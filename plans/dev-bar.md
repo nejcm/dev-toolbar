@@ -66,31 +66,60 @@ The StyleX article shows a newer or differently configured version with a styled
 
 ## 3. Recommended feature set
 
+Exactly one of the sections below is the shell. The rest are extensions, and each ships
+as its own subpath export of the same package:
+
+| Section | Ships as |
+| --- | --- |
+| 3A Toolbar shell | `@nejcm/dev-toolbar` |
+| 3B Environment and session context | `@nejcm/dev-toolbar/ext/environment` |
+| 3C Feature-flag controls | `@nejcm/dev-toolbar/ext/flags` |
+| 3D Runtime performance HUD | `@nejcm/dev-toolbar/ext/metrics` |
+| 3E Long-task and responsiveness diagnostics | `@nejcm/dev-toolbar/ext/metrics` |
+| 3F Migration counters | `@nejcm/dev-toolbar/ext/metrics` |
+| 3G Visual inspector and overlays | `@nejcm/dev-toolbar/ext/overlays` |
+| 3H Theme and design-token editor | `@nejcm/dev-toolbar/ext/theme-editor` |
+| 3I Debugging controls | `@nejcm/dev-toolbar/ext/diagnostics` |
+| 3J Diagnostic snapshot | `@nejcm/dev-toolbar/ext/diagnostics` |
+| 5 Runtime data architecture | `@nejcm/dev-toolbar/runtime` (opt-in) |
+| 6 Access and security model | the consumer's own concern; guidance only |
+
 ### A. Toolbar shell
+
+The shell is the whole of `@nejcm/dev-toolbar`'s root entry, and it contains no
+features. It is chrome plus hosting.
 
 The shell is responsible for:
 
-* Fixed bottom placement.
+* Fixed bottom (or top) placement, in a portal.
 * Compact and expanded modes.
-* Module registration.
-* Metric severity colors.
-* Tooltips explaining every value.
-* Keyboard navigation.
-* Persisted preferences.
-* Overflow handling.
-* A command menu.
-* An expandable details drawer.
+* Rendering the extensions it is given, in `align` / `order` / `priority` order.
+* Collapsing low-priority items into an overflow menu.
+* Hosting one panel at a time.
+* Style tokens and the restyling surface (`--dtb-*`, `data-dtb-part`, `classNames`).
+* Focus management and keyboard navigation.
+* Persisted preferences, through an injectable storage adapter.
+* An error boundary around every extension.
+* Aggregating extension-declared commands — without rendering a palette.
+
+The shell is explicitly **not** responsible for metric semantics, severity thresholds,
+data collection, flag adapters, access control, or any of sections 3B–3J.
 
 Recommended behavior:
 
 * Height: 28–32 px.
-* Expanded drawer: 320–480 px.
-* Do not cover application content; expose a CSS variable such as `--dev-toolbar-height`.
-* Use a portal or Shadow DOM boundary to avoid application CSS affecting the toolbar.
+* Expanded panel: 320–480 px, resizable, persisted.
+* Do not cover application content: render `children` untouched and expose
+  `--dev-toolbar-height` for apps that want to inset themselves.
+* Render in a portal on `document.body`, in the **light DOM**, with all shell CSS inside
+  an `@layer` scoped by `[data-dev-toolbar]`. Not a Shadow DOM boundary: extensions are
+  user code, and inside a shadow root their utility classes, CSS-in-JS and their own
+  portals stop working. Isolation that only the shell's own styles enjoy is not worth
+  taxing every extension author.
 * Allow repositioning to top or bottom.
-* Add a shortcut such as `Ctrl/Cmd + Shift + .`.
-* Save visibility and enabled modules per developer.
-* Pause expensive collection when hidden or when the document is not visible.
+* A toggle shortcut, `Ctrl/Cmd + Shift + .` by default and overridable.
+* Save visibility, position, active panel, panel height and per-extension enablement.
+* Report page and bar visibility to extensions; let each one decide what to pause.
 
 ### B. Environment and session context
 
@@ -654,91 +683,137 @@ interface DiagnosticSnapshot {
 
 Offer Markdown and JSON output. Redact sensitive data before it reaches the clipboard.
 
-## 4. Extensible module architecture
+## 4. Extension architecture
 
-Use a registry so teams can add tools without modifying the toolbar shell.
+Extensions are passed in as data. There is no global registry: a module-level mutable
+`Map` breaks server rendering, breaks two toolbars on one page, leaks between tests,
+and makes ordering depend on import order.
+
+```tsx
+import { DevToolbar } from "@nejcm/dev-toolbar";
+import { metrics } from "@nejcm/dev-toolbar/ext/metrics";
+import { flags } from "@nejcm/dev-toolbar/ext/flags";
+
+<DevToolbar extensions={[metrics(), flags({ adapter })]}>
+  <App />
+</DevToolbar>;
+```
+
+For a tool that should only exist while some route is mounted, `useDevToolbar()`
+registers and unregisters from inside the tree.
+
+### The contract
 
 ```ts
-interface DevToolbarModule {
+export const CONTRACT_VERSION = 1;
+
+interface DevToolbarExtension {
   id: string;
   label: string;
+  contractVersion?: number;      // core warns on mismatch
+  align?: "start" | "end";       // default "start"
   order?: number;
-
-  availability(ctx: ToolbarContext): boolean;
-
-  compact?: React.ComponentType;
-  panel?: React.ComponentType;
-
-  start?(api: ToolbarRuntime): void | (() => void);
+  priority?: number;             // low priority collapses into overflow first
+  hidden?: boolean;              // consumer-computed
+  keepMounted?: boolean;         // panel survives close
+  compact?: (props: CompactSlotProps) => React.ReactNode;
+  panel?: (props: PanelSlotProps) => React.ReactNode;
   commands?: ToolbarCommand[];
+  start?(api: ExtensionRuntimeApi): void | (() => void);
 }
 
-const modules = new Map<string, DevToolbarModule>();
+interface CompactSlotProps {
+  isOverflowed: boolean;
+  isPanelOpen: boolean;
+  density: "compact" | "comfortable";
+  openPanel(): void;
+  closePanel(): void;
+}
 
-export function registerDevToolbarModule(
-  module: DevToolbarModule,
-): () => void {
-  modules.set(module.id, module);
-  toolbarStore.refresh();
-
-  return () => {
-    modules.delete(module.id);
-    toolbarStore.refresh();
-  };
+interface ExtensionRuntimeApi {
+  signal: AbortSignal;
+  isVisible(): boolean;
+  subscribeVisibility(cb: (visible: boolean) => void): () => void;
+  storage: ToolbarStorage;       // namespaced to this extension's id
 }
 ```
 
-Example registration:
+Two deliberate omissions:
+
+* **No `availability(ctx)`.** Once domain logic leaves the shell there is no `ctx` for
+  core to supply — no identity, no session, no capabilities. A `hidden` boolean the
+  consumer computes is the honest version, and gating belongs to whoever knows the actor.
+* **`compact` and `panel` are render functions, not `ComponentType`s**, so core can hand
+  down slot state an extension cannot otherwise know: whether it has been collapsed into
+  overflow, whether its panel is open, the current density.
+
+### Lifecycle
+
+`start(api)` runs once when the toolbar mounts and returns an optional cleanup; the
+`AbortSignal` covers listeners that would rather be aborted than unsubscribed.
+
+Core *reports* visibility and never acts on it. Auto-suspending a collector because the
+bar is closed or the tab is backgrounded silently corrupts anything cumulative — a
+session-total counter that stops counting is worse than one that keeps going.
+
+### Failure isolation
+
+Each extension's `compact` and `panel` render inside their own error boundary. A
+half-finished internal tool that throws becomes an error chip; the bar and every other
+extension keep working. This matters more here than in most libraries: extensions *are*
+the product surface, and many will be someone's afternoon experiment.
+
+### Example: a project-specific extension
 
 ```ts
-registerDevToolbarModule({
+export const styleMigration: DevToolbarExtension = {
   id: "stylex-migration",
   label: "Style migration",
+  align: "end",
   order: 60,
-  availability: ctx => ctx.internal && ctx.capabilities.styleMigration,
-  compact: StyledRuleCounter,
-  panel: StyleMigrationPanel,
+  priority: 20,
+  compact: ({ isOverflowed, openPanel }) => (
+    <StyledRuleCounter dense={isOverflowed} onClick={openPanel} />
+  ),
+  panel: () => <StyleMigrationPanel />,
   start: startStyleMigrationCollector,
-});
+};
 ```
+### Package structure
 
-### Suggested package structure
+One published package, many explicit subpath exports. No monorepo.
 
 ```text
-packages/dev-toolbar/
+src/
+├── index.ts                 # DevToolbar, DevToolbarInset, useDevToolbar, types
 ├── core/
-│   ├── registry.ts
-│   ├── store.ts
-│   ├── event-bus.ts
-│   ├── permissions.ts
-│   └── redaction.ts
-├── shell/
-│   ├── Toolbar.tsx
-│   ├── ToolbarItem.tsx
-│   ├── Drawer.tsx
-│   └── CommandMenu.tsx
-├── collectors/
-│   ├── memory.ts
-│   ├── interactions.ts
-│   ├── frames.ts
-│   ├── long-tasks.ts
-│   ├── network.ts
-│   ├── hydration.ts
-│   └── dom.ts
-├── modules/
-│   ├── environment/
-│   ├── flags/
-│   ├── performance/
-│   ├── network/
-│   ├── theme-editor/
-│   ├── overlays/
-│   └── diagnostics/
-└── testing/
-    ├── mock-runtime.ts
-    └── fixtures.ts
+│   ├── DevToolbar.tsx       # portal, provider, shortcut, enabled, injectStyles
+│   ├── Bar.tsx              # align regions, order/priority sort
+│   ├── Overflow.tsx         # ResizeObserver measurement + ··· menu
+│   ├── PanelHost.tsx        # single active panel, resize, keepMounted
+│   ├── ExtensionBoundary.tsx
+│   ├── store.ts             # useSyncExternalStore, no event bus
+│   ├── storage.ts           # adapter + localStorage default
+│   ├── styles.ts            # inject-once, @layer, token defaults
+│   └── contract.ts          # types + CONTRACT_VERSION
+├── runtime/                 # opt-in: event-bus, ring-buffer, throttle, redact
+├── ext/
+│   ├── metrics/                                 # P1
+│   ├── command-menu/  environment/  flags/      # P2
+│   ├── overlays/  diagnostics/                  # P3
+│   └── theme-editor/                            # P4
+└── testing/                 # renderWithToolbar, makeExtension, mock bus
 ```
 
+The rule that keeps the boundary honest: **`core/` may not import from `runtime/` or
+`ext/`.** It is checked in the build, not just documented.
+
 ## 5. Runtime data architecture
+
+This is the shape of `@nejcm/dev-toolbar/runtime`, an opt-in subpath. Core never
+imports it. Extensions that measure something over time use it so that three
+extensions do not ship three ring buffers; extensions that only render a control
+ignore it entirely.
 
 Use a central event bus with small bounded buffers:
 
@@ -800,6 +875,15 @@ The toolbar itself should have a performance budget:
 
 ## 6. Access and security model
 
+None of this ships in the package. Core has no identity, no session and no server,
+so an authorization check living inside it would be theatre — the bytes and the
+privileged endpoints are what actually need defending, and both belong to the
+consumer. The guidance below is what a consumer should do before rendering
+`<DevToolbar>` at all.
+
+The one piece the package does provide is `redact()` in `/runtime`, because every
+snapshot-shaped extension needs it and would otherwise ship a leaky one.
+
 Do not rely on a client-side environment variable alone.
 
 Recommended gate:
@@ -840,15 +924,18 @@ Additional protections:
 
 ## 7. UI behavior
 
+Core owns the presentation *primitives*; extensions own what the values mean.
+
 ### Compact presentation
 
-Use a consistent metric item:
+Core exports a compact item primitive:
 
 ```text
 [icon] [short label] [value] [optional mini graph]
 ```
 
-Colors communicate health:
+Core also exports the severity palette as tokens — `--dtb-status-neutral`, `-ok`,
+`-warn`, `-error`, `-override`:
 
 * Neutral: not enough information or not applicable.
 * Green: healthy.
@@ -856,28 +943,28 @@ Colors communicate health:
 * Red: current regression.
 * Purple/blue: active override or non-default state.
 
-Never rely on color alone. Include an icon, text status or tooltip.
+The *tokens* are chrome and belong to core. The *thresholds* that pick a token are
+domain logic and belong to the extension. Never rely on color alone; include an icon,
+text status or tooltip.
 
-### Detail drawer
+### Detail panel
 
-Clicking a metric opens:
+Core hosts one panel at a time and owns open/close state, sizing and persistence.
+Clicking a compact item toggles that extension's panel by default; extensions and
+consumers can drive it explicitly through `openPanel(id)` / `closePanel()`.
 
-* Definition.
-* Current value.
-* Measurement window.
-* Thresholds.
-* 30–60 second chart.
-* Contributing events.
-* Links/actions.
-* Reset/copy buttons.
+A closed panel unmounts unless the extension sets `keepMounted`, which exists exactly
+for the section 7 requirement that captured history survives switching between metrics.
 
-Only one primary drawer should be open at a time. Switching between metrics should preserve captured history.
+What goes *inside* the panel is entirely the extension's business. A well-behaved
+metric panel shows: definition, current value, measurement window, thresholds, a
+30–60 second chart, contributing events, links/actions, and reset/copy buttons.
 
 ### Promoted flag
 
-The screenshot’s `UI Facelift 2026` item is worth reproducing.
-
-A team should be able to promote a flag into the toolbar temporarily:
+The screenshot's `UI Facelift 2026` item is worth reproducing, and it lives in
+`@nejcm/dev-toolbar/ext/flags` — not the shell. To core it is an ordinary extension
+declaring a compact item with a high `priority` so overflow never eats it.
 
 ```ts
 interface PromotedFlag {
@@ -894,65 +981,43 @@ This removes search friction during active migrations and organization-wide test
 
 ## 8. Delivery plan
 
-### Phase 1: Shell and access control — 3–5 days
+Phases follow the package boundary, not the feature list. Each phase after P0 adds a
+subpath export; none of them modify the shell.
+
+### P0 — the shell — 5–8 days
 
 Build:
 
-* Server-issued capability endpoint.
-* Lazy toolbar bootstrap.
-* Bottom shell.
-* Collapse/expand behavior.
-* Keyboard shortcut.
-* Module registry.
-* Local preference persistence.
-* Production/internal visual indicators.
+* `<DevToolbar>`: portal, provider, `enabled`, `position`, `shortcut`, `injectStyles`.
+* Extension slots: `align`, `order`, `priority`.
+* Overflow collapse into a `···` menu, driven by `ResizeObserver`.
+* Panel host: single active panel, resizable, `keepMounted` opt-in.
+* Style tokens, `@layer` stylesheet, inject-once, `data-dtb-part`, `classNames`.
+* Injectable storage adapter with a `localStorage` default.
+* Per-extension error boundaries.
+* `start()` lifecycle with `AbortSignal` and visibility reporting.
+* Command aggregation (`useToolbarCommands`, `runCommand`) with no palette UI.
+* `/testing` helpers and an in-repo playground app.
 
 Acceptance criteria:
 
-* Unauthorized users receive neither UI nor privileged data.
-* Toolbar causes no layout overlap.
-* Modules can register without editing the shell.
-* Toolbar is keyboard and screen-reader operable.
+* The bar causes no layout shift in an app that owns its own full-height layout.
+* Extensions can be added and removed without editing the shell.
+* An extension that throws degrades to an error chip; the bar survives.
+* Core's built chunk imports nothing from `runtime/` or `ext/`.
+* The bar is keyboard and screen-reader operable.
+* Overriding `--dtb-*` tokens from consumer CSS wins without `!important`.
 
-### Phase 2: Context and feature flags — 4–6 days
+### P1 — runtime and the first extension — 5–8 days
 
-Build:
+Build `@nejcm/dev-toolbar/runtime`:
 
-* Environment/session summary.
-* Flag adapter.
-* Searchable flag drawer.
-* Boolean and variant overrides.
-* Promoted flag support.
-* Clear-all overrides.
-* Shareable JSON recipe.
-* Audit-backed remote changes, if required.
+* Event bus, bounded ring buffers, throttled store, `redact`.
 
-Acceptance criteria:
+Build `@nejcm/dev-toolbar/ext/metrics` per sections 3D and 3E:
 
-* A developer can toggle the target flag on the current route in one click.
-* Flag source and override state are always clear.
-* Reload-required flags are identified.
-* Overrides never leak across environments.
-
-### Phase 3: Core performance HUD — 5–8 days
-
-Build collectors for:
-
-* Memory.
-* Interaction delay.
-* Jank.
-* Long tasks.
-* Network activity.
-* Hydration.
-* DOM count.
-
-Build:
-
-* Severity thresholds.
-* Tooltips.
-* Detail panels.
-* Rolling graphs.
-* Pause/reset behavior.
+* Collectors for memory, interaction delay, jank, long tasks, network, hydration, DOM count.
+* Severity thresholds, tooltips, detail panels, rolling graphs, pause/reset.
 
 Acceptance criteria:
 
@@ -960,37 +1025,40 @@ Acceptance criteria:
 * Instrumentation overhead stays within the toolbar budget.
 * Every metric documents its definition and time window.
 * Unsupported APIs show `NA`, not misleading zeroes.
+* Any change the extension forces on the contract is made *before* publishing.
 
-### Phase 4: Diagnostics and overlays — 5–8 days
+**Publish `0.1.0` at the end of P1.**
 
-Build:
+### P2 — context, flags, command palette — 6–9 days
 
-* Component metadata convention.
-* DOM/component boundary overlay.
-* Migration status overlay.
-* Network history.
-* Long-task correlation timeline.
-* Diagnostic snapshot.
-* Error/log panel.
+* `/ext/environment` per section 3B.
+* `/ext/flags` per section 3C, including the promoted flag.
+* `/ext/command-menu`: palette UI over the commands core already aggregates.
+
+Acceptance criteria:
+
+* A developer can toggle the target flag on the current route in one click.
+* Flag source and override state are always clear.
+* Reload-required flags are identified.
+* Overrides never leak across environments.
+* The palette can be replaced by a team's existing `cmdk` without forking core.
+
+### P3 — overlays and diagnostics — 6–10 days
+
+* `/ext/overlays` per section 3G: component metadata convention, boundary overlay,
+  migration status overlay.
+* `/ext/diagnostics` per sections 3I and 3J: network history, long-task correlation,
+  diagnostic snapshot, error/log panel.
 
 Acceptance criteria:
 
 * Selecting a highlighted component identifies its source metadata.
-* Copied reports contain no credentials or sensitive bodies.
+* Copied reports contain no credentials or sensitive bodies — verified against `redact`.
 * Overlay scrolling remains smooth on complex pages.
 
-### Phase 5: Theme editor — 5–10 days
+### P4 — theme editor — 5–10 days
 
-Build:
-
-* Base/accent/contrast controls.
-* LCH or OKLCH token manipulation.
-* Per-token editor.
-* Scoped preview.
-* Recipe import/export.
-* Before/after toggle.
-* Schema validation.
-* Figma export contract.
+* `/ext/theme-editor` per section 3H.
 
 Acceptance criteria:
 
@@ -998,44 +1066,25 @@ Acceptance criteria:
 * Reset returns precisely to the original theme.
 * JSON round-trips without loss.
 * Invalid or outdated recipes produce actionable errors.
-
-### Phase 6: Migration tooling and hardening — 4–7 days
-
-Build:
-
-* Custom metric module API.
-* Styled-components/legacy counter.
-* Route-aware recalculation.
-* Promoted migration metrics.
-* Integration tests.
-* Performance regression tests.
-* Documentation and ownership conventions.
-
-Acceptance criteria:
-
-* A team can add a new counter and drawer without changing core code.
-* New modules declare ownership and expiration.
-* Temporary tools can be removed cleanly.
-* The toolbar can diagnose its own CPU and memory overhead.
-
-A focused two-person team could deliver a strong MVP—shell, flags, context, delay, jank, memory, network and snapshots—in roughly 2–3 weeks. The complete platform would likely take 4–7 weeks depending on the existing feature-flag, telemetry and theming infrastructure.
+* Any dependency it needs is an optional peer, not a dependency of core.
 
 ## 9. Recommended MVP boundary
 
-Start with these nine capabilities:
+The MVP is the contract, not the feature set.
 
-1. Secure internal-only bootstrap.
-2. Expandable toolbar shell.
-3. Environment/build/session context.
-4. Feature-flag search and local overrides.
-5. One promoted flag.
-6. Delay, jank, memory and network metrics.
-7. Long-task detail view.
-8. Diagnostic snapshot.
-9. Module registration API.
+Ship first (P0 + P1 in section 8):
 
-Defer initially:
+1. The shell: portal placement, extension slots, ordering, overflow collapse, panel host.
+2. The style surface: tokens, `data-dtb-part`, `classNames`.
+3. Persistence through an injectable adapter.
+4. Per-extension error boundaries and the `start()` lifecycle.
+5. `/runtime`: event bus, ring buffers, throttled store, `redact`.
+6. `/ext/metrics`: delay, jank, memory, network — the extension that proves the contract.
+7. `/testing`, so third-party extension authors can write tests.
 
+Defer:
+
+* Everything in sections 3B, 3C, 3G, 3H, 3I and 3J, in the order given in section 8.
 * React private-internals integration.
 * Detached-DOM leak detection.
 * Full network response inspection.
@@ -1045,7 +1094,9 @@ Defer initially:
 * Persistent telemetry upload.
 * Advanced failure simulation.
 
-This MVP already captures the main reason Linear’s toolbar is effective: it places the most useful comparison controls and runtime signals directly in the application, while preserving the exact state a developer is investigating.
+The reason to publish only after a real extension exists: a contract nobody has built
+against is wrong in ways its author cannot see. `/ext/metrics` is the hardest consumer
+— it needs a background lifecycle, not just a render slot — so it finds the gaps first.
 
 ## 10. Sources and confidence boundary
 
