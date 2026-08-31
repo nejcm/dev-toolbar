@@ -16,7 +16,7 @@
     "declaration": true,
     "emitDeclarationOnly": true,
     "outDir": "dist",
-    "types": ["vitest/globals"]
+    "types": ["vitest/globals", "node"]
   },
-  "include": ["src"]
+  "include": ["src", "tsup.config.ts", "vitest.config.ts", "vitest.setup.ts"]
 }

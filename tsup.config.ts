@@ -1,12 +1,22 @@
 import { defineConfig } from "tsup";
 
+/**
+ * Entry list mirrors package.json `exports`. Subpaths land here as their
+ * phases add them (`./runtime`, `./testing`, `./ext/*`) — never as wildcards.
+ */
 export default defineConfig({
-  entry: ["src/index.ts"],
+  entry: {
+    index: "src/index.ts",
+    styles: "src/styles.css",
+  },
   format: ["esm", "cjs"],
-  dts: true,
+  dts: { entry: { index: "src/index.ts" } },
   sourcemap: true,
   clean: true,
-  treeshake: true,
+  // rollup's treeshake pass hoists imports above the banner and drops the
+  // "use client" directive; esbuild already tree-shakes this bundle.
+  treeshake: false,
   target: "es2022",
-  external: ["react", "react-dom"],
+  banner: { js: '"use client";' },
+  external: ["react", "react-dom", "react/jsx-runtime"],
 });
