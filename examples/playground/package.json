@@ -5,9 +5,9 @@
   "type": "module",
   "description": "Unpublished manual-verification app for @nejcm/dev-toolbar. Not part of the package's `files`.",
   "scripts": {
-    "predev": "npm --prefix ../.. run build",
+    "predev": "cd ../.. && bun run build",
     "dev": "vite",
-    "prebuild": "npm --prefix ../.. run build",
+    "prebuild": "cd ../.. && bun run build",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview"
   },

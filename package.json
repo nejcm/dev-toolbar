@@ -95,9 +95,9 @@
   "scripts": {
     "build": "tsup",
     "dev": "tsup --watch",
-    "playground": "npm --prefix examples/playground run dev",
-    "playground:install": "npm --prefix examples/playground install",
-    "playground:build": "npm --prefix examples/playground run build",
+    "playground": "cd examples/playground && bun run dev",
+    "playground:install": "cd examples/playground && bun install",
+    "playground:build": "cd examples/playground && bun run build",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",

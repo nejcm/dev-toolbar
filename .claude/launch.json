@@ -3,8 +3,8 @@
   "configurations": [
     {
       "name": "playground",
-      "runtimeExecutable": "npm",
-      "runtimeArgs": ["--prefix", "examples/playground", "run", "dev"],
+      "runtimeExecutable": "sh",
+      "runtimeArgs": ["-c", "cd examples/playground && bun run dev"],
       "port": 5273
     }
   ]
