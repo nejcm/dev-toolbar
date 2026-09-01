@@ -12,3 +12,6 @@ coverage/
 
 # Claude Code: machine-local permissions. .claude/launch.json is shared.
 .claude/settings.local.json
+
+# Working plans: local scratch, not part of the published package.
+plans/
