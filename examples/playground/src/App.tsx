@@ -490,7 +490,7 @@ function ThemePlayground() {
 
 export function App() {
   const [restyled, setRestyled] = useState(false);
-  const [inset, setInset] = useState(false);
+  const [inset, setInset] = useState(true);
   const [density, setDensity] = useState<ToolbarDensity>("compact");
   const [enabled, setEnabled] = useState(true);
 
@@ -604,6 +604,44 @@ export function App() {
     </main>
   );
 
+  const header = (
+    <header className="pg-header">
+      <h1>@nejcm/dev-toolbar playground</h1>
+      <div className="pg-controls">
+        <HeightReadout />
+        <button
+          type="button"
+          className="pg-button"
+          data-testid="toggle-inset"
+          onClick={() => setInset((value) => !value)}
+        >
+          Inset: {inset ? "on" : "off"}
+        </button>
+        <button
+          type="button"
+          className="pg-button"
+          data-testid="toggle-density"
+          onClick={() =>
+            setDensity((value) =>
+              value === "compact" ? "comfortable" : "compact",
+            )
+          }
+        >
+          Density: {density}
+        </button>
+        <ShellControls />
+        <button
+          type="button"
+          className="pg-button"
+          data-testid="toggle-enabled"
+          onClick={() => setEnabled((value) => !value)}
+        >
+          enabled: {String(enabled)}
+        </button>
+      </div>
+    </header>
+  );
+
   return (
     <DevToolbar
       extensions={playgroundExtensions}
@@ -613,53 +651,17 @@ export function App() {
       defaultPosition="bottom"
       classNames={{ bar: "pg-bar" }}
     >
-      <div className="pg-app">
-        <header className="pg-header">
-          <h1>@nejcm/dev-toolbar playground</h1>
-          <div className="pg-controls">
-            <HeightReadout />
-            <button
-              type="button"
-              className="pg-button"
-              data-testid="toggle-inset"
-              onClick={() => setInset((value) => !value)}
-            >
-              Inset: {inset ? "on" : "off"}
-            </button>
-            <button
-              type="button"
-              className="pg-button"
-              data-testid="toggle-density"
-              onClick={() =>
-                setDensity((value) =>
-                  value === "compact" ? "comfortable" : "compact",
-                )
-              }
-            >
-              Density: {density}
-            </button>
-            <ShellControls />
-            <button
-              type="button"
-              className="pg-button"
-              data-testid="toggle-enabled"
-              onClick={() => setEnabled((value) => !value)}
-            >
-              enabled: {String(enabled)}
-            </button>
-          </div>
-        </header>
-
-        {inset ? (
-          <DevToolbarInset className="pg-scroll" data-testid="inset">
-            {body}
-          </DevToolbarInset>
-        ) : (
-          <div className="pg-scroll" data-testid="no-inset">
-            {body}
-          </div>
-        )}
-      </div>
+      {inset ? (
+        <DevToolbarInset className="pg-app" data-testid="inset">
+          {header}
+          <div className="pg-scroll">{body}</div>
+        </DevToolbarInset>
+      ) : (
+        <div className="pg-app" data-testid="no-inset">
+          {header}
+          <div className="pg-scroll">{body}</div>
+        </div>
+      )}
     </DevToolbar>
   );
 }
