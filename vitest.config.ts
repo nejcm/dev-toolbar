@@ -53,30 +53,28 @@ export default defineConfig({
       // test imports it, and dropped the `all` flag that used to opt into that.
       // Do not reintroduce `all: true` — it is a type error, not a no-op.
       include: ["src/**/*.{ts,tsx}"],
-      exclude: [
-        "src/**/*.test.{ts,tsx}",
-        // Barrel files: re-exports only, so they report as covered or not
-        // depending on which tests happened to import through them, and
-        // either way the number says nothing about tested behaviour.
-        "src/index.ts",
-        "src/**/index.ts",
-        "src/**/index.tsx",
-        // Type-only modules compile to nothing; v8 still lists them at 0%.
-        "src/**/types.ts",
-        // Style constants — long template literals with no branches. They
-        // would inflate the line count without adding any tested logic.
-        "src/**/css.ts",
-        "src/core/styles.ts",
-      ],
+      // Only the tests themselves. An earlier draft of this config also
+      // excluded `**/index.tsx`, `**/types.ts`, `**/css.ts` and the barrels, on
+      // the theory that they were re-exports, type-only or branchless constants.
+      // Three of those four were wrong: `src/ext/*/index.tsx` are the extension
+      // *factories* (1,667 lines of real logic — AGENTS.md calls them that), and
+      // every `types.ts` carries runtime exports, 19 of them in
+      // `src/ext/overlays/types.ts` including DOM traversal. Excluding them made
+      // the numbers no better — measured both ways, they differ by fractions of
+      // a percent, because those files are in fact tested — but it did put ~1,700
+      // lines permanently out of reach of the floors below, so a new untested
+      // branch in a factory could never trip them. Do not reintroduce an exclude
+      // list without measuring both ways first.
+      exclude: ["src/**/*.test.{ts,tsx}"],
       // Floors, not targets: set just under the current measured numbers so a
       // regression fails the build while ordinary movement does not. Raise
       // them when they start reading as generous, not on every green run.
-      // Measured on the 41 test files at the time these were set: statements
-      // 90.78, branches 81.31, functions 89.78, lines 93.19.
+      // Measured over the whole of `src/` at the time these were set:
+      // statements 90.53, branches 81.82, functions 89.80, lines 92.97.
       thresholds: {
         statements: 89,
-        branches: 79,
-        functions: 87,
+        branches: 80,
+        functions: 88,
         lines: 92,
       },
     },

@@ -25,8 +25,17 @@ import { fileURLToPath } from "node:url";
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const pkg = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));
 
-/** Relative `import`/`export ... from` specifiers, plus bare `import "./x"`. */
-const RELATIVE_SPECIFIER = /(?:from|import|require\()\s*["'](\.[^"']*)["']/g;
+/**
+ * Relative specifiers in every form the bundlers emit: `from "./x"`,
+ * `import "./x"`, `require("./x")` and `import("./x")`.
+ *
+ * The dynamic-`import(` alternative is load-bearing even though `dist/` has no
+ * relative dynamic import today. The moment a lazy `import()` lands in `src/`,
+ * tsup emits a relative dynamic chunk — and a scanner that missed it would
+ * silently under-report the one entry that had just grown a large lazy chunk,
+ * which is exactly the regression this table exists to catch.
+ */
+const RELATIVE_SPECIFIER = /(?:from|import|require\(|import\()\s*["'](\.[^"']*)["']/g;
 
 /**
  * Files reachable from `entryFile` by following relative specifiers. Returns

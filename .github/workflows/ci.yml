@@ -109,17 +109,21 @@ jobs:
       - name: Verify (typecheck, lint, build, test)
         run: bun run verify
 
+      # The reporting steps below are `!cancelled()` rather than `always()`:
+      # both run on a failed `verify` (a size table and a knip report are most
+      # useful on the run that broke something), but neither holds up a
+      # cancellation the way `always()` would.
+      #
       # The package's entire pitch is low overhead across 11 separately
       # importable entry points, so this is the number a reviewer most wants on
       # the PR. Reads the `dist/` that `verify` just built.
       - name: Report bundle size
-        if: always()
+        if: ${{ !cancelled() }}
         uses: ./.github/actions/report-bundle-size
 
-      # Advisory. Runs `if: always()` so a failing test still gets the report,
-      # and swallows its own exit code internally — see the action.
+      # Advisory: swallows its own exit code internally — see the action.
       - name: Knip
-        if: always()
+        if: ${{ !cancelled() }}
         uses: ./.github/actions/knip-check
 
       # A second, instrumented run of the suite. The floors live in
@@ -128,10 +132,10 @@ jobs:
       - name: Coverage
         run: bun run test:coverage
 
-      # `if: always()` so the numbers are still reported when the run failed on
-      # a threshold — that is precisely the run where you want to see them.
+      # Reported even on a failed coverage run — a run that broke a threshold is
+      # precisely the one where you want to see the numbers.
       - name: Report coverage
-        if: always()
+        if: ${{ !cancelled() }}
         run: |
           summary=coverage/coverage-summary.json
           {
@@ -156,7 +160,7 @@ jobs:
       # is thousands of files. Kept short — this is for looking at a specific
       # run, not for trend analysis.
       - name: Upload coverage
-        if: always()
+        if: ${{ !cancelled() }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: coverage-lcov

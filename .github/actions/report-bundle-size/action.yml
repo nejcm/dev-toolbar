@@ -22,9 +22,16 @@ runs:
   steps:
     - name: Report bundle size
       shell: bash
+      # The heading goes through `env` rather than being interpolated into the
+      # script body. Repo-controlled today — ci.yml does not even pass it — but
+      # `${{ }}` inside `run:` is textual substitution before bash sees it, which
+      # is the shape every Actions script-injection advisory is about. Cheap to
+      # get right once.
+      env:
+        HEADING: ${{ inputs.heading }}
       run: |
         {
-          echo "## ${{ inputs.heading }}"
+          echo "## ${HEADING}"
           echo
           node scripts/bundle-size.mjs
         } >> "$GITHUB_STEP_SUMMARY"

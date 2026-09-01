@@ -10,15 +10,6 @@ description: Set up bun and Node, restore the bun install cache, and install dep
 # from the checked-out tree, so `uses: ./.github/actions/setup-job` cannot be
 # the first step of a job.
 
-inputs:
-  install:
-    description: >-
-      Set to 'false' to set up the toolchain and cache but skip
-      `bun install`. For jobs that only need the bun binary (a version probe,
-      a `bunx` one-shot) and would otherwise pay for a full install.
-    required: false
-    default: "true"
-
 runs:
   using: composite
   steps:
@@ -55,6 +46,5 @@ runs:
     # one version in bun.lock, which is what makes the zero-warning gate in
     # `bun run lint` deterministic.
     - name: Install dependencies
-      if: inputs.install == 'true'
       shell: bash
       run: bun install --frozen-lockfile

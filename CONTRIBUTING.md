@@ -59,6 +59,12 @@ loop. The thresholds in `vitest.config.ts` are floors set just under the measure
 numbers, so they fail on a regression rather than on ordinary movement. CI runs
 this after `verify`, and a drop below a floor fails the build.
 
+Coverage measures **all** of `src/` bar the test files. If you are tempted to add
+an `exclude` entry, measure both ways first and put the numbers in the comment —
+the header there records an earlier attempt where three of four excludes rested
+on a wrong guess about what those files contained, and quietly put ~1,700 lines
+of shipped logic outside the gate.
+
 `bun run knip` reports unused files, exports and dependencies. It is advisory
 everywhere — CI writes it to the job summary and never fails on it. Its value
 here is specific: with 11 separately importable entry points, a subpath can stop
