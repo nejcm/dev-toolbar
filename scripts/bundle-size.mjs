@@ -34,8 +34,19 @@ const pkg = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));
  * tsup emits a relative dynamic chunk — and a scanner that missed it would
  * silently under-report the one entry that had just grown a large lazy chunk,
  * which is exactly the regression this table exists to catch.
+ *
+ * The leading `(?<![\w$.])` is not decoration. Without it the keywords match as
+ * identifier *suffixes*: `reimport("./x.js")`, `myimport("./y.js")` and
+ * `obj.import("./z.js")` all matched, which would attribute a chunk to an entry
+ * that never imports it and over-report its size.
+ *
+ * Known limitation, accepted: this is a regex over text, not a parse, so an
+ * import specifier written inside a comment would be followed. Benign in
+ * practice — esbuild's output comments are `// src/...` path banners, which do
+ * not begin with `.` and so cannot match — but it is why this measures a built
+ * bundle rather than hand-written source.
  */
-const RELATIVE_SPECIFIER = /(?:from|import|require\(|import\()\s*["'](\.[^"']*)["']/g;
+const RELATIVE_SPECIFIER = /(?<![\w$.])(?:from|import|require\(|import\()\s*["'](\.[^"']*)["']/g;
 
 /**
  * Files reachable from `entryFile` by following relative specifiers. Returns

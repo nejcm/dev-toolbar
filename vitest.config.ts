@@ -70,12 +70,23 @@ export default defineConfig({
       // regression fails the build while ordinary movement does not. Raise
       // them when they start reading as generous, not on every green run.
       // Measured over the whole of `src/` at the time these were set:
-      // statements 90.53, branches 81.82, functions 89.80, lines 92.97.
+      // statements 90.53, branches 81.82, functions 89.80, lines 92.97. Each
+      // floor sits ~1.5-2 points under its measurement, which is deliberately
+      // uniform: set by eye the four end up gating at very different strengths
+      // (a `lines: 92` floor leaves 40 lines of slack where `statements: 89`
+      // leaves 73, so `lines` would fail first on every new file for no reason
+      // anyone chose). Slack in absolute terms at these values: ~81 lines,
+      // ~73 statements, ~61 branches, ~19 functions.
+      //
+      // `functions` is the tightest in practice and the one to watch: 19 new
+      // untested functions trips it. That is the intended behaviour for a real
+      // regression; if it fires on ordinary work, add the tests rather than
+      // lowering the number.
       thresholds: {
         statements: 89,
         branches: 80,
         functions: 88,
-        lines: 92,
+        lines: 91,
       },
     },
   },
