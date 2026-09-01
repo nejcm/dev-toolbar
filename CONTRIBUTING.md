@@ -203,6 +203,208 @@ cannot drift unnoticed.
 behaviour needs a test; a bug fix needs a test that fails before the fix. The
 `src/testing/` entry point (`renderWithToolbar`, `makeExtension`, `mockBus`) is
 
+## Releasing
+
+Releases are automated. You do not edit `version` in `package.json`, and you do
+not write changelog entries by hand.
+
+### The steady state
+
+1. Land a conventional commit on `main`. `feat:` and `fix:` are what move the
+   version; `chore:`, `docs:`, `refactor:` and friends do not, unless they carry
+   a `BREAKING CHANGE:` footer.
+2. `.github/workflows/release.yml` runs `release-please`, which opens (or
+   updates) a **release PR** titled `chore(release): release X.Y.Z`. That PR
+   carries the version bump and the generated `CHANGELOG.md` section. Nothing
+   has been published at this point — the PR is the proposal, and closing it
+   without merging is how you decline a release.
+3. Merge the release PR when you want the release. release-please tags it
+   (`vX.Y.Z`) and creates the GitHub release.
+4. The same workflow run then gates on CI and publishes to npm. The gate is
+   `ci.yml` called as a reusable workflow, because the release PR itself gets no
+   CI — release-please opens it with `GITHUB_TOKEN`, and GitHub does not trigger
+   workflows from that. The gate is the only CI the release commit ever gets.
+5. Publishing uses npm **trusted publishing** (OIDC). There is no npm token in
+   this repository, and there should never be one again.
+
+That title is not release-please's default, and the exact string is
+load-bearing. The default pattern is `chore${scope}: release${component}
+${version}` with `${scope}` always filled from the target branch, so left alone
+the PR would be titled `chore(main): release dev-toolbar X.Y.Z`. `ci.yml` skips
+CI on pushes whose commit message contains `chore(release):`, because
+`release.yml` re-runs CI itself as its gate; with the default title that skip
+never fires and every release is verified twice.
+`pull-request-title-pattern` in `release-please-config.json` substitutes the
+literal `chore(release)` for `chore${scope}` to keep the marker. The substitute
+still parses as a conventional commit, and — this is the part that is easy to
+break — it still round-trips through release-please's own title parser, which is
+how release-please finds the previous release and how it turns a merged PR into
+a GitHub release. An arbitrary title would break far more than the CI skip.
+
+`group-pull-request-title-pattern` is set to the identical string, and both keys
+have to stay. They are not duplicates of each other:
+
+- The **per-package** `pull-request-title-pattern` is what titles the PR today.
+  release-please's merge plugin, which would otherwise rewrite the title from the
+  group pattern, does not run here: `separate-pull-requests` defaults to `true`
+  when the config declares exactly one package.
+- The **top-level** `group-pull-request-title-pattern` is still used, as the
+  second pattern release-please tries when parsing a merged release PR's title
+  while creating the GitHub release. It also becomes the operative *titling*
+  pattern the day a second package is added, because that flips
+  `separate-pull-requests` to `false` and hands the title to the merge plugin —
+  whose own default, `chore: release ${branch}`, contains neither the marker nor
+  a version.
+
+`include-component-in-tag` is `false`, and that is not a stylistic choice
+either. release-please defaults it to **`true`**, and the `node` release type
+derives the component from the package name with the scope stripped — so the
+default would tag releases `dev-toolbar-v0.2.0`, look for previous releases
+under that same shape (never finding the `v0.1.0` bootstrap tag, and so
+summarising the entire history in the first release PR), and name the PR
+`... release dev-toolbar 0.2.0`. With it `false` the tags are plain `v0.2.0`,
+which is what every `vX.Y.Z` in this document means. `include-v-in-tag` stays
+`true` and is what supplies the `v` itself; the two are independent.
+
+Versioning is pre-1.0 semantics, set in `release-please-config.json`:
+`bump-minor-pre-major` is on, so a `BREAKING CHANGE:` bumps the minor
+(`0.1.0` -> `0.2.0`) rather than going to `1.0.0`. Turn that off deliberately
+when the API is ready to be called stable. This says nothing about when
+`CONTRACT_VERSION` should change — see the section above; that policy is
+genuinely unsettled and belongs in an ADR, not in a release config.
+
+The `## 0.1.0` section of `CHANGELOG.md` is hand-written and predates the
+automation. It is kept verbatim; generated sections stack above it. The HTML
+comment at the top of that file explains what anchors the insertion point.
+
+### When a release is tagged but not published
+
+`release-please` creates the git tag and the GitHub release *before* the gate
+and the publish job run. So a failure in either leaves the repo one version
+ahead of npm: `vX.Y.Z` is tagged, the GitHub release is live, `package.json` and
+`CHANGELOG.md` say `X.Y.Z` on `main`, and the registry has never heard of it.
+Nothing is corrupt, but it will not fix itself.
+
+**If the failure was transient** — a registry blip, a network error, a flaky
+test — **use "Re-run failed jobs", never "Re-run all jobs".** A partial re-run
+keeps the outputs of the jobs that already succeeded, so `release-please`'s
+`release_created` is still `true` and `publish` runs on the second attempt
+against the same commit.
+
+A *full* re-run is the trap, and it does not announce itself. When
+`release-please` tagged the release it also relabelled the release PR from
+`autorelease: pending` to `autorelease: tagged`, and release-please finds merged
+release PRs by filtering for the *pending* label. So a full re-run finds nothing
+to release: `release_created` is never set, `gate` and `publish` skip, and the
+whole run **completes green having published nothing**. That is worse than a
+failure, because the only signal is a green check on a release that does not
+exist on npm. (A duplicate-release error — the other thing you might expect — is
+reachable only if the very first run died *between* tagging and relabelling,
+leaving a pending PR next to an existing tag.)
+
+**If the failure was real** — the gate caught something — a re-run cannot help,
+because the commit is unchanged. Fix it forward: the fix lands on `main` as its
+own commit and produces a *new* release PR for the next version. `X.Y.Z` stays
+tagged and unpublished, and that is usually the right outcome — let `X.Y.Z+1` be
+the first published version. There is no gap to explain, because npm never saw
+`X.Y.Z`. Do not delete and re-push the tag to reuse the number: a GitHub
+release already points at it, and release-please relabelled that release PR
+`autorelease: tagged` the moment it tagged, so it will not offer `X.Y.Z` again
+regardless of what you do to the tag.
+
+The last resort is publishing that exact tag by hand
+(`git checkout vX.Y.Z && npm publish --access public`). It works, but trusted
+publishing only authenticates from CI, so a manual publish means a credential
+and 2FA prompt — and it re-opens the token path the bootstrap closed. Prefer
+rolling forward.
+
+### One-time bootstrap — NOT YET DONE
+
+**This has to happen once, in this order, before any of the above works.** npm
+trusted publishing cannot create a package that does not exist yet
+([npm/cli#8544](https://github.com/npm/cli/issues/8544)), and `0.1.0` has never
+been published. Until these steps are done, `release.yml` will open release PRs
+that cannot publish.
+
+`0.1.0` is published **by hand, from a laptop**. That is the maintainer's own
+call, made when this section was written: a one-off CI job with a short-lived
+npm token would have got provenance onto `0.1.0`, and it was declined in favour
+of not creating a publish token at all. Read this before starting: **`0.1.0` will ship without provenance.** `npm --provenance`
+only works from CI, and CI cannot publish yet, so the first version is the one
+gap; every release after it gets provenance automatically through trusted
+publishing. That is the accepted price of not creating a publish token, not an
+oversight to fix later — a version, once published, cannot be re-published with
+provenance added.
+
+1. **Confirm the npm account's 2FA is passkey/WebAuthn.** New TOTP enrolments
+   have been disabled since October 2025.
+2. **Confirm the entry-point workflow filename is `release.yml`** and leave it
+   alone. npm's trusted publisher matches on the calling workflow's filename, so
+   this has to be settled before npm is configured, not after. Renaming the file
+   later breaks publishing. It is settled: `release.yml`.
+3. **Skim <https://docs.npmjs.com/policies/dual-use/>.** Almost certainly not
+   applicable, but this package reads runtime diagnostics, and finding out at
+   publish time would be a bad surprise.
+4. **Publish the real `0.1.0`.** Do **not** use the `0.0.0` placeholder trick
+   that circulates in npm/cli#8544 — a version number, once used, can never be
+   reused, even after an unpublish.
+
+   ```sh
+   git switch main && git pull            # publish the exact commit you will tag
+   git status --porcelain                 # must print nothing
+   bun install --frozen-lockfile
+
+   bun run verify                         # typecheck, lint, build, test
+   npm ci --prefix test/fixtures/jest-consumer
+   bun run test:jest-consumer             # the CommonJS packaging check
+
+   npm whoami                             # `npm login` if this fails; it opens
+                                          # the browser for the passkey
+   npm publish --access public --dry-run  # read the file list before committing
+   npm publish --access public
+   ```
+
+   Nothing else is needed before the last line: `prepublishOnly` runs
+   `typecheck && build`, so `npm publish` builds `dist/` itself — verified from a
+   checkout with `dist/` deleted, where the dry run rebuilt it and packed exactly
+   the `files` field — `dist/` plus `CHANGELOG.md`, `README.md`, `LICENSE` and the
+   always-included `package.json` — and nothing from `src/`, `test/` or
+   `examples/`. That file list is what the dry run
+   is for; read it rather than trusting a size quoted here, which drifts every
+   time the bundle changes. `--access public` is passed explicitly even though
+   `publishConfig.access` already says so: a scoped package defaults to
+   restricted, and this is not a place to rely on one file agreeing with another.
+   `bun install` first because `prepublishOnly` needs `tsc` and `tsup`.
+
+   Do **not** use `bun publish`. It supports neither provenance nor OIDC and
+   silently ignores `publishConfig.provenance` ([oven-sh/bun#18611](https://github.com/oven-sh/bun/issues/18611))
+   — a failure that looks like success.
+5. **Tag the published commit and push the tag.**
+
+   ```sh
+   git tag -a v0.1.0 -m "v0.1.0"
+   git push origin v0.1.0
+   ```
+
+   This is not cosmetic and it is the easiest step to skip.
+   `.release-please-manifest.json` is seeded to `0.1.0`, but release-please also
+   looks for the matching tag to know where to start reading commits. Without
+   it, the first release PR will summarise the entire history instead of only
+   what came after `0.1.0`. If that happens anyway, close the bad PR and set
+   `bootstrap-sha` in `release-please-config.json` to this commit.
+6. **Wait ~5 minutes** for npm's publish-time malware scan before expecting the
+   package to be installable.
+7. **Configure the Trusted Publisher on npmjs.com**: GitHub Actions, repository
+   `nejcm/dev-toolbar`, workflow filename `release.yml`, no environment (see the
+   comment in `release.yml` for why there is no environment).
+8. **Close the token path for good.** Set npm **Publishing access** to "Require
+   two-factor authentication and disallow tokens" — trusted publishing is
+   compatible with that setting, tokens are not — and enable **immutable
+   releases** in the GitHub repository settings. There is no publish token in
+   this repository and there should never be one.
+
+Delete this whole "One-time bootstrap" subsection once it is done.
+
 ## Further reading
 
 - [docs/architecture.md](./docs/architecture.md) — the reference for the shipped core:
