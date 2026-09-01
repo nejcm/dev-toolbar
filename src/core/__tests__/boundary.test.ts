@@ -25,6 +25,7 @@ const EXT_MARKERS = [
   "[dev-toolbar/ext/environment]",
   "[dev-toolbar/ext/flags]",
   "[dev-toolbar/ext/command-menu]",
+  "[dev-toolbar/ext/overlays]",
 ];
 
 function sourceFiles(directory: string): string[] {
@@ -139,6 +140,9 @@ if (!built && mustBeBuilt) {
       expect(
         readFileSync(`${root}dist/ext/command-menu.cjs`, "utf8"),
       ).toContain(EXT_MARKERS[3] as string);
+      expect(readFileSync(`${root}dist/ext/overlays.cjs`, "utf8")).toContain(
+        EXT_MARKERS[4] as string,
+      );
     });
   });
 }
@@ -173,6 +177,16 @@ if (built || !mustBeBuilt) {
       for (const marker of EXT_MARKERS.slice(0, 3)) {
         expect(menuBundle, marker).not.toContain(marker);
       }
+      // Five. /ext/overlays is the first extension that draws over the host
+      // page; it must not drag any of the others along for the ride.
+      const overlaysBundle = readFileSync(
+        `${root}dist/ext/overlays.cjs`,
+        "utf8",
+      );
+      for (const marker of EXT_MARKERS.slice(0, 4)) {
+        expect(overlaysBundle, marker).not.toContain(marker);
+      }
+      expect(menuBundle).not.toContain(EXT_MARKERS[4] as string);
     });
 
     it("declares ./runtime and the ./ext/* entries explicitly, with no wildcards", () => {
@@ -201,6 +215,11 @@ if (built || !mustBeBuilt) {
         import: "./dist/ext/command-menu.js",
         require: "./dist/ext/command-menu.cjs",
       });
+      expect(pkg.exports["./ext/overlays"]).toEqual({
+        types: "./dist/ext/overlays.d.ts",
+        import: "./dist/ext/overlays.js",
+        require: "./dist/ext/overlays.cjs",
+      });
       expect(Object.keys(pkg.exports).some((key) => key.includes("*"))).toBe(
         false,
       );
@@ -218,6 +237,8 @@ if (built || !mustBeBuilt) {
         "dist/ext/flags.cjs",
         "dist/ext/command-menu.js",
         "dist/ext/command-menu.cjs",
+        "dist/ext/overlays.js",
+        "dist/ext/overlays.cjs",
       ]) {
         expect(
           readFileSync(`${root}${file}`, "utf8").startsWith('"use client";'),
@@ -248,6 +269,9 @@ if (built || !mustBeBuilt) {
       expect(
         readFileSync(`${root}dist/ext/command-menu.d.ts`, "utf8"),
       ).toContain("CommandMenuOptions");
+      expect(readFileSync(`${root}dist/ext/overlays.d.ts`, "utf8")).toContain(
+        "OverlaysOptions",
+      );
     });
 
     it("resolves through Node's own exports map", () => {
@@ -257,7 +281,8 @@ if (built || !mustBeBuilt) {
           `const e = await import("@nejcm/dev-toolbar/ext/environment");` +
           `const f = await import("@nejcm/dev-toolbar/ext/flags");` +
           `const c = await import("@nejcm/dev-toolbar/ext/command-menu");` +
-          `console.log(JSON.stringify({ runtime: Object.keys(r).sort(), metrics: Object.keys(m).sort(), environment: Object.keys(e).sort(), flags: Object.keys(f).sort(), commandMenu: Object.keys(c).sort() }));`,
+          `const o = await import("@nejcm/dev-toolbar/ext/overlays");` +
+          `console.log(JSON.stringify({ runtime: Object.keys(r).sort(), metrics: Object.keys(m).sort(), environment: Object.keys(e).sort(), flags: Object.keys(f).sort(), commandMenu: Object.keys(c).sort(), overlays: Object.keys(o).sort() }));`,
       );
       const result = JSON.parse(names) as {
         runtime: string[];
@@ -265,6 +290,7 @@ if (built || !mustBeBuilt) {
         environment: string[];
         flags: string[];
         commandMenu: string[];
+        overlays: string[];
       };
       expect(result.runtime).toEqual(
         expect.arrayContaining([
@@ -298,6 +324,15 @@ if (built || !mustBeBuilt) {
           "createCommandMenuRuntime",
           "filterCommands",
           "COMMAND_MENU_CSS",
+        ]),
+      );
+      expect(result.overlays).toEqual(
+        expect.arrayContaining([
+          "overlays",
+          "createOverlaysRuntime",
+          "setHostOutlines",
+          "OVERLAYS_CSS",
+          "BOXES_CSS",
         ]),
       );
     });
@@ -364,6 +399,27 @@ if (built || !mustBeBuilt) {
         commands: null,
         overlay: "function",
         panel: "undefined",
+      });
+
+      // /ext/overlays draws over the DOM, so importing it *without* one is the
+      // interesting case: the factory must build the store, enumerate its
+      // toggle commands and touch no document until start(api) runs.
+      const drawn = node(
+        `const { overlays } = await import("@nejcm/dev-toolbar/ext/overlays");` +
+          `const ext = overlays({ defaults: { boxes: true } });` +
+          `console.log(JSON.stringify({ id: ext.id, commands: ext.commands().map(c => c.id), overlay: typeof ext.overlay, active: ext.commands().length }));`,
+      );
+      expect(JSON.parse(drawn)).toEqual({
+        id: "overlays",
+        commands: [
+          "overlays.toggle.boxes",
+          "overlays.toggle.grid",
+          "overlays.toggle.inspect",
+          "overlays.toggle.focus",
+          "overlays.disableAll",
+        ],
+        overlay: "function",
+        active: 5,
       });
     });
   });

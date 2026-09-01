@@ -28,6 +28,10 @@ export default defineConfig({
         replacement: resolve("./src/ext/environment/index.tsx"),
       },
       {
+        find: /^@nejcm\/dev-toolbar\/ext\/overlays$/,
+        replacement: resolve("./src/ext/overlays/index.tsx"),
+      },
+      {
         find: /^@nejcm\/dev-toolbar$/,
         replacement: resolve("./src/index.ts"),
       },

@@ -322,6 +322,84 @@ function EnvironmentControls() {
   );
 }
 
+/**
+ * Content the overlays have something to say about.
+ *
+ * A 12-column grid at 1100px with a 24px gutter — the same numbers passed to
+ * `overlays({ grid })`, so "Column grid" lines up with the cards rather than
+ * with nothing. Nested wrappers for "Layout boxes", tabbable controls in a
+ * deliberately surprising order for "Focus order", and two controls with no
+ * accessible name at all, which the focus overlay should flag red.
+ */
+function OverlayPlayground() {
+  const [clicks, setClicks] = useState(0);
+
+  return (
+    <section className="pg-card pg-overlay-demo">
+      <h2>Drive the overlays</h2>
+      <p>
+        The <code>overlays</code> chip is the real{" "}
+        <code>@nejcm/dev-toolbar/ext/overlays</code>. Turn one on from its panel
+        or from <code>⌘K</code>. Everything it draws sits{" "}
+        <em>below the bar and above this page</em>, and takes no pointer events
+        — the counter below still counts while an overlay covers it.
+      </p>
+
+      <div className="pg-controls">
+        <button
+          type="button"
+          className="pg-button"
+          data-testid="overlay-click-through"
+          onClick={() => setClicks((value) => value + 1)}
+        >
+          Click-through test: {clicks}
+        </button>
+        {/* Deliberately unnamed: an icon-only button whose only content is
+            aria-hidden has no accessible name, and the focus overlay says so. */}
+        <button type="button" className="pg-button" data-testid="overlay-unnamed">
+          <span aria-hidden="true">★</span>
+        </button>
+        <button
+          type="button"
+          className="pg-button"
+          tabIndex={1}
+          data-testid="overlay-tabindex"
+          title="Positive tabindex — jumps to the front of the tab order"
+        >
+          tabindex=1
+        </button>
+        <label className="pg-field">
+          Labelled input
+          <input type="text" defaultValue="named" />
+        </label>
+        <input
+          type="text"
+          defaultValue="unnamed"
+          data-testid="overlay-unnamed-input"
+        />
+      </div>
+
+      <div className="pg-grid">
+        {Array.from({ length: 6 }, (_, index) => (
+          <article className="pg-tile" key={index}>
+            <div className="pg-tile-inner">
+              <div className="pg-tile-media" aria-hidden="true" />
+              <div className="pg-tile-body">
+                <h3>Tile {index + 1}</h3>
+                <p>
+                  Three wrappers deep, with padding and a margin, so the
+                  inspector has a box model worth drawing.
+                </p>
+                <a href="#tile">Open tile {index + 1}</a>
+              </div>
+            </div>
+          </article>
+        ))}
+      </div>
+    </section>
+  );
+}
+
 export function App() {
   const [restyled, setRestyled] = useState(false);
   const [inset, setInset] = useState(false);
@@ -378,10 +456,19 @@ export function App() {
             The <code>tailwind</code> chip is styled entirely by Tailwind CDN
             classes — the light-DOM regression test.
           </li>
+          <li>
+            Overlays: turn on <em>Layout boxes</em>, <em>Column grid</em>,{" "}
+            <em>Element inspector</em> and <em>Focus order</em> and check three
+            things — they draw over the page, they never cover the bar, the
+            panel or <code>⌘K</code>, and clicking straight through one still
+            hits the button underneath. Turning them all off leaves no trace.
+          </li>
         </ol>
       </section>
 
       <LoadControls />
+
+      <OverlayPlayground />
 
       <EnvironmentControls />
 

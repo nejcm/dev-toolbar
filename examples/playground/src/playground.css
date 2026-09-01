@@ -175,3 +175,60 @@ body {
 .pg-flag-list em {
   color: #a1651f;
 }
+
+/* -- Overlay demo -------------------------------------------------------- */
+
+/*
+ * A 12-column, 1100px, 24px-gutter grid — the same numbers passed to
+ * `overlays({ grid })`, so the column overlay has something true to line up
+ * with rather than something approximate.
+ */
+.pg-overlay-demo .pg-grid {
+  display: grid;
+  grid-template-columns: repeat(12, 1fr);
+  gap: 24px;
+  max-width: 1100px;
+  margin: 16px auto 0;
+}
+
+.pg-tile {
+  grid-column: span 4;
+  border: 1px solid #d9dce1;
+  border-radius: 8px;
+  background: #fff;
+}
+
+.pg-tile-inner {
+  padding: 12px;
+}
+
+.pg-tile-media {
+  height: 48px;
+  margin-bottom: 8px;
+  border-radius: 6px;
+  background: linear-gradient(135deg, #dbe4ff, #f3d9fa);
+}
+
+.pg-tile-body h3 {
+  margin: 0 0 4px;
+  font-size: 13px;
+}
+
+.pg-tile-body p {
+  margin: 0 0 8px;
+  color: #5c6069;
+  font-size: 12px;
+}
+
+.pg-field {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+}
+
+@media (max-width: 720px) {
+  .pg-tile {
+    grid-column: span 12;
+  }
+}

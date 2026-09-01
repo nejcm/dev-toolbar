@@ -9,7 +9,8 @@ delivery plan. This document describes what the code actually does.
 
 - Contract version: **1** (`CONTRACT_VERSION`)
 - Entries: `@nejcm/dev-toolbar` (root), `/runtime`, `/ext/metrics`,
-  `/ext/environment`, `/ext/flags`, `/ext/command-menu`, `/testing`, `/styles.css`
+  `/ext/environment`, `/ext/flags`, `/ext/command-menu`, `/ext/overlays`,
+  `/testing`, `/styles.css`
 - Runtime dependencies: **none**
 
 P1 built `/ext/metrics` strictly as an outside consumer of this contract, which was
@@ -27,6 +28,13 @@ P2's third, `/ext/command-menu`, is the consumer that gap was deferred to, and i
 settled it and found one more — `commands` may now be a **function**, and there is a
 third slot, `overlay`, for the surfaces the bar cannot host. Both are additive and
 both are collected in [§13](#13-what-p2s-third-extension-found). `CONTRACT_VERSION`
+stays `1`.
+
+P3's first extension, `/ext/overlays`, is the first that **draws over the host
+application**. It moved the contract in **no** places — the `overlay` slot P2 added
+for a modal turned out to be exactly the right surface for a persistent one — but it
+is the first consumer whose safety story is mostly about what it refuses to do, and
+that is collected in [§14](#14-what-p3s-first-extension-found). `CONTRACT_VERSION`
 stays `1`.
 
 ## 1. What the shell is
@@ -549,6 +557,7 @@ import them from a server component without a directive of its own.
 | Severity thresholds | The extension that owns the metric |
 | Access control | The consumer, before rendering `<DevToolbar>` at all |
 | A global extension registry | Nowhere. See §2. |
+| Visual overlays over the host page | `./ext/overlays` (P3) — core draws on nobody's application |
 
 
 ## 10. What P1 changed, and why
@@ -1035,3 +1044,228 @@ no headings, because a heading that a score order keeps re-splitting is noise a 
 reader has to read out. Ordering is total and deterministic in both modes — score,
 then recency, then aggregation order — so the row under the cursor never moves because
 an unrelated pass re-enumerated.
+
+
+## 14. What P3's first extension found
+
+`/ext/overlays` (§3G) is the first extension that paints over the application rather
+than describing it in the bar. It changed the contract in **no** places, which is the
+headline: the `overlay` slot added in §13.2 for a *modal* turned out to be exactly
+right for a *persistent* surface, and nothing else had to move.
+
+`CONTRACT_VERSION` stays `1`. Nothing was added, widened or corrected. A bump here
+would be pure noise, and the one signal a version number carries is worth more than
+the appearance of progress.
+
+### 14.1 The `overlay` slot generalised without being touched
+
+§13.2 justified the slot with a command palette: rendered once, never collapsed,
+inside the root so it inherits the tokens, `position: fixed` reaching the viewport
+because the root sets no containing block. Every one of those properties is what a
+drawing surface needs too, and one of them turned out to matter more than it did for
+the palette:
+
+**`z-index: -1` inside the root is the layer an overlay wants.** The root establishes
+a stacking context at `--dtb-z-index`, so a negative-z child paints *below the bar
+and the panel* while the whole context still paints *above the application*. Over the
+page, under the tool — with no coordination between the two, and no way for an
+overlay to cover the palette (`z-index: 1`/`2` in the same context) by accident.
+
+The slot's one limit (§13.2) also proved to be the right default rather than a
+nuisance: an overlay renders only while the bar is visible, so this extension detaches
+every listener and removes its stylesheet on `subscribeVisibility(false)`. Measuring
+for a surface that is not rendered is waste; leaving outlines on a page whose toolbar
+has just disappeared is worse than waste.
+
+### 14.2 Drawing over an application is mostly a list of refusals
+
+Four rules, each of which is a bug this extension could have been:
+
+- **It never intercepts a pointer event.** The surface and every descendant are
+  `pointer-events: none` **in CSS**, not in JavaScript, so it cannot be forgotten by
+  a later addition, and the inspector *observes* the pointer through a passive,
+  capturing `pointermove` listener plus `elementFromPoint` rather than consuming it.
+  A debugging overlay that eats the button you were trying to press is the one
+  failure that would make the whole feature untrustworthy — which is why that
+  declaration, and three others, carry `!important`. See §14.7: putting a guard in a
+  layer designed to lose was a real defect, not a stylistic one.
+- **It mutates no host node.** No injected classes, no inline styles, no wrappers.
+  Geometry is read with `getBoundingClientRect`, `getComputedStyle` and a
+  `MutationObserver`. The test that pins this compares the application's own markup
+  before, during and after — not "no obvious change", byte equality. The observer
+  also ignores mutation records whose targets are all inside a toolbar, so the
+  badges it draws while you scroll do not schedule rescans of their own.
+- **Everything drawn is React in the `overlay` slot.** So teardown is not a procedure
+  that could be got wrong; it is an unmount. A hot reload cannot leave a ghost
+  because there is no imperative surface to leave behind.
+- **A throw switches every overlay off.** Measurement runs inside animation frames
+  and a `MutationObserver`, where nothing upstream catches it and where it recurs
+  sixty times a second. Off, once, with the reason in the panel — and *not*
+  persisted: one transient failure should not cost a developer the toggles they
+  chose on every future load, so memory says off while storage still says what they
+  picked, and a reload puts it back.
+
+### 14.3 The one thing it does touch, and why that is the honest trade
+
+Outlining every element is worth an entry in this document because it is the single
+place the extension reaches outside its own surface: one `<style>` element in
+`document.head`.
+
+The alternative was measuring every element and drawing a box per element in our own
+layer, which is thousands of rects per scroll frame on a real application — the exact
+cost profile §3G warns against — to avoid one stylesheet. So the stylesheet wins, and
+it is made safe by being *exactly reversible* rather than by being small:
+
+- it is inserted through `/runtime`'s `ensureStyleSheet`, so two bundled copies still
+  insert one;
+- it is removed by **querying the document** for the attribute rather than by holding
+  the node, so a runtime that lost its reference still cannot leave one behind;
+- it is **reference-counted on the element itself** (`data-dtb-refs`), because two
+  toolbars on one page — or two bundled copies of this extension — are separate
+  closures that share one `document.head`. Removing it unconditionally on teardown
+  meant one instance unmounting silently un-outlined another instance whose flag,
+  chip and panel all still said the overlay was on. The DOM is the truth here for
+  the same reason it is the truth for style deduplication (§4.4);
+- removal happens on toggle-off, on the bar being hidden, on `api.signal` and on the
+  returned cleanup — and the teardown path calls it unconditionally rather than
+  checking a flag;
+- it uses `outline`, never `border` or `box-shadow`, so it **cannot reflow** the
+  layout it is describing.
+
+It is also the one stylesheet in this package that is deliberately **unlayered**.
+Everything else ships inside `@layer dev-toolbar` so that consumer CSS wins without
+`!important` (§4.1); this one has the opposite job — a debugging instrument that has
+to be visible over the app's own styles. It is still not `!important`, so a
+sufficiently specific app rule beats it, and the panel says so rather than hiding it.
+
+### 14.4 Choosing four of thirteen, and saying what the others cost
+
+§3G lists thirteen overlay modes. Shipping four is a judgement, so the reasoning is
+in the code (`OverlayId` in `ext/overlays/types.ts`) and the cost of each shipped one
+is rendered **in the panel**, next to its switch:
+
+| | Cost, honestly |
+| --- | --- |
+| Layout boxes | One stylesheet. No measurement, but a full repaint on toggle and more paint work per frame after — the only one whose cost grows with document size. |
+| Column grid | Free. One gradient-painted element. |
+| Element inspector | One rect and one `getComputedStyle` on **one element**, never the document, per frame in which the pointer moved, the page scrolled or the window resized. |
+| Focus order | One narrow `querySelectorAll` per debounced *application* mutation burst — which is also where accessible names are resolved, once — then one rect per element per scroll frame and nothing else. Capped at 200. |
+
+Three were left out for reasons worth recording. **Re-render and slow-commit flash**
+is not observable from outside React: it needs the DevTools hook or a `Profiler` the
+application renders, and installing ourselves into a host's React internals is
+precisely the irreversible mutation the rest of this section is about. **Component
+boundaries, token violations, feature ownership and experiment variant** all need
+per-element metadata only the application can attach (§3F) — with that attached,
+`boxes` is one CSS rule away, which is the argument for shipping the mechanism rather
+than guessing the metadata. **Stacking contexts and scroll containers** need
+`getComputedStyle` on every element in the document on every mutation, and no
+question they answer is worth that before somebody asks for it.
+
+The cost line is not documentation politeness. It is in the panel because a developer
+deciding whether to leave an overlay on while they profile something needs to know
+which one is charging them, and an extension that hides that is the reason people
+distrust dev tooling. Review caught the first drift between line and code: the focus
+overlay resolved an accessible name **per element per scroll frame** — a subtree text
+walk and a `getElementById`, up to two hundred times a frame — while its cost line
+claimed one rect per badge. Names now resolve at scan time. The rule that falls out:
+when the line and the code disagree, the code moves first, and the line moves too.
+
+Caching them moved a correctness burden onto the observer, which is worth stating
+because the follow-up review found it there. The safe claim is **not** "a name cannot
+change without a DOM mutation" — that is true and useless. It is "every mutation that
+can change a name is observed", which was false as configured: React updates
+`<button>{label}</button>` by writing `nodeValue` on the existing Text node, a
+`characterData` record the observer had not asked for. Before the cache, that
+self-healed on the next scroll frame; with it, an emptied button label left a badge
+claiming the control was named, indefinitely. The observer now watches
+`characterData` as well as `childList` and one list of attributes that deliberately
+merges *what makes an element tabbable* with *what gives it a name* — those two sets
+together are the whole definition of "a record that could change what is drawn", and
+keeping them apart is how one of them falls behind. A cache is only ever as honest as
+its invalidation, and the invalidation is the thing to review.
+
+One §3G recommendation is knowingly unimplemented — *disable overlays before
+screenshots unless requested*. There is no capture facility in this package to hook,
+and inventing one to satisfy the line would be worse than leaving it; `disableAll()`
+and its command are the manual equivalent, and a future capture feature should call
+it.
+
+### 14.5 A name-checker has to be honest about being a heuristic
+
+The focus overlay flags controls with no accessible name, which means it computes
+one. The full `accname` algorithm is long and needs the whole tree; this implements
+the branches that actually produce unnamed controls in application code, in the
+spec's priority order, and says so in the panel.
+
+One case is not optional, though, and it is the reason the check earns its place: an
+icon-only button is usually `<button><span aria-hidden="true">×</span></button>`, and
+`textContent` on that returns `×`. A name check built on `textContent` therefore
+calls the single most common unnamed control *named* — the opposite of the truth,
+about the exact case the overlay exists to catch. So the text walk skips
+`aria-hidden` and `hidden` subtrees the way `accname` does.
+
+The same honesty applies to the numbering: positive `tabindex` jumps the queue, so
+the badges do too, and a badge shows the `tabindex` that moved it. An overlay that
+numbered elements in document order would be describing a tab sequence the user does
+not have.
+
+The same reasoning removed `aria-disabled` from the scan's exclusions. It is a
+promise to assistive technology, not a change to focus behaviour — an `aria-disabled`
+button is still a real `Tab` stop — so skipping it described a sequence with missing
+stops, which is the same error in the other direction. The `disabled` *attribute* is
+still excluded, but only on the elements where it actually removes tabbability, and
+so is everything inside a disabled `<fieldset>` — with the spec's one exception,
+controls in the fieldset's first `<legend>`, which stay tabbable so a switched-off
+section can be switched back on.
+
+### 14.6 What the browser found that jsdom could not
+
+Two things, in the same spirit as §10.6.
+
+**`document.elementFromPoint` does not exist in jsdom at all.** The inspector's first
+version called it unguarded, which in a browser is fine and in a test environment
+turns a platform difference into "every overlay switched itself off". Reading no
+element is the correct answer where there is no layout; throwing is not.
+
+**An occluded tab produces no animation frames.** Everything driven by
+`requestAnimationFrame` — the inspector and the focus badges — simply stops when the
+tab is not being painted, and resumes when it is. That is the correct behaviour and
+it costs nothing, but it makes browser verification misleading unless a frame is
+forced between changing something and reading it back. Worth knowing before
+concluding that an overlay is broken.
+
+### 14.7 A guard does not belong in a layer designed to lose
+
+The defect review found, and the one worth remembering, is that this extension put a
+**safety** rule in the cascade layer §4.1 built to be overridable.
+
+`@layer dev-toolbar` exists so that a consumer can restyle the bar from their own
+stylesheet without `!important`: unlayered author declarations beat layered ones at
+any specificity. That is exactly right for colour, spacing and type — and exactly
+wrong for `pointer-events: none` on a surface that covers the viewport. A single
+unlayered `div { pointer-events: auto }`, specificity (0,0,1), the kind of rule that
+appears in resets and drag-and-drop libraries, re-enabled pointer events on the
+overlay and turned it into a click trap over the whole page. `z-index: -1` had the
+same exposure: `div { z-index: 0 }` would have lifted the surface to bar level.
+
+Four declarations — `pointer-events` (on the surface and on every descendant),
+`z-index`, `position` and `inset` — now carry `!important`. That is sufficient in
+both directions, because the cascade reverses layer order for important
+declarations: author-important beats every unlayered normal declaration, and a
+*layered* important declaration beats an unlayered important one. Everything else in
+the extension's stylesheet stays layered and overridable, which keeps the intent
+legible: the things you may restyle, and the two or three that are load-bearing.
+
+The generalisation for anyone writing an extension for this shell:
+
+> Layered CSS is a promise that the consumer wins. Do not make that promise about a
+> declaration whose failure mode is swallowing the user's clicks.
+
+There is a second lesson underneath it, about the test. The original test asserted
+the *text* of the stylesheet with a regular expression, and it passed happily while
+the guarantee was defeated by one line of app CSS. A rule that is only ever compared
+to itself is not tested. Its replacement injects a hostile rule and reads
+`getComputedStyle` off the real surface, so it fails if the cascade — not the string
+— stops behaving. It fails against the pre-fix stylesheet, which is the only way to
+know a regression test regresses.

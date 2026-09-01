@@ -24,16 +24,19 @@ Subpaths, each opt-in and each with its own bundle:
 | `@nejcm/dev-toolbar/ext/environment` | Environment, build and actor context — all of it supplied by you, all of it redacted. |
 | `@nejcm/dev-toolbar/ext/flags` | Feature-flag list, local overrides and the promoted flag. The flags stay yours. |
 | `@nejcm/dev-toolbar/ext/command-menu` | `⌘K` palette over the commands core aggregates. Replaceable with your own. |
+| `@nejcm/dev-toolbar/ext/overlays` | Layout boxes, a column grid, an element inspector and focus order — drawn over your page, never in the way of it. |
 | `@nejcm/dev-toolbar/testing` | `renderWithToolbar`, fake extensions, mock bus, fake layout. |
 | `@nejcm/dev-toolbar/styles.css` | The stylesheet, if you would rather not inject it at runtime. |
 
-> **Status:** the shell (P0), `/runtime` and `/ext/metrics` (P1) are implemented, and
-> `/ext/environment`, `/ext/flags` and `/ext/command-menu` complete P2. The contract
-> has been through four real consumers — the first moved it in four places, all listed
-> in the [changelog](./CHANGELOG.md); the second did not move it at all; the third
-> found one gap, in `commands`; the fourth closed that gap and added the `overlay`
-> slot ([plans/architecture.md §13](./plans/architecture.md)). Every change so far is
-> additive, so `CONTRACT_VERSION` is still `1`. `0.1.0` is the first publish.
+> **Status:** the shell (P0), `/runtime` and `/ext/metrics` (P1) are implemented,
+> `/ext/environment`, `/ext/flags` and `/ext/command-menu` complete P2, and
+> `/ext/overlays` opens P3. The contract has been through five real consumers — the
+> first moved it in four places, all listed in the [changelog](./CHANGELOG.md); the
+> second did not move it at all; the third found one gap, in `commands`; the fourth
+> closed that gap and added the `overlay` slot; the fifth drew over the host page and
+> needed nothing new ([plans/architecture.md §13–§14](./plans/architecture.md)).
+> Every change so far is additive, so `CONTRACT_VERSION` is still `1`. `0.1.0` is the
+> first publish.
 
 ## Install
 
@@ -157,17 +160,23 @@ interface OverlaySlotProps {
 }
 ```
 
-`overlay` is for a surface the bar cannot host — a dialog, a picker. It renders once,
+`overlay` is for a surface the bar cannot host — a dialog, a picker, a layer drawn
+over the page. It renders once,
 inside the toolbar root, for as long as you are present, not hidden and the bar is
 visible, and **overflow never collapses it**: a compact item that has collapsed into
 the `···` menu is not in the DOM at all, which would cost an extension its modal (and
 its key binding) exactly when the window got narrow. Most overlays render `null` most
-of the time. `/ext/command-menu` is the worked example.
+of the time. `/ext/command-menu` is the worked example for a modal;
+`/ext/overlays` for a persistent surface, where the trick worth stealing is
+`z-index: -1`: the toolbar root is a stacking context above your app, so a negative-z
+child of it paints over the page and under the bar, the panel and the palette.
 
 Core keeps *reporting* visibility rather than acting on it, so `start()` keeps running
 while the bar is hidden even though your overlay is not rendered. If yours is modal,
 close it on `api.subscribeVisibility(false)` and gate any key binding on
-`api.isVisible()` — otherwise it reappears, unasked, when the bar comes back.
+`api.isVisible()` — otherwise it reappears, unasked, when the bar comes back. If it
+observes the page, detach the observers there too: measuring for a surface that is
+not rendered is pure waste.
 
 `start(api)` runs once per mount, for background work:
 
@@ -572,6 +581,70 @@ Four things worth knowing:
 Replacing it with your team's own `cmdk` is one line: leave it out and write your own
 over `useToolbarCommands()` (stable snapshot) or `useDevToolbar().getCommands()`
 (re-enumerates now). That is what core aggregating and rendering nothing is for.
+
+## `@nejcm/dev-toolbar/ext/overlays`
+
+Visual overlays over the running application (§3G). Four, each toggled on its own,
+each persisted, each with a command in the palette.
+
+```tsx
+import { overlays } from "@nejcm/dev-toolbar/ext/overlays";
+
+// Once, at module scope. Not inside render.
+const extensions = [overlays({ grid: { columns: 12, gutter: 24, maxWidth: 1100 } })];
+```
+
+| Overlay | What it answers | What it costs |
+| --- | --- | --- |
+| **Layout boxes** | where the boxes actually are, and which wrapper is adding the gap | one stylesheet; a repaint on toggle, and the only overlay whose cost grows with the document |
+| **Column grid** | does this line up with the design's grid | free — one gradient-painted element |
+| **Element inspector** | what is under the pointer, how big, what it is called | one rect and one `getComputedStyle` on **one element**, never the document, per frame in which the pointer moved, the page scrolled or the window resized |
+| **Focus order** | what order `Tab` visits things in, and which have no accessible name | one narrow `querySelectorAll` per debounced *app* mutation burst, where names resolve too; then one rect per element per scroll frame; capped at 200 |
+
+The cost column is also rendered in the panel, next to each switch — an overlay you
+leave on while profiling should tell you what it is charging you.
+
+Options: `defaults` (which overlays start on), `grid` (`columns` / `gutter` /
+`maxWidth` / `baseline`), `focusLimit`, `mutationDebounceMs`, `persist`, plus the
+usual `id` / `label` / `align` / `order` / `priority` / `hidden` / `keepMounted` /
+`injectStyles`.
+
+Because it draws over *your* application, what it refuses to do matters more than
+what it draws:
+
+- **It never intercepts a pointer event.** The surface and everything in it are
+  `pointer-events: none !important`, so a click always lands on the page underneath.
+  The `!important` is deliberate and it is the only one in this package: the rest of
+  its CSS is layered so that *your* rules win, and a stray `div { pointer-events:
+  auto }` would otherwise turn a viewport-sized overlay into a click trap. The
+  inspector observes the pointer through a passive listener and `elementFromPoint`.
+- **It draws below the toolbar.** The surface is a negative-z child of the toolbar
+  root, whose stacking context is above your app — so overlays cover the page and
+  never the bar, the panel or the `⌘K` palette. `z-index`, `position` and `inset`
+  carry `!important` for the same reason as `pointer-events`.
+- **It mutates none of your DOM.** No injected classes, no inline styles on your
+  elements. The single exception is layout boxes, which is one `<style>` element in
+  `document.head` — removed when you switch it off, when the bar is hidden, and on
+  teardown. It uses `outline`, so it cannot reflow the layout it is describing.
+- **It stops while the bar is hidden.** Every listener detaches and the stylesheet
+  comes off; both return when the bar does.
+- **A throw switches everything off.** Measurement runs in animation frames where
+  nothing upstream could catch it and where it would recur every frame. The reason
+  appears in the panel, and your stored toggles are left alone — a reload brings back
+  what you had chosen.
+
+The accessible-name check is a documented heuristic, not the full `accname`
+algorithm — it skips `aria-hidden` subtrees the way `accname` does, so an icon-only
+button is correctly reported as unnamed, but treat a flag as a prompt to check rather
+than a verdict. Names are resolved when the DOM changes rather than on every frame,
+and the observer watches text, `childList` and the attributes that carry a name, so a
+label your app rewrites live is re-checked.
+
+Nine of §3G's thirteen modes are deliberately absent, with reasons — re-render flash
+needs React's internals; component boundaries and ownership need metadata only your
+app can attach; stacking contexts and scroll containers need `getComputedStyle` on
+every element in the document. See
+[plans/architecture.md §14](./plans/architecture.md).
 
 ## Styling
 

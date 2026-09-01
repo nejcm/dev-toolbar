@@ -1,0 +1,578 @@
+/**
+ * The pure half of `/ext/overlays`: what an overlay is, what it costs, and every
+ * DOM *reading* helper the surfaces share. [dev-toolbar/ext/overlays]
+ *
+ * Nothing here writes to the document. That split is the point: this extension
+ * draws over somebody else's application, so the code that touches host nodes at
+ * all is small, in one place, and read-only apart from a single stylesheet the
+ * runtime owns end to end.
+ */
+
+/* -------------------------------------------------------------------------- */
+/* The catalogue                                                               */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * §3G lists thirteen candidate overlay modes. Four ship, chosen because each
+ * answers a question you cannot answer by reading the code, and because each
+ * one's cost is knowable — see `OVERLAY_META[…].cost`.
+ *
+ * The other nine, each with its reason:
+ *
+ * - **Re-render flash** and **slow React commits.** Not observable from outside
+ *   React. They need `__REACT_DEVTOOLS_GLOBAL_HOOK__` or a `Profiler` the
+ *   *application* renders, and an extension that installs itself into the host's
+ *   React internals is exactly the kind of irreversible mutation this extension
+ *   is built not to perform. They belong to whoever owns the React tree.
+ * - **Component boundaries**, **design-token violations**, **feature ownership**
+ *   and **experiment variant.** All four need per-element metadata only the
+ *   application can attach (§3F's `data-source` attributes). When a consumer
+ *   attaches it, `boxes` is one CSS rule away from showing it — which is the
+ *   argument for shipping the mechanism first rather than guessing the metadata.
+ * - **Z-index stacking contexts** and **scroll containers.** Both require
+ *   `getComputedStyle` on every element in the document, on every mutation.
+ *   That is the one cost profile §3G explicitly warns against, and neither is
+ *   worth it before somebody asks.
+ * - **Style engine: legacy versus new.** Specific to one application's own
+ *   migration, and knowable only from that application's internals. There is
+ *   nothing general to implement here; a consumer marks the elements and turns
+ *   on `boxes`, as above.
+ * - **Offline / sync state.** Not really an overlay at all — it is a status
+ *   signal, and §3I's debugging controls and `/ext/environment`'s `syncStatus`
+ *   are where it belongs. Painting it over the page would put a persistent
+ *   status readout in the one place a developer cannot dismiss.
+ *
+ * One §3G recommendation is knowingly unimplemented: *disable overlays before
+ * screenshots unless requested*. There is no screenshot facility in this package
+ * to hook, and inventing one to satisfy the line would be worse than leaving it;
+ * `disableAll()` and its command are the manual equivalent, and any future
+ * capture feature should call it.
+ */
+export type OverlayId = "boxes" | "grid" | "inspect" | "focus";
+
+/** Stable order. Every surface — panel, palette, storage — reads this one. */
+export const OVERLAY_IDS: readonly OverlayId[] = [
+  "boxes",
+  "grid",
+  "inspect",
+  "focus",
+];
+
+export interface OverlayMeta {
+  id: OverlayId;
+  /** Panel row and command label. */
+  label: string;
+  /** One line, in the panel. */
+  summary: string;
+  /** Honest cost, shown in the panel rather than buried in a doc comment. */
+  cost: string;
+  /** True for the one overlay that reaches outside our own layer. */
+  touchesHost?: boolean;
+}
+
+export const OVERLAY_META: Record<OverlayId, OverlayMeta> = {
+  boxes: {
+    id: "boxes",
+    label: "Layout boxes",
+    summary:
+      "Outlines every element in the page, so nesting, stray wrappers and collapsed boxes are visible.",
+    cost:
+      "One stylesheet, no measurement. Costs a full repaint on toggle and slightly more paint work per frame after that; the only overlay whose cost grows with document size.",
+    touchesHost: true,
+  },
+  grid: {
+    id: "grid",
+    label: "Column grid",
+    summary:
+      "A column and baseline grid over the viewport, for checking alignment against the design's own grid.",
+    cost: "Free. One gradient-painted element; nothing is measured or observed.",
+  },
+  inspect: {
+    id: "inspect",
+    label: "Element inspector",
+    summary:
+      "Follows the pointer: box model, size and accessible name of whatever is under it.",
+    cost:
+      "One rect and one getComputedStyle on one element — never the document — per animation frame in which the pointer moved, the page scrolled or the window resized.",
+  },
+  focus: {
+    id: "focus",
+    label: "Focus order",
+    summary:
+      "Numbers every tabbable element in tab order and flags the ones with no accessible name.",
+    cost:
+      "One narrow querySelectorAll per application DOM-mutation burst (debounced), which is also where accessible names are resolved. A scroll or resize frame then costs one rect per element and nothing else. Capped at 200.",
+  },
+};
+
+/** Which overlays are on. */
+export type OverlayFlags = Record<OverlayId, boolean>;
+
+export const NO_OVERLAYS: OverlayFlags = Object.freeze({
+  boxes: false,
+  grid: false,
+  inspect: false,
+  focus: false,
+}) as OverlayFlags;
+
+export const countEnabled = (flags: OverlayFlags): number =>
+  OVERLAY_IDS.reduce((total, id) => total + (flags[id] ? 1 : 0), 0);
+
+/* -------------------------------------------------------------------------- */
+/* Geometry                                                                    */
+/* -------------------------------------------------------------------------- */
+
+/** Viewport-space rectangle. Plain data so a snapshot can be compared cheaply. */
+export interface RectLike {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+export interface Edges {
+  top: number;
+  right: number;
+  bottom: number;
+  left: number;
+}
+
+export const ZERO_EDGES: Edges = { top: 0, right: 0, bottom: 0, left: 0 };
+
+/** What the inspector draws. Built from one element, once per frame. */
+export interface HoverTarget {
+  rect: RectLike;
+  margin: Edges;
+  padding: Edges;
+  /** `div#main.card.card--wide` */
+  description: string;
+  /** `320 × 48` */
+  size: string;
+  /** Resolved accessible name, or `null` when there is none to resolve. */
+  name: string | null;
+  role: string | null;
+  /** True when the element is `position: fixed` or `sticky` — its rect moves. */
+  pinned: boolean;
+}
+
+/** One badge in the focus-order overlay. */
+export interface FocusItem {
+  /** Stable within a scan, for React keys. */
+  key: string;
+  /** 1-based position in tab order. */
+  index: number;
+  rect: RectLike;
+  tag: string;
+  /** Accessible name, or `null` — which is the thing the overlay is flagging. */
+  name: string | null;
+  /** A positive `tabindex`, which reorders the sequence and is worth seeing. */
+  tabIndex: number | null;
+}
+
+export interface OverlaysSnapshot {
+  enabled: OverlayFlags;
+  activeCount: number;
+  /** `null` unless `inspect` is on and the pointer is over host content. */
+  hover: HoverTarget | null;
+  focusItems: readonly FocusItem[];
+  /** True when the scan hit `focusLimit` and stopped. */
+  focusTruncated: boolean;
+  /** Number of tabbable elements found with no accessible name. */
+  unnamedCount: number;
+  /** False until `start(api)` has run, and again after it is torn down. */
+  ready: boolean;
+  /** False while the bar is hidden: nothing is drawn and nothing is observed. */
+  active: boolean;
+  /**
+   * Set when an overlay's own measuring threw. Every overlay is turned off when
+   * this happens — a measurement that throws once throws every frame, and an
+   * extension drawing over an application has no business retrying at 60 Hz.
+   */
+  error: string | null;
+}
+
+/* -------------------------------------------------------------------------- */
+/* Reading the host document — read-only, everywhere                           */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Everything that is focusable by `Tab` in practice.
+ *
+ * `[tabindex]` is matched and then filtered on the parsed value, because
+ * `[tabindex="-1"]` is programmatically focusable but not *tabbable*, and a
+ * focus-order overlay that numbered it would be describing a sequence the user
+ * cannot walk.
+ */
+export const TABBABLE_SELECTOR = [
+  "a[href]",
+  "area[href]",
+  "button",
+  "input",
+  "select",
+  "textarea",
+  "summary",
+  "audio[controls]",
+  "video[controls]",
+  "iframe",
+  "[contenteditable]",
+  "[tabindex]",
+].join(",");
+
+/**
+ * True for anything belonging to a dev toolbar — ours or another instance's.
+ *
+ * Every scan and every pointer read goes through this. An overlay that
+ * inspected the bar would be measuring the tool rather than the application,
+ * and one that numbered the palette's search field into the page's focus order
+ * would be lying about the page.
+ */
+export function isInToolbar(node: Node | null): boolean {
+  if (node === null) return false;
+  const element =
+    node.nodeType === 1
+      ? (node as Element)
+      : (node.parentElement as Element | null);
+  if (!element || typeof element.closest !== "function") return false;
+  return element.closest("[data-dev-toolbar]") !== null;
+}
+
+const MAX_CLASSES = 3;
+
+/** `div#main.card.card--wide` — the CSS-ish shorthand a developer reads fastest. */
+export function describeElement(element: Element): string {
+  const tag = element.tagName.toLowerCase();
+  const id = element.id === "" ? "" : `#${element.id}`;
+  // `className` is not a string on SVG elements, hence classList.
+  const classes = [...element.classList];
+  const shown = classes
+    .slice(0, MAX_CLASSES)
+    .map((name) => `.${name}`)
+    .join("");
+  const rest = classes.length > MAX_CLASSES ? `+${classes.length - MAX_CLASSES}` : "";
+  return `${tag}${id}${shown}${rest}`;
+}
+
+/**
+ * `textContent`, minus the parts a screen reader will not read.
+ *
+ * An icon-only button is usually `<button><span aria-hidden="true">×</span></button>`,
+ * and `textContent` on that returns `×` — so a name check built on `textContent`
+ * calls the most common unnamed control *named*, which is precisely the bug the
+ * overlay exists to find. `accname` skips `aria-hidden` and `hidden` subtrees;
+ * so does this.
+ */
+export function visibleText(element: Element): string | null {
+  let text = "";
+  const walk = (node: Node) => {
+    for (const child of node.childNodes) {
+      if (child.nodeType === 3) {
+        text += child.nodeValue ?? "";
+        continue;
+      }
+      if (child.nodeType !== 1) continue;
+      const el = child as Element;
+      if (el.getAttribute("aria-hidden") === "true") continue;
+      if (el.hasAttribute("hidden")) continue;
+      walk(el);
+    }
+  };
+  walk(element);
+  return trim(text);
+}
+
+const NAME_FROM_CONTENT = new Set([
+  "a",
+  "button",
+  "summary",
+  "td",
+  "th",
+  "legend",
+  "option",
+  "label",
+  "h1",
+  "h2",
+  "h3",
+  "h4",
+  "h5",
+  "h6",
+]);
+
+const trim = (value: string | null | undefined): string | null => {
+  if (typeof value !== "string") return null;
+  const text = value.replace(/\s+/g, " ").trim();
+  return text === "" ? null : text;
+};
+
+/**
+ * A deliberately partial accessible-name computation.
+ *
+ * The full algorithm is `accname`, it is long, and it needs the whole tree. This
+ * covers the cases that actually produce an unnamed control in application code
+ * — an icon-only button, an `<img>` with no `alt`, an input with a `<label>`
+ * nowhere near it — in the order the spec prioritises them.
+ *
+ * It is documented as a heuristic in the panel, because a name-checking overlay
+ * that quietly reports false positives is worse than none: the developer stops
+ * trusting the badges and then ignores the true ones.
+ */
+export function accessibleName(element: Element): string | null {
+  const aria = trim(element.getAttribute("aria-label"));
+  if (aria !== null) return aria;
+
+  const labelledBy = element.getAttribute("aria-labelledby");
+  if (labelledBy !== null) {
+    const doc = element.ownerDocument;
+    const parts = labelledBy
+      .split(/\s+/)
+      .map((id) => {
+        const target = doc?.getElementById(id) ?? null;
+        return target === null ? null : visibleText(target);
+      })
+      .filter((part): part is string => part !== null);
+    if (parts.length > 0) return parts.join(" ");
+  }
+
+  const tag = element.tagName.toLowerCase();
+
+  if (tag === "img" || tag === "area") {
+    // An empty `alt` is a *decision* — the image is decorative — so it counts as
+    // named. A missing one is the bug.
+    const alt = element.getAttribute("alt");
+    if (alt !== null) return trim(alt) ?? "";
+  }
+
+  if (tag === "input" || tag === "select" || tag === "textarea") {
+    const control = element as HTMLInputElement;
+    const type = (control.getAttribute("type") ?? "").toLowerCase();
+    if (type === "submit" || type === "button" || type === "reset") {
+      const value = trim(control.getAttribute("value"));
+      if (value !== null) return value;
+    }
+    if (type === "image") {
+      const alt = trim(control.getAttribute("alt"));
+      if (alt !== null) return alt;
+    }
+    if (control.labels && control.labels.length > 0) {
+      const text = trim(
+        [...control.labels].map((label) => visibleText(label) ?? "").join(" "),
+      );
+      if (text !== null) return text;
+    }
+    const wrapping = element.closest("label");
+    if (wrapping) {
+      const text = visibleText(wrapping);
+      if (text !== null) return text;
+    }
+  }
+
+  if (NAME_FROM_CONTENT.has(tag) || element.getAttribute("role") !== null) {
+    const text = visibleText(element);
+    if (text !== null) return text;
+    // An icon-only control is the interesting case: no text of its own, but a
+    // titled or labelled descendant still names it.
+    const inner = element.querySelector("[aria-label],[title],img[alt]");
+    if (inner) {
+      const nested =
+        trim(inner.getAttribute("aria-label")) ??
+        trim(inner.getAttribute("title")) ??
+        trim(inner.getAttribute("alt"));
+      if (nested !== null) return nested;
+    }
+  }
+
+  return trim(element.getAttribute("title"));
+}
+
+/** Explicit `tabindex`, or `null` when there is none or it is not a number. */
+export function tabIndexOf(element: Element): number | null {
+  const raw = element.getAttribute("tabindex");
+  if (raw === null) return null;
+  const parsed = Number.parseInt(raw, 10);
+  return Number.isNaN(parsed) ? null : parsed;
+}
+
+export const toRect = (rect: DOMRect): RectLike => ({
+  x: Math.round(rect.left * 100) / 100,
+  y: Math.round(rect.top * 100) / 100,
+  width: Math.round(rect.width * 100) / 100,
+  height: Math.round(rect.height * 100) / 100,
+});
+
+const px = (value: string | undefined): number => {
+  const parsed = Number.parseFloat(value ?? "");
+  return Number.isFinite(parsed) ? parsed : 0;
+};
+
+/** `margin` / `padding` edges out of one computed style. Never throws. */
+export function edgesOf(
+  style: CSSStyleDeclaration | null,
+  which: "margin" | "padding",
+): Edges {
+  if (style === null) return ZERO_EDGES;
+  return {
+    top: px(style.getPropertyValue(`${which}-top`)),
+    right: px(style.getPropertyValue(`${which}-right`)),
+    bottom: px(style.getPropertyValue(`${which}-bottom`)),
+    left: px(style.getPropertyValue(`${which}-left`)),
+  };
+}
+
+/**
+ * True when this element is worth a badge: it has a box, it is not
+ * `visibility: hidden`, and it is at least partly on screen.
+ *
+ * `width === 0 && height === 0` is the cheap test that removes `display: none`
+ * without a `getComputedStyle` call per element, which is what keeps the focus
+ * scan linear in *tabbables* rather than in style resolutions.
+ */
+export function isPaintedRect(
+  rect: RectLike,
+  viewport: { width: number; height: number },
+): boolean {
+  if (rect.width <= 0 && rect.height <= 0) return false;
+  if (rect.y > viewport.height || rect.y + rect.height < 0) return false;
+  if (rect.x > viewport.width || rect.x + rect.width < 0) return false;
+  return true;
+}
+
+/* -------------------------------------------------------------------------- */
+/* Persistence                                                                 */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Reads the persisted flag map. Fail-closed in every direction: unparseable
+ * JSON, a non-object, an unknown id or a non-boolean value all mean *off*.
+ *
+ * Off is the safe default for this extension specifically. A stored `true` for
+ * an overlay id that no longer exists must not resurrect anything, and a
+ * corrupted blob must not leave the page covered in outlines with no obvious
+ * way back.
+ */
+export function parseFlags(raw: string | null): OverlayFlags {
+  const flags: OverlayFlags = { ...NO_OVERLAYS };
+  if (raw === null) return flags;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return flags;
+  }
+  if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
+    return flags;
+  }
+  const bag = parsed as Record<string, unknown>;
+  for (const id of OVERLAY_IDS) {
+    if (bag[id] === true) flags[id] = true;
+  }
+  return flags;
+}
+
+export const serializeFlags = (flags: OverlayFlags): string =>
+  JSON.stringify(
+    Object.fromEntries(OVERLAY_IDS.map((id) => [id, flags[id] === true])),
+  );
+
+/* -------------------------------------------------------------------------- */
+/* Snapshot comparison                                                         */
+/* -------------------------------------------------------------------------- */
+
+const sameRect = (a: RectLike, b: RectLike): boolean =>
+  a.x === b.x && a.y === b.y && a.width === b.width && a.height === b.height;
+
+const sameEdges = (a: Edges, b: Edges): boolean =>
+  a.top === b.top &&
+  a.right === b.right &&
+  a.bottom === b.bottom &&
+  a.left === b.left;
+
+/**
+ * Every field the inspector *draws* from, not just the ones that identify the
+ * element.
+ *
+ * The margin and padding edges are the reason this is not shorter. Under
+ * `box-sizing: border-box` — which is most applications — a hover state or an
+ * inline style can change padding without moving the border rect at all, and
+ * comparing only `rect` left the padding and margin boxes drawn from the values
+ * they had before, until the pointer happened to move to another element.
+ */
+const sameHover = (a: HoverTarget | null, b: HoverTarget | null): boolean => {
+  if (a === null || b === null) return a === b;
+  return (
+    a.description === b.description &&
+    a.size === b.size &&
+    a.name === b.name &&
+    a.role === b.role &&
+    a.pinned === b.pinned &&
+    sameRect(a.rect, b.rect) &&
+    sameEdges(a.margin, b.margin) &&
+    sameEdges(a.padding, b.padding)
+  );
+};
+
+/**
+ * The `equals` the store uses.
+ *
+ * This is load-bearing for cost, not a micro-optimisation: the pointer moves
+ * every frame, and without it every one of those frames would re-render the
+ * overlay tree even though the pointer stayed inside the same element and
+ * nothing drawn would change.
+ */
+export function sameSnapshot(a: OverlaysSnapshot, b: OverlaysSnapshot): boolean {
+  if (a === b) return true;
+  if (a.ready !== b.ready || a.active !== b.active) return false;
+  if (a.error !== b.error) return false;
+  if (a.activeCount !== b.activeCount) return false;
+  for (const id of OVERLAY_IDS) {
+    if (a.enabled[id] !== b.enabled[id]) return false;
+  }
+  if (!sameHover(a.hover, b.hover)) return false;
+  if (a.focusTruncated !== b.focusTruncated) return false;
+  if (a.unnamedCount !== b.unnamedCount) return false;
+  if (a.focusItems.length !== b.focusItems.length) return false;
+  for (let index = 0; index < a.focusItems.length; index += 1) {
+    const left = a.focusItems[index] as FocusItem;
+    const right = b.focusItems[index] as FocusItem;
+    if (
+      left.key !== right.key ||
+      left.name !== right.name ||
+      !sameRect(left.rect, right.rect)
+    ) {
+      return false;
+    }
+  }
+  return true;
+}
+
+/* -------------------------------------------------------------------------- */
+/* Grid                                                                        */
+/* -------------------------------------------------------------------------- */
+
+/** The column grid's shape. Consumer-supplied; there is no sensible guess. */
+export interface GridSettings {
+  /** Number of columns. Default `12`. */
+  columns: number;
+  /** Gutter between columns, in px. Default `24`. */
+  gutter: number;
+  /** Grid width, in px, centred in the viewport. Default `1200`. */
+  maxWidth: number;
+  /** Baseline row height in px. `0` draws no horizontal lines. Default `8`. */
+  baseline: number;
+}
+
+export const DEFAULT_GRID: GridSettings = {
+  columns: 12,
+  gutter: 24,
+  maxWidth: 1200,
+  baseline: 8,
+};
+
+/** Clamped so a hand-typed `columns: 0` cannot produce a division by zero. */
+export function normalizeGrid(input?: Partial<GridSettings>): GridSettings {
+  const grid = { ...DEFAULT_GRID, ...input };
+  return {
+    columns: Math.max(1, Math.min(48, Math.round(grid.columns))),
+    gutter: Math.max(0, Math.min(200, grid.gutter)),
+    maxWidth: Math.max(120, Math.min(6000, grid.maxWidth)),
+    baseline: Math.max(0, Math.min(200, grid.baseline)),
+  };
+}

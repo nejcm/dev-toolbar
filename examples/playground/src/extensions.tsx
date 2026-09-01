@@ -5,14 +5,15 @@ import { metrics } from "@nejcm/dev-toolbar/ext/metrics";
 import { environment } from "@nejcm/dev-toolbar/ext/environment";
 import { flags, readStoredOverrides } from "@nejcm/dev-toolbar/ext/flags";
 import { commandMenu } from "@nejcm/dev-toolbar/ext/command-menu";
+import { overlays } from "@nejcm/dev-toolbar/ext/overlays";
 import type { FlagReading, FlagValue } from "@nejcm/dev-toolbar/ext/flags";
 
 /**
  * Placeholder extensions with deliberately varied `priority`, so narrowing the
  * window collapses them into the `···` menu in a predictable order:
  *
- *   boom (5) → hydr (20) → metrics (35) → tw (70) → flags (80) → cmds (85)
- *   → env (90) → user (100, aligned end)
+ *   boom (5) → hydr (20) → metrics (35) → overlays (55) → tw (70) → flags (80)
+ *   → cmds (85) → env (90) → user (100, aligned end)
  *
  * The fake ones are the placeholders; `metrics`, `env` and `flags` are the real
  * `@nejcm/dev-toolbar/ext/metrics`, `.../ext/environment` and `.../ext/flags`.
@@ -413,6 +414,19 @@ const user: DevToolbarExtension = {
  */
 const runtimeCommandMenu = commandMenu();
 
+/**
+ * The real `@nejcm/dev-toolbar/ext/overlays`. It draws over this page from the
+ * `overlay` slot, below the bar and above the app, and takes no pointer events
+ * — every button under an overlay still works. The grid below is deliberately
+ * the same 12/24/1100 the playground's own cards are laid out on, so "Column
+ * grid" has something true to line up with.
+ */
+const runtimeOverlays = overlays({
+  order: 20,
+  priority: 55,
+  grid: { columns: 12, gutter: 24, maxWidth: 1100, baseline: 8 },
+});
+
 const runtimeMetrics = metrics({
   order: 30,
   priority: 35,
@@ -425,6 +439,7 @@ export const playgroundExtensions: DevToolbarExtension[] = [
   runtimeEnvironment,
   commands,
   runtimeFlags,
+  runtimeOverlays,
   runtimeMetrics,
   hydration,
   tailwind,

@@ -3,7 +3,7 @@
 ## 0.1.0 — unreleased
 
 First publish. The shell (P0), the runtime primitives and the first extension (P1),
-and P2's three extensions. `CONTRACT_VERSION` is `1`.
+P2's three extensions, and the first of P3's. `CONTRACT_VERSION` is `1`.
 
 ### Added
 
@@ -46,6 +46,21 @@ and P2's three extensions. `CONTRACT_VERSION` is `1`.
   with `aria-activedescendant`, trapped `Tab` and named groups. It lives in the new
   `overlay` slot, so the shortcut survives its chip collapsing into the `···` menu.
   Swap it for your team's own `cmdk` by leaving it out — core still aggregates.
+- `@nejcm/dev-toolbar/ext/overlays` — visual overlays over the running application
+  (§3G): layout boxes, a column grid, a pointer-following element inspector and a
+  focus-order overlay that flags controls with no accessible name. Each toggles on
+  its own, persists per instance and contributes a command to the palette. It is the
+  first extension that draws over the host page, so: nothing it draws takes a pointer
+  event (`pointer-events: none !important` on the surface and every descendant — the
+  one place in this package that needs `!important`, because layered CSS is designed
+  to lose to unlayered app CSS and a guard must not), it
+  paints below the bar and the palette and above the application, it mutates no host
+  DOM node — geometry is read, never written — and every listener detaches while the
+  bar is hidden. The one thing it adds to a document it does not own is a single
+  outline stylesheet, removed on toggle-off, on hide and on teardown, and using
+  `outline` so it cannot reflow the layout it describes. A measurement that throws
+  switches every overlay off rather than recurring every frame. Each overlay's cost
+  is stated in the panel next to its switch.
 - `@nejcm/dev-toolbar/testing` — `renderWithToolbar`, `makeExtension`,
   `createMockBus`, `installToolbarLayout`.
 - `ensureStyleSheet(entry, css)` in `/runtime` — the once-per-document style injector

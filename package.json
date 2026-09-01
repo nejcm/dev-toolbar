@@ -61,6 +61,11 @@
       "import": "./dist/ext/command-menu.js",
       "require": "./dist/ext/command-menu.cjs"
     },
+    "./ext/overlays": {
+      "types": "./dist/ext/overlays.d.ts",
+      "import": "./dist/ext/overlays.js",
+      "require": "./dist/ext/overlays.cjs"
+    },
     "./ext/flags": {
       "types": "./dist/ext/flags.d.ts",
       "import": "./dist/ext/flags.js",
