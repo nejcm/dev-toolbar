@@ -130,21 +130,38 @@ export function flags(options: FlagsOptions = {}): DevToolbarExtension {
   // first render, which is before any effect fires.
   const runtime = createFlagsRuntime(runtimeOptions);
 
-  // `commands` is a static array on the extension object and the object must be
-  // referentially stable, so the per-flag commands are enumerated once, from
-  // the flags visible at factory time. Each `run` looks the flag up live, so a
-  // command is never stale — but a flag that appears later gets a panel row and
-  // no command until the page reloads. See plans/architecture.md §12.
-  const perFlag: ToolbarCommand[] = runtime.store
-    .getSnapshot()
-    .flags.filter((view) => view.type === "boolean")
-    .map((view) => ({
-      id: `${id}.toggle.${view.key}`,
-      label: `Toggle flag: ${view.label}`,
-      group: "Flags",
-      keywords: ["flag", "override", view.key],
-      run: () => runtime.toggle(view.key),
-    }));
+  /**
+   * Enumerated on every aggregation pass, not once in the factory — the
+   * function form of `commands`, added in P2 precisely because of this
+   * extension. A flag the consumer's catalogue grew after mount gets its toggle
+   * command the next time anything asks, rather than at the next page load.
+   *
+   * Command identity is the `id`, so rebuilding these objects each pass costs
+   * nothing: `run` looks the flag up live through the runtime either way.
+   *
+   * Pure and cheap, as the contract requires: it reads the snapshot the runtime
+   * has already built and never triggers a re-read of the consumer's flags. It
+   * also cannot throw — but core would contain it if it did.
+   *
+   * `peek()`, not `getSnapshot()`: the store coalesces publishes at 4 Hz for the
+   * benefit of the chip, and a command list that lagged a repaint would make
+   * "the flag is in the panel but not in the palette" a timing question.
+   *
+   * Orphans — an override whose flag the catalogue no longer lists — get a row
+   * so they can be cleared, but no toggle command: offering to turn on a flag
+   * the application does not have is not a thing to hide in a palette.
+   */
+  const perFlagCommands = (): ToolbarCommand[] =>
+    runtime.store
+      .peek()
+      .flags.filter((view) => view.type === "boolean" && !view.orphaned)
+      .map((view) => ({
+        id: `${id}.toggle.${view.key}`,
+        label: `Toggle flag: ${view.label}`,
+        group: "Flags",
+        keywords: ["flag", "override", view.key],
+        run: () => runtime.toggle(view.key),
+      }));
 
   return {
     id,
@@ -176,8 +193,8 @@ export function flags(options: FlagsOptions = {}): DevToolbarExtension {
       <FlagsPanel runtime={runtime} label={label} injectStyles={injectStyles} />
     ),
 
-    commands: [
-      ...perFlag,
+    commands: () => [
+      ...perFlagCommands(),
       {
         id: `${id}.clearOverrides`,
         label: "Clear all local flag overrides",

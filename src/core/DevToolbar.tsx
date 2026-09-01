@@ -19,6 +19,7 @@ import {
   type ToolbarStorage,
 } from "./contract";
 import { Bar } from "./Bar";
+import { OverlayHost } from "./OverlayHost";
 import { PanelHost } from "./PanelHost";
 import { DevToolbarContext, cx } from "./context";
 import type { DevToolbarContextValue } from "./context";
@@ -147,20 +148,35 @@ function DevToolbarRoot({
     return merged;
   }, [extensionsProp, state.registered]);
 
+  // The extension list, not the aggregated commands, is what is kept in a ref:
+  // with the function form of `commands` an aggregation is only ever a snapshot
+  // of the moment it was taken, so every *imperative* path re-enumerates
+  // instead of reading a stale array. See `getCommands` below.
+  const extensionsRef = useRef(extensions);
+  extensionsRef.current = extensions;
+
+  const getCommands = useCallback(
+    () => collectCommands(extensionsRef.current),
+    [],
+  );
+
+  /**
+   * The declarative snapshot behind `useToolbarCommands()`. Recomputed when the
+   * extension list changes — which is the only invalidation signal core has,
+   * since an extension whose command list grew does not tell anybody. Anything
+   * that must be current (a palette opening, `runCommand`) calls `getCommands()`
+   * rather than reading this.
+   */
   const commands = useMemo(() => collectCommands(extensions), [extensions]);
-  const commandsRef = useRef(commands);
-  commandsRef.current = commands;
 
   useEffect(() => {
     if (!enabled) return;
-    return registerCommandHost({
-      getCommands: () => commandsRef.current,
-    });
-  }, [enabled]);
+    return registerCommandHost({ getCommands });
+  }, [enabled, getCommands]);
 
   const scopedRunCommand = useCallback(
-    (id: string) => runCommand(id, commandsRef.current),
-    [],
+    (id: string) => runCommand(id, getCommands()),
+    [getCommands],
   );
 
   // Contract version check.
@@ -273,6 +289,10 @@ function DevToolbarRoot({
           });
         },
         storage: createExtensionStorage(rawStorage, instanceId, extension.id),
+        // The aggregation, reachable without importing a value from core.
+        getCommands: () => collectCommands(extensionsRef.current),
+        runCommand: (id: string) =>
+          runCommand(id, collectCommands(extensionsRef.current)),
       };
       const entry: {
         controller: AbortController;
@@ -368,6 +388,7 @@ function DevToolbarRoot({
       store,
       extensions,
       commands,
+      getCommands,
       runCommand: scopedRunCommand,
       density,
       classNames: classNames ?? {},
@@ -392,6 +413,7 @@ function DevToolbarRoot({
       store,
       extensions,
       commands,
+      getCommands,
       scopedRunCommand,
       density,
       classNames,
@@ -426,6 +448,12 @@ function DevToolbarRoot({
                 openPanel={store.openPanel}
                 closePanel={store.closePanel}
                 togglePanel={store.togglePanel}
+                classNames={classNames}
+              />
+              <OverlayHost
+                extensions={extensions}
+                density={density}
+                position={state.position}
                 classNames={classNames}
               />
               <PanelHost

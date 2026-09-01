@@ -37,6 +37,8 @@ function fakeApi(storage: ToolbarStorage): {
         listeners.add(callback);
         return () => listeners.delete(callback);
       },
+      getCommands: () => [],
+      runCommand: async () => false,
       storage,
     },
     abort: () => controller.abort(),

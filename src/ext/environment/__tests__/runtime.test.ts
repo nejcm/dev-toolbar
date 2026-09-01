@@ -340,6 +340,8 @@ describe("staleness", () => {
         signal: controller.signal,
         isVisible: () => true,
         subscribeVisibility: () => () => {},
+        getCommands: () => [],
+        runCommand: async () => false,
         storage: {
           getItem: () => null,
           setItem: () => {},
@@ -446,6 +448,8 @@ describe("a context that throws while being read", () => {
         signal: controller.signal,
         isVisible: () => true,
         subscribeVisibility: () => () => {},
+        getCommands: () => [],
+        runCommand: async () => false,
         storage: {
           getItem: () => null,
           setItem: () => {},

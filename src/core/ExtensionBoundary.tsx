@@ -6,7 +6,7 @@ import { cx } from "./context";
 export interface ExtensionBoundaryProps {
   extensionId: string;
   label: string;
-  slot: "compact" | "panel";
+  slot: "compact" | "panel" | "overlay";
   classNames?: DevToolbarClassNames | undefined;
   children: ReactNode;
 }

@@ -23,15 +23,17 @@ Subpaths, each opt-in and each with its own bundle:
 | `@nejcm/dev-toolbar/ext/metrics` | Memory, delay, jank and network, as one extension. |
 | `@nejcm/dev-toolbar/ext/environment` | Environment, build and actor context — all of it supplied by you, all of it redacted. |
 | `@nejcm/dev-toolbar/ext/flags` | Feature-flag list, local overrides and the promoted flag. The flags stay yours. |
+| `@nejcm/dev-toolbar/ext/command-menu` | `⌘K` palette over the commands core aggregates. Replaceable with your own. |
 | `@nejcm/dev-toolbar/testing` | `renderWithToolbar`, fake extensions, mock bus, fake layout. |
 | `@nejcm/dev-toolbar/styles.css` | The stylesheet, if you would rather not inject it at runtime. |
 
 > **Status:** the shell (P0), `/runtime` and `/ext/metrics` (P1) are implemented, and
-> `/ext/environment` and `/ext/flags` are the first two of the P2 extensions. The
-> contract has been through three real consumers — the first moved it in four places,
-> all listed in the [changelog](./CHANGELOG.md); the second did not move it at all;
-> the third found one gap, in `commands`, recorded in
-> [plans/architecture.md §12](./plans/architecture.md). `0.1.0` is the first publish.
+> `/ext/environment`, `/ext/flags` and `/ext/command-menu` complete P2. The contract
+> has been through four real consumers — the first moved it in four places, all listed
+> in the [changelog](./CHANGELOG.md); the second did not move it at all; the third
+> found one gap, in `commands`; the fourth closed that gap and added the `overlay`
+> slot ([plans/architecture.md §13](./plans/architecture.md)). Every change so far is
+> additive, so `CONTRACT_VERSION` is still `1`. `0.1.0` is the first publish.
 
 ## Install
 
@@ -121,7 +123,10 @@ interface DevToolbarExtension {
   keepMounted?: boolean;         // panel state survives closing
   compact?: (props: CompactSlotProps) => React.ReactNode;
   panel?: (props: PanelSlotProps) => React.ReactNode;
-  commands?: ToolbarCommand[];   // core aggregates; it renders no palette
+  overlay?: (props: OverlaySlotProps) => React.ReactNode;   // modal; never collapsed
+  // Core aggregates; it renders no palette. A function is re-enumerated on
+  // every pass, so a command that only exists later is still reachable.
+  commands?: ToolbarCommand[] | (() => ToolbarCommand[]);
   start?(api: ExtensionRuntimeApi): void | (() => void);
 }
 ```
@@ -145,7 +150,24 @@ interface PanelSlotProps {
   height: number;
   close(): void;
 }
+
+interface OverlaySlotProps {
+  density: "compact" | "comfortable";
+  position: "bottom" | "top";
+}
 ```
+
+`overlay` is for a surface the bar cannot host — a dialog, a picker. It renders once,
+inside the toolbar root, for as long as you are present, not hidden and the bar is
+visible, and **overflow never collapses it**: a compact item that has collapsed into
+the `···` menu is not in the DOM at all, which would cost an extension its modal (and
+its key binding) exactly when the window got narrow. Most overlays render `null` most
+of the time. `/ext/command-menu` is the worked example.
+
+Core keeps *reporting* visibility rather than acting on it, so `start()` keeps running
+while the bar is hidden even though your overlay is not rendered. If yours is modal,
+close it on `api.subscribeVisibility(false)` and gate any key binding on
+`api.isVisible()` — otherwise it reappears, unasked, when the bar comes back.
 
 `start(api)` runs once per mount, for background work:
 
@@ -155,8 +177,14 @@ interface ExtensionRuntimeApi {
   isVisible(): boolean;
   subscribeVisibility(cb: (visible: boolean) => void): () => void;
   storage: ToolbarStorage;                              // scoped to this extension
+  getCommands(): readonly ToolbarCommand[];             // the live aggregation
+  runCommand(id: string): Promise<boolean>;             // false = nothing declares it
 }
 ```
+
+`getCommands()` / `runCommand()` are how an extension reads the aggregation without
+importing a *value* from core — `useToolbarCommands()` is for the host application.
+Both re-enumerate on call, so they are never behind.
 
 Core **reports** visibility and never pauses you on your own behalf — a cumulative
 counter that silently stops counting is worse than one that keeps going.
@@ -499,15 +527,53 @@ on a definition masks it whatever it looks like. A masked value never round-trip
 through the editor — the input takes a new value instead.
 
 Commands aggregated into `useToolbarCommands()`: one `flags.toggle.<key>` per
-boolean flag (enumerated at factory time — a flag that appears later gets a panel
-row and no command until reload), plus `flags.clearOverrides`, `flags.copyRecipe`,
+boolean flag — re-enumerated on every aggregation pass, so a flag that appears after
+mount gets its command as soon as the extension's next poll sees it, with no reload —
+plus `flags.clearOverrides`, `flags.copyRecipe`,
 `flags.copyJson` and `flags.refresh`. Like the other extensions it ships its own
 stylesheet — pair `injectStyles={false}` on `<DevToolbar>` with
 `flags({ injectStyles: false })` and deliver `FLAGS_CSS` yourself.
 
-## Styling
+## `@nejcm/dev-toolbar/ext/command-menu`
 
-Three surfaces, in order of preference.
+The palette over the commands core has been aggregating all along. It contributes
+none of its own — it is the only extension here that reads instead of adding.
+
+```tsx
+import { commandMenu } from "@nejcm/dev-toolbar/ext/command-menu";
+
+// Once, at module scope. Not inside render.
+const extensions = [commandMenu(), flags({ … }), metrics()];
+```
+
+`Mod+K` opens it; type to filter; `↑`/`↓` move, `↵` runs, `esc` dismisses. With no
+query it browses — recently run commands first, then everything else grouped by
+extension; with a query it is one flat list ordered by match quality. Options:
+`shortcut` (`null` binds no key), `placeholder`, `emptyMessage`, `rememberRecent`,
+plus the usual `id` / `label` / `align` / `order` / `priority` / `hidden` /
+`injectStyles`.
+
+Four things worth knowing:
+
+- **It re-enumerates every time it opens.** `commands` may be a function, so an
+  extension can begin contributing one after mount. The palette asks again rather
+  than rendering a list it captured.
+- **It runs by `id`, through core.** A command that was listed and has since gone
+  says *no longer available* instead of firing a stale closure, and a `hidden`
+  extension is as unreachable here as everywhere else.
+- **A failing command keeps the palette open** and shows the message where you can
+  read it. It is running your code; the throw never reaches your app.
+- **It lives in the `overlay` slot, not a panel.** A panel would evict whatever you
+  opened the palette to act on, and a collapsed compact item would take the shortcut
+  with it. The bar chip is a convenience — the key binding is bound in `start()`.
+  Hiding the toolbar (`Mod+Shift+.`) dismisses an open palette and disables the
+  shortcut until the bar is back.
+
+Replacing it with your team's own `cmdk` is one line: leave it out and write your own
+over `useToolbarCommands()` (stable snapshot) or `useDevToolbar().getCommands()`
+(re-enumerates now). That is what core aggregating and rendering nothing is for.
+
+## Styling
 
 **1. `--dtb-*` tokens.** Set them anywhere above the bar:
 
@@ -521,8 +587,8 @@ Three surfaces, in order of preference.
 ```
 
 **2. `data-dtb-part` attributes.** Every part carries one — `root`, `bar`, `region`,
-`item`, `trigger`, `overflow-button`, `overflow-menu`, `overflow-menu-item`, `panel`,
-`panel-resizer`, `panel-body`, `error-chip`, `inset`.
+`item`, `trigger`, `overflow-button`, `overflow-menu`, `overflow-menu-item`,
+`overlay`, `panel`, `panel-resizer`, `panel-body`, `error-chip`, `inset`.
 
 Core owns the unprefixed names. An extension that ships its own CSS namespaces its
 parts *by kind* — `/ext/metrics` uses `metrics-chip`, `metrics-panel` and so on for

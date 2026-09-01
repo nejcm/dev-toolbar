@@ -4,10 +4,12 @@ export type {
   DevToolbarClassNames,
   DevToolbarExtension,
   ExtensionRuntimeApi,
+  OverlaySlotProps,
   PanelSlotProps,
   ToolbarAlign,
   ToolbarColorScheme,
   ToolbarCommand,
+  ToolbarCommandsInput,
   ToolbarDensity,
   ToolbarPosition,
   ToolbarStorage,
@@ -21,7 +23,11 @@ export type { DevToolbarInsetProps } from "./core/DevToolbarInset";
 export { useDevToolbar, useToolbarCommands } from "./core/context";
 export type { DevToolbarContextValue } from "./core/context";
 
-export { collectCommands, runCommand } from "./core/commands";
+export {
+  collectCommands,
+  resolveExtensionCommands,
+  runCommand,
+} from "./core/commands";
 
 export {
   createLocalStorage,

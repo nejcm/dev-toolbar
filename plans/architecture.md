@@ -9,7 +9,7 @@ delivery plan. This document describes what the code actually does.
 
 - Contract version: **1** (`CONTRACT_VERSION`)
 - Entries: `@nejcm/dev-toolbar` (root), `/runtime`, `/ext/metrics`,
-  `/ext/environment`, `/testing`, `/styles.css`
+  `/ext/environment`, `/ext/flags`, `/ext/command-menu`, `/testing`, `/styles.css`
 - Runtime dependencies: **none**
 
 P1 built `/ext/metrics` strictly as an outside consumer of this contract, which was
@@ -22,6 +22,13 @@ P2's first extension, `/ext/environment`, moved it in **no** places — see
 [§11](#11-what-p2s-first-extension-found). The one thing it changed is a duplication
 it refused to repeat: the per-extension style injector now lives in `/runtime`.
 
+P2's second, `/ext/flags`, found one gap and deferred it ([§12](#12-what-p2s-second-extension-found)).
+P2's third, `/ext/command-menu`, is the consumer that gap was deferred to, and it
+settled it and found one more — `commands` may now be a **function**, and there is a
+third slot, `overlay`, for the surfaces the bar cannot host. Both are additive and
+both are collected in [§13](#13-what-p2s-third-extension-found). `CONTRACT_VERSION`
+stays `1`.
+
 ## 1. What the shell is
 
 The root entry is chrome plus hosting, and nothing else. It:
@@ -32,6 +39,7 @@ The root entry is chrome plus hosting, and nothing else. It:
 - collapses the lowest-`priority` items into a `···` menu when the bar runs out of
   width, and lets them back out when the width returns;
 - hosts at most one panel at a time, resizable and persisted;
+- renders every extension's `overlay` slot, uncollapsed, for modal surfaces;
 - publishes `--dev-toolbar-height` and ships an opt-in `<DevToolbarInset>`;
 - owns the token set, the `data-dtb-part` attributes and the `classNames` map;
 - persists visibility, position, active panel and panel height through an
@@ -193,8 +201,8 @@ Lifecycle order for one extension:
 1. It appears in the merged extension list (props first, then dynamic registrations,
    de-duplicated by `id`) and is not `hidden`.
 2. `start(api)` runs once. Its return value, if a function, is the cleanup.
-3. It renders `compact` (in the bar or in the `···` menu) and, when its panel is
-   active, `panel`.
+3. It renders `compact` (in the bar or in the `···` menu), `overlay` (always, while
+   the bar is visible) and, when its panel is active, `panel`.
 4. When it leaves the list, becomes `hidden`, `enabled` flips to `false`, or the
    toolbar unmounts: `api.signal` aborts, then the cleanup runs.
 
@@ -469,6 +477,11 @@ Rules worth stating explicitly:
 - **Style with your own CSS.** Reuse core's `data-dtb-part="trigger"` to inherit the
   bar's look, or ignore it entirely and bring Tailwind. Both work — that is the point
   of the light DOM.
+- **`commands` may be a function.** Return a fresh array from it whenever what you
+  contribute depends on state that arrives after the factory ran. Keep it pure and
+  cheap — core calls it during render — and keep the order stable. See §13.1.
+- **A modal belongs in `overlay`, not `compact`.** The overlay slot renders once,
+  uncollapsed, for as long as you are present and the bar is visible. See §13.2.
 - **Register dynamically only for subtree-scoped tools.**
   `useDevToolbar().register(ext)` returns an unregister function; call it on unmount.
 
@@ -532,7 +545,7 @@ import them from a server component without a directive of its own.
 | Event bus, ring buffers, throttled store, `redact()` | `./runtime` (P1) |
 | Metrics, environment, flags, overlays, diagnostics, theme editor | `./ext/*` (P1–P4) |
 | Environment, build and session context, and any redaction of it | `./ext/environment` (P2) — core has no `ctx` to hand anybody |
-| A command palette UI | `./ext/command-menu` (P2) |
+| A command palette UI | `./ext/command-menu` (P2) — core aggregates and renders nothing |
 | Severity thresholds | The extension that owns the metric |
 | Access control | The consumer, before rendering `<DevToolbar>` at all |
 | A global extension registry | Nowhere. See §2. |
@@ -734,6 +747,8 @@ means choosing between two things P2's third extension is better placed to judge
 `/ext/command-menu` is the consumer that will actually feel the difference. It
 decides, and `CONTRACT_VERSION` stays `1` either way — nothing has shipped.
 
+**Settled by P2's third extension: the function form.** See [§13.1](#131-commands-may-be-a-function--the-deferred-decision).
+
 ### 12.3 The promoted flag is inside the extension's one overflow unit
 
 §7 says the promoted item should carry "a high `priority` so overflow never eats
@@ -829,3 +844,194 @@ Each value is redacted **under its own flag key**, so `checkout.apiToken` masks 
 key while an innocent key holding `Bearer …` masks by value. Booleans and numbers
 are left readable whatever their key: they cannot carry a credential, and masking
 them would make a flag called `session.newLogin` unreadable for nothing.
+
+
+## 13. What P2's third extension found
+
+`/ext/command-menu` is the palette over the aggregation core has been building since
+P0, and it is the odd one out in this repo: the other three *produce* commands and it
+is the first that only **reads**. It moved the contract in two places, both additive,
+and both are things only a reader could have found.
+
+`CONTRACT_VERSION` stays `1`. Every change here widens an existing optional field or
+adds a new optional one; every extension written against the P0–P2 contract still
+type-checks and still behaves identically. Version 1 has never been published, so
+even a breaking change would have had nothing to break — but it did not need one, and
+bumping on an additive change would spend the signal that a bump is supposed to carry.
+
+### 13.1 `commands` may be a function — the deferred decision
+
+`commands?: ToolbarCommand[] | (() => ToolbarCommand[])`. Core calls the function on
+each aggregation pass. §12.2 deferred the choice between this and an imperative
+`api.setCommands()`, and the function form won on three grounds.
+
+**Command identity is the `id`, not the object.** That was the objection to the
+function form — churn — and it does not survive contact with the code. `/ext/flags`
+already closes over its runtime and resolves the flag live inside `run`, so a
+re-enumerated command with the same `id` is behaviourally identical to the one it
+replaced. Core dedupes by `id`, the palette keys and diffs by `id`, and nothing
+anywhere holds a command object across a pass. Rebuilding the objects costs an array
+allocation on a list that is tens of items long, at moments a human initiated.
+
+**`setCommands()` would have been a second write path into state core derives.**
+Everything else about an extension is declarative and read from the object; commands
+would have become the one thing pushed in from an effect, with StrictMode's
+double-invoke, teardown ordering, and "who wins if both a static array and a
+`setCommands()` call exist" all to specify. And every extension wanting live commands
+would have had to subscribe to its own state and re-push — plumbing the function form
+gets for free.
+
+**It degrades to what already existed.** A static array is a constant function, so
+`/ext/metrics` and `/ext/environment` changed by exactly zero lines.
+
+Four things had to be settled to make it safe:
+
+- **How often core calls it, and where.** On the *declarative* path, once per change
+  of the extension list, inside the `useMemo` that feeds `useToolbarCommands()` —
+  which is a render-phase call of extension code, and twice per render under
+  StrictMode. On the *imperative* path — `getCommands()`, `runCommand(id)`,
+  `api.getCommands()` — once per call. The contract states the requirement this puts
+  on an extension: `commands()` must be a pure, cheap enumeration.
+- **A throwing `commands()` cannot reach the host app.** A render-phase throw is not
+  contained by the per-slot error boundaries, which sit *below* the toolbar's own
+  render — it would take down the application, which is the one failure mode this
+  package exists not to have. So core wraps every call: the extension contributes
+  nothing, exactly as if it were `hidden`, and core logs once per id rather than once
+  per render. A non-array return, and entries that are not runnable commands, are
+  dropped the same way. Fail-closed, and quiet enough to be readable.
+- **Recursion.** `api.getCommands()` aggregates, and an extension could call it from
+  inside its own `commands()`. A module-level guard makes the nested call return
+  nothing and log, rather than recursing until the stack ends inside a render.
+- **`hidden` still wins.** A hidden extension's enumerator is not called at all —
+  not called and then filtered, which would let an extension observe the traffic of
+  a state that is supposed to mean it does not exist.
+
+The one real cost, stated plainly: **core has no invalidation signal.** An extension
+whose command list grew does not tell anybody, so `useToolbarCommands()` — which must
+stay referentially stable to be usable in a dependency array — is a snapshot as of
+the last extension-list change, and can be behind. That is why the context also
+exposes `getCommands()`, why `runCommand(id)` re-enumerates instead of reading the
+snapshot, and why the palette re-enumerates every time it opens. Anything that must
+be current asks; anything that must be stable subscribes.
+
+`/ext/flags` now enumerates per flag from its own store on every pass, and a flag
+that appears after mount has a working toggle command as soon as the extension's next
+poll sees it. It reads `peek()` rather than `getSnapshot()`, because the store
+coalesces publishes at 4 Hz for the chip's benefit and "the flag is in the panel but
+not in the palette" should not be a timing question.
+
+### 13.2 The bar is not a place to hang a modal — the `overlay` slot
+
+The palette is a dialog. Three surfaces existed and none of them fits one.
+
+A **panel** is wrong twice over: core hosts one panel at a time, so opening the
+palette would evict whatever you opened it to act on, and a panel is a resizable
+drawer pinned to the bar, not a centred modal with a scrim.
+
+The **compact** slot is wrong for a subtler and more serious reason. A collapsed item
+is not rendered at all until the `···` menu is opened — so an extension that hosts
+its dialog *and its key binding* in `compact` loses both exactly when the window gets
+narrow. §12.3 established the rule that collapsing costs an item its position, never
+its capability; for a palette, the shortcut **is** the capability.
+
+So core gained a third slot: `overlay?: (props) => ReactNode`, rendered once per
+extension, inside the toolbar root, for as long as the extension is present and not
+hidden and the bar is visible. It is never collapsed — overflow is about horizontal
+space and an overlay occupies none — and there is no single-active invariant, because
+an overlay is the extension's own modal and only it knows whether it is showing
+anything. Most render `null` most of the time.
+
+Inside the root rather than a portal of its own, deliberately: it inherits the
+`--dtb-*` tokens, the density and colour-scheme attributes and the `@layer` scoping,
+and the root sets no containing block, so a `position: fixed` overlay still covers the
+viewport rather than the 30px bar. The wrapper is `display: contents`, so it adds
+nothing to the root's layout or to `--dev-toolbar-height`. Slot errors are contained
+like any other, with `data-dtb-slot="overlay"` on the chip.
+
+The one limit worth stating: an overlay renders only while the bar is visible. Core
+does not stop an extension when the bar is hidden — visibility is *reported*, never
+acted on (§2) — so `start()` keeps running and a key binding registered there keeps
+firing. Left alone, that is a trap rather than a limit: review caught the palette
+opening its store while hidden, painting nothing, and then appearing uninvited the
+moment the bar came back. Hiding the bar does not turn an overlay off by itself; the
+extension has to decide what "hidden" means for it. `/ext/command-menu` closes on
+`subscribeVisibility(false)` and ignores its shortcut while `isVisible()` is false,
+which is the behaviour the api exists to make possible. An extension whose overlay is
+not modal may reasonably choose otherwise.
+
+The other thing not to claim too broadly: the wrapper is `display: contents`, so a
+*rendered* overlay adds nothing to the root's layout or to `--dev-toolbar-height`.
+The error path is the exception. A throwing overlay degrades to core's error chip,
+and with the wrapper out of the layout that chip becomes a flex child of the root,
+which is a column — so in a real browser it lands as a row between the bar and the
+panel and does add height. That is arguably the right failure (a broken extension
+should be visible, not silently absent), but it is the one case where "an overlay
+adds no layout" is untrue, and it is pinned by a test rather than left to be
+rediscovered.
+
+### 13.3 An extension had no way to read the aggregation
+
+`useToolbarCommands()` is a *value* exported from core, and §7's rule is that an
+extension imports only types, because a first-party subpath bundled beside the host's
+copy of core is not guaranteed to resolve to the same module instance. Core had built
+an aggregation that the one extension needing it could not legally reach.
+
+So `ExtensionRuntimeApi` — the object core already hands an extension, which is how
+storage and visibility reach it without an import — gained `getCommands()` and
+`runCommand(id)`. The palette holds the `api` from `start()` and asks it. That also
+gives the right failure semantics for free: running by `id` through core means a
+command that was listed and has since gone reports *no longer available* instead of
+firing a stale closure, and a `hidden` extension's commands are unreachable from the
+palette for exactly the same reason they are unreachable everywhere else.
+
+### 13.4 A reader has its own version of failing closed
+
+`/ext/flags` (§12.4) had to keep an override honest. A palette's equivalent is that
+it runs **somebody else's code, chosen by id, at a moment the user is watching**:
+
+- **A failed run keeps the palette open** and shows the message in place. Closing
+  over a failure would leave a user who pressed Enter with a command that silently
+  did nothing, which is the same lie as a badge that says *overridden* over an
+  application that never heard about it.
+- **"Gone" and "broken" are different messages.** `runCommand` resolving `false` is a
+  command that is no longer in the aggregation; a throw is a command that ran and
+  failed. Collapsing them would hide a stale palette behind an apparent bug in
+  somebody's command.
+- **The aggregation itself is caught.** Core already contains a throwing
+  `commands()`, so this is unreachable — but the palette is a reader, and a reader
+  that lets a failure in what it reads escape takes the toolbar down with it.
+- **Focus is restored to what had it**, on both ways out, and only if that element is
+  still in the document: a command may well have unmounted whatever was focused.
+- **One command runs at a time.** `Enter` repeats and a pointer lands on a row that
+  is already busy, so a slow async command could be started twice concurrently while
+  `aria-busy` was the only thing suggesting otherwise. The guard is on the state, not
+  on the markup.
+
+### 13.5 The hotkey parser is duplicated once, on purpose
+
+Core's `parseShortcut`/`matchesShortcut` are values, so the palette carries its own
+~50-line copy with the same semantics (`Mod` is Meta on Apple platforms and Ctrl
+elsewhere, exclusively; modifiers match exactly in both directions; a shifted
+punctuation key falls back to `event.code`). This is the *first* duplication. If a
+second extension needs one it moves to `/runtime`, the way `ensureStyleSheet` did in
+§11.2 — two is the point at which the duplication is the design, and one is not.
+
+### 13.6 Accessibility is the design, not a pass over it
+
+A command palette is a combobox over a listbox, and the pattern dictates the markup
+rather than the other way round: focus never leaves the text field, the active row is
+named by `aria-activedescendant` rather than focused, `Tab` is trapped because
+`aria-modal="true"` claims it is, groups carry accessible names, and `Escape` stops
+propagating so core's `···` menu does not also close underneath it. Two of these
+looked fine and were not until a test forced them: asserting `document.activeElement`
+after `Tab` passes in jsdom whether or not the handler exists, because jsdom
+implements no sequential focus navigation — the assertion that means something is on
+`defaultPrevented`; and `Enter` has to be ignored while an IME is composing, or the
+palette runs a command when a Japanese or Chinese typist commits a candidate.
+
+The searching/browsing split is an accessibility decision too. With no query the list
+is grouped by extension with headings; with a query it is one flat scored list with
+no headings, because a heading that a score order keeps re-splitting is noise a screen
+reader has to read out. Ordering is total and deterministic in both modes — score,
+then recency, then aggregation order — so the row under the cursor never moves because
+an unrelated pass re-enumerated.

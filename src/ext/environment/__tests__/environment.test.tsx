@@ -5,6 +5,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act } from "@testing-library/react";
 import { renderWithToolbar } from "@nejcm/dev-toolbar/testing";
+import { collectCommands } from "../../../core/commands";
 import { environment } from "../index";
 import type { EnvironmentOptions } from "../index";
 
@@ -420,7 +421,9 @@ describe("the clipboard path", () => {
 
   it("closes the front door: the aggregated command redacts as well", async () => {
     const { extension } = mount(leaky);
-    const copy = extension.commands?.find((c) => c.id === "environment.copy");
+    const copy = collectCommands([extension]).find(
+      (c) => c.id === "environment.copy",
+    );
     await act(async () => {
       await copy?.run();
     });

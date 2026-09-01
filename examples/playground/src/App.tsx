@@ -234,6 +234,18 @@ function FlagReadout() {
         >
           Orphan an override, then reload
         </button>
+        <button
+          type="button"
+          className="pg-button"
+          data-testid="flag-add"
+          title="Adds a flag to the catalogue after mount. Open ⌘K and it has a toggle command — no reload."
+          onClick={() => {
+            playgroundFlags.addFlag(`runtime-${Date.now().toString().slice(-4)}`);
+            force((value) => value + 1);
+          }}
+        >
+          Add a flag at runtime
+        </button>
         <a className="pg-button" href="?dtb-flags=reset" data-testid="flag-reset">
           Reload with ?dtb-flags=reset
         </a>

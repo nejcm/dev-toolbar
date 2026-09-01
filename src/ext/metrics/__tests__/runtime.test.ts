@@ -29,6 +29,8 @@ function api(): {
         listeners.add(callback);
         return () => listeners.delete(callback);
       },
+      getCommands: () => [],
+      runCommand: async () => false,
       storage: {
         getItem: (key) => store.get(key) ?? null,
         setItem: (key, value) => void store.set(key, value),

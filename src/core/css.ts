@@ -146,6 +146,13 @@ export const CORE_CSS = String.raw`/**
     border-bottom: 1px solid var(--dtb-border);
   }
 
+  /* Overlay slots occupy no space of their own; the extension positions its
+     own surface; display: contents keeps this wrapper out of the root's
+     layout entirely. */
+  [data-dev-toolbar] [data-dtb-part="overlay"] {
+    display: contents;
+  }
+
   [data-dev-toolbar] [data-dtb-part="region"] {
     display: flex;
     align-items: center;

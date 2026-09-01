@@ -4,7 +4,11 @@ import { DevToolbar, HEIGHT_VARIABLE } from "../core/DevToolbar";
 import type { DevToolbarProps } from "../core/DevToolbar";
 import { useDevToolbar } from "../core/context";
 import type { DevToolbarContextValue } from "../core/context";
-import type { DevToolbarExtension, ToolbarPosition } from "../core/contract";
+import type {
+  DevToolbarExtension,
+  ToolbarCommand,
+  ToolbarPosition,
+} from "../core/contract";
 import { createMemoryStorage } from "../core/storage";
 import { installToolbarLayout } from "./layout";
 import type {
@@ -44,6 +48,8 @@ export interface ToolbarHandle {
    */
   item(extensionId: string): HTMLElement | null;
   panel(extensionId: string): HTMLElement | null;
+  /** The overlay slot's wrapper for an extension. Never collapsed, so always here. */
+  overlay(extensionId: string): HTMLElement | null;
   /** The error chip an extension degraded to, if any. */
   errorChip(extensionId?: string): HTMLElement | null;
   overflowButton(): HTMLButtonElement | null;
@@ -81,6 +87,8 @@ export interface ToolbarHandle {
   /** Dynamic registration, the `useDevToolbar().register()` path. */
   register(extension: DevToolbarExtension): () => void;
   runCommand(id: string): Promise<boolean>;
+  /** Re-enumerates every extension's commands, the way a palette does on open. */
+  getCommands(): readonly ToolbarCommand[];
 }
 
 export interface RenderWithToolbarResult extends RenderResult {
@@ -181,6 +189,10 @@ export function renderWithToolbar(
       document.querySelector<HTMLElement>(
         `[data-dtb-part="panel"][data-dtb-ext-id="${id}"]`,
       ),
+    overlay: (id) =>
+      document.querySelector<HTMLElement>(
+        `[data-dtb-part="overlay"][data-dtb-ext-id="${id}"]`,
+      ),
     errorChip: (id) =>
       document.querySelector<HTMLElement>(
         id === undefined
@@ -248,6 +260,7 @@ export function renderWithToolbar(
       return () => run(() => unregister());
     },
     runCommand: (id) => context().runCommand(id),
+    getCommands: () => context().getCommands(),
   };
 
   const unmount = () => {

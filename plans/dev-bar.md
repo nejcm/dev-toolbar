@@ -52,7 +52,7 @@ The screenshot shows a toolbar attached to the bottom of Linear’s desktop appl
 
 | Visible item   | Recommended interpretation             |
 | -------------- | -------------------------------------- |
-| `⌘`            | Keyboard shortcut/help or command menu |
+| `⌘`            | Keyboard shortcut/help or command menu — `@nejcm/dev-toolbar/ext/command-menu` |
 | `Mem 0.82GB`   | JavaScript heap usage                  |
 | `Delay 418ms`  | Recent interaction/input delay         |
 | Icon + `5,629` | DOM-node or rendered-component count   |
@@ -1050,6 +1050,14 @@ Acceptance criteria:
 * Reload-required flags are identified.
 * Overrides never leak across environments.
 * The palette can be replaced by a team's existing `cmdk` without forking core.
+
+**Reinterpreted in P2.** The palette needed two additions to the contract, both
+additive and both recorded in [architecture.md §13](./architecture.md): `commands`
+may be a *function* core re-enumerates on each pass (so a flag that appears after
+mount has a working command), and a third slot, `overlay`, hosts modal surfaces the
+bar cannot — a collapsed compact item is not in the DOM, which would cost the palette
+its shortcut exactly when the window got narrow. Replaceability holds: the palette
+reads `useToolbarCommands()` / `getCommands()` and core still renders none of it.
 
 ### P3 — overlays and diagnostics — 6–10 days
 

@@ -3,7 +3,7 @@
 ## 0.1.0 — unreleased
 
 First publish. The shell (P0), the runtime primitives and the first extension (P1),
-and the first two P2 extensions. `CONTRACT_VERSION` is `1`.
+and P2's three extensions. `CONTRACT_VERSION` is `1`.
 
 ### Added
 
@@ -38,6 +38,14 @@ and the first two P2 extensions. `CONTRACT_VERSION` is `1`.
   refuse input they cannot parse instead of coercing it.
 - `readStoredOverrides()` on `/ext/flags` — reads the persisted override map without
   mounting anything, so an app can seed its own store before the first paint.
+- `@nejcm/dev-toolbar/ext/command-menu` — the `⌘K` palette over the commands core
+  aggregates, and the only extension here that reads instead of contributing. Browses
+  grouped with recents first, searches as one scored list, runs by id through core so
+  a command that has gone says so, keeps itself open and shows the message when a
+  command throws, and restores focus to whatever had it. A combobox over a listbox,
+  with `aria-activedescendant`, trapped `Tab` and named groups. It lives in the new
+  `overlay` slot, so the shortcut survives its chip collapsing into the `···` menu.
+  Swap it for your team's own `cmdk` by leaving it out — core still aggregates.
 - `@nejcm/dev-toolbar/testing` — `renderWithToolbar`, `makeExtension`,
   `createMockBus`, `installToolbarLayout`.
 - `ensureStyleSheet(entry, css)` in `/runtime` — the once-per-document style injector
@@ -53,14 +61,49 @@ and the first two P2 extensions. `CONTRACT_VERSION` is `1`.
   Both rebuild paths (`redact` and `redactHeaders`) now define the property. Affected
   `/ext/environment` as well as `/ext/flags`.
 
-### Known contract limitation
+### Contract changes from building the palette
 
-`DevToolbarExtension.commands` is a static array on an object that must be
-referentially stable, so an extension cannot change what it contributes after the
-factory returns. `/ext/flags` enumerates its per-flag toggle commands once; a flag
-that appears later gets a panel row and no command until reload. Recorded rather
-than fixed — `/ext/command-menu` is the consumer that should choose the fix. See
-[plans/architecture.md §12.2](./plans/architecture.md).
+Building `/ext/command-menu` moved it in two more places, both additive, and settled
+the limitation `/ext/flags` had deferred. Full rationale in
+[plans/architecture.md §13](./plans/architecture.md).
+
+`CONTRACT_VERSION` stays `1`. Every extension written against the earlier contract
+still *behaves* identically, and every one that only ever *receives* an
+`ExtensionRuntimeApi` — which is what an extension does — still type-checks. The
+qualification: `getCommands` and `runCommand` are required members, so code that
+**constructs** that type by hand breaks. That is real — the three api fakes in this
+repo's own tests needed updating — but it is test-harness code rather than the
+extension-facing contract `contractVersion` describes, and nothing has been
+published. Extension authors constructing an api for their own tests should reach for
+`/testing` instead.
+
+- **`commands` may be a function.**
+  `commands?: ToolbarCommand[] | (() => ToolbarCommand[])`, called by core on each
+  aggregation pass. A static array stays valid and unchanged, so `/ext/metrics` and
+  `/ext/environment` needed no edit. This closes the gap recorded in §12.2: an
+  extension can now contribute a command that only exists after mount.
+  `/ext/flags` enumerates per flag live, and a flag that appears later gets a working
+  toggle command with no reload. The function must be a pure, cheap enumeration — it
+  runs during render — and core fails closed around it: a throw, a non-array return
+  or an unrunnable entry means that extension contributes nothing, logged once per id.
+  Because core has no invalidation signal, `useToolbarCommands()` remains the stable
+  snapshot as of the last extension-list change, and `useDevToolbar().getCommands()`
+  re-enumerates on demand; `runCommand(id)` always resolves against a fresh
+  aggregation.
+- **A third slot, `overlay`.** Rendered once per extension inside the toolbar root
+  while the extension is present, not hidden and the bar is visible, and never
+  collapsed by overflow. For dialogs and pickers: a panel would evict whatever else
+  was open, and a compact item that collapses into the `···` menu is not in the DOM,
+  which would take an extension's modal and key binding with it. Errors are contained
+  like any other slot (`data-dtb-slot="overlay"`), and the wrapper is
+  `display: contents`, so a rendered overlay adds nothing to the root's layout or to
+  `--dev-toolbar-height` — the one exception being a *throwing* overlay, whose error
+  chip becomes a flex child of the root's column and does add a row.
+- **`ExtensionRuntimeApi` gains `getCommands()` and `runCommand(id)`**, so an
+  extension can read the aggregation without importing a value from core — which §7
+  forbids, and which `useToolbarCommands()` would have required.
+- `/testing` follows: `makeExtension({ overlay, throwInOverlay })`,
+  `toolbar.overlay(id)` and `toolbar.getCommands()`.
 
 ### Contract changes from building the first extension
 

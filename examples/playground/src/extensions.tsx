@@ -1,9 +1,10 @@
 import { useState } from "react";
 import type { DevToolbarExtension } from "@nejcm/dev-toolbar";
-import { useToolbarCommands } from "@nejcm/dev-toolbar";
+import { useDevToolbar, useToolbarCommands } from "@nejcm/dev-toolbar";
 import { metrics } from "@nejcm/dev-toolbar/ext/metrics";
 import { environment } from "@nejcm/dev-toolbar/ext/environment";
 import { flags, readStoredOverrides } from "@nejcm/dev-toolbar/ext/flags";
+import { commandMenu } from "@nejcm/dev-toolbar/ext/command-menu";
 import type { FlagReading, FlagValue } from "@nejcm/dev-toolbar/ext/flags";
 
 /**
@@ -142,14 +143,25 @@ const commands: DevToolbarExtension = {
 
 function CommandsPanel() {
   const commandList = useToolbarCommands();
+  const { getCommands } = useDevToolbar();
+  const [live, setLive] = useState<number | null>(null);
   return (
     <Definition>
       <strong>Commands core has aggregated ({commandList.length})</strong>
       <p style={{ margin: 0, color: "var(--dtb-muted)" }}>
-        Core aggregates every extension's commands and renders no palette. The
-        environment entries here copy the same redacted snapshot the panel
-        shows.
+        Core aggregates every extension's commands and renders no palette —{" "}
+        <code>⌘K</code> is <code>/ext/command-menu</code>, an ordinary
+        extension. This list is the declarative snapshot, recomputed when the
+        extension list changes. <code>getCommands()</code> re-enumerates now,
+        which is how the palette sees a flag that was added after mount.
       </p>
+      <button
+        type="button"
+        data-dtb-part="trigger"
+        onClick={() => setLive(getCommands().length)}
+      >
+        Re-enumerate{live === null ? "" : ` — ${live} right now`}
+      </button>
       <ul style={{ margin: 0, paddingLeft: 18 }}>
         {commandList.map((command) => (
           <li key={command.id}>
@@ -219,6 +231,25 @@ export const playgroundFlags = {
   /** Flips a base value, so you can watch a *server* change under an override. */
   flipBase(key: string) {
     flagBase[key] = !(flagBase[key] === true);
+    flagListeners.forEach((listener) => listener());
+  },
+  /**
+   * Adds a flag to the catalogue *after* the toolbar has mounted.
+   *
+   * This is the P2c contract change made visible: `commands` is a function
+   * core calls on each aggregation pass, so the new flag's toggle command shows
+   * up in the palette on the next open. It used to need a page reload.
+   */
+  addFlag(key: string) {
+    if (Object.prototype.hasOwnProperty.call(flagBase, key)) return;
+    flagBase[key] = false;
+    CATALOGUE.push({
+      key,
+      label: `Runtime flag: ${key}`,
+      description: "Added after mount, from the page.",
+      type: "boolean",
+      defaultValue: false,
+    });
     flagListeners.forEach((listener) => listener());
   },
   /** Set on the window by App, so the adapter can be made to throw on demand. */
@@ -374,6 +405,14 @@ const user: DevToolbarExtension = {
  * hand the bar a new object on every render while the running collectors stayed
  * with the first one — core warns about exactly that.
  */
+/**
+ * The real `@nejcm/dev-toolbar/ext/command-menu`. It contributes no commands of
+ * its own — it is the only extension here that reads the aggregation instead of
+ * adding to it — and its surface is the `overlay` slot, so `⌘K` keeps working
+ * when its chip collapses into the `···` menu.
+ */
+const runtimeCommandMenu = commandMenu();
+
 const runtimeMetrics = metrics({
   order: 30,
   priority: 35,
@@ -382,6 +421,7 @@ const runtimeMetrics = metrics({
 });
 
 export const playgroundExtensions: DevToolbarExtension[] = [
+  runtimeCommandMenu,
   runtimeEnvironment,
   commands,
   runtimeFlags,

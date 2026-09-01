@@ -5,6 +5,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, fireEvent } from "@testing-library/react";
 import { renderWithToolbar } from "@nejcm/dev-toolbar/testing";
+import { collectCommands } from "../../../core/commands";
 import { createMemoryStorage } from "../../../core/storage";
 import { flags, readStoredOverrides } from "../index";
 import { OVERRIDES_KEY } from "../runtime";
@@ -599,7 +600,7 @@ describe("commands", () => {
       onOverride: record,
       promoted: { flagKey: "ui-facelift" },
     });
-    expect(extension.commands?.map((command) => command.id)).toEqual([
+    expect(collectCommands([extension]).map((command) => command.id)).toEqual([
       "flags.toggle.new-header",
       "flags.toggle.ui-facelift",
       "flags.clearOverrides",
@@ -621,6 +622,48 @@ describe("commands", () => {
       await toolbar.runCommand("flags.clearOverrides");
     });
     expect(applied.at(-1)).toEqual(["ui-facelift", undefined]);
+  });
+
+  it("gives a flag added after mount a working command, without a reload", async () => {
+    // The gap recorded in architecture.md §12.2 and closed by P2's third extension: `commands`
+    // used to be a static array enumerated in the factory, so this flag got a
+    // panel row and no command until the page reloaded.
+    const catalogue: FlagReading[] = [
+      { key: "ui-facelift", type: "boolean", defaultValue: false, value: false },
+    ];
+    const { toolbar } = mount({ flags: () => catalogue, onOverride: record });
+
+    expect(toolbar.getCommands().map((command) => command.id)).not.toContain(
+      "flags.toggle.late-arrival",
+    );
+
+    catalogue.push({
+      key: "late-arrival",
+      label: "Late arrival",
+      type: "boolean",
+      defaultValue: false,
+      value: false,
+    });
+    // Whatever makes the extension re-read — a poll tick here, its own refresh
+    // command — is enough. Nothing re-renders the toolbar and no extension
+    // object is rebuilt.
+    await act(async () => {
+      await toolbar.runCommand("flags.refresh");
+    });
+
+    expect(toolbar.getCommands().map((command) => command.id)).toContain(
+      "flags.toggle.late-arrival",
+    );
+    await act(async () => {
+      expect(await toolbar.runCommand("flags.toggle.late-arrival")).toBe(true);
+    });
+    expect(applied.at(-1)).toEqual(["late-arrival", true]);
+
+    // And the row is in the panel, so the two views agree.
+    act(() => {
+      toolbar.openPanel("flags");
+    });
+    expect(row(toolbar.panel("flags"), "late-arrival")).not.toBeNull();
   });
 
   it("copies the same redacted recipe the panel shows", async () => {

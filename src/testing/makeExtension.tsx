@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import type {
   CompactSlotProps,
   DevToolbarExtension,
+  OverlaySlotProps,
   PanelSlotProps,
   ToolbarCommand,
 } from "../core/contract";
@@ -19,7 +20,7 @@ export function resetExtensionIds(): void {
 }
 
 export interface MakeExtensionOptions
-  extends Partial<Omit<DevToolbarExtension, "compact" | "panel">> {
+  extends Partial<Omit<DevToolbarExtension, "compact" | "panel" | "overlay">> {
   /**
    * `true` renders a default toggle button, a string renders that text inside
    * it, a function is used as the slot itself, `false` omits the slot so core
@@ -28,6 +29,13 @@ export interface MakeExtensionOptions
   compact?: boolean | string | ((props: CompactSlotProps) => ReactNode);
   /** Same shape as `compact`, but for the panel slot. Default `false`. */
   panel?: boolean | string | ((props: PanelSlotProps) => ReactNode);
+  /**
+   * Same shape again, for the overlay slot — the one core never collapses.
+   * Default `false`.
+   */
+  overlay?: boolean | string | ((props: OverlaySlotProps) => ReactNode);
+  /** Throw from `overlay`. */
+  throwInOverlay?: boolean | Error;
   /** Throw from `compact` — exercises the per-extension error boundary. */
   throwInCompact?: boolean | Error;
   /** Throw from `panel`. */
@@ -51,8 +59,10 @@ export function makeExtension(
   const {
     compact = true,
     panel = false,
+    overlay = false,
     throwInCompact = false,
     throwInPanel = false,
+    throwInOverlay = false,
     throwInStart = false,
     ...rest
   } = options;
@@ -93,6 +103,19 @@ export function makeExtension(
   } else if (panel !== false) {
     const text = typeof panel === "string" ? panel : `${label} panel`;
     extension.panel = () => <div data-testid={`dtb-panel-${id}`}>{text}</div>;
+  }
+
+  if (throwInOverlay !== false) {
+    extension.overlay = () => {
+      throw asError(throwInOverlay, `[test] extension "${id}" overlay threw`);
+    };
+  } else if (typeof overlay === "function") {
+    extension.overlay = overlay;
+  } else if (overlay !== false) {
+    const text = typeof overlay === "string" ? overlay : `${label} overlay`;
+    extension.overlay = () => (
+      <div data-testid={`dtb-overlay-${id}`}>{text}</div>
+    );
   }
 
   if (throwInStart !== false) {

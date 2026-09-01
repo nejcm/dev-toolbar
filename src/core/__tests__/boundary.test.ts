@@ -24,6 +24,7 @@ const EXT_MARKERS = [
   "[dev-toolbar/ext/metrics]",
   "[dev-toolbar/ext/environment]",
   "[dev-toolbar/ext/flags]",
+  "[dev-toolbar/ext/command-menu]",
 ];
 
 function sourceFiles(directory: string): string[] {
@@ -135,6 +136,9 @@ if (!built && mustBeBuilt) {
       expect(readFileSync(`${root}dist/ext/flags.cjs`, "utf8")).toContain(
         EXT_MARKERS[2] as string,
       );
+      expect(
+        readFileSync(`${root}dist/ext/command-menu.cjs`, "utf8"),
+      ).toContain(EXT_MARKERS[3] as string);
     });
   });
 }
@@ -160,6 +164,15 @@ if (built || !mustBeBuilt) {
       const flagsBundle = readFileSync(`${root}dist/ext/flags.cjs`, "utf8");
       expect(flagsBundle).not.toContain(EXT_MARKERS[0] as string);
       expect(flagsBundle).not.toContain(EXT_MARKERS[1] as string);
+      // Four. /ext/command-menu reads the aggregation, which is core's, so it
+      // must not end up carrying the extensions that produce it.
+      const menuBundle = readFileSync(
+        `${root}dist/ext/command-menu.cjs`,
+        "utf8",
+      );
+      for (const marker of EXT_MARKERS.slice(0, 3)) {
+        expect(menuBundle, marker).not.toContain(marker);
+      }
     });
 
     it("declares ./runtime and the ./ext/* entries explicitly, with no wildcards", () => {
@@ -183,6 +196,11 @@ if (built || !mustBeBuilt) {
         import: "./dist/ext/flags.js",
         require: "./dist/ext/flags.cjs",
       });
+      expect(pkg.exports["./ext/command-menu"]).toEqual({
+        types: "./dist/ext/command-menu.d.ts",
+        import: "./dist/ext/command-menu.js",
+        require: "./dist/ext/command-menu.cjs",
+      });
       expect(Object.keys(pkg.exports).some((key) => key.includes("*"))).toBe(
         false,
       );
@@ -198,6 +216,8 @@ if (built || !mustBeBuilt) {
         "dist/ext/environment.cjs",
         "dist/ext/flags.js",
         "dist/ext/flags.cjs",
+        "dist/ext/command-menu.js",
+        "dist/ext/command-menu.cjs",
       ]) {
         expect(
           readFileSync(`${root}${file}`, "utf8").startsWith('"use client";'),
@@ -225,6 +245,9 @@ if (built || !mustBeBuilt) {
       expect(readFileSync(`${root}dist/ext/flags.d.ts`, "utf8")).toContain(
         "FlagsOptions",
       );
+      expect(
+        readFileSync(`${root}dist/ext/command-menu.d.ts`, "utf8"),
+      ).toContain("CommandMenuOptions");
     });
 
     it("resolves through Node's own exports map", () => {
@@ -233,13 +256,15 @@ if (built || !mustBeBuilt) {
           `const m = await import("@nejcm/dev-toolbar/ext/metrics");` +
           `const e = await import("@nejcm/dev-toolbar/ext/environment");` +
           `const f = await import("@nejcm/dev-toolbar/ext/flags");` +
-          `console.log(JSON.stringify({ runtime: Object.keys(r).sort(), metrics: Object.keys(m).sort(), environment: Object.keys(e).sort(), flags: Object.keys(f).sort() }));`,
+          `const c = await import("@nejcm/dev-toolbar/ext/command-menu");` +
+          `console.log(JSON.stringify({ runtime: Object.keys(r).sort(), metrics: Object.keys(m).sort(), environment: Object.keys(e).sort(), flags: Object.keys(f).sort(), commandMenu: Object.keys(c).sort() }));`,
       );
       const result = JSON.parse(names) as {
         runtime: string[];
         metrics: string[];
         environment: string[];
         flags: string[];
+        commandMenu: string[];
       };
       expect(result.runtime).toEqual(
         expect.arrayContaining([
@@ -265,6 +290,14 @@ if (built || !mustBeBuilt) {
           "createFlagsRuntime",
           "readStoredOverrides",
           "FLAGS_CSS",
+        ]),
+      );
+      expect(result.commandMenu).toEqual(
+        expect.arrayContaining([
+          "commandMenu",
+          "createCommandMenuRuntime",
+          "filterCommands",
+          "COMMAND_MENU_CSS",
         ]),
       );
     });
@@ -300,10 +333,12 @@ if (built || !mustBeBuilt) {
 
       // And /ext/flags, whose per-flag commands are enumerated in the factory
       // from a snapshot built there — so that build must also survive Node.
+      // /ext/flags now declares `commands` as a *function* — the P2 contract
+      // change — so the shape of what it returns is asserted by calling it.
       const flags = node(
         `const { flags } = await import("@nejcm/dev-toolbar/ext/flags");` +
           `const ext = flags({ flags: [{ key: "a", type: "boolean", defaultValue: false }], onOverride: () => {} });` +
-          `console.log(JSON.stringify({ id: ext.id, commands: ext.commands.map(c => c.id) }));`,
+          `console.log(JSON.stringify({ id: ext.id, commands: ext.commands().map(c => c.id) }));`,
       );
       expect(JSON.parse(flags)).toEqual({
         id: "flags",
@@ -314,6 +349,21 @@ if (built || !mustBeBuilt) {
           "flags.copyJson",
           "flags.refresh",
         ],
+      });
+
+      // /ext/command-menu is the one extension that contributes nothing: it
+      // reads the aggregation instead of adding to it, and its surface is the
+      // overlay slot rather than a panel.
+      const menu = node(
+        `const { commandMenu } = await import("@nejcm/dev-toolbar/ext/command-menu");` +
+          `const ext = commandMenu();` +
+          `console.log(JSON.stringify({ id: ext.id, commands: ext.commands ?? null, overlay: typeof ext.overlay, panel: typeof ext.panel }));`,
+      );
+      expect(JSON.parse(menu)).toEqual({
+        id: "command-menu",
+        commands: null,
+        overlay: "function",
+        panel: "undefined",
       });
     });
   });
