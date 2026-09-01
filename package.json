@@ -101,10 +101,13 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:jest-consumer": "npm run build && npm --prefix test/fixtures/jest-consumer run test",
-    "lint": "eslint .",
-    "format": "prettier --write .",
-    "prepublishOnly": "npm run typecheck && npm run build"
+    "test:jest-consumer": "bun run build && npm --prefix test/fixtures/jest-consumer run test",
+    "lint": "oxlint --max-warnings=59",
+    "lint:fix": "oxlint --fix",
+    "format": "oxfmt",
+    "format:check": "oxfmt --check",
+    "verify": "bun run typecheck && bun run lint && bun run test && bun run build",
+    "prepublishOnly": "bun run typecheck && bun run build"
   },
   "peerDependencies": {
     "react": ">=18",
@@ -126,6 +129,8 @@
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
     "jsdom": "^25.0.1",
+    "oxfmt": "^0.66.0",
+    "oxlint": "^1.81.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "tsup": "^8.3.5",

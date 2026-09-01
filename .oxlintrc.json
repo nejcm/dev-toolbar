@@ -1,0 +1,44 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "plugins": ["typescript", "unicorn", "oxc", "react", "jsx-a11y"],
+  "env": {
+    "browser": true
+  },
+  "rules": {
+    "react/no-unstable-nested-components": "error",
+    "react/rules-of-hooks": "error",
+    "jsx-a11y/no-autofocus": "error",
+    "jsx-a11y/tabindex-no-positive": "error"
+  },
+  "overrides": [
+    {
+      "files": ["**/*.{test,spec}.{ts,tsx}", "vitest.config.ts", "vitest.setup.ts"],
+      "plugins": ["typescript", "unicorn", "oxc", "react", "jsx-a11y", "vitest"],
+      "env": {
+        "vitest": true
+      },
+      "globals": {
+        "describe": "readonly",
+        "it": "readonly",
+        "test": "readonly",
+        "expect": "readonly",
+        "beforeEach": "readonly",
+        "afterEach": "readonly",
+        "vi": "readonly"
+      },
+      "rules": {
+        "vitest/no-focused-tests": "error",
+        "vitest/no-identical-title": "error",
+        "vitest/no-disabled-tests": "error"
+      }
+    }
+  ],
+  "ignorePatterns": [
+    "node_modules",
+    "dist",
+    "coverage",
+    "plans",
+    "examples/playground",
+    "test/fixtures/**"
+  ]
+}

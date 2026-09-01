@@ -1092,11 +1092,16 @@ setTestingLibrary(await import("@testing-library/react"));
 ## Development
 
 ```bash
-npm install
-npm run typecheck
-npm test
-npm run build
+bun install
+bun run typecheck
+bun run lint
+bun run format
+bun run test
+bun run build
+bun run verify
 ```
+
+`verify` runs typecheck, lint, test, and build in sequence — the same gate CI will use.
 
 ### Playground
 
@@ -1108,13 +1113,13 @@ P4 — a real design-token set the page actually consumes, so an edit in
 `/ext/theme-editor` visibly changes the app while the bar stays exactly where it was.
 
 ```bash
-npm run playground:install   # once
-npm run playground           # builds the package, then starts Vite on :5273
+bun run playground:install   # once
+bun run playground           # builds the package, then starts Vite on :5273
 ```
 
 The dev server rebuilds `dist` first, because the playground consumes the package
 through its `exports` map exactly as a real consumer does. After editing `src/`, run
-`npm run build` (or `npm run dev` in a second terminal) and reload.
+`bun run build` (or `bun run dev` in a second terminal) and reload.
 
 ### CommonJS / Jest consumer fixture
 
@@ -1125,10 +1130,10 @@ paths by which `/testing` loads its optional Testing Library peer — it can gre
 bundle for the shape of an import, but that is a canary, not proof.
 
 ```bash
-npm run test:jest-consumer   # builds, then runs Jest against dist/
+bun run test:jest-consumer   # builds, then runs Jest against dist/
 ```
 
-It is a standalone script on purpose, not part of `npm test`: it needs a fresh
+It is a standalone script on purpose, not part of `bun run test`: it needs a fresh
 `dist/`, and a second runner inside the vitest run would confuse both. It is not
 published. Before deleting it as redundant, read
 [its README](./test/fixtures/jest-consumer/README.md) — this failure class has
