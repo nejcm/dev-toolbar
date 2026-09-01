@@ -1,0 +1,12 @@
+[install]
+# Refuse to resolve any package version published in the last 48 hours (the
+# value is in seconds). Most malicious publishes are caught and unpublished
+# inside that window, so waiting it out is close to free supply-chain defence.
+#
+# This filters *resolution* only. `bun install --frozen-lockfile` installs the
+# exact versions already written in bun.lock, so CI is unaffected, and
+# `.github/dependabot.yml` sets `cooldown.default-days: 2` to match — Dependabot
+# will not author a lockfile bump to a version this setting would refuse.
+#
+# Escape hatch if a package ever needs to be exempted: `minimumReleaseAgeExcludes`.
+minimumReleaseAge = 172800

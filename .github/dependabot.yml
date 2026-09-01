@@ -1,0 +1,40 @@
+version: 2
+
+# `cooldown` is the Dependabot-side twin of `minimumReleaseAge` in bunfig.toml:
+# never propose a day-zero version that `bun install --frozen-lockfile` would
+# then install verbatim in CI. `default-days: 2` matches the 172800 seconds
+# there, so Dependabot cannot author a lockfile bump bun would refuse to resolve.
+#
+# Only minor and patch updates are grouped. Majors are deliberately left
+# ungrouped so each arrives as its own PR and can be reviewed and reverted on
+# its own — for a published library a major bump of a build or lint tool is a
+# decision, not a chore.
+updates:
+  # `bun` is its own ecosystem identifier and is what covers `bun.lock`;
+  # npm/yarn/pnpm all collapse into `npm`, which would NOT pick this repo up.
+  - package-ecosystem: bun
+    directory: "/"
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 2
+    open-pull-requests-limit: 5
+    groups:
+      minor-and-patch:
+        patterns: ["*"]
+        update-types: [minor, patch]
+
+  # The workflow actions are SHA-pinned, which only stays current because this
+  # entry exists to bump them. Removing it re-freezes CI on whatever SHAs were
+  # last written by hand.
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 2
+    open-pull-requests-limit: 5
+    groups:
+      minor-and-patch:
+        patterns: ["*"]
+        update-types: [minor, patch]

@@ -1,0 +1,33 @@
+{
+  "editor.formatOnSave": true,
+  "editor.tabSize": 2,
+  "editor.insertSpaces": true,
+  "files.eol": "\n",
+  "files.insertFinalNewline": true,
+  "files.trimTrailingWhitespace": true,
+
+  // oxfmt (shipped inside the Oxc extension) is the formatter for JS/TS. It is
+  // set per language rather than globally because oxfmt handles JS and TS only
+  // — CSS, JSON and Markdown have no formatter in this repo, and pointing them
+  // at oxc would just fail on save.
+  "[javascript]": { "editor.defaultFormatter": "oxc.oxc-vscode" },
+  "[javascriptreact]": { "editor.defaultFormatter": "oxc.oxc-vscode" },
+  "[typescript]": { "editor.defaultFormatter": "oxc.oxc-vscode" },
+  "[typescriptreact]": { "editor.defaultFormatter": "oxc.oxc-vscode" },
+
+  // oxfmt silently accepts unknown keys in .oxfmtrc.json despite its schema
+  // declaring additionalProperties: false, so a typo there fails quiet rather
+  // than erroring. Editor validation against the shipped schema is the only
+  // guard. Both files also carry an inline "$schema", so this is deliberate
+  // redundancy for editors that ignore that.
+  "json.schemas": [
+    {
+      "fileMatch": [".oxfmtrc.json"],
+      "url": "./node_modules/oxfmt/configuration_schema.json"
+    },
+    {
+      "fileMatch": [".oxlintrc.json"],
+      "url": "./node_modules/oxlint/configuration_schema.json"
+    }
+  ]
+}

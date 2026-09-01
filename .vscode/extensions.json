@@ -1,0 +1,10 @@
+{
+  "recommendations": [
+    // Applies .editorconfig, so indentation and line endings match the repo
+    // without per-editor configuration.
+    "EditorConfig.EditorConfig",
+    // The Oxc language server: oxlint diagnostics plus oxfmt formatting, i.e.
+    // the same two binaries `bun run lint` and `bun run format` use.
+    "oxc.oxc-vscode"
+  ]
+}

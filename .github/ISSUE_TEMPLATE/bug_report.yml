@@ -1,0 +1,83 @@
+name: Bug report
+description: Something in the toolbar behaves differently than documented.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for filing. A minimal reproduction is by far the most useful
+        thing you can include — it usually turns a week of guessing into an
+        afternoon of fixing.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What happened, and what did you expect instead?
+      placeholder: The metrics panel renders empty after the first route change.
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Reproduction
+      description: >-
+        Steps to reproduce, ideally as a link to a minimal repo or a StackBlitz.
+        A code snippet showing how the toolbar and its extensions are mounted is
+        the next best thing.
+      placeholder: |
+        1. Mount <DevToolbar> with the metrics extension
+        2. Navigate to another route
+        3. Open the metrics panel
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behaviour
+      description: What should have happened?
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: "@nejcm/dev-toolbar version"
+      placeholder: 0.1.0
+    validations:
+      required: true
+
+  - type: input
+    id: react-version
+    attributes:
+      label: React version
+      placeholder: 19.0.0
+    validations:
+      required: true
+
+  - type: input
+    id: bundler
+    attributes:
+      label: Bundler / framework
+      description: Vite, Next.js, webpack, Rspack, etc., with the version.
+      placeholder: Vite 6.0.0
+    validations:
+      required: true
+
+  - type: input
+    id: browser
+    attributes:
+      label: Browser
+      placeholder: Chrome 140
+    validations:
+      required: true
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
+      description: Console errors, screenshots, anything else.
+    validations:
+      required: false

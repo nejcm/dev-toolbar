@@ -1,0 +1,31 @@
+# <type>(<optional scope>): <description>
+#   |<----  use the imperative, present tense: "add", not "added"  ---->|
+#   |<----  keep the whole subject line under 72 characters        ---->|
+
+# Why is this change needed, and what does it do? Wrap at 72 columns.
+
+# Footers: breaking changes and issue references.
+# BREAKING CHANGE: <what broke and what to do instead>
+# Refs: #123
+# Closes: #123
+
+# type must be one of:
+#   feat     a new user-facing capability          (minor version bump)
+#   fix      a bug fix                             (patch version bump)
+#   perf     a performance improvement
+#   refactor a change that is neither a fix nor a feature
+#   docs     documentation only
+#   test     tests only
+#   style    formatting only, no behaviour change
+#   build    build system or dependencies
+#   ci       CI configuration
+#   chore    anything else that does not touch src/
+#   revert   reverts a previous commit
+#
+# A `!` after the type/scope, or a `BREAKING CHANGE:` footer, marks a breaking
+# change. If it changes the extension contract in a way that is not purely
+# additive, raise the CONTRACT_VERSION question in the PR — when to bump is not
+# a settled rule. See CONTRIBUTING.md.
+#
+# This template is a local convenience and is NOT enforced. The commit-msg
+# commitlint hook is the actual gate.
