@@ -229,3 +229,77 @@ describe("redactHeaders", () => {
     ).toEqual({ ...expected, "set-cookie": REDACTED });
   });
 });
+
+describe("a key called __proto__", () => {
+  // Found through /ext/flags: a flag literally keyed `__proto__` rendered as
+  // "[object Object]" for every value, with a spurious "masked" badge. The
+  // rebuild assigned into a plain object, and `Object.prototype`'s `__proto__`
+  // setter swallows the write. Nothing was polluted; the value was replaced by
+  // a lie, which is worse in a redactor than in most places.
+  it("survives the rebuild as data", () => {
+    const output = redact({ __proto__: undefined, a: 1 } as never) as Record<
+      string,
+      unknown
+    >;
+    // Build the input by definition too — an object *literal* `__proto__:` sets
+    // the prototype rather than creating a key.
+    const input: Record<string, unknown> = {};
+    Object.defineProperty(input, "__proto__", {
+      value: "keep-me",
+      writable: true,
+      enumerable: true,
+      configurable: true,
+    });
+    input["token"] = "abc";
+    const redacted = redact(input) as Record<string, unknown>;
+
+    expect(Object.keys(redacted).sort()).toEqual(["__proto__", "token"]);
+    expect(
+      Object.getOwnPropertyDescriptor(redacted, "__proto__")?.value,
+    ).toBe("keep-me");
+    expect(redacted["token"]).toBe(REDACTED);
+    // Still an ordinary object: the fix must not leak a null prototype across
+    // the public API.
+    expect(Object.getPrototypeOf(redacted)).toBe(Object.prototype);
+    expect(output).toBeTypeOf("object");
+  });
+
+  it("is masked like any other key when it matches", () => {
+    const input: Record<string, unknown> = {};
+    Object.defineProperty(input, "__proto__", {
+      value: "x",
+      writable: true,
+      enumerable: true,
+      configurable: true,
+    });
+    const redacted = redact(input, { extraKeys: ["proto"] }) as Record<
+      string,
+      unknown
+    >;
+    expect(Object.getOwnPropertyDescriptor(redacted, "__proto__")?.value).toBe(
+      REDACTED,
+    );
+  });
+
+  it("pollutes nothing on the way through", () => {
+    redact(JSON.parse('{"__proto__":{"polluted":true},"a":1}'));
+    expect(
+      ({} as Record<string, unknown>)["polluted"],
+    ).toBeUndefined();
+  });
+
+  it("survives redactHeaders too", () => {
+    const headers: Record<string, string> = {};
+    Object.defineProperty(headers, "__proto__", {
+      value: "keep-me",
+      writable: true,
+      enumerable: true,
+      configurable: true,
+    });
+    const redacted = redactHeaders(headers);
+    expect(Object.getOwnPropertyDescriptor(redacted, "__proto__")?.value).toBe(
+      "keep-me",
+    );
+    expect(Object.getPrototypeOf(redacted)).toBe(Object.prototype);
+  });
+});

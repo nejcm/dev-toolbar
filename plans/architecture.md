@@ -691,3 +691,141 @@ to be told which one they are looking at.
 
 Neither is a contract change. Both are what a snapshot-shaped extension should do, and
 they are recorded here because the next one — `/ext/diagnostics` — has the same shape.
+
+## 12. What P2's second extension found
+
+`/ext/flags` is §3C plus §7's promoted flag, and it is the first extension that
+**changes what the application does**. Metrics and environment observe; this one
+mutates, persists the mutation, and applies it by calling *consumer* code. Three
+findings, one of which is a genuine gap in the contract.
+
+### 12.1 The consumer-owned-state pattern held a second time
+
+`/ext/environment` established it: the extension's subject matter belongs to the
+consumer, who passes it into the extension's own typed factory rather than into
+some `ctx` core would have to invent. Flags work the same way — a `flags` reading
+in, an `onOverride` adapter out — and the shape survived contact with a subject that
+is *writable*. Omitting the adapter degrades to a read-only panel, which is the
+honest answer for a consumer with nowhere to put an override, and is one boolean on
+the snapshot rather than a second extension.
+
+The one thing worth stating for the next author: **the reading's `value` is the
+value before the toolbar's override**, and the override badge is driven by the
+extension's own map, never by comparing `value` against the override. A consumer
+who folds overrides back into the store they read `value` from makes the two equal;
+comparing would have silently un-marked every override for exactly the integrations
+most likely to exist.
+
+### 12.2 The contract gap: `commands` cannot change
+
+`DevToolbarExtension.commands` is a static array on an object that must be
+referentially stable (§3). `/ext/flags` contributes one toggle command per boolean
+flag, and it can only enumerate the flags it can see **at factory time**. A flag
+that appears later gets a panel row and no command until the page reloads.
+
+This is a real limitation and it is recorded rather than fixed, because fixing it
+means choosing between two things P2's third extension is better placed to judge:
+
+- making `commands` a function core calls on each aggregation pass — cheap, but it
+  turns command identity into something that can churn on every render; or
+- an imperative `api.setCommands()` on `ExtensionRuntimeApi`, which is precise but
+  adds a second, effect-time path into state core currently derives.
+
+`/ext/command-menu` is the consumer that will actually feel the difference. It
+decides, and `CONTRACT_VERSION` stays `1` either way — nothing has shipped.
+
+### 12.3 The promoted flag is inside the extension's one overflow unit
+
+§7 says the promoted item should carry "a high `priority` so overflow never eats
+it", and `priority` is per *extension*. `/ext/metrics` already settled that one
+extension is one overflow unit — core collapses items, not the parts inside them —
+so a promoted flag cannot outrank the panel trigger it ships alongside. The
+alternatives were both worse: returning two extension objects from `flags()` means
+two ids, two storage scopes and two stores for one feature, and core has no notion
+of a linked pair to keep them together.
+
+So the promoted control lives in the same compact slot as the flags chip, and the
+mitigation is that **collapsing costs its position, never its capability**: the
+`···` menu renders the same working switch. The default `priority` is `60`, above
+the metrics chips, so it survives a narrowing window longer than a memory readout.
+
+### 12.4 Mutating the app needs an escape hatch that works without the app
+
+Everything else in this repo degrades to "the panel shows less". An override
+degrades to "the application behaves differently, and it still will after a
+reload". That changes what failure isolation has to mean:
+
+- **The failure is shown, not swallowed, and it is per key.** A throwing
+  `onOverride` is caught — it runs inside a click handler and inside `start()` —
+  and the failure is recorded *against that flag*, cleared only by that flag's own
+  later success. Review caught the first cut holding one global slot: overriding
+  `a` threw and raised the banner, overriding `b` succeeded and erased it, and row
+  `a` went on claiming to be overridden with no warning anywhere. Same defect on
+  the `start()` re-apply loop, on exactly the load where it matters. A panel that
+  says *overridden* while the app never heard about it is the same lie as
+  `/ext/environment`'s "masked" badge over an unmasked value, so the row itself now
+  carries *override not applied* and grades `bad`.
+- **An override whose flag no longer exists still gets a row.** The re-apply loop
+  applies every *stored* override, but the snapshot was built only from the current
+  catalogue — so a renamed flag left an override that the application kept
+  receiving while the toolbar counted zero and disabled its own *Clear all* button.
+  The only way out was the URL kill switch, which nobody reaches for when the UI
+  says nothing is wrong. Orphans are rendered, tagged *no longer in the catalogue*,
+  counted, and clearable. They grade `warn` rather than the override accent: stale
+  state to clean up is not a deliberate override, and colouring them the same hides
+  the only difference that matters. The general lesson for a snapshot-shaped
+  extension that writes: **anything you apply must appear in what you display**, or
+  the display is a subset pretending to be the whole.
+- **The application's own value stays on screen.** Every row shows effective, app
+  and default side by side, so nobody debugs against a value the server never sent.
+- **`?dtb-flags=reset` clears every override before any of them is applied.** The
+  override that breaks the page also breaks the toolbar you would use to remove it,
+  and "clear your localStorage" is not something you talk a colleague through.
+  `readStoredOverrides()` honours it too, so an app that hydrates its own store
+  early does not resurrect what the URL just dropped.
+- **Reload behaviour is per flag.** §3C's `reloadBehavior`; a non-`live` flag that
+  is overridden is marked *reload required* and the banner offers the reload.
+
+An editor adds one more: **refuse input rather than coercing it**. The number
+editor used `Number(raw)` with a `0` fallback, so Enter on an empty or unparseable
+field pinned the flag to zero, persisted it and applied it. `parseValue` now returns
+`undefined` for anything that is not a value of that type, the row says *not a
+number*, and the draft survives so it can be fixed. The number editor is a `text`
+input with `inputMode="decimal"` on purpose: `type="number"` silently discards what
+it cannot parse, which turns a rejected keystroke into an empty field with no
+explanation.
+
+### 12.5 Two shapes that only a writing extension exposes
+
+Both were found by review, both are one line, and both are the kind of thing that
+survives indefinitely in a read-only extension.
+
+**A null prototype must not cross a public API.** The persisted override map is a
+null-prototype object so that a key literally called `__proto__` round-trips as data
+rather than being swallowed by the prototype's setter. Returning that map from
+`readStoredOverrides()` made `result.hasOwnProperty("a")` throw for every consumer.
+The internal representation stays; the public function returns a spread copy.
+
+**`redact()` dropped a `__proto__` key, and that is a `/runtime` bug.** `walk()`
+rebuilt objects with `output[key] = …`, which for `__proto__` invokes
+`Object.prototype`'s setter and writes nothing — so the key read back through the
+prototype and rendered as `"[object Object]"`, *with* a `masked` badge, because the
+before and after forms differed. Nothing was polluted (the value is a string and the
+setter ignores it), but a value silently replaced by a lie is precisely what a
+redactor must not do, and `/ext/environment` shared the defect. Both rebuild paths
+now use `Object.defineProperty`. `/ext/flags` did not cause this; writing flag keys
+straight through the redactor is simply the first thing that made it visible — which
+is the argument for `/runtime` owning shared primitives in the first place (§11.2).
+
+### 12.6 Redaction, again, with one new wrinkle
+
+Same rule as §11.3 — `redact()` on the way in, one snapshot for the panel and the
+clipboard — with one addition a value *editor* forces: a masked value must not
+round-trip through the input. The text editor starts empty with a "masked — type a
+new value" placeholder rather than being seeded with the current value, because
+seeding it is the one place the redacted snapshot would leak back onto the screen.
+
+Each value is redacted **under its own flag key**, so `checkout.apiToken` masks by
+key while an innocent key holding `Bearer …` masks by value. Booleans and numbers
+are left readable whatever their key: they cannot carry a credential, and masking
+them would make a flag called `session.newLogin` unreadable for nothing.

@@ -1,7 +1,11 @@
 import { useEffect, useState } from "react";
 import { DevToolbar, DevToolbarInset, useDevToolbar } from "@nejcm/dev-toolbar";
 import type { ToolbarDensity } from "@nejcm/dev-toolbar";
-import { playgroundContext, playgroundExtensions } from "./extensions";
+import {
+  playgroundContext,
+  playgroundExtensions,
+  playgroundFlags,
+} from "./extensions";
 
 /** Live readout of the `--dev-toolbar-height` the shell publishes. */
 function HeightReadout() {
@@ -156,6 +160,89 @@ function LoadControls() {
 }
 
 /**
+ * What the *application* currently resolves for each flag, read through the
+ * same `override ?? base` the pretend provider uses. This is the honest half of
+ * the demo: an override in the toolbar has to show up here, or the toolbar is
+ * lying about mutating anything.
+ */
+function FlagReadout() {
+  const [, force] = useState(0);
+  useEffect(() => {
+    const unsubscribe = playgroundFlags.subscribe(() =>
+      force((value) => value + 1),
+    );
+    return () => {
+      unsubscribe();
+    };
+  }, []);
+
+  return (
+    <section className="pg-card">
+      <h2>Drive the flags</h2>
+      <p>
+        The <code>flags</code> chip and the{" "}
+        <strong>UI Facelift 2026</strong> pill in the bar are the real{" "}
+        <code>@nejcm/dev-toolbar/ext/flags</code>. The flags themselves belong to
+        this app — the extension owns nothing but the overrides, which it applies
+        through the <code>onOverride</code> adapter below and persists under{" "}
+        <code>dtb:v1:playground:ext:flags:overrides</code>.
+      </p>
+      <ul className="pg-flag-list" data-testid="flag-readout">
+        {playgroundFlags.keys().map((key) => (
+          <li key={key}>
+            <code>{key}</code> = <strong>{String(playgroundFlags.read(key))}</strong>
+            {playgroundFlags.overridden(key) ? (
+              <em> (overridden — the app resolves {String(playgroundFlags.base(key))})</em>
+            ) : null}
+          </li>
+        ))}
+      </ul>
+      <div className="pg-controls">
+        <button
+          type="button"
+          className="pg-button"
+          data-testid="flag-flip-base"
+          onClick={() => playgroundFlags.flipBase("new-header")}
+        >
+          Flip the server's own new-header
+        </button>
+        <button
+          type="button"
+          className="pg-button"
+          data-testid="flag-break-adapter"
+          onClick={() => {
+            playgroundFlags.breakAdapter = !playgroundFlags.breakAdapter;
+            force((value) => value + 1);
+          }}
+        >
+          adapter throws: {String(playgroundFlags.breakAdapter)}
+        </button>
+        <button
+          type="button"
+          className="pg-button"
+          data-testid="flag-orphan"
+          title="Simulates a renamed flag: an override whose key the catalogue no longer lists. It is still applied on every mount, so it still gets a row."
+          onClick={() => {
+            const key = "dtb:v1:playground:ext:flags:overrides";
+            const stored: Record<string, unknown> = JSON.parse(
+              localStorage.getItem(key) ?? "{}",
+            ) as Record<string, unknown>;
+            stored["checkout.v1-renamed"] = "on";
+            localStorage.setItem(key, JSON.stringify(stored));
+            location.reload();
+          }}
+        >
+          Orphan an override, then reload
+        </button>
+        <a className="pg-button" href="?dtb-flags=reset" data-testid="flag-reset">
+          Reload with ?dtb-flags=reset
+        </a>
+      </div>
+    </section>
+  );
+}
+
+/**
  * Drives the real environment extension. Its `context` is a getter, so flipping
  * these mutates the module-level object and the extension picks it up on its
  * next poll — no re-render of the toolbar involved.
@@ -263,6 +350,19 @@ export function App() {
             single error chip. Everything else keeps working.
           </li>
           <li>
+            Flags: override something, reload, and it comes back — then{" "}
+            <em>Clear all overrides</em>, or{" "}
+            <code>?dtb-flags=reset</code> if an override ever wedges the app.
+            Renamed-flag overrides still get a row; an adapter failure marks the
+            row it failed on.
+          </li>
+          <li>
+            <strong>UI Facelift 2026</strong> in the bar is the promoted flag:
+            its own switch, not a panel row. It collapses into <code>···</code>
+            with the rest of <code>/ext/flags</code> — one extension is one
+            overflow unit — and still works there.
+          </li>
+          <li>
             The <code>tailwind</code> chip is styled entirely by Tailwind CDN
             classes — the light-DOM regression test.
           </li>
@@ -272,6 +372,8 @@ export function App() {
       <LoadControls />
 
       <EnvironmentControls />
+
+      <FlagReadout />
 
       <section className="pg-card">
         <h2>Restyle demo</h2>

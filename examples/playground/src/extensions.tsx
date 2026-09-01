@@ -3,6 +3,8 @@ import type { DevToolbarExtension } from "@nejcm/dev-toolbar";
 import { useToolbarCommands } from "@nejcm/dev-toolbar";
 import { metrics } from "@nejcm/dev-toolbar/ext/metrics";
 import { environment } from "@nejcm/dev-toolbar/ext/environment";
+import { flags, readStoredOverrides } from "@nejcm/dev-toolbar/ext/flags";
+import type { FlagReading, FlagValue } from "@nejcm/dev-toolbar/ext/flags";
 
 /**
  * Placeholder extensions with deliberately varied `priority`, so narrowing the
@@ -11,8 +13,8 @@ import { environment } from "@nejcm/dev-toolbar/ext/environment";
  *   boom (5) → hydr (20) → metrics (35) → tw (70) → flags (80) → cmds (85)
  *   → env (90) → user (100, aligned end)
  *
- * The fake ones are the placeholders; `metrics` and `env` are the real
- * `@nejcm/dev-toolbar/ext/metrics` and `.../ext/environment`.
+ * The fake ones are the placeholders; `metrics`, `env` and `flags` are the real
+ * `@nejcm/dev-toolbar/ext/metrics`, `.../ext/environment` and `.../ext/flags`.
  */
 
 function Chip({
@@ -165,51 +167,127 @@ function CommandsPanel() {
   );
 }
 
-const flags: DevToolbarExtension = {
-  id: "flags",
-  label: "Flags",
-  order: 10,
-  priority: 80,
-  keepMounted: true,
-  compact: ({ isPanelOpen, openPanel, closePanel }) => (
-    <Chip
-      label="flags"
-      value="3 on"
-      tone="neutral"
-      expanded={isPanelOpen}
-      onClick={() => (isPanelOpen ? closePanel() : openPanel())}
-    />
-  ),
-  panel: () => <FlagsPanel />,
-  commands: [
-    {
-      id: "flags.reset",
-      label: "Reset flag overrides",
-      run: () => console.info("[playground] flag overrides reset"),
-    },
-  ],
+/* -------------------------------------------------------------------------- */
+/* The real @nejcm/dev-toolbar/ext/flags, over a fake flag backend.             */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * The application's own flag state — a stand-in for whatever provider a real
+ * app uses. `base` is what the app resolves on its own; `overrides` is where
+ * the toolbar's overrides land, and the app reads `overrides ?? base`.
+ *
+ * Keeping them in two maps is the whole integration contract: the extension
+ * needs the value *before* the override to be able to show both, and §3C's
+ * precedence table puts the local override on top of it.
+ */
+const flagBase: Record<string, FlagValue> = {
+  "ui-facelift": false,
+  "new-header": true,
+  "checkout.copy": "classic",
+  "search.rank": 2,
+  "billing.tier": "standard",
+  // A flag whose key is credential-shaped on purpose: it must never render or
+  // copy as typed, in the panel or through a command.
+  "checkout.apiToken": "tok-live-abcdef123456",
 };
 
-function FlagsPanel() {
-  // `keepMounted: true` — this counter survives closing and reopening the panel.
-  const [renders, setRenders] = useState(0);
-  return (
-    <Definition>
-      <strong>Flags (keepMounted)</strong>
-      <p style={{ margin: 0, color: "var(--dtb-muted)" }}>
-        This panel opts into <code>keepMounted</code>, so its state survives a
-        close. Bump the counter, close the panel, reopen it.
-      </p>
-      <button
-        type="button"
-        data-dtb-part="trigger"
-        onClick={() => setRenders((value) => value + 1)}
-      >
-        counter: {renders}
-      </button>
-    </Definition>
-  );
-}
+/**
+ * Seeded from storage *before the first paint*, which is the point of
+ * `readStoredOverrides()`: the extension re-applies overrides in `start()`,
+ * inside an effect, so without this the app would render one frame with the
+ * un-overridden values after every reload.
+ */
+const flagOverrides: Record<string, FlagValue> = readStoredOverrides({
+  instanceId: "playground",
+});
+
+const flagListeners = new Set<() => void>();
+
+export const playgroundFlags = {
+  read: (key: string): FlagValue =>
+    Object.prototype.hasOwnProperty.call(flagOverrides, key)
+      ? (flagOverrides[key] as FlagValue)
+      : (flagBase[key] as FlagValue),
+  base: (key: string): FlagValue => flagBase[key] as FlagValue,
+  keys: () => Object.keys(flagBase),
+  overridden: (key: string) =>
+    Object.prototype.hasOwnProperty.call(flagOverrides, key),
+  subscribe(listener: () => void) {
+    flagListeners.add(listener);
+    return () => flagListeners.delete(listener);
+  },
+  /** Flips a base value, so you can watch a *server* change under an override. */
+  flipBase(key: string) {
+    flagBase[key] = !(flagBase[key] === true);
+    flagListeners.forEach((listener) => listener());
+  },
+  /** Set on the window by App, so the adapter can be made to throw on demand. */
+  breakAdapter: false,
+};
+
+const CATALOGUE: Omit<FlagReading, "value">[] = [
+  {
+    key: "ui-facelift",
+    label: "UI Facelift 2026",
+    description: "The 2026 shell redesign, behind a migration flag.",
+    owner: "design-systems",
+    type: "boolean",
+    defaultValue: false,
+    projectUrl: "https://example.com/projects/facelift",
+  },
+  {
+    key: "new-header",
+    label: "New header",
+    owner: "growth",
+    type: "boolean",
+    defaultValue: false,
+    expiresAt: "2026-01-01",
+  },
+  {
+    key: "checkout.copy",
+    label: "Checkout copy",
+    type: "variant",
+    variants: ["classic", "urgent", "friendly"],
+    defaultValue: "classic",
+  },
+  {
+    key: "search.rank",
+    label: "Search ranking version",
+    type: "number",
+    defaultValue: 1,
+    // Read once at boot in this pretend app, so an override needs a reload.
+    reloadBehavior: "full-reload",
+  },
+  { key: "billing.tier", label: "Billing tier", type: "string", defaultValue: "standard" },
+  { key: "checkout.apiToken", label: "Checkout API token", type: "string" },
+];
+
+const runtimeFlags = flags({
+  order: 10,
+  priority: 80,
+  pollMs: 400,
+  flags: () =>
+    CATALOGUE.map((definition) => ({
+      ...definition,
+      // BEFORE the toolbar's overrides — that is what makes the panel able to
+      // show the application's own value next to the override.
+      value: flagBase[definition.key],
+      source: "server-rule" as const,
+    })),
+  onOverride: (key, value) => {
+    if (playgroundFlags.breakAdapter) {
+      throw new Error("playground: the flag provider is offline");
+    }
+    if (value === undefined) delete flagOverrides[key];
+    else flagOverrides[key] = value;
+    flagListeners.forEach((listener) => listener());
+  },
+  promoted: {
+    flagKey: "ui-facelift",
+    label: "UI Facelift 2026",
+    icon: "\u25c8",
+  },
+});
 
 const hydration: DevToolbarExtension = {
   id: "hydr",
@@ -306,7 +384,7 @@ const runtimeMetrics = metrics({
 export const playgroundExtensions: DevToolbarExtension[] = [
   runtimeEnvironment,
   commands,
-  flags,
+  runtimeFlags,
   runtimeMetrics,
   hydration,
   tailwind,

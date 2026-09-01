@@ -56,6 +56,11 @@
       "import": "./dist/ext/environment.js",
       "require": "./dist/ext/environment.cjs"
     },
+    "./ext/flags": {
+      "types": "./dist/ext/flags.d.ts",
+      "import": "./dist/ext/flags.js",
+      "require": "./dist/ext/flags.cjs"
+    },
     "./testing": {
       "types": "./dist/testing.d.ts",
       "import": "./dist/testing.js",

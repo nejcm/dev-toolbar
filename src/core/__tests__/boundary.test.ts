@@ -6,7 +6,7 @@
  * transitive import through a third module, or a shared chunk the bundler
  * decides to hoist, would slip past a grep. So this walks the *built* graph:
  * it follows `dist/index.js`'s imports into every chunk it reaches and looks
- * for strings that only exist in `runtime/` and `ext/metrics/`.
+ * for strings that only exist in `runtime/` and the `ext/*` subpaths.
  */
 import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync, readdirSync } from "node:fs";
@@ -23,6 +23,7 @@ const RUNTIME_MARKER = "[dev-toolbar/runtime]";
 const EXT_MARKERS = [
   "[dev-toolbar/ext/metrics]",
   "[dev-toolbar/ext/environment]",
+  "[dev-toolbar/ext/flags]",
 ];
 
 function sourceFiles(directory: string): string[] {
@@ -131,6 +132,9 @@ if (!built && mustBeBuilt) {
       expect(readFileSync(`${root}dist/ext/environment.cjs`, "utf8")).toContain(
         EXT_MARKERS[1] as string,
       );
+      expect(readFileSync(`${root}dist/ext/flags.cjs`, "utf8")).toContain(
+        EXT_MARKERS[2] as string,
+      );
     });
   });
 }
@@ -152,6 +156,10 @@ if (built || !mustBeBuilt) {
       expect(readFileSync(`${root}dist/ext/metrics.cjs`, "utf8")).not.toContain(
         EXT_MARKERS[1] as string,
       );
+      // Three now: /ext/flags must drag in neither of the other two.
+      const flagsBundle = readFileSync(`${root}dist/ext/flags.cjs`, "utf8");
+      expect(flagsBundle).not.toContain(EXT_MARKERS[0] as string);
+      expect(flagsBundle).not.toContain(EXT_MARKERS[1] as string);
     });
 
     it("declares ./runtime and the ./ext/* entries explicitly, with no wildcards", () => {
@@ -170,6 +178,11 @@ if (built || !mustBeBuilt) {
         import: "./dist/ext/environment.js",
         require: "./dist/ext/environment.cjs",
       });
+      expect(pkg.exports["./ext/flags"]).toEqual({
+        types: "./dist/ext/flags.d.ts",
+        import: "./dist/ext/flags.js",
+        require: "./dist/ext/flags.cjs",
+      });
       expect(Object.keys(pkg.exports).some((key) => key.includes("*"))).toBe(
         false,
       );
@@ -183,6 +196,8 @@ if (built || !mustBeBuilt) {
         "dist/ext/metrics.cjs",
         "dist/ext/environment.js",
         "dist/ext/environment.cjs",
+        "dist/ext/flags.js",
+        "dist/ext/flags.cjs",
       ]) {
         expect(
           readFileSync(`${root}${file}`, "utf8").startsWith('"use client";'),
@@ -207,6 +222,9 @@ if (built || !mustBeBuilt) {
       expect(
         readFileSync(`${root}dist/ext/environment.d.ts`, "utf8"),
       ).toContain("EnvironmentOptions");
+      expect(readFileSync(`${root}dist/ext/flags.d.ts`, "utf8")).toContain(
+        "FlagsOptions",
+      );
     });
 
     it("resolves through Node's own exports map", () => {
@@ -214,12 +232,14 @@ if (built || !mustBeBuilt) {
         `const r = await import("@nejcm/dev-toolbar/runtime");` +
           `const m = await import("@nejcm/dev-toolbar/ext/metrics");` +
           `const e = await import("@nejcm/dev-toolbar/ext/environment");` +
-          `console.log(JSON.stringify({ runtime: Object.keys(r).sort(), metrics: Object.keys(m).sort(), environment: Object.keys(e).sort() }));`,
+          `const f = await import("@nejcm/dev-toolbar/ext/flags");` +
+          `console.log(JSON.stringify({ runtime: Object.keys(r).sort(), metrics: Object.keys(m).sort(), environment: Object.keys(e).sort(), flags: Object.keys(f).sort() }));`,
       );
       const result = JSON.parse(names) as {
         runtime: string[];
         metrics: string[];
         environment: string[];
+        flags: string[];
       };
       expect(result.runtime).toEqual(
         expect.arrayContaining([
@@ -237,6 +257,14 @@ if (built || !mustBeBuilt) {
           "environment",
           "createEnvironmentRuntime",
           "ENVIRONMENT_CSS",
+        ]),
+      );
+      expect(result.flags).toEqual(
+        expect.arrayContaining([
+          "flags",
+          "createFlagsRuntime",
+          "readStoredOverrides",
+          "FLAGS_CSS",
         ]),
       );
     });
@@ -267,6 +295,24 @@ if (built || !mustBeBuilt) {
           "environment.copy",
           "environment.copyJson",
           "environment.refresh",
+        ],
+      });
+
+      // And /ext/flags, whose per-flag commands are enumerated in the factory
+      // from a snapshot built there — so that build must also survive Node.
+      const flags = node(
+        `const { flags } = await import("@nejcm/dev-toolbar/ext/flags");` +
+          `const ext = flags({ flags: [{ key: "a", type: "boolean", defaultValue: false }], onOverride: () => {} });` +
+          `console.log(JSON.stringify({ id: ext.id, commands: ext.commands.map(c => c.id) }));`,
+      );
+      expect(JSON.parse(flags)).toEqual({
+        id: "flags",
+        commands: [
+          "flags.toggle.a",
+          "flags.clearOverrides",
+          "flags.copyRecipe",
+          "flags.copyJson",
+          "flags.refresh",
         ],
       });
     });

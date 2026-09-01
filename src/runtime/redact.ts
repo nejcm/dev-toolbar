@@ -149,6 +149,30 @@ function redactString(value: string, resolved: ResolvedOptions): string {
 }
 
 /**
+ * Writes one own data property, by definition rather than by assignment.
+ *
+ * `output[key] = value` invokes a setter, and `Object.prototype` has one for
+ * `__proto__`: assigning there silently *drops* the entry and rebuilds nothing.
+ * A key literally called `__proto__` then read back through the prototype and
+ * rendered as `"[object Object]"` — with a "masked" badge, because the before
+ * and after forms differed. No pollution (the value is a string and the setter
+ * ignores it), but a value replaced by a lie is exactly what this module exists
+ * to prevent. `/ext/flags` made it observable; `/ext/environment` had it too.
+ */
+function define(
+  target: Record<string, unknown>,
+  key: string,
+  value: unknown,
+): void {
+  Object.defineProperty(target, key, {
+    value,
+    writable: true,
+    enumerable: true,
+    configurable: true,
+  });
+}
+
+/**
  * Returns a masked deep copy. The input is never mutated. Cycles become
  * `"[circular]"`; class instances, `Map`, `Set`, functions and symbols become
  * a short tag rather than being walked, because a diagnostics dump is not the
@@ -212,9 +236,13 @@ function walk(
   seen.add(object);
   const output: Record<string, unknown> = {};
   for (const [key, entry] of Object.entries(value as Record<string, unknown>)) {
-    output[key] = matches(key, resolved)
-      ? resolved.mask
-      : walk(entry, resolved, depth + 1, seen);
+    define(
+      output,
+      key,
+      matches(key, resolved)
+        ? resolved.mask
+        : walk(entry, resolved, depth + 1, seen),
+    );
   }
   seen.delete(object);
   return output;
@@ -358,9 +386,12 @@ export function redactHeaders(
   const output: Record<string, string> = {};
 
   const put = (key: string, value: string) => {
-    output[key] = matches(key, resolved)
-      ? resolved.mask
-      : redactString(value, resolved);
+    // Same reason as `walk`: a header named `__proto__` must survive as data.
+    define(
+      output,
+      key,
+      matches(key, resolved) ? resolved.mask : redactString(value, resolved),
+    );
   };
 
   if (typeof Headers !== "undefined" && headers instanceof Headers) {

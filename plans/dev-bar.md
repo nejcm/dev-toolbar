@@ -979,6 +979,14 @@ interface PromotedFlag {
 
 This removes search friction during active migrations and organization-wide testing.
 
+**Reinterpreted in P2.** "A high `priority` so overflow never eats it" cannot be
+taken literally: `priority` is per *extension*, and core collapses whole items, so
+the promoted control cannot outrank the flags trigger it ships beside. What §7 is
+actually protecting — read with §3C's one-click toggle — is that promotion must not
+be *silently lost*. So `/ext/flags` renders the same working switch inside the `···`
+menu: collapsing costs one extra click, never the capability. See
+[architecture.md §12.3](./architecture.md).
+
 ## 8. Delivery plan
 
 Phases follow the package boundary, not the feature list. Each phase after P0 adds a

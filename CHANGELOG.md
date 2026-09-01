@@ -3,7 +3,7 @@
 ## 0.1.0 — unreleased
 
 First publish. The shell (P0), the runtime primitives and the first extension (P1),
-and the first P2 extension. `CONTRACT_VERSION` is `1`.
+and the first two P2 extensions. `CONTRACT_VERSION` is `1`.
 
 ### Added
 
@@ -25,11 +25,42 @@ and the first P2 extension. `CONTRACT_VERSION` is `1`.
   connection are read from the browser and tagged `detected` so they cannot be
   mistaken for a deploy fact. Production is marked conspicuously and impersonation is
   unmistakable in the bar and the panel.
+- `@nejcm/dev-toolbar/ext/flags` — feature-flag controls (§3C) and the promoted flag
+  (§7). The flags stay the consumer's: a reading in, an `onOverride` adapter out, and
+  a read-only panel when no adapter is supplied. Every row shows the effective value,
+  the application's own value and the default side by side, so an override is never
+  mistaken for what the server sent. Overrides persist per instance, are re-applied
+  through the adapter on the next mount, and `?dtb-flags=reset` drops them all before
+  any of them is applied. Values are redacted on the way in, under their own flag
+  key, and a masked value never round-trips through the editor. An override whose
+  flag has left the catalogue still gets a row, because it is still being applied.
+  Adapter failures are recorded per flag and shown on the row that failed. Editors
+  refuse input they cannot parse instead of coercing it.
+- `readStoredOverrides()` on `/ext/flags` — reads the persisted override map without
+  mounting anything, so an app can seed its own store before the first paint.
 - `@nejcm/dev-toolbar/testing` — `renderWithToolbar`, `makeExtension`,
   `createMockBus`, `installToolbarLayout`.
 - `ensureStyleSheet(entry, css)` in `/runtime` — the once-per-document style injector
   both extensions were writing privately. Keyed on a
   `style[data-dev-toolbar-styles]` element, so two bundled copies still inject once.
+
+### Fixed
+
+- `redact()` in `/runtime` silently dropped an object key named `__proto__` — the
+  rebuild assigned into a plain object, where `Object.prototype`'s setter swallows
+  the write, so the key read back through the prototype and rendered as
+  `"[object Object]"` with a spurious `masked` badge. Nothing was ever polluted.
+  Both rebuild paths (`redact` and `redactHeaders`) now define the property. Affected
+  `/ext/environment` as well as `/ext/flags`.
+
+### Known contract limitation
+
+`DevToolbarExtension.commands` is a static array on an object that must be
+referentially stable, so an extension cannot change what it contributes after the
+factory returns. `/ext/flags` enumerates its per-flag toggle commands once; a flag
+that appears later gets a panel row and no command until reload. Recorded rather
+than fixed — `/ext/command-menu` is the consumer that should choose the fix. See
+[plans/architecture.md §12.2](./plans/architecture.md).
 
 ### Contract changes from building the first extension
 
