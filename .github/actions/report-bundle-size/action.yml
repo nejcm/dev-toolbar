@@ -1,0 +1,30 @@
+name: Report bundle size
+description: Write a per-entrypoint size table for the built package to the job summary.
+
+# Descended from sugarwork-ui's `.github/actions/report-bundle-size`, which
+# reports one JS/CSS/total triple for a build directory. That shape does not
+# work for a library with 11 entry points and a code-split ESM build — see the
+# header of `scripts/bundle-size.mjs` for why — so the measurement moved into a
+# script and this action is the thin reporting wrapper around it.
+#
+# Requires a build to have run and `actions/checkout` before it. Node is used
+# rather than bun only because the script is plain ESM with no dependencies;
+# either runtime works.
+
+inputs:
+  heading:
+    description: Heading for the summary section.
+    required: false
+    default: Bundle size
+
+runs:
+  using: composite
+  steps:
+    - name: Report bundle size
+      shell: bash
+      run: |
+        {
+          echo "## ${{ inputs.heading }}"
+          echo
+          node scripts/bundle-size.mjs
+        } >> "$GITHUB_STEP_SUMMARY"

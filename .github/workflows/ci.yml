@@ -89,50 +89,80 @@ jobs:
       # comment to know what it is bumping from. Do not replace these with tags
       # without removing that.
       #
-      # All four are on their latest major. That puts every action on the
-      # node24 runtime, which needs Actions Runner >= 2.327.1 — fine on
-      # `ubuntu-latest`, but a blocker to check before this workflow is ever
-      # pointed at a self-hosted runner.
+      # Local composite actions under `.github/actions/` are referenced by path,
+      # not by SHA — they are this repo's own code, already covered by the
+      # checkout. Dependabot reads the pins inside them the same way.
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: Set up bun
-        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
-        with:
-          # Reads the `packageManager` field, so CI runs the same bun the
-          # contributor does. Pinning matters here beyond reproducibility: the
-          # `lint` script allows zero warnings, and a different oxlint-hosting
-          # bun picking up different defaults would surface new ones and fail
-          # the run for no real reason.
-          bun-version-file: package.json
-          # The explicit actions/cache step below owns the install cache.
-          no-cache: true
+      # bun + Node + install cache + `bun install --frozen-lockfile`. Every
+      # detail that used to be spelled out here — why bun is version-pinned from
+      # `packageManager`, why Node comes from `.nvmrc`, why the install cache is
+      # an explicit step — now lives in the action.
+      - name: Set up job
+        uses: ./.github/actions/setup-job
 
-      # vitest and tsup spawn real Node workers, so the Node major is part of
-      # the test environment. Unpinned, below Node 22, jsdom's `Storage` replaces
-      # the shim in vitest.setup.ts and a `setItem` spy stops seeing writes.
-      # `.nvmrc` is the source of truth, as `packageManager` is for bun above.
-      - name: Set up Node
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
-        with:
-          node-version-file: .nvmrc
-
-      - name: Cache bun install cache
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: ~/.bun/install/cache
-          key: ${{ runner.os }}-bun-${{ hashFiles('bun.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-bun-
-
-      # --frozen-lockfile is not only about speed: oxlint is pinned to exactly
-      # 1.81.0 in bun.lock, which is what makes the zero-warning gate in
-      # `bun run lint` deterministic.
-      - name: Install dependencies
-        run: bun install --frozen-lockfile
-
+      # `verify` is typecheck, lint, build, test in that order, and the build it
+      # runs is what the size report below measures. Coverage is a separate run
+      # rather than folded into `verify`: instrumentation slows the suite, and a
+      # contributor running `bun run verify` locally should not pay for it.
       - name: Verify (typecheck, lint, build, test)
         run: bun run verify
+
+      # The package's entire pitch is low overhead across 11 separately
+      # importable entry points, so this is the number a reviewer most wants on
+      # the PR. Reads the `dist/` that `verify` just built.
+      - name: Report bundle size
+        if: always()
+        uses: ./.github/actions/report-bundle-size
+
+      # Advisory. Runs `if: always()` so a failing test still gets the report,
+      # and swallows its own exit code internally — see the action.
+      - name: Knip
+        if: always()
+        uses: ./.github/actions/knip-check
+
+      # A second, instrumented run of the suite. The floors live in
+      # `vitest.config.ts`, so this step is a real gate: a drop below them fails
+      # here even though `verify` above passed.
+      - name: Coverage
+        run: bun run test:coverage
+
+      # `if: always()` so the numbers are still reported when the run failed on
+      # a threshold — that is precisely the run where you want to see them.
+      - name: Report coverage
+        if: always()
+        run: |
+          summary=coverage/coverage-summary.json
+          {
+            echo "## Coverage"
+            echo
+            if [ -f "$summary" ]; then
+              echo "| Metric | Covered | Total | % |"
+              echo "| --- | --: | --: | --: |"
+              jq -r '
+                .total
+                | to_entries
+                | map(select(.key != "branchesTrue"))
+                | .[]
+                | "| \(.key) | \(.value.covered) | \(.value.total) | \(.value.pct)% |"
+              ' "$summary"
+            else
+              echo "_No summary produced — the coverage run did not complete._"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # lcov rather than the html report: nothing in CI reads the html, and it
+      # is thousands of files. Kept short — this is for looking at a specific
+      # run, not for trend analysis.
+      - name: Upload coverage
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: coverage-lcov
+          path: coverage/lcov.info
+          retention-days: 14
+          if-no-files-found: warn
 
       # Deliberately uncached and after verify: audit results depend on the
       # advisory database rather than on repo contents, so keying them to a

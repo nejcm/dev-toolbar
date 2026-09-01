@@ -19,6 +19,8 @@ The contract an extension is written against is the real public API.
 | `examples/playground/` | Vite app consuming the built package via `file:../..` | Vite, React | `dist/`, as a real consumer does |
 | `test/fixtures/jest-consumer/` | A real Jest 29 + CommonJS consumer of `dist/` | Jest, npm | `dist/`, as a CommonJS consumer does |
 | `docs/` | Durable architecture reference and ADRs | Markdown | — |
+| `scripts/` | Repo tooling with no home in `src/`: currently the per-entrypoint size report | Plain ESM `.mjs`, no deps | `dist/`, `package.json` `exports` |
+| `.github/actions/` | Composite actions the workflows share: `setup-job`, `report-bundle-size`, `knip-check` | GitHub Actions | `.github/workflows/` |
 
 Each extension directory follows the same convention: `index.tsx` (the factory),
 `runtime.ts` (non-React logic), `ui.tsx`, `types.ts`, `css.ts`, `__tests__/`.
@@ -35,13 +37,17 @@ bun run format               # oxfmt — JS/TS only
 bun run format:check         # oxfmt --check
 bun run test                 # vitest run
 bun run test:watch           # vitest
+bun run test:coverage        # vitest run --coverage — enforces the floors in vitest.config.ts
 bun run build                # tsup
+bun run knip                 # unused files, exports and deps — advisory, never a gate
+bun run size                 # builds, then a per-entrypoint size table
 bun run test:jest-consumer   # builds, then runs Jest against dist/ — not part of `test`
 bun run playground           # builds, then Vite on :5273
 ```
 
 `bun run verify` is the one command that matters. If it passes locally it passes in
-CI; `.github/workflows/ci.yml` runs exactly it.
+CI; `.github/workflows/ci.yml` runs exactly it, then `test:coverage` as a second
+gate and `knip` + `size` as advisory job-summary reports.
 
 ## Conventions
 

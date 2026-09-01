@@ -27,8 +27,16 @@ updates:
   # The workflow actions are SHA-pinned, which only stays current because this
   # entry exists to bump them. Removing it re-freezes CI on whatever SHAs were
   # last written by hand.
+  #
+  # `directories` rather than `directory`: with `directory: "/"` Dependabot
+  # scans `.github/workflows/` and an `action.yml` at the repo root, and nothing
+  # else. The composite actions under `.github/actions/*/action.yml` carry their
+  # own `uses:` pins — setup-job alone holds three — and would be invisible
+  # without the glob below.
   - package-ecosystem: github-actions
-    directory: "/"
+    directories:
+      - "/"
+      - "/.github/actions/*"
     schedule:
       interval: weekly
     cooldown:

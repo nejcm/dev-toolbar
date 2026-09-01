@@ -38,7 +38,10 @@ The individual pieces, when you want a faster loop:
 | `bun run format:check` | `oxfmt --check` |
 | `bun run test` | `vitest run` |
 | `bun run test:watch` | `vitest` |
+| `bun run test:coverage` | `vitest run --coverage` |
 | `bun run build` | `tsup` |
+| `bun run knip` | unused files, exports and dependencies |
+| `bun run size` | builds, then prints a per-entrypoint size table |
 
 Two things about `lint` that catch people out:
 
@@ -49,6 +52,21 @@ Two things about `lint` that catch people out:
 - **oxfmt handles JS and TS only.** CSS, JSON and Markdown have no formatter
   here. `.editorconfig` is what keeps them consistent, so install the
   EditorConfig extension (`.vscode/extensions.json` recommends it).
+
+`bun run test:coverage` is a second, instrumented run of the same suite, kept
+out of `verify` because the instrumentation is slow enough to notice in a local
+loop. The thresholds in `vitest.config.ts` are floors set just under the measured
+numbers, so they fail on a regression rather than on ordinary movement. CI runs
+this after `verify`, and a drop below a floor fails the build.
+
+`bun run knip` reports unused files, exports and dependencies. It is advisory
+everywhere — CI writes it to the job summary and never fails on it. Its value
+here is specific: with 11 separately importable entry points, a subpath can stop
+being referenced without anything else noticing.
+
+`bun run size` prints a per-entrypoint table of gzip, raw, CJS and `.d.ts`
+sizes. Read `scripts/bundle-size.mjs`'s header before changing it — the obvious
+implementations of this report are all wrong for a code-split build.
 
 `bun run test:jest-consumer` is deliberately *not* part of `bun run test`. It
 builds the package and runs a real jest-based consumer against `dist/`, which is

@@ -1,0 +1,59 @@
+name: Knip check
+description: Run knip and post a collapsible report to the job summary. Never fails the job.
+
+# Adapted from rumi.ai's `.github/actions/knip-check`. Two changes: knip's own
+# `markdown` reporter replaces the sed-based ANSI stripping and manual code
+# fence, and the exit code is swallowed here rather than relying on the caller
+# to set `continue-on-error`. Advisory by design — an 11-entry export map is
+# exactly where a subpath quietly stops being referenced, and that is worth
+# surfacing on every PR without being a merge gate.
+#
+# Requires `actions/checkout` and an install before it.
+
+runs:
+  using: composite
+  steps:
+    - name: Knip check
+      id: knip
+      shell: bash
+      run: |
+        set +e
+        bunx knip --no-config-hints --reporter markdown > knip-report.md 2>&1
+        code=$?
+        set -e
+        cat knip-report.md
+        # knip exits 1 when it finds issues and >1 on a real failure (bad
+        # config, unreadable entry). Only the former is "found something".
+        if [ "$code" -eq 0 ]; then
+          echo "status=clean" >> "$GITHUB_OUTPUT"
+        elif [ "$code" -eq 1 ]; then
+          echo "status=issues" >> "$GITHUB_OUTPUT"
+        else
+          echo "status=error" >> "$GITHUB_OUTPUT"
+        fi
+
+    - name: Knip summary
+      if: always()
+      shell: bash
+      run: |
+        {
+          echo "## Knip"
+          echo
+          case "${{ steps.knip.outputs.status }}" in
+            clean)  echo "No unused files, exports or dependencies." ;;
+            issues) echo "Unused code reported. Advisory — this does not block merge." ;;
+            *)      echo "knip failed to run. The report below is its output." ;;
+          esac
+          echo
+          echo "<details><summary>Full report</summary>"
+          echo
+          # The report is already markdown; it must not be fenced, and it needs
+          # the blank lines above and below to render inside <details>.
+          cat knip-report.md 2>/dev/null || echo "_no report produced_"
+          echo
+          echo "</details>"
+          # Trailing blank line: without it a following step's `##` heading
+          # lands on the line after the closing tag and does not render.
+          echo
+        } >> "$GITHUB_STEP_SUMMARY"
+        rm -f knip-report.md

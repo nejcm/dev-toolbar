@@ -1,0 +1,73 @@
+name: Cleanup
+
+# Ported from rumi.ai's `cleanup.yml`. Actions caches are scoped to the ref that
+# wrote them, and a merged or closed PR's ref is never built again — its entries
+# just sit in the repo's 10 GB cache budget until they are evicted, and eviction
+# is least-recently-used across the whole repo, so a pile of dead PR caches
+# evicts live `main` entries. Deleting them on close is the fix.
+
+on:
+  pull_request:
+    types: [closed]
+  workflow_dispatch:
+    inputs:
+      pr-number:
+        description: >-
+          PR number whose caches to delete. Required on a manual run — the
+          `pull_request` payload that normally supplies it is absent, and
+          without it the ref resolves to `refs/pull//merge`, which matches
+          nothing and reports success having deleted nothing.
+        type: string
+        required: true
+
+# `actions: write` is what `gh actions-cache delete` needs. Nothing else here
+# touches the repo, so `contents: read` covers the checkout the gh extension
+# install wants.
+permissions:
+  contents: read
+  actions: write
+
+jobs:
+  caches:
+    name: Delete the PR's Actions caches
+    runs-on: ubuntu-latest
+    # A `pull_request` event from a fork gets a read-only `GITHUB_TOKEN` no
+    # matter what the `permissions` block above asks for, so the delete would
+    # 403. Fork PRs also write their caches to a separate, isolated scope that
+    # this ref would not reach anyway, so there is nothing here to clean up.
+    if: >-
+      github.event_name == 'workflow_dispatch'
+      || github.event.pull_request.head.repo.full_name == github.repository
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Delete caches
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # `refs/pull/N/merge` is the ref CI runs on for a pull_request event,
+          # so it is the ref every cache this PR wrote is keyed to.
+          BRANCH: refs/pull/${{ github.event.pull_request.number || inputs.pr-number }}/merge
+          REPO: ${{ github.repository }}
+        run: |
+          gh extension install actions/gh-actions-cache
+
+          echo "Listing caches for $BRANCH"
+          keys=$(gh actions-cache list -R "$REPO" -B "$BRANCH" --limit 100 | cut -f 1)
+
+          if [ -z "$keys" ]; then
+            echo "No caches to delete."
+            exit 0
+          fi
+
+          # Deletion is best-effort: a key can vanish between the list and the
+          # delete (concurrent eviction, or a re-run of this workflow), and that
+          # is not a failure worth reporting.
+          set +e
+          for key in $keys; do
+            echo "Deleting $key"
+            gh actions-cache delete "$key" -R "$REPO" -B "$BRANCH" --confirm
+          done
+          set -e
+          echo "Done."
