@@ -38,6 +38,7 @@ function fakeApi(storage: ToolbarStorage): {
         return () => listeners.delete(callback);
       },
       getCommands: () => [],
+      getDiagnostics: () => [],
       runCommand: async () => false,
       storage,
     },

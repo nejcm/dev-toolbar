@@ -35,6 +35,7 @@ const api = (
       removeItem: (k) => void store.delete(k),
     },
     getCommands: () => [],
+    getDiagnostics: () => [],
     runCommand: async () => false,
     ...overrides,
   };

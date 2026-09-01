@@ -341,6 +341,7 @@ describe("staleness", () => {
         isVisible: () => true,
         subscribeVisibility: () => () => {},
         getCommands: () => [],
+        getDiagnostics: () => [],
         runCommand: async () => false,
         storage: {
           getItem: () => null,
@@ -449,6 +450,7 @@ describe("a context that throws while being read", () => {
         isVisible: () => true,
         subscribeVisibility: () => () => {},
         getCommands: () => [],
+        getDiagnostics: () => [],
         runCommand: async () => false,
         storage: {
           getItem: () => null,

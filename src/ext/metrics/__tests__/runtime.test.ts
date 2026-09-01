@@ -30,6 +30,7 @@ function api(): {
         return () => listeners.delete(callback);
       },
       getCommands: () => [],
+      getDiagnostics: () => [],
       runCommand: async () => false,
       storage: {
         getItem: (key) => store.get(key) ?? null,

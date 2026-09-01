@@ -3,6 +3,8 @@ export type {
   CompactSlotProps,
   DevToolbarClassNames,
   DevToolbarExtension,
+  DiagnosticStatus,
+  ExtensionDiagnostics,
   ExtensionRuntimeApi,
   OverlaySlotProps,
   PanelSlotProps,
@@ -28,6 +30,8 @@ export {
   resolveExtensionCommands,
   runCommand,
 } from "./core/commands";
+
+export { collectDiagnostics } from "./core/diagnostics";
 
 export {
   createLocalStorage,

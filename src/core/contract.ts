@@ -61,6 +61,52 @@ export type ToolbarCommandsInput =
   | readonly ToolbarCommand[]
   | (() => readonly ToolbarCommand[]);
 
+/**
+ * What one extension contributed to a diagnostic snapshot — **P3**.
+ *
+ * Core produces one of these per present, non-hidden extension, whether or not
+ * it declares `diagnostics`. That is deliberate: a snapshot headed for a bug
+ * report must be able to say *which* extensions had nothing to say, because an
+ * absent contribution and a failed one look identical once they are both simply
+ * missing from the output.
+ */
+export type DiagnosticStatus =
+  /** `diagnostics()` ran and returned a value. */
+  | "ok"
+  /** The extension declares no `diagnostics()`. Present, contributed nothing. */
+  | "absent"
+  /** `diagnostics()` threw. `error` says what it threw. */
+  | "failed";
+
+export interface ExtensionDiagnostics {
+  id: string;
+  label: string;
+  status: DiagnosticStatus;
+  /** Only present when `status` is `"ok"`. Not redacted — core has no `redact()`. */
+  data?: unknown;
+  /**
+   * The thrown error's **message alone**, unjoined and unredacted. Only present
+   * when `status` is `"failed"`.
+   *
+   * Deliberately not `"TypeError: something"`. A reader has to redact this
+   * before it reaches a bug report, and the redactors in `/runtime` match value
+   * *shapes* anchored to the whole string — so a message that is a
+   * credential-carrying URL (what `fetch`, undici and axios all throw) is
+   * maskable on its own and unmaskable once core has prefixed it. Core cannot
+   * redact for you: it may not import `/runtime`. It can decline to make
+   * redaction impossible, and that is what this split is.
+   */
+  error?: string;
+  /**
+   * The thrown error's `name`, e.g. `"TypeError"`. Absent for a non-`Error` throw.
+   *
+   * Foreign, like `error`, and for a reason that is easy to miss: `name` is a
+   * *writable own property*, not a class identifier the runtime guarantees. A
+   * reader must redact it before joining it to anything.
+   */
+  errorName?: string;
+}
+
 export interface CompactSlotProps {
   /** True when this item is rendered inside the overflow menu rather than the bar. */
   isOverflowed: boolean;
@@ -127,6 +173,19 @@ export interface ExtensionRuntimeApi {
    * more, which a palette has to be able to tell its user.
    */
   runCommand(id: string): Promise<boolean>;
+  /**
+   * One entry per present, non-hidden extension — **P3**.
+   *
+   * The diagnostics counterpart of `getCommands()`, and here for the same
+   * reason (§13.3): `/ext/diagnostics` lives on its own subpath, so it may not
+   * import a *value* from core, and `api` is the object core already hands it.
+   *
+   * Entries for extensions that declare no `diagnostics()` are included with
+   * `status: "absent"`. A reader that only wants contributions can filter; a
+   * reader that has to be honest about completeness — which is the whole job of
+   * a bug-report snapshot — needs the full roster.
+   */
+  getDiagnostics(): readonly ExtensionDiagnostics[];
 }
 
 export interface DevToolbarExtension {
@@ -165,6 +224,27 @@ export interface DevToolbarExtension {
   overlay?: (props: OverlaySlotProps) => ReactNode;
   /** A static array, or a function core calls on each pass. See `ToolbarCommandsInput`. */
   commands?: ToolbarCommandsInput;
+  /**
+   * What this extension knows that belongs in a bug report — **P3**.
+   *
+   * Core aggregates these the way it aggregates `commands`, and renders none of
+   * them; `/ext/diagnostics` is the reader. Same three rules as
+   * `ToolbarCommandsInput`, for the same reasons:
+   *
+   * - **Pure and cheap.** It is called on demand, not on a timer, but it is
+   *   called from a click handler somebody is waiting on. Enumerate what you
+   *   already hold; do not measure, fetch or mutate.
+   * - **Return something JSON-serialisable.** A `BigInt`, a cycle or a class
+   *   instance is the reader's problem to survive, and it will — but it will
+   *   also say so in the output, next to your id.
+   * - **Return data that is already safe to leave the machine.** Whatever you
+   *   return is going into a ticket. The reader redacts it again on the way in,
+   *   which is defence in depth, not a substitute for redacting at the source.
+   *
+   * A throw is contained: core reports `status: "failed"` for this extension
+   * and the rest of the snapshot is built normally.
+   */
+  diagnostics?: () => unknown;
   start?(api: ExtensionRuntimeApi): void | (() => void);
 }
 

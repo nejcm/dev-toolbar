@@ -6,14 +6,15 @@ import { environment } from "@nejcm/dev-toolbar/ext/environment";
 import { flags, readStoredOverrides } from "@nejcm/dev-toolbar/ext/flags";
 import { commandMenu } from "@nejcm/dev-toolbar/ext/command-menu";
 import { overlays } from "@nejcm/dev-toolbar/ext/overlays";
+import { diagnostics } from "@nejcm/dev-toolbar/ext/diagnostics";
 import type { FlagReading, FlagValue } from "@nejcm/dev-toolbar/ext/flags";
 
 /**
  * Placeholder extensions with deliberately varied `priority`, so narrowing the
  * window collapses them into the `···` menu in a predictable order:
  *
- *   boom (5) → hydr (20) → metrics (35) → overlays (55) → tw (70) → flags (80)
- *   → cmds (85) → env (90) → user (100, aligned end)
+ *   boom (5) → diagnostics (10) → hydr (20) → metrics (35) → overlays (55)
+ *   → tw (70) → flags (80) → cmds (85) → env (90) → user (100, aligned end)
  *
  * The fake ones are the placeholders; `metrics`, `env` and `flags` are the real
  * `@nejcm/dev-toolbar/ext/metrics`, `.../ext/environment` and `.../ext/flags`.
@@ -427,6 +428,49 @@ const runtimeOverlays = overlays({
   grid: { columns: 12, gutter: 24, maxWidth: 1100, baseline: 8 },
 });
 
+/**
+ * The real `@nejcm/dev-toolbar/ext/diagnostics`. It contributes nothing to the
+ * aggregation; it *reads* it, so what its panel shows is metrics', environment's
+ * and flags' own `diagnostics()` output plus the page's facts and §3E's long
+ * tasks. The placeholder extensions here declare none, so they show up as
+ * present-and-absent — which is the completeness property made visible.
+ *
+ * The `app` context and the `source` below deliberately carry credentials in
+ * three different shapes: a key `redact()` matches (`sessionToken`), a *value*
+ * it matches under an innocent key (`Bearer …`), and a token nested two levels
+ * down under keys that look fine (`billing.identity.refreshToken`). None of the
+ * three may appear in the panel, on the clipboard or in the downloaded file.
+ */
+const runtimeDiagnostics = diagnostics({
+  order: 5,
+  priority: 10,
+  app: () => ({
+    release: "web-2026.08.28.4",
+    commit: "a84c7e1",
+    environment: "staging",
+    sessionToken: "sess-playground-secret",
+    note: "Bearer playground-bearer-secret",
+    workspaceId: "ws_456",
+  }),
+  sources: [
+    {
+      id: "router",
+      label: "Router",
+      read: () => ({
+        route: "/playground",
+        billing: { identity: { refreshToken: "rt-playground-secret" } },
+      }),
+    },
+    {
+      id: "broken-source",
+      label: "A source that cannot be read",
+      read: () => {
+        throw new Error("playground: this source is deliberately broken");
+      },
+    },
+  ],
+});
+
 const runtimeMetrics = metrics({
   order: 30,
   priority: 35,
@@ -436,6 +480,7 @@ const runtimeMetrics = metrics({
 
 export const playgroundExtensions: DevToolbarExtension[] = [
   runtimeCommandMenu,
+  runtimeDiagnostics,
   runtimeEnvironment,
   commands,
   runtimeFlags,

@@ -24,6 +24,7 @@ import { PanelHost } from "./PanelHost";
 import { DevToolbarContext, cx } from "./context";
 import type { DevToolbarContextValue } from "./context";
 import { collectCommands, registerCommandHost, runCommand } from "./commands";
+import { collectDiagnostics } from "./diagnostics";
 import {
   createExtensionStorage,
   createInstanceStorage,
@@ -293,6 +294,9 @@ function DevToolbarRoot({
         getCommands: () => collectCommands(extensionsRef.current),
         runCommand: (id: string) =>
           runCommand(id, collectCommands(extensionsRef.current)),
+        // Same shape and the same reason as `getCommands`: read through the
+        // ref, so a snapshot taken now reflects the extension list now.
+        getDiagnostics: () => collectDiagnostics(extensionsRef.current),
       };
       const entry: {
         controller: AbortController;

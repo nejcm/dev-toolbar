@@ -23,6 +23,7 @@ import { createMemoryCollector } from "./collectors/memory";
 import { createDelayCollector } from "./collectors/delay";
 import { createJankCollector } from "./collectors/jank";
 import { createNetworkCollector } from "./collectors/network";
+import { writeClipboardTextOrThrow } from "../../runtime";
 import { createMetricsRuntime } from "./runtime";
 import { MetricsChips, MetricsPanel } from "./ui";
 import { METRIC_IDS } from "./types";
@@ -141,6 +142,13 @@ export function metrics(options: MetricsOptions = {}): DevToolbarExtension {
       />
     ),
 
+    /**
+     * The redacted collector dump, for `/ext/diagnostics` — **P3**. The same
+     * builder `metrics.copy` uses; every request URL is already masked on the
+     * way into the ring and the whole payload goes through `redact()` again.
+     */
+    diagnostics: () => runtime.diagnostics(),
+
     panel: () => <MetricsPanel runtime={runtime} injectStyles={injectStyles} />,
 
     commands: [
@@ -156,9 +164,13 @@ export function metrics(options: MetricsOptions = {}): DevToolbarExtension {
         label: "Copy performance diagnostics",
         group: "Metrics",
         keywords: ["diagnostics", "clipboard", "report"],
+        // Through `/runtime`, which throws when the write did not happen —
+        // the palette reports a throw and closes over a resolve (§13.4), so
+        // the old optional-chained call silently did nothing and looked fine.
         run: async () => {
-          const text = JSON.stringify(runtime.diagnostics(), null, 2);
-          await globalThis.navigator?.clipboard?.writeText?.(text);
+          await writeClipboardTextOrThrow(
+            JSON.stringify(runtime.diagnostics(), null, 2),
+          );
         },
       },
     ],

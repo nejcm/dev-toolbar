@@ -3,7 +3,7 @@
 ## 0.1.0 — unreleased
 
 First publish. The shell (P0), the runtime primitives and the first extension (P1),
-P2's three extensions, and the first of P3's. `CONTRACT_VERSION` is `1`.
+P2's three extensions, and P3's two. `CONTRACT_VERSION` is `1`.
 
 ### Added
 
@@ -61,11 +61,47 @@ P2's three extensions, and the first of P3's. `CONTRACT_VERSION` is `1`.
   `outline` so it cannot reflow the layout it describes. A measurement that throws
   switches every overlay off rather than recurring every frame. Each overlay's cost
   is stated in the panel next to its switch.
+- `@nejcm/dev-toolbar/ext/diagnostics` — the diagnostic snapshot (§3J) with §3E's
+  long-task and responsiveness data in it. It **aggregates** rather than
+  re-collecting: core now aggregates `DevToolbarExtension.diagnostics()` the way it
+  aggregates `commands`, and this extension reads the roster, so flags, metrics and
+  environment each report themselves rather than being guessed at a second time. It
+  gathers for itself only what no other extension owns — the page's own facts, and a
+  `PerformanceObserver` over `longtask`, `event` and `layout-shift`. Every count is
+  `null` rather than `0` where the browser cannot observe it, with a note saying
+  which of the two it is: `longtask` and `layout-shift` are Chromium-only today, and
+  "no long tasks" is the opposite claim to "this browser cannot count them". The
+  panel shows the exact text the Copy and Download buttons produce, before either is
+  pressed — Markdown for a ticket, JSON for a tool, the choice persisted — because
+  the entire output is data headed off the machine. Everything foreign is redacted on
+  the way *in*, once, so the panel, the clipboard, the download and the four commands
+  read one object and no path re-derives from a raw value; the masked count is shown
+  next to the buttons. Omission is a first-class outcome: a contributor that throws,
+  returns nothing, or returns something that will not serialise gets a status, a line
+  in a top-level `omissions` list, a banner in the panel and a heading in the
+  Markdown — a snapshot that silently dropped the failing extension would read as
+  complete.
 - `@nejcm/dev-toolbar/testing` — `renderWithToolbar`, `makeExtension`,
   `createMockBus`, `installToolbarLayout`.
 - `ensureStyleSheet(entry, css)` in `/runtime` — the once-per-document style injector
   both extensions were writing privately. Keyed on a
   `style[data-dev-toolbar-styles]` element, so two bundled copies still inject once.
+- `writeClipboardText(text)` in `/runtime` — the same story one layer up. Three
+  extensions had hand-rolled the same feature-detect-call-map-two-outcomes block and
+  `/ext/diagnostics` would have been the fourth. Resolves `false` rather than throwing
+  or pretending, because a missing API and a rejected write are the same answer to a
+  copy button, and a "Copied" badge over an empty clipboard is the same class of lie
+  as a "masked" badge over an unmasked value. `/ext/metrics`, `/ext/environment` and
+  `/ext/flags` now call it from their panels; their panel behaviour is unchanged.
+- `writeClipboardTextOrThrow(text, hint?)` in `/runtime`, and a **fix** the move
+  exposed. A panel button can render "clipboard unavailable"; an aggregated
+  `ToolbarCommand` returns `void` and can only speak through the palette, which
+  reports a command that throws and closes over one that resolves. All five
+  first-party copy commands were `await navigator?.clipboard?.writeText?.(text)` —
+  which on an insecure origin or an unfocused document copies nothing and resolves,
+  so the palette closed as though it had worked. `metrics.copy`,
+  `environment.copy`, `environment.copyJson`, `flags.copyRecipe` and `flags.copyJson`
+  now fail loudly. `/ext/diagnostics` does the same for its download command.
 
 ### Fixed
 
@@ -188,3 +224,100 @@ extension where the guidance bites:
 The contract did not move. `/ext/environment` needed nothing that P1 had not already
 added, which is the first evidence that version 1 is stable rather than merely
 young — see [plans/architecture.md §11](./plans/architecture.md).
+
+### The one contract change from building the snapshot
+
+`/ext/diagnostics` is the second extension whose job is to *read* what the others
+produce, and it hit §13.3's problem in a new place: several extensions already had a
+`diagnostics()` on their runtime object, and nothing in the contract could reach it.
+So the aggregation core already ran for `commands` was extended, in the two matching
+places. Full rationale in [plans/architecture.md §15](./plans/architecture.md).
+
+- **`DevToolbarExtension.diagnostics?: () => unknown`.** Optional, so every existing
+  extension is unchanged and contributes an explicit *"present, nothing to say"*
+  rather than silently vanishing from a snapshot. Core calls it, contains a throw,
+  and renders nothing.
+- **`ExtensionRuntimeApi.getDiagnostics()`.** One entry per present, non-hidden
+  extension — `ok` with data, `absent`, or `failed` with the message. This is how an
+  extension on its own subpath reads the aggregation without importing a *value* from
+  core, exactly as `getCommands()` is.
+- A `failed` entry carries `error` (**the message alone**) and `errorName`
+  separately, never pre-joined. Core cannot redact — it may not import `/runtime` —
+  and the redactors match value shapes anchored to the whole string, so a joined
+  `"Error: https://…?token=…"` is unmaskable while the bare message is not. Core does
+  the one thing that keeps redaction possible downstream: it declines to make it
+  impossible.
+- `/ext/metrics`, `/ext/environment` and `/ext/flags` each declare `diagnostics`,
+  wired to the redacted builder their own copy commands already used. No new data is
+  exposed anywhere: a third front door onto the same masked view.
+
+`CONTRACT_VERSION` stays `1`. Both additions are additive and every extension written
+against the earlier contract behaves identically; the same qualification as P2's
+applies, which is that `getDiagnostics` is a required member of `ExtensionRuntimeApi`,
+so code that **constructs** that type by hand needs a line. That is test-harness code
+— four api fakes in this repo needed it — not the extension-facing contract
+`contractVersion` describes, and nothing has been published.
+
+Two things were deliberately *not* added. `getDiagnostics` is **not** on
+`DevToolbarContextValue`, so there is no `useToolbarDiagnostics()`: `commands` are on
+the context because the host application runs them, while a snapshot has exactly one
+reader and giving it a second, host-facing door would widen the surface for nobody.
+And `/ext/diagnostics` declares no `diagnostics()` of its own — it would make the
+snapshot contain itself, and the reentrancy guard would become load-bearing rather
+than a safety net.
+
+### How `/ext/diagnostics` treats your data
+
+The same §11.3 rules as `/ext/environment`, at the severity a document that is
+*entirely* outbound deserves:
+
+- **Everything foreign is redacted on the way in, and objects reach `redact()` as
+  objects.** Serialising first would turn every nested key into characters inside a
+  value, which is the leak that shipped in the first cut of `/ext/environment`.
+- **One object feeds every output.** Panel, clipboard, download and all four commands
+  render the same redacted snapshot. There is no path from raw data to any of them.
+- **Each contribution is proved serialisable on its own.** A `BigInt` survives
+  `redact()` and throws in `JSON.stringify`; one extension must not cost you the
+  whole snapshot, so that becomes an `unserialisable` status next to the id that
+  caused it.
+- **Every failure is a status, not a swallowed exception.** A getter that throws while
+  `redact()` walks it, a `diagnostics()` that throws, a `source` that throws, a
+  build that fails outright — each degrades to a snapshot that says so. And the
+  failure path may not fail the way the happy path can: the timestamp, the
+  responsiveness read and the store's clock on that path are all guarded, because a
+  host with a patched `Date` or a hostile `performance.now` would otherwise turn "the
+  capture failed" into a throw out of a click handler.
+- **An error description is a join, and joins happen before redaction.** Five paths
+  put a thrown error into the report as `` `${error.name}: ${error.message}` `` and
+  then ran the anchored redaction pass over the result — so a message that *is* a
+  credential-carrying URL, which is what `fetch`, undici and axios all throw, arrived
+  in the ticket verbatim behind its own `"Error: "` prefix. A sixth,
+  `failedSnapshot`'s omission reason, was not redacted at all. All six redact the
+  message first and prefix afterwards. A credential the consumer buried in prose is
+  genuinely beyond an anchored matcher; one this package hid behind its own prefix
+  never was. The same rule applies to the prefix: `error.name` is a *writable* own
+  property, not a class identifier the runtime guarantees, so it is redacted too.
+  **Both halves of a join this package performs are foreign until proven otherwise.**
+- **§3E has a fifth support state, `"stopped"`.** Teardown used to leave the entry
+  types marked `"supported"`, so a report taken afterwards claimed live observation
+  over counts that had stopped moving. A type that was never available is not
+  promoted — "unavailable" and "we stopped asking" are different facts.
+- **Masking is visible**, counted next to the buttons — and the count is derived from
+  the *snapshot*, never from the rendered text. Two browser-found bugs are the same
+  bug twice: the Markdown footer says ``masked as `[redacted]` ``, so counting the
+  rendered text counted its own sentence (the toolbar said 6 where the footer said
+  5); and counting only the *literal* mask missed one written into a URL query, where
+  `URLSearchParams.set` percent-encodes it to `%5Bredacted%5D`. That second one is
+  the OAuth-callback shape, so a page whose only secret was a token in the address
+  bar masked it correctly and then reported "No values were masked". Both encodings
+  are counted, from one canonical source.
+- **§3J's `recentErrors` is not implemented, on purpose.** It is the one field in the
+  spec's shape with no owner, and the only way to fill it would be a global
+  `window.onerror` listener — permanent instrumentation of the host application,
+  duplicating the error reporter it already has. `sources` covers it without this
+  package reaching into anybody's runtime. Reasoning and the cost of the omission in
+  [plans/architecture.md §15.8](./plans/architecture.md).
+- **It is still not a security boundary.** `redact()` matches key names and value
+  shapes. A secret under an innocent key with no telltale shape survives, and the
+  test suite pins that limit deliberately rather than only demonstrating successes.
+  You are the last check, which is why the text is on screen before you send it.

@@ -1,6 +1,7 @@
 import { useEffect, useState, useSyncExternalStore } from "react";
 import type { ReactNode } from "react";
 import { Sparkline } from "./Sparkline";
+import { writeClipboardText } from "../../runtime";
 import { ensureMetricsStyles } from "./css";
 import { formatBytes, formatMs, shortenUrl } from "./format";
 import type { MetricsRuntime } from "./runtime";
@@ -134,17 +135,10 @@ export function MetricsPanel({ runtime, injectStyles }: PanelProps): ReactNode {
   const view = snapshot.views[snapshot.order.includes(active) ? active : first];
   const collector = runtime.collectors.find((entry) => entry.id === view.id);
 
+  // `/runtime`'s shared writer. See `runtime/clipboard.ts`.
   const copy = () => {
     const text = JSON.stringify(runtime.diagnostics(), null, 2);
-    const clipboard = globalThis.navigator?.clipboard;
-    if (!clipboard?.writeText) {
-      setCopied("failed");
-      return;
-    }
-    clipboard.writeText(text).then(
-      () => setCopied("ok"),
-      () => setCopied("failed"),
-    );
+    void writeClipboardText(text).then((ok) => setCopied(ok ? "ok" : "failed"));
   };
 
   return (

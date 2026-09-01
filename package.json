@@ -66,6 +66,11 @@
       "import": "./dist/ext/overlays.js",
       "require": "./dist/ext/overlays.cjs"
     },
+    "./ext/diagnostics": {
+      "types": "./dist/ext/diagnostics.d.ts",
+      "import": "./dist/ext/diagnostics.js",
+      "require": "./dist/ext/diagnostics.cjs"
+    },
     "./ext/flags": {
       "types": "./dist/ext/flags.d.ts",
       "import": "./dist/ext/flags.js",

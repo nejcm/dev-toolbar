@@ -45,6 +45,7 @@
  * dropped, not hidden, `extra:<key>` entries included), or compute `hidden`
  * yourself and leave the extension out of the array entirely.
  */
+import { writeClipboardTextOrThrow } from "../../runtime";
 import { createEnvironmentRuntime } from "./runtime";
 import { EnvironmentChip, EnvironmentPanel } from "./ui";
 import type { EnvironmentContextInput, EnvironmentRuntimeOptions } from "./runtime";
@@ -138,6 +139,14 @@ export function environment(
       />
     ),
 
+    /**
+     * The redacted snapshot, for `/ext/diagnostics` — **P3**. Exactly what the
+     * `environment.copyJson` command copies, from exactly the same builder: a
+     * bug-report aggregator is a third front door onto this data, and it must
+     * not be able to fetch what the panel would not show.
+     */
+    diagnostics: () => runtime.diagnostics(),
+
     panel: () => (
       <EnvironmentPanel
         runtime={runtime}
@@ -155,10 +164,10 @@ export function environment(
         // Same redacted snapshot the panel renders. A command is a front door:
         // if this read the raw context, `runCommand("environment.copy")` would
         // be a way around every mask in the UI.
+        // `/runtime`'s writer, which throws when the write did not happen:
+        // the palette reports a throw and closes over a resolve (§13.4).
         run: async () => {
-          await globalThis.navigator?.clipboard?.writeText?.(
-            runtime.snapshotText(),
-          );
+          await writeClipboardTextOrThrow(runtime.snapshotText());
         },
       },
       {
@@ -167,7 +176,7 @@ export function environment(
         group: "Environment",
         keywords: ["diagnostics", "json", "context"],
         run: async () => {
-          await globalThis.navigator?.clipboard?.writeText?.(
+          await writeClipboardTextOrThrow(
             JSON.stringify(runtime.diagnostics(), null, 2),
           );
         },

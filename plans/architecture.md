@@ -558,6 +558,7 @@ import them from a server component without a directive of its own.
 | Access control | The consumer, before rendering `<DevToolbar>` at all |
 | A global extension registry | Nowhere. See §2. |
 | Visual overlays over the host page | `./ext/overlays` (P3) — core draws on nobody's application |
+| Any rendering of the diagnostics aggregation | `./ext/diagnostics` (P3) — core collects the roster and renders nothing, as with commands |
 
 
 ## 10. What P1 changed, and why
@@ -1269,3 +1270,389 @@ to itself is not tested. Its replacement injects a hostile rule and reads
 `getComputedStyle` off the real surface, so it fails if the cascade — not the string
 — stops behaving. It fails against the pre-fix stylesheet, which is the only way to
 know a regression test regresses.
+
+## 15. What P3's second extension found
+
+`/ext/diagnostics` is §3J — *capture a diagnostic snapshot for a bug report* — with
+§3E's long-task data as one of its inputs. It is the second extension whose job is to
+**read** what the others produce rather than to measure something itself, and it is
+the first whose entire output is a document that leaves the machine.
+
+It changed the contract in two places, both additive, both the same shape as §13.3's
+change. `CONTRACT_VERSION` stays `1`.
+
+### 15.1 The aggregation generalised, and that is the whole design
+
+§3J's `DiagnosticSnapshot` lists `flags`, `metrics` and `session`. Three extensions
+already owned those and already had a redacted `diagnostics()` on their runtime
+objects — and nothing in the contract could reach one. The two ways out were:
+
+1. re-collect. Read the flag adapter, the collectors and the context again from this
+   extension. That produces a *second* answer for every field, subtly different from
+   the one the panel next door is showing, in a document whose only purpose is to be
+   believed by somebody who was not there. It also drags four extensions into one
+   bundle, which §2 exists to prevent.
+2. aggregate. Which is what core already does for `commands`, for exactly the same
+   reason: core knows the extension list and nobody else does.
+
+So `DevToolbarExtension` gained `diagnostics?: () => unknown` and
+`ExtensionRuntimeApi` gained `getDiagnostics()`. Core collects and renders nothing,
+the way it collects and renders nothing for commands. The three extensions with a
+builder already wired it to that same builder — no new data is exposed anywhere, and
+a snapshot cannot fetch what the panel would not show, which is §11.3's rule about
+front doors applied to a third one.
+
+Two deliberate non-additions:
+
+- **No `useToolbarDiagnostics()`.** `commands` are on `DevToolbarContextValue`
+  because the *host application* runs them — a button in the app, a hotkey, a test.
+  A snapshot has exactly one reader, and it reaches the aggregation the way §13.3
+  established. A host-facing door would be surface area for nobody.
+- **`/ext/diagnostics` declares no `diagnostics()`.** It would make the snapshot
+  contain itself; `getDiagnostics()` enumerates every present extension including the
+  caller. The gather step also skips its own id, so the reentrancy guard in
+  `core/diagnostics.ts` stays a safety net rather than becoming load-bearing.
+
+### 15.2 The roster is complete on purpose, which is not what commands does
+
+`collectCommands` drops an extension that contributes nothing; there is nothing to
+render. `collectDiagnostics` emits an entry for **every** present, non-hidden
+extension, including the ones with no `diagnostics()` at all, and that difference is
+the single most important decision in this extension.
+
+A bug report is read by somebody who was not there. In a snapshot, *"this extension
+had nothing to say"* and *"this extension threw when we asked"* are two facts, and
+once both are simply missing from the output they are one fact: **absence**. A
+snapshot that quietly dropped the failing extension reads as complete, and the reader
+concludes from a missing section that there was nothing to see — which is precisely
+the wrong conclusion, because the extension that threw is very often the one the bug
+is about.
+
+So a failure travels as *data*, not as a console line: `status`, a message, an entry
+in a top-level `omissions` array, a banner at the top of the panel, and a banner
+*above the data* in the Markdown. Four places, because a completeness warning at the
+bottom of a long paste is a warning nobody reads. `hidden` is the one exception and
+it is the right one: hidden means the extension does not exist for this actor, so
+even listing it as absent would leak the fact of its existence into a document headed
+off the machine.
+
+The reader adds a fourth status core cannot produce. `redact()` already turns cycles,
+`Map`s, `Set`s, functions and class instances into short tags, so almost nothing
+unserialisable survives it — except `BigInt`, which passes through as a primitive and
+throws in `JSON.stringify`. Each contribution is therefore serialised *on its own*, as
+a check rather than as output, and one extension returning one `BigInt` costs the
+reader that extension rather than the whole snapshot.
+
+### 15.3 §11.3, at the severity of a document that is entirely outbound
+
+§11.3 predicted this extension would have the same shape as `/ext/environment`. It
+does, and the difference is only that here there is no non-outbound half: every field
+is headed for a ticket. The rules held without amendment.
+
+- **Redact on the way in**, and hand `redact()` objects, never JSON. The builder is
+  the only code that touches a raw value; `renderMarkdown` and `renderJson` take the
+  already-redacted snapshot and have no access to anything else. The Markdown path is
+  the one that tempts the wrong order, because it fences JSON *inside* text — which
+  is why the regression test asserts against the Markdown rather than the JSON.
+- **One object, every output.** Panel, clipboard, download and four commands.
+- **Masking is visible**, and the count is derived from the *snapshot* — never from
+  the rendered text, and never from the literal mask alone. Two defects, both found
+  in a browser, are the same defect twice: **the count and the thing it counts must
+  be the same thing.** Counting the rendered Markdown counted the footer's own
+  sentence about the mask, so the panel's toolbar disagreed with the footer of the
+  text it was displaying (6 against 5). Counting only the literal `[redacted]` missed
+  a mask written into a URL query, which `URLSearchParams.set` percent-encodes to
+  `%5Bredacted%5D` — and that is not an edge case, it is the OAuth-callback shape
+  this document calls the most likely credential carrier in the snapshot. A page
+  whose only sensitive datum was a token in the address bar masked it correctly and
+  then printed *"No values were masked… none matched here"*: a false statement in the
+  one document whose entire argument is that masking is visible. Anything that
+  *describes* the output has to be computed from the canonical form, and has to know
+  every encoding the output can carry.
+- **Reading foreign data fails closed**, at four separate levels: the `redact()` walk
+  (a getter that throws, at any depth), the per-contribution serialisation, the
+  per-source read, and the whole build.
+
+One new wrinkle, and a real defect it exposed: **an error path must not be able to
+fail the way the happy path can.** `failedSnapshot` — the thing that exists so a
+broken capture still yields a usable report — called `new Date().toISOString()`
+itself. A patched `Date` turned "the capture failed" into a throw out of a click
+handler. It now uses a timestamp helper that cannot throw, the responsiveness report
+on that path is read through a guard of its own, and the clock the store is stamped
+with is the guarded one rather than `createThrottledStore`'s unguarded default — that
+last read happens *after* the build, on the publish, so guarding only the parts this
+file owned left the failure path still able to fail. The generalisation: whatever the
+failure branch touches, it may only touch things that cannot produce the failure it is
+handling.
+
+There is a second, sharper lesson underneath, and it is about the **test**, not the
+code. The first regression test for this stubbed a throwing `Date` and asserted that
+`capture()` did not throw — but nothing in it made the *build* fail, so
+`failedSnapshot` was never reached and the test passed against the very defect it
+claimed to pin. Review confirmed it analytically: reverting the fix survived the whole
+suite. A failure-path test has to establish **both** conditions at once — the failure
+being handled, and the second failure inside the handling — or it is only exercising
+the happy path in a costume. Every guard added here is now mutation-checked by
+reverting it and watching a named test fail.
+
+There is a third instance of the same rule, and it is the one that actually shipped a
+leak: **an error description is a join too.** `` `${error.name}: ${error.message}` ``
+put a `"Error: "` prefix in front of the message, and `redact()`'s value matching is
+anchored to the whole string — so `new Error("https://api.test/refresh?refresh_token=…")`,
+which is exactly what `fetch`, undici and axios throw, sailed into the rendered report
+verbatim. Four sibling paths had it (a contributor's throw through core's roster, a
+`source`'s throw, an `app` getter's throw, a getter throwing while `redact()` walked a
+contribution) and a fifth — `failedSnapshot`'s omission reason — had no redaction at
+all, in the banner of the very report that says nothing below it is complete.
+
+The distinction that resolves it is worth stating exactly, because it looks like it
+contradicts the deliberate-leak test below and does not:
+
+> A credential the **consumer** buried in prose is genuinely beyond an anchored
+> matcher. One **this package** hid behind its own prefix never was.
+
+So `"Error: <message>"` is not consumer prose and does not get the mid-sentence
+exemption. Every path now redacts the message and prefixes afterwards.
+
+And then the same attack, run again, found the seventh: **the prefix is foreign too.**
+`error.name` is a writable own property, not a class identifier the runtime
+guarantees — `Object.assign(err, { name: "Bearer …" })` is the whole exploit — and it
+was joined on with no redaction at all, which is worse than the join bug it was
+sitting next to: not merely unmaskable in position, but never masked. The corrected
+rule is therefore not "redact the message before joining" but:
+
+> **Both halves of a join this package performs are foreign until proven otherwise.**
+> Masking one of them is not the rule; it is half of it.
+
+That is the generalisation the `containerName` fix (§15.3, above) should have produced
+the first time. The lesson about *where* to look: a template literal that mixes a
+label with a value invites you to classify the label as ours, and `error.name`,
+`containerType` and `containerId` all look like ours until you check who can write
+them. That forced a
+change in core, which cannot redact at all: `ExtensionDiagnostics` carries `error`
+(the message alone) and `errorName` separately, rather than a pre-joined string. Core
+still redacts nothing — it does the one thing that keeps redaction *possible*
+downstream, which is to decline to make it impossible.
+
+The test that hid this is the more instructive half. It handed the reader a roster
+entry whose `error` was a bare URL — **a string core never emitted**, because core
+joined first. It passed while the real pipeline leaked, and it told anyone reading the
+suite that error text carrying a URL was scrubbed. A fixture the code under test
+cannot produce proves nothing about the code under test. The replacements all run
+through `collectDiagnostics` with extensions that genuinely throw.
+
+The honest limit is pinned by a test that asserts a *leak*: a bare secret under an
+innocent key with no credential-shaped value survives, because `redact()` is key- and
+value-shape matching and nothing else. A suite that only demonstrated successes would
+imply a guarantee this package does not make. The mitigation is not a better matcher;
+it is that the text is on screen, in full, before anybody presses Copy.
+
+### 15.4 Showing it is the feature
+
+§3J says "a one-click *Copy debug report* action". The panel is built around showing
+you the payload first, and it is worth being precise about what that claim covers,
+because the first draft of this section overclaimed and contradicted the extension's
+own commands.
+
+The claim is **not** "no path may copy without review". `diagnostics.copy` does
+exactly that, and it is defensible for the reason the builder is arranged around:
+redaction happens on the way in, so a command can only ever reach the same masked
+object the panel renders. There is no unredacted path for it to take. Forbidding it
+would refuse §3J's actual request in exchange for nothing.
+
+The claim is that **the panel's largest element is the payload itself** — a `<pre>`
+holding the exact string the buttons produce, not a summary of it, not a subset, the
+same string, asserted by a test that compares the clipboard write to the rendered DOM.
+A snapshot is only useful if it is *right*, and the person who can tell is standing
+there. That property survives a blind copy, because every command captures into the
+same store: opening the panel after a palette copy shows precisely what went to the
+clipboard. A copy you did not read is still a copy you can go and read.
+
+The one thing a command cannot do is open the panel for you. `ExtensionRuntimeApi`
+exposes no panel control — core owns single-active-panel state — and adding one for
+this convenience would be a contract change made for a nicety rather than for a gap.
+
+Download is offered next to copy, and it is legitimate here in a way it would not be
+elsewhere: a download started by a click is a real user action. It is also the one
+place this extension touches the host document — an `<a download>` appended and
+removed in the same task, because Firefox has historically ignored `click()` on a
+detached anchor. The object URL is revoked on a timer rather than synchronously
+(several browsers cancel the download if you revoke immediately) and the revoker is
+also run on teardown, so nothing retains a Blob. The filename is derived from the
+snapshot's own `generatedAt` rather than from the clock, so it does not move between
+the button and the toast.
+
+The chip does **not** capture. Walking every extension to keep a number in the bar
+fresh would charge every consumer, on every page, for a feature used once when
+something has already gone wrong. Capture happens on panel open, on the Capture
+button, and on a command — never on a timer.
+
+### 15.5 §3E, and the sentence that shapes the whole module
+
+`longtask` and `layout-shift` are Chromium-only as of writing; `event` is not
+universal either; `PerformanceObserver.supportedEntryTypes` is itself missing on older
+engines; and `observe({ type })` throws on some and no-ops on others. Four distinct
+"no", and the temptation is to collapse them into one `0`.
+
+**"No long tasks occurred" and "this browser cannot count long tasks" are opposite
+claims.** A `0` that means the second closes a line of investigation that `null` plus
+*"Firefox does not implement longtask"* keeps open. So every count is `number | null`,
+`null` is the only thing reported when the answer is unknown, `SupportState` keeps the
+four reasons distinct, and each section carries a `note` that spells out which one it
+is — in the output, not only in the panel, because the panel is not what gets pasted.
+
+The observer callback is wrapped for §14.2's reason (a browser callback where nothing
+upstream catches a throw and where it would recur per entry), and `observe()` is
+attempted per entry type in its own `try`, so one unsupported type does not cost the
+other two.
+
+There is a fifth state, `"stopped"`, and it exists because review found the same
+lie in a place the first four did not reach. Teardown disconnected the observers and
+left `support` at `"supported"`, so a `report()` taken afterwards printed *"Observed
+via PerformanceObserver"* over counts that had stopped moving when the extension did.
+A type that was never available is *not* promoted — `"unavailable"` and "we stopped
+asking" are different facts, which is the whole premise of this section.
+
+The monitor keeps running while the bar is hidden, which is the clearest case yet for
+§2's "core reports visibility, never acts on it": the long task worth putting in a bug
+report happened while the developer was using the application, not while they were
+reading the toolbar.
+
+### 15.6 The fourth copy is the one that moves
+
+§11.2 established the rule — two is where the duplication is the design — and §13.5
+recorded the counter-case where one duplication stayed put on purpose.
+`navigator.clipboard.writeText`, feature-detected and mapped onto an `ok`/`failed`
+status, had been written by `/ext/metrics`, `/ext/environment` and `/ext/flags`. The
+`/ext/environment` builder flagged that a third writer would mean it belonged in
+`/runtime`; this was the fourth. It moved, and all three call it.
+
+What was worth centralising is the failure half. A missing API (insecure origin, test
+environment) and a rejected write (unfocused document, denied permission) are the
+same answer to a copy button — nothing reached the clipboard — and neither may throw
+out of a click handler. `writeClipboardText` resolves `false`. There is deliberately
+no `document.execCommand("copy")` fallback: it needs a live selection in a temporary
+node, which means mutating the host document from a helper, and saying "clipboard
+unavailable" over text the user can select is the honest degradation.
+
+The move then exposed a bug the duplication had been hiding, and it is the more
+interesting half. A panel button has somewhere to *put* "clipboard unavailable" — a
+`role="status"` beside it. An aggregated `ToolbarCommand` does not: it returns `void`,
+and §13.4 established that the palette shows the message for a command that **throws**
+and closes over one that resolves. All five first-party copy commands were written as
+`await globalThis.navigator?.clipboard?.writeText?.(text)`, which on an insecure
+origin resolves `undefined` and copies nothing — so the palette closed as though the
+copy had worked. That is the same lie as a "Copied" badge over an empty clipboard,
+told by omission instead of by a badge.
+
+So `/runtime` exports two functions rather than one. `writeClipboardText` returns a
+boolean, for a surface that can render the outcome; `writeClipboardTextOrThrow` throws,
+for a command whose only channel to the user is the palette's error line. Which one a
+call site wants is a property of the call site, not of the clipboard, and that is why
+the split is in the shared module rather than at each of the seven call sites.
+`/ext/diagnostics` applies the same reasoning to its download command: a palette entry
+that reported nothing when the download never started is a command that silently did
+nothing.
+
+### 15.7 What the contract still gets wrong, recorded
+
+§12.2 and §14.4 set the habit: a gap an extension *found* belongs in this document,
+not only in the note that accompanied the branch. Four, none of them blocking, in
+descending order of how likely they are to bite somebody.
+
+- **`TARGET_CONTRACT_VERSION` is a hand-maintained copy of core's constant**
+  (`ext/diagnostics/runtime.ts`), because §7 forbids importing a value from core.
+  This is the `parseShortcut` duplication of §13.5 with a worse failure mode: the
+  number is *printed into every outbound bug report*, so drift is not a dead hotkey,
+  it is a wrong fact in somebody's ticket about a version they cannot check. Tests
+  are not subject to the no-values rule, so a one-line equality assertion in
+  `ext/diagnostics/__tests__/diagnostics.test.tsx` closes it. Any future extension
+  that needs to *state* the contract version should copy that assertion, not just the
+  constant.
+- **`contractVersion` is declarative and core cannot refuse.** It warns, once, and
+  then renders and starts the extension anyway. An extension declaring `2` against a
+  core implementing `1` gets everything a matching one gets. That is deliberate for
+  now — core has no basis to decide what a mismatch means, and refusing to render
+  would turn a warning into an outage — but it means the field is documentation
+  rather than a gate, and it should be described that way rather than as a check.
+- **`ExtensionDiagnostics.data` crosses core unredacted.** Core cannot import
+  `/runtime` (§2), so it cannot redact, and the reader does it instead. This is the
+  right layering — the alternative inverts the architecture — but it means the
+  aggregation itself is not a safe surface: a *second* reader that forgot to redact
+  would ship raw contributions. Recorded on the type, and the reason `/ext/diagnostics`
+  redacts everything again even though the three first-party contributors already have.
+- **There is no invalidation signal for `diagnostics`,** exactly as there is none for
+  `commands` (§12.2). It costs nothing here because capture is always on demand and
+  never on a timer, but a future reader that wanted to *watch* the aggregation would
+  hit the same wall the palette hit, and the fix would be the same shape.
+
+One **join** is known and deliberately unfixed, in prior-phase code:
+`describeTarget` in `ext/metrics/collectors/delay.ts` builds `tag#id.class` from live
+DOM attributes and hands the assembled string to metrics' `redact()` pass. It is
+structurally the `containerName` bug — parts joined before an anchored matcher sees
+them — with materially lower plausibility, because a DOM `id` or class would have to
+*be* credential-shaped rather than merely contain something. It is recorded rather
+than changed because it lives in reviewed, approved P1 code and this is a diagnostics
+phase; the fix, if it is ever wanted, is the same one-line `part()` treatment
+`describeAttribution` got. A sweep of every template join in `/ext/diagnostics` and the
+three aggregated runtimes found nothing else: the rest join already-redacted display
+strings, internal dirty-check keys, or numbers.
+
+One **cosmetic consequence of the `error`/`errorName` split**: a third-party reader
+that renders only `entry.error` shows messages with no name in front of them. The type
+documentation says what each field is, and a reader that wants the joined form has one
+template literal to write — after masking both halves.
+
+Three hardening gaps are known and deliberately unfixed, all of the form *a hostile
+host global makes a guarded path fail*. They are recorded rather than closed because
+each costs more than it buys:
+
+- **`createThrottledStore`'s `write()` calls its injected `schedule` unguarded**
+  (`runtime/throttledStore.ts`), reachable when a second capture lands inside
+  `intervalMs` of the first with a hostile `setTimeout`. The guard belongs in
+  `/runtime`, where it would change behaviour for `/ext/metrics` and `/ext/flags` too,
+  and that is not a change to make in a phase about diagnostics.
+- **A `console.error` on the failure path logs the raw thrown value.** That is the
+  developer's own console, not the outbound document — the same data they already have
+  locally — and stripping it would make the log useless for the debugging it exists
+  for. Worth knowing before pasting a console transcript into a ticket.
+- **`renderJson` and `fence` describe a serialisation failure with the engine's own
+  message,** unredacted. `JSON.stringify`'s `TypeError` names a type, never a value,
+  and both are module-level functions with no `redactOptions` in scope.
+- **`clearTimeout` inside `startDownload`'s revoker is the last unguarded member of
+  the class.** Covered in spirit by the entry above rather than separately: a host
+  that has replaced `clearTimeout` with something that throws has already broken more
+  than this.
+
+### 15.8 §3J's `recentErrors`, and why it is not here
+
+§14.4's standard is that leaving something out of a spec is a judgement, and a
+judgement has to be written down with what it costs. §3J's `DiagnosticSnapshot` lists
+six fields. Five are accounted for:
+
+| §3J field | Where it went |
+| --- | --- |
+| `app`, `session` | The `app` option — consumer-supplied, because core has no `ctx` and this extension invents none (§11.1) |
+| `flags` | `/ext/flags`' own `diagnostics()`, through the aggregation |
+| `metrics` | `/ext/metrics`' own, plus §3E's long tasks, which nothing else owned |
+| `recentRequests` | `/ext/metrics`' network collector, whose ring already masks every request URL on the way in |
+| `recentErrors` | **Not implemented.** |
+
+`recentErrors` is the one field with no owner, and shipping it would mean this
+extension installing a `window.onerror` / `unhandledrejection` listener. That is a
+different kind of act from everything else it does — it is *instrumentation of the
+host application*, permanent, global, and exactly the class of irreversible reach into
+somebody else's runtime that §14.2 and §14.4 refuse elsewhere. It also duplicates what
+every real application already has (Sentry, Rollbar, a logger), and a second capture
+that disagreed with the first would be worse than none in a document whose only
+purpose is to be believed.
+
+The cost of leaving it out is real and worth naming: the single most useful line in
+many bug reports is the exception that preceded it, and a reader of this snapshot has
+to go and fetch it from somewhere else.
+
+The right shape, if it is ever wanted, is **not** a listener in this extension. It is a
+`sources` entry — `sources: [{ id: "errors", read: () => myErrorBuffer.recent() }]` —
+which works today, gives the application the choice, and reuses the error reporter it
+already trusts. That is why `sources` exists, and it is documented in the README as
+the answer to this specific gap rather than as a general escape hatch.

@@ -1,0 +1,269 @@
+import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
+import type { ReactNode } from "react";
+import { ensureDiagnosticsStyles } from "./css";
+import { SNAPSHOT_FORMATS } from "./types";
+import type { DiagnosticsSnapshotState, SnapshotFormat } from "./types";
+import type { DiagnosticsRuntime } from "./runtime";
+
+/**
+ * The rendered surface. [dev-toolbar/ext/diagnostics]
+ *
+ * The panel's shape is the extension's argument: **the snapshot is shown, in
+ * full, before anything can be sent anywhere**. The preview is the largest
+ * element on the panel and it holds exactly the text the copy and download
+ * buttons produce — not a summary of it, not a subset, the same string. A
+ * "Copy debug report" button that puts something on the clipboard nobody has
+ * read is how a session token ends up in a public issue tracker.
+ *
+ * Everything it renders comes from the redacted snapshot, which is redacted as
+ * it is built. No component here has access to a raw value, so none can print
+ * one — the same construction `/ext/environment` and `/ext/flags` use.
+ */
+
+function useSnapshotState(runtime: DiagnosticsRuntime): DiagnosticsSnapshotState {
+  return useSyncExternalStore(
+    runtime.store.subscribe,
+    runtime.store.getSnapshot,
+    runtime.store.getSnapshot,
+  );
+}
+
+function useDiagnosticsStyles(inject: boolean): void {
+  useEffect(() => {
+    if (inject) ensureDiagnosticsStyles();
+  }, [inject]);
+}
+
+const FORMAT_LABEL: Record<SnapshotFormat, string> = {
+  markdown: "Markdown",
+  json: "JSON",
+};
+
+/* -------------------------------------------------------------------------- */
+/* Bar chip                                                                    */
+/* -------------------------------------------------------------------------- */
+
+export interface ChipProps {
+  runtime: DiagnosticsRuntime;
+  label: string;
+  isOverflowed: boolean;
+  isPanelOpen: boolean;
+  injectStyles: boolean;
+  onToggle(): void;
+}
+
+/**
+ * The chip deliberately does **not** capture. A snapshot walks every
+ * extension's `diagnostics()`, and doing that on a timer to keep a number in
+ * the bar fresh would charge every consumer for a feature only used when
+ * something has gone wrong. It shows whether a snapshot exists and whether the
+ * last one was complete; the panel does the work.
+ */
+export function DiagnosticsChip({
+  runtime,
+  label,
+  isOverflowed,
+  isPanelOpen,
+  injectStyles,
+  onToggle,
+}: ChipProps): ReactNode {
+  useDiagnosticsStyles(injectStyles);
+  const state = useSnapshotState(runtime);
+  const omissions = state.snapshot?.omissions.length ?? 0;
+  const captured = state.snapshot !== null;
+
+  return (
+    <button
+      type="button"
+      data-dtb-part="trigger"
+      aria-expanded={isPanelOpen}
+      onClick={onToggle}
+      title={
+        captured
+          ? `${label}: snapshot taken${omissions === 0 ? ", complete" : `, ${omissions} omission${omissions === 1 ? "" : "s"}`} — click to review, copy or download it`
+          : `${label}: click to capture a snapshot for a bug report`
+      }
+    >
+      <span
+        data-dtb-part="diag-chip"
+        data-dtb-incomplete={omissions > 0 ? "true" : "false"}
+      >
+        <span data-dtb-part="diag-dot" aria-hidden="true" />
+        <span>{isOverflowed ? label : "diagnostics"}</span>
+        <span data-dtb-part="diag-value">
+          {captured ? (omissions === 0 ? "ready" : `${omissions} missing`) : "capture"}
+        </span>
+      </span>
+    </button>
+  );
+}
+
+/* -------------------------------------------------------------------------- */
+/* Panel                                                                       */
+/* -------------------------------------------------------------------------- */
+
+export interface PanelProps {
+  runtime: DiagnosticsRuntime;
+  label: string;
+  injectStyles: boolean;
+}
+
+export function DiagnosticsPanel({
+  runtime,
+  label,
+  injectStyles,
+}: PanelProps): ReactNode {
+  useDiagnosticsStyles(injectStyles);
+  const state = useSnapshotState(runtime);
+  const [format, setFormat] = useState<SnapshotFormat>(() =>
+    runtime.readFormat(),
+  );
+  const [status, setStatus] = useState<string | null>(null);
+
+  // Capturing is a side effect, so it happens in one — not during render, where
+  // it would run twice under StrictMode and walk every extension twice for one
+  // panel open. The panel opens on an already-captured snapshot when there is
+  // one, which is what makes reopening it cheap.
+  useEffect(() => {
+    if (runtime.latest() === null) runtime.capture();
+  }, [runtime]);
+
+  const snapshot = state.snapshot;
+  // One render per capture per format. The mask count is deliberately *not*
+  // derived from that string: it comes from the snapshot, because the Markdown
+  // footer contains the mask inside a sentence about the mask and would count
+  // itself. See `countMasked` — this comment used to claim the opposite, which
+  // is how a reader would have "fixed" the code back toward the bug.
+  const view = useMemo(
+    () =>
+      snapshot === null
+        ? { text: "", masked: 0 }
+        : { text: runtime.render(format), masked: runtime.maskedCount() },
+    // `state.revision` is the capture identity; `snapshot` is derived from it.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [runtime, format, state.revision, snapshot === null],
+  );
+  const { text, masked } = view;
+
+  const choose = (next: SnapshotFormat) => {
+    setFormat(next);
+    runtime.writeFormat(next);
+    setStatus(null);
+  };
+
+  const recapture = () => {
+    runtime.capture();
+    setStatus(null);
+  };
+
+  const copy = () => {
+    void runtime.copy(format).then((ok) => {
+      setStatus(
+        ok
+          ? `Copied ${FORMAT_LABEL[format]} to the clipboard.`
+          : "Clipboard unavailable — select the text below and copy it by hand.",
+      );
+    });
+  };
+
+  const download = () => {
+    const started = runtime.download(format);
+    setStatus(
+      started
+        ? `Downloading ${runtime.filename(format)}.`
+        : "Downloads are unavailable here — copy the text below instead.",
+    );
+  };
+
+  return (
+    <div data-dtb-part="diag-panel" aria-label={label}>
+      <div data-dtb-part="diag-toolbar">
+        <div
+          data-dtb-part="diag-formats"
+          role="group"
+          aria-label="Snapshot format"
+        >
+          {SNAPSHOT_FORMATS.map((id) => (
+            <button
+              key={id}
+              type="button"
+              data-dtb-part="diag-format"
+              data-dtb-format={id}
+              aria-pressed={format === id}
+              onClick={() => choose(id)}
+            >
+              {FORMAT_LABEL[id]}
+            </button>
+          ))}
+        </div>
+        <button
+          type="button"
+          data-dtb-part="diag-action"
+          data-dtb-action="capture"
+          onClick={recapture}
+        >
+          Capture again
+        </button>
+        <button
+          type="button"
+          data-dtb-part="diag-action"
+          data-dtb-action="copy"
+          disabled={snapshot === null}
+          onClick={copy}
+        >
+          Copy
+        </button>
+        <button
+          type="button"
+          data-dtb-part="diag-action"
+          data-dtb-action="download"
+          disabled={snapshot === null}
+          onClick={download}
+        >
+          Download
+        </button>
+        <span data-dtb-part="diag-note" role="status">
+          {status ??
+            (snapshot === null
+              ? "Capturing…"
+              : `Nothing has been sent anywhere. Read this, then copy or download it. ${
+                  masked === 0
+                    ? "No values matched the mask."
+                    : `${masked} value${masked === 1 ? "" : "s"} masked.`
+                }`)}
+        </span>
+      </div>
+
+      {snapshot !== null && snapshot.omissions.length > 0 ? (
+        <div data-dtb-part="diag-omissions" role="alert">
+          <strong>
+            Incomplete — {snapshot.omissions.length} thing
+            {snapshot.omissions.length === 1 ? "" : "s"} could not be included.
+          </strong>{" "}
+          They are listed in the snapshot itself as well, so whoever reads the
+          ticket sees them too.
+          <ul data-dtb-part="diag-omission-list">
+            {snapshot.omissions.map((omission) => (
+              <li key={omission.id} data-dtb-omission={omission.id}>
+                <code>{omission.id}</code> ({omission.label}): {omission.reason}
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+
+      {snapshot === null ? (
+        <p data-dtb-part="diag-empty">No snapshot yet.</p>
+      ) : (
+        <pre
+          data-dtb-part="diag-preview"
+          data-dtb-format={format}
+          tabIndex={0}
+          aria-label={`${label} snapshot, ${FORMAT_LABEL[format]}`}
+        >
+          {text}
+        </pre>
+      )}
+    </div>
+  );
+}

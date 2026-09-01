@@ -45,6 +45,8 @@ export type {
 
 export { STYLE_ATTRIBUTE, ensureStyleSheet } from "./styles";
 
+export { writeClipboardText, writeClipboardTextOrThrow } from "./clipboard";
+
 export {
   DEFAULT_SENSITIVE_KEYS,
   REDACTED,

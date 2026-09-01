@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import type { ReactNode } from "react";
+import { writeClipboardText } from "../../runtime";
 import { ensureFlagsStyles } from "./css";
 import { formatValue, matchesQuery, parseValue, severityFor } from "./types";
 import type { FlagValue, FlagView, FlagsSnapshot } from "./types";
@@ -484,16 +485,11 @@ export function FlagsPanel({
   const pending = new Set(snapshot.reloadPending);
   const failed = Object.keys(snapshot.adapterErrors);
 
+  // `/runtime`'s shared writer, not a hand-rolled one: a missing clipboard API
+  // and a rejected write are the same answer to this panel, and four copies of
+  // that judgement is three too many. See `runtime/clipboard.ts`.
   const copy = (text: string) => {
-    const clipboard = globalThis.navigator?.clipboard;
-    if (!clipboard?.writeText) {
-      setCopied("failed");
-      return;
-    }
-    clipboard.writeText(text).then(
-      () => setCopied("ok"),
-      () => setCopied("failed"),
-    );
+    void writeClipboardText(text).then((ok) => setCopied(ok ? "ok" : "failed"));
   };
 
   return (

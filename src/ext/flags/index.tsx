@@ -63,6 +63,7 @@ import {
   parseOverrides,
   resetRequested,
 } from "./runtime";
+import { writeClipboardTextOrThrow } from "../../runtime";
 import { FlagsChip, FlagsPanel } from "./ui";
 import type { FlagsRuntimeOptions } from "./runtime";
 import type { FlagValue } from "./types";
@@ -189,6 +190,13 @@ export function flags(options: FlagsOptions = {}): DevToolbarExtension {
       />
     ),
 
+    /**
+     * The redacted override list, for `/ext/diagnostics` — **P3**. Display
+     * strings, never raw flag values, for the reason `runtime.diagnostics()`
+     * gives: every front door onto this data shows the same masked view.
+     */
+    diagnostics: () => runtime.diagnostics(),
+
     panel: () => (
       <FlagsPanel runtime={runtime} label={label} injectStyles={injectStyles} />
     ),
@@ -210,10 +218,10 @@ export function flags(options: FlagsOptions = {}): DevToolbarExtension {
         // The same redacted snapshot the panel renders. A command is a second
         // front door: if this read raw values, running it would be a way around
         // every mask in the UI.
+        // `/runtime`'s writer, which throws when the write did not happen:
+        // the palette reports a throw and closes over a resolve (§13.4).
         run: async () => {
-          await globalThis.navigator?.clipboard?.writeText?.(
-            runtime.recipeText(),
-          );
+          await writeClipboardTextOrThrow(runtime.recipeText());
         },
       },
       {
@@ -222,7 +230,7 @@ export function flags(options: FlagsOptions = {}): DevToolbarExtension {
         group: "Flags",
         keywords: ["diagnostics", "json", "override"],
         run: async () => {
-          await globalThis.navigator?.clipboard?.writeText?.(
+          await writeClipboardTextOrThrow(
             JSON.stringify(runtime.diagnostics(), null, 2),
           );
         },

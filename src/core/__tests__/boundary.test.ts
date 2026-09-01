@@ -26,6 +26,7 @@ const EXT_MARKERS = [
   "[dev-toolbar/ext/flags]",
   "[dev-toolbar/ext/command-menu]",
   "[dev-toolbar/ext/overlays]",
+  "[dev-toolbar/ext/diagnostics]",
 ];
 
 function sourceFiles(directory: string): string[] {
@@ -143,6 +144,9 @@ if (!built && mustBeBuilt) {
       expect(readFileSync(`${root}dist/ext/overlays.cjs`, "utf8")).toContain(
         EXT_MARKERS[4] as string,
       );
+      expect(
+        readFileSync(`${root}dist/ext/diagnostics.cjs`, "utf8"),
+      ).toContain(EXT_MARKERS[5] as string);
     });
   });
 }
@@ -187,6 +191,20 @@ if (built || !mustBeBuilt) {
         expect(overlaysBundle, marker).not.toContain(marker);
       }
       expect(menuBundle).not.toContain(EXT_MARKERS[4] as string);
+      // Six. /ext/diagnostics is the second reader of a core aggregation, and
+      // the one whose whole job is to report on the others — so it is the most
+      // likely of the lot to drag one in. It must not: a consumer who wants a
+      // bug-report button should not thereby ship a flag editor.
+      const diagnosticsBundle = readFileSync(
+        `${root}dist/ext/diagnostics.cjs`,
+        "utf8",
+      );
+      for (const marker of EXT_MARKERS.slice(0, 5)) {
+        expect(diagnosticsBundle, marker).not.toContain(marker);
+      }
+      for (const bundle of [flagsBundle, menuBundle, overlaysBundle]) {
+        expect(bundle).not.toContain(EXT_MARKERS[5] as string);
+      }
     });
 
     it("declares ./runtime and the ./ext/* entries explicitly, with no wildcards", () => {
@@ -220,6 +238,11 @@ if (built || !mustBeBuilt) {
         import: "./dist/ext/overlays.js",
         require: "./dist/ext/overlays.cjs",
       });
+      expect(pkg.exports["./ext/diagnostics"]).toEqual({
+        types: "./dist/ext/diagnostics.d.ts",
+        import: "./dist/ext/diagnostics.js",
+        require: "./dist/ext/diagnostics.cjs",
+      });
       expect(Object.keys(pkg.exports).some((key) => key.includes("*"))).toBe(
         false,
       );
@@ -239,6 +262,8 @@ if (built || !mustBeBuilt) {
         "dist/ext/command-menu.cjs",
         "dist/ext/overlays.js",
         "dist/ext/overlays.cjs",
+        "dist/ext/diagnostics.js",
+        "dist/ext/diagnostics.cjs",
       ]) {
         expect(
           readFileSync(`${root}${file}`, "utf8").startsWith('"use client";'),
@@ -272,6 +297,9 @@ if (built || !mustBeBuilt) {
       expect(readFileSync(`${root}dist/ext/overlays.d.ts`, "utf8")).toContain(
         "OverlaysOptions",
       );
+      expect(
+        readFileSync(`${root}dist/ext/diagnostics.d.ts`, "utf8"),
+      ).toContain("DiagnosticsOptions");
     });
 
     it("resolves through Node's own exports map", () => {
@@ -282,7 +310,8 @@ if (built || !mustBeBuilt) {
           `const f = await import("@nejcm/dev-toolbar/ext/flags");` +
           `const c = await import("@nejcm/dev-toolbar/ext/command-menu");` +
           `const o = await import("@nejcm/dev-toolbar/ext/overlays");` +
-          `console.log(JSON.stringify({ runtime: Object.keys(r).sort(), metrics: Object.keys(m).sort(), environment: Object.keys(e).sort(), flags: Object.keys(f).sort(), commandMenu: Object.keys(c).sort(), overlays: Object.keys(o).sort() }));`,
+          `const d = await import("@nejcm/dev-toolbar/ext/diagnostics");` +
+          `console.log(JSON.stringify({ runtime: Object.keys(r).sort(), metrics: Object.keys(m).sort(), environment: Object.keys(e).sort(), flags: Object.keys(f).sort(), commandMenu: Object.keys(c).sort(), overlays: Object.keys(o).sort(), diagnostics: Object.keys(d).sort() }));`,
       );
       const result = JSON.parse(names) as {
         runtime: string[];
@@ -291,6 +320,7 @@ if (built || !mustBeBuilt) {
         flags: string[];
         commandMenu: string[];
         overlays: string[];
+        diagnostics: string[];
       };
       expect(result.runtime).toEqual(
         expect.arrayContaining([
@@ -333,6 +363,21 @@ if (built || !mustBeBuilt) {
           "setHostOutlines",
           "OVERLAYS_CSS",
           "BOXES_CSS",
+        ]),
+      );
+      expect(result.diagnostics).toEqual(
+        expect.arrayContaining([
+          "diagnostics",
+          "createDiagnosticsRuntime",
+          "createResponsivenessMonitor",
+          "renderMarkdown",
+          "DIAGNOSTICS_CSS",
+        ]),
+      );
+      expect(result.runtime).toEqual(
+        expect.arrayContaining([
+          "writeClipboardText",
+          "writeClipboardTextOrThrow",
         ]),
       );
     });
@@ -420,6 +465,31 @@ if (built || !mustBeBuilt) {
         ],
         overlay: "function",
         active: 5,
+      });
+
+      // /ext/diagnostics builds its runtime in the factory and starts a
+      // PerformanceObserver only in start(api), so importing it in Node — which
+      // has a PerformanceObserver but no document — must be inert and must
+      // still produce a capturable snapshot that says what it could not read.
+      const diag = node(
+        `const { diagnostics } = await import("@nejcm/dev-toolbar/ext/diagnostics");` +
+          `const { createDiagnosticsRuntime } = await import("@nejcm/dev-toolbar/ext/diagnostics");` +
+          `const ext = diagnostics();` +
+          `const snap = createDiagnosticsRuntime().capture();` +
+          `console.log(JSON.stringify({ id: ext.id, commands: ext.commands.map(c => c.id), contributes: typeof ext.diagnostics, gathered: snap.toolbar.gathered, omissions: snap.omissions.length }));`,
+      );
+      expect(JSON.parse(diag)).toEqual({
+        id: "diagnostics",
+        commands: [
+          "diagnostics.capture",
+          "diagnostics.copy",
+          "diagnostics.copyJson",
+          "diagnostics.download",
+        ],
+        // It reads the aggregation; it deliberately does not contribute to it.
+        contributes: "undefined",
+        gathered: false,
+        omissions: 1,
       });
     });
   });

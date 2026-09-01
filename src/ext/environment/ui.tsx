@@ -1,5 +1,6 @@
 import { useEffect, useState, useSyncExternalStore } from "react";
 import type { ReactNode } from "react";
+import { writeClipboardText } from "../../runtime";
 import { ensureEnvironmentStyles } from "./css";
 import { GROUP_LABELS } from "./types";
 import type {
@@ -115,16 +116,11 @@ export function EnvironmentPanel({
   const snapshot = useSnapshot(runtime);
   const [copied, setCopied] = useState<"idle" | "ok" | "failed">("idle");
 
+  // `/runtime`'s shared writer, not a hand-rolled one: a missing clipboard API
+  // and a rejected write are the same answer to this panel, and four copies of
+  // that judgement is three too many. See `runtime/clipboard.ts`.
   const copy = (text: string) => {
-    const clipboard = globalThis.navigator?.clipboard;
-    if (!clipboard?.writeText) {
-      setCopied("failed");
-      return;
-    }
-    clipboard.writeText(text).then(
-      () => setCopied("ok"),
-      () => setCopied("failed"),
-    );
+    void writeClipboardText(text).then((ok) => setCopied(ok ? "ok" : "failed"));
   };
 
   const groups: EnvironmentGroup[] = ["build", "session", "client"];
