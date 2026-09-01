@@ -16,7 +16,12 @@
     "declaration": true,
     "emitDeclarationOnly": true,
     "outDir": "dist",
-    "types": ["vitest/globals", "node"]
+    "types": ["vitest/globals", "node"],
+    "baseUrl": ".",
+    "paths": {
+      "@nejcm/dev-toolbar": ["./src/index.ts"],
+      "@nejcm/dev-toolbar/testing": ["./src/testing/index.ts"]
+    }
   },
   "include": ["src", "tsup.config.ts", "vitest.config.ts", "vitest.setup.ts"]
 }

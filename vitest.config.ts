@@ -1,7 +1,26 @@
+import { fileURLToPath } from "node:url";
 import { defineConfig } from "vitest/config";
+
+const resolve = (path: string) =>
+  fileURLToPath(new URL(path, import.meta.url));
 
 export default defineConfig({
   esbuild: { jsx: "automatic" },
+  resolve: {
+    // Lets a test import the package by its published specifiers, the way a
+    // downstream extension author does. The built output is exercised
+    // separately, through Node's own resolver, in testing/__tests__/exports.
+    alias: [
+      {
+        find: /^@nejcm\/dev-toolbar\/testing$/,
+        replacement: resolve("./src/testing/index.ts"),
+      },
+      {
+        find: /^@nejcm\/dev-toolbar$/,
+        replacement: resolve("./src/index.ts"),
+      },
+    ],
+  },
   test: {
     globals: true,
     environment: "jsdom",

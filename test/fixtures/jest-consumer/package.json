@@ -1,0 +1,16 @@
+{
+  "name": "dtb-jest-consumer-fixture",
+  "private": true,
+  "version": "0.0.0",
+  "description": "CommonJS/Jest consumer fixture for @nejcm/dev-toolbar. Not published; see README.md in this directory.",
+  "scripts": {
+    "test": "node sync-package.mjs && jest"
+  },
+  "devDependencies": {
+    "@testing-library/react": "^16.3.0",
+    "jest": "^29.7.0",
+    "jest-environment-jsdom": "^29.7.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  }
+}

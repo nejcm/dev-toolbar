@@ -1,0 +1,167 @@
+/*
+ * The playground's own CSS. Two jobs:
+ *
+ * 1. A strict 100vh application layout that the toolbar must not disturb.
+ * 2. The restyle demo — token overrides plus one `classNames` slot, all
+ *    unlayered, none of it using `!important`.
+ */
+
+:root {
+  --pg-bg: #fbfbfc;
+  --pg-fg: #14161a;
+  --pg-muted: #5b6270;
+  --pg-border: #e2e4e9;
+  --pg-card: #ffffff;
+  color-scheme: light dark;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --pg-bg: #0e1013;
+    --pg-fg: #e8eaee;
+    --pg-muted: #9aa1ae;
+    --pg-border: #242830;
+    --pg-card: #16191e;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--pg-bg);
+  color: var(--pg-fg);
+  font: 14px/1.55 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+/*
+ * The layout under test. `height: 100vh` with `overflow: hidden` and one inner
+ * scroll container: if the bar took part in normal flow, or pushed the document,
+ * this would visibly break.
+ */
+.pg-app {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  height: 100vh;
+  overflow: hidden;
+}
+
+.pg-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 20px;
+  border-bottom: 1px solid var(--pg-border);
+  background: var(--pg-card);
+}
+
+.pg-header h1 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+}
+
+.pg-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.pg-readout {
+  padding: 3px 8px;
+  border: 1px solid var(--pg-border);
+  border-radius: 999px;
+  background: var(--pg-bg);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+}
+
+.pg-button {
+  padding: 4px 10px;
+  border: 1px solid var(--pg-border);
+  border-radius: 6px;
+  background: var(--pg-bg);
+  color: inherit;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.pg-button:hover {
+  border-color: var(--pg-muted);
+}
+
+/* The scroll container. `DevToolbarInset` renders in this slot when inset is on. */
+.pg-scroll {
+  min-height: 0;
+  overflow: auto;
+}
+
+.pg-main {
+  display: grid;
+  gap: 16px;
+  max-width: 860px;
+  padding: 20px;
+}
+
+.pg-card {
+  padding: 16px 18px;
+  border: 1px solid var(--pg-border);
+  border-radius: 10px;
+  background: var(--pg-card);
+}
+
+.pg-card h2 {
+  margin: 0 0 8px;
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--pg-muted);
+}
+
+.pg-card p,
+.pg-card li {
+  margin: 0 0 6px;
+}
+
+.pg-card code {
+  padding: 1px 4px;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--pg-muted) 14%, transparent);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+}
+
+/* --------------------------------------------------------------------------
+ * Restyle demo.
+ *
+ * Core's stylesheet lives inside `@layer dev-toolbar`. Everything below is
+ * unlayered, and unlayered author styles beat *any* layered rule regardless of
+ * specificity — which is why none of this needs `!important`, and why the
+ * `.pg-bar` rule (one class) still overrides core's two-attribute selector.
+ * -------------------------------------------------------------------------- */
+
+[data-pg-restyle] [data-dev-toolbar] {
+  --dtb-bg: #120b1f;
+  --dtb-fg: #f4e9ff;
+  --dtb-accent: #ff7ac6;
+  --dtb-bar-height: 40px;
+}
+
+[data-pg-restyle] .pg-bar {
+  background: linear-gradient(90deg, #2a1150 0%, #120b1f 55%, #331049 100%);
+  border-top-color: #ff7ac6;
+  letter-spacing: 0.02em;
+}

@@ -954,7 +954,7 @@ Clicking a compact item toggles that extension's panel by default; extensions an
 consumers can drive it explicitly through `openPanel(id)` / `closePanel()`.
 
 A closed panel unmounts unless the extension sets `keepMounted`, which exists exactly
-for the section 7 requirement that captured history survives switching between metrics.
+so that captured history survives switching between metrics (section 3D).
 
 What goes *inside* the panel is entirely the extension's business. A well-behaved
 metric panel shows: definition, current value, measurement window, thresholds, a

@@ -40,6 +40,11 @@
       "import": "./dist/index.js",
       "require": "./dist/index.cjs"
     },
+    "./testing": {
+      "types": "./dist/testing.d.ts",
+      "import": "./dist/testing.js",
+      "require": "./dist/testing.cjs"
+    },
     "./styles.css": "./dist/styles.css",
     "./package.json": "./package.json"
   },
@@ -49,19 +54,27 @@
   "scripts": {
     "build": "tsup",
     "dev": "tsup --watch",
+    "playground": "npm --prefix examples/playground run dev",
+    "playground:install": "npm --prefix examples/playground install",
+    "playground:build": "npm --prefix examples/playground run build",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
+    "test:jest-consumer": "npm run build && npm --prefix test/fixtures/jest-consumer run test",
     "lint": "eslint .",
     "format": "prettier --write .",
     "prepublishOnly": "npm run typecheck && npm run build"
   },
   "peerDependencies": {
     "react": ">=18",
-    "react-dom": ">=18"
+    "react-dom": ">=18",
+    "@testing-library/react": ">=14"
   },
   "peerDependenciesMeta": {
     "react-dom": {
+      "optional": true
+    },
+    "@testing-library/react": {
       "optional": true
     }
   },

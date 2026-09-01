@@ -5,7 +5,10 @@ export interface ParsedShortcut {
   meta: boolean;
   alt: boolean;
   shift: boolean;
-  /** `Mod` = Cmd on Apple platforms, Ctrl elsewhere. Accepts either. */
+  /**
+   * `Mod` = Cmd on Apple platforms, Ctrl elsewhere — exclusively. On a Mac
+   * `Mod+Shift+.` matches Cmd+Shift+. and *not* Ctrl+Shift+.
+   */
   mod: boolean;
 }
 

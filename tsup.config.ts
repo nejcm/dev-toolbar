@@ -7,10 +7,11 @@ import { defineConfig } from "tsup";
 export default defineConfig({
   entry: {
     index: "src/index.ts",
+    testing: "src/testing/index.ts",
     styles: "src/styles.css",
   },
   format: ["esm", "cjs"],
-  dts: { entry: { index: "src/index.ts" } },
+  dts: { entry: { index: "src/index.ts", testing: "src/testing/index.ts" } },
   sourcemap: true,
   clean: true,
   // rollup's treeshake pass hoists imports above the banner and drops the
@@ -18,5 +19,11 @@ export default defineConfig({
   treeshake: false,
   target: "es2022",
   banner: { js: '"use client";' },
-  external: ["react", "react-dom", "react/jsx-runtime"],
+  external: [
+    "react",
+    "react-dom",
+    "react/jsx-runtime",
+    // ./testing only. An optional peer, so it must never be bundled.
+    "@testing-library/react",
+  ],
 });
