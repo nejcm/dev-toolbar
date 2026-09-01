@@ -23,7 +23,7 @@ bun install
 bun run verify
 ```
 
-That is `typecheck && lint && test && build`, in sequence — the exact gate CI
+That is `typecheck && lint && build && test`, in sequence — the exact gate CI
 runs. If it passes locally it passes in CI, and a PR that fails it will not
 merge.
 

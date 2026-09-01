@@ -27,7 +27,7 @@ Each extension directory follows the same convention: `index.tsx` (the factory),
 
 ```sh
 bun install                  # also installs the git hooks (simple-git-hooks)
-bun run verify               # typecheck && lint && test && build — the CI gate
+bun run verify               # typecheck && lint && build && test — the CI gate
 bun run typecheck            # tsc --noEmit
 bun run lint                 # oxlint --max-warnings=59  (a ratchet, see below)
 bun run lint:fix             # oxlint --fix

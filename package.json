@@ -106,7 +106,7 @@
     "lint:fix": "oxlint --fix",
     "format": "oxfmt",
     "format:check": "oxfmt --check",
-    "verify": "bun run typecheck && bun run lint && bun run test && bun run build",
+    "verify": "bun run typecheck && bun run lint && bun run build && bun run test",
     "prepublishOnly": "bun run typecheck && bun run build",
     "prepare": "simple-git-hooks"
   },
