@@ -43,6 +43,8 @@ export type {
   Unsubscribe,
 } from "./throttledStore";
 
+export { STYLE_ATTRIBUTE, ensureStyleSheet } from "./styles";
+
 export {
   DEFAULT_SENSITIVE_KEYS,
   REDACTED,

@@ -8,8 +8,8 @@ an extension against it.
 delivery plan. This document describes what the code actually does.
 
 - Contract version: **1** (`CONTRACT_VERSION`)
-- Entries: `@nejcm/dev-toolbar` (root), `/runtime`, `/ext/metrics`, `/testing`,
-  `/styles.css`
+- Entries: `@nejcm/dev-toolbar` (root), `/runtime`, `/ext/metrics`,
+  `/ext/environment`, `/testing`, `/styles.css`
 - Runtime dependencies: **none**
 
 P1 built `/ext/metrics` strictly as an outside consumer of this contract, which was
@@ -17,6 +17,10 @@ the point of building it. It moved the contract in four places; all four are mar
 **P1** below and collected in [§10](#10-what-p1-changed-and-why). `CONTRACT_VERSION`
 stays `1`: every change is additive or a semantic correction, and version 1 has never
 been published, so there is nothing in the wild to break.
+
+P2's first extension, `/ext/environment`, moved it in **no** places — see
+[§11](#11-what-p2s-first-extension-found). The one thing it changed is a duplication
+it refused to repeat: the per-extension style injector now lives in `/runtime`.
 
 ## 1. What the shell is
 
@@ -300,11 +304,18 @@ styling metrics chips wants one rule for both. The instance is already addressab
 lost, and `data-dtb-metric` narrows further to a single chip.
 
 Core's `injectStyles` prop is a prop, so an extension cannot see it. An extension
-that ships CSS therefore needs its own switch — `metrics({ injectStyles: false })` —
-and should export its stylesheet as a string for consumers who deliver CSS
-themselves. Threading core's flag down would mean extensions importing core's React
-context at runtime, which only works if both resolve to the same module instance; see
-§7.
+that ships CSS therefore needs its own switch — `metrics({ injectStyles: false })`,
+`environment({ injectStyles: false })` — and should export its stylesheet as a string
+for consumers who deliver CSS themselves. Threading core's flag down would mean
+extensions importing core's React context at runtime, which only works if both
+resolve to the same module instance; see §7.
+
+The *injection* itself is shared: `ensureStyleSheet(entry, css)` in `/runtime`
+(**P2**). It keys on a `style[data-dev-toolbar-styles="<entry>"]` element, so the DOM
+rather than a module flag is the deduplication truth and two bundled copies still
+inject once. It sits in `/runtime` rather than core because importing core's injector
+would drag core's whole stylesheet string into an extension's bundle — and extensions
+already import `/runtime`, while core never does.
 
 ### 4.3 `classNames`
 
@@ -519,7 +530,8 @@ import them from a server component without a directive of its own.
 | Not in core | Where it goes |
 | --- | --- |
 | Event bus, ring buffers, throttled store, `redact()` | `./runtime` (P1) |
-| Metrics, flags, environment, overlays, diagnostics, theme editor | `./ext/*` (P1–P4) |
+| Metrics, environment, flags, overlays, diagnostics, theme editor | `./ext/*` (P1–P4) |
+| Environment, build and session context, and any redaction of it | `./ext/environment` (P2) — core has no `ctx` to hand anybody |
 | A command palette UI | `./ext/command-menu` (P2) |
 | Severity thresholds | The extension that owns the metric |
 | Access control | The consumer, before rendering `<DevToolbar>` at all |
@@ -605,3 +617,77 @@ not the same as the thing working.
   sat at their mount-time values while the collectors happily kept collecting. The
   store belongs to the extension object, not to one start/stop cycle. Both now have
   regression tests that fail against the old code.
+
+## 11. What P2's first extension found
+
+`/ext/environment` is §3B — environment, build and authenticated-actor context — and
+it is the first extension whose subject matter is *the consumer's own data* rather
+than something it can measure for itself. It needed no contract change.
+
+### 11.1 The contract held
+
+Four things that could have been gaps and were not:
+
+- **No `ctx` was missed.** The Decisions table dropped `availability(ctx)` on the
+  grounds that core has no identity to hand anybody. An extension whose entire subject
+  is identity confirms it from the other side: the consumer passes what it knows into
+  the extension's own factory, which is a narrower, typed, per-extension surface, and
+  core stays out of it. `hidden` and the `fields` allowlist cover the restricted-view
+  case without core knowing what a role is.
+- **A store in the factory, again.** Same rule as `/ext/metrics`: the snapshot is
+  built by `environment()`, not by `start(api)`, because the chip renders before any
+  effect runs. Nothing new, but it is now twice in a row that the *first* thing an
+  extension author must know is this one.
+- **Visibility stayed reported, not enforced.** The extension re-reads on the bar
+  becoming visible and otherwise polls; core pausing it would have been wrong for
+  exactly the reason §2 gives.
+- **Slot-level severity needed nothing from core** beyond `--dtb-ok` / `--dtb-warn` /
+  `--dtb-danger`, which P1 added. Production renders in the danger colour and an
+  impersonation overrides everything — an extension-level judgement, made with core's
+  tokens, so a restyled bar restyles it.
+
+### 11.2 The one change: `ensureStyleSheet` moves to `/runtime`
+
+`/ext/metrics` wrote a private near-copy of core's style injector, with a comment
+explaining why it could not import core's. `/ext/environment` was about to write the
+same twenty lines a second time. Two is the point at which the duplication is the
+design, so it moved to `/runtime` and both extensions call it. Behaviour is unchanged
+and both keep their own `injectStyles` option; see §4.2.
+
+### 11.3 Redaction as a UI concern, not just a clipboard one
+
+§6 says to mask credentials and PII *in copied snapshots*. Building the panel made a
+stronger rule obvious: redact on the way **in**, so the snapshot the panel renders and
+the snapshot the clipboard receives are the same object. A "copy" path that re-derives
+from raw context is one refactor away from being the only path that forgets, and the
+aggregated command is a second front door onto the same data — `runCommand(
+"environment.copy")` must not be able to fetch what the panel would not show.
+
+The trap underneath that rule is **order of operations**, and it is silent. `redact()`
+finds sensitive keys by *walking an object graph*; a value serialised before it gets
+there is a string, and every key inside it is now just characters in a value. Review
+caught exactly this in the first cut of `/ext/environment`: `extra` entries were
+`JSON.stringify`d before redaction, so `extra: { user: { authToken } }` put the token
+in the panel and on the clipboard — and the row still displayed its `masked` tag,
+because a sibling email had been masked by the PII pass. A leak under a badge that
+says "masked" is worse than a plain one. Redact first, serialise second, and derive
+the `masked` flag by comparing the two *rendered* forms so it cannot be set by a
+formatting difference.
+
+The third is that **reading the consumer's data must fail closed**. Redaction walks
+the graph with `Object.entries`, which invokes getters, so a getter that throws —
+anywhere in the context, at any depth — throws from the snapshot build. The first
+build runs inside the extension's *factory*, before core has mounted anything, so it
+would take down the host application's render rather than degrading to an error chip;
+the later ones run inside a `setInterval`, where nobody can catch them at all. §6's
+failure isolation is the shell's promise about *slots*; this is the same promise an
+extension has to keep for itself about everything it does outside one. The build is
+wrapped, and a context it cannot read becomes a snapshot that says so.
+
+The second rule is that **masking is visible**. A masked row is tagged in the panel
+and counted next to the copy buttons. Silent masking and a value that was never
+supplied look identical, and a developer debugging "why is my user id wrong" deserves
+to be told which one they are looking at.
+
+Neither is a contract change. Both are what a snapshot-shaped extension should do, and
+they are recorded here because the next one — `/ext/diagnostics` — has the same shape.

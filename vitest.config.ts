@@ -24,6 +24,10 @@ export default defineConfig({
         replacement: resolve("./src/ext/metrics/index.tsx"),
       },
       {
+        find: /^@nejcm\/dev-toolbar\/ext\/environment$/,
+        replacement: resolve("./src/ext/environment/index.tsx"),
+      },
+      {
         find: /^@nejcm\/dev-toolbar$/,
         replacement: resolve("./src/index.ts"),
       },

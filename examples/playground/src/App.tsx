@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { DevToolbar, DevToolbarInset, useDevToolbar } from "@nejcm/dev-toolbar";
 import type { ToolbarDensity } from "@nejcm/dev-toolbar";
-import { playgroundExtensions } from "./extensions";
+import { playgroundContext, playgroundExtensions } from "./extensions";
 
 /** Live readout of the `--dev-toolbar-height` the shell publishes. */
 function HeightReadout() {
@@ -155,6 +155,74 @@ function LoadControls() {
   );
 }
 
+/**
+ * Drives the real environment extension. Its `context` is a getter, so flipping
+ * these mutates the module-level object and the extension picks it up on its
+ * next poll — no re-render of the toolbar involved.
+ */
+function EnvironmentControls() {
+  const [, force] = useState(0);
+  const flip = (mutate: () => void) => {
+    mutate();
+    force((value) => value + 1);
+  };
+
+  return (
+    <section className="pg-card">
+      <h2>Drive the environment</h2>
+      <p>
+        The <code>env</code> chip is the real{" "}
+        <code>@nejcm/dev-toolbar/ext/environment</code>. Its context carries an
+        email address, an API endpoint with <code>access_token</code> in the
+        query string, an <code>extra.authToken</code> and a{" "}
+        <code>refreshToken</code> nested inside <code>extra.identity</code> — all
+        four must appear masked in the panel and in anything copied from it.
+      </p>
+      <div className="pg-controls">
+        <button
+          type="button"
+          className="pg-button"
+          data-testid="env-impersonate"
+          onClick={() =>
+            flip(() => {
+              playgroundContext.impersonating = !playgroundContext.impersonating;
+            })
+          }
+        >
+          impersonating: {String(playgroundContext.impersonating)}
+        </button>
+        <button
+          type="button"
+          className="pg-button"
+          data-testid="env-sync"
+          onClick={() =>
+            flip(() => {
+              playgroundContext.syncStatus =
+                playgroundContext.syncStatus === "connected"
+                  ? "offline"
+                  : "connected";
+            })
+          }
+        >
+          sync: {playgroundContext.syncStatus}
+        </button>
+        <button
+          type="button"
+          className="pg-button"
+          data-testid="env-supply"
+          onClick={() =>
+            flip(() => {
+              playgroundContext.supply = !playgroundContext.supply;
+            })
+          }
+        >
+          context supplied: {String(playgroundContext.supply)}
+        </button>
+      </div>
+    </section>
+  );
+}
+
 export function App() {
   const [restyled, setRestyled] = useState(false);
   const [inset, setInset] = useState(false);
@@ -202,6 +270,8 @@ export function App() {
       </section>
 
       <LoadControls />
+
+      <EnvironmentControls />
 
       <section className="pg-card">
         <h2>Restyle demo</h2>

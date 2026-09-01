@@ -11,6 +11,8 @@
  * attribute: core owns the unprefixed names, an extension owns names prefixed
  * with its own id.
  */
+import { ensureStyleSheet } from "../../runtime";
+
 export const METRICS_CSS = String.raw`@layer dev-toolbar {
   [data-dev-toolbar] [data-dtb-part="metrics-chips"] {
     display: inline-flex;
@@ -264,24 +266,12 @@ export const METRICS_CSS = String.raw`@layer dev-toolbar {
 export const METRICS_STYLE_ENTRY = "ext-metrics";
 
 /**
- * Injects the stylesheet once per document.
- *
- * A near-copy of core's `ensureStyles`, on purpose: importing core's would drag
- * the whole core stylesheet string into this bundle, and `/ext/metrics` is meant
- * to be addable without paying for anything it does not use. The dedup key is a
- * DOM attribute, so two bundled copies still inject once.
+ * Injects the stylesheet once per document, through `/runtime`'s shared
+ * injector. It is not core's: importing core's would drag the whole core
+ * stylesheet string into this bundle, and `/ext/metrics` is meant to be
+ * addable without paying for anything it does not use. The dedup key is a DOM
+ * attribute, so two bundled copies still inject once.
  */
 export function ensureMetricsStyles(doc?: Document): HTMLStyleElement | null {
-  const target = doc ?? (typeof document === "undefined" ? null : document);
-  if (!target?.head) return null;
-  const attribute = "data-dev-toolbar-styles";
-  const existing = target.head.querySelector<HTMLStyleElement>(
-    `style[${attribute}="${METRICS_STYLE_ENTRY}"]`,
-  );
-  if (existing) return existing;
-  const style = target.createElement("style");
-  style.setAttribute(attribute, METRICS_STYLE_ENTRY);
-  style.textContent = METRICS_CSS;
-  target.head.appendChild(style);
-  return style;
+  return ensureStyleSheet(METRICS_STYLE_ENTRY, METRICS_CSS, doc);
 }

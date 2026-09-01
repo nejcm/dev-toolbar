@@ -18,9 +18,12 @@ const pkg = JSON.parse(readFileSync(`${root}package.json`, "utf8")) as {
   exports: Record<string, unknown>;
 };
 
-/** Only ever present in a `src/runtime/*` or `src/ext/metrics/*` module. */
+/** Only ever present in a `src/runtime/*` or `src/ext/*` module. */
 const RUNTIME_MARKER = "[dev-toolbar/runtime]";
-const EXT_MARKER = "[dev-toolbar/ext/metrics]";
+const EXT_MARKERS = [
+  "[dev-toolbar/ext/metrics]",
+  "[dev-toolbar/ext/environment]",
+];
 
 function sourceFiles(directory: string): string[] {
   const output: string[] = [];
@@ -104,14 +107,18 @@ if (!built && mustBeBuilt) {
       for (const file of graph) {
         const source = readFileSync(file, "utf8");
         expect(source, file).not.toContain(RUNTIME_MARKER);
-        expect(source, file).not.toContain(EXT_MARKER);
+        for (const marker of EXT_MARKERS) {
+          expect(source, `${file} / ${marker}`).not.toContain(marker);
+        }
       }
     });
 
     it("pulls none into the CommonJS root entry either", () => {
       const source = readFileSync(`${root}dist/index.cjs`, "utf8");
       expect(source).not.toContain(RUNTIME_MARKER);
-      expect(source).not.toContain(EXT_MARKER);
+      for (const marker of EXT_MARKERS) {
+        expect(source, marker).not.toContain(marker);
+      }
     });
 
     it("does contain the markers where they belong, so the check can fail", () => {
@@ -119,7 +126,10 @@ if (!built && mustBeBuilt) {
         RUNTIME_MARKER,
       );
       expect(readFileSync(`${root}dist/ext/metrics.cjs`, "utf8")).toContain(
-        EXT_MARKER,
+        EXT_MARKERS[0] as string,
+      );
+      expect(readFileSync(`${root}dist/ext/environment.cjs`, "utf8")).toContain(
+        EXT_MARKERS[1] as string,
       );
     });
   });
@@ -133,7 +143,18 @@ if (built || !mustBeBuilt) {
         encoding: "utf8",
       }).trim();
 
-    it("declares ./runtime and ./ext/metrics explicitly, with no wildcards", () => {
+    it("keeps one extension out of another's bundle", () => {
+      // Two extensions on two subpaths: neither should drag the other in, or
+      // adding a second chip would quietly cost the first one's collectors.
+      expect(
+        readFileSync(`${root}dist/ext/environment.cjs`, "utf8"),
+      ).not.toContain(EXT_MARKERS[0] as string);
+      expect(readFileSync(`${root}dist/ext/metrics.cjs`, "utf8")).not.toContain(
+        EXT_MARKERS[1] as string,
+      );
+    });
+
+    it("declares ./runtime and the ./ext/* entries explicitly, with no wildcards", () => {
       expect(pkg.exports["./runtime"]).toEqual({
         types: "./dist/runtime.d.ts",
         import: "./dist/runtime.js",
@@ -143,6 +164,11 @@ if (built || !mustBeBuilt) {
         types: "./dist/ext/metrics.d.ts",
         import: "./dist/ext/metrics.js",
         require: "./dist/ext/metrics.cjs",
+      });
+      expect(pkg.exports["./ext/environment"]).toEqual({
+        types: "./dist/ext/environment.d.ts",
+        import: "./dist/ext/environment.js",
+        require: "./dist/ext/environment.cjs",
       });
       expect(Object.keys(pkg.exports).some((key) => key.includes("*"))).toBe(
         false,
@@ -155,6 +181,8 @@ if (built || !mustBeBuilt) {
         "dist/runtime.cjs",
         "dist/ext/metrics.js",
         "dist/ext/metrics.cjs",
+        "dist/ext/environment.js",
+        "dist/ext/environment.cjs",
       ]) {
         expect(
           readFileSync(`${root}${file}`, "utf8").startsWith('"use client";'),
@@ -176,17 +204,22 @@ if (built || !mustBeBuilt) {
       expect(readFileSync(`${root}dist/ext/metrics.d.ts`, "utf8")).toContain(
         "MetricsOptions",
       );
+      expect(
+        readFileSync(`${root}dist/ext/environment.d.ts`, "utf8"),
+      ).toContain("EnvironmentOptions");
     });
 
     it("resolves through Node's own exports map", () => {
       const names = node(
         `const r = await import("@nejcm/dev-toolbar/runtime");` +
           `const m = await import("@nejcm/dev-toolbar/ext/metrics");` +
-          `console.log(JSON.stringify({ runtime: Object.keys(r).sort(), metrics: Object.keys(m).sort() }));`,
+          `const e = await import("@nejcm/dev-toolbar/ext/environment");` +
+          `console.log(JSON.stringify({ runtime: Object.keys(r).sort(), metrics: Object.keys(m).sort(), environment: Object.keys(e).sort() }));`,
       );
       const result = JSON.parse(names) as {
         runtime: string[];
         metrics: string[];
+        environment: string[];
       };
       expect(result.runtime).toEqual(
         expect.arrayContaining([
@@ -198,6 +231,13 @@ if (built || !mustBeBuilt) {
       );
       expect(result.metrics).toEqual(
         expect.arrayContaining(["metrics", "createMetricsRuntime"]),
+      );
+      expect(result.environment).toEqual(
+        expect.arrayContaining([
+          "environment",
+          "createEnvironmentRuntime",
+          "ENVIRONMENT_CSS",
+        ]),
       );
     });
 
@@ -212,6 +252,22 @@ if (built || !mustBeBuilt) {
       expect(JSON.parse(output)).toEqual({
         id: "metrics",
         commands: ["metrics.reset", "metrics.copy"],
+      });
+
+      // Same for /ext/environment, whose snapshot is built in the factory and
+      // must therefore survive having no `window` to detect anything from.
+      const env = node(
+        `const { environment } = await import("@nejcm/dev-toolbar/ext/environment");` +
+          `const ext = environment({ context: { environment: "production", userId: "a@b.io" } });` +
+          `console.log(JSON.stringify({ id: ext.id, commands: ext.commands.map(c => c.id) }));`,
+      );
+      expect(JSON.parse(env)).toEqual({
+        id: "environment",
+        commands: [
+          "environment.copy",
+          "environment.copyJson",
+          "environment.refresh",
+        ],
       });
     });
   });

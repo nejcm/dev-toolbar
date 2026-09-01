@@ -21,13 +21,15 @@ Subpaths, each opt-in and each with its own bundle:
 | `@nejcm/dev-toolbar` | The shell. Chrome plus hosting. |
 | `@nejcm/dev-toolbar/runtime` | Event bus, ring buffers, throttled store, `redact()`. For extensions that measure. Core never imports it. |
 | `@nejcm/dev-toolbar/ext/metrics` | Memory, delay, jank and network, as one extension. |
+| `@nejcm/dev-toolbar/ext/environment` | Environment, build and actor context — all of it supplied by you, all of it redacted. |
 | `@nejcm/dev-toolbar/testing` | `renderWithToolbar`, fake extensions, mock bus, fake layout. |
 | `@nejcm/dev-toolbar/styles.css` | The stylesheet, if you would rather not inject it at runtime. |
 
-> **Status:** the shell (P0), `/runtime` and `/ext/metrics` (P1) are implemented and
-> the contract has been through its first real consumer — which moved it in four
-> places, all listed in the [changelog](./CHANGELOG.md). `0.1.0` is the first
-> publish.
+> **Status:** the shell (P0), `/runtime` and `/ext/metrics` (P1) are implemented, and
+> `/ext/environment` is the first of the P2 extensions. The contract has been through
+> two real consumers — the first moved it in four places, all listed in the
+> [changelog](./CHANGELOG.md); the second did not move it at all. `0.1.0` is the
+> first publish.
 
 ## Install
 
@@ -244,6 +246,11 @@ import {
   two dumps that are identical still diff as identical. This is hygiene for anything
   headed to a screenshot or a clipboard, **not** a security boundary: it matches
   names, so a secret under `data` survives.
+- **`ensureStyleSheet(entry, css)`** — injects a stylesheet once per document, keyed
+  on a `style[data-dev-toolbar-styles]` element rather than a module flag, so two
+  bundled copies of your package still inject once. Core's `injectStyles` is a prop
+  and extensions cannot see it, so an extension that ships CSS needs its own switch
+  and its own injector; this is the injector.
 
 ## `@nejcm/dev-toolbar/ext/metrics`
 
@@ -311,6 +318,92 @@ The extension ships its own stylesheet, injected once per document. If you set
 `injectStyles={false}` on `<DevToolbar>`, set `metrics({ injectStyles: false })` too
 and deliver `METRICS_CSS` yourself — core's flag is a prop, and extensions cannot see
 props.
+
+## `@nejcm/dev-toolbar/ext/environment`
+
+Which environment am I in, what is deployed, and who am I acting as — the context
+block from `plans/dev-bar.md` §3B.
+
+**Everything it shows is supplied by you.** Core has no `ctx`, this extension invents
+none, it reads no `process.env` and looks for no global. Supply nothing and the chip
+says `unknown` — not `local`, and nothing guessed from the hostname.
+
+```tsx
+import { environment } from "@nejcm/dev-toolbar/ext/environment";
+
+// Once, at module scope. Not inside render.
+const extensions = [
+  environment({
+    context: {
+      environment: "production",        // local | preview | staging | production | your own
+      release: __RELEASE__,
+      commit: __COMMIT__,
+      branch: __BRANCH__,
+      deployment: process.env.VERCEL_DEPLOYMENT_ID,
+      region: "ap-southeast-1",
+      apiEndpoint: API_BASE,
+      builtAt: __BUILT_AT__,            // ISO string, epoch ms or a Date
+      userId: user.id,
+      workspaceId: workspace.id,
+      internal: user.isStaff,
+      impersonating: session.impersonating,   // true, or { actor, subject }
+      roles: user.roles,
+      syncStatus: connection.state,
+      extra: { tenantTier: plan },      // anything else worth a row
+    },
+  }),
+];
+```
+
+Pass a **function** instead of an object for anything that changes — a sync status, a
+switched workspace — and it is re-read every `pollMs` (default 4 s), plus on
+`online`/`offline`, `resize`, `popstate` and `hashchange`. The same timer runs
+whenever `detect` is on even with a static object, because `history.pushState` — how
+every SPA router navigates — fires no event anyone can listen for, and the Route row
+would otherwise be stale indefinitely.
+
+The compact slot is a dot and the environment name; production is red on purpose, and
+an active impersonation says so in the bar. The panel is the detail table, with three
+rows the browser answers for itself — route, viewport, connection — tagged `detected`
+so they are never read as something the deployment asserted. A field nobody supplied
+says *not supplied* rather than being quietly absent.
+
+### What it does with your data
+
+Session context is the most sensitive thing a toolbar puts on a screen, so:
+
+- every value goes through [`redact()`](#nejcmdev-toolbarruntime) on the way *in*, and
+  email addresses are masked on top of it (`n***@example.com`). The panel, "Copy
+  summary", "Copy JSON" and the aggregated commands all read that same redacted
+  snapshot — there is no path that reaches the raw context;
+- the masking is **visible**: a masked row is tagged `masked`, and the count sits next
+  to the copy buttons. A redaction nobody can see is indistinguishable from a value
+  that was never supplied;
+- `fields: ["environment", "release"]` is an allowlist for a restricted view —
+  everything else is *dropped*, not hidden, and that includes `extra` entries, which
+  are named `extra:<key>`. For an actor who should not see the extension at all,
+  leave it out of the `extensions` array (§6 of the design is guidance for you, not
+  something core enforces);
+- structured `extra` values are redacted **as objects** and serialised afterwards, so
+  a credential nested inside one (`extra: { user: { authToken } }`) is masked like a
+  top-level one. `redact()` matches key names by walking a graph; handing it a JSON
+  string instead would hide every inner key from it.
+
+```ts
+environment({
+  context: () => ({ environment: "staging", syncStatus: connection.state }),
+  pollMs: 2000,
+  fields: ["environment", "release", "extra:tier"],  // restricted view
+  detect: false,                                 // no route/viewport/connection
+  maskPii: false,                                // stop masking email addresses
+  redactOptions: { extraKeys: ["tenantcode"] },  // mask more key names
+});
+```
+
+Commands aggregated into `useToolbarCommands()`: `environment.copy`,
+`environment.copyJson`, `environment.refresh`. Like `/ext/metrics`, it ships its own
+stylesheet — pair `injectStyles={false}` on `<DevToolbar>` with
+`environment({ injectStyles: false })` and deliver `ENVIRONMENT_CSS` yourself.
 
 ## Styling
 

@@ -2,16 +2,17 @@ import { useState } from "react";
 import type { DevToolbarExtension } from "@nejcm/dev-toolbar";
 import { useToolbarCommands } from "@nejcm/dev-toolbar";
 import { metrics } from "@nejcm/dev-toolbar/ext/metrics";
+import { environment } from "@nejcm/dev-toolbar/ext/environment";
 
 /**
  * Placeholder extensions with deliberately varied `priority`, so narrowing the
  * window collapses them into the `···` menu in a predictable order:
  *
- *   boom (5) → hydr (20) → metrics (35) → tw (70) → flags (80) → env (90)
- *   → user (100, aligned end)
+ *   boom (5) → hydr (20) → metrics (35) → tw (70) → flags (80) → cmds (85)
+ *   → env (90) → user (100, aligned end)
  *
- * All of them are fake except `metrics`, which is the real
- * `@nejcm/dev-toolbar/ext/metrics` and measures the page it is running on.
+ * The fake ones are the placeholders; `metrics` and `env` are the real
+ * `@nejcm/dev-toolbar/ext/metrics` and `.../ext/environment`.
  */
 
 function Chip({
@@ -64,45 +65,91 @@ function Definition({ children }: { children: React.ReactNode }) {
   );
 }
 
-const environment: DevToolbarExtension = {
-  id: "env",
-  label: "Environment",
-  order: 0,
-  priority: 90,
-  compact: ({ isPanelOpen, openPanel, closePanel }) => (
-    <Chip
-      label="env"
-      value="staging"
-      tone="ok"
-      expanded={isPanelOpen}
-      onClick={() => (isPanelOpen ? closePanel() : openPanel())}
-    />
-  ),
-  panel: () => <EnvironmentPanel />,
-  commands: [
-    {
-      id: "env.copy",
-      label: "Copy environment summary",
-      run: () => console.info("[playground] copied environment summary"),
-    },
-  ],
+/**
+ * The real `@nejcm/dev-toolbar/ext/environment`, driven by a getter so the
+ * playground can flip impersonation and the sync status at runtime and watch
+ * the chip react.
+ *
+ * The context deliberately contains four things that must never reach the
+ * screen or the clipboard as typed: an email address, an API endpoint with a
+ * token in its query string, an `extra` key called `authToken`, and a
+ * `refreshToken` nested one level down inside `extra.identity` — whose own key is innocent,
+ * so only a redactor that walks the object finds it.
+ */
+export const playgroundContext = {
+  impersonating: false,
+  syncStatus: "connected",
+  supply: true,
 };
 
-function EnvironmentPanel() {
-  const commands = useToolbarCommands();
+const runtimeEnvironment = environment({
+  order: 0,
+  priority: 90,
+  pollMs: 500,
+  context: () =>
+    playgroundContext.supply
+      ? {
+          environment: "staging",
+          release: "web-2026.08.28.4",
+          commit: "a84c7e1",
+          branch: "feat/shell-architecture",
+          deployment: "dpl_9f2c1",
+          region: "ap-southeast-1",
+          apiEndpoint: "https://api.example.com/v2?access_token=super-secret",
+          builtAt: "2026-08-28T10:04:00.000Z",
+          userId: "nejc.mursic@example.com",
+          workspaceId: "ws_456",
+          internal: true,
+          impersonating: playgroundContext.impersonating
+            ? { actor: "staff_1", subject: "usr_123" }
+            : false,
+          roles: ["admin", "support"],
+          syncStatus: playgroundContext.syncStatus,
+          // The nested one is the interesting case: `redact()` only finds
+          // `refreshToken` if it walks the object, which means the object must
+          // reach it unserialised.
+          extra: {
+            authToken: "abcdef123456",
+            bundler: "vite",
+            identity: {
+              email: "nejc.mursic@example.com",
+              refreshToken: "rt-nested-secret",
+            },
+          },
+        }
+      : {},
+});
+
+/** Kept from the placeholder set: it is the only demo of command aggregation. */
+const commands: DevToolbarExtension = {
+  id: "cmds",
+  label: "Commands",
+  order: 5,
+  priority: 85,
+  compact: ({ isPanelOpen, togglePanel }) => (
+    <Chip
+      label="cmds"
+      value="aggregated"
+      tone="neutral"
+      expanded={isPanelOpen}
+      onClick={togglePanel}
+    />
+  ),
+  panel: () => <CommandsPanel />,
+};
+
+function CommandsPanel() {
+  const commandList = useToolbarCommands();
   return (
     <Definition>
-      <strong>Environment</strong>
+      <strong>Commands core has aggregated ({commandList.length})</strong>
       <p style={{ margin: 0, color: "var(--dtb-muted)" }}>
-        A panel is just a render function. Core owns the single-active-panel
-        invariant, the resize handle and the persisted height; what is inside is
-        entirely the extension's business.
+        Core aggregates every extension's commands and renders no palette. The
+        environment entries here copy the same redacted snapshot the panel
+        shows.
       </p>
-      <strong style={{ marginTop: 8 }}>
-        Commands core has aggregated ({commands.length})
-      </strong>
       <ul style={{ margin: 0, paddingLeft: 18 }}>
-        {commands.map((command) => (
+        {commandList.map((command) => (
           <li key={command.id}>
             <button
               type="button"
@@ -257,7 +304,8 @@ const runtimeMetrics = metrics({
 });
 
 export const playgroundExtensions: DevToolbarExtension[] = [
-  environment,
+  runtimeEnvironment,
+  commands,
   flags,
   runtimeMetrics,
   hydration,

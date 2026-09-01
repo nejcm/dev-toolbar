@@ -51,6 +51,11 @@
       "import": "./dist/ext/metrics.js",
       "require": "./dist/ext/metrics.cjs"
     },
+    "./ext/environment": {
+      "types": "./dist/ext/environment.d.ts",
+      "import": "./dist/ext/environment.js",
+      "require": "./dist/ext/environment.cjs"
+    },
     "./testing": {
       "types": "./dist/testing.d.ts",
       "import": "./dist/testing.js",
