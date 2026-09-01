@@ -37,10 +37,8 @@ Subpaths, each opt-in and each with its own bundle:
 > all listed in the [changelog](./CHANGELOG.md); the second did not move it at all;
 > the third found one gap, in `commands`; the fourth closed that gap and added the
 > `overlay` slot; the fifth drew over the host page and needed nothing new; the sixth
-> needed to *read* the other five, which is the `diagnostics` aggregation; the
-> seventh both mutates the application and writes to its CSS, and needed nothing new
-> either ([plans/architecture.md §13–§16](./plans/architecture.md)). Every change is
-> additive, so `CONTRACT_VERSION` is still `1`. `0.1.0` is the first publish.
+> either. Every change is additive, so `CONTRACT_VERSION` is still `1`. `0.1.0` is the
+> first publish.
 
 ## Install
 
@@ -246,9 +244,7 @@ and leak between tests.
 
 A slot that throws degrades to an error chip. The bar and every other extension keep
 working.
-
-Full authoring guide, with a worked example:
-[plans/architecture.md](./plans/architecture.md#7-writing-an-extension).
+[docs/architecture.md](./docs/architecture.md#7-writing-an-extension).
 
 ## `@nejcm/dev-toolbar/runtime`
 
@@ -362,10 +358,7 @@ The extension ships its own stylesheet, injected once per document. If you set
 and deliver `METRICS_CSS` yourself — core's flag is a prop, and extensions cannot see
 props.
 
-## `@nejcm/dev-toolbar/ext/environment`
-
-Which environment am I in, what is deployed, and who am I acting as — the context
-block from `plans/dev-bar.md` §3B.
+Which environment am I in, what is deployed, and who am I acting as.
 
 **Everything it shows is supplied by you.** Core has no `ctx`, this extension invents
 none, it reads no `process.env` and looks for no global. Supply nothing and the chip
@@ -448,9 +441,7 @@ Commands aggregated into `useToolbarCommands()`: `environment.copy`,
 stylesheet — pair `injectStyles={false}` on `<DevToolbar>` with
 `environment({ injectStyles: false })` and deliver `ENVIRONMENT_CSS` yourself.
 
-## `@nejcm/dev-toolbar/ext/flags`
-
-Feature-flag controls — `plans/dev-bar.md` §3C — including §7's promoted flag.
+Feature-flag controls, including the promoted flag.
 
 **The flags are yours.** This extension owns no flag store, integrates no provider
 and reaches for no global. You hand it what your application resolved and, if you
@@ -645,10 +636,7 @@ and the observer watches text, `childList` and the attributes that carry a name,
 label your app rewrites live is re-checked.
 
 Nine of §3G's thirteen modes are deliberately absent, with reasons — re-render flash
-needs React's internals; component boundaries and ownership need metadata only your
-app can attach; stacking contexts and scroll containers need `getComputedStyle` on
-every element in the document. See
-[plans/architecture.md §14](./plans/architecture.md).
+every element in the document.
 
 ## `@nejcm/dev-toolbar/ext/diagnostics`
 
@@ -886,9 +874,7 @@ Commands: `theme-editor.preset.<name>` (one per preset, enumerated live),
 `theme-editor.copyRecipe`, `theme-editor.copyFigma`, `theme-editor.copyLink`,
 `theme-editor.refresh`.
 
-Not implemented, on purpose: palette generation from base/accent/contrast, hue/chroma/
-lightness controls, and a Figma plugin. What each of those costs you is stated in the
-panel and in [plans/architecture.md §16](./plans/architecture.md).
+panel.
 
 ## Styling
 
@@ -926,9 +912,7 @@ specificity — a one-class selector of yours overrides core's two-attribute sel
 
 Because the bar is light DOM, an extension can also just use Tailwind, styled
 components, or your design system, and it renders the way it does everywhere else.
-
-The full token table is in
-[plans/architecture.md](./plans/architecture.md#4-style-api).
+[docs/architecture.md](./docs/architecture.md#4-style-api).
 
 ## Keeping it out of production
 
@@ -1144,13 +1128,13 @@ already shipped twice.
 [CHANGELOG.md](./CHANGELOG.md) — including the four places the extension contract
 moved when the first real extension was written against it.
 
-## Documents
-
-- [plans/architecture.md](./plans/architecture.md) — shell contract, boundary
-  rationale, token table, extension-authoring guide, and what each extension found
-- [plans/implementation.md](./plans/implementation.md) — the accepted delivery plan
-- [plans/dev-bar.md](./plans/dev-bar.md) — the product design and the extension
-  catalogue
+- [docs/architecture.md](./docs/architecture.md) — shell contract, boundary rationale,
+  token table, extension-authoring guide, and the known gaps in the contract
+- [docs/adr/](./docs/adr/) — decision records: why extensions are plain objects, why
+  the bar is light DOM, and the open question about `CONTRACT_VERSION`
+- [CONTRIBUTING.md](./CONTRIBUTING.md) — setup, commands, commit convention
+- [src/core/contract.ts](./src/core/contract.ts) — the contract itself, and the source
+  of truth for every type in it
 
 ## License
 

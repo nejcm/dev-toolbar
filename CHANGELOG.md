@@ -171,10 +171,9 @@ unreachable in every test, because an element with real declarations is caught b
 declaration count instead. There is now a case per reading, and a third guard no test
 could distinguish from its neighbour was deleted rather than kept.
 
-### What independent review found in the theme editor
-
-One blocking defect, fixed, plus five smaller ones. Full reasoning in
-[plans/architecture.md §16.9](./plans/architecture.md).
+@One blocking defect, fixed, plus five smaller ones. The full review reasoning lived
+in that phase's working notes, which are not tracked; the rules it sharpened are in
+[docs/architecture.md](./docs/architecture.md).
 
 - **Fixed: the recipe export re-masked by token name, breaking the round trip.**
   `executableRecipe()` correctly omits masked tokens; `recipeText()` then put the whole
@@ -210,9 +209,7 @@ One blocking defect, fixed, plus five smaller ones. Full reasoning in
 ### Closed: the last known join, in `/ext/metrics`
 
 `describe()` in `ext/metrics/collectors/delay.ts` built `tag#id.class` from live DOM
-attributes and handed the assembled string to metrics' `redact()` pass, whose value
-matching is anchored to the whole string — so a credential-shaped `id` was maskable on
-its own and unmaskable behind `tag`. `plans/architecture.md` §15.7 recorded it as
+its own and unmaskable behind `tag`. The known-gaps register recorded it as
 deliberately unfixed on the grounds that it lived in approved P1 code; P4 removed that
 argument by fixing three fresh instances of the same shape and writing the checklist
 that names it. Each part now goes through the same one-line masking
@@ -227,9 +224,7 @@ before P4. It passes: the server HTML contains the page and none of the bar, and
 is no hydration warning in `next dev` or in a production build with
 `reactStrictMode: true`. It also exposed a documentation error. The `"use client"`
 banner makes each built entry a client module, so a server component may **render**
-`<DevToolbar>` but may not **call** `metrics()` — RSC rejects invoking a client
-module's export from the server, and every first-party extension is a factory. The
-README and `plans/architecture.md` §8 described the banner as making the package
+README and the architecture reference described the banner as making the package
 importable from a server component and stopped there; both now show the one-file client
 wrapper, which is where the extension array belongs anyway.
 
@@ -249,9 +244,7 @@ shapes in the catalogue, and it needed no contract change at all — no new slot
 `api` member, no widened field. `CONTRACT_VERSION` stays `1`. Four of the last five
 extensions moved it in zero places, which is the strongest available evidence that it
 is finished; a bump on this phase would spend the only signal a version number carries
-in exchange for the appearance of progress. Full rationale, including the one place
-`/ext/overlays`' visibility rule was deliberately reversed, in
-[plans/architecture.md §16](./plans/architecture.md).
+[docs/architecture.md](./docs/architecture.md).
 
 One small correction to the redaction rule, in this extension only rather than in
 `/runtime`: a structural field of *our own* whose name contained `token` was masked by
@@ -262,9 +255,7 @@ redactor too.
 
 ### Contract changes from building the palette
 
-Building `/ext/command-menu` moved it in two more places, both additive, and settled
-the limitation `/ext/flags` had deferred. Full rationale in
-[plans/architecture.md §13](./plans/architecture.md).
+[docs/architecture.md](./docs/architecture.md).
 
 `CONTRACT_VERSION` stays `1`. Every extension written against the earlier contract
 still *behaves* identically, and every one that only ever *receives* an
@@ -307,9 +298,7 @@ published. Extension authors constructing an api for their own tests should reac
 ### Contract changes from building the first extension
 
 Building `/ext/metrics` against the P0 contract moved it in four places. All are
-additive or semantic corrections and version 1 has never shipped, so
-`CONTRACT_VERSION` stays `1`. Full rationale in
-[plans/architecture.md §10](./plans/architecture.md).
+[docs/architecture.md](./docs/architecture.md).
 
 - **`hidden` now means absent, not unpainted.** A hidden extension is never
   `start()`ed and is torn down if it becomes hidden while running; its panel is
@@ -369,17 +358,13 @@ extension where the guidance bites:
   sensitive keys by walking a graph, so a value serialised first would hide its own
   inner keys from it.
 
-The contract did not move. `/ext/environment` needed nothing that P1 had not already
-added, which is the first evidence that version 1 is stable rather than merely
-young — see [plans/architecture.md §11](./plans/architecture.md).
+young — see [docs/architecture.md](./docs/architecture.md).
 
 ### The one contract change from building the snapshot
 
 `/ext/diagnostics` is the second extension whose job is to *read* what the others
 produce, and it hit §13.3's problem in a new place: several extensions already had a
-`diagnostics()` on their runtime object, and nothing in the contract could reach it.
-So the aggregation core already ran for `commands` was extended, in the two matching
-places. Full rationale in [plans/architecture.md §15](./plans/architecture.md).
+places. Full rationale in [docs/architecture.md](./docs/architecture.md).
 
 - **`DevToolbarExtension.diagnostics?: () => unknown`.** Optional, so every existing
   extension is unchanged and contributes an explicit *"present, nothing to say"*
@@ -462,9 +447,7 @@ The same §11.3 rules as `/ext/environment`, at the severity a document that is
 - **§3J's `recentErrors` is not implemented, on purpose.** It is the one field in the
   spec's shape with no owner, and the only way to fill it would be a global
   `window.onerror` listener — permanent instrumentation of the host application,
-  duplicating the error reporter it already has. `sources` covers it without this
-  package reaching into anybody's runtime. Reasoning and the cost of the omission in
-  [plans/architecture.md §15.8](./plans/architecture.md).
+[docs/architecture.md](./docs/architecture.md).
 - **It is still not a security boundary.** `redact()` matches key names and value
   shapes. A secret under an innocent key with no telltale shape survives, and the
   test suite pins that limit deliberately rather than only demonstrating successes.

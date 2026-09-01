@@ -186,9 +186,11 @@ number carries. That precedent leaned partly on "nothing has been published
 yet", which stopped being true at `0.1.0`.
 
 So: **if you are changing the contract in a way that is not purely additive,
-say so explicitly in the PR description and raise the version question there.**
-Do not bump it silently, and do not assume the additive precedent covers you.
-Settling this properly is a pending architecture decision.
+Settling this properly is a pending architecture decision, written up as
+[ADR-003](./docs/adr/ADR-003-contract-version-policy.md) — which states the three
+candidate policies and what each costs, and settles none of them. Read it before
+raising the question, so the PR argues about the options rather than rediscovering
+them.
 
 If you add an extension that needs to *state* a contract version, copy the
 equality assertion alongside the constant, not just the constant —
@@ -201,5 +203,16 @@ cannot drift unnoticed.
 `vitest`, with tests colocated in `__tests__/` next to what they cover. New
 behaviour needs a test; a bug fix needs a test that fails before the fix. The
 `src/testing/` entry point (`renderWithToolbar`, `makeExtension`, `mockBus`) is
-published for consumers and is also what the internal tests use — if you find
-yourself writing setup boilerplate, check whether it belongs there instead.
+
+## Further reading
+
+- [docs/architecture.md](./docs/architecture.md) — the reference for the shipped core:
+  what the shell guarantees, why the boundaries sit where they do, the full style
+  surface, the extension-authoring guide, and the known gaps in the contract.
+- [docs/adr/](./docs/adr/) — decision records, and when to add one. The short version:
+  an ADR is for a decision whose reversal would be paid for by consumers. Most
+  decisions are not that.
+- [src/core/contract.ts](./src/core/contract.ts) — the contract itself. Where it and
+  any document disagree, the file is right.
+- [AGENTS.md](./AGENTS.md) — the same repo map, written for coding agents. It is the
+  single source; `CLAUDE.md` only points at it, so edit `AGENTS.md`.
