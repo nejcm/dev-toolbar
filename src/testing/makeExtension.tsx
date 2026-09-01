@@ -71,13 +71,13 @@ export function makeExtension(
     extension.compact = compact;
   } else if (compact !== false) {
     const text = typeof compact === "string" ? compact : label;
-    extension.compact = ({ isPanelOpen, openPanel, closePanel }) => (
+    extension.compact = ({ isPanelOpen, togglePanel }) => (
       <button
         type="button"
         data-dtb-part="trigger"
         data-testid={`dtb-compact-${id}`}
         aria-expanded={isPanelOpen}
-        onClick={() => (isPanelOpen ? closePanel() : openPanel())}
+        onClick={togglePanel}
       >
         {text}
       </button>

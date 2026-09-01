@@ -1,6 +1,6 @@
 {
   "name": "@nejcm/dev-toolbar",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "private": false,
   "description": "Extensible, low-overhead in-app developer toolbar for React applications: runtime health signals, feature flags, overlays and diagnostics.",
   "keywords": [
@@ -28,6 +28,7 @@
   ],
   "files": [
     "dist",
+    "CHANGELOG.md",
     "README.md",
     "LICENSE"
   ],
@@ -39,6 +40,16 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js",
       "require": "./dist/index.cjs"
+    },
+    "./runtime": {
+      "types": "./dist/runtime.d.ts",
+      "import": "./dist/runtime.js",
+      "require": "./dist/runtime.cjs"
+    },
+    "./ext/metrics": {
+      "types": "./dist/ext/metrics.d.ts",
+      "import": "./dist/ext/metrics.js",
+      "require": "./dist/ext/metrics.cjs"
     },
     "./testing": {
       "types": "./dist/testing.d.ts",

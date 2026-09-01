@@ -74,6 +74,7 @@ export function Bar({
       density,
       openPanel: () => openPanel(extension.id),
       closePanel: () => closePanel(extension.id),
+      togglePanel: () => togglePanel(extension.id),
     };
 
     return (

@@ -39,6 +39,10 @@ export const CORE_CSS = String.raw`/**
     --dtb-shadow: 0 6px 24px rgba(0, 0, 0, 0.14);
     --dtb-danger: #c0392b;
     --dtb-danger-bg: rgba(192, 57, 43, 0.12);
+    --dtb-ok: #1e8a54;
+    --dtb-ok-bg: rgba(30, 138, 84, 0.12);
+    --dtb-warn: #a8730c;
+    --dtb-warn-bg: rgba(168, 115, 12, 0.14);
 
     position: fixed;
     left: 0;
@@ -78,6 +82,10 @@ export const CORE_CSS = String.raw`/**
     --dtb-shadow: 0 6px 24px rgba(0, 0, 0, 0.5);
     --dtb-danger: #ff7b6b;
     --dtb-danger-bg: rgba(255, 123, 107, 0.16);
+    --dtb-ok: #56d39a;
+    --dtb-ok-bg: rgba(86, 211, 154, 0.16);
+    --dtb-warn: #e5b455;
+    --dtb-warn-bg: rgba(229, 180, 85, 0.18);
   }
 
   @media (prefers-color-scheme: dark) {
@@ -94,6 +102,10 @@ export const CORE_CSS = String.raw`/**
       --dtb-shadow: 0 6px 24px rgba(0, 0, 0, 0.5);
       --dtb-danger: #ff7b6b;
       --dtb-danger-bg: rgba(255, 123, 107, 0.16);
+      --dtb-ok: #56d39a;
+      --dtb-ok-bg: rgba(86, 211, 154, 0.16);
+      --dtb-warn: #e5b455;
+      --dtb-warn-bg: rgba(229, 180, 85, 0.18);
     }
   }
 

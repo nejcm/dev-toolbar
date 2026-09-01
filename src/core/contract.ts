@@ -41,6 +41,14 @@ export interface CompactSlotProps {
   density: ToolbarDensity;
   openPanel(): void;
   closePanel(): void;
+  /**
+   * Open this extension's panel when it is closed, close it when it is open.
+   *
+   * Added in P1: every extension that renders a trigger was writing
+   * `isPanelOpen ? closePanel() : openPanel()` by hand, which is core's own
+   * invariant leaking into extension code.
+   */
+  togglePanel(): void;
 }
 
 export interface PanelSlotProps {
@@ -74,7 +82,18 @@ export interface DevToolbarExtension {
   order?: number;
   /** Overflow collapse order — lowest collapses first. Default `0`. */
   priority?: number;
-  /** Consumer-computed. Replaces the dropped `availability(ctx)`. */
+  /**
+   * Consumer-computed. Replaces the dropped `availability(ctx)`.
+   *
+   * This is not "temporarily unpainted" — it means *this extension does not
+   * exist for this actor*, so core treats it as absent everywhere, not just in
+   * the bar. A hidden extension is never `start()`ed, is torn down (signal
+   * aborted, cleanup run) if it becomes hidden while running, has its panel
+   * unmounted and closed, and contributes no commands to `useToolbarCommands()`
+   * or `runCommand()`.
+   *
+   * If you only want to collapse an item out of sight, use `priority`.
+   */
   hidden?: boolean;
   /** Keep the panel mounted after it closes. */
   keepMounted?: boolean;

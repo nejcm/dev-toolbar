@@ -1,12 +1,20 @@
 import type { DevToolbarExtension, ToolbarCommand } from "./contract";
 
-/** Flattens extension-declared commands. Later duplicates of an id are dropped. */
+/**
+ * Flattens extension-declared commands. Later duplicates of an id are dropped.
+ *
+ * `hidden` extensions contribute nothing. `hidden` means the extension does not
+ * exist for this actor, so leaving its commands runnable — by `runCommand(id)`
+ * today, and by the `/ext/command-menu` palette in P2 — would hand back exactly
+ * what hiding it took away.
+ */
 export function collectCommands(
   extensions: readonly DevToolbarExtension[],
 ): ToolbarCommand[] {
   const seen = new Set<string>();
   const commands: ToolbarCommand[] = [];
   for (const extension of extensions) {
+    if (extension.hidden === true) continue;
     for (const command of extension.commands ?? []) {
       if (seen.has(command.id)) continue;
       seen.add(command.id);

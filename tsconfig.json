@@ -20,6 +20,8 @@
     "baseUrl": ".",
     "paths": {
       "@nejcm/dev-toolbar": ["./src/index.ts"],
+      "@nejcm/dev-toolbar/runtime": ["./src/runtime/index.ts"],
+      "@nejcm/dev-toolbar/ext/metrics": ["./src/ext/metrics/index.tsx"],
       "@nejcm/dev-toolbar/testing": ["./src/testing/index.ts"]
     }
   },

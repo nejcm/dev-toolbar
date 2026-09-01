@@ -14,9 +14,20 @@ own subpath exports.
 - Restyleable from your own CSS without `!important`
 - SSR-safe: your app server-renders untouched, the bar is client-only
 
-> **Status:** the shell (P0) is implemented. `0.1.0` publishes after `/runtime` and
-> `/ext/metrics` land — a contract nobody has built against is wrong in ways its
-> author cannot see. The public API may still move until then.
+Subpaths, each opt-in and each with its own bundle:
+
+| Entry | What it is |
+| --- | --- |
+| `@nejcm/dev-toolbar` | The shell. Chrome plus hosting. |
+| `@nejcm/dev-toolbar/runtime` | Event bus, ring buffers, throttled store, `redact()`. For extensions that measure. Core never imports it. |
+| `@nejcm/dev-toolbar/ext/metrics` | Memory, delay, jank and network, as one extension. |
+| `@nejcm/dev-toolbar/testing` | `renderWithToolbar`, fake extensions, mock bus, fake layout. |
+| `@nejcm/dev-toolbar/styles.css` | The stylesheet, if you would rather not inject it at runtime. |
+
+> **Status:** the shell (P0), `/runtime` and `/ext/metrics` (P1) are implemented and
+> the contract has been through its first real consumer — which moved it in four
+> places, all listed in the [changelog](./CHANGELOG.md). `0.1.0` is the first
+> publish.
 
 ## Install
 
@@ -121,6 +132,7 @@ interface CompactSlotProps {
   density: "compact" | "comfortable";
   openPanel(): void;
   closePanel(): void;
+  togglePanel(): void;           // the one every trigger actually wants
 }
 
 interface PanelSlotProps {
@@ -144,6 +156,21 @@ interface ExtensionRuntimeApi {
 
 Core **reports** visibility and never pauses you on your own behalf — a cumulative
 counter that silently stops counting is worse than one that keeps going.
+
+Two lifecycle rules the metrics extension paid for, so you do not have to:
+
+- **`hidden` is not "unpainted", it is "does not exist here".** A hidden extension is
+  never `start()`ed and is torn down if it becomes hidden; its panel is unmounted and
+  closed; and it contributes no commands, so `runCommand()` and P2's palette cannot
+  reach it either. Anything less and hiding a collector would leave `fetch` patched,
+  its request table on screen, and a copy-to-clipboard command one keystroke away for
+  a user not allowed to see any of it. To merely collapse an item out of sight, use
+  `priority`.
+- **Build your extension once, at module scope.** The object identity *is* the
+  lifecycle: `start()` belongs to the object core first saw, so rebuilding it inside
+  render leaves the bar rendering a second object that owns nothing. Core warns once
+  per id when it detects this. A hot-module reload of the module that builds your
+  extensions does the same thing; reload the page.
 
 A minimal one:
 
@@ -178,6 +205,113 @@ working.
 Full authoring guide, with a worked example:
 [plans/architecture.md](./plans/architecture.md#7-writing-an-extension).
 
+## `@nejcm/dev-toolbar/runtime`
+
+Opt-in machinery for extensions that measure something over time. Core never imports
+it, so a toolbar that is three buttons never pays for it. Nothing in it imports React
+either, so a collector can run in a worker.
+
+```ts
+import {
+  createEventBus,
+  createRingBuffer,
+  createNumericRing,
+  createTimeSeries,
+  createThrottledStore,
+  redact,
+  redactUrl,
+  redactHeaders,
+} from "@nejcm/dev-toolbar/runtime";
+```
+
+- **`createEventBus<Events>()`** — typed pub/sub, one per instance (never a
+  singleton). `on(type, handler, { signal })` unsubscribes on the `AbortSignal`
+  `start(api)` already gave you. A throwing handler is contained, not propagated into
+  whatever emitted.
+- **`createRingBuffer<T>(n)` / `createNumericRing(n)` / `createTimeSeries(n)`** —
+  bounded and *allocation-stable*: storage is allocated once, `push` writes into a
+  slot that already exists, and every read that could allocate takes a caller-owned
+  destination. `createNumericRing` is a `Float64Array` underneath; that is what the
+  sparklines read.
+- **`createThrottledStore(initial, { intervalMs })`** — accepts every write,
+  publishes at most once per interval, leading edge first and trailing edge after.
+  `getSnapshot` stays stable between notifications, which is what
+  `useSyncExternalStore` requires. A 60 Hz sampler becomes a 4 Hz re-render.
+- **`redact(value)` / `redactUrl(url)` / `redactHeaders(headers)`** — masks
+  credentials by key name, plus `Bearer …`, bare JWTs, and URL values carrying a
+  sensitive parameter (the OAuth-callback shape, where the secret is in the value and
+  no key matching will find it). A URL with nothing to mask is returned unchanged, so
+  two dumps that are identical still diff as identical. This is hygiene for anything
+  headed to a screenshot or a clipboard, **not** a security boundary: it matches
+  names, so a secret under `data` survives.
+
+## `@nejcm/dev-toolbar/ext/metrics`
+
+Memory, delay, jank and network in one extension.
+
+```tsx
+import { DevToolbar } from "@nejcm/dev-toolbar";
+import { metrics } from "@nejcm/dev-toolbar/ext/metrics";
+
+// Once, at module scope. Not inside render.
+const extensions = [metrics()];
+
+export function Root({ children }) {
+  return <DevToolbar extensions={extensions}>{children}</DevToolbar>;
+}
+```
+
+| Chip | Shows | Thresholds (default, all configurable) |
+| --- | --- | --- |
+| `mem` | Used JS heap, and whether it has climbed on every sample for a minute | 50% / 75% of the heap limit |
+| `delay` | The *worst* interaction in a rolling 30 s window, not the latest | 200 ms / 500 ms, per INP guidance |
+| `jank` | Dropped frames over expected frames, across 5 s of *active* frames | 2% / 5% |
+| `net` | Requests in flight; the panel lists recent ones | any slow → warn, any failed → bad |
+
+Every one degrades on its own. `performance.memory` is Chromium-only, Event Timing is
+not everywhere, and `requestAnimationFrame` may not exist at all: each missing API
+turns its chip into `NA` with a sentence in the panel saying why. None of them throws,
+and one missing API never breaks the others.
+
+```ts
+metrics({
+  only: ["memory", "network"],       // which collectors run, in bar order
+  updateHz: 2,                       // aggregation rate; §5 caps compact at 4 Hz
+  memory: { thresholds: { warn: 0.4, bad: 0.7 } },
+  jank: false,                       // switch one off entirely
+  network: { slowMs: 400, filter: ({ url }) => !url.startsWith("/telemetry") },
+});
+```
+
+**Instrument your own client instead of being patched.** By default the network
+collector wraps `fetch` and `XMLHttpRequest` — once globally, feeding every live
+collector, and restoring the originals when the last one leaves. If you would rather
+report from your own HTTP client, hand it a bus:
+
+```ts
+import { createEventBus } from "@nejcm/dev-toolbar/runtime";
+import type { ToolbarEventMap } from "@nejcm/dev-toolbar/runtime";
+
+export const bus = createEventBus<ToolbarEventMap>();
+
+const extensions = [
+  metrics({ network: { bus, patchFetch: false, patchXhr: false } }),
+];
+
+// then, from your client:
+bus.emit("network-start", { requestId, method, url });
+bus.emit("network-end", { requestId, ok, status, duration, bytes });
+```
+
+URLs are run through `redactUrl()` before they are retained, and headers and bodies
+are never read at all. "Copy diagnostic data" passes the whole dump through
+`redact()` on the way to the clipboard.
+
+The extension ships its own stylesheet, injected once per document. If you set
+`injectStyles={false}` on `<DevToolbar>`, set `metrics({ injectStyles: false })` too
+and deliver `METRICS_CSS` yourself — core's flag is a prop, and extensions cannot see
+props.
+
 ## Styling
 
 Three surfaces, in order of preference.
@@ -196,6 +330,13 @@ Three surfaces, in order of preference.
 **2. `data-dtb-part` attributes.** Every part carries one — `root`, `bar`, `region`,
 `item`, `trigger`, `overflow-button`, `overflow-menu`, `overflow-menu-item`, `panel`,
 `panel-resizer`, `panel-body`, `error-chip`, `inset`.
+
+Core owns the unprefixed names. An extension that ships its own CSS namespaces its
+parts *by kind* — `/ext/metrics` uses `metrics-chip`, `metrics-panel` and so on for
+every instance, whatever `id` you give it, so one rule styles them all. To reach a
+single instance, use the `data-dtb-ext-id` on the surrounding item. Severity colours
+come from `--dtb-ok`, `--dtb-warn` and `--dtb-danger`, so overriding one token
+restyles every extension's severity at once.
 
 **3. `classNames`.** A narrow map for putting your own class on a part:
 
@@ -373,6 +514,11 @@ It is a standalone script on purpose, not part of `npm test`: it needs a fresh
 published. Before deleting it as redundant, read
 [its README](./test/fixtures/jest-consumer/README.md) — this failure class has
 already shipped twice.
+
+## Changelog
+
+[CHANGELOG.md](./CHANGELOG.md) — including the four places the extension contract
+moved when the first real extension was written against it.
 
 ## Documents
 

@@ -181,11 +181,29 @@ function DevToolbarRoot({
     }
   }, [extensions, enabled]);
 
-  // start(api): once per extension id while it is present. Core reports
-  // visibility and never pauses an extension on its behalf.
+  // A panel open when its extension becomes hidden must close, not merely stop
+  // painting: `activePanelId` is persisted, so leaving it set would reopen the
+  // panel on the next reload the moment the extension came back. Only a
+  // *present and hidden* extension closes — an id that is simply absent is left
+  // alone, which is what lets a persisted panel survive until the extension
+  // that owns it registers.
+  useEffect(() => {
+    if (!enabled) return;
+    const active = state.activePanelId;
+    if (active === null) return;
+    const match = extensions.find((extension) => extension.id === active);
+    if (match?.hidden === true) store.closePanel(active);
+  }, [enabled, extensions, state.activePanelId, store]);
+
+  // start(api): once per extension id while it is present *and not hidden*.
+  // Core reports visibility and never pauses an extension on its behalf.
   const runningRef = useRef(
-    new Map<string, { controller: AbortController; dispose?: () => void }>(),
+    new Map<
+      string,
+      { controller: AbortController; dispose?: () => void; start: unknown }
+    >(),
   );
+  const identityWarnedRef = useRef(new Set<string>());
   useEffect(() => {
     const running = runningRef.current;
 
@@ -197,7 +215,15 @@ function DevToolbarRoot({
       return;
     }
 
-    const present = new Set(extensions.map((extension) => extension.id));
+    // `hidden` is the consumer saying this extension does not exist for this
+    // actor. Running its collectors anyway — patching fetch, retaining request
+    // URLs, holding a rAF loop open — would be exactly the leak `hidden`
+    // exists to prevent, so a hidden extension is stopped, not merely unpainted.
+    const present = new Set(
+      extensions
+        .filter((extension) => extension.hidden !== true)
+        .map((extension) => extension.id),
+    );
 
     for (const [id, entry] of [...running]) {
       if (present.has(id)) continue;
@@ -206,7 +232,31 @@ function DevToolbarRoot({
     }
 
     for (const extension of extensions) {
-      if (running.has(extension.id) || typeof extension.start !== "function") {
+      if (extension.hidden === true || typeof extension.start !== "function") {
+        continue;
+      }
+      const existing = running.get(extension.id);
+      if (existing) {
+        // The running lifecycle belongs to the object that was started. If the
+        // consumer rebuilt the extension inside render, the slots now render
+        // from a *different* object than the one holding the collectors, and
+        // its state is silently lost. `{...ext, hidden}` keeps the same `start`
+        // reference, so this does not fire for the legitimate pattern.
+        if (
+          existing.start !== extension.start &&
+          !identityWarnedRef.current.has(extension.id)
+        ) {
+          identityWarnedRef.current.add(extension.id);
+          // eslint-disable-next-line no-console
+          console.warn(
+            `[dev-toolbar] extension "${extension.id}" was rebuilt after it started. ` +
+              "Its start() lifecycle still belongs to the first object, so whatever " +
+              "that object owns — collectors, buffers, subscriptions — is unreachable " +
+              "from what the bar now renders. Build extensions once, at module scope, " +
+              "not inside render. (A hot-module reload of the module that builds them " +
+              "does this too; reload the page.)",
+          );
+        }
         continue;
       }
       const controller = new AbortController();
@@ -224,9 +274,11 @@ function DevToolbarRoot({
         },
         storage: createExtensionStorage(rawStorage, instanceId, extension.id),
       };
-      const entry: { controller: AbortController; dispose?: () => void } = {
-        controller,
-      };
+      const entry: {
+        controller: AbortController;
+        dispose?: () => void;
+        start: unknown;
+      } = { controller, start: extension.start };
       running.set(extension.id, entry);
       try {
         const dispose = extension.start(api);

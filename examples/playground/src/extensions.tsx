@@ -1,18 +1,17 @@
-import { useEffect, useState } from "react";
-import type {
-  DevToolbarExtension,
-  ExtensionRuntimeApi,
-} from "@nejcm/dev-toolbar";
+import { useState } from "react";
+import type { DevToolbarExtension } from "@nejcm/dev-toolbar";
 import { useToolbarCommands } from "@nejcm/dev-toolbar";
+import { metrics } from "@nejcm/dev-toolbar/ext/metrics";
 
 /**
- * Eight fake extensions with deliberately varied `priority`, so narrowing the
+ * Placeholder extensions with deliberately varied `priority`, so narrowing the
  * window collapses them into the `···` menu in a predictable order:
  *
- *   boom (5) → hydr (20) → net (30) → jank (40) → delay (60) → tw (70)
- *   → flags (80) → env (90) → user (100, aligned end)
+ *   boom (5) → hydr (20) → metrics (35) → tw (70) → flags (80) → env (90)
+ *   → user (100, aligned end)
  *
- * None of them measure anything real. The point is the shell.
+ * All of them are fake except `metrics`, which is the real
+ * `@nejcm/dev-toolbar/ext/metrics` and measures the page it is running on.
  */
 
 function Chip({
@@ -63,37 +62,6 @@ function Definition({ children }: { children: React.ReactNode }) {
   return (
     <div style={{ display: "grid", gap: 6, maxWidth: 640 }}>{children}</div>
   );
-}
-
-/** Fake sampler: proves `start(api)` runs, honours its AbortSignal, and can persist. */
-function fakeSampler(key: string, next: (value: number) => number) {
-  return (api: ExtensionRuntimeApi) => {
-    let value = Number(api.storage.getItem(key) ?? "0") || 12;
-    const id = setInterval(() => {
-      value = next(value);
-      api.storage.setItem(key, String(value));
-    }, 2000);
-    api.signal.addEventListener("abort", () => clearInterval(id));
-    return () => clearInterval(id);
-  };
-}
-
-function useFakeValue(seed: number, spread: number) {
-  const [value, setValue] = useState(seed);
-  useEffect(() => {
-    const id = setInterval(
-      () =>
-        setValue((current) =>
-          Math.max(
-            0,
-            Math.round(current + (Math.random() - 0.5) * spread),
-          ),
-        ),
-      1500,
-    );
-    return () => clearInterval(id);
-  }, [spread]);
-  return value;
 }
 
 const environment: DevToolbarExtension = {
@@ -196,64 +164,6 @@ function FlagsPanel() {
   );
 }
 
-const delay: DevToolbarExtension = {
-  id: "delay",
-  label: "Delay",
-  order: 20,
-  priority: 60,
-  compact: ({ isPanelOpen, openPanel, closePanel }) => (
-    <DelayChip
-      expanded={isPanelOpen}
-      onClick={() => (isPanelOpen ? closePanel() : openPanel())}
-    />
-  ),
-  panel: () => (
-    <Definition>
-      <strong>Delay</strong>
-      <p style={{ margin: 0, color: "var(--dtb-muted)" }}>
-        Placeholder. The real metric extension arrives in P1 behind
-        <code> @nejcm/dev-toolbar/ext/metrics</code>.
-      </p>
-    </Definition>
-  ),
-  start: fakeSampler("samples", (value) => value + 1),
-};
-
-function DelayChip({
-  expanded,
-  onClick,
-}: {
-  expanded: boolean;
-  onClick: () => void;
-}) {
-  const value = useFakeValue(18, 12);
-  return (
-    <Chip
-      label="delay"
-      value={`${value}ms`}
-      tone={value > 40 ? "warn" : "ok"}
-      expanded={expanded}
-      onClick={onClick}
-    />
-  );
-}
-
-const jank: DevToolbarExtension = {
-  id: "jank",
-  label: "Jank",
-  order: 30,
-  priority: 40,
-  compact: () => <Chip label="jank" value="0.4%" tone="ok" />,
-};
-
-const net: DevToolbarExtension = {
-  id: "net",
-  label: "Net",
-  order: 40,
-  priority: 30,
-  compact: () => <Chip label="net" value="120ms" tone="warn" />,
-};
-
 const hydration: DevToolbarExtension = {
   id: "hydr",
   label: "Hydration",
@@ -331,12 +241,25 @@ const user: DevToolbarExtension = {
   compact: () => <Chip label="user" value="internal" tone="neutral" />,
 };
 
+/**
+ * The real thing, from `@nejcm/dev-toolbar/ext/metrics`. It replaces the fake
+ * `delay` / `jank` / `net` chips this file used to ship.
+ *
+ * Built ONCE, at module scope. Calling `metrics()` inside a component would
+ * hand the bar a new object on every render while the running collectors stayed
+ * with the first one — core warns about exactly that.
+ */
+const runtimeMetrics = metrics({
+  order: 30,
+  priority: 35,
+  network: { slowMs: 400 },
+  jank: { windowMs: 5000 },
+});
+
 export const playgroundExtensions: DevToolbarExtension[] = [
   environment,
   flags,
-  delay,
-  jank,
-  net,
+  runtimeMetrics,
   hydration,
   tailwind,
   broken,

@@ -55,8 +55,22 @@ export function PanelHost({
     openedRef.current.add(activePanelId);
   }
 
+  // A hidden extension has been torn down (`start()`'s signal aborted), so a
+  // `keepMounted` panel of its must not come back holding pre-teardown state
+  // when the consumer un-hides it. Forget it was ever opened.
+  for (const extension of extensions) {
+    if (extension.hidden === true) openedRef.current.delete(extension.id);
+  }
+
   const mounted = extensions.filter((extension) => {
     if (typeof extension.panel !== "function") return false;
+    // `hidden` means absent, not unpainted. Without this a panel opened before
+    // the consumer hid the extension keeps rendering — for the metrics
+    // extension, that is a request table left on screen for a restricted user.
+    // Core also closes `activePanelId` on the transition; this filter is what
+    // makes the render correct in the same commit, and it covers `keepMounted`
+    // panels, which have no active id to close.
+    if (extension.hidden === true) return false;
     if (extension.id === activePanelId) return true;
     return (
       extension.keepMounted === true && openedRef.current.has(extension.id)

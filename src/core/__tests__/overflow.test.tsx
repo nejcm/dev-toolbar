@@ -111,6 +111,7 @@ const renderBar = () =>
             density: "compact",
             openPanel: () => {},
             closePanel: () => {},
+            togglePanel: () => {},
           })}
         </div>
       )}

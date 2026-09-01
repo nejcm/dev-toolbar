@@ -69,6 +69,92 @@ function ShellControls() {
   );
 }
 
+/** Kept at module scope so "Allocate" actually retains, rather than being collected. */
+const ballast: number[][] = [];
+
+/**
+ * Drives the real metrics extension. Without something making requests,
+ * blocking the main thread and holding memory, every chip sits at its resting
+ * value and the panel has nothing to draw.
+ */
+function LoadControls() {
+  const [held, setHeld] = useState(0);
+
+  const request = (count: number, path: string) => {
+    for (let index = 0; index < count; index += 1) {
+      // A credential in the query string on purpose: the panel must show it
+      // masked, never as typed.
+      void fetch(`${path}?access_token=super-secret&i=${index}`).catch(() => {});
+    }
+  };
+
+  const block = (ms: number) => {
+    const until = performance.now() + ms;
+    while (performance.now() < until) {
+      /* deliberately blocking the main thread */
+    }
+  };
+
+  return (
+    <section className="pg-card">
+      <h2>Drive the metrics</h2>
+      <p>
+        The <code>metrics</code> chips are the real{" "}
+        <code>@nejcm/dev-toolbar/ext/metrics</code>, measuring this page. Give
+        them something to measure.
+      </p>
+      <div className="pg-controls">
+        <button
+          type="button"
+          className="pg-button"
+          data-testid="load-fetch-ok"
+          onClick={() => request(5, "/vite.svg")}
+        >
+          5 requests (200)
+        </button>
+        <button
+          type="button"
+          className="pg-button"
+          data-testid="load-fetch-fail"
+          onClick={() => request(3, "/definitely-not-here")}
+        >
+          3 requests (404)
+        </button>
+        <button
+          type="button"
+          className="pg-button"
+          data-testid="load-block"
+          onClick={() => block(300)}
+        >
+          Block 300 ms
+        </button>
+        <button
+          type="button"
+          className="pg-button"
+          data-testid="load-allocate"
+          onClick={() => {
+            ballast.push(Array.from({ length: 1_500_000 }, (_, i) => i));
+            setHeld(ballast.length);
+          }}
+        >
+          Allocate ~12 MB ({held} held)
+        </button>
+        <button
+          type="button"
+          className="pg-button"
+          data-testid="load-release"
+          onClick={() => {
+            ballast.length = 0;
+            setHeld(0);
+          }}
+        >
+          Release
+        </button>
+      </div>
+    </section>
+  );
+}
+
 export function App() {
   const [restyled, setRestyled] = useState(false);
   const [inset, setInset] = useState(false);
@@ -91,8 +177,8 @@ export function App() {
           </li>
           <li>
             Narrow the window: <code>boom</code>, <code>hydr</code>,{" "}
-            <code>net</code>, <code>jank</code> collapse into <code>···</code>{" "}
-            first — lowest <code>priority</code> goes first.
+            <code>metrics</code> collapse into <code>···</code> first — lowest{" "}
+            <code>priority</code> goes first.
           </li>
           <li>
             <code>Cmd+Shift+.</code> (macOS) or <code>Ctrl+Shift+.</code>{" "}
@@ -114,6 +200,8 @@ export function App() {
           </li>
         </ol>
       </section>
+
+      <LoadControls />
 
       <section className="pg-card">
         <h2>Restyle demo</h2>
