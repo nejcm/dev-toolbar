@@ -1,6 +1,20 @@
 # Changelog
 
-## 0.1.0 — unreleased
+<!--
+  release-please inserts each generated release section immediately below this
+  comment and above the section that follows, newest first. It finds that spot
+  with its default `versionHeaderRegex` (`\n###? v?[0-9[]`) — the first `##` or
+  `###` heading whose text starts with a digit. The `## 0.1.0` heading below is
+  what anchors it, so do not retitle that heading to something non-numeric and
+  do not remove the `# Changelog` H1.
+
+  Everything under `## 0.1.0` is hand-written prose and predates the automation.
+  It is kept verbatim on purpose: it documents the initial surface far better
+  than grouped commit subjects would, and no generator will reproduce it. The
+  style break at the boundary is accepted, not an oversight.
+-->
+
+## 0.1.0 (2026-09-02)
 
 First publish, and the whole of the accepted plan. The shell (P0), the runtime
 primitives and the first extension (P1), P2's three extensions, P3's two and P4's one.
