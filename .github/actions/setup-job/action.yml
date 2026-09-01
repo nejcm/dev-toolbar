@@ -1,0 +1,50 @@
+name: Setup job
+description: Set up bun and Node, restore the bun install cache, and install dependencies.
+
+# Ported from sugarwork-ui's `.github/actions/setup-job`, minus its turbo-cache
+# input (no turbo here) and with the SHA pins this repo uses instead of its
+# floating tags. Every workflow that touches the tree repeats these four steps;
+# this is the one place they are described.
+#
+# Callers must run `actions/checkout` first — a local composite action is read
+# from the checked-out tree, so `uses: ./.github/actions/setup-job` cannot be
+# the first step of a job.
+
+runs:
+  using: composite
+  steps:
+    - name: Set up bun
+      uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+      with:
+        # Reads the `packageManager` field, so CI runs the same bun the
+        # contributor does. Pinning matters here beyond reproducibility: the
+        # `lint` script allows zero warnings, and a different oxlint-hosting
+        # bun picking up different defaults would surface new ones and fail
+        # the run for no real reason.
+        bun-version-file: package.json
+        # The explicit actions/cache step below owns the install cache.
+        no-cache: true
+
+    # vitest and tsup spawn real Node workers, so the Node major is part of
+    # the test environment. Unpinned, below Node 22, jsdom's `Storage` replaces
+    # the shim in vitest.setup.ts and a `setItem` spy stops seeing writes.
+    # `.nvmrc` is the source of truth, as `packageManager` is for bun above.
+    - name: Set up Node
+      uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+      with:
+        node-version-file: .nvmrc
+
+    - name: Cache bun install cache
+      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ~/.bun/install/cache
+        key: ${{ runner.os }}-bun-${{ hashFiles('bun.lock') }}
+        restore-keys: |
+          ${{ runner.os }}-bun-
+
+    # --frozen-lockfile is not only about speed: oxlint is pinned to exactly
+    # one version in bun.lock, which is what makes the zero-warning gate in
+    # `bun run lint` deterministic.
+    - name: Install dependencies
+      shell: bash
+      run: bun install --frozen-lockfile
