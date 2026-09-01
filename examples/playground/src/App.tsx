@@ -400,6 +400,94 @@ function OverlayPlayground() {
   );
 }
 
+/**
+ * Content whose appearance is entirely token-driven, so the theme editor has
+ * something true to change.
+ *
+ * Nothing here talks to the extension. That is the point: the tokens are the
+ * application's, declared in `playground.css` and consumed by these rules, and
+ * the toolbar edits them where they live.
+ */
+function ThemePlayground() {
+  const [tokens, setTokens] = useState<[string, string][]>([]);
+
+  const read = () => {
+    const style = getComputedStyle(document.documentElement);
+    setTokens(
+      [
+        "--pg-brand",
+        "--pg-radius",
+        "--pg-space",
+        "--pg-font-scale",
+        "--pg-tile-accent",
+      ].map((name) => [name, style.getPropertyValue(name).trim()]),
+    );
+  };
+
+  useEffect(read, []);
+
+  return (
+    <section className="pg-card pg-theme-demo">
+      <h2>Drive the theme</h2>
+      <p>
+        The <code>theme</code> chip is the real{" "}
+        <code>@nejcm/dev-toolbar/ext/theme-editor</code>. The tokens belong to
+        this page — they are declared in <code>playground.css</code> and used by
+        the cards, buttons, tiles and type below — and the extension edits them
+        as inline custom properties on the surface you pick.
+      </p>
+      <ul>
+        <li>
+          Edit <code>--pg-radius</code> or <code>--pg-brand</code> and watch
+          every card, tile and link follow. <em>Preview: off</em> puts the
+          application's own values back without discarding the edit — §3H's
+          before/after.
+        </li>
+        <li>
+          Switch the surface to <em>Just the demo card</em> and edit the same
+          token again: the change is scoped to this card's subtree.
+        </li>
+        <li>
+          <code>--dtb-accent</code> is in the catalogue and is{" "}
+          <strong>refused</strong>. Editing the toolbar's own tokens from here
+          would restyle the bar rather than the app, so the name is never
+          written. The bar must not move while everything else does.
+        </li>
+        <li>
+          <em>Reset everything</em> restores this page exactly, down to removing
+          the <code>style</code> attribute the extension created. So does
+          reloading with <code>?dtb-theme=reset</code>.
+        </li>
+        <li>
+          Export as CSS, as a recipe, or as design tokens; <em>Copy share
+          link</em> puts the recipe in the URL, and opening that URL applies it
+          through the same filter a pasted recipe goes through.
+        </li>
+      </ul>
+
+      <div className="pg-theme-swatches" data-testid="theme-swatches">
+        {tokens.map(([name, value]) => (
+          <span className="pg-theme-swatch" key={name}>
+            <i style={{ background: value }} aria-hidden="true" />
+            {name}: {value || "(unset)"}
+          </span>
+        ))}
+      </div>
+
+      <div className="pg-controls">
+        <button
+          type="button"
+          className="pg-theme-cta"
+          data-testid="theme-cta"
+          onClick={read}
+        >
+          Re-read the computed tokens
+        </button>
+      </div>
+    </section>
+  );
+}
+
 export function App() {
   const [restyled, setRestyled] = useState(false);
   const [inset, setInset] = useState(false);
@@ -457,6 +545,12 @@ export function App() {
             classes — the light-DOM regression test.
           </li>
           <li>
+            Theme: edit a token, watch this page change and the{" "}
+            <em>bar stay exactly where it was</em>, reload and find the edit
+            still applied, then <em>Reset everything</em> and confirm the page
+            is byte-identical to how it started.
+          </li>
+          <li>
             Overlays: turn on <em>Layout boxes</em>, <em>Column grid</em>,{" "}
             <em>Element inspector</em> and <em>Focus order</em> and check three
             things — they draw over the page, they never cover the bar, the
@@ -467,6 +561,8 @@ export function App() {
       </section>
 
       <LoadControls />
+
+      <ThemePlayground />
 
       <OverlayPlayground />
 

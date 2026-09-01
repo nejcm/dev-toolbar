@@ -11,7 +11,7 @@
  * The chip shows the *worst* interaction in a rolling window, not the latest.
  * Which one it is has to be unambiguous, so the panel says both.
  */
-import { createRingBuffer, createTimeSeries } from "../../../runtime";
+import { createRingBuffer, createTimeSeries, redact } from "../../../runtime";
 import { formatMs, NOT_AVAILABLE } from "../format";
 import type { Collector, CollectorContext, MetricView, Thresholds } from "../types";
 import { severityFor } from "../types";
@@ -55,13 +55,51 @@ export function supportsEventTiming(): boolean {
   return Array.isArray(types) && types.includes("event");
 }
 
+/**
+ * One part of a target description, masked **before** it is joined.
+ *
+ * `redact()` on a bare string is value-shape matching and nothing else, which
+ * is the correct treatment here: there is no key, and the hazard is a value
+ * that *looks* like a credential. Same helper, same reasoning, as `part()` in
+ * `/ext/diagnostics`' `responsiveness.ts`.
+ */
+const part = (value: string): string => {
+  try {
+    return String(redact(value));
+  } catch {
+    // Only reachable through a hostile global, and this runs inside a
+    // `PerformanceObserver` callback where nothing upstream would catch it.
+    return "[unreadable]";
+  }
+};
+
+/**
+ * A DOM target reduced to `tag#id.class`, **with each part masked before the
+ * join**.
+ *
+ * This was the last known instance of the join defect `/ext/diagnostics`
+ * §15.3 named and P4's §16.8 turned into a checklist, and it was recorded in
+ * §15.7 as deliberately unfixed. `id` and `className` are live DOM attributes,
+ * so they are foreign; the assembled string was handed to metrics' `redact()`
+ * pass, whose value matching is anchored to the *whole* string, so a
+ * credential-shaped `id` was findable on its own and unfindable the moment
+ * `tag` was in front of it.
+ *
+ * Plausibility is lower here than in the diagnostics cases — a DOM `id` or
+ * class would have to *be* credential-shaped rather than merely contain
+ * something — but the fix is the same line, and leaving the register's last
+ * open item open would make its own standard look optional.
+ */
 function describe(target: Element | null | undefined): string {
   if (!target || typeof target.tagName !== "string") return "unknown";
-  const tag = target.tagName.toLowerCase();
-  const id = target.id ? `#${target.id}` : "";
+  // The tag name is not foreign — it comes from a fixed HTML vocabulary — but
+  // it costs nothing to run it through the same helper, and doing so removes
+  // the question of which of the three parts was exempt and why.
+  const tag = part(target.tagName.toLowerCase());
+  const id = target.id ? `#${part(target.id)}` : "";
   const first =
     typeof target.className === "string" && target.className.trim() !== ""
-      ? `.${target.className.trim().split(/\s+/)[0] as string}`
+      ? `.${part(target.className.trim().split(/\s+/)[0] as string)}`
       : "";
   return `${tag}${id}${first}`;
 }

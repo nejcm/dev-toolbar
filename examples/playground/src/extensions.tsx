@@ -7,6 +7,8 @@ import { flags, readStoredOverrides } from "@nejcm/dev-toolbar/ext/flags";
 import { commandMenu } from "@nejcm/dev-toolbar/ext/command-menu";
 import { overlays } from "@nejcm/dev-toolbar/ext/overlays";
 import { diagnostics } from "@nejcm/dev-toolbar/ext/diagnostics";
+import { themeEditor } from "@nejcm/dev-toolbar/ext/theme-editor";
+import type { DesignTokenDefinition } from "@nejcm/dev-toolbar/ext/theme-editor";
 import type { FlagReading, FlagValue } from "@nejcm/dev-toolbar/ext/flags";
 
 /**
@@ -471,6 +473,162 @@ const runtimeDiagnostics = diagnostics({
   ],
 });
 
+/* -------------------------------------------------------------------------- */
+/* The real @nejcm/dev-toolbar/ext/theme-editor, over the page's own tokens.    */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * The token catalogue. Every name here is a custom property `playground.css`
+ * actually declares **and actually consumes**, which is the only way to tell
+ * whether the extension does anything: edit `--pg-radius` and the cards round
+ * off, edit `--pg-brand` and the tiles, links and buttons follow.
+ *
+ * Four of them are here to exercise a rule rather than to be pretty:
+ *
+ * - `--dtb-accent` is declared on purpose and is **refused**. It is the
+ *   toolbar's own token, and writing it onto `:root` — an ancestor of the
+ *   portalled toolbar root — would restyle the bar instead of the app. The row
+ *   says so rather than silently disappearing.
+ * - `--pg-session-panel-bg` normalises to `sessionpanelbg`, which contains
+ *   `session`, one of `redact()`'s default sensitive keys. It is a **colour**,
+ *   so it stays readable: a colour cannot carry a credential, and masking it
+ *   would make the token you most need to see the one you cannot.
+ * - `--pg-font-license-token` is a free **string** whose name matches, so it is
+ *   masked in the panel and in every export, and the editor refuses to
+ *   round-trip the mask back through the input.
+ * - `--pg-font-scale` is a `number`, so `parseValue`'s refusal is reachable:
+ *   type `big` into it and the row says "not a number" instead of pinning the
+ *   page's font size to zero.
+ */
+const PLAYGROUND_TOKENS: DesignTokenDefinition[] = [
+  {
+    name: "--pg-brand",
+    label: "Brand",
+    group: "Colour",
+    type: "color",
+    defaultValue: "#5e6ad2",
+    description: "Links, tile gradients, button focus.",
+  },
+  {
+    name: "--pg-brand-contrast",
+    label: "Brand contrast",
+    group: "Colour",
+    type: "color",
+    defaultValue: "#ffffff",
+  },
+  { name: "--pg-bg", label: "Page background", group: "Colour", type: "color" },
+  { name: "--pg-card", label: "Card surface", group: "Colour", type: "color" },
+  { name: "--pg-fg", label: "Text", group: "Colour", type: "color" },
+  { name: "--pg-muted", label: "Muted text", group: "Colour", type: "color" },
+  { name: "--pg-border", label: "Border", group: "Colour", type: "color" },
+  {
+    name: "--pg-tile-accent",
+    label: "Tile accent",
+    group: "Colour",
+    type: "color",
+  },
+  {
+    name: "--pg-session-panel-bg",
+    label: "Session panel",
+    group: "Colour",
+    type: "color",
+    description:
+      "Key-matched by redact() and left readable anyway — a colour cannot carry a credential.",
+  },
+  {
+    name: "--pg-radius",
+    label: "Corner radius",
+    group: "Shape",
+    type: "length",
+    defaultValue: "10px",
+  },
+  {
+    name: "--pg-space",
+    label: "Card spacing",
+    group: "Shape",
+    type: "length",
+    defaultValue: "16px",
+  },
+  {
+    name: "--pg-font-scale",
+    label: "Type scale",
+    group: "Type",
+    type: "number",
+    defaultValue: "1",
+    description: "Multiplies the body font size. Try 1.15; try `big`.",
+  },
+  {
+    name: "--pg-font-license-token",
+    label: "Font licence",
+    group: "Type",
+    type: "string",
+    description: "A string token whose name is credential-shaped. Masked.",
+  },
+  {
+    name: "--dtb-accent",
+    label: "Toolbar accent (refused)",
+    group: "Refused",
+    type: "color",
+    description:
+      "The toolbar's own token. Never written — restyle the bar from your own stylesheet instead.",
+  },
+];
+
+const runtimeThemeEditor = themeEditor({
+  order: 15,
+  priority: 45,
+  tokens: PLAYGROUND_TOKENS,
+  createdBy: "playground",
+  // §3H's surface/subtree selection: the whole app, or just the demo card.
+  surfaces: [
+    { id: "root", label: "Whole application (:root)", selector: ":root" },
+    { id: "demo", label: "Just the demo card", selector: ".pg-theme-demo" },
+  ],
+  // §3H's presets, computed by the consumer — which is where a palette
+  // generator belongs. The extension owns no colour model and generates
+  // nothing; a preset is a plain recipe, the same shape Import accepts.
+  presets: [
+    {
+      schemaVersion: 1,
+      name: "Warm",
+      mode: "light",
+      surface: "root",
+      overrides: {
+        "--pg-brand": "#d9480f",
+        "--pg-tile-accent": "#ffe8cc",
+        "--pg-radius": "14px",
+      },
+      createdAt: "2026-08-28T10:04:00.000Z",
+    },
+    {
+      schemaVersion: 1,
+      name: "Sharp",
+      mode: "light",
+      surface: "root",
+      overrides: { "--pg-radius": "0px", "--pg-space": "10px" },
+      createdAt: "2026-08-28T10:04:00.000Z",
+    },
+  ],
+  // The app's own colour mode. The extension has no idea what a mode is; this
+  // is consumer code, exactly like /ext/flags' `onOverride`.
+  mode: {
+    // Falls back to the media query rather than assuming "light", because an
+    // unset attribute means "follow the system" here — and a recipe that
+    // recorded `mode: "light"` while the page was rendering dark would be a
+    // wrong fact in a document somebody hands to a designer.
+    read: () => {
+      const chosen = document.documentElement.dataset["pgMode"];
+      if (chosen === "dark" || chosen === "light") return chosen;
+      return window.matchMedia?.("(prefers-color-scheme: dark)").matches
+        ? "dark"
+        : "light";
+    },
+    set: (next) => {
+      document.documentElement.dataset["pgMode"] = next;
+    },
+  },
+});
+
 const runtimeMetrics = metrics({
   order: 30,
   priority: 35,
@@ -485,6 +643,7 @@ export const playgroundExtensions: DevToolbarExtension[] = [
   commands,
   runtimeFlags,
   runtimeOverlays,
+  runtimeThemeEditor,
   runtimeMetrics,
   hydration,
   tailwind,

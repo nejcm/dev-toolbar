@@ -27,6 +27,7 @@ const EXT_MARKERS = [
   "[dev-toolbar/ext/command-menu]",
   "[dev-toolbar/ext/overlays]",
   "[dev-toolbar/ext/diagnostics]",
+  "[dev-toolbar/ext/theme-editor]",
 ];
 
 function sourceFiles(directory: string): string[] {
@@ -147,6 +148,9 @@ if (!built && mustBeBuilt) {
       expect(
         readFileSync(`${root}dist/ext/diagnostics.cjs`, "utf8"),
       ).toContain(EXT_MARKERS[5] as string);
+      expect(
+        readFileSync(`${root}dist/ext/theme-editor.cjs`, "utf8"),
+      ).toContain(EXT_MARKERS[6] as string);
     });
   });
 }
@@ -205,6 +209,19 @@ if (built || !mustBeBuilt) {
       for (const bundle of [flagsBundle, menuBundle, overlaysBundle]) {
         expect(bundle).not.toContain(EXT_MARKERS[5] as string);
       }
+      // Seven. /ext/theme-editor writes to the host document, which makes it
+      // the one a consumer is most likely to adopt on its own; adding a token
+      // editor must not thereby ship a flag editor, a palette or a profiler.
+      const themeBundle = readFileSync(
+        `${root}dist/ext/theme-editor.cjs`,
+        "utf8",
+      );
+      for (const marker of EXT_MARKERS.slice(0, 6)) {
+        expect(themeBundle, marker).not.toContain(marker);
+      }
+      for (const bundle of [flagsBundle, menuBundle, overlaysBundle, diagnosticsBundle]) {
+        expect(bundle).not.toContain(EXT_MARKERS[6] as string);
+      }
     });
 
     it("declares ./runtime and the ./ext/* entries explicitly, with no wildcards", () => {
@@ -243,6 +260,11 @@ if (built || !mustBeBuilt) {
         import: "./dist/ext/diagnostics.js",
         require: "./dist/ext/diagnostics.cjs",
       });
+      expect(pkg.exports["./ext/theme-editor"]).toEqual({
+        types: "./dist/ext/theme-editor.d.ts",
+        import: "./dist/ext/theme-editor.js",
+        require: "./dist/ext/theme-editor.cjs",
+      });
       expect(Object.keys(pkg.exports).some((key) => key.includes("*"))).toBe(
         false,
       );
@@ -264,6 +286,8 @@ if (built || !mustBeBuilt) {
         "dist/ext/overlays.cjs",
         "dist/ext/diagnostics.js",
         "dist/ext/diagnostics.cjs",
+        "dist/ext/theme-editor.js",
+        "dist/ext/theme-editor.cjs",
       ]) {
         expect(
           readFileSync(`${root}${file}`, "utf8").startsWith('"use client";'),
@@ -300,6 +324,30 @@ if (built || !mustBeBuilt) {
       expect(
         readFileSync(`${root}dist/ext/diagnostics.d.ts`, "utf8"),
       ).toContain("DiagnosticsOptions");
+      expect(
+        readFileSync(`${root}dist/ext/theme-editor.d.ts`, "utf8"),
+      ).toContain("ThemeEditorOptions");
+    });
+
+    it("declares every subpath the plan promised, and nothing by wildcard", () => {
+      // The closing check for P4: the delivery plan's `exports` map is `.`,
+      // `./runtime`, `./testing`, `./styles.css` and one entry per `./ext/*`,
+      // enumerated. Asserting the whole key set — rather than each key on its
+      // own — is what makes a *missing* entry fail rather than only a wrong one.
+      expect(Object.keys(pkg.exports).sort()).toEqual([
+        ".",
+        "./ext/command-menu",
+        "./ext/diagnostics",
+        "./ext/environment",
+        "./ext/flags",
+        "./ext/metrics",
+        "./ext/overlays",
+        "./ext/theme-editor",
+        "./package.json",
+        "./runtime",
+        "./styles.css",
+        "./testing",
+      ]);
     });
 
     it("resolves through Node's own exports map", () => {
@@ -311,7 +359,8 @@ if (built || !mustBeBuilt) {
           `const c = await import("@nejcm/dev-toolbar/ext/command-menu");` +
           `const o = await import("@nejcm/dev-toolbar/ext/overlays");` +
           `const d = await import("@nejcm/dev-toolbar/ext/diagnostics");` +
-          `console.log(JSON.stringify({ runtime: Object.keys(r).sort(), metrics: Object.keys(m).sort(), environment: Object.keys(e).sort(), flags: Object.keys(f).sort(), commandMenu: Object.keys(c).sort(), overlays: Object.keys(o).sort(), diagnostics: Object.keys(d).sort() }));`,
+          `const t = await import("@nejcm/dev-toolbar/ext/theme-editor");` +
+          `console.log(JSON.stringify({ runtime: Object.keys(r).sort(), metrics: Object.keys(m).sort(), environment: Object.keys(e).sort(), flags: Object.keys(f).sort(), commandMenu: Object.keys(c).sort(), overlays: Object.keys(o).sort(), diagnostics: Object.keys(d).sort(), themeEditor: Object.keys(t).sort() }));`,
       );
       const result = JSON.parse(names) as {
         runtime: string[];
@@ -321,6 +370,7 @@ if (built || !mustBeBuilt) {
         commandMenu: string[];
         overlays: string[];
         diagnostics: string[];
+        themeEditor: string[];
       };
       expect(result.runtime).toEqual(
         expect.arrayContaining([
@@ -372,6 +422,16 @@ if (built || !mustBeBuilt) {
           "createResponsivenessMonitor",
           "renderMarkdown",
           "DIAGNOSTICS_CSS",
+        ]),
+      );
+      expect(result.themeEditor).toEqual(
+        expect.arrayContaining([
+          "themeEditor",
+          "createThemeEditorRuntime",
+          "readStoredThemeOverrides",
+          "parseRecipe",
+          "RESERVED_PREFIXES",
+          "THEME_EDITOR_CSS",
         ]),
       );
       expect(result.runtime).toEqual(
@@ -490,6 +550,29 @@ if (built || !mustBeBuilt) {
         contributes: "undefined",
         gathered: false,
         omissions: 1,
+      });
+
+      // /ext/theme-editor writes to a document, so importing it *without* one
+      // is the interesting case: the factory must build the store, enumerate
+      // its commands and touch no document until start(api) runs.
+      const theme = node(
+        `const { themeEditor } = await import("@nejcm/dev-toolbar/ext/theme-editor");` +
+          `const ext = themeEditor({ tokens: [{ name: "--brand-500", type: "color", value: "#fff" }, { name: "--dtb-bg", type: "color" }] });` +
+          `console.log(JSON.stringify({ id: ext.id, commands: ext.commands().map(c => c.id), contributes: typeof ext.diagnostics, overlay: typeof ext.overlay }));`,
+      );
+      expect(JSON.parse(theme)).toEqual({
+        id: "theme-editor",
+        commands: [
+          "theme-editor.reset",
+          "theme-editor.togglePreview",
+          "theme-editor.copyCss",
+          "theme-editor.copyRecipe",
+          "theme-editor.copyFigma",
+          "theme-editor.copyLink",
+          "theme-editor.refresh",
+        ],
+        contributes: "function",
+        overlay: "undefined",
       });
     });
   });

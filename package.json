@@ -76,6 +76,11 @@
       "import": "./dist/ext/flags.js",
       "require": "./dist/ext/flags.cjs"
     },
+    "./ext/theme-editor": {
+      "types": "./dist/ext/theme-editor.d.ts",
+      "import": "./dist/ext/theme-editor.js",
+      "require": "./dist/ext/theme-editor.cjs"
+    },
     "./testing": {
       "types": "./dist/testing.d.ts",
       "import": "./dist/testing.js",

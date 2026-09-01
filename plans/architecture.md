@@ -10,7 +10,7 @@ delivery plan. This document describes what the code actually does.
 - Contract version: **1** (`CONTRACT_VERSION`)
 - Entries: `@nejcm/dev-toolbar` (root), `/runtime`, `/ext/metrics`,
   `/ext/environment`, `/ext/flags`, `/ext/command-menu`, `/ext/overlays`,
-  `/testing`, `/styles.css`
+  `/ext/diagnostics`, `/ext/theme-editor`, `/testing`, `/styles.css`
 - Runtime dependencies: **none**
 
 P1 built `/ext/metrics` strictly as an outside consumer of this contract, which was
@@ -36,6 +36,16 @@ for a modal turned out to be exactly the right surface for a persistent one — 
 is the first consumer whose safety story is mostly about what it refuses to do, and
 that is collected in [§14](#14-what-p3s-first-extension-found). `CONTRACT_VERSION`
 stays `1`.
+
+P3's second, `/ext/diagnostics`, added `diagnostics()` and `getDiagnostics()` — the
+same shape §13.3 added for commands — and recorded what the contract still gets wrong
+in [§15.7](#157-what-the-contract-still-gets-wrong-recorded).
+
+P4's `/ext/theme-editor` is the last extension in the plan and the only one carrying
+**both** of the earlier hazards at once: it mutates the application like `/ext/flags`
+and it touches the host's CSS like `/ext/overlays`. It moved the contract in **no**
+places; what it found is collected in
+[§16](#16-what-p4s-extension-found). `CONTRACT_VERSION` stays `1`.
 
 ## 1. What the shell is
 
@@ -546,12 +556,39 @@ client render always agree.
 Built entries carry a `"use client"` banner, so a React Server Components app can
 import them from a server component without a directive of its own.
 
+### The banner's one sharp edge — **P4**
+
+The claim above is about *importing and rendering*. It is not about **calling**, and the
+difference is a build error rather than a runtime one.
+
+`"use client"` makes each built entry a client module in its entirety. RSC permits a
+server component to render a client component, and forbids it from invoking a function
+exported by a client module — so a `layout.tsx` with no directive can render
+`<DevToolbar>`, and the moment it also writes `metrics()` the build fails with
+*"Attempted to call metrics() from the server but metrics is on the client."* Every
+first-party extension is a factory, so every RSC consumer meets this on their first
+attempt.
+
+This was found by finally running the plan's Verification item 5 — a real Next 16
+app-router project — which no earlier phase had done. Nothing in the code is wrong: the
+fix is one small client module holding the extension array, which is where it belongs
+anyway, because §3 requires the objects to be built once outside render. What was wrong
+was the documentation, which described the banner as making the package importable from
+a server component and stopped there. Both the README and this document now show the
+wrapper.
+
+The rest of item 5 holds as claimed, verified in `next dev` and in a production
+`next build && next start` with `reactStrictMode: true`: the server HTML contains the
+page and not one `data-dev-toolbar` or `data-dtb-part`, the bar mounts client-side, and
+the console carries no hydration warning.
+
 ## 9. What is deliberately absent
 
 | Not in core | Where it goes |
 | --- | --- |
 | Event bus, ring buffers, throttled store, `redact()` | `./runtime` (P1) |
 | Metrics, environment, flags, overlays, diagnostics, theme editor | `./ext/*` (P1–P4) |
+| Any design system, colour model or palette generator | `./ext/theme-editor` (P4) edits the tokens *you* publish — core has no `ctx` and neither does it |
 | Environment, build and session context, and any redaction of it | `./ext/environment` (P2) — core has no `ctx` to hand anybody |
 | A command palette UI | `./ext/command-menu` (P2) — core aggregates and renders nothing |
 | Severity thresholds | The extension that owns the metric |
@@ -1586,17 +1623,27 @@ descending order of how likely they are to bite somebody.
   never on a timer, but a future reader that wanted to *watch* the aggregation would
   hit the same wall the palette hit, and the fix would be the same shape.
 
-One **join** is known and deliberately unfixed, in prior-phase code:
-`describeTarget` in `ext/metrics/collectors/delay.ts` builds `tag#id.class` from live
-DOM attributes and hands the assembled string to metrics' `redact()` pass. It is
+One **join** was known and deliberately unfixed, in prior-phase code — **closed in
+P4.** `describe()` in `ext/metrics/collectors/delay.ts` (this document called it
+`describeTarget`, which was never the function's name) built `tag#id.class` from live
+DOM attributes and handed the assembled string to metrics' `redact()` pass. It is
 structurally the `containerName` bug — parts joined before an anchored matcher sees
 them — with materially lower plausibility, because a DOM `id` or class would have to
-*be* credential-shaped rather than merely contain something. It is recorded rather
-than changed because it lives in reviewed, approved P1 code and this is a diagnostics
-phase; the fix, if it is ever wanted, is the same one-line `part()` treatment
-`describeAttribution` got. A sweep of every template join in `/ext/diagnostics` and the
-three aggregated runtimes found nothing else: the rest join already-redacted display
-strings, internal dirty-check keys, or numbers.
+*be* credential-shaped rather than merely contain something.
+
+It was recorded rather than changed on the grounds that it lived in reviewed, approved
+P1 code and P3 was a diagnostics phase. P4 removed that argument: the phase fixed three
+fresh instances of exactly this shape ([§16.8](#168-three-sources-that-were-not-on-the-list))
+and wrote the checklist that names it, so shipping `0.1.0` with the fourth *known*
+instance open would have made this register's own standard look optional — and after a
+publish the behaviour is public. Each part now goes through the same one-line `part()`
+treatment `describeAttribution` got, with two tests: a JWT-shaped `id` and a
+`Bearer …` class are masked, and an ordinary `a#checkout-cta.btn` stays readable so the
+masking is not a blanket one.
+
+A sweep of every template join in `/ext/diagnostics` and the three aggregated runtimes
+found nothing else: the rest join already-redacted display strings, internal
+dirty-check keys, or numbers.
 
 One **cosmetic consequence of the `error`/`errorName` split**: a third-party reader
 that renders only `entry.error` shows messages with no name in front of them. The type
@@ -1656,3 +1703,361 @@ The right shape, if it is ever wanted, is **not** a listener in this extension. 
 which works today, gives the application the choice, and reuses the error reporter it
 already trusts. That is why `sources` exists, and it is documented in the README as
 the answer to this specific gap rather than as a general escape hatch.
+
+## 16. What P4's extension found
+
+`/ext/theme-editor` is §3H — editing an application's design tokens live — and it is
+the last extension in the plan. It is also the only one that carries **both** of the
+hazards the earlier phases met separately: it mutates the application the way
+`/ext/flags` does, and it touches the host's CSS the way `/ext/overlays` does.
+
+It changed the contract in **no** places. `CONTRACT_VERSION` stays `1`. Nothing was
+added, widened or corrected — the extension that combines the two most dangerous
+shapes in the catalogue needed nothing from core that the P0–P3 contract did not
+already provide, which is the strongest evidence so far that the contract is finished.
+A bump here would be noise, and the one signal a version number carries is worth more
+than the appearance of progress.
+
+### 16.1 The two inherited hazards, and where their rules disagree
+
+Both prior sets of rules applied, and the interesting part is the one place they
+gave opposite answers.
+
+| From | Rule | Here |
+| --- | --- | --- |
+| §12.4 | A mutation needs an escape hatch that works without the app | `?dtb-theme=reset`, run **before** any stored edit is applied |
+| §12.4 | Anything you apply must appear in what you display | An edit whose token the catalogue no longer declares is rendered, tagged and clearable |
+| §12.4 | The failure is per key, never one global slot | `applyErrors` is a `Map`, cleared only by that token's own success |
+| §12.6 | A masked value must not round-trip through the input | The editor starts empty with a "masked — type a new value" placeholder |
+| §14.2 | The reversal is exact, and pinned by byte equality | The inline value **and its priority** are recorded and restored |
+| §14.3 | Teardown is unconditional, not flag-checked | `releaseAll()` restores what this hold displaced, then removes a `style` attribute it created |
+| §14.2 | A throw in a place nobody catches switches the feature off | Every write is wrapped; the failure lands on the row |
+
+The disagreement is **visibility**. `/ext/overlays` detaches every listener and removes
+its stylesheet on `subscribeVisibility(false)`, and §14.1 argues that is the right
+default. This extension deliberately does the opposite: hiding the bar does not revert
+the edits. An overlay is a drawing, and drawing for a surface that is not rendered is
+waste; an edit is a *state the developer chose*, and a toolbar that repainted the
+application every time somebody pressed the hide shortcut would be unusable.
+
+That is the clearest vindication yet of §2's "core reports visibility, never acts on
+it". Two extensions, one signal, opposite correct answers — and core would have been
+wrong whichever one it picked on their behalf.
+
+### 16.2 A guard you can express as "never emit it" does not belong in CSS at all
+
+§14.7's lesson was that a safety rule must not sit in a cascade layer designed to lose,
+and `/ext/overlays` fixed it with four `!important` declarations. This extension has
+the same class of problem in a sharper form — its whole job is to write CSS custom
+properties onto an element the toolbar inherits from — and it does **not** reach for
+`!important`, because it does not have to.
+
+The toolbar is styled entirely from `--dtb-*` and publishes `--dev-toolbar-height`
+(§4.1). The default surface is `:root`, which is an ancestor of the portalled toolbar
+root, so writing either name there would repaint the tool being used to make the edit.
+The guard is `RESERVED_PREFIXES` in `ext/theme-editor/types.ts`: those names are
+**never written**, whatever a consumer declares, and a token that carries one gets a
+row saying so rather than silently vanishing.
+
+> §14.7 says: do not promise the consumer wins over a declaration whose failure mode
+> is swallowing clicks. The generalisation P4 adds: **prefer a guard you can state as
+> "never emit it" over one you have to win a cascade argument for.** A declaration that
+> is never produced cannot be beaten by specificity, by layer order, or by
+> `!important`, and there is nothing to keep in sync with the stylesheet.
+
+The same reasoning covers the second bleed vector: a *surface* whose selector resolves
+inside a `[data-dev-toolbar]` subtree is refused outright. The name guard already makes
+it harmless, but "write the app's tokens onto the toolbar" is never what anybody meant,
+and doing nothing useful quietly is worse than saying no.
+
+The tests that pin this are written to §14.7's standard as well: they drive the real
+extension and assert against the DOM, not that a helper returned `"reserved"`. Two of
+them, because the guard has **two callers** and the rule being right is not evidence
+that both consult it:
+
+- the `setOverride` door — a reserved token declared in the catalogue, edited from the
+  panel, is absent from the element's inline style, and the bar's own tokens
+  (`--dtb-bg`, `--dtb-fg`, `--dtb-accent`, `--dtb-bar-height`, `--dtb-font-size`) plus
+  its computed background, colour and font size are unchanged across the edit, read
+  **off the toolbar root** so that inheritance from `:root` is in scope. Comparing
+  *style attributes*, which the first cut did, is a weaker claim than this section was
+  making: a token reaching the bar by inheritance changes no attribute on the bar at
+  all, which is precisely the bleed path.
+- the **storage** door — a `--dtb-*` entry planted in `localStorage` travels through
+  `vetStored()` (which deliberately does not filter names, because an orphan is the
+  developer's own work) into `applyAll()`, where `writeOne`'s `checkTokenName` is the
+  only line stopping it. Review deleted that line as a mutation and the whole
+  extension's suite still passed: this path was genuinely unpinned while this section
+  claimed it was covered. It is now pinned, and `vetStored()` additionally drops a
+  reserved name outright — see §16.9.
+
+### 16.3 Redaction had to learn what the value *is*
+
+§11.3 established redact-on-the-way-in; §12.6 added that a value editor must not
+round-trip a mask; §15.3 sharpened it to "both halves of a join this package performs
+are foreign until proven otherwise". All three held. Two things are new.
+
+**The two halves of a join do not get the same treatment.** A token name and a token
+value are both foreign, and what each one *becomes* is different: the value ends up on
+a clipboard, so it is **redacted**; the name ends up as a CSS identifier in an inline
+declaration and in exported CSS text, so it is **validated**. Masking a name would
+corrupt every export and guard nothing — the hazard there is syntax, not secrecy, and
+a name carrying `;` or `}` closes the declaration and opens a rule of somebody else's
+choosing. So the corrected form of §15.3's rule is:
+
+> Both halves of a join are foreign. **Which treatment each half needs is decided by
+> what it becomes downstream, not by the fact that it is foreign.**
+
+**A colour cannot carry a credential.** `redact()` matches key names by substring on a
+normalised key, so `--session-panel-bg` normalises to `sessionpanelbg`, contains
+`session`, and was masked — making the token a developer most wants to see the one they
+cannot, in an editor. That is `/ext/flags`' §12.6 argument for booleans and numbers,
+arriving in a place where it is much more likely to bite: token names are *descriptive
+English*, so collisions with a credential word list are routine rather than exotic. So
+key matching applies only to a free `string` token; colours, lengths and numbers are
+matched on the **value's shape** alone, which still masks a `Bearer …`, a JWT or a URL
+carrying a token in its query whatever the token is called. `sensitive: true` overrides
+everything, in either direction.
+
+The same substring matcher then produced the phase's most instructive small defect, and
+it was found by a test rather than by review. The recipe's own metadata field counting
+what had been withheld was called `omittedMaskedTokens` — which contains `token`, so
+`redact()` masked it, and the reader got `"[redacted]"` where a count belongs.
+
+> Our own structural field names are foreign to the redactor too.
+
+It is renamed, and a test now asserts that no top-level field of any outbound payload
+comes back equal to the mask. That check is worth copying: it is cheap, and it fails
+loudly for a class of bug whose symptom is a *wrong fact in an outbound document* —
+exactly what §15.3 exists to prevent, with the twist that the foreign key was ours.
+
+### 16.4 A document a human reads and a document a machine applies want opposite things
+
+§15.3 says masking must be visible and the count must be computed from the canonical
+form. Four export formats made a second distinction necessary.
+
+- **CSS text** and the **Figma / design-tokens JSON** are read by a person or by a tool
+  that shows a person. A masked value appears as the mask, with a stated count: the
+  reader must be told something was withheld.
+- The **recipe JSON** and the **share link** are *applied*. Carrying `[redacted]` into
+  them is how a token ends up literally set to the string `[redacted]`. So masked
+  tokens are **omitted**, and the count of omissions travels with the document.
+
+Belt and braces on the way back in: a value equal to the mask is refused by the
+sanitiser, so a CSS block pasted out of the panel and back into Import cannot pin a
+token to a placeholder either.
+
+### 16.5 Three doors, one sanitiser
+
+A pasted recipe, a consumer preset and a `?dtb-theme=` link are three ways for foreign
+values to arrive, and the link is the one that looks like a new trust boundary. It is
+not, and the design is what makes that true: all three go through **one** `sanitize()`,
+which keeps only names the current catalogue declares and only values that pass the
+same check the panel's own editor applies. There is one place to review rather than
+three, and a link cannot do anything a person sitting at the keyboard could not.
+
+Two rules inside it are worth stating:
+
+- **Only declared names.** An unknown name would let a link write an arbitrary custom
+  property onto the page. A *stored* edit is treated differently — applied, and shown
+  as an orphan — because it was made here, against a catalogue that existed, and
+  refusing to apply it would silently discard the developer's own work.
+- **`url()` and its relatives are refused, not escaped.** A value that fetches is an
+  outbound request to a host of the link author's choosing, which is a real
+  exfiltration channel rather than a cosmetic problem. `;`, `{`, `}`, `<`, `>`, `\`,
+  comment delimiters, `@import` and `image-set()` go with it. `var()`, `calc()`,
+  `clamp()`, `oklch()` and `color-mix()` are all fine, because a deny list of the
+  constructs that *escape a declaration* ages better than an allow list of the syntax
+  somebody might want.
+
+### 16.6 Choosing five of thirteen, and saying what the others cost
+
+§3H lists thirteen capabilities. Eight ship — individual token overrides, surface and
+subtree selection, reset token and reset all, before/after comparison, presets and
+named recipes, import/export JSON, copy CSS variables, share recipe link — plus the
+Figma-compatible export. Following §14.4's standard, the cost of what is missing is
+stated **in the panel**, next to the thing itself:
+
+| Left out | What it costs, honestly |
+| --- | --- |
+| Base UI colour, accent, contrast; hue/chroma/lightness controls | You cannot regenerate a palette from one input here. Doing so means owning a colour model and a scale generator — a design system, which §2's whole argument says is the consumer's. The mechanism is already there: a consumer computes a scale and hands it over as a `preset`, which is the same `ThemeRecipe` shape Import accepts. |
+| Light/dark mode | The toolbar cannot know how an application flips its own mode. The `mode` adapter reports it, and drives it only if you supply a `set`. |
+| Figma plugin import | The export is the W3C design-tokens shape, versioned and deterministic — the half of §3H's pipeline this package can honestly own. Writing the plugin is a different product. |
+| §3H's `{ l, c, h, alpha }` override model | An override here is the literal value, so a recipe is a complete self-describing document rather than a delta against a generator the reader may not have. That is also what makes the Figma pipeline deterministic in the only sense that matters: what is exported is what is applied. |
+
+One honest limit is in the panel rather than in this document, because a developer needs
+it while they are debugging: edits are inline custom properties, so an application rule
+marked `!important` still wins, and the panel will show an edit the page is not
+honouring. `/ext/overlays` §14.3 made the same admission about its outline sheet.
+
+### 16.7 What the browser found, and what jsdom could not
+
+**jsdom drops `!important` on custom properties entirely.** `setProperty("--x", "red",
+"important")` writes `--x: red;` and `getPropertyPriority` returns `""`, so the
+priority half of the reversal is *unobservable* in the ambient test document — an
+assertion there would have passed whether or not the priority was carried. The unit
+test drives a hand-written declaration object instead, and a browser pass confirms the
+real thing: an author's `--pg-brand: #111 !important` is displaced by an edit and comes
+back with its priority, byte-identical.
+
+**Core writes `--dev-toolbar-height` as an inline style on `document.documentElement`.**
+So `<html>` carries a `style` attribute for as long as a toolbar is mounted, and keeps
+an empty one afterwards. A byte-equality reversal test aimed at `:root` would therefore
+be measuring core's residue rather than this extension's — and the tempting fix, a
+looser assertion, would have quietly retired the guarantee. The tests edit a dedicated
+element and keep `:root` for the one case that needs it: the bleed check, because
+`:root` is what the toolbar inherits from.
+
+**`setProperty` then `removeProperty` leaves `style=""` behind.** Verified in the
+browser as well as jsdom: after a reset the attribute is gone, not empty. This is small
+and it is exactly the kind of residue that becomes a bug report about a diff.
+
+### 16.8 Three sources that were not on the list
+
+§15.3 says both halves of a join are foreign until proven otherwise, and §16.3
+sharpened that to "which treatment each half needs depends on what it becomes".
+Attacking this extension's own export and apply paths — before review, deliberately —
+found three strings that had not been classified at all. All three are the same
+mistake, and it is not a mistake about joins:
+
+> "Foreign" is a property of the **source**, so the way to find the gaps is to
+> enumerate the sources of every string you print or write, not to re-read the joins.
+
+**The surface selector is printed.** It is resolved with `querySelector`, which fails
+closed on anything malformed — so `:root { } body { background: url("https://evil.test/x") } .z`
+resolves to nothing and applies nothing. `cssText` printed it anyway, producing a
+*working* rule the consumer never wrote, in a file somebody pastes into their
+stylesheet. It looked like configuration rather than data, which is exactly why it was
+skipped. Fixed the §16.2 way: `isPrintableSelector()` refuses to emit, and an
+unprintable surface falls back to `:root` with the reason in a comment — not escaped
+into something that might still parse.
+
+**Storage is a fourth door.** The panel, a pasted recipe and a link all went through
+one sanitiser (§16.5); `parseOverrides()` accepted any string, on the reasoning that
+this map had been written by us. It has not necessarily been: `localStorage` is
+writable by every script on the origin and by anybody who has been talked into pasting
+something into a console. This was the worst of the three, because it was not only an
+export leak: `style.setProperty` accepts a *custom property* value of nearly any shape,
+so `red; background: url(…)` landed in the inline style attribute verbatim and became a
+live declaration. Stored values are now re-checked on load, refused entries are counted
+in the panel and the cleaned map is written back. Names are deliberately still **not**
+filtered against the catalogue, unlike an import — an orphan is the developer's own work
+(§12.4). It is the value that is foreign, not the name.
+
+**A description is exported.** `description` was rendered raw in the panel and copied
+raw into the Figma `$description`. It now goes through `redact()` once, on the way into
+the view, so the panel and the export read the same string. Two details worth keeping:
+the mask is tracked as `metadataMasked` (named `descriptionMasked` until the group
+joined it — §16.9), *separate* from `masked`, because `masked`
+drives the editor's refuse-to-seed behaviour and a row whose description was scrubbed
+has a perfectly usable value; and the Figma export's own count includes it, because
+that is the one document carrying descriptions and §15.3's rule is that whatever
+describes the output is computed from the output. A test also asserts the **limit**: a
+credential buried mid-sentence survives, because `redact()` is anchored to the whole
+string. Calling the redactor and missing is a different failure from not calling it,
+and a suite showing only successes would imply a guarantee this package does not make.
+
+A fourth attack found no leak but did find a claim that was not being tested.
+"Restores the document byte-for-byte" is decided by two readings — whether the element
+already had a `style` attribute, and whether it still has declarations after the
+release — and the browser produced a `style=""` residue that looked like a bug and was
+not: the element genuinely had an empty `style` attribute at acquisition, left there by
+the session's own earlier poking, and refusing to remove an attribute the extension did
+not add is the correct answer. Chasing it was still worth it, because it showed the
+tests were pinning the wrong guard: an element with `style="color: red"` is caught by
+the *declaration count*, so the attribute reading was unreachable in every test and
+could have been deleted without a single failure. There is now a case for each reading
+— an empty foreign attribute, a foreign declaration, and three acquire/release cycles
+with neither — and a third guard that no test could distinguish from its neighbour was
+deleted rather than kept, which is §14.7's rule about a rule only ever compared to
+itself.
+
+The general lesson for the next extension, stated as a checklist rather than a
+principle, because a principle did not catch these:
+
+> List every string you print, write to the DOM, put in a URL, or copy. For each one,
+> name its source. Anything whose source is not this module's own literals is foreign,
+> and needs either redaction (if it is going to a person) or validation (if it is going
+> to a parser) — and configuration is a source like any other.
+
+### 16.9 What independent review found, and the rule it sharpened
+
+Review returned one blocking defect and a list of smaller ones. The blocking one is the
+most instructive thing in this section, because the extension's own author had written
+the rule it broke, in this document, two sections earlier.
+
+**A blanket redaction pass downstream of a classified join undoes the
+classification.** §16.3 built a type-aware `render()` so that `--sidebar-bg` and
+`--spinner-size` stay readable: token names are descriptive English and collide with any
+credential word list by substring (`sidebarbg` contains `sid`; `spinnersize` contains
+`pin`). `executableRecipe()` respected that. Then `recipeText()` passed the whole
+payload through `redact()` again as belt-and-braces — and `redact()` walks an object
+graph matching *every* key at *every* depth, while `recipe.overrides` is keyed by token
+names. So both tokens exported as `"[redacted]"` in the one document a machine applies,
+and re-importing that recipe applied **nothing**, because `sanitize()` correctly refuses
+the mask sentinel. A total round-trip loss against `plans/dev-bar.md`'s written
+acceptance criterion, from a pass that existed only as a safety net.
+
+Three things about it are worth keeping:
+
+- **The proof it was a defect and not a policy** was that `shareLink()` — the other
+  executable document, for the identical state — carried the raw values. Two outputs of
+  one function disagreeing is a bug by definition. Both are now built by one
+  `executablePayload()`, so agreement is structural rather than maintained.
+- **The fix is a split, not a removal.** The metadata still goes through the object
+  walk, because that is the pass that catches a structural field of *ours* whose name
+  collides — it is how `maskedValuesOmitted` was found (§16.8). Each override value goes
+  through `redact()` on its own, as a bare string: value-shape matching and nothing
+  else, idempotent because every value there already survived `render()`.
+- **The test that hid it** was §16.8's own "no field equals the mask" scan, which
+  looked at **top level only** — the depth where the last bug had been. It is now
+  recursive, over both executable documents. A scan that stops where the previous bug
+  stopped only ever catches the previous bug.
+
+The amendment to §15.3, which is the durable part:
+
+> **Both halves of a join are foreign, and which treatment each half needs is decided by
+> what it becomes downstream (§16.3). A blanket redaction pass placed *downstream* of
+> such a join re-applies the treatment the classification withheld — so belt-and-braces
+> redaction must be shape-only, or key-exempted, once a classified join is behind it.**
+
+Five smaller findings, all fixed:
+
+| | What it was |
+| --- | --- |
+| The **storage caller** of the bleed guard was untested | Deleting `writeOne`'s `checkTokenName` line broke nothing the suite could see. §16.2 claimed otherwise. Now pinned, and the claim corrected. A guard with two callers needs a test per caller. |
+| A reserved name in storage was **residue with no exit** | `vetStored()` checked values only, so a `--dtb-*` entry survived every reload while `writeOne` refused it every time — and its row, being refused, had no editor and so no per-row clear. `vetStored()` now drops a reserved name outright. That is the one place where a reserved name and an orphan part company: an orphan is *applicable* — the catalogue may name it again tomorrow — and a reserved name never is, so keeping it is not preserving the developer's work, it is keeping litter. |
+| A **replaced surface element** left the panel lying | `currentHold()` migrated on the next single-token write, but wrote only that token, while every other row went on reporting `override ?? base`. An SPA re-rendering the subtree a surface selects was enough. A migration now re-applies everything. Cannot bite the default `:root`. |
+| `isPrintableSelector` **denied combinators** | `#app > main` is an ordinary surface selector, and denying it exported the block scoped to `:root` with a note saying it could not be printed — a wrong scope in a stylesheet, which is worse than the refusal it was imitating. The comment claiming "a real selector never contains any of these" was simply false. The deny list is now only what *ends a selector and starts something else*, plus `@` at the start, which is the only position where it can open an at-rule. |
+| The **group name** reached the Figma export unclassified | §16.8's own checklist names this case — "configuration is a source like any other" — and the group is consumer-supplied and lands as a JSON key. Redacted at view-build time like the description, and folded into the count; `descriptionMasked` is now `metadataMasked`, because it covers both. |
+
+Two were recorded rather than fixed, and one line of documentation was corrected:
+
+- **`adopt()` replaces rather than merges.** A recipe is a whole theme, and half of one
+  merged over half of another is a theme nobody designed. But `sanitize()`'s neighbouring
+  argument is that the developer's work is not silently discarded, so the notice now
+  counts what was displaced. There is no undo; saying what happened is the honest
+  minimum.
+- **Two holds on one element, released in reverse order, can resurrect a value.** A
+  writes `--x` (prior `""`), B writes `--x` (prior: A's value), tearing down A then B
+  leaves A's value live with no holder. Inherent to any per-closure inline-restore
+  scheme — the alternative is shared module state, which §2 rules out — and it needs two
+  toolbars editing the same token on the same surface. The code comment used to call
+  this "last-writer-wins", which was optimistic; it now says a release *can restore a
+  displaced value*.
+
+### 16.10 The contract, at the end of the plan
+
+Nothing in §15.7's register was closed by this phase, and nothing new joins it. The
+four recorded gaps — the hand-maintained `TARGET_CONTRACT_VERSION` copy,
+`contractVersion` being documentation rather than a gate, `ExtensionDiagnostics.data`
+crossing core unredacted, and the absence of an invalidation signal for `commands` and
+`diagnostics` — are all still true and all still non-blocking, for the reasons recorded
+there. This extension states the contract version the way §15.7 asks: a one-line
+equality assertion against core's constant in
+`ext/theme-editor/__tests__/theme-editor.test.tsx`, rather than a second copy of the
+number.
+
+Seven extensions, four of the last five needing no contract change at all, and the one
+that needed the most — `/ext/command-menu` — needing only additive widening. That is
+what "the contract is done" looks like from the inside.

@@ -26,18 +26,20 @@ Subpaths, each opt-in and each with its own bundle:
 | `@nejcm/dev-toolbar/ext/command-menu` | `⌘K` palette over the commands core aggregates. Replaceable with your own. |
 | `@nejcm/dev-toolbar/ext/overlays` | Layout boxes, a column grid, an element inspector and focus order — drawn over your page, never in the way of it. |
 | `@nejcm/dev-toolbar/ext/diagnostics` | One snapshot for a bug report: the page, long tasks, and every other extension's own diagnostics. Reviewed before it is sent. |
+| `@nejcm/dev-toolbar/ext/theme-editor` | Edit your design tokens live, see the before and after, hand the result to a designer. The tokens stay yours. |
 | `@nejcm/dev-toolbar/testing` | `renderWithToolbar`, fake extensions, mock bus, fake layout. |
 | `@nejcm/dev-toolbar/styles.css` | The stylesheet, if you would rather not inject it at runtime. |
 
-> **Status:** the shell (P0), `/runtime` and `/ext/metrics` (P1) are implemented,
-> `/ext/environment`, `/ext/flags` and `/ext/command-menu` complete P2, and
-> `/ext/overlays` and `/ext/diagnostics` complete P3. The contract has been through
-> six real consumers — the first moved it in four places, all listed in the
-> [changelog](./CHANGELOG.md); the second did not move it at all; the third found one
-> gap, in `commands`; the fourth closed that gap and added the `overlay` slot; the
-> fifth drew over the host page and needed nothing new; the sixth needed to *read*
-> the other five, which is the `diagnostics` aggregation
-> ([plans/architecture.md §13–§15](./plans/architecture.md)). Every change so far is
+> **Status:** complete. The shell (P0), `/runtime` and `/ext/metrics` (P1),
+> `/ext/environment` / `/ext/flags` / `/ext/command-menu` (P2), `/ext/overlays` and
+> `/ext/diagnostics` (P3) and `/ext/theme-editor` (P4) are all implemented. The
+> contract has been through seven real consumers — the first moved it in four places,
+> all listed in the [changelog](./CHANGELOG.md); the second did not move it at all;
+> the third found one gap, in `commands`; the fourth closed that gap and added the
+> `overlay` slot; the fifth drew over the host page and needed nothing new; the sixth
+> needed to *read* the other five, which is the `diagnostics` aggregation; the
+> seventh both mutates the application and writes to its CSS, and needed nothing new
+> either ([plans/architecture.md §13–§16](./plans/architecture.md)). Every change is
 > additive, so `CONTRACT_VERSION` is still `1`. `0.1.0` is the first publish.
 
 ## Install
@@ -742,6 +744,152 @@ redactors match value shapes anchored to the whole string and a message that *is
 credential-carrying URL (what `fetch` and axios throw) stops being maskable the moment
 `"Error: "` is in front of it.
 
+## `@nejcm/dev-toolbar/ext/theme-editor`
+
+Live design-token editing (§3H). Edit the custom properties your application already
+publishes, see the application's own value next to your edit, and take the result away
+as CSS, as a versioned recipe, as a design-tokens export or as a link.
+
+```tsx
+import { themeEditor } from "@nejcm/dev-toolbar/ext/theme-editor";
+
+// Once, at module scope. Not inside render.
+const extensions = [
+  themeEditor({
+    tokens: [
+      { name: "--brand-500", label: "Brand", group: "Colour", type: "color" },
+      { name: "--radius-md", group: "Shape", type: "length", defaultValue: "8px" },
+      { name: "--type-scale", group: "Type", type: "number", defaultValue: "1" },
+    ],
+    // §3H's surface/subtree selection. Defaults to `:root` only.
+    surfaces: [
+      { id: "root", label: "Whole application", selector: ":root" },
+      { id: "checkout", label: "Checkout only", selector: "[data-area=checkout]" },
+    ],
+  }),
+];
+```
+
+**The tokens are yours.** This extension owns no design system and generates no
+palette. `value` is optional: leave it out and the application's own value is read off
+the surface with `getComputedStyle`, captured *before* the edit lands so the panel can
+keep showing it. Supply `onApply` if you also want the edit mirrored into your own
+theme provider; the live preview happens either way.
+
+Types are `color`, `length`, `number` and `string`. A `number` or `length` that does not
+parse is **refused with the draft kept**, never coerced — the `/ext/flags` rule. A
+`color` gets a swatch, and a native picker when the current value is hex.
+
+### It changes what your app looks like
+
+So it behaves like `/ext/flags`, which changes what your app *does*:
+
+- **Edits persist** under `dtb:v1:<instanceId>:ext:<id>:overrides` and are re-applied
+  on the next mount. `readStoredThemeOverrides()` reads them before you render, if your
+  own theme object needs to agree with the panel on the first paint.
+- **There is a kill switch.** Any page loaded with `?dtb-theme=reset` drops every edit
+  *before* any of them is applied, because the edit that makes the page unreadable is
+  the one you cannot see the panel to remove.
+- **Reset is exact.** The inline value each property held before the extension touched
+  it — priority included — is restored, and a `style` attribute the extension created
+  is removed rather than left empty. Same on teardown, unconditionally.
+- **Preview: off** holds every edit back without discarding it, which is §3H's
+  before/after comparison. Turning it back on re-applies through the same path.
+- **An edit the catalogue no longer declares still gets a row.** It is still being
+  written to your page, so it is shown, tagged and clearable.
+- **Hiding the bar does not revert anything.** Deliberately unlike `/ext/overlays`: an
+  edit is a state you chose, not a drawing.
+
+### It cannot restyle the toolbar
+
+The bar is styled from `--dtb-*` and publishes `--dev-toolbar-height`, and the default
+surface `:root` is an ancestor of the portalled toolbar root — so those names are
+**never written**, whatever you declare. A token that carries one gets a row saying
+why. Restyling the bar is a supported thing to want; do it from your own stylesheet
+([Styling](#styling)), which needs nothing from this extension.
+
+A surface whose selector resolves inside a `[data-dev-toolbar]` subtree is refused for
+the same reason.
+
+### Sharing and importing
+
+Four outputs, all built from one already-redacted snapshot:
+
+| Format | For |
+| --- | --- |
+| CSS variables | Pasting into your stylesheet |
+| Recipe JSON | Re-importing here, or committing |
+| Design tokens (`$type`/`$value`) | Figma Variables and other W3C design-tokens importers |
+| Share link | `?dtb-theme=<recipe>` on the current URL |
+
+A pasted recipe, a `preset` you supply, and a link all go through the **same** filter:
+only token names your current catalogue declares, and only values the editor itself
+would accept — which is what keeps `url(...)` in somebody's link from making your page
+fetch from their host. Anything dropped is counted and named.
+
+Presets are `ThemeRecipe`s **you** compute, which is where a palette generator belongs:
+
+```ts
+themeEditor({
+  tokens,
+  presets: [
+    { schemaVersion: 1, name: "High contrast", mode: "light", surface: "root",
+      overrides: generateScale("#0b7285"), createdAt: new Date().toISOString() },
+  ],
+  // The app's own colour mode. Report-only without `set`.
+  mode: { read: () => myTheme.mode, set: (next) => myTheme.setMode(next) },
+});
+```
+
+### What it does with your data
+
+Token values reach a clipboard, a file and a URL, so `redact()` runs on the way **in**
+and the panel and every export read the same masked snapshot. Two rules are specific to
+tokens:
+
+- **A colour, a length and a number are never masked by their name.** Token names are
+  descriptive English, so `--session-panel-bg` collides with the credential word list
+  routinely — and masking it would hide the token you most need to see. Those types are
+  matched on the *value's* shape only, which still masks a `Bearer …`, a JWT or a URL
+  carrying a token in its query. A free `string` token is matched on its name as well,
+  and `sensitive: true` masks anything.
+- **A masked value never round-trips.** The editor starts empty with a placeholder
+  rather than seeded, and the recipe and share link **omit** masked tokens with a stated
+  count rather than carrying `[redacted]` into a document something is going to apply.
+
+A token's `description` and its `group` are redacted the same way, once, so the panel
+and the Figma export read the same strings — with the honest limit that `redact()`
+matches value *shapes* anchored to the whole string, so a credential buried
+mid-sentence in your own prose survives.
+
+The recipe JSON and the share link are built by one function and carry the **raw**
+values, masked ones omitted with a count. They deliberately do *not* get a second
+key-matching pass: a token called `--sidebar-bg` or `--spinner-size` collides with the
+credential word list by substring, and masking it in a document something is about to
+apply is how a theme stops round-tripping.
+
+Persisted edits are re-checked on load rather than trusted: `localStorage` is writable
+by anything on the origin, and an unchecked custom-property value is accepted by the
+CSSOM almost verbatim. Anything refused is dropped, counted in the panel, and removed
+from storage. The surface selector is checked before it is printed into exported CSS,
+for the same reason.
+
+Use `redactOptions: { allowKeys: ["..."] }` if the default list is masking a token of
+yours that is not a secret.
+
+Options: `tokens`, `onApply`, `surfaces`, `presets`, `mode`, `pollMs`, `redactOptions`,
+`themeParam`, `persist`, `now`, `document`, `createdBy`, plus the usual `id` / `label` /
+`align` / `order` / `priority` / `hidden` / `keepMounted` / `injectStyles`.
+
+Commands: `theme-editor.preset.<name>` (one per preset, enumerated live),
+`theme-editor.reset`, `theme-editor.togglePreview`, `theme-editor.copyCss`,
+`theme-editor.copyRecipe`, `theme-editor.copyFigma`, `theme-editor.copyLink`,
+`theme-editor.refresh`.
+
+Not implemented, on purpose: palette generation from base/accent/contrast, hue/chroma/
+lightness controls, and a Figma plugin. What each of those costs you is stated in the
+panel and in [plans/architecture.md §16](./plans/architecture.md).
+
 ## Styling
 
 **1. `--dtb-*` tokens.** Set them anywhere above the bar:
@@ -833,7 +981,48 @@ never appears in server HTML, so there is nothing to hydrate and nothing to mism
 client render always agrees with the server.
 
 Built entries carry a `"use client"` banner, so an app-router page can import them
-from a server component without adding a directive.
+from a server component without adding a directive of its own.
+
+**Build the extension array in a client module, though.** The banner makes each built
+entry a *client* module, and RSC forbids a server component from **calling** a function
+that lives in one — so `<DevToolbar>` renders fine from a server component, while
+`metrics()` in the same file fails the build with *"Attempted to call metrics() from
+the server but metrics is on the client"*. One small file with the directive fixes it,
+and it is where the extension array should live anyway, since the contract requires the
+objects to be built once outside render:
+
+```tsx
+// app/dev-tools.tsx
+"use client";
+import { DevToolbar } from "@nejcm/dev-toolbar";
+import { metrics } from "@nejcm/dev-toolbar/ext/metrics";
+import type { ReactNode } from "react";
+
+const extensions = [metrics()];
+
+export function DevTools({ children }: { children: ReactNode }) {
+  return <DevToolbar extensions={extensions}>{children}</DevToolbar>;
+}
+```
+
+```tsx
+// app/layout.tsx — stays a server component
+import { DevTools } from "./dev-tools";
+
+export default function RootLayout({ children }: { children: React.ReactNode }) {
+  return (
+    <html lang="en">
+      <body>
+        <DevTools>{children}</DevTools>
+      </body>
+    </html>
+  );
+}
+```
+
+Verified against Next 16 app router, `reactStrictMode: true`, in both `next dev` and a
+production `next build && next start`: the server HTML contains the page and none of
+the bar, and the browser console is clean — no hydration warning.
 
 Persisted preferences (visibility, position, active panel, panel height) are read on
 the client only. If you inject your own `storage` adapter on the server, make it a
@@ -914,7 +1103,9 @@ npm run build
 `examples/playground` is a Vite app that links the package with `file:../..`. It is
 not published (it is outside `files`) and its build output is gitignored. It exists
 for the manual checks unit tests cannot make: overlay behaviour over a real `100vh`
-layout, live overflow collapse, restyling, and the Tailwind regression test.
+layout, live overflow collapse, restyling, the Tailwind regression test, and — since
+P4 — a real design-token set the page actually consumes, so an edit in
+`/ext/theme-editor` visibly changes the app while the bar stays exactly where it was.
 
 ```bash
 npm run playground:install   # once

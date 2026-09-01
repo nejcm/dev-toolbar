@@ -1,28 +1,68 @@
 /*
- * The playground's own CSS. Two jobs:
+ * The playground's own CSS. Three jobs:
  *
  * 1. A strict 100vh application layout that the toolbar must not disturb.
  * 2. The restyle demo — token overrides plus one `classNames` slot, all
  *    unlayered, none of it using `!important`.
+ * 3. A real design-token set for `/ext/theme-editor` to edit. Every `--pg-*`
+ *    custom property below is actually consumed by the rules underneath it, so
+ *    editing one in the toolbar visibly changes this page — which is the only
+ *    way to tell whether that extension does anything at all.
  */
 
 :root {
+  /* -- The token set the theme editor is handed. Used, not decorative. -- */
   --pg-bg: #fbfbfc;
   --pg-fg: #14161a;
   --pg-muted: #5b6270;
   --pg-border: #e2e4e9;
   --pg-card: #ffffff;
+  --pg-brand: #5e6ad2;
+  --pg-brand-contrast: #ffffff;
+  --pg-radius: 10px;
+  --pg-space: 16px;
+  --pg-font-scale: 1;
+  --pg-tile-accent: #dbe4ff;
+  /*
+   * Credential-shaped by the redactor's key matching — `session` is on the
+   * default list — and a *colour*, so the theme editor deliberately leaves it
+   * readable. Masking it would make the token you most need to see the one you
+   * cannot.
+   */
+  --pg-session-panel-bg: #f2f4ff;
+  /*
+   * A free string whose name matches, which *is* masked. The panel tags it and
+   * the editor refuses to round-trip the mask back through the input.
+   */
+  --pg-font-license-token: lic-playground-abcdef;
   color-scheme: light dark;
 }
 
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-pg-mode="light"]) {
     --pg-bg: #0e1013;
     --pg-fg: #e8eaee;
     --pg-muted: #9aa1ae;
     --pg-border: #242830;
     --pg-card: #16191e;
+    --pg-tile-accent: #1d2440;
+    --pg-session-panel-bg: #171b2c;
   }
+}
+
+/*
+ * The app's own colour mode, driven by the `mode` adapter passed to
+ * `themeEditor()`. The extension does not know what a mode is — flipping one is
+ * consumer code, exactly like `onOverride` in /ext/flags.
+ */
+:root[data-pg-mode="dark"] {
+  --pg-bg: #0e1013;
+  --pg-fg: #e8eaee;
+  --pg-muted: #9aa1ae;
+  --pg-border: #242830;
+  --pg-card: #16191e;
+  --pg-tile-accent: #1d2440;
+  --pg-session-panel-bg: #171b2c;
 }
 
 * {
@@ -39,7 +79,10 @@ body {
   margin: 0;
   background: var(--pg-bg);
   color: var(--pg-fg);
-  font: 14px/1.55 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  /* Read through a token so the theme editor's `--pg-font-scale` is visible. */
+  font-size: calc(14px * var(--pg-font-scale));
+  line-height: 1.55;
 }
 
 /*
@@ -91,7 +134,7 @@ body {
 .pg-button {
   padding: 4px 10px;
   border: 1px solid var(--pg-border);
-  border-radius: 6px;
+  border-radius: calc(var(--pg-radius) * 0.6);
   background: var(--pg-bg);
   color: inherit;
   font: inherit;
@@ -100,7 +143,7 @@ body {
 }
 
 .pg-button:hover {
-  border-color: var(--pg-muted);
+  border-color: var(--pg-brand);
 }
 
 /* The scroll container. `DevToolbarInset` renders in this slot when inset is on. */
@@ -111,16 +154,20 @@ body {
 
 .pg-main {
   display: grid;
-  gap: 16px;
+  gap: var(--pg-space);
   max-width: 860px;
   padding: 20px;
 }
 
 .pg-card {
-  padding: 16px 18px;
+  padding: var(--pg-space) calc(var(--pg-space) + 2px);
   border: 1px solid var(--pg-border);
-  border-radius: 10px;
+  border-radius: var(--pg-radius);
   background: var(--pg-card);
+}
+
+.pg-card a {
+  color: var(--pg-brand);
 }
 
 .pg-card h2 {
@@ -193,9 +240,9 @@ body {
 
 .pg-tile {
   grid-column: span 4;
-  border: 1px solid #d9dce1;
-  border-radius: 8px;
-  background: #fff;
+  border: 1px solid var(--pg-border);
+  border-radius: var(--pg-radius);
+  background: var(--pg-card);
 }
 
 .pg-tile-inner {
@@ -205,8 +252,8 @@ body {
 .pg-tile-media {
   height: 48px;
   margin-bottom: 8px;
-  border-radius: 6px;
-  background: linear-gradient(135deg, #dbe4ff, #f3d9fa);
+  border-radius: calc(var(--pg-radius) * 0.6);
+  background: linear-gradient(135deg, var(--pg-tile-accent), var(--pg-brand));
 }
 
 .pg-tile-body h3 {
@@ -216,7 +263,7 @@ body {
 
 .pg-tile-body p {
   margin: 0 0 8px;
-  color: #5c6069;
+  color: var(--pg-muted);
   font-size: 12px;
 }
 
@@ -231,4 +278,54 @@ body {
   .pg-tile {
     grid-column: span 12;
   }
+}
+
+/* -- Theme editor demo ---------------------------------------------------- */
+
+/*
+ * A second *surface* for `/ext/theme-editor`: selecting it in the panel scopes
+ * every edit to this card's subtree instead of to `:root`, which is §3H's
+ * "surface/subtree selection". The card reads the same tokens as the rest of the
+ * page, so switching surfaces and editing the same token twice makes the
+ * difference obvious.
+ */
+.pg-theme-demo {
+  background: var(--pg-session-panel-bg);
+}
+
+.pg-theme-swatches {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 8px 0;
+}
+
+.pg-theme-swatch {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  border: 1px solid var(--pg-border);
+  border-radius: var(--pg-radius);
+  background: var(--pg-card);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+}
+
+.pg-theme-swatch i {
+  width: 14px;
+  height: 14px;
+  border: 1px solid var(--pg-border);
+  border-radius: 3px;
+}
+
+.pg-theme-cta {
+  padding: 6px 14px;
+  border: 0;
+  border-radius: var(--pg-radius);
+  background: var(--pg-brand);
+  color: var(--pg-brand-contrast);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
 }

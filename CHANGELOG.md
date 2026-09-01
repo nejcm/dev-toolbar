@@ -2,8 +2,9 @@
 
 ## 0.1.0 — unreleased
 
-First publish. The shell (P0), the runtime primitives and the first extension (P1),
-P2's three extensions, and P3's two. `CONTRACT_VERSION` is `1`.
+First publish, and the whole of the accepted plan. The shell (P0), the runtime
+primitives and the first extension (P1), P2's three extensions, P3's two and P4's one.
+`CONTRACT_VERSION` is `1`.
 
 ### Added
 
@@ -81,6 +82,39 @@ P2's three extensions, and P3's two. `CONTRACT_VERSION` is `1`.
   in a top-level `omissions` list, a banner in the panel and a heading in the
   Markdown — a snapshot that silently dropped the failing extension would read as
   complete.
+- `@nejcm/dev-toolbar/ext/theme-editor` — live design-token editing (§3H), and the
+  only extension that carries both of the earlier hazards at once: it mutates the
+  application like `/ext/flags` and it writes to the host's CSS like `/ext/overlays`.
+  The tokens stay the consumer's — a catalogue in, an optional `onApply` out, and no
+  design system, colour model or palette generator anywhere in it. An edit is an
+  inline custom property on the surface you pick (§3H's subtree selection), and every
+  row shows the edit, the application's own value and the design system's default
+  side by side; the app value is captured *before* the write lands, because once the
+  property is on the element the computed value is the edit.
+  **Reversal is exact**: the inline value each property held first — priority
+  included — is restored, and a `style` attribute the extension created is removed
+  rather than left empty, on reset, on *Preview: off* (§3H's before/after) and
+  unconditionally on teardown. Edits persist per instance and are re-applied on the
+  next mount, `readStoredThemeOverrides()` reads them before the first paint, and
+  `?dtb-theme=reset` drops them all before any of them is applied. An edit whose
+  token has left the catalogue still gets a row, because it is still being written.
+  Write failures are recorded per token and shown on the row that failed. Values that
+  are not of the token's type are refused with the draft kept, never coerced.
+  **It cannot restyle the toolbar**: `--dtb-*` and `--dev-toolbar*` are never written,
+  whatever the consumer declares, and a surface inside a `[data-dev-toolbar]` subtree
+  is refused — a guard expressed as a refusal to emit rather than as CSS, which is
+  §14.7's lesson taken one step further. Four exports — CSS variables, a versioned
+  recipe, the W3C design-tokens shape for Figma, and a `?dtb-theme=` share link — all
+  read one redacted snapshot. Import, presets and the link go through **one**
+  sanitiser: only names the live catalogue declares, only values the editor itself
+  would accept, so `url(...)` in somebody's link cannot make the page fetch from
+  their host. Colours, lengths and numbers are never masked by *name* (token names
+  are descriptive English and collide with any credential word list) but are still
+  masked by value shape; a free `string` token is masked by name too. Masked tokens
+  are shown as the mask in the human-readable exports and **omitted**, with a count,
+  from the two a machine applies.
+- `readStoredThemeOverrides()` on `/ext/theme-editor` — the `readStoredOverrides()`
+  story for tokens: reads the persisted edits without mounting anything.
 - `@nejcm/dev-toolbar/testing` — `renderWithToolbar`, `makeExtension`,
   `createMockBus`, `installToolbarLayout`.
 - `ensureStyleSheet(entry, css)` in `/runtime` — the once-per-document style injector
@@ -103,6 +137,102 @@ P2's three extensions, and P3's two. `CONTRACT_VERSION` is `1`.
   `environment.copy`, `environment.copyJson`, `flags.copyRecipe` and `flags.copyJson`
   now fail loudly. `/ext/diagnostics` does the same for its download command.
 
+### Three leaks the theme editor's author found by attacking it
+
+All in P4 code, all fixed before review, and each pinned by a test that fails against
+the pre-fix code. Same shape: a string whose *source* had never been classified, which
+is a different search from re-reading the joins §15.3 is about.
+
+Independent review then found two more, and the honest note is that "all
+mutation-checked" was an overclaim as first written: the bleed guard's **storage**
+caller had no test at all, so deleting the guard changed nothing the suite could see.
+Both are fixed below and both are now mutation-checked for real.
+
+- **A surface selector was printed into exported CSS unchecked.** It never resolves —
+  `querySelector` fails closed — so nothing was applied; the export nonetheless carried
+  a working rule the consumer never wrote, into a file somebody pastes into their
+  stylesheet. `isPrintableSelector()` now refuses to emit one, and an unprintable
+  surface falls back to `:root` with the reason in a comment.
+- **A persisted edit was trusted because we had written it.** `localStorage` is
+  writable by every script on the origin. Worse than an export leak: `setProperty`
+  accepts a custom-property value of nearly any shape, so `red; background: url(…)`
+  planted in storage became a live declaration in the inline style attribute. Stored
+  values are re-checked on load, refusals are counted in the panel, and the cleaned map
+  is written back. Names are still not filtered against the catalogue — an orphan is the
+  developer's own work.
+- **A token `description` reached the Figma export unredacted.** Now redacted once, on
+  the way into the view, so the panel and the export read one string. Tracked as
+  `metadataMasked` separately from `masked`, which drives the editor, and counted in
+  the export that actually carries descriptions.
+
+A fourth attack found no leak, but found that the exact-reversal tests were pinning the
+wrong guard: the "did this element already have a `style` attribute" reading was
+unreachable in every test, because an element with real declarations is caught by the
+declaration count instead. There is now a case per reading, and a third guard no test
+could distinguish from its neighbour was deleted rather than kept.
+
+### What independent review found in the theme editor
+
+One blocking defect, fixed, plus five smaller ones. Full reasoning in
+[plans/architecture.md §16.9](./plans/architecture.md).
+
+- **Fixed: the recipe export re-masked by token name, breaking the round trip.**
+  `executableRecipe()` correctly omits masked tokens; `recipeText()` then put the whole
+  payload through `redact()` again as belt-and-braces, and `redact()` matches keys by
+  substring at every depth — so `--sidebar-bg` (`sidebarbg` contains `sid`) and
+  `--spinner-size` (contains `pin`) exported as `"[redacted]"` while the panel and the
+  CSS export showed the real values. Re-importing that recipe applied *nothing*, because
+  the sanitiser refuses the mask sentinel: total round-trip loss on ordinary token names.
+  `shareLink()` for the same state carried raw values, which is what proved it a defect
+  rather than a policy. Both executable documents are now built by one function, the
+  metadata still goes through the object walk (that is the pass that catches a
+  structural field of *ours* whose name collides) and each override value goes through
+  `redact()` alone as a bare string — value-shape matching only. The rule, for anyone
+  writing the next extension: **belt-and-braces redaction must be shape-only or
+  key-exempted downstream of a classified join.**
+- **Fixed: the storage caller of the bleed guard was untested.** `vetStored()`
+  deliberately does not filter names, so a `--dtb-*` entry planted in `localStorage`
+  reached `writeOne`, where one line stopped it — and deleting that line broke no test.
+  The guard worked; the coverage claim did not. Now pinned, and `vetStored()` drops a
+  reserved name outright rather than carrying residue that no per-row control could
+  clear.
+- **Fixed: a replaced surface element left the panel claiming edits the page had
+  reverted.** A migration now re-applies every edit, not just the one being written.
+- **Fixed: `isPrintableSelector` denied combinators,** so `#app > main` exported scoped
+  to `:root` with a note saying it could not be printed — a wrong scope, which is worse
+  than the refusal it imitated.
+- **Fixed: a token's `group` reached the Figma export unredacted,** the same class as
+  the description. `descriptionMasked` is now `metadataMasked` and covers both.
+- **Recorded:** `adopt()` replaces rather than merges (the notice now counts what it
+  displaced), and two toolbars editing the same token on one surface can resurrect a
+  displaced value on reverse-order teardown — inherent to a per-closure restore scheme.
+
+### Closed: the last known join, in `/ext/metrics`
+
+`describe()` in `ext/metrics/collectors/delay.ts` built `tag#id.class` from live DOM
+attributes and handed the assembled string to metrics' `redact()` pass, whose value
+matching is anchored to the whole string — so a credential-shaped `id` was maskable on
+its own and unmaskable behind `tag`. `plans/architecture.md` §15.7 recorded it as
+deliberately unfixed on the grounds that it lived in approved P1 code; P4 removed that
+argument by fixing three fresh instances of the same shape and writing the checklist
+that names it. Each part now goes through the same one-line masking
+`describeAttribution` got, with a test for a masked target and one for an ordinary
+target that must stay readable. (The register named the function `describeTarget`; it
+was always `describe()`.)
+
+### Documentation fix found by running the SSR check
+
+The plan's SSR verification — a real Next app-router page — had not actually been run
+before P4. It passes: the server HTML contains the page and none of the bar, and there
+is no hydration warning in `next dev` or in a production build with
+`reactStrictMode: true`. It also exposed a documentation error. The `"use client"`
+banner makes each built entry a client module, so a server component may **render**
+`<DevToolbar>` but may not **call** `metrics()` — RSC rejects invoking a client
+module's export from the server, and every first-party extension is a factory. The
+README and `plans/architecture.md` §8 described the banner as making the package
+importable from a server component and stopped there; both now show the one-file client
+wrapper, which is where the extension array belongs anyway.
+
 ### Fixed
 
 - `redact()` in `/runtime` silently dropped an object key named `__proto__` — the
@@ -111,6 +241,24 @@ P2's three extensions, and P3's two. `CONTRACT_VERSION` is `1`.
   `"[object Object]"` with a spurious `masked` badge. Nothing was ever polluted.
   Both rebuild paths (`redact` and `redactHeaders`) now define the property. Affected
   `/ext/environment` as well as `/ext/flags`.
+
+### What the last extension changed in the contract: nothing
+
+`/ext/theme-editor` is the seventh consumer and the one carrying both of the riskiest
+shapes in the catalogue, and it needed no contract change at all — no new slot, no new
+`api` member, no widened field. `CONTRACT_VERSION` stays `1`. Four of the last five
+extensions moved it in zero places, which is the strongest available evidence that it
+is finished; a bump on this phase would spend the only signal a version number carries
+in exchange for the appearance of progress. Full rationale, including the one place
+`/ext/overlays`' visibility rule was deliberately reversed, in
+[plans/architecture.md §16](./plans/architecture.md).
+
+One small correction to the redaction rule, in this extension only rather than in
+`/runtime`: a structural field of *our own* whose name contained `token` was masked by
+`redact()`'s substring key matching, so an outbound recipe reported `"[redacted]"`
+where a count belonged. Renamed, and a test now asserts that no top-level field of any
+outbound payload comes back equal to the mask. Our own field names are foreign to the
+redactor too.
 
 ### Contract changes from building the palette
 

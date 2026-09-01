@@ -139,6 +139,55 @@ describe("delay collector — Event Timing present", () => {
     controller.abort();
   });
 
+  it("masks each part of the target before joining them", () => {
+    // The last known instance of §15.3's join defect, recorded in §15.7 and
+    // closed here. `id` and `className` are live DOM attributes, so they are
+    // foreign, and metrics' `redact()` pass matches value shapes **anchored to
+    // the whole string** — so a credential-shaped `id` was findable on its own
+    // and unfindable the moment `tag` was joined in front of it.
+    //
+    // A JWT-shaped id is the shape that survives an anchored matcher after a
+    // join and not before it, which is exactly what makes it the right fixture:
+    // the point is not that this markup is likely, it is that the guarantee
+    // either holds per part or does not hold at all.
+    const observer = install({});
+    const clock = { t: 0 };
+    const collector = createDelayCollector();
+    const controller = new AbortController();
+    collector.start(context(controller, clock));
+
+    const target = document.createElement("button");
+    target.id = "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.dQw4w9WgXcQxxxxx";
+    target.className = "Bearer sk-live-abcdef123456";
+    observer.emit([entry({ target })]);
+
+    const described = Object.fromEntries(collector.read(0).detail)[
+      "Worst target"
+    ] as string;
+    expect(described).not.toContain("eyJhbGciOiJIUzI1NiJ9");
+    expect(described).not.toContain("sk-live-abcdef123456");
+    expect(described).toBe("button#[redacted].Bearer");
+    controller.abort();
+  });
+
+  it("leaves an ordinary target readable, so the masking is not a blanket one", () => {
+    const observer = install({});
+    const clock = { t: 0 };
+    const collector = createDelayCollector();
+    const controller = new AbortController();
+    collector.start(context(controller, clock));
+
+    const target = document.createElement("a");
+    target.id = "checkout-cta";
+    target.className = "btn btn-primary";
+    observer.emit([entry({ target })]);
+
+    expect(
+      Object.fromEntries(collector.read(0).detail)["Worst target"],
+    ).toBe("a#checkout-cta.btn");
+    controller.abort();
+  });
+
   it("falls back through narrower observe() shapes when options are rejected", () => {
     const observer = install({
       observeThrowsFor: (init) =>
