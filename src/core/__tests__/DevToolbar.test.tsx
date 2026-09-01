@@ -1,6 +1,7 @@
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import { useEffect } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { Mock } from "vitest";
 import { CONTRACT_VERSION } from "../contract";
 import type { DevToolbarExtension, ExtensionRuntimeApi } from "../contract";
 import { DevToolbar } from "../DevToolbar";
@@ -44,8 +45,8 @@ const mountedPanelIds = () =>
     (node) => (node as HTMLElement).dataset["dtbExtId"],
   );
 
-let warn: ReturnType<typeof vi.spyOn>;
-let error: ReturnType<typeof vi.spyOn>;
+let warn: Mock<typeof console.warn>;
+let error: Mock<typeof console.error>;
 
 beforeEach(() => {
   warn = vi.spyOn(console, "warn").mockImplementation(() => {});

@@ -10,9 +10,13 @@ through two different paths, and both are invisible to the main test suite:
 - **ESM runners** get a cached dynamic `import()`, so `act` and `render` come from
   the host's own module graph. A `createRequire()` here would return a second copy
   whose `cleanup()` would not clean up what our `render()` mounted.
-- **Jest** never settles a dynamic `import()` inside its vm sandbox, so the
+- **Jest** never resolves a dynamic `import()` inside its vm sandbox, so the
   CommonJS build falls back to `module.require` — which *is* Jest's own resolver,
-  returning the copy already in its registry.
+  returning the copy already in its registry. Jest 29 left that import pending
+  forever; Jest 30 rejects it with "A dynamic import callback was invoked without
+  --experimental-vm-modules". Either way it never yields a module, and the
+  fallback is what supplies Testing Library — confirmed by disabling the fallback
+  and watching `render.test.js` go red.
 
 That optional peer must also never appear as a **static** import, or importing the
 subpath for `createMockBus()` alone would fail with `ERR_MODULE_NOT_FOUND` on a
@@ -55,10 +59,11 @@ because Jest resolves through realpath, and a link would pull React from the rep
 root while the tests pull it from here — two React copies, and an "invalid hook
 call" with nothing to do with what is under test.
 
-`jest.setup.cjs` filters exactly one thing: Jest 29 pins an older jsdom whose CSS
-parser does not understand `@layer`, so core's injected stylesheet produces a
-multi-kilobyte "Could not parse CSS stylesheet" error on every render. It is
-cosmetic and pre-existing. Everything else still reaches the console — a fixture
-nobody can read when it fails is a fixture nobody keeps.
+There is deliberately no `setupFiles`. A `jest.setup.cjs` used to exist to filter
+the multi-kilobyte "Could not parse CSS stylesheet" error that Jest 29's older
+bundled jsdom logged on every render, because it does not understand `@layer`.
+Jest 30 bundles jsdom 26, which parses `@layer` fine, so the filter was deleted
+rather than left swallowing `console.error` for nothing — a fixture nobody can
+read when it fails is a fixture nobody keeps.
 
 Nothing here is published: the root `files` field is `dist`, `README.md`, `LICENSE`.

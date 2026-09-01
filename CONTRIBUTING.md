@@ -5,7 +5,7 @@ surface, so most of what follows is about keeping that surface honest.
 
 ## Getting set up
 
-Requires [bun](https://bun.sh) and Node 20 or newer (`.nvmrc` pins the major).
+Requires [bun](https://bun.sh) and Node 24 or newer (`.nvmrc` pins the major).
 The exact bun version is in `package.json` under `packageManager`, and CI reads
 that same field, so matching it locally means matching CI.
 

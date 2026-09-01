@@ -989,8 +989,10 @@ describe("output", () => {
 
 describe("startDownload", () => {
   it("returns null rather than throwing where object URLs do not exist", () => {
-    // jsdom implements no `URL.createObjectURL`, which is the honest test of
-    // the fail-closed path — and of `download()` reporting `false` upward.
+    // jsdom implements `URL.createObjectURL` as of 30, so the absence it once
+    // gave for free is staged here. This pins the fail-closed path — and
+    // `download()` reporting `false` upward.
+    vi.stubGlobal("URL", { ...URL, createObjectURL: undefined, revokeObjectURL: undefined });
     const { runtime, stop } = started();
     expect(runtime.download("json")).toBe(false);
     stop();

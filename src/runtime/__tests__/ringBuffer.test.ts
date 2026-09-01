@@ -34,9 +34,11 @@ describe("createRingBuffer", () => {
     const ArrayConstructor = globalThis.Array;
     const spy = vi
       .spyOn(globalThis, "Array")
-      .mockImplementation(
-        (...args: unknown[]) => new ArrayConstructor(...(args as [number])) as unknown as never,
-      );
+      // A `function` expression, not an arrow: the spy is invoked with `new`,
+      // and an arrow is not constructible.
+      .mockImplementation(function (...args: unknown[]) {
+        return new ArrayConstructor(...(args as [number])) as unknown as never;
+      });
     try {
       const ring = createRingBuffer<number>(8);
       expect(spy).toHaveBeenCalledTimes(1);
@@ -88,11 +90,11 @@ describe("createRingBuffer", () => {
 describe("createNumericRing", () => {
   it("allocates one Float64Array and never another", () => {
     const Float64 = globalThis.Float64Array;
-    const spy = vi
-      .spyOn(globalThis, "Float64Array")
-      .mockImplementation(
-        (...args: unknown[]) => new Float64(...(args as [number])) as unknown as never,
-      );
+    const spy = vi.spyOn(globalThis, "Float64Array").mockImplementation(function (
+      ...args: unknown[]
+    ) {
+      return new Float64(...(args as [number])) as unknown as never;
+    });
     try {
       const ring = createNumericRing(16);
       expect(spy).toHaveBeenCalledTimes(1);

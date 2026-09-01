@@ -9,6 +9,4 @@ module.exports = {
   // Pick the "require" condition from the package's exports map, which is what
   // a CommonJS consumer gets.
   testEnvironmentOptions: { customExportConditions: ["require", "default"] },
-  // Filters only jsdom's `@layer` CSS parse warning. See jest.setup.cjs.
-  setupFiles: ["<rootDir>/jest.setup.cjs"],
 };

@@ -3,6 +3,7 @@
  * redaction pass and the fail-closed guarantees.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { Mock } from "vitest";
 import { createMemoryStorage } from "../../../core/storage";
 import { createFlagsRuntime, OVERRIDES_KEY, parseOverrides } from "../runtime";
 import { parseValue, severityFor } from "../types";
@@ -47,7 +48,7 @@ function fakeApi(storage: ToolbarStorage): {
   };
 }
 
-let consoleError: ReturnType<typeof vi.spyOn>;
+let consoleError: Mock<typeof console.error>;
 
 beforeEach(() => {
   consoleError = vi.spyOn(console, "error").mockImplementation(() => {});

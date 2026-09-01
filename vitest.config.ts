@@ -4,7 +4,6 @@ import { defineConfig } from "vitest/config";
 const resolve = (path: string) => fileURLToPath(new URL(path, import.meta.url));
 
 export default defineConfig({
-  esbuild: { jsx: "automatic" },
   resolve: {
     // Lets a test import the package by its published specifiers, the way a
     // downstream extension author does. The built output is exercised

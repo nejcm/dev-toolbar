@@ -158,6 +158,7 @@ describe("the panel", () => {
 
   it("says so rather than lying when the clipboard is unavailable", async () => {
     vi.stubGlobal("navigator", {});
+    vi.stubGlobal("URL", { ...URL, createObjectURL: undefined, revokeObjectURL: undefined });
     const { toolbar } = mount();
     act(() => toolbar.openPanel("diagnostics"));
     await act(async () => {
@@ -183,7 +184,9 @@ describe("the panel", () => {
   });
 
   it("says downloads are unavailable where they are", () => {
-    // jsdom has no `URL.createObjectURL`, so this is the real fail-closed path.
+    // jsdom implements `URL.createObjectURL` as of 30, so a host without it is
+    // staged rather than assumed.
+    vi.stubGlobal("URL", { ...URL, createObjectURL: undefined, revokeObjectURL: undefined });
     const { toolbar } = mount();
     act(() => toolbar.openPanel("diagnostics"));
     act(() => fireEvent.click(button("download")));
@@ -263,6 +266,7 @@ describe("the contract it uses", () => {
 
   it("makes its copy and download commands fail loudly, not silently", async () => {
     vi.stubGlobal("navigator", {});
+    vi.stubGlobal("URL", { ...URL, createObjectURL: undefined, revokeObjectURL: undefined });
     const { toolbar } = mount();
     const commands = toolbar.getCommands();
     const copy = commands.find((c) => c.id === "diagnostics.copy");
@@ -271,7 +275,7 @@ describe("the contract it uses", () => {
     // A command that resolves is a command the palette closes over. These
     // could not do what they say, so they say so.
     await expect(copy?.run()).rejects.toThrow("clipboard is unavailable");
-    // jsdom has no URL.createObjectURL, so this is the real fail-closed path.
+    // The stubbed `URL` above has no `createObjectURL`: the fail-closed path.
     expect(() => download?.run()).toThrow("Downloads are unavailable");
 
     // And the capture survives the failed copy, which is the property §15.4
