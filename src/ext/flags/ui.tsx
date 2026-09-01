@@ -61,9 +61,7 @@ function PromotedControl({
       ? `locally overridden — the app's own value is ${view.baseText}`
       : `from ${view.source}`,
     toggleable ? "click to toggle" : "click to open the flags panel",
-    view.reloadBehavior === "live"
-      ? null
-      : `changing it needs a ${view.reloadBehavior}`,
+    view.reloadBehavior === "live" ? null : `changing it needs a ${view.reloadBehavior}`,
   ]
     .filter(Boolean)
     .join(" · ");
@@ -74,16 +72,12 @@ function PromotedControl({
       data-dtb-part="flag-promoted"
       data-dtb-flag={view.key}
       data-dtb-overridden={view.overridden ? "true" : "false"}
-      {...(view.type === "boolean"
-        ? { role: "switch", "aria-checked": on }
-        : {})}
+      {...(view.type === "boolean" ? { role: "switch", "aria-checked": on } : {})}
       onClick={toggleable ? onToggle : onOpen}
       title={title}
     >
       <span data-dtb-part="flag-promoted-dot" aria-hidden="true" />
-      {view.promotedIcon ? (
-        <span aria-hidden="true">{view.promotedIcon}</span>
-      ) : null}
+      {view.promotedIcon ? <span aria-hidden="true">{view.promotedIcon}</span> : null}
       <span>{label}</span>
       {view.type === "boolean" ? null : (
         <span data-dtb-part="flag-promoted-value">{view.effectiveText}</span>
@@ -116,9 +110,7 @@ export function FlagsChip({
 
   const count = snapshot.supplied ? snapshot.flags.length : 0;
   const summary =
-    snapshot.overriddenCount > 0
-      ? `${snapshot.overriddenCount} overridden`
-      : `${count}`;
+    snapshot.overriddenCount > 0 ? `${snapshot.overriddenCount} overridden` : `${count}`;
   const title = snapshot.supplied
     ? `Feature flags: ${count} · ${snapshot.overriddenCount} locally overridden${snapshot.writable ? "" : " · read-only"}`
     : "Feature flags: none supplied to flags()";
@@ -284,11 +276,7 @@ function Editor({
         // A masked value never round-trips through the editor: showing it in an
         // input would be the one place the redacted snapshot leaked back out.
         placeholder={view.masked ? "masked — type a new value" : view.effectiveText}
-        title={
-          rejected
-            ? `Not a ${view.type} — nothing was applied.`
-            : `Override ${view.key}`
-        }
+        title={rejected ? `Not a ${view.type} — nothing was applied.` : `Override ${view.key}`}
         value={draft}
         onChange={(event) => {
           setDraft(event.target.value);
@@ -310,13 +298,7 @@ function Editor({
   );
 }
 
-function ClearButton({
-  view,
-  runtime,
-}: {
-  view: FlagView;
-  runtime: FlagsRuntime;
-}): ReactNode {
+function ClearButton({ view, runtime }: { view: FlagView; runtime: FlagsRuntime }): ReactNode {
   return (
     <button
       type="button"
@@ -362,11 +344,7 @@ function Row({
           </span>
         ) : null}
         {view.applyError ? (
-          <span
-            data-dtb-part="flag-tag"
-            data-dtb-tag="not-applied"
-            title={view.applyError}
-          >
+          <span data-dtb-part="flag-tag" data-dtb-tag="not-applied" title={view.applyError}>
             {/* The same slot records a failed *clear*, where "override not
                 applied" would read backwards. */}
             {view.overridden ? "override not applied" : "clear not applied"}
@@ -468,11 +446,7 @@ export interface PanelProps {
   injectStyles: boolean;
 }
 
-export function FlagsPanel({
-  runtime,
-  label,
-  injectStyles,
-}: PanelProps): ReactNode {
+export function FlagsPanel({ runtime, label, injectStyles }: PanelProps): ReactNode {
   useFlagsStyles(injectStyles);
   const snapshot = useSnapshot(runtime);
   const [query, setQuery] = useState("");
@@ -542,16 +516,15 @@ export function FlagsPanel({
 
       {failed.length > 0 ? (
         <p data-dtb-part="flag-banner" data-dtb-tone="error" role="alert">
-          {failed.length} override{failed.length === 1 ? "" : "s"} could not be
-          applied: {failed.join(", ")}. Those rows are marked; your application
-          did not pick them up.
+          {failed.length} override{failed.length === 1 ? "" : "s"} could not be applied:{" "}
+          {failed.join(", ")}. Those rows are marked; your application did not pick them up.
         </p>
       ) : null}
 
       {pending.size > 0 ? (
         <p data-dtb-part="flag-banner" data-dtb-tone="warn" role="status">
-          {pending.size} override{pending.size === 1 ? " needs" : "s need"} a
-          reload to take effect: {[...pending].join(", ")}.{" "}
+          {pending.size} override{pending.size === 1 ? " needs" : "s need"} a reload to take effect:{" "}
+          {[...pending].join(", ")}.{" "}
           <button
             type="button"
             data-dtb-part="flag-action"
@@ -573,21 +546,17 @@ export function FlagsPanel({
 
       {snapshot.writable ? null : (
         <p data-dtb-part="flag-note" data-dtb-role="read-only-note">
-          Read-only: no <code>onOverride</code> adapter was supplied to{" "}
-          <code>flags()</code>, so this panel lists and copies but changes
-          nothing.
+          Read-only: no <code>onOverride</code> adapter was supplied to <code>flags()</code>, so
+          this panel lists and copies but changes nothing.
         </p>
       )}
 
       {snapshot.supplied ? null : (
         <div data-dtb-part="flag-empty">
           <p data-dtb-part="flag-note">
-            No flags were supplied. This extension owns no flag store and
-            integrates no provider — pass what your application resolved:{" "}
-            <code>
-              {'flags({ flags: () => myFlags, onOverride: (k, v) => …  })'}
-            </code>
-            .
+            No flags were supplied. This extension owns no flag store and integrates no provider —
+            pass what your application resolved:{" "}
+            <code>{"flags({ flags: () => myFlags, onOverride: (k, v) => …  })"}</code>.
           </p>
         </div>
       )}
@@ -606,10 +575,9 @@ export function FlagsPanel({
 
       {snapshot.writable ? (
         <p data-dtb-part="flag-note" data-dtb-role="escape-hatch">
-          Overrides persist across reloads in this browser. Clear them all
-          above, or load any page with <code>?dtb-flags=reset</code> if an
-          override has broken the app badly enough that you cannot reach this
-          panel.
+          Overrides persist across reloads in this browser. Clear them all above, or load any page
+          with <code>?dtb-flags=reset</code> if an override has broken the app badly enough that you
+          cannot reach this panel.
         </p>
       ) : null}
     </div>

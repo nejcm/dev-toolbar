@@ -26,15 +26,9 @@ describe("shortcut parsing", () => {
 
     expect(matchesShortcut(event({ key: "k", ctrlKey: true }), ctrlK)).toBe(true);
     // Extra modifiers must not match.
-    expect(
-      matchesShortcut(event({ key: "k", ctrlKey: true, metaKey: true }), ctrlK),
-    ).toBe(false);
-    expect(
-      matchesShortcut(event({ key: "k", ctrlKey: true, altKey: true }), ctrlK),
-    ).toBe(false);
-    expect(
-      matchesShortcut(event({ key: "k", ctrlKey: true, shiftKey: true }), ctrlK),
-    ).toBe(false);
+    expect(matchesShortcut(event({ key: "k", ctrlKey: true, metaKey: true }), ctrlK)).toBe(false);
+    expect(matchesShortcut(event({ key: "k", ctrlKey: true, altKey: true }), ctrlK)).toBe(false);
+    expect(matchesShortcut(event({ key: "k", ctrlKey: true, shiftKey: true }), ctrlK)).toBe(false);
   });
 
   it("matches by physical code when the shifted character differs", () => {
@@ -48,12 +42,8 @@ describe("shortcut parsing", () => {
   });
 
   it("rejects missing modifiers", () => {
-    expect(matchesShortcut(event({ key: ".", shiftKey: true }), parsed!, true)).toBe(
-      false,
-    );
-    expect(matchesShortcut(event({ key: ".", metaKey: true }), parsed!, true)).toBe(
-      false,
-    );
+    expect(matchesShortcut(event({ key: ".", shiftKey: true }), parsed!, true)).toBe(false);
+    expect(matchesShortcut(event({ key: ".", metaKey: true }), parsed!, true)).toBe(false);
   });
 
   it("returns null for a modifier-only shortcut", () => {

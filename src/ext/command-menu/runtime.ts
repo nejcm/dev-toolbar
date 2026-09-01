@@ -153,9 +153,8 @@ export function parseHotkey(input: string): ParsedHotkey | null {
 
 export function isApplePlatform(): boolean {
   if (typeof navigator === "undefined") return false;
-  const data = (
-    navigator as Navigator & { userAgentData?: { platform?: string } }
-  ).userAgentData?.platform;
+  const data = (navigator as Navigator & { userAgentData?: { platform?: string } }).userAgentData
+    ?.platform;
   const value = String(data ?? navigator.platform ?? navigator.userAgent ?? "");
   return /mac|iphone|ipad|ipod|darwin/i.test(value);
 }
@@ -235,11 +234,7 @@ function readRecent(raw: string | null): string[] {
 export function createCommandMenuRuntime(
   options: CommandMenuRuntimeOptions = {},
 ): CommandMenuRuntime {
-  const {
-    shortcut = DEFAULT_SHORTCUT,
-    apple = isApplePlatform(),
-    rememberRecent = true,
-  } = options;
+  const { shortcut = DEFAULT_SHORTCUT, apple = isApplePlatform(), rememberRecent = true } = options;
 
   const hotkey = shortcut === null ? null : parseHotkey(shortcut);
 
@@ -282,20 +277,11 @@ export function createCommandMenuRuntime(
   };
 
   /** Recompute `results` and clamp the cursor. Never lets it point at nothing. */
-  const derive = (
-    snapshot: CommandMenuSnapshot,
-    keepActiveId?: string,
-  ): CommandMenuSnapshot => {
-    const results = filterCommands(
-      snapshot.commands,
-      snapshot.query,
-      snapshot.recent,
-    );
+  const derive = (snapshot: CommandMenuSnapshot, keepActiveId?: string): CommandMenuSnapshot => {
+    const results = filterCommands(snapshot.commands, snapshot.query, snapshot.recent);
     let activeIndex = results.length === 0 ? -1 : 0;
     if (keepActiveId !== undefined) {
-      const found = results.findIndex(
-        (match) => match.command.id === keepActiveId,
-      );
+      const found = results.findIndex((match) => match.command.id === keepActiveId);
       if (found >= 0) activeIndex = found;
     }
     return { ...snapshot, results, activeIndex };
@@ -363,10 +349,7 @@ export function createCommandMenuRuntime(
       ok = api === null ? false : await api.runCommand(target);
       if (!ok) message = "That command is no longer available.";
     } catch (error) {
-      message =
-        error instanceof Error && error.message !== ""
-          ? error.message
-          : String(error);
+      message = error instanceof Error && error.message !== "" ? error.message : String(error);
     }
 
     if (!ok) {
@@ -380,10 +363,10 @@ export function createCommandMenuRuntime(
       return;
     }
 
-    const recent = [
-      target,
-      ...store.peek().recent.filter((entry) => entry !== target),
-    ].slice(0, RECENT_LIMIT);
+    const recent = [target, ...store.peek().recent.filter((entry) => entry !== target)].slice(
+      0,
+      RECENT_LIMIT,
+    );
     persistRecent(recent);
     store.update((current) => ({
       ...current,
@@ -403,9 +386,7 @@ export function createCommandMenuRuntime(
 
     start(runtimeApi) {
       api = runtimeApi;
-      const recent = rememberRecent
-        ? readRecent(runtimeApi.storage.getItem(RECENT_KEY))
-        : [];
+      const recent = rememberRecent ? readRecent(runtimeApi.storage.getItem(RECENT_KEY)) : [];
       store.set({ ...store.peek(), ready: true, recent });
 
       const onKeyDown = (event: KeyboardEvent) => {
@@ -423,11 +404,9 @@ export function createCommandMenuRuntime(
 
       // Hiding the bar dismisses an open palette, rather than suspending it
       // behind a bar that is not there.
-      const stopWatchingVisibility = runtimeApi.subscribeVisibility(
-        (visible) => {
-          if (!visible) close();
-        },
-      );
+      const stopWatchingVisibility = runtimeApi.subscribeVisibility((visible) => {
+        if (!visible) close();
+      });
 
       if (typeof window !== "undefined") {
         window.addEventListener("keydown", onKeyDown);
@@ -456,9 +435,7 @@ export function createCommandMenuRuntime(
         const count = snapshot.results.length;
         if (count === 0) return snapshot;
         const next = (((snapshot.activeIndex + delta) % count) + count) % count;
-        return next === snapshot.activeIndex
-          ? snapshot
-          : { ...snapshot, activeIndex: next };
+        return next === snapshot.activeIndex ? snapshot : { ...snapshot, activeIndex: next };
       });
     },
 

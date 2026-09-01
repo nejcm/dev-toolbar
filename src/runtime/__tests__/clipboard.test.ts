@@ -78,15 +78,13 @@ describe("writeClipboardTextOrThrow", () => {
     // resolves. Resolving here is how five first-party copy commands used to
     // silently do nothing while the palette closed as though they had worked.
     vi.stubGlobal("navigator", {});
-    await expect(writeClipboardTextOrThrow("x")).rejects.toThrow(
-      "The clipboard is unavailable",
-    );
+    await expect(writeClipboardTextOrThrow("x")).rejects.toThrow("The clipboard is unavailable");
   });
 
   it("carries a caller-supplied hint into the message", async () => {
     vi.stubGlobal("navigator", {});
-    await expect(
-      writeClipboardTextOrThrow("x", "It is in the Diagnostics panel."),
-    ).rejects.toThrow("It is in the Diagnostics panel.");
+    await expect(writeClipboardTextOrThrow("x", "It is in the Diagnostics panel.")).rejects.toThrow(
+      "It is in the Diagnostics panel.",
+    );
   });
 });

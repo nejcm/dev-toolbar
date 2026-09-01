@@ -98,9 +98,7 @@ describe("metrics runtime", () => {
       runtime.store.subscribe(listener);
 
       await Promise.all(
-        Array.from({ length: 25 }, (_, index) =>
-          globalThis.fetch(`/api/${index}`),
-        ),
+        Array.from({ length: 25 }, (_, index) => globalThis.fetch(`/api/${index}`)),
       );
       await new Promise((resolve) => setTimeout(resolve, 0));
 
@@ -212,11 +210,7 @@ describe("metrics runtime", () => {
     // jsdom is configured at http://localhost:3000/; give it the OAuth
     // implicit-flow shape, which is a credential sitting in the address bar.
     const original = window.location.href;
-    window.history.replaceState(
-      {},
-      "",
-      "/callback?access_token=hunter2&state=xyz",
-    );
+    window.history.replaceState({}, "", "/callback?access_token=hunter2&state=xyz");
     try {
       const runtime = createMetricsRuntime({ collectors: [memory()] });
       const dump = JSON.stringify(runtime.diagnostics());

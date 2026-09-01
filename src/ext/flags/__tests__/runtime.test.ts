@@ -72,9 +72,7 @@ describe("the snapshot", () => {
     });
     runtime.setOverride("checkout.copy", "new");
 
-    const view = runtime.store
-      .getSnapshot()
-      .flags.find((entry) => entry.key === "checkout.copy");
+    const view = runtime.store.getSnapshot().flags.find((entry) => entry.key === "checkout.copy");
     expect(view?.effectiveText).toBe("new");
     // The honest half: the app's own value is still on screen.
     expect(view?.baseText).toBe("old");
@@ -136,10 +134,7 @@ describe("overrides", () => {
     runtime.setOverride("checkout.copy", "new");
     applied.length = 0;
     runtime.clearAll();
-    expect(applied.map(([key]) => key).sort()).toEqual([
-      "checkout.copy",
-      "ui-facelift",
-    ]);
+    expect(applied.map(([key]) => key).sort()).toEqual(["checkout.copy", "ui-facelift"]);
     expect(applied.every(([, value]) => value === undefined)).toBe(true);
     expect(runtime.overrides()).toEqual({});
   });
@@ -255,9 +250,7 @@ describe("persistence", () => {
     // row read back through `Object.prototype` and displayed "[object Object]"
     // for every value — with a "masked" badge, because the two rendered forms
     // differed. Fixed in /runtime; /ext/environment had it too.
-    const view = runtime.store
-      .getSnapshot()
-      .flags.find((entry) => entry.key === "__proto__");
+    const view = runtime.store.getSnapshot().flags.find((entry) => entry.key === "__proto__");
     expect(view?.effectiveText).toBe("x");
     expect(view?.baseText).toBe("base");
     expect(view?.masked).toBe(false);
@@ -299,10 +292,7 @@ describe("orphaned overrides", () => {
     });
     runtime.start(fakeApi(orphaned()).api);
     // Both were applied to the application…
-    expect(applied.map(([key]) => key).sort()).toEqual([
-      "checkout.v2",
-      "ui-facelift",
-    ]);
+    expect(applied.map(([key]) => key).sort()).toEqual(["checkout.v2", "ui-facelift"]);
     const snapshot = runtime.store.getSnapshot();
     // …so both are counted, and the orphan has a row of its own.
     expect(snapshot.overriddenCount).toBe(2);
@@ -335,9 +325,7 @@ describe("orphaned overrides", () => {
       },
     });
     runtime.start(fakeApi(orphaned()).api);
-    const orphan = runtime.store
-      .getSnapshot()
-      .flags.find((v) => v.key === "checkout.v2");
+    const orphan = runtime.store.getSnapshot().flags.find((v) => v.key === "checkout.v2");
     expect(severityFor(orphan as FlagView)).toBe("bad");
   });
 
@@ -352,31 +340,24 @@ describe("orphaned overrides", () => {
     expect(runtime.store.getSnapshot().overriddenCount).toBe(1);
     runtime.clearAll();
     expect(storage.getItem(OVERRIDES_KEY)).toBeNull();
-    expect(runtime.store.getSnapshot().flags.every((v) => !v.orphaned)).toBe(
-      true,
-    );
+    expect(runtime.store.getSnapshot().flags.every((v) => !v.orphaned)).toBe(true);
   });
 
   it("stop being orphans the moment the catalogue lists them again", () => {
     let extended = false;
     const runtime = createFlagsRuntime({
       flags: () =>
-        extended
-          ? [...CATALOGUE, { key: "checkout.v2", type: "string", value: "off" }]
-          : CATALOGUE,
+        extended ? [...CATALOGUE, { key: "checkout.v2", type: "string", value: "off" }] : CATALOGUE,
       onOverride: () => {},
     });
     runtime.start(fakeApi(orphaned()).api);
-    expect(
-      runtime.store.getSnapshot().flags.find((v) => v.key === "checkout.v2")
-        ?.orphaned,
-    ).toBe(true);
+    expect(runtime.store.getSnapshot().flags.find((v) => v.key === "checkout.v2")?.orphaned).toBe(
+      true,
+    );
     extended = true;
     runtime.refresh();
     runtime.store.flush();
-    const view = runtime.store
-      .getSnapshot()
-      .flags.find((v) => v.key === "checkout.v2");
+    const view = runtime.store.getSnapshot().flags.find((v) => v.key === "checkout.v2");
     expect(view?.orphaned).toBe(false);
     expect(view?.baseText).toBe("off");
     expect(view?.overridden).toBe(true);
@@ -448,12 +429,10 @@ describe("failing closed", () => {
     });
     expect(() => runtime.setOverride("ui-facelift", true)).not.toThrow();
     const snapshot = runtime.store.getSnapshot();
-    expect(snapshot.adapterErrors["ui-facelift"]).toContain(
+    expect(snapshot.adapterErrors["ui-facelift"]).toContain("provider is offline");
+    expect(snapshot.flags.find((view) => view.key === "ui-facelift")?.applyError).toContain(
       "provider is offline",
     );
-    expect(
-      snapshot.flags.find((view) => view.key === "ui-facelift")?.applyError,
-    ).toContain("provider is offline");
     expect(consoleError).toHaveBeenCalled();
   });
 
@@ -469,16 +448,10 @@ describe("failing closed", () => {
     const snapshot = runtime.store.getSnapshot();
     // A single error slot was erased here by the unrelated success, taking the
     // only warning off screen while the row kept claiming to be overridden.
-    expect(snapshot.adapterErrors["ui-facelift"]).toContain(
-      "provider is offline",
-    );
+    expect(snapshot.adapterErrors["ui-facelift"]).toContain("provider is offline");
     expect(snapshot.adapterErrors["checkout.copy"]).toBeUndefined();
-    expect(
-      snapshot.flags.find((v) => v.key === "ui-facelift")?.applyError,
-    ).toBeDefined();
-    expect(
-      snapshot.flags.find((v) => v.key === "checkout.copy")?.applyError,
-    ).toBeUndefined();
+    expect(snapshot.flags.find((v) => v.key === "ui-facelift")?.applyError).toBeDefined();
+    expect(snapshot.flags.find((v) => v.key === "checkout.copy")?.applyError).toBeUndefined();
   });
 
   it("keeps a failure raised while re-applying stored overrides on mount", () => {
@@ -500,9 +473,9 @@ describe("failing closed", () => {
     );
     // The load where it matters most: the first stored override failed and the
     // second succeeded, and the failure must survive that.
-    expect(
-      runtime.store.getSnapshot().adapterErrors["ui-facelift"],
-    ).toContain("provider is offline");
+    expect(runtime.store.getSnapshot().adapterErrors["ui-facelift"]).toContain(
+      "provider is offline",
+    );
   });
 
   it("clears a key's failure only on that key's own success", () => {
@@ -514,9 +487,7 @@ describe("failing closed", () => {
       },
     });
     runtime.setOverride("ui-facelift", true);
-    expect(runtime.store.getSnapshot().adapterErrors).toHaveProperty(
-      "ui-facelift",
-    );
+    expect(runtime.store.getSnapshot().adapterErrors).toHaveProperty("ui-facelift");
     broken = false;
     runtime.setOverride("ui-facelift", false);
     expect(runtime.store.getSnapshot().adapterErrors).toEqual({});
@@ -599,8 +570,7 @@ describe("promotion", () => {
       createFlagsRuntime({ ...promoted, flags: CATALOGUE, now: () => at });
 
     expect(
-      make({ promoted: { flagKey: "ui-facelift" } }).store.getSnapshot()
-        .promoted,
+      make({ promoted: { flagKey: "ui-facelift" } }).store.getSnapshot().promoted,
     ).toHaveLength(1);
     expect(
       make({

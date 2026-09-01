@@ -19,11 +19,7 @@ export interface SparklineProps {
 const WIDTH = 240;
 const HEIGHT = 40;
 
-export function Sparkline({
-  series,
-  revision,
-  label,
-}: SparklineProps): ReactNode {
+export function Sparkline({ series, revision, label }: SparklineProps): ReactNode {
   const scratch = useRef<Float64Array | null>(null);
   if (scratch.current === null || scratch.current.length !== series.capacity) {
     scratch.current = new Float64Array(series.capacity);
@@ -57,10 +53,7 @@ export function Sparkline({
         continue;
       }
       const x = index * step;
-      const y =
-        max === min
-          ? HEIGHT / 2
-          : HEIGHT - 2 - ((value - min) / span) * (HEIGHT - 4);
+      const y = max === min ? HEIGHT / 2 : HEIGHT - 2 - ((value - min) / span) * (HEIGHT - 4);
       d += `${started ? "L" : "M"}${x.toFixed(1)} ${y.toFixed(1)}`;
       started = true;
     }

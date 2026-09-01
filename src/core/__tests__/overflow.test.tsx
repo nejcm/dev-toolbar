@@ -36,14 +36,8 @@ const widths: Record<string, number> = { a: 60, b: 60, c: 60, d: 60 };
 let containerWidth = 100;
 
 const patchLayout = () => {
-  const offset = Object.getOwnPropertyDescriptor(
-    HTMLElement.prototype,
-    "offsetWidth",
-  );
-  const client = Object.getOwnPropertyDescriptor(
-    HTMLElement.prototype,
-    "clientWidth",
-  );
+  const offset = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "offsetWidth");
+  const client = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "clientWidth");
   Object.defineProperty(HTMLElement.prototype, "offsetWidth", {
     configurable: true,
     get(this: HTMLElement) {
@@ -152,11 +146,9 @@ describe("OverflowBar", () => {
     renderBar();
 
     const idsInBar = () =>
-      [
-        ...document.querySelectorAll(
-          '[data-dtb-part="region"] > [data-dtb-part="item"]',
-        ),
-      ].map((node) => (node as HTMLElement).dataset["dtbExtId"]);
+      [...document.querySelectorAll('[data-dtb-part="region"] > [data-dtb-part="item"]')].map(
+        (node) => (node as HTMLElement).dataset["dtbExtId"],
+      );
 
     expect(idsInBar()).toEqual(["a", "b", "c"]);
 
@@ -170,17 +162,13 @@ describe("OverflowBar", () => {
     // Shrink: the observer callback drives the collapse.
     resize(100);
     expect(idsInBar()).toEqual(["a"]);
-    expect(
-      document.querySelector('[data-dtb-part="overflow-button"]'),
-    ).not.toBeNull();
+    expect(document.querySelector('[data-dtb-part="overflow-button"]')).not.toBeNull();
 
     // Widen again: sticky cached widths let the collapsed items come back even
     // though they were not in the DOM to be measured while collapsed.
     resize(1000);
     expect(idsInBar()).toEqual(["a", "b", "c"]);
-    expect(
-      document.querySelector('[data-dtb-part="overflow-button"]'),
-    ).toBeNull();
+    expect(document.querySelector('[data-dtb-part="overflow-button"]')).toBeNull();
   });
 
   it("dismisses the ··· menu on Escape and on an outside click", () => {
@@ -190,16 +178,12 @@ describe("OverflowBar", () => {
     renderBar();
 
     const open = () =>
-      fireEvent.click(
-        screen.getByRole("button", { name: "More developer toolbar items" }),
-      );
+      fireEvent.click(screen.getByRole("button", { name: "More developer toolbar items" }));
     const menu = () => document.querySelector('[data-dtb-part="overflow-menu"]');
 
     open();
     expect(menu()).not.toBeNull();
-    expect(
-      menu()!.querySelectorAll('[role="menuitem"]').length,
-    ).toBe(2);
+    expect(menu()!.querySelectorAll('[role="menuitem"]').length).toBe(2);
 
     fireEvent.keyDown(document, { key: "Escape" });
     expect(menu()).toBeNull();
@@ -219,8 +203,6 @@ describe("OverflowBar", () => {
 
     const bar = document.querySelector('[data-dtb-part="bar"]')!;
     expect(bar.querySelectorAll('[data-dtb-part="item"]').length).toBe(3);
-    expect(
-      document.querySelector('[data-dtb-part="overflow-button"]'),
-    ).toBeNull();
+    expect(document.querySelector('[data-dtb-part="overflow-button"]')).toBeNull();
   });
 });

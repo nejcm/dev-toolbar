@@ -42,10 +42,7 @@ let written: string[] = [];
  * assertion. The bleed test below is the one case that deliberately uses
  * `:root`, because that is the element the toolbar inherits from.
  */
-const mount = (
-  options: ThemeEditorOptions = {},
-  storage?: ToolbarStorage | null,
-) => {
+const mount = (options: ThemeEditorOptions = {}, storage?: ToolbarStorage | null) => {
   const extension = themeEditor({
     tokens: TOKENS,
     surfaces: [{ id: "app", label: "App", selector: "#app" }],
@@ -65,9 +62,7 @@ const text = (element: Element | null | undefined) =>
   element?.textContent?.replace(/\s+/g, " ").trim() ?? "";
 
 const row = (panel: HTMLElement | null, name: string) =>
-  panel?.querySelector<HTMLElement>(
-    `[data-dtb-part="thm-row"][data-dtb-token="${name}"]`,
-  ) ?? null;
+  panel?.querySelector<HTMLElement>(`[data-dtb-part="thm-row"][data-dtb-token="${name}"]`) ?? null;
 
 const root = () => document.documentElement;
 
@@ -107,11 +102,9 @@ afterEach(() => {
 describe("the compact chip", () => {
   it("counts the tokens and shouts when an edit is live", () => {
     const { toolbar } = mount();
-    expect(
-      text(
-        toolbar.item("theme-editor")?.querySelector('[data-dtb-part="thm-count"]'),
-      ),
-    ).toBe("4");
+    expect(text(toolbar.item("theme-editor")?.querySelector('[data-dtb-part="thm-count"]'))).toBe(
+      "4",
+    );
 
     act(() => {
       toolbar.openPanel("theme-editor");
@@ -127,12 +120,8 @@ describe("the compact chip", () => {
       fireEvent.keyDown(input as HTMLInputElement, { key: "Enter" });
     });
 
-    const chip = toolbar
-      .item("theme-editor")
-      ?.querySelector('[data-dtb-part="thm-chip"]');
-    expect(text(chip?.querySelector('[data-dtb-part="thm-count"]'))).toBe(
-      "1 edited",
-    );
+    const chip = toolbar.item("theme-editor")?.querySelector('[data-dtb-part="thm-chip"]');
+    expect(text(chip?.querySelector('[data-dtb-part="thm-count"]'))).toBe("1 edited");
     expect(chip?.getAttribute("data-dtb-edited")).toBe("true");
     // And the page actually changed, which is the whole point.
     expect(app().style.getPropertyValue("--brand-500")).toBe("#ff0000");
@@ -149,11 +138,9 @@ describe("the compact chip", () => {
         ?.querySelector<HTMLButtonElement>('[data-dtb-action="preview"]')
         ?.click();
     });
-    expect(
-      text(
-        toolbar.item("theme-editor")?.querySelector('[data-dtb-part="thm-count"]'),
-      ),
-    ).toBe("paused");
+    expect(text(toolbar.item("theme-editor")?.querySelector('[data-dtb-part="thm-count"]'))).toBe(
+      "paused",
+    );
   });
 
   it("says so when the consumer supplied no tokens", () => {
@@ -161,9 +148,7 @@ describe("the compact chip", () => {
     act(() => {
       toolbar.openPanel("theme-editor");
     });
-    expect(text(toolbar.panel("theme-editor"))).toContain(
-      "No tokens were supplied",
-    );
+    expect(text(toolbar.panel("theme-editor"))).toContain("No tokens were supplied");
   });
 });
 
@@ -189,9 +174,7 @@ describe("the panel", () => {
     const reserved = row(toolbar.panel("theme-editor"), "--dtb-bg");
     expect(reserved).not.toBeNull();
     expect(text(reserved)).toContain("reserved name");
-    expect(
-      reserved?.querySelector('input[data-dtb-part="thm-input"]'),
-    ).toBeNull();
+    expect(reserved?.querySelector('input[data-dtb-part="thm-input"]')).toBeNull();
   });
 
   it("keeps the draft and says why when a value is refused", () => {
@@ -211,9 +194,7 @@ describe("the panel", () => {
     });
     expect(input?.value).toBe("definitely not a length");
     expect(input?.getAttribute("data-dtb-invalid")).toBe("true");
-    expect(text(row(toolbar.panel("theme-editor"), "--radius-md"))).toContain(
-      "not a length",
-    );
+    expect(text(row(toolbar.panel("theme-editor"), "--radius-md"))).toContain("not a length");
     expect(app().style.getPropertyValue("--radius-md")).toBe("");
   });
 
@@ -256,9 +237,7 @@ describe("the panel", () => {
     expect(app().hasAttribute("style")).toBe(true);
 
     act(() => {
-      panel()
-        ?.querySelector<HTMLButtonElement>('[data-dtb-action="reset-all"]')
-        ?.click();
+      panel()?.querySelector<HTMLButtonElement>('[data-dtb-action="reset-all"]')?.click();
     });
     expect(app().hasAttribute("style")).toBe(false);
     expect(app().outerHTML).toBe(before);
@@ -285,9 +264,7 @@ describe("the panel", () => {
 
     const rendered = panel()?.querySelector('[data-dtb-part="thm-output"]');
     act(() => {
-      panel()
-        ?.querySelector<HTMLButtonElement>('[data-dtb-action="copy"]')
-        ?.click();
+      panel()?.querySelector<HTMLButtonElement>('[data-dtb-action="copy"]')?.click();
     });
     expect(written).toHaveLength(1);
     expect(written[0]).toBe(rendered?.textContent);
@@ -300,9 +277,7 @@ describe("the panel", () => {
       toolbar.openPanel("theme-editor");
     });
     const panel = () => toolbar.panel("theme-editor");
-    const box = panel()?.querySelector<HTMLTextAreaElement>(
-      '[data-dtb-part="thm-import"]',
-    );
+    const box = panel()?.querySelector<HTMLTextAreaElement>('[data-dtb-part="thm-import"]');
     act(() => {
       fireEvent.change(box as HTMLTextAreaElement, {
         target: {
@@ -315,9 +290,7 @@ describe("the panel", () => {
       });
     });
     act(() => {
-      panel()
-        ?.querySelector<HTMLButtonElement>('[data-dtb-action="import"]')
-        ?.click();
+      panel()?.querySelector<HTMLButtonElement>('[data-dtb-action="import"]')?.click();
     });
     expect(app().style.getPropertyValue("--radius-md")).toBe("24px");
     expect(app().style.getPropertyValue("--stranger")).toBe("");
@@ -363,9 +336,7 @@ describe("the panel", () => {
       toolbar.openPanel("theme-editor");
     });
     const button = () =>
-      toolbar
-        .panel("theme-editor")
-        ?.querySelector<HTMLButtonElement>('[data-dtb-action="mode"]');
+      toolbar.panel("theme-editor")?.querySelector<HTMLButtonElement>('[data-dtb-action="mode"]');
     expect(text(button())).toBe("mode: light");
     act(() => {
       button()?.click();
@@ -406,9 +377,7 @@ describe("the shell contract", () => {
       toolbar.openOverflow();
     });
     expect(
-      toolbar
-        .item("theme-editor")
-        ?.querySelector('[data-dtb-part="thm-chip"]'),
+      toolbar.item("theme-editor")?.querySelector('[data-dtb-part="thm-chip"]'),
     ).not.toBeNull();
   });
 
@@ -465,9 +434,8 @@ describe("the shell contract", () => {
     // lie as a badge that says *edited* over a page that never heard about it.
     const { extension, toolbar } = mount();
     const label = () =>
-      collectCommands([extension]).find(
-        (command) => command.id === "theme-editor.togglePreview",
-      )?.label ?? "";
+      collectCommands([extension]).find((command) => command.id === "theme-editor.togglePreview")
+        ?.label ?? "";
     expect(label()).toContain("Pause");
     await act(async () => {
       await toolbar.runCommand("theme-editor.togglePreview");
@@ -486,9 +454,9 @@ describe("the shell contract", () => {
     const command = collectCommands([extension]).find(
       (entry) => entry.id === "theme-editor.copyCss",
     );
-    await expect(
-      Promise.resolve().then(() => command?.run()),
-    ).rejects.toThrow(/clipboard is unavailable/i);
+    await expect(Promise.resolve().then(() => command?.run())).rejects.toThrow(
+      /clipboard is unavailable/i,
+    );
   });
 
   it("hands `/ext/diagnostics` a redacted contribution", () => {
@@ -617,11 +585,7 @@ describe("the shell contract", () => {
     const second = mount({}, storage);
     expect(app().style.getPropertyValue("--brand-500")).toBe("#ff0000");
     expect(
-      text(
-        second.toolbar
-          .item("theme-editor")
-          ?.querySelector('[data-dtb-part="thm-count"]'),
-      ),
+      text(second.toolbar.item("theme-editor")?.querySelector('[data-dtb-part="thm-count"]')),
     ).toBe("1 edited");
   });
 

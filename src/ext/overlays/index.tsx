@@ -171,9 +171,7 @@ export function overlays(options: OverlaysOptions = {}): DevToolbarExtension {
       />
     ),
 
-    panel: () => (
-      <OverlaysPanel runtime={runtime} label={label} injectStyles={injectStyles} />
-    ),
+    panel: () => <OverlaysPanel runtime={runtime} label={label} injectStyles={injectStyles} />,
 
     /**
      * The surface goes in `overlay`, not `panel` or `compact`, for the reason
@@ -181,9 +179,7 @@ export function overlays(options: OverlaysOptions = {}): DevToolbarExtension {
      * all, so overlays would vanish exactly when the window got narrow, and a
      * panel is a drawer pinned to the bar rather than a viewport-sized layer.
      */
-    overlay: () => (
-      <OverlaysSurface runtime={runtime} injectStyles={injectStyles} />
-    ),
+    overlay: () => <OverlaysSurface runtime={runtime} injectStyles={injectStyles} />,
 
     commands: () => [
       ...toggles(),

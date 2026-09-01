@@ -46,8 +46,7 @@ function OverlayHostImpl({
   classNames,
 }: OverlayHostProps): ReactNode {
   const hosted = extensions.filter(
-    (extension) =>
-      extension.hidden !== true && typeof extension.overlay === "function",
+    (extension) => extension.hidden !== true && typeof extension.overlay === "function",
   );
   if (hosted.length === 0) return null;
 
@@ -69,9 +68,7 @@ function OverlayHostImpl({
             classNames={classNames}
           >
             <Slot
-              render={
-                extension.overlay as (props: OverlaySlotProps) => ReactNode
-              }
+              render={extension.overlay as (props: OverlaySlotProps) => ReactNode}
               props={props}
             />
           </ExtensionBoundary>

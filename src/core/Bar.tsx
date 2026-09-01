@@ -32,12 +32,8 @@ export function sortExtensions(extensions: readonly DevToolbarExtension[]): {
   const byOrder = (a: DevToolbarExtension, b: DevToolbarExtension) =>
     (a.order ?? 0) - (b.order ?? 0);
   return {
-    start: visible
-      .filter((extension) => (extension.align ?? "start") === "start")
-      .sort(byOrder),
-    end: visible
-      .filter((extension) => extension.align === "end")
-      .sort(byOrder),
+    start: visible.filter((extension) => (extension.align ?? "start") === "start").sort(byOrder),
+    end: visible.filter((extension) => extension.align === "end").sort(byOrder),
   };
 }
 

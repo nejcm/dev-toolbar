@@ -14,9 +14,7 @@ describe("storage adapters", () => {
     const storage = createInstanceStorage(createLocalStorage(), "app");
     storage.setItem("visible", "true");
 
-    expect(window.localStorage.getItem(`${STORAGE_PREFIX}:app:visible`)).toBe(
-      "true",
-    );
+    expect(window.localStorage.getItem(`${STORAGE_PREFIX}:app:visible`)).toBe("true");
     expect(storage.getItem("visible")).toBe("true");
 
     storage.removeItem("visible");
@@ -26,9 +24,7 @@ describe("storage adapters", () => {
   it("namespaces per extension id", () => {
     const storage = createExtensionStorage(createLocalStorage(), "app", "flags");
     storage.setItem("enabled", "1");
-    expect(
-      window.localStorage.getItem(`${STORAGE_PREFIX}:app:ext:flags:enabled`),
-    ).toBe("1");
+    expect(window.localStorage.getItem(`${STORAGE_PREFIX}:app:ext:flags:enabled`)).toBe("1");
   });
 
   it("round-trips in memory", () => {

@@ -25,10 +25,7 @@
 /** How the snapshot is rendered for copying and downloading. */
 export type SnapshotFormat = "markdown" | "json";
 
-export const SNAPSHOT_FORMATS: readonly SnapshotFormat[] = [
-  "markdown",
-  "json",
-];
+export const SNAPSHOT_FORMATS: readonly SnapshotFormat[] = ["markdown", "json"];
 
 /* -------------------------------------------------------------------------- */
 /* §3E — long-task and responsiveness                                          */
@@ -177,11 +174,7 @@ export interface NavigationReport {
  * contribution is serialised on its own and a failure is recorded next to the
  * id that caused it.
  */
-export type ContributionStatus =
-  | "ok"
-  | "absent"
-  | "failed"
-  | "unserialisable";
+export type ContributionStatus = "ok" | "absent" | "failed" | "unserialisable";
 
 export interface DiagnosticContribution {
   id: string;
@@ -255,11 +248,7 @@ export const NO_SNAPSHOT: DiagnosticsSnapshotState = {
 };
 
 /** Human wording for a `SupportState`, used in every `note` and in the panel. */
-export function describeSupport(
-  state: SupportState,
-  entryType: string,
-  detail?: string,
-): string {
+export function describeSupport(state: SupportState, entryType: string, detail?: string): string {
   switch (state) {
     case "supported":
       return `Observed via PerformanceObserver ("${entryType}").`;

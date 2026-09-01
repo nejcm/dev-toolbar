@@ -138,10 +138,7 @@ export interface DiagnosticsRuntime {
  */
 const now = (): number => {
   try {
-    if (
-      typeof performance !== "undefined" &&
-      typeof performance.now === "function"
-    ) {
+    if (typeof performance !== "undefined" && typeof performance.now === "function") {
       return performance.now();
     }
   } catch {
@@ -186,10 +183,7 @@ interface NavigatorLike {
 }
 
 function readNavigation(): NavigationReport | null {
-  if (
-    typeof performance === "undefined" ||
-    typeof performance.getEntriesByType !== "function"
-  ) {
+  if (typeof performance === "undefined" || typeof performance.getEntriesByType !== "function") {
     return null;
   }
   try {
@@ -203,9 +197,7 @@ function readNavigation(): NavigationReport | null {
       | undefined;
     if (entry === undefined) return null;
     const ms = (value: unknown): number | null =>
-      typeof value === "number" && Number.isFinite(value) && value > 0
-        ? Math.round(value)
-        : null;
+      typeof value === "number" && Number.isFinite(value) && value > 0 ? Math.round(value) : null;
     return {
       type: typeof entry.type === "string" ? entry.type : null,
       responseEndMs: ms(entry.responseEnd),
@@ -263,9 +255,7 @@ function readPage(options: RedactOptions | undefined): PageReport {
   }
 
   const href =
-    typeof location === "undefined" || typeof location.href !== "string"
-      ? null
-      : location.href;
+    typeof location === "undefined" || typeof location.href !== "string" ? null : location.href;
 
   return {
     url: href === null ? null : redactUrl(href, options),
@@ -277,17 +267,12 @@ function readPage(options: RedactOptions | undefined): PageReport {
     language: typeof nav?.language === "string" ? nav.language : null,
     timeZone,
     viewport: size,
-    devicePixelRatio:
-      typeof win?.devicePixelRatio === "number" ? win.devicePixelRatio : null,
+    devicePixelRatio: typeof win?.devicePixelRatio === "number" ? win.devicePixelRatio : null,
     online: typeof nav?.onLine === "boolean" ? nav.onLine : null,
-    visibility:
-      typeof doc?.visibilityState === "string" ? doc.visibilityState : null,
+    visibility: typeof doc?.visibilityState === "string" ? doc.visibilityState : null,
     hardwareConcurrency:
-      typeof nav?.hardwareConcurrency === "number"
-        ? nav.hardwareConcurrency
-        : null,
-    deviceMemoryGb:
-      typeof nav?.deviceMemory === "number" ? nav.deviceMemory : null,
+      typeof nav?.hardwareConcurrency === "number" ? nav.hardwareConcurrency : null,
+    deviceMemoryGb: typeof nav?.deviceMemory === "number" ? nav.deviceMemory : null,
     domElements,
     navigation: readNavigation(),
   };
@@ -384,10 +369,7 @@ export function createDiagnosticsRuntime(
   };
 
   /** Redact, then prove it serialises. In that order, always. */
-  const finish = (
-    entry: { id: string; label: string },
-    raw: unknown,
-  ): DiagnosticContribution => {
+  const finish = (entry: { id: string; label: string }, raw: unknown): DiagnosticContribution => {
     let redacted: unknown;
     try {
       redacted = redact(raw, redactOptions);
@@ -469,10 +451,7 @@ export function createDiagnosticsRuntime(
         // `errorName` gets the same pass, for the reason `describeSafely`
         // gives: it is `error.name`, which is writable, so it is foreign data
         // like everything else core hands over.
-        const name =
-          entry.errorName === undefined
-            ? undefined
-            : redactText(entry.errorName);
+        const name = entry.errorName === undefined ? undefined : redactText(entry.errorName);
         contributions.push({
           id: entry.id,
           label: entry.label,
@@ -531,15 +510,13 @@ export function createDiagnosticsRuntime(
     const report = monitor.report();
     const clean = (sample: LongTaskSample): LongTaskSample => ({
       ...sample,
-      attribution:
-        sample.attribution === null ? null : redactText(sample.attribution),
+      attribution: sample.attribution === null ? null : redactText(sample.attribution),
     });
     return {
       ...report,
       longTasks: {
         ...report.longTasks,
-        worst:
-          report.longTasks.worst === null ? null : clean(report.longTasks.worst),
+        worst: report.longTasks.worst === null ? null : clean(report.longTasks.worst),
         recent: report.longTasks.recent.map(clean),
       },
     };
@@ -550,9 +527,7 @@ export function createDiagnosticsRuntime(
 
     for (const source of sources) {
       const label = source.label ?? source.id;
-      contributions.push(
-        takeData({ id: source.id, label }, () => source.read()),
-      );
+      contributions.push(takeData({ id: source.id, label }, () => source.read()));
     }
 
     const appContribution =
@@ -708,9 +683,7 @@ export function createDiagnosticsRuntime(
   const ensure = (): DiagnosticSnapshot => store.peek().snapshot ?? capture();
 
   const render = (format: SnapshotFormat): string =>
-    format === "json"
-      ? renderJson(ensure())
-      : renderMarkdown(ensure(), mask);
+    format === "json" ? renderJson(ensure()) : renderMarkdown(ensure(), mask);
 
   const filename = (format: SnapshotFormat): string => {
     // `:` is illegal in a filename on Windows and awkward everywhere; `.` would
@@ -747,9 +720,7 @@ export function createDiagnosticsRuntime(
     download(format) {
       const text = render(format);
       const mime =
-        format === "json"
-          ? "application/json;charset=utf-8"
-          : "text/markdown;charset=utf-8";
+        format === "json" ? "application/json;charset=utf-8" : "text/markdown;charset=utf-8";
       const revoke = startDownload(text, filename(format), mime);
       if (revoke === null) return false;
       // Bounded, but never by revoking early: forcing the oldest revoker at a
@@ -860,22 +831,16 @@ const cell = (value: unknown): string => {
   return text.replace(/\\/g, "\\\\").replace(/\|/g, "\\|").replace(/\r?\n/g, " ");
 };
 
-const row = (label: string, value: unknown): string =>
-  `| ${label} | ${cell(value)} |`;
+const row = (label: string, value: unknown): string => `| ${label} | ${cell(value)} |`;
 
 /**
  * Markdown, for pasting into a ticket. Built entirely from the already-redacted
  * snapshot: this function receives no raw value and has no access to one.
  */
-export function renderMarkdown(
-  snapshot: DiagnosticSnapshot,
-  mask: string = REDACTED,
-): string {
+export function renderMarkdown(snapshot: DiagnosticSnapshot, mask: string = REDACTED): string {
   const lines: string[] = [];
   const total = snapshot.contributions.length;
-  const ok = snapshot.contributions.filter(
-    (entry) => entry.status === "ok",
-  ).length;
+  const ok = snapshot.contributions.filter((entry) => entry.status === "ok").length;
 
   lines.push("# Diagnostic snapshot");
   lines.push("");
@@ -923,10 +888,7 @@ export function renderMarkdown(
   lines.push(row("Visibility", page.visibility));
   lines.push(row("CPU cores", page.hardwareConcurrency));
   lines.push(
-    row(
-      "Device memory",
-      page.deviceMemoryGb === null ? null : `${page.deviceMemoryGb} GB`,
-    ),
+    row("Device memory", page.deviceMemoryGb === null ? null : `${page.deviceMemoryGb} GB`),
   );
   lines.push(row("DOM elements", page.domElements));
   if (page.navigation !== null) {
@@ -934,9 +896,7 @@ export function renderMarkdown(
     lines.push(
       row(
         "Response end",
-        page.navigation.responseEndMs === null
-          ? null
-          : `${page.navigation.responseEndMs} ms`,
+        page.navigation.responseEndMs === null ? null : `${page.navigation.responseEndMs} ms`,
       ),
     );
     lines.push(
@@ -950,22 +910,16 @@ export function renderMarkdown(
     lines.push(
       row(
         "Load event",
-        page.navigation.loadEventMs === null
-          ? null
-          : `${page.navigation.loadEventMs} ms`,
+        page.navigation.loadEventMs === null ? null : `${page.navigation.loadEventMs} ms`,
       ),
     );
   }
   lines.push("");
 
   const responsiveness = snapshot.responsiveness;
-  lines.push(
-    `## Responsiveness — last ${Math.round(responsiveness.windowMs / 1000)} s`,
-  );
+  lines.push(`## Responsiveness — last ${Math.round(responsiveness.windowMs / 1000)} s`);
   lines.push("");
-  lines.push(
-    `Observed for ${Math.round(responsiveness.observedForMs / 1000)} s.`,
-  );
+  lines.push(`Observed for ${Math.round(responsiveness.observedForMs / 1000)} s.`);
   lines.push("");
   const tasks = responsiveness.longTasks;
   lines.push(
@@ -978,9 +932,7 @@ export function renderMarkdown(
   if (tasks.worst !== null) {
     lines.push(
       `  - Worst: ${tasks.worst.durationMs} ms at ${tasks.worst.startTime} ms` +
-        (tasks.worst.attribution === null
-          ? ""
-          : ` — ${tasks.worst.attribution}`),
+        (tasks.worst.attribution === null ? "" : ` — ${tasks.worst.attribution}`),
     );
   }
   if (tasks.recent.length > 0) lines.push("  - Most recent:");
@@ -1024,9 +976,7 @@ export function renderMarkdown(
     if (entry.status === "ok") {
       lines.push(fence(entry.data));
     } else {
-      lines.push(
-        `_${entry.status}_ — ${entry.error ?? "this extension contributed nothing."}`,
-      );
+      lines.push(`_${entry.status}_ — ${entry.error ?? "this extension contributed nothing."}`);
     }
     lines.push("");
   }
@@ -1070,10 +1020,7 @@ export function renderMarkdown(
  * is that masking is visible. Both encodings are counted, and the encoded form
  * is only searched for when it actually differs.
  */
-export function countMasked(
-  snapshot: DiagnosticSnapshot,
-  mask: string = REDACTED,
-): number {
+export function countMasked(snapshot: DiagnosticSnapshot, mask: string = REDACTED): number {
   let serialised: string;
   try {
     serialised = JSON.stringify(snapshot) ?? "";
@@ -1154,11 +1101,7 @@ export interface Revoker {
   spent(): boolean;
 }
 
-export function startDownload(
-  text: string,
-  name: string,
-  mime: string,
-): Revoker | null {
+export function startDownload(text: string, name: string, mime: string): Revoker | null {
   if (typeof document === "undefined" || typeof Blob === "undefined") {
     return null;
   }

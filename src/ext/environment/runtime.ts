@@ -25,9 +25,7 @@ import type {
   ImpersonationContext,
 } from "./types";
 
-export type EnvironmentContextInput =
-  | EnvironmentContext
-  | (() => EnvironmentContext);
+export type EnvironmentContextInput = EnvironmentContext | (() => EnvironmentContext);
 
 export interface EnvironmentRuntimeOptions {
   context?: EnvironmentContextInput;
@@ -100,9 +98,7 @@ function detectViewport(): string | undefined {
 function detectConnection(): string | undefined {
   if (typeof navigator === "undefined") return undefined;
   const online = navigator.onLine === false ? "offline" : "online";
-  const connection = (
-    navigator as unknown as { connection?: ConnectionLike }
-  ).connection;
+  const connection = (navigator as unknown as { connection?: ConnectionLike }).connection;
   if (!connection?.effectiveType) return online;
   const parts = [online, connection.effectiveType];
   if (typeof connection.downlink === "number") {
@@ -122,9 +118,7 @@ function detectConnection(): string | undefined {
 const EMAIL = /([A-Za-z0-9._%+-])[A-Za-z0-9._%+-]*@([A-Za-z0-9.-]+\.[A-Za-z]{2,})/g;
 
 export function maskEmails(value: string): string {
-  return value.replace(EMAIL, (_match, first: string, domain: string) =>
-    `${first}***@${domain}`,
-  );
+  return value.replace(EMAIL, (_match, first: string, domain: string) => `${first}***@${domain}`);
 }
 
 /**
@@ -171,10 +165,7 @@ function redactValues(
   raw: Record<string, unknown>,
   options: EnvironmentRuntimeOptions,
 ): { values: Record<string, string>; masked: Set<string> } {
-  const redacted = redact(raw, options.redactOptions) as Record<
-    string,
-    unknown
-  >;
+  const redacted = redact(raw, options.redactOptions) as Record<string, unknown>;
   const values: Record<string, string> = {};
   const masked = new Set<string>();
 
@@ -198,16 +189,15 @@ function redactValues(
 function formatBuiltAt(value: string | number | Date | undefined): string | undefined {
   if (value === undefined) return undefined;
   const date =
-    value instanceof Date
-      ? value
-      : new Date(typeof value === "number" ? value : String(value));
+    value instanceof Date ? value : new Date(typeof value === "number" ? value : String(value));
   if (Number.isNaN(date.getTime())) return String(value);
   return date.toISOString();
 }
 
-function formatImpersonation(
-  value: boolean | ImpersonationContext | undefined,
-): { display: string | undefined; active: boolean } {
+function formatImpersonation(value: boolean | ImpersonationContext | undefined): {
+  display: string | undefined;
+  active: boolean;
+} {
   if (value === undefined) return { display: undefined, active: false };
   if (typeof value === "boolean") {
     return { display: value ? "ACTIVE" : "no", active: value };
@@ -243,10 +233,7 @@ export function createEnvironmentRuntime(
         // A consumer's getter throwing must not take down the bar: the slot is
         // inside an error boundary, but start()'s interval is not.
         // eslint-disable-next-line no-console
-        console.error(
-          "[dev-toolbar/ext/environment] the supplied context getter threw.",
-          error,
-        );
+        console.error("[dev-toolbar/ext/environment] the supplied context getter threw.", error);
         return {};
       }
     }
@@ -314,11 +301,7 @@ export function createEnvironmentRuntime(
         label: spec.label,
         group: spec.group,
         value: present ? value : "",
-        source: present
-          ? detected.has(spec.id)
-            ? "detected"
-            : "supplied"
-          : "missing",
+        source: present ? (detected.has(spec.id) ? "detected" : "supplied") : "missing",
         masked: masked.has(spec.id),
         alarming:
           (spec.id === "impersonation" && impersonation.active) ||
@@ -402,16 +385,14 @@ export function createEnvironmentRuntime(
           masked: false,
           alarming: true,
         },
-        ...FIELD_SPECS.filter((spec) => !allowed || allowed.has(spec.id)).map(
-          (spec) => ({
-            id: spec.id,
-            label: spec.label,
-            group: spec.group,
-            value: "",
-            source: "missing" as const,
-            masked: false,
-          }),
-        ),
+        ...FIELD_SPECS.filter((spec) => !allowed || allowed.has(spec.id)).map((spec) => ({
+          id: spec.id,
+          label: spec.label,
+          group: spec.group,
+          value: "",
+          source: "missing" as const,
+          masked: false,
+        })),
       ],
     };
   };

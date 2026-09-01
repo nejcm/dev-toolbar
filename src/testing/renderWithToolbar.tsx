@@ -4,21 +4,13 @@ import { DevToolbar, HEIGHT_VARIABLE } from "../core/DevToolbar";
 import type { DevToolbarProps } from "../core/DevToolbar";
 import { useDevToolbar } from "../core/context";
 import type { DevToolbarContextValue } from "../core/context";
-import type {
-  DevToolbarExtension,
-  ToolbarCommand,
-  ToolbarPosition,
-} from "../core/contract";
+import type { DevToolbarExtension, ToolbarCommand, ToolbarPosition } from "../core/contract";
 import { createMemoryStorage } from "../core/storage";
 import { installToolbarLayout } from "./layout";
-import type {
-  InstallToolbarLayoutOptions,
-  ToolbarLayoutHandle,
-} from "./layout";
+import type { InstallToolbarLayoutOptions, ToolbarLayoutHandle } from "./layout";
 import { requireTestingLibrary } from "./reactTestingLibrary";
 
-export interface RenderWithToolbarOptions
-  extends Omit<DevToolbarProps, "children"> {
+export interface RenderWithToolbarOptions extends Omit<DevToolbarProps, "children"> {
   /**
    * Install the fake layout so overflow collapse and `--dev-toolbar-height`
    * work under jsdom. `true` uses the defaults. Torn down on `unmount()`.
@@ -95,11 +87,7 @@ export interface RenderWithToolbarResult extends RenderResult {
   toolbar: ToolbarHandle;
 }
 
-function Probe({
-  onRender,
-}: {
-  onRender: (value: DevToolbarContextValue) => void;
-}): null {
+function Probe({ onRender }: { onRender: (value: DevToolbarContextValue) => void }): null {
   // Captured during render rather than in an effect so the handle always sees
   // the value from the most recent commit, including the very first one.
   onRender(useDevToolbar());
@@ -131,8 +119,7 @@ export function renderWithToolbar(
   const props: RenderWithToolbarProps = {
     instanceId: "test",
     ...toolbarProps,
-    storage:
-      "storage" in toolbarProps ? toolbarProps.storage : createMemoryStorage(),
+    storage: "storage" in toolbarProps ? toolbarProps.storage : createMemoryStorage(),
   };
 
   let latest: DevToolbarContextValue | null = null;
@@ -150,17 +137,13 @@ export function renderWithToolbar(
 
   const context = (): DevToolbarContextValue => {
     if (!latest) {
-      throw new Error(
-        "[dev-toolbar/testing] the toolbar is not mounted — did render() throw?",
-      );
+      throw new Error("[dev-toolbar/testing] the toolbar is not mounted — did render() throw?");
     }
     return latest;
   };
 
-  const root = () =>
-    document.querySelector<HTMLElement>('[data-dtb-part="root"]');
-  const part = (name: string) =>
-    document.querySelector<HTMLElement>(`[data-dtb-part="${name}"]`);
+  const root = () => document.querySelector<HTMLElement>('[data-dtb-part="root"]');
+  const part = (name: string) => document.querySelector<HTMLElement>(`[data-dtb-part="${name}"]`);
   const parts = (name: string) => [
     ...document.querySelectorAll<HTMLElement>(`[data-dtb-part="${name}"]`),
   ];
@@ -182,17 +165,11 @@ export function renderWithToolbar(
     part,
     parts,
     item: (id) =>
-      document.querySelector<HTMLElement>(
-        `[data-dtb-part="item"][data-dtb-ext-id="${id}"]`,
-      ),
+      document.querySelector<HTMLElement>(`[data-dtb-part="item"][data-dtb-ext-id="${id}"]`),
     panel: (id) =>
-      document.querySelector<HTMLElement>(
-        `[data-dtb-part="panel"][data-dtb-ext-id="${id}"]`,
-      ),
+      document.querySelector<HTMLElement>(`[data-dtb-part="panel"][data-dtb-ext-id="${id}"]`),
     overlay: (id) =>
-      document.querySelector<HTMLElement>(
-        `[data-dtb-part="overlay"][data-dtb-ext-id="${id}"]`,
-      ),
+      document.querySelector<HTMLElement>(`[data-dtb-part="overlay"][data-dtb-ext-id="${id}"]`),
     errorChip: (id) =>
       document.querySelector<HTMLElement>(
         id === undefined
@@ -200,9 +177,7 @@ export function renderWithToolbar(
           : `[data-dtb-part="error-chip"][data-dtb-ext-id="${id}"]`,
       ),
     overflowButton: () =>
-      document.querySelector<HTMLButtonElement>(
-        '[data-dtb-part="overflow-button"]',
-      ),
+      document.querySelector<HTMLButtonElement>('[data-dtb-part="overflow-button"]'),
     overflowMenu: () => part("overflow-menu"),
     overflowedIds() {
       // Not read from the menu: its items only exist in the DOM while it is
@@ -230,8 +205,7 @@ export function renderWithToolbar(
       }
       run(() => button.click());
     },
-    height: () =>
-      document.documentElement.style.getPropertyValue(HEIGHT_VARIABLE),
+    height: () => document.documentElement.style.getPropertyValue(HEIGHT_VARIABLE),
     layout: layoutHandle,
     resize(width) {
       if (!layoutHandle) {

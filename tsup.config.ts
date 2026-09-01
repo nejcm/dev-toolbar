@@ -28,7 +28,7 @@ export default defineConfig({
       "ext/flags": "src/ext/flags/index.tsx",
       "ext/command-menu": "src/ext/command-menu/index.tsx",
       "ext/overlays": "src/ext/overlays/index.tsx",
-    "ext/diagnostics": "src/ext/diagnostics/index.tsx",
+      "ext/diagnostics": "src/ext/diagnostics/index.tsx",
       "ext/theme-editor": "src/ext/theme-editor/index.tsx",
       testing: "src/testing/index.ts",
     },

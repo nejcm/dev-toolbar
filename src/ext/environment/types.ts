@@ -182,10 +182,7 @@ export function normaliseKind(kind: string): string {
  * Impersonation outranks everything: there is no route to a reassuring green
  * while you are acting as somebody else.
  */
-export function severityForKind(
-  kind: string,
-  impersonating: boolean,
-): EnvironmentSeverity {
+export function severityForKind(kind: string, impersonating: boolean): EnvironmentSeverity {
   if (impersonating) return "bad";
   switch (normaliseKind(kind)) {
     case "production":

@@ -8,10 +8,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { collectDiagnostics, resetDiagnosticsWarnings } from "../diagnostics";
 import type { DevToolbarExtension } from "../contract";
 
-const ext = (
-  id: string,
-  extra: Partial<DevToolbarExtension> = {},
-): DevToolbarExtension => ({ id, label: id.toUpperCase(), ...extra });
+const ext = (id: string, extra: Partial<DevToolbarExtension> = {}): DevToolbarExtension => ({
+  id,
+  label: id.toUpperCase(),
+  ...extra,
+});
 
 beforeEach(() => {
   resetDiagnosticsWarnings();
@@ -105,9 +106,7 @@ describe("collectDiagnostics", () => {
     ]);
     expect(entries[0]?.error).toBe("just a string");
     expect(entries[0]?.errorName).toBeUndefined();
-    expect(entries[1]?.error).toBe(
-      "threw a value that could not be described",
-    );
+    expect(entries[1]?.error).toBe("threw a value that could not be described");
     expect(entries[1]?.errorName).toBeUndefined();
   });
 
@@ -139,9 +138,7 @@ describe("collectDiagnostics", () => {
     const entries = collectDiagnostics(list);
     expect(entries[0]?.status).toBe("ok");
     expect(entries[0]?.data).toEqual({ nested: [] });
-    expect(String(error.mock.calls[0]?.[0])).toContain(
-      "getDiagnostics() was called from inside",
-    );
+    expect(String(error.mock.calls[0]?.[0])).toContain("getDiagnostics() was called from inside");
     // Once per process, not once per pass.
     collectDiagnostics(list);
     expect(error).toHaveBeenCalledTimes(1);
@@ -162,9 +159,7 @@ describe("collectDiagnostics", () => {
   });
 
   it("falls back to the id when an extension has no label", () => {
-    const entries = collectDiagnostics([
-      { id: "nolabel" } as unknown as DevToolbarExtension,
-    ]);
+    const entries = collectDiagnostics([{ id: "nolabel" } as unknown as DevToolbarExtension]);
     expect(entries[0]?.label).toBe("nolabel");
   });
 });

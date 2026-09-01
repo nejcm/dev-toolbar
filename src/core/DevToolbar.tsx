@@ -1,11 +1,4 @@
-import {
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  useSyncExternalStore,
-} from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import type { CSSProperties, ReactNode } from "react";
 import { createPortal } from "react-dom";
 import {
@@ -25,11 +18,7 @@ import { DevToolbarContext, cx } from "./context";
 import type { DevToolbarContextValue } from "./context";
 import { collectCommands, registerCommandHost, runCommand } from "./commands";
 import { collectDiagnostics } from "./diagnostics";
-import {
-  createExtensionStorage,
-  createInstanceStorage,
-  resolveStorage,
-} from "./storage";
+import { createExtensionStorage, createInstanceStorage, resolveStorage } from "./storage";
 import { createToolbarStore } from "./store";
 import { DEFAULT_SHORTCUT, matchesShortcut, parseShortcut } from "./shortcut";
 import { ensureStyles } from "./styles";
@@ -127,11 +116,7 @@ function DevToolbarRoot({
     }),
   );
 
-  const state = useSyncExternalStore(
-    store.subscribe,
-    store.getSnapshot,
-    store.getSnapshot,
-  );
+  const state = useSyncExternalStore(store.subscribe, store.getSnapshot, store.getSnapshot);
 
   // Client-only mount: the bar is never part of server HTML, so there is
   // nothing to hydrate and nothing to mismatch.
@@ -156,10 +141,7 @@ function DevToolbarRoot({
   const extensionsRef = useRef(extensions);
   extensionsRef.current = extensions;
 
-  const getCommands = useCallback(
-    () => collectCommands(extensionsRef.current),
-    [],
-  );
+  const getCommands = useCallback(() => collectCommands(extensionsRef.current), []);
 
   /**
    * The declarative snapshot behind `useToolbarCommands()`. Recomputed when the
@@ -215,10 +197,7 @@ function DevToolbarRoot({
   // start(api): once per extension id while it is present *and not hidden*.
   // Core reports visibility and never pauses an extension on its behalf.
   const runningRef = useRef(
-    new Map<
-      string,
-      { controller: AbortController; dispose?: () => void; start: unknown }
-    >(),
+    new Map<string, { controller: AbortController; dispose?: () => void; start: unknown }>(),
   );
   const identityWarnedRef = useRef(new Set<string>());
   useEffect(() => {
@@ -237,9 +216,7 @@ function DevToolbarRoot({
     // URLs, holding a rAF loop open — would be exactly the leak `hidden`
     // exists to prevent, so a hidden extension is stopped, not merely unpainted.
     const present = new Set(
-      extensions
-        .filter((extension) => extension.hidden !== true)
-        .map((extension) => extension.id),
+      extensions.filter((extension) => extension.hidden !== true).map((extension) => extension.id),
     );
 
     for (const [id, entry] of [...running]) {
@@ -259,10 +236,7 @@ function DevToolbarRoot({
         // from a *different* object than the one holding the collectors, and
         // its state is silently lost. `{...ext, hidden}` keeps the same `start`
         // reference, so this does not fire for the legitimate pattern.
-        if (
-          existing.start !== extension.start &&
-          !identityWarnedRef.current.has(extension.id)
-        ) {
+        if (existing.start !== extension.start && !identityWarnedRef.current.has(extension.id)) {
           identityWarnedRef.current.add(extension.id);
           // eslint-disable-next-line no-console
           console.warn(
@@ -292,8 +266,7 @@ function DevToolbarRoot({
         storage: createExtensionStorage(rawStorage, instanceId, extension.id),
         // The aggregation, reachable without importing a value from core.
         getCommands: () => collectCommands(extensionsRef.current),
-        runCommand: (id: string) =>
-          runCommand(id, collectCommands(extensionsRef.current)),
+        runCommand: (id: string) => runCommand(id, collectCommands(extensionsRef.current)),
         // Same shape and the same reason as `getCommands`: read through the
         // ref, so a snapshot taken now reflects the extension list now.
         getDiagnostics: () => collectDiagnostics(extensionsRef.current),
@@ -309,10 +282,7 @@ function DevToolbarRoot({
         if (typeof dispose === "function") entry.dispose = dispose;
       } catch (error) {
         // eslint-disable-next-line no-console
-        console.error(
-          `[dev-toolbar] extension "${extension.id}" threw from start().`,
-          error,
-        );
+        console.error(`[dev-toolbar] extension "${extension.id}" threw from start().`, error);
       }
     }
   }, [extensions, enabled, store, rawStorage, instanceId]);
@@ -376,13 +346,7 @@ function DevToolbarRoot({
       observer.disconnect();
       root.style.removeProperty(HEIGHT_VARIABLE);
     };
-  }, [
-    enabled,
-    shouldRender,
-    state.position,
-    state.panelHeight,
-    state.activePanelId,
-  ]);
+  }, [enabled, shouldRender, state.position, state.panelHeight, state.activePanelId]);
 
   const contextValue = useMemo<DevToolbarContextValue>(
     () => ({
@@ -426,8 +390,7 @@ function DevToolbarRoot({
     ],
   );
 
-  const target =
-    container ?? (typeof document === "undefined" ? null : document.body);
+  const target = container ?? (typeof document === "undefined" ? null : document.body);
 
   return (
     <DevToolbarContext.Provider value={contextValue}>
@@ -491,9 +454,6 @@ function stopExtension(
     entry.dispose?.();
   } catch (error) {
     // eslint-disable-next-line no-console
-    console.error(
-      `[dev-toolbar] extension "${id}" threw from its start() cleanup.`,
-      error,
-    );
+    console.error(`[dev-toolbar] extension "${id}" threw from its start() cleanup.`, error);
   }
 }

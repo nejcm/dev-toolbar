@@ -16,10 +16,7 @@ export type {
   ToolbarHandle,
 } from "./renderWithToolbar";
 
-export {
-  setTestingLibrary,
-  testingLibraryReady,
-} from "./reactTestingLibrary";
+export { setTestingLibrary, testingLibraryReady } from "./reactTestingLibrary";
 export type { ReactTestingLibrary } from "./reactTestingLibrary";
 
 export { makeCommand, makeExtension, resetExtensionIds } from "./makeExtension";
@@ -35,9 +32,6 @@ export type {
 } from "./mockBus";
 
 export { installToolbarLayout } from "./layout";
-export type {
-  InstallToolbarLayoutOptions,
-  ToolbarLayoutHandle,
-} from "./layout";
+export type { InstallToolbarLayoutOptions, ToolbarLayoutHandle } from "./layout";
 
 export { createMemoryStorage, createNullStorage } from "../core/storage";

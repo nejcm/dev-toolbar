@@ -4,21 +4,10 @@
  * to see going wrong through a rendered list.
  */
 import { describe, expect, it } from "vitest";
-import {
-  filterCommands,
-  OTHER_SECTION,
-  RECENT_SECTION,
-  scoreCommand,
-  sectionsOf,
-} from "../types";
+import { filterCommands, OTHER_SECTION, RECENT_SECTION, scoreCommand, sectionsOf } from "../types";
 import type { ToolbarCommand } from "../../../core/contract";
 
-const make = (
-  id: string,
-  label: string,
-  group?: string,
-  keywords?: string[],
-): ToolbarCommand => ({
+const make = (id: string, label: string, group?: string, keywords?: string[]): ToolbarCommand => ({
   id,
   label,
   ...(group === undefined ? {} : { group }),
@@ -26,8 +15,7 @@ const make = (
   run: () => {},
 });
 
-const ids = (matches: { command: ToolbarCommand }[]) =>
-  matches.map((match) => match.command.id);
+const ids = (matches: { command: ToolbarCommand }[]) => matches.map((match) => match.command.id);
 
 describe("scoreCommand", () => {
   it("returns a positive score for everything on an empty query", () => {
@@ -51,9 +39,9 @@ describe("scoreCommand", () => {
     expect(scoreCommand(make("x", "flags"), "flags")).toBeGreaterThan(
       scoreCommand(make("x", "Zzz", undefined, ["flags"]), "flags"),
     );
-    expect(
-      scoreCommand(make("x", "Zzz", undefined, ["flags"]), "flags"),
-    ).toBeGreaterThan(scoreCommand(make("x", "Zzz", "flags"), "flags"));
+    expect(scoreCommand(make("x", "Zzz", undefined, ["flags"]), "flags")).toBeGreaterThan(
+      scoreCommand(make("x", "Zzz", "flags"), "flags"),
+    );
   });
 
   it("requires every term to match something, so typing more only narrows", () => {
@@ -78,12 +66,7 @@ describe("filterCommands", () => {
 
   it("browses in aggregation order, sectioned by consecutive group", () => {
     const matches = filterCommands(commands, "");
-    expect(ids(matches)).toEqual([
-      "flags.toggle.a",
-      "flags.clear",
-      "metrics.reset",
-      "loose",
-    ]);
+    expect(ids(matches)).toEqual(["flags.toggle.a", "flags.clear", "metrics.reset", "loose"]);
     expect(sectionsOf(matches).map((section) => section.section)).toEqual([
       "Flags",
       "Metrics",
@@ -93,12 +76,7 @@ describe("filterCommands", () => {
 
   it("pulls recents to the front, in recency order, under their own heading", () => {
     const matches = filterCommands(commands, "", ["metrics.reset", "loose"]);
-    expect(ids(matches)).toEqual([
-      "metrics.reset",
-      "loose",
-      "flags.toggle.a",
-      "flags.clear",
-    ]);
+    expect(ids(matches)).toEqual(["metrics.reset", "loose", "flags.toggle.a", "flags.clear"]);
     const sections = sectionsOf(matches);
     expect(sections[0]).toEqual({ section: RECENT_SECTION, from: 0, to: 1 });
   });
@@ -113,10 +91,7 @@ describe("filterCommands", () => {
   });
 
   it("puts the better match first even when it was aggregated last", () => {
-    const ordered = [
-      make("weak", "Hard reset the counters"),
-      make("strong", "Reset metrics"),
-    ];
+    const ordered = [make("weak", "Hard reset the counters"), make("strong", "Reset metrics")];
     expect(ids(filterCommands(ordered, "reset"))).toEqual(["strong", "weak"]);
   });
 

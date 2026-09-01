@@ -9,11 +9,7 @@ import { createMemoryStorage } from "../../../core/storage";
 import { commandMenu } from "../index";
 import { RECENT_KEY } from "../runtime";
 import type { CommandMenuOptions } from "../index";
-import type {
-  DevToolbarExtension,
-  ToolbarCommand,
-  ToolbarStorage,
-} from "../../../core/contract";
+import type { DevToolbarExtension, ToolbarCommand, ToolbarStorage } from "../../../core/contract";
 
 let unmountAll: (() => void)[] = [];
 let ran: string[] = [];
@@ -67,12 +63,10 @@ const mount = (
 
 const dialog = () => document.querySelector<HTMLElement>('[role="dialog"]');
 const input = () => document.querySelector<HTMLInputElement>('[role="combobox"]');
-const options = () => [
-  ...document.querySelectorAll<HTMLElement>('[role="option"]'),
-];
+const options = () => [...document.querySelectorAll<HTMLElement>('[role="option"]')];
 const labels = () =>
-  options().map((option) =>
-    option.querySelector('[data-dtb-part="cmd-option-label"]')?.textContent,
+  options().map(
+    (option) => option.querySelector('[data-dtb-part="cmd-option-label"]')?.textContent,
   );
 const activeOption = () =>
   document.querySelector<HTMLElement>('[role="option"][aria-selected="true"]');
@@ -134,14 +128,11 @@ describe("opening and dismissing", () => {
     expect(dialog()).toBeNull();
 
     hotkey();
-    const scrim = () =>
-      document.querySelector('[data-dtb-part="cmd-scrim"]') as HTMLElement;
+    const scrim = () => document.querySelector('[data-dtb-part="cmd-scrim"]') as HTMLElement;
     // A right-click reaching for a context menu is not a dismissal. Dispatched
     // by hand: Testing Library's `pointerDown` synthesizes an event that
     // carries no `button` at all, so it cannot express the case.
-    scrim().dispatchEvent(
-      new MouseEvent("pointerdown", { bubbles: true, button: 2 }),
-    );
+    scrim().dispatchEvent(new MouseEvent("pointerdown", { bubbles: true, button: 2 }));
     expect(dialog()).not.toBeNull();
     fireEvent.pointerDown(scrim());
     expect(dialog()).toBeNull();
@@ -149,18 +140,14 @@ describe("opening and dismissing", () => {
 
   it("opens from the bar chip too", () => {
     const { toolbar } = mount();
-    const trigger = toolbar
-      .item("command-menu")
-      ?.querySelector<HTMLButtonElement>("button");
+    const trigger = toolbar.item("command-menu")?.querySelector<HTMLButtonElement>("button");
     expect(trigger?.getAttribute("aria-keyshortcuts")).toBe("Control+K");
     act(() => trigger?.click());
     expect(dialog()).not.toBeNull();
   });
 
   it("still opens on the shortcut when its own chip has collapsed", () => {
-    const { toolbar } = mount({ priority: 0 }, [
-      makeExtension({ id: "wide", priority: 90 }),
-    ]);
+    const { toolbar } = mount({ priority: 0 }, [makeExtension({ id: "wide", priority: 90 })]);
     toolbar.resize(100);
     expect(toolbar.isOverflowed("command-menu")).toBe(true);
     expect(toolbar.item("command-menu")).toBeNull();
@@ -205,11 +192,7 @@ describe("searching and keyboard navigation", () => {
   it("lists every aggregated command, grouped, with the first row active", () => {
     mount();
     hotkey();
-    expect(labels()).toEqual([
-      "Toggle flag: A",
-      "Clear all local flag overrides",
-      "Reset metrics",
-    ]);
+    expect(labels()).toEqual(["Toggle flag: A", "Clear all local flag overrides", "Reset metrics"]);
     expect(
       [...document.querySelectorAll('[role="group"]')].map((group) =>
         group.getAttribute("aria-label"),
@@ -227,9 +210,9 @@ describe("searching and keyboard navigation", () => {
 
     type("zzz");
     expect(options()).toHaveLength(0);
-    expect(
-      document.querySelector('[data-dtb-part="cmd-empty"]')?.textContent,
-    ).toContain("No matching command");
+    expect(document.querySelector('[data-dtb-part="cmd-empty"]')?.textContent).toContain(
+      "No matching command",
+    );
     // Nothing is active, so Enter cannot run something the user cannot see.
     expect(input()?.getAttribute("aria-activedescendant")).toBeNull();
     press("Enter");
@@ -331,9 +314,7 @@ describe("running", () => {
       press("Enter");
     });
     expect(dialog()).not.toBeNull();
-    expect(document.querySelector('[role="alert"]')?.textContent).toBe(
-      "the provider is offline",
-    );
+    expect(document.querySelector('[role="alert"]')?.textContent).toBe("the provider is offline");
   });
 
   it("says so when the chosen command has gone since it was listed", async () => {
@@ -352,9 +333,7 @@ describe("running", () => {
       press("Enter");
     });
     expect(dialog()).not.toBeNull();
-    expect(document.querySelector('[role="alert"]')?.textContent).toContain(
-      "no longer available",
-    );
+    expect(document.querySelector('[role="alert"]')?.textContent).toContain("no longer available");
     expect(ran).toEqual([]);
   });
 
@@ -440,15 +419,11 @@ describe("recents", () => {
       press("Enter");
     });
     expect(ran).toEqual(["metrics.reset"]);
-    expect(storage.getItem(`dtb:v1:test:ext:command-menu:${RECENT_KEY}`)).toBe(
-      '["metrics.reset"]',
-    );
+    expect(storage.getItem(`dtb:v1:test:ext:command-menu:${RECENT_KEY}`)).toBe('["metrics.reset"]');
 
     hotkey();
     expect(labels()?.[0]).toBe("Reset metrics");
-    expect(
-      document.querySelector('[role="group"]')?.getAttribute("aria-label"),
-    ).toBe("Recent");
+    expect(document.querySelector('[role="group"]')?.getAttribute("aria-label")).toBe("Recent");
   });
 
   it("forgets a recent whose command no longer exists", async () => {
@@ -470,9 +445,7 @@ describe("recents", () => {
     await act(async () => {
       press("Enter");
     });
-    expect(
-      storage.getItem(`dtb:v1:test:ext:command-menu:${RECENT_KEY}`),
-    ).toBeNull();
+    expect(storage.getItem(`dtb:v1:test:ext:command-menu:${RECENT_KEY}`)).toBeNull();
   });
 });
 
@@ -496,11 +469,9 @@ describe("accessibility", () => {
 
     press("ArrowDown");
     expect(box.getAttribute("aria-activedescendant")).not.toBe(active);
-    expect(
-      document.getElementById(
-        box.getAttribute("aria-activedescendant") as string,
-      ),
-    ).toBe(activeOption());
+    expect(document.getElementById(box.getAttribute("aria-activedescendant") as string)).toBe(
+      activeOption(),
+    );
   });
 
   it("marks exactly one option selected at a time", () => {
@@ -508,9 +479,7 @@ describe("accessibility", () => {
     hotkey();
     press("ArrowDown");
     expect(
-      options().filter(
-        (option) => option.getAttribute("aria-selected") === "true",
-      ),
+      options().filter((option) => option.getAttribute("aria-selected") === "true"),
     ).toHaveLength(1);
   });
 });

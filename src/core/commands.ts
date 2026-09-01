@@ -1,8 +1,4 @@
-import type {
-  DevToolbarExtension,
-  ToolbarCommand,
-  ToolbarCommandsInput,
-} from "./contract";
+import type { DevToolbarExtension, ToolbarCommand, ToolbarCommandsInput } from "./contract";
 
 /**
  * Failures already reported, so a broken `commands()` logs once, not per
@@ -24,9 +20,7 @@ function isCommand(value: unknown): value is ToolbarCommand {
   if (typeof value !== "object" || value === null) return false;
   const candidate = value as Partial<ToolbarCommand>;
   return (
-    typeof candidate.id === "string" &&
-    candidate.id !== "" &&
-    typeof candidate.run === "function"
+    typeof candidate.id === "string" && candidate.id !== "" && typeof candidate.run === "function"
   );
 }
 
@@ -93,9 +87,7 @@ export function resolveExtensionCommands(
  * or through the `/ext/command-menu` palette — would hand back exactly what
  * hiding it took away.
  */
-export function collectCommands(
-  extensions: readonly DevToolbarExtension[],
-): ToolbarCommand[] {
+export function collectCommands(extensions: readonly DevToolbarExtension[]): ToolbarCommand[] {
   if (aggregating) {
     // Through `warnOnce` like every other failure on this path: it is reached
     // during render, and under StrictMode a recursive `commands()` would
@@ -166,10 +158,7 @@ export function findCommand(
  * "the command is gone" and "the command was never there" must not be told
  * apart by how recently the caller happened to enumerate.
  */
-export async function runCommand(
-  id: string,
-  scope?: readonly ToolbarCommand[],
-): Promise<boolean> {
+export async function runCommand(id: string, scope?: readonly ToolbarCommand[]): Promise<boolean> {
   const command = findCommand(id, scope);
   if (!command) {
     // eslint-disable-next-line no-console

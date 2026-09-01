@@ -154,10 +154,7 @@ export function setHostOutlines(on: boolean, doc?: Document): void {
     ),
   ];
   const readRefs = (node: HTMLElement): number => {
-    const parsed = Number.parseInt(
-      node.getAttribute(BOXES_REFS_ATTRIBUTE) ?? "",
-      10,
-    );
+    const parsed = Number.parseInt(node.getAttribute(BOXES_REFS_ATTRIBUTE) ?? "", 10);
     // A sheet with no count is one somebody else inserted, or one from an
     // older version. Treat it as held once rather than as free to remove.
     return Number.isFinite(parsed) && parsed > 0 ? parsed : 1;
@@ -238,9 +235,7 @@ function inTabOrder(elements: Element[]): Element[] {
   return [...positive.map((entry) => entry.element), ...natural];
 }
 
-export function createOverlaysRuntime(
-  options: OverlaysRuntimeOptions = {},
-): OverlaysRuntime {
+export function createOverlaysRuntime(options: OverlaysRuntimeOptions = {}): OverlaysRuntime {
   const {
     defaults,
     grid: gridInput,

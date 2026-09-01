@@ -14,12 +14,7 @@
 import { createRingBuffer, createTimeSeries, redactUrl } from "../../../runtime";
 import type { RedactOptions, ToolbarBus } from "../../../runtime";
 import { formatCount, formatMs } from "../format";
-import type {
-  Collector,
-  CollectorContext,
-  MetricView,
-  NetworkEntryView,
-} from "../types";
+import type { Collector, CollectorContext, MetricView, NetworkEntryView } from "../types";
 
 export interface NetworkEntry {
   id: string;
@@ -147,11 +142,7 @@ function attach(
  * which `begin` calls — must never surface as a failed request in the app being
  * measured. Observing something is not permission to break it.
  */
-function fanIn(
-  sinks: Set<NetworkSink>,
-  method: string,
-  url: string,
-): [NetworkSink, unknown][] {
+function fanIn(sinks: Set<NetworkSink>, method: string, url: string): [NetworkSink, unknown][] {
   const tokens: [NetworkSink, unknown][] = [];
   for (const sink of sinks) {
     try {
@@ -163,10 +154,7 @@ function fanIn(
   return tokens;
 }
 
-function fanOut(
-  tokens: [NetworkSink, unknown][],
-  result: Parameters<NetworkSink["end"]>[1],
-): void {
+function fanOut(tokens: [NetworkSink, unknown][], result: Parameters<NetworkSink["end"]>[1]): void {
   for (const [sink, token] of tokens) {
     try {
       sink.end(token, result);
@@ -222,11 +210,8 @@ export function instrumentFetch(sink: NetworkSink): () => void {
           },
           (error: unknown) => {
             fanOut(tokens, {
-              error: String(
-                (error as { message?: string } | undefined)?.message ?? error,
-              ),
-              aborted:
-                (error as { name?: string } | undefined)?.name === "AbortError",
+              error: String((error as { message?: string } | undefined)?.message ?? error),
+              aborted: (error as { name?: string } | undefined)?.name === "AbortError",
             });
             throw error;
           },
@@ -268,12 +253,12 @@ export function instrumentXhr(sink: NetworkSink): () => void {
           method: String(method).toUpperCase(),
           url: String(url),
         });
-        return (
-          originalOpen as unknown as (
-            this: XMLHttpRequest,
-            ...args: unknown[]
-          ) => void
-        ).call(this, method, url, ...rest);
+        return (originalOpen as unknown as (this: XMLHttpRequest, ...args: unknown[]) => void).call(
+          this,
+          method,
+          url,
+          ...rest,
+        );
       } as typeof proto.open;
 
       const send = function patchedSend(
@@ -295,9 +280,7 @@ export function instrumentXhr(sink: NetworkSink): () => void {
           this.addEventListener("load", () => settle({ status: this.status }));
           this.addEventListener("error", () => settle({ error: "network error" }));
           this.addEventListener("timeout", () => settle({ error: "timeout" }));
-          this.addEventListener("abort", () =>
-            settle({ error: "aborted", aborted: true }),
-          );
+          this.addEventListener("abort", () => settle({ error: "aborted", aborted: true }));
         }
         return originalSend.call(this, body ?? null);
       } as typeof proto.send;
@@ -313,9 +296,7 @@ export function instrumentXhr(sink: NetworkSink): () => void {
   );
 }
 
-export function createNetworkCollector(
-  options: NetworkCollectorOptions = {},
-): Collector {
+export function createNetworkCollector(options: NetworkCollectorOptions = {}): Collector {
   const {
     patchFetch = true,
     patchXhr = true,
@@ -339,12 +320,7 @@ export function createNetworkCollector(
 
   const clean = (url: string) => redactUrl(url, options.redact);
 
-  const begin = (
-    now: number,
-    method: string,
-    rawUrl: string,
-    id?: string,
-  ): NetworkEntry | null => {
+  const begin = (now: number, method: string, rawUrl: string, id?: string): NetworkEntry | null => {
     const url = clean(rawUrl);
     if (filter && !filter({ method, url })) return null;
     sequence += 1;
@@ -389,8 +365,7 @@ export function createNetworkCollector(
     entry.aborted = result.aborted ?? false;
     const duration = now - entry.startedAt;
     const failed =
-      result.error !== undefined ||
-      (result.status !== undefined && result.status >= 400);
+      result.error !== undefined || (result.status !== undefined && result.status >= 400);
     totals = {
       started: totals.started,
       completed: totals.completed + 1,
@@ -469,12 +444,7 @@ export function createNetworkCollector(
           (payload) => {
             pending.set(
               payload.requestId,
-              begin(
-                context.now(),
-                payload.method,
-                payload.url,
-                payload.requestId,
-              ),
+              begin(context.now(), payload.method, payload.url, payload.requestId),
             );
             context.invalidate();
           },
@@ -483,10 +453,7 @@ export function createNetworkCollector(
         bus.on(
           "network-end",
           (payload) => {
-            const entry =
-              pending.get(payload.requestId) ??
-              byId.get(payload.requestId) ??
-              null;
+            const entry = pending.get(payload.requestId) ?? byId.get(payload.requestId) ?? null;
             pending.delete(payload.requestId);
             finish(entry, context.now(), {
               status: payload.status,
@@ -547,14 +514,8 @@ export function createNetworkCollector(
         ["Completed (session)", formatCount(totals.completed)],
         ["Failed (session)", formatCount(totals.failed)],
         ["Aborted (session)", formatCount(totals.aborted)],
-        [
-          `Failed (last ${Math.round(windowMs / 1000)} s)`,
-          String(window.failed),
-        ],
-        [
-          `Slow >${formatMs(slowMs)} (last ${Math.round(windowMs / 1000)} s)`,
-          String(window.slow),
-        ],
+        [`Failed (last ${Math.round(windowMs / 1000)} s)`, String(window.failed)],
+        [`Slow >${formatMs(slowMs)} (last ${Math.round(windowMs / 1000)} s)`, String(window.slow)],
         ["Instrumentation", bus ? "bus + patched" : "patched fetch/XHR"],
       );
 
@@ -563,8 +524,7 @@ export function createNetworkCollector(
         label: "net",
         title: "Network",
         status: totals.started === 0 ? "pending" : "ok",
-        severity:
-          window.failed > 0 ? "bad" : window.slow > 0 ? "warn" : "ok",
+        severity: window.failed > 0 ? "bad" : window.slow > 0 ? "warn" : "ok",
         display: String(window.active),
         value: window.active,
         unit: "requests",
@@ -594,5 +554,3 @@ export function createNetworkCollector(
     },
   };
 }
-
-

@@ -75,18 +75,17 @@ import type {
   ToolbarStorage,
 } from "../../core/contract";
 
-export interface FlagsOptions
-  extends Pick<
-    FlagsRuntimeOptions,
-    | "flags"
-    | "onOverride"
-    | "pollMs"
-    | "promoted"
-    | "audience"
-    | "redactOptions"
-    | "resetParam"
-    | "now"
-  > {
+export interface FlagsOptions extends Pick<
+  FlagsRuntimeOptions,
+  | "flags"
+  | "onOverride"
+  | "pollMs"
+  | "promoted"
+  | "audience"
+  | "redactOptions"
+  | "resetParam"
+  | "now"
+> {
   /** Extension id. Default `"flags"`. */
   id?: string;
   /** Bar label, used by the error chip and the panel's accessible name. Default `"Flags"`. */
@@ -197,9 +196,7 @@ export function flags(options: FlagsOptions = {}): DevToolbarExtension {
      */
     diagnostics: () => runtime.diagnostics(),
 
-    panel: () => (
-      <FlagsPanel runtime={runtime} label={label} injectStyles={injectStyles} />
-    ),
+    panel: () => <FlagsPanel runtime={runtime} label={label} injectStyles={injectStyles} />,
 
     commands: () => [
       ...perFlagCommands(),
@@ -230,9 +227,7 @@ export function flags(options: FlagsOptions = {}): DevToolbarExtension {
         group: "Flags",
         keywords: ["diagnostics", "json", "override"],
         run: async () => {
-          await writeClipboardTextOrThrow(
-            JSON.stringify(runtime.diagnostics(), null, 2),
-          );
+          await writeClipboardTextOrThrow(JSON.stringify(runtime.diagnostics(), null, 2));
         },
       },
       {
@@ -280,9 +275,7 @@ export function readStoredOverrides(
   if (resetRequested(resetParam)) return {};
   const key = `dtb:v1:${instanceId}:ext:${id}:${OVERRIDES_KEY}`;
   try {
-    const source =
-      storage ??
-      (typeof localStorage === "undefined" ? null : localStorage);
+    const source = storage ?? (typeof localStorage === "undefined" ? null : localStorage);
     if (source === null) return {};
     // A spread copy, not the internal map: `parseOverrides` returns a
     // null-prototype object so a persisted `__proto__` key round-trips as data,
@@ -303,13 +296,7 @@ export {
   resetRequested,
 } from "./runtime";
 export type { FlagsRuntime, FlagsRuntimeOptions } from "./runtime";
-export {
-  formatValue,
-  inferType,
-  matchesQuery,
-  parseValue,
-  severityFor,
-} from "./types";
+export { formatValue, inferType, matchesQuery, parseValue, severityFor } from "./types";
 export type {
   FeatureFlagDefinition,
   FlagReading,

@@ -31,10 +31,7 @@ export interface MockBusEvent<T = unknown> {
   at: number;
 }
 
-export type MockBusHandler<T = unknown> = (
-  payload: T,
-  event: MockBusEvent<T>,
-) => void;
+export type MockBusHandler<T = unknown> = (payload: T, event: MockBusEvent<T>) => void;
 
 export interface MockBus {
   clock: MockClock;
@@ -96,11 +93,7 @@ function createClock(start: number): MockClock {
     time = target;
   };
 
-  const schedule = (
-    callback: () => void,
-    delay: number,
-    interval: number | null,
-  ) => {
+  const schedule = (callback: () => void, delay: number, interval: number | null) => {
     const safeDelay = Number.isFinite(delay) && delay > 0 ? delay : 0;
     nextId += 1;
     const timer: Timer = {
@@ -147,7 +140,7 @@ export function createMockBus(options: CreateMockBusOptions = {}): MockBus {
   const anyHandlers = new Set<MockBusHandler>();
   let history: MockBusEvent[] = [];
 
-  const on = <T,>(type: string, handler: MockBusHandler<T>) => {
+  const on = <T>(type: string, handler: MockBusHandler<T>) => {
     const set = handlers.get(type) ?? new Set();
     handlers.set(type, set);
     set.add(handler as MockBusHandler<never>);
@@ -193,13 +186,9 @@ export function createMockBus(options: CreateMockBusOptions = {}): MockBus {
       };
     },
     events: (type) =>
-      type === undefined
-        ? history
-        : history.filter((event) => event.type === type),
+      type === undefined ? history : history.filter((event) => event.type === type),
     payloads<T = unknown>(type: string) {
-      return history
-        .filter((event) => event.type === type)
-        .map((event) => event.payload as T);
+      return history.filter((event) => event.type === type).map((event) => event.payload as T);
     },
     clearEvents() {
       history = [];
@@ -212,8 +201,7 @@ export function createMockBus(options: CreateMockBusOptions = {}): MockBus {
     },
     listenerCount: (type) =>
       type === undefined
-        ? [...handlers.values()].reduce((sum, set) => sum + set.size, 0) +
-          anyHandlers.size
+        ? [...handlers.values()].reduce((sum, set) => sum + set.size, 0) + anyHandlers.size
         : (handlers.get(type)?.size ?? 0),
   };
 }

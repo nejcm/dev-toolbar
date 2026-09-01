@@ -41,9 +41,7 @@ export function installToolbarLayout(
   options: InstallToolbarLayoutOptions = {},
 ): ToolbarLayoutHandle {
   if (typeof HTMLElement === "undefined") {
-    throw new Error(
-      "[dev-toolbar/testing] installToolbarLayout() needs a DOM environment.",
-    );
+    throw new Error("[dev-toolbar/testing] installToolbarLayout() needs a DOM environment.");
   }
 
   let barWidth = options.barWidth ?? 800;
@@ -54,9 +52,8 @@ export function installToolbarLayout(
 
   const observers = new Set<Observer>();
 
-  const previousResizeObserver = (
-    globalThis as { ResizeObserver?: typeof ResizeObserver }
-  ).ResizeObserver;
+  const previousResizeObserver = (globalThis as { ResizeObserver?: typeof ResizeObserver })
+    .ResizeObserver;
 
   class FakeResizeObserver implements ResizeObserver {
     private readonly entry: Observer;
@@ -78,14 +75,8 @@ export function installToolbarLayout(
     FakeResizeObserver as unknown as typeof ResizeObserver;
 
   const proto = HTMLElement.prototype;
-  const previousOffsetWidth = Object.getOwnPropertyDescriptor(
-    proto,
-    "offsetWidth",
-  );
-  const previousClientWidth = Object.getOwnPropertyDescriptor(
-    proto,
-    "clientWidth",
-  );
+  const previousOffsetWidth = Object.getOwnPropertyDescriptor(proto, "offsetWidth");
+  const previousClientWidth = Object.getOwnPropertyDescriptor(proto, "clientWidth");
   const previousRect = proto.getBoundingClientRect;
 
   const widthOf = (element: HTMLElement): number => {
@@ -112,9 +103,7 @@ export function installToolbarLayout(
     },
   });
 
-  proto.getBoundingClientRect = function getBoundingClientRect(
-    this: HTMLElement,
-  ): DOMRect {
+  proto.getBoundingClientRect = function getBoundingClientRect(this: HTMLElement): DOMRect {
     if (this.dataset["dtbPart"] !== "root") {
       return previousRect.call(this);
     }
@@ -156,11 +145,10 @@ export function installToolbarLayout(
     restore() {
       observers.clear();
       if (previousResizeObserver === undefined) {
-        delete (globalThis as { ResizeObserver?: typeof ResizeObserver })
-          .ResizeObserver;
+        delete (globalThis as { ResizeObserver?: typeof ResizeObserver }).ResizeObserver;
       } else {
-        (globalThis as { ResizeObserver?: typeof ResizeObserver })
-          .ResizeObserver = previousResizeObserver;
+        (globalThis as { ResizeObserver?: typeof ResizeObserver }).ResizeObserver =
+          previousResizeObserver;
       }
       if (previousOffsetWidth) {
         Object.defineProperty(proto, "offsetWidth", previousOffsetWidth);

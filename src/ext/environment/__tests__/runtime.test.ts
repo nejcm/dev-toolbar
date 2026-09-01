@@ -9,9 +9,7 @@ describe("maskEmails", () => {
   });
 
   it("masks every address in a sentence", () => {
-    expect(maskEmails("a@x.io and bob@y.co.uk")).toBe(
-      "a***@x.io and b***@y.co.uk",
-    );
+    expect(maskEmails("a@x.io and bob@y.co.uk")).toBe("a***@x.io and b***@y.co.uk");
   });
 
   it("leaves anything that is not an address alone", () => {
@@ -55,9 +53,7 @@ describe("the snapshot", () => {
     const snapshot = runtime.store.getSnapshot();
     expect(snapshot.supplied).toBe(false);
     expect(snapshot.kind).toBe("unknown");
-    expect(snapshot.fields.every((field) => field.source === "missing")).toBe(
-      true,
-    );
+    expect(snapshot.fields.every((field) => field.source === "missing")).toBe(true);
     expect(runtime.snapshotText()).toBe(
       "Environment: unknown — no context was supplied to environment().",
     );
@@ -72,9 +68,7 @@ describe("the snapshot", () => {
       },
     });
     const fields = runtime.store.getSnapshot().fields;
-    expect(fields.find((field) => field.id === "region")?.value).toBe(
-      "eu-central-1",
-    );
+    expect(fields.find((field) => field.id === "region")?.value).toBe("eu-central-1");
     expect(fields.find((field) => field.id === "extra:region")?.value).toBe(
       "not the deploy region",
     );
@@ -91,9 +85,7 @@ describe("the snapshot", () => {
     });
     const snapshot = runtime.store.getSnapshot();
     expect(snapshot.maskedCount).toBe(2);
-    expect(snapshot.fields.find((f) => f.id === "extra:tool")?.masked).toBe(
-      false,
-    );
+    expect(snapshot.fields.find((f) => f.id === "extra:tool")?.masked).toBe(false);
   });
 
   it("honours extra redaction keys the consumer adds", () => {
@@ -102,10 +94,9 @@ describe("the snapshot", () => {
       redactOptions: { extraKeys: ["tenantcode"] },
       context: { extra: { tenantCode: "acme-secret" } },
     });
-    expect(
-      runtime.store.getSnapshot().fields.find((f) => f.id === "extra:tenantCode")
-        ?.value,
-    ).toBe("[redacted]");
+    expect(runtime.store.getSnapshot().fields.find((f) => f.id === "extra:tenantCode")?.value).toBe(
+      "[redacted]",
+    );
   });
 
   it("stringifies a structured extra rather than printing [object Object]", () => {
@@ -113,10 +104,9 @@ describe("the snapshot", () => {
       detect: false,
       context: { extra: { limits: { rps: 20 } } },
     });
-    expect(
-      runtime.store.getSnapshot().fields.find((f) => f.id === "extra:limits")
-        ?.value,
-    ).toBe('{"rps":20}');
+    expect(runtime.store.getSnapshot().fields.find((f) => f.id === "extra:limits")?.value).toBe(
+      '{"rps":20}',
+    );
   });
 
   it("normalises builtAt to ISO, whatever shape it arrived in", () => {
@@ -126,10 +116,9 @@ describe("the snapshot", () => {
         detect: false,
         context: { builtAt: value },
       });
-      expect(
-        runtime.store.getSnapshot().fields.find((f) => f.id === "builtAt")
-          ?.value,
-      ).toBe("2026-08-28T10:04:00.000Z");
+      expect(runtime.store.getSnapshot().fields.find((f) => f.id === "builtAt")?.value).toBe(
+        "2026-08-28T10:04:00.000Z",
+      );
     }
   });
 
@@ -138,17 +127,15 @@ describe("the snapshot", () => {
       detect: false,
       context: { builtAt: "whenever" },
     });
-    expect(
-      runtime.store.getSnapshot().fields.find((f) => f.id === "builtAt")?.value,
-    ).toBe("whenever");
+    expect(runtime.store.getSnapshot().fields.find((f) => f.id === "builtAt")?.value).toBe(
+      "whenever",
+    );
   });
 
   it("keeps detected facts out entirely when detect is false", () => {
     const runtime = createEnvironmentRuntime({ detect: false });
     expect(
-      runtime.store
-        .getSnapshot()
-        .fields.filter((field) => field.source === "detected"),
+      runtime.store.getSnapshot().fields.filter((field) => field.source === "detected"),
     ).toEqual([]);
   });
 });
@@ -176,9 +163,7 @@ describe("diagnostics", () => {
       "userId",
       "extra:authorization",
     ]);
-    expect(payload.fields.find((f) => f.id === "userId")?.value).toBe(
-      "a***@b.io",
-    );
+    expect(payload.fields.find((f) => f.id === "userId")?.value).toBe("a***@b.io");
   });
 });
 
@@ -198,9 +183,7 @@ describe("nested `extra` values", () => {
         },
       },
     });
-    const field = runtime.store
-      .getSnapshot()
-      .fields.find((entry) => entry.id === "extra:user");
+    const field = runtime.store.getSnapshot().fields.find((entry) => entry.id === "extra:user");
     expect(field?.value).not.toContain("supersecret123");
     expect(field?.value).toContain("[redacted]");
     expect(field?.value).toContain("n***@example.com");
@@ -221,9 +204,7 @@ describe("nested `extra` values", () => {
     });
     expect(runtime.snapshotText()).not.toContain("supersecret123");
     expect(runtime.snapshotText()).not.toContain("SflKxwRJSMeKKF2QT4");
-    expect(JSON.stringify(runtime.diagnostics())).not.toContain(
-      "supersecret123",
-    );
+    expect(JSON.stringify(runtime.diagnostics())).not.toContain("supersecret123");
   });
 
   it("redacts a sensitive key nested inside an array", () => {
@@ -232,8 +213,7 @@ describe("nested `extra` values", () => {
       context: { extra: { grants: [{ scope: "read", apiKey: "k-99" }] } },
     });
     expect(
-      runtime.store.getSnapshot().fields.find((f) => f.id === "extra:grants")
-        ?.value,
+      runtime.store.getSnapshot().fields.find((f) => f.id === "extra:grants")?.value,
     ).not.toContain("k-99");
   });
 
@@ -244,9 +224,7 @@ describe("nested `extra` values", () => {
       detect: false,
       context: { extra: { limits: { rps: 20, burst: 40 } } },
     });
-    const field = runtime.store
-      .getSnapshot()
-      .fields.find((entry) => entry.id === "extra:limits");
+    const field = runtime.store.getSnapshot().fields.find((entry) => entry.id === "extra:limits");
     expect(field?.value).toBe('{"rps":20,"burst":40}');
     expect(field?.masked).toBe(false);
   });
@@ -259,8 +237,7 @@ describe("nested `extra` values", () => {
       context: { extra: { cyclic } },
     });
     expect(
-      runtime.store.getSnapshot().fields.find((f) => f.id === "extra:cyclic")
-        ?.value,
+      runtime.store.getSnapshot().fields.find((f) => f.id === "extra:cyclic")?.value,
     ).toContain("[circular]");
   });
 });
@@ -307,9 +284,7 @@ describe("the environment string itself", () => {
     // The loose local-part match swallows the `preview-` prefix too. Over-
     // masking here is the safe direction; leaking the address was not.
     expect(String(snapshot.kind)).toBe("p***@example.com");
-    expect(JSON.stringify(runtime.diagnostics())).not.toContain(
-      "nejc@example.com",
-    );
+    expect(JSON.stringify(runtime.diagnostics())).not.toContain("nejc@example.com");
   });
 
   it("still grades a production environment that is spelled differently", () => {
@@ -319,9 +294,7 @@ describe("the environment string itself", () => {
     });
     const snapshot = runtime.store.getSnapshot();
     expect(snapshot.severity).toBe("bad");
-    expect(
-      snapshot.fields.find((field) => field.id === "environment")?.alarming,
-    ).toBe(true);
+    expect(snapshot.fields.find((field) => field.id === "environment")?.alarming).toBe(true);
   });
 });
 
@@ -349,8 +322,7 @@ describe("staleness", () => {
           removeItem: () => {},
         },
       });
-      const route = () =>
-        runtime.store.getSnapshot().fields.find((f) => f.id === "route")?.value;
+      const route = () => runtime.store.getSnapshot().fields.find((f) => f.id === "route")?.value;
       expect(route()).toBe("/");
       history.pushState({}, "", "/acme/project/ABC");
       vi.advanceTimersByTime(600);
@@ -388,9 +360,9 @@ describe("a context that throws while being read", () => {
         context: throwingExtra(),
       });
       const snapshot = runtime.store.getSnapshot();
-      expect(
-        snapshot.fields.find((field) => field.id === "contextError")?.value,
-      ).toContain("could not be read");
+      expect(snapshot.fields.find((field) => field.id === "contextError")?.value).toContain(
+        "could not be read",
+      );
       expect(spy).toHaveBeenCalled();
     } finally {
       spy.mockRestore();
@@ -408,11 +380,9 @@ describe("a context that throws while being read", () => {
           },
         },
       });
-      expect(
-        runtime.store
-          .getSnapshot()
-          .fields.some((field) => field.id === "contextError"),
-      ).toBe(true);
+      expect(runtime.store.getSnapshot().fields.some((field) => field.id === "contextError")).toBe(
+        true,
+      );
     } finally {
       spy.mockRestore();
     }
@@ -426,9 +396,7 @@ describe("a context that throws while being read", () => {
         context: throwingExtra(),
       });
       expect(runtime.snapshotText()).toContain("could not be read");
-      expect(JSON.stringify(runtime.diagnostics())).toContain(
-        "could not be read",
-      );
+      expect(JSON.stringify(runtime.diagnostics())).toContain("could not be read");
     } finally {
       spy.mockRestore();
     }
@@ -477,9 +445,7 @@ describe("a context that throws while being read", () => {
         fields: ["environment"],
         context: { environment: "staging", ...throwingExtra() },
       });
-      expect(
-        runtime.store.getSnapshot().fields.map((field) => field.id),
-      ).toEqual(["environment"]);
+      expect(runtime.store.getSnapshot().fields.map((field) => field.id)).toEqual(["environment"]);
       expect(spy).not.toHaveBeenCalled();
     } finally {
       spy.mockRestore();
@@ -500,9 +466,10 @@ describe("a context that throws while being read", () => {
       });
       // The diagnostic row is not consumer data, so it survives the allowlist;
       // everything the allowlist dropped stays dropped.
-      expect(
-        runtime.store.getSnapshot().fields.map((field) => field.id),
-      ).toEqual(["contextError", "environment"]);
+      expect(runtime.store.getSnapshot().fields.map((field) => field.id)).toEqual([
+        "contextError",
+        "environment",
+      ]);
     } finally {
       spy.mockRestore();
     }

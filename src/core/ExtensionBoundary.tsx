@@ -19,10 +19,7 @@ interface ExtensionBoundaryState {
  * One boundary per extension slot. A throwing `compact` or `panel` degrades to
  * an error chip; the rest of the bar keeps rendering.
  */
-export class ExtensionBoundary extends Component<
-  ExtensionBoundaryProps,
-  ExtensionBoundaryState
-> {
+export class ExtensionBoundary extends Component<ExtensionBoundaryProps, ExtensionBoundaryState> {
   override state: ExtensionBoundaryState = { error: null };
 
   static getDerivedStateFromError(error: unknown): ExtensionBoundaryState {

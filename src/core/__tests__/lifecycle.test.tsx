@@ -29,12 +29,9 @@ describe("hidden extensions", () => {
       start,
     });
 
-    const { rerender, unmount } = render(
-      <DevToolbar extensions={[build(false)]} storage={null} />,
-    );
+    const { rerender, unmount } = render(<DevToolbar extensions={[build(false)]} storage={null} />);
     expect(start).toHaveBeenCalledTimes(1);
-    const signal = (start.mock.calls[0] as unknown as [{ signal: AbortSignal }])[0]
-      .signal;
+    const signal = (start.mock.calls[0] as unknown as [{ signal: AbortSignal }])[0].signal;
 
     rerender(<DevToolbar extensions={[build(true)]} storage={null} />);
     expect(dispose).toHaveBeenCalledTimes(1);
@@ -113,9 +110,7 @@ describe("hidden means absent everywhere, not just in the bar", () => {
       commands: [{ id: "restricted.copy", label: "Copy", run }],
     };
     const { toolbar, unmount } = mountRegistered(visible);
-    expect(toolbar.context().commands.map((c) => c.id)).toEqual([
-      "restricted.copy",
-    ]);
+    expect(toolbar.context().commands.map((c) => c.id)).toEqual(["restricted.copy"]);
     await expect(toolbar.runCommand("restricted.copy")).resolves.toBe(true);
     expect(run).toHaveBeenCalledTimes(1);
     unmount();
@@ -146,9 +141,7 @@ describe("extension object identity", () => {
 
   it("warns once when a started extension is rebuilt inside render", () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
-    const { rerender, unmount } = render(
-      <DevToolbar extensions={[rebuilt()]} storage={null} />,
-    );
+    const { rerender, unmount } = render(<DevToolbar extensions={[rebuilt()]} storage={null} />);
     expect(warn).not.toHaveBeenCalled();
 
     rerender(<DevToolbar extensions={[rebuilt()]} storage={null} />);
@@ -168,13 +161,9 @@ describe("extension object identity", () => {
       label: "Stable",
       start: () => () => {},
     };
-    const { rerender, unmount } = render(
-      <DevToolbar extensions={[base]} storage={null} />,
-    );
+    const { rerender, unmount } = render(<DevToolbar extensions={[base]} storage={null} />);
     // Same `start` reference: a derived object, not a rebuilt one.
-    rerender(
-      <DevToolbar extensions={[{ ...base, order: 5 }]} storage={null} />,
-    );
+    rerender(<DevToolbar extensions={[{ ...base, order: 5 }]} storage={null} />);
     expect(warn).not.toHaveBeenCalled();
     unmount();
     warn.mockRestore();
@@ -244,9 +233,7 @@ describe("start(api) ordering", () => {
       <DevToolbar enabled={false} extensions={[extension]} storage={null} />,
     );
     expect(order).toEqual([]);
-    rerender(
-      <DevToolbar enabled extensions={[extension]} storage={null} />,
-    );
+    rerender(<DevToolbar enabled extensions={[extension]} storage={null} />);
     expect(order[0]).toBe("compact");
     expect(order).toContain("start");
     unmount();

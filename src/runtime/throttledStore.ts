@@ -105,10 +105,13 @@ export function createThrottledStore<T>(
       publish();
       return;
     }
-    cancelTimer = schedule(() => {
-      cancelTimer = null;
-      publish();
-    }, Math.max(0, intervalMs - elapsed));
+    cancelTimer = schedule(
+      () => {
+        cancelTimer = null;
+        publish();
+      },
+      Math.max(0, intervalMs - elapsed),
+    );
   };
 
   return {

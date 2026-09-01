@@ -26,10 +26,7 @@ export interface BusSubscribeOptions {
 }
 
 export interface EventBus<Events extends Record<string, unknown>> {
-  emit<K extends keyof Events & string>(
-    type: K,
-    payload: Events[K],
-  ): BusEvent<Events[K]>;
+  emit<K extends keyof Events & string>(type: K, payload: Events[K]): BusEvent<Events[K]>;
   on<K extends keyof Events & string>(
     type: K,
     handler: BusHandler<Events[K]>,
@@ -66,18 +63,15 @@ const defaultNow = (): number =>
     ? performance.now()
     : Date.now();
 
-export function createEventBus<
-  Events extends Record<string, unknown> = Record<string, unknown>,
->(options: CreateEventBusOptions = {}): EventBus<Events> {
+export function createEventBus<Events extends Record<string, unknown> = Record<string, unknown>>(
+  options: CreateEventBusOptions = {},
+): EventBus<Events> {
   const { now = defaultNow } = options;
   const onError =
     options.onError ??
     ((error: unknown, event: BusEvent) => {
       // eslint-disable-next-line no-console
-      console.error(
-        `[dev-toolbar/runtime] a "${event.type}" handler threw.`,
-        error,
-      );
+      console.error(`[dev-toolbar/runtime] a "${event.type}" handler threw.`, error);
     });
 
   const handlers = new Map<string, Set<BusHandler<never>>>();

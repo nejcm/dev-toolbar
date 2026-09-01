@@ -186,10 +186,7 @@ const FUNCTIONAL = /^(?:calc|clamp|min|max|var|env|round)\s*\(/i;
  * `undefined` rather than a coerced fallback, for `/ext/flags`' reason
  * (§12.4): a refused edit is recoverable and a silently corrected one is not.
  */
-export function checkTokenValue(
-  type: TokenType,
-  raw: string,
-): ValueRefusal | null {
+export function checkTokenValue(type: TokenType, raw: string): ValueRefusal | null {
   const value = raw.trim();
   if (value === "") return "empty";
   if (value.length > MAX_VALUE_LENGTH) return "too-long";
@@ -200,10 +197,7 @@ export function checkTokenValue(
   return null;
 }
 
-export function describeValueRefusal(
-  refusal: ValueRefusal,
-  type: TokenType,
-): string {
+export function describeValueRefusal(refusal: ValueRefusal, type: TokenType): string {
   switch (refusal) {
     case "empty":
       return "nothing was typed — clear the override instead if that is what you meant.";
@@ -467,17 +461,11 @@ export function parseRecipe(raw: string): RecipeParse {
     };
   }
   const rawOverrides = candidate["overrides"];
-  if (
-    rawOverrides === null ||
-    typeof rawOverrides !== "object" ||
-    Array.isArray(rawOverrides)
-  ) {
+  if (rawOverrides === null || typeof rawOverrides !== "object" || Array.isArray(rawOverrides)) {
     return { recipe: null, error: "the recipe has no `overrides` object." };
   }
   const overrides: Record<string, string> = {};
-  for (const [name, value] of Object.entries(
-    rawOverrides as Record<string, unknown>,
-  )) {
+  for (const [name, value] of Object.entries(rawOverrides as Record<string, unknown>)) {
     if (typeof value !== "string") continue;
     // `Object.defineProperty`, not assignment: an override literally called
     // `__proto__` must round-trip as data. `/runtime`'s `redact()` learned this
@@ -495,18 +483,10 @@ export function parseRecipe(raw: string): RecipeParse {
       schemaVersion: RECIPE_SCHEMA_VERSION,
       name: typeof candidate["name"] === "string" ? candidate["name"] : "Theme",
       mode: mode === "dark" ? "dark" : "light",
-      surface:
-        typeof candidate["surface"] === "string"
-          ? candidate["surface"]
-          : DEFAULT_SURFACE.id,
+      surface: typeof candidate["surface"] === "string" ? candidate["surface"] : DEFAULT_SURFACE.id,
       overrides,
-      createdAt:
-        typeof candidate["createdAt"] === "string"
-          ? candidate["createdAt"]
-          : "",
-      ...(typeof candidate["createdBy"] === "string"
-        ? { createdBy: candidate["createdBy"] }
-        : {}),
+      createdAt: typeof candidate["createdAt"] === "string" ? candidate["createdAt"] : "",
+      ...(typeof candidate["createdBy"] === "string" ? { createdBy: candidate["createdBy"] } : {}),
     },
     error: null,
   };

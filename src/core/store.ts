@@ -1,8 +1,4 @@
-import type {
-  DevToolbarExtension,
-  ToolbarPosition,
-  ToolbarStorage,
-} from "./contract";
+import type { DevToolbarExtension, ToolbarPosition, ToolbarStorage } from "./contract";
 import { readJson, writeJson } from "./storage";
 
 export const MIN_PANEL_HEIGHT = 160;
@@ -45,8 +41,7 @@ export interface ToolbarStore {
   register(extension: DevToolbarExtension): () => void;
 }
 
-const isBoolean = (value: unknown): value is boolean =>
-  typeof value === "boolean";
+const isBoolean = (value: unknown): value is boolean => typeof value === "boolean";
 const isPosition = (value: unknown): value is ToolbarPosition =>
   value === "bottom" || value === "top";
 const isNumber = (value: unknown): value is number =>
@@ -63,12 +58,7 @@ export function createToolbarStore(options: ToolbarStoreOptions): ToolbarStore {
   const { storage } = options;
 
   let state: ToolbarState = {
-    visible: readJson(
-      storage,
-      STORAGE_KEYS.visible,
-      options.defaultVisible ?? true,
-      isBoolean,
-    ),
+    visible: readJson(storage, STORAGE_KEYS.visible, options.defaultVisible ?? true, isBoolean),
     position: readJson(
       storage,
       STORAGE_KEYS.position,
@@ -162,10 +152,7 @@ export function createToolbarStore(options: ToolbarStoreOptions): ToolbarStore {
   const register = (extension: DevToolbarExtension) => {
     state = {
       ...state,
-      registered: [
-        ...state.registered.filter((item) => item.id !== extension.id),
-        extension,
-      ],
+      registered: [...state.registered.filter((item) => item.id !== extension.id), extension],
     };
     emit();
     return () => {

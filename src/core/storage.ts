@@ -12,9 +12,7 @@ export function createNullStorage(): ToolbarStorage {
 }
 
 /** In-memory adapter. Handy in tests and non-browser hosts. */
-export function createMemoryStorage(
-  seed?: Record<string, string>,
-): ToolbarStorage {
+export function createMemoryStorage(seed?: Record<string, string>): ToolbarStorage {
   const map = new Map<string, string>(Object.entries(seed ?? {}));
   return {
     getItem: (key) => (map.has(key) ? (map.get(key) as string) : null),
@@ -68,10 +66,7 @@ export function createLocalStorage(): ToolbarStorage {
 }
 
 /** Prefixes every key of `base`. Used for instance and per-extension scoping. */
-export function createScopedStorage(
-  base: ToolbarStorage,
-  prefix: string,
-): ToolbarStorage {
+export function createScopedStorage(base: ToolbarStorage, prefix: string): ToolbarStorage {
   const scope = (key: string) => `${prefix}${key}`;
   return {
     getItem: (key) => base.getItem(scope(key)),
@@ -81,10 +76,7 @@ export function createScopedStorage(
 }
 
 /** `dtb:v1:<instanceId>:` scope for core preferences. */
-export function createInstanceStorage(
-  base: ToolbarStorage,
-  instanceId: string,
-): ToolbarStorage {
+export function createInstanceStorage(base: ToolbarStorage, instanceId: string): ToolbarStorage {
   return createScopedStorage(base, `${STORAGE_PREFIX}:${instanceId}:`);
 }
 
@@ -94,16 +86,11 @@ export function createExtensionStorage(
   instanceId: string,
   extensionId: string,
 ): ToolbarStorage {
-  return createScopedStorage(
-    base,
-    `${STORAGE_PREFIX}:${instanceId}:ext:${extensionId}:`,
-  );
+  return createScopedStorage(base, `${STORAGE_PREFIX}:${instanceId}:ext:${extensionId}:`);
 }
 
 /** Resolves the `storage` prop: `undefined` → localStorage, `null` → disabled. */
-export function resolveStorage(
-  storage: ToolbarStorage | null | undefined,
-): ToolbarStorage {
+export function resolveStorage(storage: ToolbarStorage | null | undefined): ToolbarStorage {
   if (storage === null) return createNullStorage();
   return storage ?? createLocalStorage();
 }
@@ -131,11 +118,7 @@ export function readJson<T>(
   }
 }
 
-export function writeJson(
-  storage: ToolbarStorage,
-  key: string,
-  value: unknown,
-): void {
+export function writeJson(storage: ToolbarStorage, key: string, value: unknown): void {
   try {
     storage.setItem(key, JSON.stringify(value));
   } catch {

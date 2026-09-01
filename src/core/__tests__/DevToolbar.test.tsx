@@ -17,10 +17,7 @@ const panelExtension = (
   id,
   label: id,
   compact: ({ isPanelOpen, openPanel, closePanel }) => (
-    <button
-      type="button"
-      onClick={() => (isPanelOpen ? closePanel() : openPanel())}
-    >
+    <button type="button" onClick={() => (isPanelOpen ? closePanel() : openPanel())}>
       {id}
     </button>
   ),
@@ -68,9 +65,7 @@ describe("DevToolbar rendering", () => {
       </DevToolbar>,
     );
 
-    expect(container.innerHTML).toBe(
-      '<main data-testid="app">app</main>',
-    );
+    expect(container.innerHTML).toBe('<main data-testid="app">app</main>');
     const root = document.body.querySelector("[data-dev-toolbar]");
     expect(root).not.toBeNull();
     expect(root!.parentElement).toBe(document.body);
@@ -98,9 +93,7 @@ describe("DevToolbar rendering", () => {
         <div />
       </DevToolbar>,
     );
-    expect(
-      document.head.querySelectorAll("style[data-dev-toolbar-styles]").length,
-    ).toBe(1);
+    expect(document.head.querySelectorAll("style[data-dev-toolbar-styles]").length).toBe(1);
     first.unmount();
 
     document.head
@@ -111,19 +104,14 @@ describe("DevToolbar rendering", () => {
         <div />
       </DevToolbar>,
     );
-    expect(
-      document.head.querySelectorAll("style[data-dev-toolbar-styles]").length,
-    ).toBe(0);
+    expect(document.head.querySelectorAll("style[data-dev-toolbar-styles]").length).toBe(0);
   });
 });
 
 describe("panels", () => {
   it("keeps a single panel open at a time", () => {
     render(
-      <DevToolbar
-        instanceId="t"
-        extensions={[panelExtension("a"), panelExtension("b")]}
-      >
+      <DevToolbar instanceId="t" extensions={[panelExtension("a"), panelExtension("b")]}>
         <div />
       </DevToolbar>,
     );
@@ -142,10 +130,7 @@ describe("panels", () => {
     render(
       <DevToolbar
         instanceId="t"
-        extensions={[
-          panelExtension("plain"),
-          panelExtension("sticky", { keepMounted: true }),
-        ]}
+        extensions={[panelExtension("plain"), panelExtension("sticky", { keepMounted: true })]}
       >
         <div />
       </DevToolbar>,
@@ -187,18 +172,14 @@ describe("panel resize", () => {
       fireEvent(window, pointer("pointermove", clientY));
     }
 
-    const writesDuringDrag = setItem.mock.calls.filter(
-      (call) => call[0] === key,
-    ).length;
+    const writesDuringDrag = setItem.mock.calls.filter((call) => call[0] === key).length;
     expect(writesDuringDrag).toBe(0);
     // The panel still tracks the drag live.
     const panel = document.querySelector('[data-dtb-part="panel"]') as HTMLElement;
     expect(panel.style.getPropertyValue("--dtb-panel-height")).toBe("360px");
 
     fireEvent(window, pointer("pointerup", 460));
-    expect(
-      setItem.mock.calls.filter((call) => call[0] === key).length,
-    ).toBe(1);
+    expect(setItem.mock.calls.filter((call) => call[0] === key).length).toBe(1);
     expect(window.localStorage.getItem(key)).toBe("360");
 
     setItem.mockRestore();
@@ -221,9 +202,7 @@ describe("error containment", () => {
       </DevToolbar>,
     );
 
-    const chip = document.querySelector(
-      '[data-dtb-part="error-chip"][data-dtb-ext-id="boom"]',
-    );
+    const chip = document.querySelector('[data-dtb-part="error-chip"][data-dtb-ext-id="boom"]');
     expect(chip).not.toBeNull();
     expect(chip!.getAttribute("title")).toBe("compact exploded");
     expect(screen.getByRole("button", { name: "ok" })).toBeTruthy();
@@ -252,9 +231,7 @@ describe("error containment", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "boom" }));
     expect(
-      document.querySelector(
-        '[data-dtb-part="error-chip"][data-dtb-slot="panel"]',
-      ),
+      document.querySelector('[data-dtb-part="error-chip"][data-dtb-slot="panel"]'),
     ).not.toBeNull();
     expect(screen.getByRole("button", { name: "ok" })).toBeTruthy();
   });
@@ -302,12 +279,8 @@ describe("persistence", () => {
     fireEvent.click(screen.getByRole("button", { name: "move" }));
     fireEvent.click(screen.getByRole("button", { name: "a" }));
 
-    expect(
-      window.localStorage.getItem(`${STORAGE_PREFIX}:persist:position`),
-    ).toBe('"top"');
-    expect(
-      window.localStorage.getItem(`${STORAGE_PREFIX}:persist:activePanel`),
-    ).toBe('"a"');
+    expect(window.localStorage.getItem(`${STORAGE_PREFIX}:persist:position`)).toBe('"top"');
+    expect(window.localStorage.getItem(`${STORAGE_PREFIX}:persist:activePanel`)).toBe('"a"');
   });
 
   it("writes nothing when storage={null}", () => {
@@ -320,9 +293,7 @@ describe("persistence", () => {
     fireEvent.click(screen.getByRole("button", { name: "a" }));
     fireToggleShortcut();
 
-    const keys = Object.keys(window.localStorage).filter((key) =>
-      key.startsWith(STORAGE_PREFIX),
-    );
+    const keys = Object.keys(window.localStorage).filter((key) => key.startsWith(STORAGE_PREFIX));
     expect(keys).toEqual([]);
   });
 });
@@ -432,17 +403,13 @@ describe("lifecycle", () => {
       <DevToolbar
         instanceId="t"
         enabled={false}
-        extensions={[
-          { id: "old", label: "Old", contractVersion: CONTRACT_VERSION + 1 },
-        ]}
+        extensions={[{ id: "old", label: "Old", contractVersion: CONTRACT_VERSION + 1 }]}
       >
         <div />
       </DevToolbar>,
     );
 
-    expect(
-      document.documentElement.style.getPropertyValue("--dev-toolbar-height"),
-    ).toBe("");
+    expect(document.documentElement.style.getPropertyValue("--dev-toolbar-height")).toBe("");
     expect(warn).not.toHaveBeenCalled();
   });
 
@@ -455,9 +422,7 @@ describe("lifecycle", () => {
         <div />
       </DevToolbar>,
     );
-    expect(
-      window.localStorage.getItem(`${STORAGE_PREFIX}:inst:ext:e:k`),
-    ).toBe("v");
+    expect(window.localStorage.getItem(`${STORAGE_PREFIX}:inst:ext:e:k`)).toBe("v");
   });
 });
 
@@ -472,9 +437,7 @@ describe("commands and dynamic registration", () => {
     render(
       <DevToolbar
         instanceId="t"
-        extensions={[
-          { id: "a", label: "A", commands: [{ id: "a.run", label: "Run", run }] },
-        ]}
+        extensions={[{ id: "a", label: "A", commands: [{ id: "a.run", label: "Run", run }] }]}
       >
         <Commands />
       </DevToolbar>,
@@ -505,9 +468,7 @@ describe("commands and dynamic registration", () => {
         <Register />
       </DevToolbar>,
     );
-    expect(
-      document.querySelector('[data-dtb-ext-id="dyn"]'),
-    ).not.toBeNull();
+    expect(document.querySelector('[data-dtb-ext-id="dyn"]')).not.toBeNull();
 
     view.unmount();
   });

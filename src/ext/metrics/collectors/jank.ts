@@ -40,9 +40,7 @@ export interface JankCollectorOptions {
   thresholds?: Thresholds;
 }
 
-export function createJankCollector(
-  options: JankCollectorOptions = {},
-): Collector {
+export function createJankCollector(options: JankCollectorOptions = {}): Collector {
   const {
     windowMs = 5000,
     frameMs = 1000 / 60,
@@ -54,8 +52,7 @@ export function createJankCollector(
   const frames = createRingBuffer<Frame>(historySize);
   const series = createTimeSeries(120);
   const supported =
-    typeof requestAnimationFrame === "function" &&
-    typeof cancelAnimationFrame === "function";
+    typeof requestAnimationFrame === "function" && typeof cancelAnimationFrame === "function";
   let worstFrame = 0;
   let discarded = 0;
 
@@ -89,8 +86,7 @@ export function createJankCollector(
     ...(supported
       ? {}
       : {
-          unsupportedReason:
-            "requestAnimationFrame is unavailable, so frames cannot be timed.",
+          unsupportedReason: "requestAnimationFrame is unavailable, so frames cannot be timed.",
         }),
     series,
     start(context: CollectorContext) {
@@ -106,8 +102,7 @@ export function createJankCollector(
           const delta = timestamp - previous;
           // A backgrounded tab, a sleeping machine or a throttled timer: not
           // a dropped frame, an absent one.
-          const hidden =
-            typeof document !== "undefined" && document.visibilityState === "hidden";
+          const hidden = typeof document !== "undefined" && document.visibilityState === "hidden";
           if (delta > idleGapMs || hidden) {
             discarded += 1;
           } else {

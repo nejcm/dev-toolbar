@@ -34,9 +34,7 @@ const storage = () => {
   };
 };
 
-type Roster =
-  | readonly ExtensionDiagnostics[]
-  | (() => readonly ExtensionDiagnostics[]);
+type Roster = readonly ExtensionDiagnostics[] | (() => readonly ExtensionDiagnostics[]);
 
 /** A minimal `ExtensionRuntimeApi` with a controllable diagnostics roster. */
 const api = (roster: Roster = []): ExtensionRuntimeApi => ({
@@ -160,10 +158,7 @@ describe("redaction on the way in", () => {
     // put a real query on `location`.
     const original = `${location.pathname}${location.search}${location.hash}`;
     history.replaceState({}, "", "/cb?access_token=leaky&page=2");
-    const referrer = Object.getOwnPropertyDescriptor(
-      Document.prototype,
-      "referrer",
-    );
+    const referrer = Object.getOwnPropertyDescriptor(Document.prototype, "referrer");
     Object.defineProperty(document, "referrer", {
       configurable: true,
       get: () => "https://idp.test/authorize?client_secret=also-leaky",
@@ -226,9 +221,7 @@ describe("redaction on the way in", () => {
     expect(snapshot.responsiveness.longTasks.count).toBe(1);
     expect(json).not.toContain("abcdefghijklmnop");
     expect(json).not.toContain("super-secret");
-    expect(snapshot.responsiveness.longTasks.worst?.attribution).toContain(
-      "Bearer [redacted]",
-    );
+    expect(snapshot.responsiveness.longTasks.worst?.attribution).toContain("Bearer [redacted]");
     stop();
   });
 
@@ -261,9 +254,7 @@ describe("redaction on the way in", () => {
     expect(find(snapshot, "net")?.error).toBe(
       "Error: https://api.test/refresh?refresh_token=%5Bredacted%5D",
     );
-    expect(snapshot.omissions[0]?.reason).toContain(
-      "refresh_token=%5Bredacted%5D",
-    );
+    expect(snapshot.omissions[0]?.reason).toContain("refresh_token=%5Bredacted%5D");
     stop();
   });
 
@@ -298,9 +289,7 @@ describe("redaction on the way in", () => {
     expect(corpus).not.toContain("roster-name-LEAK");
     expect(corpus).not.toContain("aaaaaaaa.bbbbbbbb.cccccccc");
     expect(find(snapshot, "net")?.error).toBe("Bearer [redacted]: boom");
-    expect(snapshot.omissions.find((o) => o.id === "app")?.reason).toContain(
-      "[redacted]: nope",
-    );
+    expect(snapshot.omissions.find((o) => o.id === "app")?.reason).toContain("[redacted]: nope");
     // An ordinary name is left alone, or every report would be unreadable.
     stop();
   });
@@ -342,9 +331,7 @@ describe("redaction on the way in", () => {
     expect(find(snapshot, "router")?.error).toBe(
       "TypeError: https://api.test/x?access_token=%5Bredacted%5D",
     );
-    expect(
-      snapshot.omissions.map((entry) => entry.id).sort(),
-    ).toEqual(["app", "router"]);
+    expect(snapshot.omissions.map((entry) => entry.id).sort()).toEqual(["app", "router"]);
     for (const omission of snapshot.omissions) {
       expect(omission.reason).toContain("access_token=%5Bredacted%5D");
     }
@@ -358,9 +345,7 @@ describe("redaction on the way in", () => {
         throw new Error("https://api.test/x?client_secret=WALK-LEAK");
       },
     };
-    const { runtime, stop } = started({}, [
-      { id: "g", label: "G", status: "ok", data: hostile },
-    ]);
+    const { runtime, stop } = started({}, [{ id: "g", label: "G", status: "ok", data: hostile }]);
     const snapshot = runtime.capture();
 
     expect(renderJson(snapshot)).not.toContain("WALK-LEAK");
@@ -416,9 +401,7 @@ describe("redaction on the way in", () => {
       configurable: true,
       writable: true,
     });
-    const { runtime, stop } = started({}, [
-      { id: "p", label: "P", status: "ok", data: raw },
-    ]);
+    const { runtime, stop } = started({}, [{ id: "p", label: "P", status: "ok", data: raw }]);
     expect(renderJson(runtime.capture())).toContain("kept");
     stop();
   });
@@ -505,7 +488,7 @@ describe("redaction on the way in", () => {
     stop();
   });
 
-  it("honours a custom mask and extraKeys", () =>{
+  it("honours a custom mask and extraKeys", () => {
     const { runtime, stop } = started(
       { redactOptions: { mask: "██", extraKeys: ["favouritecolour"] } },
       [
@@ -549,17 +532,13 @@ describe("omissions are visible", () => {
     // Both output formats say so, and the Markdown says it *before* the data.
     const markdown = renderMarkdown(snapshot);
     expect(markdown).toContain("Incomplete — 1 thing could not be included");
-    expect(markdown.indexOf("Incomplete")).toBeLessThan(
-      markdown.indexOf("## Page"),
-    );
+    expect(markdown.indexOf("Incomplete")).toBeLessThan(markdown.indexOf("## Page"));
     expect(renderJson(snapshot)).toContain('"omissions"');
     stop();
   });
 
   it("lists an extension that contributed nothing rather than dropping it", () => {
-    const { runtime, stop } = started({}, [
-      { id: "quiet", label: "Quiet", status: "absent" },
-    ]);
+    const { runtime, stop } = started({}, [{ id: "quiet", label: "Quiet", status: "absent" }]);
     const snapshot = runtime.capture();
     expect(find(snapshot, "quiet")?.status).toBe("absent");
     expect(snapshot.omissions[0]?.reason).toContain("declares no diagnostics()");
@@ -590,9 +569,7 @@ describe("omissions are visible", () => {
         throw new Error("getter exploded");
       },
     };
-    const { runtime, stop } = started({}, [
-      { id: "g", label: "G", status: "ok", data: hostile },
-    ]);
+    const { runtime, stop } = started({}, [{ id: "g", label: "G", status: "ok", data: hostile }]);
     const snapshot = runtime.capture();
     expect(find(snapshot, "g")?.status).toBe("failed");
     expect(find(snapshot, "g")?.error).toContain("redacting it threw");
@@ -603,9 +580,7 @@ describe("omissions are visible", () => {
   it("turns a cycle into a tag rather than a serialisation failure", () => {
     const cyclic: Record<string, unknown> = { name: "loop" };
     cyclic["self"] = cyclic;
-    const { runtime, stop } = started({}, [
-      { id: "c", label: "C", status: "ok", data: cyclic },
-    ]);
+    const { runtime, stop } = started({}, [{ id: "c", label: "C", status: "ok", data: cyclic }]);
     const snapshot = runtime.capture();
     expect(find(snapshot, "c")?.status).toBe("ok");
     expect(renderJson(snapshot)).toContain("[circular]");
@@ -613,9 +588,7 @@ describe("omissions are visible", () => {
   });
 
   it("treats a contributor that returned undefined as absent, not as ok", () => {
-    const { runtime, stop } = started({}, [
-      { id: "u", label: "U", status: "ok", data: undefined },
-    ]);
+    const { runtime, stop } = started({}, [{ id: "u", label: "U", status: "ok", data: undefined }]);
     const snapshot = runtime.capture();
     expect(find(snapshot, "u")?.status).toBe("absent");
     expect(snapshot.omissions).toHaveLength(1);
@@ -640,9 +613,9 @@ describe("omissions are visible", () => {
     const snapshot = runtime.capture();
     expect(snapshot.toolbar.gathered).toBe(false);
     expect(snapshot.omissions.some((entry) => entry.id === "*")).toBe(true);
-    expect(
-      snapshot.contributions.find((entry) => entry.id === "*")?.error,
-    ).toContain("core's getDiagnostics() threw");
+    expect(snapshot.contributions.find((entry) => entry.id === "*")?.error).toContain(
+      "core's getDiagnostics() threw",
+    );
     stop();
   });
 
@@ -688,10 +661,7 @@ describe("app context and sources", () => {
     // First, not merely present: the app context is the section a reader looks
     // for before anything else, so its absence leads the list. That needs at
     // least one other omission to mean anything.
-    expect(snapshot.omissions.map((entry) => entry.id)).toEqual([
-      "app",
-      "quiet",
-    ]);
+    expect(snapshot.omissions.map((entry) => entry.id)).toEqual(["app", "quiet"]);
     expect(snapshot.omissions[0]?.reason).toContain("no session yet");
     expect(renderMarkdown(snapshot)).not.toContain("## App context");
     stop();
@@ -791,9 +761,7 @@ describe("app context and sources", () => {
     const snapshot = captured[0] as DiagnosticSnapshot;
     expect(snapshot.omissions[0]?.label).toBe("The whole snapshot");
     expect(snapshot.responsiveness.longTasks.support).toBe("failed");
-    expect(snapshot.responsiveness.longTasks.note).toContain(
-      "could not be read",
-    );
+    expect(snapshot.responsiveness.longTasks.note).toContain("could not be read");
     expect(snapshot.responsiveness.longTasks.count).toBeNull();
     expect(renderMarkdown(snapshot)).toContain("Incomplete");
     expect(error).toHaveBeenCalled();
@@ -846,9 +814,7 @@ describe("app context and sources", () => {
 
 describe("output", () => {
   it("says it is complete, with a count, when nothing was omitted", () => {
-    const { runtime, stop } = started({}, [
-      { id: "a", label: "A", status: "ok", data: 1 },
-    ]);
+    const { runtime, stop } = started({}, [{ id: "a", label: "A", status: "ok", data: 1 }]);
     const markdown = renderMarkdown(runtime.capture());
     expect(markdown).toContain("Complete: 1 of 1 contributions included.");
     expect(markdown).not.toContain("Incomplete");
@@ -950,12 +916,8 @@ describe("output", () => {
     const { runtime, stop } = started();
     const snapshot = runtime.capture();
     const stamp = snapshot.generatedAt.replace(/[:.]/g, "-");
-    expect(runtime.filename("json")).toBe(
-      `dev-toolbar-diagnostics-${stamp}.json`,
-    );
-    expect(runtime.filename("markdown")).toBe(
-      `dev-toolbar-diagnostics-${stamp}.md`,
-    );
+    expect(runtime.filename("json")).toBe(`dev-toolbar-diagnostics-${stamp}.json`);
+    expect(runtime.filename("markdown")).toBe(`dev-toolbar-diagnostics-${stamp}.md`);
     // Stable across calls, because it reads the captured snapshot rather than
     // the clock: a filename that moved between the button and the toast would
     // make the download unfindable.
@@ -970,9 +932,7 @@ describe("output", () => {
         writeText: async (text: string) => void writes.push(text),
       },
     });
-    const { runtime, stop } = started({}, [
-      { id: "a", label: "A", status: "ok", data: { n: 1 } },
-    ]);
+    const { runtime, stop } = started({}, [{ id: "a", label: "A", status: "ok", data: { n: 1 } }]);
     runtime.capture();
     await expect(runtime.copy("markdown")).resolves.toBe(true);
     expect(writes[0]).toBe(runtime.render("markdown"));
@@ -1039,8 +999,7 @@ describe("startDownload", () => {
   it("clicks an anchor it appends and removes, and defers revocation", () => {
     const created: string[] = [];
     const revoked: string[] = [];
-    let clicked: { href: string; download: string; inDocument: boolean } | null =
-      null;
+    let clicked: { href: string; download: string; inDocument: boolean } | null = null;
     vi.stubGlobal("URL", {
       ...URL,
       createObjectURL: (blob: Blob) => {

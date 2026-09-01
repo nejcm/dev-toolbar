@@ -10,11 +10,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { CONTRACT_VERSION, DevToolbarInset } from "@nejcm/dev-toolbar";
 import type { DevToolbarExtension } from "@nejcm/dev-toolbar";
-import {
-  createMockBus,
-  makeExtension,
-  renderWithToolbar,
-} from "@nejcm/dev-toolbar/testing";
+import { createMockBus, makeExtension, renderWithToolbar } from "@nejcm/dev-toolbar/testing";
 
 describe("@nejcm/dev-toolbar/testing", () => {
   it("renders an extension the way its author would test it", () => {
@@ -69,10 +65,7 @@ describe("@nejcm/dev-toolbar/testing", () => {
     });
 
     const { toolbar, unmount } = renderWithToolbar(<div>App</div>, {
-      extensions: [
-        myExtension,
-        makeExtension({ id: "pinned", label: "Pinned", priority: 100 }),
-      ],
+      extensions: [myExtension, makeExtension({ id: "pinned", label: "Pinned", priority: 100 })],
       layout: { barWidth: 600, itemWidth: 80 },
     });
 
@@ -129,9 +122,7 @@ describe("@nejcm/dev-toolbar/testing", () => {
     );
 
     expect(toolbar.height()).toBe("30px");
-    const inset = container.querySelector<HTMLElement>(
-      '[data-dtb-part="inset"]',
-    );
+    const inset = container.querySelector<HTMLElement>('[data-dtb-part="inset"]');
     expect(inset?.style.paddingBottom).toBe("var(--dev-toolbar-height, 0px)");
 
     toolbar.setVisible(false);
@@ -158,9 +149,7 @@ describe("@nejcm/dev-toolbar/testing", () => {
     first.toolbar.setPanelHeight(420);
     first.unmount();
 
-    expect([...map.keys()].every((key) => key.startsWith("dtb:v1:app:"))).toBe(
-      true,
-    );
+    expect([...map.keys()].every((key) => key.startsWith("dtb:v1:app:"))).toBe(true);
 
     const second = renderWithToolbar(null, {
       storage,

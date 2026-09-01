@@ -12,10 +12,7 @@ describe("ensureStyleSheet", () => {
     const first = ensureStyleSheet("test-entry", ".a{color:red}");
     const second = ensureStyleSheet("test-entry", ".a{color:blue}");
     expect(first).toBe(second);
-    expect(
-      document.head.querySelectorAll(`style[${STYLE_ATTRIBUTE}="test-entry"]`)
-        .length,
-    ).toBe(1);
+    expect(document.head.querySelectorAll(`style[${STYLE_ATTRIBUTE}="test-entry"]`).length).toBe(1);
     // The DOM is the source of truth, so the first writer wins — a second
     // bundled copy of a package must not restyle the page underneath the first.
     expect(first?.textContent).toBe(".a{color:red}");

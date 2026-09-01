@@ -20,8 +20,7 @@ interface PerformanceMemory {
 export function readPerformanceMemory(
   source: unknown = typeof performance === "undefined" ? undefined : performance,
 ): PerformanceMemory | null {
-  const memory = (source as { memory?: Partial<PerformanceMemory> } | undefined)
-    ?.memory;
+  const memory = (source as { memory?: Partial<PerformanceMemory> } | undefined)?.memory;
   if (!memory) return null;
   const { usedJSHeapSize, totalJSHeapSize, jsHeapSizeLimit } = memory;
   if (
@@ -50,9 +49,7 @@ export interface MemoryCollectorOptions {
 
 const GROWTH_MIN_SAMPLES = 5;
 
-export function createMemoryCollector(
-  options: MemoryCollectorOptions = {},
-): Collector {
+export function createMemoryCollector(options: MemoryCollectorOptions = {}): Collector {
   const {
     sampleMs = 2000,
     historySize = 90,
@@ -139,9 +136,7 @@ export function createMemoryCollector(
       const ratio = latest.usedJSHeapSize / latest.jsHeapSizeLimit;
       const growing = sustainedGrowth(now);
       const baseline = series.valueAt(now - growthWindowMs);
-      const change = Number.isFinite(baseline)
-        ? latest.usedJSHeapSize - baseline
-        : Number.NaN;
+      const change = Number.isFinite(baseline) ? latest.usedJSHeapSize - baseline : Number.NaN;
 
       detail.push(
         ["Used JS heap", formatBytes(latest.usedJSHeapSize, 1)],

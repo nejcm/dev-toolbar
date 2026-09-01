@@ -222,8 +222,8 @@ describe("attack 2 — storage is a door, and it was the one under-treated", () 
     // Door 3: a consumer preset, through the same sanitiser.
     // Door 4: storage, read at start() above.
     const reserved = Object.keys(runtime.overrides()).filter(
-      (name) => name.toLowerCase().startsWith("--dtb-") ||
-        name.toLowerCase().startsWith("--dev-toolbar"),
+      (name) =>
+        name.toLowerCase().startsWith("--dtb-") || name.toLowerCase().startsWith("--dev-toolbar"),
     );
     expect(reserved).toEqual([]);
     // And nothing reserved is on the element either.
@@ -237,10 +237,7 @@ describe("attack 2 — storage is a door, and it was the one under-treated", () 
     // orphan is the developer's own work and gets a row so it can be cleared
     // (§12.4). It is the value that is foreign, not the name.
     const storage = createMemoryStorage();
-    storage.setItem(
-      OVERRIDES_KEY,
-      JSON.stringify({ "--renamed": "#00ff00", "--x": HOSTILE }),
-    );
+    storage.setItem(OVERRIDES_KEY, JSON.stringify({ "--renamed": "#00ff00", "--x": HOSTILE }));
     const runtime = createThemeEditorRuntime({
       tokens: [{ name: "--x", type: "color", value: "#fff" }],
     });
@@ -248,10 +245,9 @@ describe("attack 2 — storage is a door, and it was the one under-treated", () 
 
     expect(runtime.overrides()).toEqual({ "--renamed": "#00ff00" });
     expect(root().style.getPropertyValue("--renamed")).toBe("#00ff00");
-    expect(
-      runtime.store.peek().tokens.find((view) => view.name === "--renamed")
-        ?.orphaned,
-    ).toBe(true);
+    expect(runtime.store.peek().tokens.find((view) => view.name === "--renamed")?.orphaned).toBe(
+      true,
+    );
   });
 });
 

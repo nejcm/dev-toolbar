@@ -78,8 +78,7 @@ export interface RedactOptions {
   values?: boolean;
 }
 
-const normalise = (key: string): string =>
-  key.toLowerCase().replace(/[-_.\s]/g, "");
+const normalise = (key: string): string => key.toLowerCase().replace(/[-_.\s]/g, "");
 
 interface ResolvedOptions {
   keys: string[];
@@ -103,10 +102,7 @@ function resolve(options: RedactOptions | undefined): ResolvedOptions {
 }
 
 /** True when a key name should have its value masked. Exported for reuse. */
-export function isSensitiveKey(
-  key: string,
-  options?: RedactOptions,
-): boolean {
+export function isSensitiveKey(key: string, options?: RedactOptions): boolean {
   const resolved = resolve(options);
   return matches(key, resolved);
 }
@@ -159,11 +155,7 @@ function redactString(value: string, resolved: ResolvedOptions): string {
  * ignores it), but a value replaced by a lie is exactly what this module exists
  * to prevent. `/ext/flags` made it observable; `/ext/environment` had it too.
  */
-function define(
-  target: Record<string, unknown>,
-  key: string,
-  value: unknown,
-): void {
+function define(target: Record<string, unknown>, key: string, value: unknown): void {
   Object.defineProperty(target, key, {
     value,
     writable: true,
@@ -239,9 +231,7 @@ function walk(
     define(
       output,
       key,
-      matches(key, resolved)
-        ? resolved.mask
-        : walk(entry, resolved, depth + 1, seen),
+      matches(key, resolved) ? resolved.mask : walk(entry, resolved, depth + 1, seen),
     );
   }
   seen.delete(object);
@@ -387,11 +377,7 @@ export function redactHeaders(
 
   const put = (key: string, value: string) => {
     // Same reason as `walk`: a header named `__proto__` must survive as data.
-    define(
-      output,
-      key,
-      matches(key, resolved) ? resolved.mask : redactString(value, resolved),
-    );
+    define(output, key, matches(key, resolved) ? resolved.mask : redactString(value, resolved));
   };
 
   if (typeof Headers !== "undefined" && headers instanceof Headers) {

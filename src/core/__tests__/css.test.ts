@@ -3,10 +3,7 @@ import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import { CORE_CSS } from "../css";
 
-const stylesheet = readFileSync(
-  resolve(process.cwd(), "src/styles.css"),
-  "utf8",
-);
+const stylesheet = readFileSync(resolve(process.cwd(), "src/styles.css"), "utf8");
 
 describe("core stylesheet", () => {
   it("stays identical to the shipped styles.css", () => {

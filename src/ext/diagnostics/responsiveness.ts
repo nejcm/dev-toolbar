@@ -85,10 +85,7 @@ interface TimedSample {
  */
 const defaultNow = (): number => {
   try {
-    if (
-      typeof performance !== "undefined" &&
-      typeof performance.now === "function"
-    ) {
+    if (typeof performance !== "undefined" && typeof performance.now === "function") {
       return performance.now();
     }
   } catch {
@@ -252,9 +249,8 @@ export function createResponsivenessMonitor(
     // `supportedEntryTypes` is the only non-throwing way to ask, and it is
     // itself absent on older engines — in which case the honest thing is to try
     // `observe()` and let the throw answer the question.
-    const supported = (
-      Ctor as unknown as { supportedEntryTypes?: readonly string[] }
-    ).supportedEntryTypes;
+    const supported = (Ctor as unknown as { supportedEntryTypes?: readonly string[] })
+      .supportedEntryTypes;
     if (Array.isArray(supported) && !supported.includes(entryType)) {
       support[entryType] = "unsupported";
       return;
@@ -279,9 +275,7 @@ export function createResponsivenessMonitor(
       // pattern as the error paths in `runtime.ts`, and `part()` masks the
       // message on its own rather than behind a prefix, which is the whole
       // point of that fix. One line is cheaper than an exception.
-      detail[entryType] = part(
-        error instanceof Error ? error.message : safeString(error),
-      );
+      detail[entryType] = part(error instanceof Error ? error.message : safeString(error));
     }
   };
 
@@ -332,10 +326,7 @@ export function createResponsivenessMonitor(
       totalDurationMs: Math.round(total),
       totalBlockingMs: Math.round(blocking),
       worst: worst === null ? null : toSample(worst),
-      recent: samples
-        .slice(-recentSize)
-        .reverse()
-        .map(toSample),
+      recent: samples.slice(-recentSize).reverse().map(toSample),
       note:
         `${note} A long task is one over ${LONG_TASK_THRESHOLD_MS} ms; blocking time is the excess ` +
         "above that threshold. Entries buffered by the browser from before the " +

@@ -3,11 +3,7 @@ import type { ReactNode } from "react";
 import { writeClipboardText } from "../../runtime";
 import { ensureEnvironmentStyles } from "./css";
 import { GROUP_LABELS } from "./types";
-import type {
-  EnvironmentFieldView,
-  EnvironmentGroup,
-  EnvironmentSnapshot,
-} from "./types";
+import type { EnvironmentFieldView, EnvironmentGroup, EnvironmentSnapshot } from "./types";
 import type { EnvironmentRuntime } from "./runtime";
 
 /**
@@ -34,9 +30,7 @@ function useEnvironmentStyles(inject: boolean): void {
 }
 
 const kindLabel = (snapshot: EnvironmentSnapshot): string =>
-  snapshot.supplied && snapshot.kind !== "unknown"
-    ? String(snapshot.kind)
-    : "unknown";
+  snapshot.supplied && snapshot.kind !== "unknown" ? String(snapshot.kind) : "unknown";
 
 export interface ChipProps {
   runtime: EnvironmentRuntime;
@@ -69,20 +63,13 @@ export function EnvironmentChip({
       <span data-dtb-part="env-value" data-dtb-env={kind}>
         {kind}
       </span>
-      {snapshot.impersonating ? (
-        <span data-dtb-part="env-alert">impersonating</span>
-      ) : null}
+      {snapshot.impersonating ? <span data-dtb-part="env-alert">impersonating</span> : null}
     </span>
   );
 
   if (isOverflowed) {
     return (
-      <button
-        type="button"
-        data-dtb-part="env-overflow"
-        onClick={onToggle}
-        title={title}
-      >
+      <button type="button" data-dtb-part="env-overflow" onClick={onToggle} title={title}>
         {inner}
       </button>
     );
@@ -107,11 +94,7 @@ export interface PanelProps {
   injectStyles: boolean;
 }
 
-export function EnvironmentPanel({
-  runtime,
-  label,
-  injectStyles,
-}: PanelProps): ReactNode {
+export function EnvironmentPanel({ runtime, label, injectStyles }: PanelProps): ReactNode {
   useEnvironmentStyles(injectStyles);
   const snapshot = useSnapshot(runtime);
   const [copied, setCopied] = useState<"idle" | "ok" | "failed">("idle");
@@ -124,9 +107,7 @@ export function EnvironmentPanel({
   };
 
   const groups: EnvironmentGroup[] = ["build", "session", "client"];
-  const anythingSupplied = snapshot.fields.some(
-    (field) => field.source === "supplied",
-  );
+  const anythingSupplied = snapshot.fields.some((field) => field.source === "supplied");
 
   return (
     <div
@@ -137,8 +118,7 @@ export function EnvironmentPanel({
     >
       {snapshot.impersonating ? (
         <p data-dtb-part="env-banner" role="alert">
-          Impersonation is active. Everything you do here happens as somebody
-          else.
+          Impersonation is active. Everything you do here happens as somebody else.
         </p>
       ) : null}
 
@@ -146,17 +126,14 @@ export function EnvironmentPanel({
         {anythingSupplied ? null : (
           <div data-dtb-part="env-empty">
             <p data-dtb-part="env-note">
-              No environment context was supplied, so this environment is{" "}
-              <strong>unknown</strong> — not "local". Nothing here is guessed
-              from the hostname, and nothing is read from{" "}
+              No environment context was supplied, so this environment is <strong>unknown</strong> —
+              not "local". Nothing here is guessed from the hostname, and nothing is read from{" "}
               <code>process.env</code>.
             </p>
             <p data-dtb-part="env-note">
               Pass what you know:{" "}
               <code>
-                {
-                  'environment({ context: { environment: "staging", release: __RELEASE__ } })'
-                }
+                {'environment({ context: { environment: "staging", release: __RELEASE__ } })'}
               </code>
               , or a function for values that change.
             </p>
@@ -164,9 +141,7 @@ export function EnvironmentPanel({
         )}
 
         {groups.map((group) => {
-          const fields = snapshot.fields.filter(
-            (field) => field.group === group,
-          );
+          const fields = snapshot.fields.filter((field) => field.group === group);
           if (fields.length === 0) return null;
           return (
             <section key={group} data-dtb-part="env-group" data-dtb-group={group}>
@@ -194,9 +169,7 @@ export function EnvironmentPanel({
           type="button"
           data-dtb-part="env-action"
           data-dtb-action="copy-json"
-          onClick={() =>
-            copy(JSON.stringify(runtime.diagnostics(), null, 2))
-          }
+          onClick={() => copy(JSON.stringify(runtime.diagnostics(), null, 2))}
         >
           Copy JSON
         </button>
@@ -229,7 +202,11 @@ function Row({ field }: { field: EnvironmentFieldView }): ReactNode {
           field.value
         )}
         {field.masked ? (
-          <span data-dtb-part="env-tag" data-dtb-tag="masked" title="This value was masked before it was rendered or copied.">
+          <span
+            data-dtb-part="env-tag"
+            data-dtb-tag="masked"
+            title="This value was masked before it was rendered or copied."
+          >
             masked
           </span>
         ) : null}

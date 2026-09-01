@@ -1,14 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createJankCollector } from "../collectors/jank";
 
-const originalRaf = Object.getOwnPropertyDescriptor(
-  globalThis,
-  "requestAnimationFrame",
-);
-const originalCaf = Object.getOwnPropertyDescriptor(
-  globalThis,
-  "cancelAnimationFrame",
-);
+const originalRaf = Object.getOwnPropertyDescriptor(globalThis, "requestAnimationFrame");
+const originalCaf = Object.getOwnPropertyDescriptor(globalThis, "cancelAnimationFrame");
 
 interface Frames {
   tick(deltaMs: number): void;

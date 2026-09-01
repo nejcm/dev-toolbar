@@ -149,10 +149,7 @@ export function parseOverrides(raw: string | null): Record<string, FlagValue> {
   }
   // Null prototype so a persisted `__proto__` key round-trips as data rather
   // than being dropped on the way in while surviving on the way out.
-  const output: Record<string, FlagValue> = Object.create(null) as Record<
-    string,
-    FlagValue
-  >;
+  const output: Record<string, FlagValue> = Object.create(null) as Record<string, FlagValue>;
   for (const [key, value] of Object.entries(parsed as Record<string, unknown>)) {
     if (isFlagValue(value)) output[key] = value;
   }
@@ -160,13 +157,8 @@ export function parseOverrides(raw: string | null): Record<string, FlagValue> {
 }
 
 /** A null-prototype copy. Every write to the override map goes through this. */
-function cloneOverrides(
-  source: Record<string, FlagValue>,
-): Record<string, FlagValue> {
-  return Object.assign(
-    Object.create(null) as Record<string, FlagValue>,
-    source,
-  );
+function cloneOverrides(source: Record<string, FlagValue>): Record<string, FlagValue> {
+  return Object.assign(Object.create(null) as Record<string, FlagValue>, source);
 }
 
 const emptyOverrides = (): Record<string, FlagValue> =>
@@ -193,9 +185,7 @@ export function resetRequested(param: string | null): boolean {
   }
 }
 
-export function createFlagsRuntime(
-  options: FlagsRuntimeOptions = {},
-): FlagsRuntime {
+export function createFlagsRuntime(options: FlagsRuntimeOptions = {}): FlagsRuntime {
   const {
     flags,
     onOverride,
@@ -238,8 +228,7 @@ export function createFlagsRuntime(
       // not. Same rule /ext/environment settled.
       // eslint-disable-next-line no-console
       console.error(
-        "[dev-toolbar/ext/flags] the supplied flags getter threw. " +
-          "Showing an empty list.",
+        "[dev-toolbar/ext/flags] the supplied flags getter threw. " + "Showing an empty list.",
         error,
       );
       return [];
@@ -271,10 +260,7 @@ export function createFlagsRuntime(
       return { text: formatValue(value), masked: false };
     }
     const before = formatValue(value);
-    const bag = redact({ [key]: value }, redactOptions) as Record<
-      string,
-      unknown
-    >;
+    const bag = redact({ [key]: value }, redactOptions) as Record<string, unknown>;
     const after = formatValue(bag[key] as FlagValue);
     return { text: after, masked: after !== before };
   };
@@ -325,8 +311,7 @@ export function createFlagsRuntime(
       const effectiveRender = render(key, effective, reading.sensitive);
       const baseRender = render(key, base, reading.sensitive);
       const defaultRender = render(key, defaultValue, reading.sensitive);
-      const masked =
-        effectiveRender.masked || baseRender.masked || defaultRender.masked;
+      const masked = effectiveRender.masked || baseRender.masked || defaultRender.masked;
       if (masked) maskedCount += 1;
 
       const expiresAtMs = parseDate(reading.expiresAt);
@@ -335,19 +320,13 @@ export function createFlagsRuntime(
       views.push({
         key,
         label: reading.label ?? key,
-        ...(reading.description === undefined
-          ? {}
-          : { description: reading.description }),
+        ...(reading.description === undefined ? {} : { description: reading.description }),
         ...(reading.owner === undefined ? {} : { owner: reading.owner }),
         type,
         ...(reading.variants === undefined ? {} : { variants: reading.variants }),
         reloadBehavior: reading.reloadBehavior ?? "live",
-        ...(reading.projectUrl === undefined
-          ? {}
-          : { projectUrl: reading.projectUrl }),
-        ...(reading.expiresAt === undefined
-          ? {}
-          : { expiresAt: reading.expiresAt }),
+        ...(reading.projectUrl === undefined ? {} : { projectUrl: reading.projectUrl }),
+        ...(reading.expiresAt === undefined ? {} : { expiresAt: reading.expiresAt }),
         expired: expiresAtMs !== null && expiresAtMs < at,
         recentlyUsed: reading.recentlyUsed === true,
 
@@ -358,25 +337,20 @@ export function createFlagsRuntime(
         overridden: hasOverride,
         source: hasOverride
           ? "local-override"
-          : (reading.source ??
-            (base === defaultValue ? "default" : "unknown")),
+          : (reading.source ?? (base === defaultValue ? "default" : "unknown")),
 
         effectiveText: effectiveRender.text,
         baseText: baseRender.text,
         defaultText: defaultRender.text,
         masked,
         orphaned: false,
-        ...(adapterErrors.has(key)
-          ? { applyError: adapterErrors.get(key) as string }
-          : {}),
+        ...(adapterErrors.has(key) ? { applyError: adapterErrors.get(key) as string } : {}),
         promoted: promotion !== null,
         ...(promotion === null
           ? {}
           : {
               promotedLabel: promotion.label ?? reading.label ?? key,
-              ...(promotion.icon === undefined
-                ? {}
-                : { promotedIcon: promotion.icon }),
+              ...(promotion.icon === undefined ? {} : { promotedIcon: promotion.icon }),
             }),
       });
     }
@@ -394,11 +368,8 @@ export function createFlagsRuntime(
       views.push({
         key,
         label: key,
-        type: typeof value === "boolean"
-          ? "boolean"
-          : typeof value === "number"
-            ? "number"
-            : "string",
+        type:
+          typeof value === "boolean" ? "boolean" : typeof value === "number" ? "number" : "string",
         reloadBehavior: "live",
         expired: false,
         recentlyUsed: false,
@@ -414,9 +385,7 @@ export function createFlagsRuntime(
         defaultText: "—",
         masked: rendered.masked,
         orphaned: true,
-        ...(adapterErrors.has(key)
-          ? { applyError: adapterErrors.get(key) as string }
-          : {}),
+        ...(adapterErrors.has(key) ? { applyError: adapterErrors.get(key) as string } : {}),
         promoted: false,
       });
     }
@@ -482,8 +451,7 @@ export function createFlagsRuntime(
         writable,
         reloadPending: [],
         adapterErrors: Object.fromEntries(adapterErrors),
-        readError:
-          "The flag list could not be read — it threw. See the console.",
+        readError: "The flag list could not be read — it threw. See the console.",
       };
     }
   };
@@ -548,10 +516,7 @@ export function createFlagsRuntime(
         } — your application may not have picked this override up.`,
       );
       // eslint-disable-next-line no-console
-      console.error(
-        `[dev-toolbar/ext/flags] the onOverride adapter threw for "${key}".`,
-        error,
-      );
+      console.error(`[dev-toolbar/ext/flags] the onOverride adapter threw for "${key}".`, error);
     }
   };
 
@@ -654,9 +619,7 @@ export function createFlagsRuntime(
       }
 
       const timer =
-        typeof flags === "function"
-          ? setInterval(publish, Math.max(250, pollMs))
-          : null;
+        typeof flags === "function" ? setInterval(publish, Math.max(250, pollMs)) : null;
       const stopWatching = api.subscribeVisibility(() => publish());
       publish();
       store.flush();

@@ -42,9 +42,7 @@ if (typeof globalThis.localStorage === "undefined") {
 afterEach(() => {
   cleanup();
   document.documentElement.removeAttribute("style");
-  for (const style of document.head.querySelectorAll(
-    "style[data-dev-toolbar-styles]",
-  )) {
+  for (const style of document.head.querySelectorAll("style[data-dev-toolbar-styles]")) {
     style.remove();
   }
   window.localStorage.clear();

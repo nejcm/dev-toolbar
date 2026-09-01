@@ -59,8 +59,7 @@ export async function writeClipboardText(text: string): Promise<boolean> {
   let clipboard: ClipboardLike | undefined;
   try {
     // Reading `navigator.clipboard` can itself throw in a sandboxed frame.
-    clipboard = (globalThis as { navigator?: { clipboard?: ClipboardLike } })
-      .navigator?.clipboard;
+    clipboard = (globalThis as { navigator?: { clipboard?: ClipboardLike } }).navigator?.clipboard;
   } catch {
     return false;
   }

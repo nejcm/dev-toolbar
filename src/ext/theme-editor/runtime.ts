@@ -168,27 +168,18 @@ const nowIso = (at: number): string => {
   }
 };
 
-const emptyMap = (): Record<string, string> =>
-  Object.create(null) as Record<string, string>;
+const emptyMap = (): Record<string, string> => Object.create(null) as Record<string, string>;
 
 const cloneMap = (source: Record<string, string>): Record<string, string> =>
   Object.assign(emptyMap(), source);
 
 /** Own data property, by definition rather than assignment. See §12.5. */
-function define(
-  target: Record<string, string>,
-  key: string,
-  value: string,
-): void {
+function define(target: Record<string, string>, key: string, value: string): void {
   defineAny(target as Record<string, unknown>, key, value);
 }
 
 /** The same, for a payload whose values are not all strings. */
-function defineAny(
-  target: Record<string, unknown>,
-  key: string,
-  value: unknown,
-): void {
+function defineAny(target: Record<string, unknown>, key: string, value: unknown): void {
   Object.defineProperty(target, key, {
     value,
     writable: true,
@@ -266,8 +257,7 @@ export function readStoredThemeOverrides(
   if (resetRequested(themeParam)) return {};
   const key = `dtb:v1:${instanceId}:ext:${id}:${OVERRIDES_KEY}`;
   try {
-    const source =
-      storage ?? (typeof localStorage === "undefined" ? null : localStorage);
+    const source = storage ?? (typeof localStorage === "undefined" ? null : localStorage);
     if (source === null) return {};
     // A spread copy, never the null-prototype map: handing that across a public
     // API breaks `result.hasOwnProperty(...)` for every consumer (§12.5).
@@ -396,9 +386,7 @@ export function createThemeEditorRuntime(
   } = options;
 
   const surfaces: readonly ThemeSurface[] =
-    surfaceOption && surfaceOption.length > 0
-      ? surfaceOption
-      : [DEFAULT_SURFACE];
+    surfaceOption && surfaceOption.length > 0 ? surfaceOption : [DEFAULT_SURFACE];
 
   const maskText = redactOptions?.mask ?? MASK_SENTINEL;
 
@@ -434,8 +422,7 @@ export function createThemeEditorRuntime(
       readError = null;
       return value as readonly DesignTokenDefinition[];
     } catch (error) {
-      readError =
-        "The token list could not be read — it threw. See the console.";
+      readError = "The token list could not be read — it threw. See the console.";
       // eslint-disable-next-line no-console
       console.error(
         "[dev-toolbar/ext/theme-editor] the supplied tokens getter threw. " +
@@ -448,15 +435,11 @@ export function createThemeEditorRuntime(
 
   const readPresets = (): readonly ThemeRecipe[] => {
     try {
-      const value =
-        typeof presetOption === "function" ? presetOption() : presetOption;
+      const value = typeof presetOption === "function" ? presetOption() : presetOption;
       return Array.isArray(value) ? (value as readonly ThemeRecipe[]) : [];
     } catch (error) {
       // eslint-disable-next-line no-console
-      console.error(
-        "[dev-toolbar/ext/theme-editor] the supplied presets getter threw.",
-        error,
-      );
+      console.error("[dev-toolbar/ext/theme-editor] the supplied presets getter threw.", error);
       return [];
     }
   };
@@ -467,10 +450,7 @@ export function createThemeEditorRuntime(
       return mode.read() === "dark" ? "dark" : "light";
     } catch (error) {
       // eslint-disable-next-line no-console
-      console.error(
-        "[dev-toolbar/ext/theme-editor] the mode adapter's read() threw.",
-        error,
-      );
+      console.error("[dev-toolbar/ext/theme-editor] the mode adapter's read() threw.", error);
       return null;
     }
   };
@@ -493,10 +473,7 @@ export function createThemeEditorRuntime(
       // belt and braces; it is here because "write the app's tokens onto the
       // toolbar" is never what somebody meant, and silently doing nothing
       // useful is worse than saying no.
-      if (
-        typeof found.closest === "function" &&
-        found.closest("[data-dev-toolbar]") !== null
-      ) {
+      if (typeof found.closest === "function" && found.closest("[data-dev-toolbar]") !== null) {
         return null;
       }
       return found;
@@ -679,9 +656,7 @@ export function createThemeEditorRuntime(
     if (sensitive) return { text: maskText, masked: true };
     const after =
       type === "string"
-        ? ((redact({ [name]: value }, redactOptions) as Record<string, unknown>)[
-            name
-          ] as string)
+        ? ((redact({ [name]: value }, redactOptions) as Record<string, unknown>)[name] as string)
         : (redact(value, redactOptions) as string);
     const text = typeof after === "string" ? after : maskText;
     return { text, masked: text !== value };
@@ -707,10 +682,7 @@ export function createThemeEditorRuntime(
     }
   };
 
-  const baseFor = (
-    definition: DesignTokenDefinition,
-    overridden: boolean,
-  ): string | null => {
+  const baseFor = (definition: DesignTokenDefinition, overridden: boolean): string | null => {
     if (typeof definition.value === "string") return definition.value;
     if (overridden) return capturedBase.get(definition.name) ?? null;
     const read = computedBase(definition.name);
@@ -733,29 +705,16 @@ export function createThemeEditorRuntime(
       const refusal = checkTokenName(name);
       if (refusal !== null) refusedCount += 1;
       const type = inferType(definition);
-      const overridden =
-        refusal === null &&
-        Object.prototype.hasOwnProperty.call(overrides, name);
+      const overridden = refusal === null && Object.prototype.hasOwnProperty.call(overrides, name);
       const override = overridden ? (overrides[name] as string) : undefined;
       const base = baseFor(definition, overridden);
       const defaultValue = definition.defaultValue ?? null;
       const effective = override ?? base;
 
-      const effectiveRender = render(
-        name,
-        type,
-        effective,
-        definition.sensitive,
-      );
+      const effectiveRender = render(name, type, effective, definition.sensitive);
       const baseRender = render(name, type, base, definition.sensitive);
-      const defaultRender = render(
-        name,
-        type,
-        defaultValue,
-        definition.sensitive,
-      );
-      const masked =
-        effectiveRender.masked || baseRender.masked || defaultRender.masked;
+      const defaultRender = render(name, type, defaultValue, definition.sensitive);
+      const masked = effectiveRender.masked || baseRender.masked || defaultRender.masked;
       if (masked) maskedCount += 1;
       const description =
         definition.description === undefined
@@ -790,14 +749,11 @@ export function createThemeEditorRuntime(
         defaultText: defaultRender.text,
         masked,
         metadataMasked:
-          (description !== undefined &&
-            description !== definition.description) ||
+          (description !== undefined && description !== definition.description) ||
           group !== rawGroup,
         refusal,
         orphaned: false,
-        ...(applyErrors.has(name)
-          ? { applyError: applyErrors.get(name) as string }
-          : {}),
+        ...(applyErrors.has(name) ? { applyError: applyErrors.get(name) as string } : {}),
       });
     }
 
@@ -829,9 +785,7 @@ export function createThemeEditorRuntime(
         metadataMasked: false,
         refusal,
         orphaned: true,
-        ...(applyErrors.has(name)
-          ? { applyError: applyErrors.get(name) as string }
-          : {}),
+        ...(applyErrors.has(name) ? { applyError: applyErrors.get(name) as string } : {}),
       });
     }
 
@@ -893,8 +847,7 @@ export function createThemeEditorRuntime(
         mode: null,
         modeWritable: false,
         applyErrors: Object.fromEntries(applyErrors),
-        readError:
-          "The token list could not be read — it threw. See the console.",
+        readError: "The token list could not be read — it threw. See the console.",
         notice,
       };
     }
@@ -1012,9 +965,7 @@ export function createThemeEditorRuntime(
    * nothing to check it against.
    */
   const declaredType = (name: string): TokenType => {
-    const definition = readTokens().find(
-      (candidate) => candidate?.name === name,
-    );
+    const definition = readTokens().find((candidate) => candidate?.name === name);
     return definition ? inferType(definition) : "string";
   };
 
@@ -1089,9 +1040,7 @@ export function createThemeEditorRuntime(
       dropped === 0
         ? null
         : `${dropped} dropped — this application does not declare them, or the value was refused`,
-      replaced === 0
-        ? null
-        : `${replaced} earlier edit${replaced === 1 ? "" : "s"} replaced`,
+      replaced === 0 ? null : `${replaced} earlier edit${replaced === 1 ? "" : "s"} replaced`,
     ]
       .filter((clause): clause is string => clause !== null)
       .join(", ")}.`;
@@ -1105,9 +1054,7 @@ export function createThemeEditorRuntime(
 
   /** Overridden rows worth exporting, in catalogue order. */
   const exportable = (snapshot: ThemeSnapshot): readonly TokenView[] =>
-    snapshot.tokens.filter(
-      (view) => view.overridden && view.refusal === null,
-    );
+    snapshot.tokens.filter((view) => view.overridden && view.refusal === null);
 
   const maskedNote = (count: number): string =>
     count === 0
@@ -1144,9 +1091,7 @@ export function createThemeEditorRuntime(
     // `checkTokenName` has already refused anything that could close the
     // declaration — and the value is *redacted*, which is `effectiveText`.
     // Neither treatment substitutes for the other.
-    const body = rows
-      .map((view) => `  ${view.name}: ${view.effectiveText};`)
-      .join("\n");
+    const body = rows.map((view) => `  ${view.name}: ${view.effectiveText};`).join("\n");
     return `${header}\n${selector} {\n${body}\n}\n`;
   };
 
@@ -1228,15 +1173,10 @@ export function createThemeEditorRuntime(
       omitted === 0 ? { ...recipe } : { ...recipe, maskedValuesOmitted: omitted };
 
     const { overrides: rawOverrides, ...metadata } = source;
-    const redactedMetadata = redact(metadata, redactOptions) as Record<
-      string,
-      unknown
-    >;
+    const redactedMetadata = redact(metadata, redactOptions) as Record<string, unknown>;
 
     const redactedOverrides: Record<string, string> = {};
-    for (const [name, value] of Object.entries(
-      (rawOverrides ?? {}) as Record<string, string>,
-    )) {
+    for (const [name, value] of Object.entries((rawOverrides ?? {}) as Record<string, string>)) {
       define(redactedOverrides, name, redact(value, redactOptions) as string);
     }
 
@@ -1244,11 +1184,7 @@ export function createThemeEditorRuntime(
     // human diffs does not reshuffle because of how it was assembled.
     const payload: Record<string, unknown> = {};
     for (const key of Object.keys(source)) {
-      defineAny(
-        payload,
-        key,
-        key === "overrides" ? redactedOverrides : redactedMetadata[key],
-      );
+      defineAny(payload, key, key === "overrides" ? redactedOverrides : redactedMetadata[key]);
     }
     return payload;
   };
@@ -1289,17 +1225,13 @@ export function createThemeEditorRuntime(
         // The redacted display string, never the raw value: an export is a
         // second front door onto the same data (§11.3).
         $value: view.effectiveText,
-        ...(view.description === undefined
-          ? {}
-          : { $description: view.description }),
+        ...(view.description === undefined ? {} : { $description: view.description }),
       };
     }
     // Descriptions are exported here and nowhere else, so this count — unlike
     // the CSS one — has to include them. §15.3: whatever describes the output
     // is computed from the output, not from a neighbouring number.
-    const masked = rows.filter(
-      (view) => view.masked || view.metadataMasked,
-    ).length;
+    const masked = rows.filter((view) => view.masked || view.metadataMasked).length;
     try {
       return JSON.stringify(
         {
@@ -1365,9 +1297,7 @@ export function createThemeEditorRuntime(
 
     setOverride(name, value) {
       if (checkTokenName(name) !== null) return "syntax";
-      const definition = readTokens().find(
-        (candidate) => candidate?.name === name,
-      );
+      const definition = readTokens().find((candidate) => candidate?.name === name);
       const type = definition ? inferType(definition) : "string";
       const refusal = checkTokenValue(type, value);
       if (refusal !== null) return refusal;
@@ -1437,10 +1367,7 @@ export function createThemeEditorRuntime(
         mode.set(next);
       } catch (error) {
         // eslint-disable-next-line no-console
-        console.error(
-          "[dev-toolbar/ext/theme-editor] the mode adapter's set() threw.",
-          error,
-        );
+        console.error("[dev-toolbar/ext/theme-editor] the mode adapter's set() threw.", error);
         notice = "The application's mode adapter refused that change.";
       }
       publish();
@@ -1524,13 +1451,9 @@ export function createThemeEditorRuntime(
 
         try {
           const storedSurface = persist ? api.storage.getItem(SURFACE_KEY) : null;
-          const found = surfaces.find(
-            (candidate) => candidate.id === storedSurface,
-          );
+          const found = surfaces.find((candidate) => candidate.id === storedSurface);
           if (found) surface = found;
-          preview = persist
-            ? api.storage.getItem(PREVIEW_KEY) !== "0"
-            : true;
+          preview = persist ? api.storage.getItem(PREVIEW_KEY) !== "0" : true;
         } catch {
           /* defaults stand */
         }
@@ -1557,9 +1480,7 @@ export function createThemeEditorRuntime(
       }
 
       const timer =
-        typeof tokens === "function"
-          ? setInterval(publish, Math.max(250, pollMs))
-          : null;
+        typeof tokens === "function" ? setInterval(publish, Math.max(250, pollMs)) : null;
 
       // Visibility is *reported*, not acted on (§2). This extension deliberately
       // keeps its edits applied while the bar is hidden — see the note at the

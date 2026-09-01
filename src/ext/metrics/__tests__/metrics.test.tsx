@@ -40,17 +40,11 @@ describe("metrics extension in the bar", () => {
     const { toolbar } = mount();
     const item = toolbar.item("metrics");
     expect(item).not.toBeNull();
-    expect(item?.querySelector('[data-dtb-part="metrics-label"]')?.textContent).toBe(
-      "mem",
-    );
-    expect(item?.querySelector('[data-dtb-part="metrics-value"]')?.textContent).toBe(
-      "48 MB",
-    );
+    expect(item?.querySelector('[data-dtb-part="metrics-label"]')?.textContent).toBe("mem");
+    expect(item?.querySelector('[data-dtb-part="metrics-value"]')?.textContent).toBe("48 MB");
     // 48/128 = 37.5% of the limit.
     expect(
-      item?.querySelector('[data-dtb-part="metrics-chip"]')?.getAttribute(
-        "data-dtb-severity",
-      ),
+      item?.querySelector('[data-dtb-part="metrics-chip"]')?.getAttribute("data-dtb-severity"),
     ).toBe("ok");
   });
 
@@ -58,8 +52,7 @@ describe("metrics extension in the bar", () => {
     mount();
     mount({ id: "metrics-2" });
     expect(
-      document.head.querySelectorAll('style[data-dev-toolbar-styles="ext-metrics"]')
-        .length,
+      document.head.querySelectorAll('style[data-dev-toolbar-styles="ext-metrics"]').length,
     ).toBe(1);
   });
 
@@ -68,9 +61,7 @@ describe("metrics extension in the bar", () => {
       .querySelectorAll('style[data-dev-toolbar-styles="ext-metrics"]')
       .forEach((node) => node.remove());
     mount({ injectStyles: false });
-    expect(
-      document.head.querySelector('style[data-dev-toolbar-styles="ext-metrics"]'),
-    ).toBeNull();
+    expect(document.head.querySelector('style[data-dev-toolbar-styles="ext-metrics"]')).toBeNull();
   });
 
   it("toggles its own panel from the chip, through CompactSlotProps.togglePanel", () => {
@@ -101,9 +92,9 @@ describe("metrics extension in the bar", () => {
       "48 MB",
     );
     expect(panel?.querySelector('[data-dtb-part="metrics-sparkline"]')).not.toBeNull();
-    const labels = [
-      ...(panel?.querySelectorAll('[data-dtb-part="metrics-rows"] dt') ?? []),
-    ].map((node) => node.textContent);
+    const labels = [...(panel?.querySelectorAll('[data-dtb-part="metrics-rows"] dt') ?? [])].map(
+      (node) => node.textContent,
+    );
     expect(labels).toContain("Heap limit");
     expect(labels).toContain("Share of limit");
   });
@@ -113,9 +104,7 @@ describe("metrics extension in the bar", () => {
     toolbar.resize(60);
     expect(toolbar.isOverflowed("metrics")).toBe(true);
     toolbar.openOverflow();
-    const rows = toolbar
-      .overflowMenu()
-      ?.querySelectorAll('[data-dtb-part="metrics-overflow-row"]');
+    const rows = toolbar.overflowMenu()?.querySelectorAll('[data-dtb-part="metrics-overflow-row"]');
     expect(rows?.length).toBe(2);
     expect(rows?.[0]?.textContent).toContain("Memory");
   });
@@ -133,13 +122,9 @@ describe("metrics extension in the bar", () => {
     const { toolbar } = mount({ memory: { read: () => null } });
     const item = toolbar.item("metrics");
     expect(toolbar.errorChip("metrics")).toBeNull();
-    expect(item?.querySelector('[data-dtb-part="metrics-value"]')?.textContent).toBe(
-      "NA",
-    );
+    expect(item?.querySelector('[data-dtb-part="metrics-value"]')?.textContent).toBe("NA");
     expect(
-      item?.querySelector('[data-dtb-part="metrics-chip"]')?.getAttribute(
-        "data-dtb-severity",
-      ),
+      item?.querySelector('[data-dtb-part="metrics-chip"]')?.getAttribute("data-dtb-severity"),
     ).toBe("unknown");
 
     toolbar.openPanel("metrics");

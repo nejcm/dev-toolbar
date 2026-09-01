@@ -42,18 +42,14 @@ describe("package.json exports", () => {
       import: "./dist/testing.js",
       require: "./dist/testing.cjs",
     });
-    expect(Object.keys(pkg.exports).some((key) => key.includes("*"))).toBe(
-      false,
-    );
+    expect(Object.keys(pkg.exports).some((key) => key.includes("*"))).toBe(false);
   });
 
   it("publishes neither the playground nor the Jest consumer fixture", () => {
     expect(pkg.files).not.toContain("examples");
     expect(pkg.files).not.toContain("test");
     expect(existsSync(`${root}examples/playground/package.json`)).toBe(true);
-    expect(
-      existsSync(`${root}test/fixtures/jest-consumer/package.json`),
-    ).toBe(true);
+    expect(existsSync(`${root}test/fixtures/jest-consumer/package.json`)).toBe(true);
   });
 });
 
@@ -88,9 +84,7 @@ if (!built && mustBeBuilt) {
 
     it('emits its own .d.ts and a "use client" banner in both formats', () => {
       for (const file of ["dist/testing.js", "dist/testing.cjs"]) {
-        expect(
-          readFileSync(`${root}${file}`, "utf8").startsWith('"use client";'),
-        ).toBe(true);
+        expect(readFileSync(`${root}${file}`, "utf8").startsWith('"use client";')).toBe(true);
       }
       const types = readFileSync(`${root}dist/testing.d.ts`, "utf8");
       expect(types).toContain("renderWithToolbar");
@@ -101,9 +95,7 @@ if (!built && mustBeBuilt) {
       // A static import is hoisted to the top of the bundle and makes the whole
       // subpath unimportable without the optional peer. A dynamic one does not.
       const source = readFileSync(`${root}dist/testing.js`, "utf8");
-      expect(source).not.toMatch(
-        /^\s*import[^;]*from\s*["']@testing-library\/react["']/m,
-      );
+      expect(source).not.toMatch(/^\s*import[^;]*from\s*["']@testing-library\/react["']/m);
       expect(source).toContain('import("@testing-library/react")');
     });
 
@@ -125,19 +117,13 @@ if (!built && mustBeBuilt) {
           }),
         );
         for (const dep of ["react", "react-dom"]) {
-          symlinkSync(
-            `${root}node_modules/${dep}`,
-            join(fixture, "node_modules", dep),
-            "dir",
-          );
+          symlinkSync(`${root}node_modules/${dep}`, join(fixture, "node_modules", dep), "dir");
         }
         writeFileSync(
           join(fixture, "package.json"),
           JSON.stringify({ name: "fixture", private: true, type: "module" }),
         );
-        expect(
-          existsSync(join(fixture, "node_modules", "@testing-library")),
-        ).toBe(false);
+        expect(existsSync(join(fixture, "node_modules", "@testing-library"))).toBe(false);
 
         const output = node(
           `const m = await import("@nejcm/dev-toolbar/testing");` +
@@ -170,9 +156,7 @@ if (!built && mustBeBuilt) {
         expect(result.message).toContain("npm install --save-dev");
         // Both remedy forms, because the dynamic-import one is exactly what is
         // broken in the runner most likely to need the escape hatch.
-        expect(result.message).toContain(
-          "setTestingLibrary(require('@testing-library/react'))",
-        );
+        expect(result.message).toContain("setTestingLibrary(require('@testing-library/react'))");
         expect(result.message).toContain(
           "setTestingLibrary(await import('@testing-library/react'))",
         );

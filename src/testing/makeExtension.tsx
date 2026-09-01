@@ -19,8 +19,9 @@ export function resetExtensionIds(): void {
   counter = 0;
 }
 
-export interface MakeExtensionOptions
-  extends Partial<Omit<DevToolbarExtension, "compact" | "panel" | "overlay">> {
+export interface MakeExtensionOptions extends Partial<
+  Omit<DevToolbarExtension, "compact" | "panel" | "overlay">
+> {
   /**
    * `true` renders a default toggle button, a string renders that text inside
    * it, a function is used as the slot itself, `false` omits the slot so core
@@ -53,9 +54,7 @@ const asError = (value: boolean | Error, message: string): Error =>
  * `makeExtension()` on its own yields a valid extension with a generated id, a
  * clickable compact slot and no panel. Everything else is opt-in.
  */
-export function makeExtension(
-  options: MakeExtensionOptions = {},
-): DevToolbarExtension {
+export function makeExtension(options: MakeExtensionOptions = {}): DevToolbarExtension {
   const {
     compact = true,
     panel = false,
@@ -113,9 +112,7 @@ export function makeExtension(
     extension.overlay = overlay;
   } else if (overlay !== false) {
     const text = typeof overlay === "string" ? overlay : `${label} overlay`;
-    extension.overlay = () => (
-      <div data-testid={`dtb-overlay-${id}`}>{text}</div>
-    );
+    extension.overlay = () => <div data-testid={`dtb-overlay-${id}`}>{text}</div>;
   }
 
   if (throwInStart !== false) {

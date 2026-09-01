@@ -47,9 +47,8 @@ interface EventTiming extends PerformanceEntry {
 /** True when this browser can report Event Timing entries at all. */
 export function supportsEventTiming(): boolean {
   if (typeof PerformanceObserver === "undefined") return false;
-  const types = (
-    PerformanceObserver as unknown as { supportedEntryTypes?: readonly string[] }
-  ).supportedEntryTypes;
+  const types = (PerformanceObserver as unknown as { supportedEntryTypes?: readonly string[] })
+    .supportedEntryTypes;
   // No list at all means an old polyfill; assume unsupported rather than
   // throwing inside observe().
   return Array.isArray(types) && types.includes("event");
@@ -104,9 +103,7 @@ function describe(target: Element | null | undefined): string {
   return `${tag}${id}${first}`;
 }
 
-export function createDelayCollector(
-  options: DelayCollectorOptions = {},
-): Collector {
+export function createDelayCollector(options: DelayCollectorOptions = {}): Collector {
   const {
     windowMs = 30_000,
     durationThreshold = 16,
@@ -138,8 +135,7 @@ export function createDelayCollector(
     },
     get unsupportedReason() {
       return (
-        observerFailed ??
-        "PerformanceObserver does not report \"event\" entries in this browser."
+        observerFailed ?? 'PerformanceObserver does not report "event" entries in this browser.'
       );
     },
     series,
@@ -149,10 +145,7 @@ export function createDelayCollector(
           if (entry.entryType !== "event") continue;
           const event = entry as EventTiming;
           const inputDelay = Math.max(0, event.processingStart - event.startTime);
-          const processing = Math.max(
-            0,
-            event.processingEnd - event.processingStart,
-          );
+          const processing = Math.max(0, event.processingEnd - event.processingStart);
           const record: InteractionRecord = {
             at: context.now(),
             name: event.name,
@@ -187,8 +180,7 @@ export function createDelayCollector(
         }
       }
       if (!observing) {
-        observerFailed =
-          "PerformanceObserver.observe() rejected every Event Timing option shape.";
+        observerFailed = "PerformanceObserver.observe() rejected every Event Timing option shape.";
         context.invalidate();
         return;
       }

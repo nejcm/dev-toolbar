@@ -32,11 +32,7 @@ import type { MemoryCollectorOptions } from "./collectors/memory";
 import type { DelayCollectorOptions } from "./collectors/delay";
 import type { JankCollectorOptions } from "./collectors/jank";
 import type { NetworkCollectorOptions } from "./collectors/network";
-import type {
-  DevToolbarExtension,
-  ExtensionRuntimeApi,
-  ToolbarAlign,
-} from "../../core/contract";
+import type { DevToolbarExtension, ExtensionRuntimeApi, ToolbarAlign } from "../../core/contract";
 
 export interface MetricsOptions {
   /** Extension id. Change it to mount two independent metric groups. Default `"metrics"`. */
@@ -65,9 +61,7 @@ export interface MetricsOptions {
   network?: boolean | NetworkCollectorOptions;
 }
 
-function optionsFor<T extends object>(
-  value: boolean | T | undefined,
-): T | null {
+function optionsFor<T extends object>(value: boolean | T | undefined): T | null {
   if (value === false) return null;
   if (value === true || value === undefined) return {} as T;
   return value;
@@ -168,9 +162,7 @@ export function metrics(options: MetricsOptions = {}): DevToolbarExtension {
         // the palette reports a throw and closes over a resolve (§13.4), so
         // the old optional-chained call silently did nothing and looked fine.
         run: async () => {
-          await writeClipboardTextOrThrow(
-            JSON.stringify(runtime.diagnostics(), null, 2),
-          );
+          await writeClipboardTextOrThrow(JSON.stringify(runtime.diagnostics(), null, 2));
         },
       },
     ],
@@ -180,28 +172,14 @@ export function metrics(options: MetricsOptions = {}): DevToolbarExtension {
 export { METRICS_CSS, ensureMetricsStyles } from "./css";
 export { createMetricsRuntime } from "./runtime";
 export type { MetricsRuntime, MetricsRuntimeOptions } from "./runtime";
-export {
-  createDelayCollector,
-  supportsEventTiming,
-} from "./collectors/delay";
+export { createDelayCollector, supportsEventTiming } from "./collectors/delay";
 export { createJankCollector } from "./collectors/jank";
-export {
-  createMemoryCollector,
-  readPerformanceMemory,
-} from "./collectors/memory";
-export {
-  createNetworkCollector,
-  instrumentFetch,
-  instrumentXhr,
-} from "./collectors/network";
+export { createMemoryCollector, readPerformanceMemory } from "./collectors/memory";
+export { createNetworkCollector, instrumentFetch, instrumentXhr } from "./collectors/network";
 export type { DelayCollectorOptions, InteractionRecord } from "./collectors/delay";
 export type { JankCollectorOptions } from "./collectors/jank";
 export type { MemoryCollectorOptions } from "./collectors/memory";
-export type {
-  NetworkCollectorOptions,
-  NetworkEntry,
-  NetworkSink,
-} from "./collectors/network";
+export type { NetworkCollectorOptions, NetworkEntry, NetworkSink } from "./collectors/network";
 export { METRIC_IDS, severityFor } from "./types";
 export type {
   Collector,
@@ -214,10 +192,4 @@ export type {
   Severity,
   Thresholds,
 } from "./types";
-export {
-  formatBytes,
-  formatCount,
-  formatMs,
-  formatPercent,
-  NOT_AVAILABLE,
-} from "./format";
+export { formatBytes, formatCount, formatMs, formatPercent, NOT_AVAILABLE } from "./format";

@@ -105,9 +105,7 @@ describe("name validation — the guard that keeps the toolbar out of it", () =>
     expect(root().style.getPropertyValue("--dtb-bg")).toBe("");
     expect(root().hasAttribute("style")).toBe(false);
 
-    const view = runtime.store
-      .peek()
-      .tokens.find((token) => token.name === "--dtb-bg");
+    const view = runtime.store.peek().tokens.find((token) => token.name === "--dtb-bg");
     expect(view?.refusal).toBe("reserved");
     expect(runtime.store.peek().refusedCount).toBe(1);
   });
@@ -320,9 +318,9 @@ describe("applying and reversing", () => {
     runtime.setOverride("--brand-500", "#ff0000");
     const snapshot = runtime.store.peek();
     expect(snapshot.writable).toBe(false);
-    expect(
-      snapshot.tokens.find((token) => token.name === "--brand-500")?.applyError,
-    ).toContain("missing");
+    expect(snapshot.tokens.find((token) => token.name === "--brand-500")?.applyError).toContain(
+      "missing",
+    );
   });
 
   it("refuses a surface that lives inside a dev toolbar", () => {
@@ -354,9 +352,7 @@ describe("before and after", () => {
     const runtime = createThemeEditorRuntime({ tokens: TOKENS });
     runtime.start(fakeApi(createMemoryStorage()));
     runtime.setOverride("--brand-500", "#ff0000");
-    const view = runtime.store
-      .peek()
-      .tokens.find((token) => token.name === "--brand-500");
+    const view = runtime.store.peek().tokens.find((token) => token.name === "--brand-500");
     expect(view?.effectiveText).toBe("#ff0000");
     expect(view?.baseText).toBe("#3355ff");
     expect(view?.overridden).toBe(true);
@@ -372,9 +368,7 @@ describe("before and after", () => {
     });
     runtime.start(fakeApi(createMemoryStorage()));
     runtime.setOverride("--computed-only", "#ffffff");
-    const view = runtime.store
-      .peek()
-      .tokens.find((token) => token.name === "--computed-only");
+    const view = runtime.store.peek().tokens.find((token) => token.name === "--computed-only");
     expect(view?.effectiveText).toBe("#ffffff");
     expect(view?.baseText).toBe("rgb(1, 2, 3)");
   });
@@ -426,9 +420,7 @@ describe("redaction", () => {
 
   it("honours `sensitive` unconditionally", () => {
     const runtime = createThemeEditorRuntime({
-      tokens: [
-        { name: "--brand-500", type: "color", value: "#123456", sensitive: true },
-      ],
+      tokens: [{ name: "--brand-500", type: "color", value: "#123456", sensitive: true }],
     });
     expect(runtime.store.peek().tokens[0]?.effectiveText).toBe("[redacted]");
   });
@@ -443,9 +435,7 @@ describe("redaction", () => {
     expect(runtime.cssText()).not.toContain("sk-live-should-never-appear");
     expect(runtime.cssText()).toContain("[redacted]");
     expect(runtime.figmaText()).not.toContain("sk-live-should-never-appear");
-    expect(JSON.stringify(runtime.diagnostics())).not.toContain(
-      "sk-live-should-never-appear",
-    );
+    expect(JSON.stringify(runtime.diagnostics())).not.toContain("sk-live-should-never-appear");
     // The recipe is *executable*, so it omits what it cannot represent rather
     // than carrying the mask into a document a machine applies.
     const recipe = JSON.parse(runtime.recipeText()) as {
@@ -574,9 +564,7 @@ describe("redaction", () => {
     // `name` values, which is correct — they were produced at different times.
     // What must never differ is anything describing the *theme*, and this
     // assertion covers that as a subset.
-    expect(JSON.parse(fromLink as string)).toEqual(
-      JSON.parse(runtime.recipeText()),
-    );
+    expect(JSON.parse(fromLink as string)).toEqual(JSON.parse(runtime.recipeText()));
     // And the genuinely masked one is still omitted from both, with the count.
     const parsed = JSON.parse(runtime.recipeText()) as {
       overrides: Record<string, string>;
@@ -625,13 +613,11 @@ describe("exports", () => {
   it("exports the W3C design-tokens shape for Figma", () => {
     const figma = JSON.parse(built().figmaText()) as Record<string, unknown>;
     expect(
-      (figma["Colour"] as Record<string, { $type: string; $value: string }>)[
-        "brand-500"
-      ],
+      (figma["Colour"] as Record<string, { $type: string; $value: string }>)["brand-500"],
     ).toEqual({ $type: "color", $value: "#ff0000" });
-    expect(
-      (figma["Tokens"] as Record<string, { $type: string }>)["radius-md"]?.$type,
-    ).toBe("dimension");
+    expect((figma["Tokens"] as Record<string, { $type: string }>)["radius-md"]?.$type).toBe(
+      "dimension",
+    );
   });
 
   it("says nothing is active rather than exporting an empty rule", () => {
@@ -650,9 +636,7 @@ describe("foreign recipes", () => {
   };
 
   it("refuses a wrong schema version, and says which", () => {
-    expect(parseRecipe('{"schemaVersion":2,"overrides":{}}').error).toContain(
-      "schemaVersion 2",
-    );
+    expect(parseRecipe('{"schemaVersion":2,"overrides":{}}').error).toContain("schemaVersion 2");
     expect(parseRecipe("not json").error).toContain("not JSON");
     expect(parseRecipe('{"schemaVersion":1}').error).toContain("overrides");
   });
@@ -723,12 +707,8 @@ describe("foreign recipes", () => {
   });
 
   it("keeps a `__proto__` override as data", () => {
-    const { recipe } = parseRecipe(
-      '{"schemaVersion":1,"overrides":{"__proto__":"red"}}',
-    );
-    expect(Object.prototype.hasOwnProperty.call(recipe?.overrides ?? {}, "__proto__")).toBe(
-      true,
-    );
+    const { recipe } = parseRecipe('{"schemaVersion":1,"overrides":{"__proto__":"red"}}');
+    expect(Object.prototype.hasOwnProperty.call(recipe?.overrides ?? {}, "__proto__")).toBe(true);
     expect(({} as Record<string, unknown>)["red"]).toBeUndefined();
   });
 
@@ -861,9 +841,7 @@ describe("failing closed", () => {
     // `--radius-md` must not erase the failure on `--brand-500`.
     expect(snapshot.applyErrors["--brand-500"]).toContain("provider offline");
     expect(snapshot.applyErrors["--radius-md"]).toBeUndefined();
-    expect(
-      snapshot.tokens.find((token) => token.name === "--brand-500")?.applyError,
-    ).toBeDefined();
+    expect(snapshot.tokens.find((token) => token.name === "--brand-500")?.applyError).toBeDefined();
 
     broken = false;
     runtime.setOverride("--brand-500", "#00ff00");
@@ -953,17 +931,12 @@ describe("persistence", () => {
     // still written to the page on every mount, so a panel that dropped it
     // would make it invisible *and* unclearable.
     const storage = createMemoryStorage();
-    storage.setItem(
-      OVERRIDES_KEY,
-      JSON.stringify({ "--renamed-token": "#ff0000" }),
-    );
+    storage.setItem(OVERRIDES_KEY, JSON.stringify({ "--renamed-token": "#ff0000" }));
     const runtime = createThemeEditorRuntime({ tokens: TOKENS });
     runtime.start(fakeApi(storage));
     expect(root().style.getPropertyValue("--renamed-token")).toBe("#ff0000");
 
-    const view = runtime.store
-      .peek()
-      .tokens.find((token) => token.name === "--renamed-token");
+    const view = runtime.store.peek().tokens.find((token) => token.name === "--renamed-token");
     expect(view?.orphaned).toBe(true);
     expect(runtime.store.peek().overriddenCount).toBe(1);
 
@@ -988,9 +961,9 @@ describe("persistence", () => {
     expect(runtime.overrides()).toEqual({ "--brand-500": "#00ff00" });
     expect(runtime.store.peek().notice).toContain("--dtb-bg");
     // Written back, so it does not come round again on the next load.
-    expect(
-      JSON.parse(storage.getItem(OVERRIDES_KEY) as string) as unknown,
-    ).toEqual({ "--brand-500": "#00ff00" });
+    expect(JSON.parse(storage.getItem(OVERRIDES_KEY) as string) as unknown).toEqual({
+      "--brand-500": "#00ff00",
+    });
   });
 
   it("re-applies every edit when the surface element is replaced", () => {
@@ -1065,9 +1038,7 @@ describe("persistence", () => {
       instanceId: "test",
       storage: {
         getItem: (key) =>
-          key === "dtb:v1:test:ext:theme-editor:overrides"
-            ? storage.getItem(OVERRIDES_KEY)
-            : null,
+          key === "dtb:v1:test:ext:theme-editor:overrides" ? storage.getItem(OVERRIDES_KEY) : null,
         setItem: () => {},
         removeItem: () => {},
       },

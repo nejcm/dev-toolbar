@@ -56,10 +56,7 @@ describe("collectCommands", () => {
       id: "a",
       commands: [command("a.one"), command("a.two")],
     });
-    expect(collectCommands([extension]).map((c) => c.id)).toEqual([
-      "a.one",
-      "a.two",
-    ]);
+    expect(collectCommands([extension]).map((c) => c.id)).toEqual(["a.one", "a.two"]);
   });
 
   it("calls the function form on every pass, so a later command is enumerated", () => {
@@ -70,10 +67,7 @@ describe("collectCommands", () => {
     });
     expect(collectCommands([extension]).map((c) => c.id)).toEqual(["a.one"]);
     extra = true;
-    expect(collectCommands([extension]).map((c) => c.id)).toEqual([
-      "a.one",
-      "a.two",
-    ]);
+    expect(collectCommands([extension]).map((c) => c.id)).toEqual(["a.one", "a.two"]);
   });
 
   it("orders by extension, then declaration, and drops later duplicate ids", () => {
@@ -85,17 +79,9 @@ describe("collectCommands", () => {
       id: "b",
       commands: [command("b.one"), command("shared")],
     });
-    expect(collectCommands([first, second]).map((c) => c.id)).toEqual([
-      "shared",
-      "a.one",
-      "b.one",
-    ]);
+    expect(collectCommands([first, second]).map((c) => c.id)).toEqual(["shared", "a.one", "b.one"]);
     // Stable across passes: a palette's cursor must not move under it.
-    expect(collectCommands([first, second]).map((c) => c.id)).toEqual([
-      "shared",
-      "a.one",
-      "b.one",
-    ]);
+    expect(collectCommands([first, second]).map((c) => c.id)).toEqual(["shared", "a.one", "b.one"]);
   });
 
   it("contains a throwing commands() and keeps the rest of the aggregation", () => {
@@ -107,9 +93,7 @@ describe("collectCommands", () => {
     });
     const fine = makeExtension({ id: "fine", commands: [command("fine.one")] });
 
-    expect(collectCommands([broken, fine]).map((c) => c.id)).toEqual([
-      "fine.one",
-    ]);
+    expect(collectCommands([broken, fine]).map((c) => c.id)).toEqual(["fine.one"]);
     expect(errors).toHaveLength(1);
     expect(String(errors[0]?.[0])).toContain("broken");
 
@@ -201,7 +185,10 @@ describe("aggregation through a mounted toolbar", () => {
       id: "grow",
       commands: () =>
         grown
-          ? [command("grow.one", () => ran.push("one")), command("grow.late", () => ran.push("late"))]
+          ? [
+              command("grow.one", () => ran.push("one")),
+              command("grow.late", () => ran.push("late")),
+            ]
           : [command("grow.one", () => ran.push("one"))],
     });
     const { toolbar } = mount([extension]);
@@ -212,10 +199,7 @@ describe("aggregation through a mounted toolbar", () => {
     grown = true;
 
     // No re-render, no remount: the extension list has not changed at all.
-    expect(toolbar.getCommands().map((c) => c.id)).toEqual([
-      "grow.one",
-      "grow.late",
-    ]);
+    expect(toolbar.getCommands().map((c) => c.id)).toEqual(["grow.one", "grow.late"]);
     await act(async () => {
       expect(await toolbar.runCommand("grow.late")).toBe(true);
     });
@@ -240,18 +224,14 @@ describe("aggregation through a mounted toolbar", () => {
         void api.runCommand("other.one");
         // Later, after the other extension has grown.
         queueMicrotask(() => {
-          ranByExtension = api
-            .getCommands()
-            .some((c) => c.id === "other.late");
+          ranByExtension = api.getCommands().some((c) => c.id === "other.late");
         });
       },
     };
     const other = makeExtension({
       id: "other",
       commands: () =>
-        grown
-          ? [command("other.one"), command("other.late")]
-          : [command("other.one")],
+        grown ? [command("other.one"), command("other.late")] : [command("other.one")],
     });
 
     mount([reader, other]);
@@ -272,13 +252,8 @@ describe("aggregation through a mounted toolbar", () => {
     });
     expect(toolbar.context().commands).toBe(first);
 
-    const unregister = toolbar.register(
-      makeExtension({ id: "b", commands: [command("b.one")] }),
-    );
-    expect(toolbar.context().commands.map((c) => c.id)).toEqual([
-      "a.one",
-      "b.one",
-    ]);
+    const unregister = toolbar.register(makeExtension({ id: "b", commands: [command("b.one")] }));
+    expect(toolbar.context().commands.map((c) => c.id)).toEqual(["a.one", "b.one"]);
     unregister();
   });
 

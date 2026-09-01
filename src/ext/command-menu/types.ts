@@ -133,9 +133,7 @@ export function filterCommands(
   const recents = scored
     .filter((entry) => recentRank.has(entry.command.id))
     .sort(
-      (a, b) =>
-        (recentRank.get(a.command.id) as number) -
-        (recentRank.get(b.command.id) as number),
+      (a, b) => (recentRank.get(a.command.id) as number) - (recentRank.get(b.command.id) as number),
     );
   const rest = scored.filter((entry) => !recentRank.has(entry.command.id));
 

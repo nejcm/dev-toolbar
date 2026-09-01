@@ -42,11 +42,7 @@
 import { createCommandMenuRuntime, isApplePlatform } from "./runtime";
 import { CommandMenuOverlay, CommandMenuTrigger } from "./ui";
 import type { CommandMenuRuntimeOptions } from "./runtime";
-import type {
-  DevToolbarExtension,
-  ExtensionRuntimeApi,
-  ToolbarAlign,
-} from "../../core/contract";
+import type { DevToolbarExtension, ExtensionRuntimeApi, ToolbarAlign } from "../../core/contract";
 
 export interface CommandMenuOptions extends CommandMenuRuntimeOptions {
   /** Extension id. Default `"command-menu"`. */
@@ -81,9 +77,7 @@ export interface CommandMenuOptions extends CommandMenuRuntimeOptions {
  * Builds the extension. Call it once — the returned object owns the palette's
  * state and, once started, the key binding.
  */
-export function commandMenu(
-  options: CommandMenuOptions = {},
-): DevToolbarExtension {
+export function commandMenu(options: CommandMenuOptions = {}): DevToolbarExtension {
   const {
     id = "command-menu",
     label = "Commands",
@@ -160,11 +154,5 @@ export type {
   CommandMenuSnapshot,
   ParsedHotkey,
 } from "./runtime";
-export {
-  filterCommands,
-  OTHER_SECTION,
-  RECENT_SECTION,
-  scoreCommand,
-  sectionsOf,
-} from "./types";
+export { filterCommands, OTHER_SECTION, RECENT_SECTION, scoreCommand, sectionsOf } from "./types";
 export type { CommandMatch } from "./types";

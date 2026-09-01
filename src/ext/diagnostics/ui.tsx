@@ -84,10 +84,7 @@ export function DiagnosticsChip({
           : `${label}: click to capture a snapshot for a bug report`
       }
     >
-      <span
-        data-dtb-part="diag-chip"
-        data-dtb-incomplete={omissions > 0 ? "true" : "false"}
-      >
+      <span data-dtb-part="diag-chip" data-dtb-incomplete={omissions > 0 ? "true" : "false"}>
         <span data-dtb-part="diag-dot" aria-hidden="true" />
         <span>{isOverflowed ? label : "diagnostics"}</span>
         <span data-dtb-part="diag-value">
@@ -108,16 +105,10 @@ export interface PanelProps {
   injectStyles: boolean;
 }
 
-export function DiagnosticsPanel({
-  runtime,
-  label,
-  injectStyles,
-}: PanelProps): ReactNode {
+export function DiagnosticsPanel({ runtime, label, injectStyles }: PanelProps): ReactNode {
   useDiagnosticsStyles(injectStyles);
   const state = useSnapshotState(runtime);
-  const [format, setFormat] = useState<SnapshotFormat>(() =>
-    runtime.readFormat(),
-  );
+  const [format, setFormat] = useState<SnapshotFormat>(() => runtime.readFormat());
   const [status, setStatus] = useState<string | null>(null);
 
   // Capturing is a side effect, so it happens in one — not during render, where
@@ -178,11 +169,7 @@ export function DiagnosticsPanel({
   return (
     <div data-dtb-part="diag-panel" aria-label={label}>
       <div data-dtb-part="diag-toolbar">
-        <div
-          data-dtb-part="diag-formats"
-          role="group"
-          aria-label="Snapshot format"
-        >
+        <div data-dtb-part="diag-formats" role="group" aria-label="Snapshot format">
           {SNAPSHOT_FORMATS.map((id) => (
             <button
               key={id}
@@ -240,8 +227,7 @@ export function DiagnosticsPanel({
             Incomplete — {snapshot.omissions.length} thing
             {snapshot.omissions.length === 1 ? "" : "s"} could not be included.
           </strong>{" "}
-          They are listed in the snapshot itself as well, so whoever reads the
-          ticket sees them too.
+          They are listed in the snapshot itself as well, so whoever reads the ticket sees them too.
           <ul data-dtb-part="diag-omission-list">
             {snapshot.omissions.map((omission) => (
               <li key={omission.id} data-dtb-omission={omission.id}>

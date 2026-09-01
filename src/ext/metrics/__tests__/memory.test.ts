@@ -40,9 +40,7 @@ describe("memory collector — API present", () => {
     view = collector.read(clock.t);
     expect(view.severity).toBe("bad"); // 80% of the limit
     expect(Object.fromEntries(view.detail)["Share of limit"]).toBe("80.0%");
-    expect(Object.fromEntries(view.detail)["Change (last minute)"]).toBe(
-      "+38.1 MB",
-    );
+    expect(Object.fromEntries(view.detail)["Change (last minute)"]).toBe("+38.1 MB");
 
     controller.abort();
   });
@@ -124,9 +122,7 @@ describe("memory collector — API absent", () => {
     expect(view.hint).toContain("Chromium-only");
     // Starting an unsupported collector must still be harmless.
     const controller = new AbortController();
-    expect(() =>
-      collector.start(context(controller, { t: 0 })),
-    ).not.toThrow();
+    expect(() => collector.start(context(controller, { t: 0 }))).not.toThrow();
     controller.abort();
     expect(collector.diagnostics(0)).toMatchObject({ supported: false });
   });

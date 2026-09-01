@@ -46,9 +46,7 @@ let loadError: unknown = null;
  * by the time an `it()` body calls `renderWithToolbar()` this has already
  * settled. Await it only if you need to render during module evaluation.
  */
-export const testingLibraryReady: Promise<void> = import(
-  "@testing-library/react"
-)
+export const testingLibraryReady: Promise<void> = import("@testing-library/react")
   .then((module) => {
     cached ??= module as unknown as ReactTestingLibrary;
   })
@@ -77,8 +75,7 @@ export function setTestingLibrary(module: ReactTestingLibrary): void {
  * to keep narrow. `module` is undefined in ESM, so this is genuinely dead there.
  */
 function requireFromHost(): ReactTestingLibrary | null {
-  const host: unknown =
-    typeof module === "undefined" ? undefined : (module as unknown);
+  const host: unknown = typeof module === "undefined" ? undefined : (module as unknown);
   if (host === undefined || host === null) return null;
   const load = (host as { require?: (id: string) => unknown }).require;
   if (typeof load !== "function") return null;

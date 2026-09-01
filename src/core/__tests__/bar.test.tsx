@@ -3,18 +3,14 @@ import { describe, expect, it, vi } from "vitest";
 import type { DevToolbarExtension } from "../contract";
 import { Bar, sortExtensions } from "../Bar";
 
-const ext = (
-  id: string,
-  overrides: Partial<DevToolbarExtension> = {},
-): DevToolbarExtension => ({
+const ext = (id: string, overrides: Partial<DevToolbarExtension> = {}): DevToolbarExtension => ({
   id,
   label: id,
   compact: () => <span data-testid={`compact-${id}`}>{id}</span>,
   ...overrides,
 });
 
-const ids = (list: readonly DevToolbarExtension[]) =>
-  list.map((extension) => extension.id);
+const ids = (list: readonly DevToolbarExtension[]) => list.map((extension) => extension.id);
 
 describe("sortExtensions", () => {
   it("splits by align and sorts by order", () => {

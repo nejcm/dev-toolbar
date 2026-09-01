@@ -84,9 +84,7 @@ describe("persistence", () => {
 
 describe("describing an element", () => {
   it("reads like a selector, and truncates a long class list", () => {
-    const host = html(
-      `<div id="main" class="a b c d e"></div><span class="x"></span><i></i>`,
-    );
+    const host = html(`<div id="main" class="a b c d e"></div><span class="x"></span><i></i>`);
     const [div, span, italic] = [...host.children];
     expect(describeElement(div as Element)).toBe("div#main.a.b.c+2");
     expect(describeElement(span as Element)).toBe("span.x");
@@ -102,9 +100,7 @@ describe("accessible names", () => {
 
   it("prefers aria-label, then aria-labelledby, then content", () => {
     expect(name(`<button aria-label="Close">×</button>`)).toBe("Close");
-    expect(
-      name(`<button aria-labelledby="t">×</button><span id="t">Save</span>`),
-    ).toBe("Save");
+    expect(name(`<button aria-labelledby="t">×</button><span id="t">Save</span>`)).toBe("Save");
     expect(name(`<button>  Save   changes </button>`)).toBe("Save changes");
   });
 
@@ -123,9 +119,7 @@ describe("accessible names", () => {
   });
 
   it("names an icon-only button from its labelled child", () => {
-    expect(name(`<button><svg aria-label="Delete"></svg></button>`)).toBe(
-      "Delete",
-    );
+    expect(name(`<button><svg aria-label="Delete"></svg></button>`)).toBe("Delete");
     expect(name(`<button><svg></svg></button>`)).toBeNull();
   });
 
@@ -137,9 +131,7 @@ describe("accessible names", () => {
 
 describe("reading the document", () => {
   it("recognises anything inside any dev toolbar", () => {
-    const host = html(
-      `<div data-dev-toolbar><span id="inside"></span></div><b id="outside"></b>`,
-    );
+    const host = html(`<div data-dev-toolbar><span id="inside"></span></div><b id="outside"></b>`);
     expect(isInToolbar(host.querySelector("#inside"))).toBe(true);
     expect(isInToolbar(host.querySelector("[data-dev-toolbar]"))).toBe(true);
     expect(isInToolbar(host.querySelector("#outside"))).toBe(false);
@@ -148,17 +140,13 @@ describe("reading the document", () => {
     // resolve through its parent rather than throwing.
     expect(
       isInToolbar(
-        (host.querySelector("#inside") as Element).appendChild(
-          document.createTextNode("x"),
-        ),
+        (host.querySelector("#inside") as Element).appendChild(document.createTextNode("x")),
       ),
     ).toBe(true);
   });
 
   it("parses tabindex, and only when it is a number", () => {
-    const host = html(
-      `<a tabindex="3"></a><b tabindex="-1"></b><i tabindex="wat"></i><u></u>`,
-    );
+    const host = html(`<a tabindex="3"></a><b tabindex="-1"></b><i tabindex="wat"></i><u></u>`);
     const [a, b, i, u] = [...host.children];
     expect(tabIndexOf(a as Element)).toBe(3);
     expect(tabIndexOf(b as Element)).toBe(-1);
@@ -168,22 +156,12 @@ describe("reading the document", () => {
 
   it("counts a rect as painted only when it has a box and is on screen", () => {
     const viewport = { width: 100, height: 100 };
-    expect(isPaintedRect({ x: 0, y: 0, width: 0, height: 0 }, viewport)).toBe(
-      false,
-    );
-    expect(isPaintedRect({ x: 0, y: 0, width: 10, height: 10 }, viewport)).toBe(
-      true,
-    );
-    expect(isPaintedRect({ x: 0, y: 200, width: 10, height: 10 }, viewport)).toBe(
-      false,
-    );
-    expect(
-      isPaintedRect({ x: 0, y: -20, width: 10, height: 10 }, viewport),
-    ).toBe(false);
+    expect(isPaintedRect({ x: 0, y: 0, width: 0, height: 0 }, viewport)).toBe(false);
+    expect(isPaintedRect({ x: 0, y: 0, width: 10, height: 10 }, viewport)).toBe(true);
+    expect(isPaintedRect({ x: 0, y: 200, width: 10, height: 10 }, viewport)).toBe(false);
+    expect(isPaintedRect({ x: 0, y: -20, width: 10, height: 10 }, viewport)).toBe(false);
     // Partly on screen still counts: half a badge is information.
-    expect(isPaintedRect({ x: 0, y: -5, width: 10, height: 10 }, viewport)).toBe(
-      true,
-    );
+    expect(isPaintedRect({ x: 0, y: -5, width: 10, height: 10 }, viewport)).toBe(true);
   });
 });
 
@@ -205,9 +183,7 @@ describe("the grid", () => {
 
 describe("the host stylesheet", () => {
   const sheets = () =>
-    document.head.querySelectorAll(
-      `style[data-dev-toolbar-styles="${BOXES_STYLE_ENTRY}"]`,
-    );
+    document.head.querySelectorAll(`style[data-dev-toolbar-styles="${BOXES_STYLE_ENTRY}"]`);
 
   it("adds exactly one, however many times it is asked", () => {
     setHostOutlines(true);
@@ -228,12 +204,8 @@ describe("the host stylesheet", () => {
     stray.setAttribute("data-dev-toolbar-styles", BOXES_STYLE_ENTRY);
     document.head.appendChild(stray);
     expect(sheets()).toHaveLength(2);
-    expect(
-      (sheets()[0] as HTMLElement).getAttribute(BOXES_REFS_ATTRIBUTE),
-    ).toBe("1");
-    expect(
-      (sheets()[1] as HTMLElement).getAttribute(BOXES_REFS_ATTRIBUTE),
-    ).toBeNull();
+    expect((sheets()[0] as HTMLElement).getAttribute(BOXES_REFS_ATTRIBUTE)).toBe("1");
+    expect((sheets()[1] as HTMLElement).getAttribute(BOXES_REFS_ATTRIBUTE)).toBeNull();
 
     setHostOutlines(false);
     expect(sheets()).toHaveLength(0);
@@ -257,9 +229,10 @@ describe("the host stylesheet", () => {
 describe("the runtime on its own", () => {
   it("starts with everything off, and honours supplied defaults", () => {
     expect(createOverlaysRuntime().enabled()).toEqual(NO_OVERLAYS);
-    expect(createOverlaysRuntime({ defaults: { grid: true } }).enabled()).toEqual(
-      { ...NO_OVERLAYS, grid: true },
-    );
+    expect(createOverlaysRuntime({ defaults: { grid: true } }).enabled()).toEqual({
+      ...NO_OVERLAYS,
+      grid: true,
+    });
   });
 
   it("ignores an id it does not ship", () => {
@@ -274,9 +247,7 @@ describe("the runtime on its own", () => {
     expect(runtime.store.peek().ready).toBe(false);
     expect(runtime.store.peek().active).toBe(false);
     expect(
-      document.head.querySelectorAll(
-        `style[data-dev-toolbar-styles="${BOXES_STYLE_ENTRY}"]`,
-      ),
+      document.head.querySelectorAll(`style[data-dev-toolbar-styles="${BOXES_STYLE_ENTRY}"]`),
     ).toHaveLength(0);
   });
 });
@@ -307,9 +278,7 @@ describe("snapshot equality", () => {
   it("is what stops a stationary pointer re-rendering the page", () => {
     // The pointer moves inside one element: same rect, same label, nothing to
     // repaint. Without this the overlay tree would re-render every frame.
-    expect(
-      sameSnapshot({ ...base, hover }, { ...base, hover: { ...hover } }),
-    ).toBe(true);
+    expect(sameSnapshot({ ...base, hover }, { ...base, hover: { ...hover } })).toBe(true);
     expect(
       sameSnapshot(
         { ...base, hover },
@@ -327,29 +296,19 @@ describe("snapshot equality", () => {
       ...hover,
       padding: { top: 8, right: 8, bottom: 8, left: 8 },
     };
-    expect(sameSnapshot({ ...base, hover }, { ...base, hover: padded })).toBe(
-      false,
-    );
+    expect(sameSnapshot({ ...base, hover }, { ...base, hover: padded })).toBe(false);
     const marginned = {
       ...hover,
       margin: { top: 0, right: 0, bottom: 12, left: 0 },
     };
-    expect(
-      sameSnapshot({ ...base, hover }, { ...base, hover: marginned }),
-    ).toBe(false);
+    expect(sameSnapshot({ ...base, hover }, { ...base, hover: marginned })).toBe(false);
     // And the two labels the inspector prints from.
-    expect(
-      sameSnapshot(
-        { ...base, hover },
-        { ...base, hover: { ...hover, role: "button" } },
-      ),
-    ).toBe(false);
-    expect(
-      sameSnapshot(
-        { ...base, hover },
-        { ...base, hover: { ...hover, pinned: true } },
-      ),
-    ).toBe(false);
+    expect(sameSnapshot({ ...base, hover }, { ...base, hover: { ...hover, role: "button" } })).toBe(
+      false,
+    );
+    expect(sameSnapshot({ ...base, hover }, { ...base, hover: { ...hover, pinned: true } })).toBe(
+      false,
+    );
   });
 
   it("notices every field a surface reads", () => {
@@ -373,10 +332,7 @@ describe("snapshot equality", () => {
       tabIndex: null,
     };
     expect(
-      sameSnapshot(
-        { ...base, focusItems: [item] },
-        { ...base, focusItems: [{ ...item }] },
-      ),
+      sameSnapshot({ ...base, focusItems: [item] }, { ...base, focusItems: [{ ...item }] }),
     ).toBe(true);
     expect(
       sameSnapshot(

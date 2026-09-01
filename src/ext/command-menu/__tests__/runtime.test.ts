@@ -21,9 +21,7 @@ afterEach(() => {
 const key = (init: Partial<KeyboardEventInit> & { key: string }) =>
   new KeyboardEvent("keydown", init);
 
-const api = (
-  overrides: Partial<ExtensionRuntimeApi> = {},
-): ExtensionRuntimeApi => {
+const api = (overrides: Partial<ExtensionRuntimeApi> = {}): ExtensionRuntimeApi => {
   const store = new Map<string, string>();
   return {
     signal: new AbortController().signal,
@@ -76,15 +74,13 @@ describe("matchesHotkey", () => {
   });
 
   it("matches modifiers exactly, so Mod+K is not Mod+Shift+K", () => {
-    expect(
-      matchesHotkey(key({ key: "k", ctrlKey: true, shiftKey: true }), modK!, false),
-    ).toBe(false);
+    expect(matchesHotkey(key({ key: "k", ctrlKey: true, shiftKey: true }), modK!, false)).toBe(
+      false,
+    );
   });
 
   it("falls back to the physical code when a layout reports another character", () => {
-    expect(
-      matchesHotkey(key({ key: "œ", code: "KeyK", ctrlKey: true }), modK!, false),
-    ).toBe(true);
+    expect(matchesHotkey(key({ key: "œ", code: "KeyK", ctrlKey: true }), modK!, false)).toBe(true);
   });
 });
 

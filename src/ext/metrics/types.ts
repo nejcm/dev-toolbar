@@ -9,12 +9,7 @@ import type { TimeSeries } from "../../runtime";
 
 export type MetricId = "memory" | "delay" | "jank" | "network";
 
-export const METRIC_IDS: readonly MetricId[] = [
-  "memory",
-  "delay",
-  "jank",
-  "network",
-];
+export const METRIC_IDS: readonly MetricId[] = ["memory", "delay", "jank", "network"];
 
 /** `"unknown"` is a real state: it is what an unsupported platform API looks like. */
 export type Severity = "unknown" | "ok" | "warn" | "bad";
@@ -32,10 +27,7 @@ export interface Thresholds {
   bad: number;
 }
 
-export function severityFor(
-  value: number,
-  thresholds: Thresholds,
-): Severity {
+export function severityFor(value: number, thresholds: Thresholds): Severity {
   if (!Number.isFinite(value)) return "unknown";
   if (value > thresholds.bad) return "bad";
   if (value > thresholds.warn) return "warn";

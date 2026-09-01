@@ -25,11 +25,7 @@ export type { DevToolbarInsetProps } from "./core/DevToolbarInset";
 export { useDevToolbar, useToolbarCommands } from "./core/context";
 export type { DevToolbarContextValue } from "./core/context";
 
-export {
-  collectCommands,
-  resolveExtensionCommands,
-  runCommand,
-} from "./core/commands";
+export { collectCommands, resolveExtensionCommands, runCommand } from "./core/commands";
 
 export { collectDiagnostics } from "./core/diagnostics";
 
@@ -44,8 +40,4 @@ export { CORE_CSS, ensureStyles } from "./core/styles";
 
 export { DEFAULT_SHORTCUT } from "./core/shortcut";
 
-export {
-  DEFAULT_PANEL_HEIGHT,
-  MAX_PANEL_HEIGHT,
-  MIN_PANEL_HEIGHT,
-} from "./core/store";
+export { DEFAULT_PANEL_HEIGHT, MAX_PANEL_HEIGHT, MIN_PANEL_HEIGHT } from "./core/store";

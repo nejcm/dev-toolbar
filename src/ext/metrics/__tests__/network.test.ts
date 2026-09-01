@@ -22,15 +22,12 @@ const response = (status = 200, length?: string) =>
     headers: { get: (name: string) => (name === "content-length" ? (length ?? null) : null) },
   }) as unknown as Response;
 
-const detailOf = (view: { detail: readonly [string, string][] }) =>
-  Object.fromEntries(view.detail);
+const detailOf = (view: { detail: readonly [string, string][] }) => Object.fromEntries(view.detail);
 
 describe("network collector — fetch present", () => {
   it("counts in-flight requests and restores fetch on teardown", async () => {
     let settle: (value: Response) => void = () => {};
-    const inner = vi.fn(
-      () => new Promise<Response>((resolve) => (settle = resolve)),
-    );
+    const inner = vi.fn(() => new Promise<Response>((resolve) => (settle = resolve)));
     globalThis.fetch = inner as unknown as typeof fetch;
 
     const clock = { t: 0 };
@@ -138,9 +135,7 @@ describe("network collector — fetch present", () => {
     collector.start(context(controller, { t: 0 }));
     await globalThis.fetch("/telemetry/beacon");
     await globalThis.fetch("/api/real");
-    expect((collector.entries?.(0) ?? []).map((entry) => entry.url)).toEqual([
-      "/api/real",
-    ]);
+    expect((collector.entries?.(0) ?? []).map((entry) => entry.url)).toEqual(["/api/real"]);
     controller.abort();
   });
 
@@ -200,9 +195,9 @@ describe("network collector — fetch present", () => {
     collector.start(context(controller, { t: 0 }));
     // A malformed percent-escape used to make redactUrl() throw URIError,
     // synchronously, inside the wrapper.
-    await expect(
-      globalThis.fetch("http://bad host/?%zz=1&api_key=abc"),
-    ).resolves.toMatchObject({ status: 200 });
+    await expect(globalThis.fetch("http://bad host/?%zz=1&api_key=abc")).resolves.toMatchObject({
+      status: 200,
+    });
     expect(collector.entries?.(0)[0]?.url).not.toContain("abc");
     controller.abort();
   });
@@ -218,7 +213,6 @@ describe("network collector — fetch present", () => {
     controller.abort();
     expect(globalThis.fetch).toBe(stranger);
   });
-
 
   it("clears everything on reset", async () => {
     globalThis.fetch = vi.fn(async () => response(200)) as unknown as typeof fetch;

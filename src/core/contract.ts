@@ -57,9 +57,7 @@ export interface ToolbarCommand {
  * A throw is contained: core logs once per extension and treats that extension
  * as contributing nothing, exactly as if it were `hidden`.
  */
-export type ToolbarCommandsInput =
-  | readonly ToolbarCommand[]
-  | (() => readonly ToolbarCommand[]);
+export type ToolbarCommandsInput = readonly ToolbarCommand[] | (() => readonly ToolbarCommand[]);
 
 /**
  * What one extension contributed to a diagnostic snapshot — **P3**.

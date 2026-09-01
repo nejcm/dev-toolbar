@@ -24,24 +24,11 @@ export type {
   ToolbarEventMap,
 } from "./bus";
 
-export {
-  createNumericRing,
-  createRingBuffer,
-  createTimeSeries,
-} from "./ringBuffer";
-export type {
-  NumericRing,
-  NumericRingStats,
-  RingBuffer,
-  TimeSeries,
-} from "./ringBuffer";
+export { createNumericRing, createRingBuffer, createTimeSeries } from "./ringBuffer";
+export type { NumericRing, NumericRingStats, RingBuffer, TimeSeries } from "./ringBuffer";
 
 export { createThrottledStore } from "./throttledStore";
-export type {
-  CreateThrottledStoreOptions,
-  ThrottledStore,
-  Unsubscribe,
-} from "./throttledStore";
+export type { CreateThrottledStoreOptions, ThrottledStore, Unsubscribe } from "./throttledStore";
 
 export { STYLE_ATTRIBUTE, ensureStyleSheet } from "./styles";
 

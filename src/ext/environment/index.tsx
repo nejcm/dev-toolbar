@@ -49,17 +49,12 @@ import { writeClipboardTextOrThrow } from "../../runtime";
 import { createEnvironmentRuntime } from "./runtime";
 import { EnvironmentChip, EnvironmentPanel } from "./ui";
 import type { EnvironmentContextInput, EnvironmentRuntimeOptions } from "./runtime";
-import type {
-  DevToolbarExtension,
-  ExtensionRuntimeApi,
-  ToolbarAlign,
-} from "../../core/contract";
+import type { DevToolbarExtension, ExtensionRuntimeApi, ToolbarAlign } from "../../core/contract";
 
-export interface EnvironmentOptions
-  extends Pick<
-    EnvironmentRuntimeOptions,
-    "pollMs" | "fields" | "detect" | "maskPii" | "redactOptions"
-  > {
+export interface EnvironmentOptions extends Pick<
+  EnvironmentRuntimeOptions,
+  "pollMs" | "fields" | "detect" | "maskPii" | "redactOptions"
+> {
   /** Extension id. Default `"environment"`. */
   id?: string;
   /** Bar label, used by the error chip and the panel's accessible name. Default `"Environment"`. */
@@ -85,9 +80,7 @@ export interface EnvironmentOptions
  * Builds the extension. Call it once — the returned object owns the store and,
  * once started, the listeners.
  */
-export function environment(
-  options: EnvironmentOptions = {},
-): DevToolbarExtension {
+export function environment(options: EnvironmentOptions = {}): DevToolbarExtension {
   const {
     id = "environment",
     label = "Environment",
@@ -147,13 +140,7 @@ export function environment(
      */
     diagnostics: () => runtime.diagnostics(),
 
-    panel: () => (
-      <EnvironmentPanel
-        runtime={runtime}
-        label={label}
-        injectStyles={injectStyles}
-      />
-    ),
+    panel: () => <EnvironmentPanel runtime={runtime} label={label} injectStyles={injectStyles} />,
 
     commands: [
       {
@@ -176,9 +163,7 @@ export function environment(
         group: "Environment",
         keywords: ["diagnostics", "json", "context"],
         run: async () => {
-          await writeClipboardTextOrThrow(
-            JSON.stringify(runtime.diagnostics(), null, 2),
-          );
+          await writeClipboardTextOrThrow(JSON.stringify(runtime.diagnostics(), null, 2));
         },
       },
       {

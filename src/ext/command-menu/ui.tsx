@@ -1,9 +1,4 @@
-import {
-  useEffect,
-  useId,
-  useRef,
-  useSyncExternalStore,
-} from "react";
+import { useEffect, useId, useRef, useSyncExternalStore } from "react";
 import type { KeyboardEvent as ReactKeyboardEvent, ReactNode } from "react";
 import { ensureCommandMenuStyles } from "./css";
 import { describeHotkey, ariaKeyshortcuts } from "./runtime";
@@ -72,9 +67,7 @@ export function CommandMenuTrigger({
       aria-label={`${label}${hint === "" ? "" : ` (${hint})`}`}
       {...(keyshortcuts === undefined ? {} : { "aria-keyshortcuts": keyshortcuts })}
       title={
-        hint === ""
-          ? `${label} — search and run every registered command`
-          : `${label} — ${hint}`
+        hint === "" ? `${label} — search and run every registered command` : `${label} — ${hint}`
       }
       onClick={() => runtime.toggle()}
     >
@@ -128,9 +121,7 @@ function Dialog({
 
   useEffect(() => {
     const previous =
-      typeof document === "undefined"
-        ? null
-        : (document.activeElement as HTMLElement | null);
+      typeof document === "undefined" ? null : (document.activeElement as HTMLElement | null);
     inputRef.current?.focus();
     return () => {
       // Restore, but only to something still in the document: an extension's
@@ -237,13 +228,7 @@ function Dialog({
           value={snapshot.query}
           onChange={(event) => runtime.setQuery(event.target.value)}
         />
-        <div
-          ref={listRef}
-          id={listId}
-          data-dtb-part="cmd-list"
-          role="listbox"
-          aria-label={label}
-        >
+        <div ref={listRef} id={listId} data-dtb-part="cmd-list" role="listbox" aria-label={label}>
           {snapshot.results.length === 0 ? (
             <div data-dtb-part="cmd-empty" role="status">
               {emptyMessage}
@@ -261,48 +246,37 @@ function Dialog({
                     {section.section}
                   </div>
                 )}
-                {snapshot.results
-                  .slice(section.from, section.to + 1)
-                  .map((match, offset) => {
-                    const index = section.from + offset;
-                    const selected = index === snapshot.activeIndex;
-                    return (
-                      <div
-                        key={match.command.id}
-                        id={optionId(index)}
-                        data-dtb-part="cmd-option"
-                        data-dtb-command-id={match.command.id}
-                        role="option"
-                        aria-selected={selected}
-                        aria-busy={
-                          snapshot.running === match.command.id ? true : undefined
-                        }
-                        // pointerdown, not click: mousedown inside the dialog
-                        // would otherwise blur the input first.
-                        onPointerDown={(event) => {
-                          event.preventDefault();
-                          runtime.setActiveIndex(index);
-                          void runtime.run(match.command.id);
-                        }}
-                        onPointerMove={() => runtime.setActiveIndex(index)}
-                      >
-                        <span data-dtb-part="cmd-option-label">
-                          {match.command.label}
-                        </span>
-                        {match.command.group === undefined ||
-                        section.section !== "" ? null : (
-                          <span data-dtb-part="cmd-option-group">
-                            {match.command.group}
-                          </span>
-                        )}
-                        {match.command.shortcut === undefined ? null : (
-                          <kbd data-dtb-part="cmd-option-hint">
-                            {match.command.shortcut}
-                          </kbd>
-                        )}
-                      </div>
-                    );
-                  })}
+                {snapshot.results.slice(section.from, section.to + 1).map((match, offset) => {
+                  const index = section.from + offset;
+                  const selected = index === snapshot.activeIndex;
+                  return (
+                    <div
+                      key={match.command.id}
+                      id={optionId(index)}
+                      data-dtb-part="cmd-option"
+                      data-dtb-command-id={match.command.id}
+                      role="option"
+                      aria-selected={selected}
+                      aria-busy={snapshot.running === match.command.id ? true : undefined}
+                      // pointerdown, not click: mousedown inside the dialog
+                      // would otherwise blur the input first.
+                      onPointerDown={(event) => {
+                        event.preventDefault();
+                        runtime.setActiveIndex(index);
+                        void runtime.run(match.command.id);
+                      }}
+                      onPointerMove={() => runtime.setActiveIndex(index)}
+                    >
+                      <span data-dtb-part="cmd-option-label">{match.command.label}</span>
+                      {match.command.group === undefined || section.section !== "" ? null : (
+                        <span data-dtb-part="cmd-option-group">{match.command.group}</span>
+                      )}
+                      {match.command.shortcut === undefined ? null : (
+                        <kbd data-dtb-part="cmd-option-hint">{match.command.shortcut}</kbd>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             ))
           )}

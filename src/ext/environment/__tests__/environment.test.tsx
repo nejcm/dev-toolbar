@@ -52,24 +52,16 @@ describe("the compact chip", () => {
   it("says unknown, not local, when the consumer supplied nothing", () => {
     const { toolbar } = mount();
     const item = toolbar.item("environment");
-    expect(text(item?.querySelector('[data-dtb-part="env-value"]'))).toBe(
-      "unknown",
-    );
+    expect(text(item?.querySelector('[data-dtb-part="env-value"]'))).toBe("unknown");
     expect(
-      item
-        ?.querySelector('[data-dtb-part="env-chip"]')
-        ?.getAttribute("data-dtb-severity"),
+      item?.querySelector('[data-dtb-part="env-chip"]')?.getAttribute("data-dtb-severity"),
     ).toBe("unknown");
   });
 
   it("shows the supplied environment and marks production conspicuously", () => {
     const { toolbar } = mount({ context: { environment: "production" } });
-    const chip = toolbar
-      .item("environment")
-      ?.querySelector('[data-dtb-part="env-chip"]');
-    expect(text(chip?.querySelector('[data-dtb-part="env-value"]'))).toBe(
-      "production",
-    );
+    const chip = toolbar.item("environment")?.querySelector('[data-dtb-part="env-chip"]');
+    expect(text(chip?.querySelector('[data-dtb-part="env-value"]'))).toBe("production");
     expect(chip?.getAttribute("data-dtb-severity")).toBe("bad");
   });
 
@@ -98,12 +90,8 @@ describe("the compact chip", () => {
     const { toolbar } = mount({
       context: { environment: "local", impersonating: true },
     });
-    const chip = toolbar
-      .item("environment")
-      ?.querySelector('[data-dtb-part="env-chip"]');
-    expect(text(chip?.querySelector('[data-dtb-part="env-alert"]'))).toBe(
-      "impersonating",
-    );
+    const chip = toolbar.item("environment")?.querySelector('[data-dtb-part="env-chip"]');
+    expect(text(chip?.querySelector('[data-dtb-part="env-alert"]'))).toBe("impersonating");
     // Impersonation outranks the environment: local stops being calm.
     expect(chip?.getAttribute("data-dtb-severity")).toBe("bad");
   });
@@ -114,12 +102,8 @@ describe("the compact chip", () => {
     expect(toolbar.overflowedIds()).toContain("environment");
     toolbar.openOverflow();
     const item = toolbar.item("environment");
-    expect(
-      item?.querySelector('[data-dtb-part="env-overflow"]'),
-    ).not.toBeNull();
-    expect(text(item?.querySelector('[data-dtb-part="env-value"]'))).toBe(
-      "production",
-    );
+    expect(item?.querySelector('[data-dtb-part="env-overflow"]')).not.toBeNull();
+    expect(text(item?.querySelector('[data-dtb-part="env-value"]'))).toBe("production");
   });
 
   it("toggles its own panel through CompactSlotProps.togglePanel", () => {
@@ -176,9 +160,7 @@ describe("the panel", () => {
     expect(route?.getAttribute("data-dtb-source")).toBe("detected");
     expect(text(route)).toContain("/");
     expect(text(route)).toContain("detected");
-    expect(row(panel, "environment")?.getAttribute("data-dtb-source")).toBe(
-      "supplied",
-    );
+    expect(row(panel, "environment")?.getAttribute("data-dtb-source")).toBe("supplied");
   });
 
   it("says a missing field is missing rather than inventing one", () => {
@@ -209,17 +191,13 @@ describe("the panel", () => {
     toolbar.openPanel("environment");
     const panel = toolbar.panel("environment");
     expect(
-      panel
-        ?.querySelector('[data-dtb-part="env-panel"]')
-        ?.getAttribute("data-dtb-impersonating"),
+      panel?.querySelector('[data-dtb-part="env-panel"]')?.getAttribute("data-dtb-impersonating"),
     ).toBe("true");
-    expect(
-      text(panel?.querySelector('[data-dtb-part="env-banner"]')),
-    ).toContain("Impersonation is active");
-    expect(text(row(panel, "impersonation"))).toContain("staff_1 → usr_9");
-    expect(row(panel, "impersonation")?.getAttribute("data-dtb-alarming")).toBe(
-      "true",
+    expect(text(panel?.querySelector('[data-dtb-part="env-banner"]'))).toContain(
+      "Impersonation is active",
     );
+    expect(text(row(panel, "impersonation"))).toContain("staff_1 → usr_9");
+    expect(row(panel, "impersonation")?.getAttribute("data-dtb-alarming")).toBe("true");
   });
 
   it("drops everything outside a `fields` allowlist", () => {
@@ -255,9 +233,7 @@ describe("the panel", () => {
     mount();
     mount({ id: "environment-2" });
     expect(
-      document.head.querySelectorAll(
-        'style[data-dev-toolbar-styles="ext-environment"]',
-      ).length,
+      document.head.querySelectorAll('style[data-dev-toolbar-styles="ext-environment"]').length,
     ).toBe(1);
 
     document.head
@@ -265,9 +241,7 @@ describe("the panel", () => {
       .forEach((node) => node.remove());
     mount({ id: "environment-3", injectStyles: false });
     expect(
-      document.head.querySelector(
-        'style[data-dev-toolbar-styles="ext-environment"]',
-      ),
+      document.head.querySelector('style[data-dev-toolbar-styles="ext-environment"]'),
     ).toBeNull();
   });
 });
@@ -315,9 +289,7 @@ describe("redaction of consumer-supplied data", () => {
     expect(row(panel, "userId")?.getAttribute("data-dtb-masked")).toBe("true");
     expect(text(row(panel, "userId"))).toContain("masked");
     // A value that had nothing to mask is not tagged, or the tag means nothing.
-    expect(row(panel, "extra:buildTool")?.getAttribute("data-dtb-masked")).toBe(
-      "false",
-    );
+    expect(row(panel, "extra:buildTool")?.getAttribute("data-dtb-masked")).toBe("false");
     expect(text(panel?.querySelector('[data-dtb-part="env-actions"] [role="status"]'))).toContain(
       "masked",
     );
@@ -346,9 +318,7 @@ describe("redaction of consumer-supplied data", () => {
     const { toolbar } = mount(leaky);
     toolbar.openPanel("environment");
     const panel = toolbar.panel("environment");
-    expect(row(panel, "extra:sessionCookie")?.getAttribute("data-dtb-source")).toBe(
-      "supplied",
-    );
+    expect(row(panel, "extra:sessionCookie")?.getAttribute("data-dtb-source")).toBe("supplied");
   });
 });
 
@@ -414,16 +384,12 @@ describe("the clipboard path", () => {
       fields: { id: string; value: string }[];
     };
     expect(JSON.stringify(parsed)).not.toContain("super-secret");
-    expect(parsed.fields.find((f) => f.id === "userId")?.value).toBe(
-      "n***@example.com",
-    );
+    expect(parsed.fields.find((f) => f.id === "userId")?.value).toBe("n***@example.com");
   });
 
   it("closes the front door: the aggregated command redacts as well", async () => {
     const { extension } = mount(leaky);
-    const copy = collectCommands([extension]).find(
-      (c) => c.id === "environment.copy",
-    );
+    const copy = collectCommands([extension]).find((c) => c.id === "environment.copy");
     await act(async () => {
       await copy?.run();
     });
@@ -440,13 +406,11 @@ describe("the clipboard path", () => {
     toolbar.openPanel("environment");
     const panel = toolbar.panel("environment");
     await act(async () => {
-      panel
-        ?.querySelector<HTMLButtonElement>('[data-dtb-action="copy"]')
-        ?.click();
+      panel?.querySelector<HTMLButtonElement>('[data-dtb-action="copy"]')?.click();
     });
-    expect(
-      text(panel?.querySelector('[data-dtb-part="env-actions"] [role="status"]')),
-    ).toBe("Clipboard unavailable.");
+    expect(text(panel?.querySelector('[data-dtb-part="env-actions"] [role="status"]'))).toBe(
+      "Clipboard unavailable.",
+    );
   });
 });
 
@@ -460,9 +424,7 @@ describe("live context", () => {
         context: () => ({ environment: "staging", syncStatus: status }),
       });
       toolbar.openPanel("environment");
-      expect(text(row(toolbar.panel("environment"), "sync"))).toBe(
-        "connecting",
-      );
+      expect(text(row(toolbar.panel("environment"), "sync"))).toBe("connecting");
       status = "connected";
       act(() => {
         vi.advanceTimersByTime(600);
@@ -509,13 +471,9 @@ describe("live context", () => {
         },
       });
       expect(toolbar.item("environment")).not.toBeNull();
-      expect(
-        text(
-          toolbar
-            .item("environment")
-            ?.querySelector('[data-dtb-part="env-value"]'),
-        ),
-      ).toBe("unknown");
+      expect(text(toolbar.item("environment")?.querySelector('[data-dtb-part="env-value"]'))).toBe(
+        "unknown",
+      );
     } finally {
       spy.mockRestore();
     }

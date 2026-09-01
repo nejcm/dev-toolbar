@@ -1,9 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import {
-  createNumericRing,
-  createRingBuffer,
-  createTimeSeries,
-} from "../ringBuffer";
+import { createNumericRing, createRingBuffer, createTimeSeries } from "../ringBuffer";
 
 describe("createRingBuffer", () => {
   it("keeps the newest `capacity` items and drops the rest", () => {
@@ -39,8 +35,7 @@ describe("createRingBuffer", () => {
     const spy = vi
       .spyOn(globalThis, "Array")
       .mockImplementation(
-        (...args: unknown[]) =>
-          new ArrayConstructor(...(args as [number])) as unknown as never,
+        (...args: unknown[]) => new ArrayConstructor(...(args as [number])) as unknown as never,
       );
     try {
       const ring = createRingBuffer<number>(8);
@@ -96,8 +91,7 @@ describe("createNumericRing", () => {
     const spy = vi
       .spyOn(globalThis, "Float64Array")
       .mockImplementation(
-        (...args: unknown[]) =>
-          new Float64(...(args as [number])) as unknown as never,
+        (...args: unknown[]) => new Float64(...(args as [number])) as unknown as never,
       );
     try {
       const ring = createNumericRing(16);

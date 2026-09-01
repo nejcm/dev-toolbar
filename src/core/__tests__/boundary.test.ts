@@ -47,9 +47,7 @@ describe("core boundary (source)", () => {
       const source = readFileSync(file, "utf8");
       // `import type` would erase, but core has no business referencing these
       // at all, so the check does not carve out an exception for it.
-      for (const match of source.matchAll(
-        /from\s+["']([^"']+)["']/g,
-      )) {
+      for (const match of source.matchAll(/from\s+["']([^"']+)["']/g)) {
         const specifier = match[1] as string;
         if (/(^|\/)(runtime|ext)(\/|$)/.test(specifier)) {
           offenders.push(`${file} -> ${specifier}`);
@@ -62,9 +60,7 @@ describe("core boundary (source)", () => {
   it("keeps /testing off runtime/ and ext/ too, so it works before they exist", () => {
     const offenders: string[] = [];
     for (const file of sourceFiles(resolve(root, "src/testing"))) {
-      for (const match of readFileSync(file, "utf8").matchAll(
-        /from\s+["'](\.\.?\/[^"']+)["']/g,
-      )) {
+      for (const match of readFileSync(file, "utf8").matchAll(/from\s+["'](\.\.?\/[^"']+)["']/g)) {
         const specifier = match[1] as string;
         if (/(^|\/)(runtime|ext)(\/|$)/.test(specifier)) {
           offenders.push(`${file} -> ${specifier}`);
@@ -127,30 +123,26 @@ if (!built && mustBeBuilt) {
     });
 
     it("does contain the markers where they belong, so the check can fail", () => {
-      expect(readFileSync(`${root}dist/runtime.cjs`, "utf8")).toContain(
-        RUNTIME_MARKER,
-      );
+      expect(readFileSync(`${root}dist/runtime.cjs`, "utf8")).toContain(RUNTIME_MARKER);
       expect(readFileSync(`${root}dist/ext/metrics.cjs`, "utf8")).toContain(
         EXT_MARKERS[0] as string,
       );
       expect(readFileSync(`${root}dist/ext/environment.cjs`, "utf8")).toContain(
         EXT_MARKERS[1] as string,
       );
-      expect(readFileSync(`${root}dist/ext/flags.cjs`, "utf8")).toContain(
-        EXT_MARKERS[2] as string,
+      expect(readFileSync(`${root}dist/ext/flags.cjs`, "utf8")).toContain(EXT_MARKERS[2] as string);
+      expect(readFileSync(`${root}dist/ext/command-menu.cjs`, "utf8")).toContain(
+        EXT_MARKERS[3] as string,
       );
-      expect(
-        readFileSync(`${root}dist/ext/command-menu.cjs`, "utf8"),
-      ).toContain(EXT_MARKERS[3] as string);
       expect(readFileSync(`${root}dist/ext/overlays.cjs`, "utf8")).toContain(
         EXT_MARKERS[4] as string,
       );
-      expect(
-        readFileSync(`${root}dist/ext/diagnostics.cjs`, "utf8"),
-      ).toContain(EXT_MARKERS[5] as string);
-      expect(
-        readFileSync(`${root}dist/ext/theme-editor.cjs`, "utf8"),
-      ).toContain(EXT_MARKERS[6] as string);
+      expect(readFileSync(`${root}dist/ext/diagnostics.cjs`, "utf8")).toContain(
+        EXT_MARKERS[5] as string,
+      );
+      expect(readFileSync(`${root}dist/ext/theme-editor.cjs`, "utf8")).toContain(
+        EXT_MARKERS[6] as string,
+      );
     });
   });
 }
@@ -166,9 +158,9 @@ if (built || !mustBeBuilt) {
     it("keeps one extension out of another's bundle", () => {
       // Two extensions on two subpaths: neither should drag the other in, or
       // adding a second chip would quietly cost the first one's collectors.
-      expect(
-        readFileSync(`${root}dist/ext/environment.cjs`, "utf8"),
-      ).not.toContain(EXT_MARKERS[0] as string);
+      expect(readFileSync(`${root}dist/ext/environment.cjs`, "utf8")).not.toContain(
+        EXT_MARKERS[0] as string,
+      );
       expect(readFileSync(`${root}dist/ext/metrics.cjs`, "utf8")).not.toContain(
         EXT_MARKERS[1] as string,
       );
@@ -178,19 +170,13 @@ if (built || !mustBeBuilt) {
       expect(flagsBundle).not.toContain(EXT_MARKERS[1] as string);
       // Four. /ext/command-menu reads the aggregation, which is core's, so it
       // must not end up carrying the extensions that produce it.
-      const menuBundle = readFileSync(
-        `${root}dist/ext/command-menu.cjs`,
-        "utf8",
-      );
+      const menuBundle = readFileSync(`${root}dist/ext/command-menu.cjs`, "utf8");
       for (const marker of EXT_MARKERS.slice(0, 3)) {
         expect(menuBundle, marker).not.toContain(marker);
       }
       // Five. /ext/overlays is the first extension that draws over the host
       // page; it must not drag any of the others along for the ride.
-      const overlaysBundle = readFileSync(
-        `${root}dist/ext/overlays.cjs`,
-        "utf8",
-      );
+      const overlaysBundle = readFileSync(`${root}dist/ext/overlays.cjs`, "utf8");
       for (const marker of EXT_MARKERS.slice(0, 4)) {
         expect(overlaysBundle, marker).not.toContain(marker);
       }
@@ -199,10 +185,7 @@ if (built || !mustBeBuilt) {
       // the one whose whole job is to report on the others — so it is the most
       // likely of the lot to drag one in. It must not: a consumer who wants a
       // bug-report button should not thereby ship a flag editor.
-      const diagnosticsBundle = readFileSync(
-        `${root}dist/ext/diagnostics.cjs`,
-        "utf8",
-      );
+      const diagnosticsBundle = readFileSync(`${root}dist/ext/diagnostics.cjs`, "utf8");
       for (const marker of EXT_MARKERS.slice(0, 5)) {
         expect(diagnosticsBundle, marker).not.toContain(marker);
       }
@@ -212,10 +195,7 @@ if (built || !mustBeBuilt) {
       // Seven. /ext/theme-editor writes to the host document, which makes it
       // the one a consumer is most likely to adopt on its own; adding a token
       // editor must not thereby ship a flag editor, a palette or a profiler.
-      const themeBundle = readFileSync(
-        `${root}dist/ext/theme-editor.cjs`,
-        "utf8",
-      );
+      const themeBundle = readFileSync(`${root}dist/ext/theme-editor.cjs`, "utf8");
       for (const marker of EXT_MARKERS.slice(0, 6)) {
         expect(themeBundle, marker).not.toContain(marker);
       }
@@ -265,9 +245,7 @@ if (built || !mustBeBuilt) {
         import: "./dist/ext/theme-editor.js",
         require: "./dist/ext/theme-editor.cjs",
       });
-      expect(Object.keys(pkg.exports).some((key) => key.includes("*"))).toBe(
-        false,
-      );
+      expect(Object.keys(pkg.exports).some((key) => key.includes("*"))).toBe(false);
     });
 
     it('emits both formats with a "use client" banner and its own .d.ts', () => {
@@ -289,44 +267,32 @@ if (built || !mustBeBuilt) {
         "dist/ext/theme-editor.js",
         "dist/ext/theme-editor.cjs",
       ]) {
-        expect(
-          readFileSync(`${root}${file}`, "utf8").startsWith('"use client";'),
-          file,
-        ).toBe(true);
+        expect(readFileSync(`${root}${file}`, "utf8").startsWith('"use client";'), file).toBe(true);
       }
       // Shared chunks carry it too, or the directive would be lost for any
       // consumer that reaches the code through one.
       for (const file of readdirSync(`${root}dist`)) {
         if (!/^chunk-.*\.js$/.test(file)) continue;
-        expect(
-          readFileSync(`${root}dist/${file}`, "utf8").startsWith('"use client";'),
-          file,
-        ).toBe(true);
+        expect(readFileSync(`${root}dist/${file}`, "utf8").startsWith('"use client";'), file).toBe(
+          true,
+        );
       }
-      expect(readFileSync(`${root}dist/runtime.d.ts`, "utf8")).toContain(
-        "createRingBuffer",
+      expect(readFileSync(`${root}dist/runtime.d.ts`, "utf8")).toContain("createRingBuffer");
+      expect(readFileSync(`${root}dist/ext/metrics.d.ts`, "utf8")).toContain("MetricsOptions");
+      expect(readFileSync(`${root}dist/ext/environment.d.ts`, "utf8")).toContain(
+        "EnvironmentOptions",
       );
-      expect(readFileSync(`${root}dist/ext/metrics.d.ts`, "utf8")).toContain(
-        "MetricsOptions",
+      expect(readFileSync(`${root}dist/ext/flags.d.ts`, "utf8")).toContain("FlagsOptions");
+      expect(readFileSync(`${root}dist/ext/command-menu.d.ts`, "utf8")).toContain(
+        "CommandMenuOptions",
       );
-      expect(
-        readFileSync(`${root}dist/ext/environment.d.ts`, "utf8"),
-      ).toContain("EnvironmentOptions");
-      expect(readFileSync(`${root}dist/ext/flags.d.ts`, "utf8")).toContain(
-        "FlagsOptions",
+      expect(readFileSync(`${root}dist/ext/overlays.d.ts`, "utf8")).toContain("OverlaysOptions");
+      expect(readFileSync(`${root}dist/ext/diagnostics.d.ts`, "utf8")).toContain(
+        "DiagnosticsOptions",
       );
-      expect(
-        readFileSync(`${root}dist/ext/command-menu.d.ts`, "utf8"),
-      ).toContain("CommandMenuOptions");
-      expect(readFileSync(`${root}dist/ext/overlays.d.ts`, "utf8")).toContain(
-        "OverlaysOptions",
+      expect(readFileSync(`${root}dist/ext/theme-editor.d.ts`, "utf8")).toContain(
+        "ThemeEditorOptions",
       );
-      expect(
-        readFileSync(`${root}dist/ext/diagnostics.d.ts`, "utf8"),
-      ).toContain("DiagnosticsOptions");
-      expect(
-        readFileSync(`${root}dist/ext/theme-editor.d.ts`, "utf8"),
-      ).toContain("ThemeEditorOptions");
     });
 
     it("declares every subpath the plan promised, and nothing by wildcard", () => {
@@ -380,23 +346,12 @@ if (built || !mustBeBuilt) {
           "redact",
         ]),
       );
-      expect(result.metrics).toEqual(
-        expect.arrayContaining(["metrics", "createMetricsRuntime"]),
-      );
+      expect(result.metrics).toEqual(expect.arrayContaining(["metrics", "createMetricsRuntime"]));
       expect(result.environment).toEqual(
-        expect.arrayContaining([
-          "environment",
-          "createEnvironmentRuntime",
-          "ENVIRONMENT_CSS",
-        ]),
+        expect.arrayContaining(["environment", "createEnvironmentRuntime", "ENVIRONMENT_CSS"]),
       );
       expect(result.flags).toEqual(
-        expect.arrayContaining([
-          "flags",
-          "createFlagsRuntime",
-          "readStoredOverrides",
-          "FLAGS_CSS",
-        ]),
+        expect.arrayContaining(["flags", "createFlagsRuntime", "readStoredOverrides", "FLAGS_CSS"]),
       );
       expect(result.commandMenu).toEqual(
         expect.arrayContaining([
@@ -435,10 +390,7 @@ if (built || !mustBeBuilt) {
         ]),
       );
       expect(result.runtime).toEqual(
-        expect.arrayContaining([
-          "writeClipboardText",
-          "writeClipboardTextOrThrow",
-        ]),
+        expect.arrayContaining(["writeClipboardText", "writeClipboardTextOrThrow"]),
       );
     });
 
@@ -464,11 +416,7 @@ if (built || !mustBeBuilt) {
       );
       expect(JSON.parse(env)).toEqual({
         id: "environment",
-        commands: [
-          "environment.copy",
-          "environment.copyJson",
-          "environment.refresh",
-        ],
+        commands: ["environment.copy", "environment.copyJson", "environment.refresh"],
       });
 
       // And /ext/flags, whose per-flag commands are enumerated in the factory

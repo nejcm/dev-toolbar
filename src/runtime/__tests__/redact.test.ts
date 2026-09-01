@@ -38,19 +38,18 @@ describe("redact", () => {
 
   it("masks credential-shaped string values regardless of key", () => {
     const jwt = "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NSJ9.dBjftJeZ4CVPmB92K";
-    expect(
-      redact({ note: `Bearer ${jwt}`, blob: jwt, plain: "hello world" }),
-    ).toEqual({ note: `Bearer ${REDACTED}`, blob: REDACTED, plain: "hello world" });
+    expect(redact({ note: `Bearer ${jwt}`, blob: jwt, plain: "hello world" })).toEqual({
+      note: `Bearer ${REDACTED}`,
+      blob: REDACTED,
+      plain: "hello world",
+    });
 
     expect(redact({ blob: jwt }, { values: false })).toEqual({ blob: jwt });
   });
 
   it("honours extraKeys, allowKeys and a custom mask", () => {
     expect(
-      redact(
-        { tenant: "acme", session: "s1" },
-        { extraKeys: ["tenant"], mask: "***" },
-      ),
+      redact({ tenant: "acme", session: "s1" }, { extraKeys: ["tenant"], mask: "***" }),
     ).toEqual({ tenant: "***", session: "***" });
 
     // allowKeys wins over the default list.
@@ -77,12 +76,9 @@ describe("redact", () => {
     expect(redact({ page: "https://app.test/about" })).toEqual({
       page: "https://app.test/about",
     });
-    expect(
-      redact(
-        { page: "https://app.test/cb?access_token=hunter2" },
-        { values: false },
-      ),
-    ).toEqual({ page: "https://app.test/cb?access_token=hunter2" });
+    expect(redact({ page: "https://app.test/cb?access_token=hunter2" }, { values: false })).toEqual(
+      { page: "https://app.test/cb?access_token=hunter2" },
+    );
   });
 
   it("returns an innocent URL byte-for-byte, normalisation included", () => {
@@ -159,9 +155,7 @@ describe("redact", () => {
 
 describe("redactUrl", () => {
   it("masks sensitive query parameters and keeps the rest", () => {
-    expect(
-      redactUrl("https://api.example.com/v1/users?page=2&access_token=abc123"),
-    ).toBe(
+    expect(redactUrl("https://api.example.com/v1/users?page=2&access_token=abc123")).toBe(
       `https://api.example.com/v1/users?page=2&access_token=${encodeURIComponent(REDACTED)}`,
     );
   });
@@ -237,10 +231,7 @@ describe("a key called __proto__", () => {
   // setter swallows the write. Nothing was polluted; the value was replaced by
   // a lie, which is worse in a redactor than in most places.
   it("survives the rebuild as data", () => {
-    const output = redact({ __proto__: undefined, a: 1 } as never) as Record<
-      string,
-      unknown
-    >;
+    const output = redact({ __proto__: undefined, a: 1 } as never) as Record<string, unknown>;
     // Build the input by definition too — an object *literal* `__proto__:` sets
     // the prototype rather than creating a key.
     const input: Record<string, unknown> = {};
@@ -254,9 +245,7 @@ describe("a key called __proto__", () => {
     const redacted = redact(input) as Record<string, unknown>;
 
     expect(Object.keys(redacted).sort()).toEqual(["__proto__", "token"]);
-    expect(
-      Object.getOwnPropertyDescriptor(redacted, "__proto__")?.value,
-    ).toBe("keep-me");
+    expect(Object.getOwnPropertyDescriptor(redacted, "__proto__")?.value).toBe("keep-me");
     expect(redacted["token"]).toBe(REDACTED);
     // Still an ordinary object: the fix must not leak a null prototype across
     // the public API.
@@ -272,20 +261,13 @@ describe("a key called __proto__", () => {
       enumerable: true,
       configurable: true,
     });
-    const redacted = redact(input, { extraKeys: ["proto"] }) as Record<
-      string,
-      unknown
-    >;
-    expect(Object.getOwnPropertyDescriptor(redacted, "__proto__")?.value).toBe(
-      REDACTED,
-    );
+    const redacted = redact(input, { extraKeys: ["proto"] }) as Record<string, unknown>;
+    expect(Object.getOwnPropertyDescriptor(redacted, "__proto__")?.value).toBe(REDACTED);
   });
 
   it("pollutes nothing on the way through", () => {
     redact(JSON.parse('{"__proto__":{"polluted":true},"a":1}'));
-    expect(
-      ({} as Record<string, unknown>)["polluted"],
-    ).toBeUndefined();
+    expect(({} as Record<string, unknown>)["polluted"]).toBeUndefined();
   });
 
   it("survives redactHeaders too", () => {
@@ -297,9 +279,7 @@ describe("a key called __proto__", () => {
       configurable: true,
     });
     const redacted = redactHeaders(headers);
-    expect(Object.getOwnPropertyDescriptor(redacted, "__proto__")?.value).toBe(
-      "keep-me",
-    );
+    expect(Object.getOwnPropertyDescriptor(redacted, "__proto__")?.value).toBe("keep-me");
     expect(Object.getPrototypeOf(redacted)).toBe(Object.prototype);
   });
 });

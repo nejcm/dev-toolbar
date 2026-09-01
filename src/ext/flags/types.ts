@@ -77,9 +77,7 @@ export interface FlagReading extends FeatureFlagDefinition {
   recentlyUsed?: boolean;
 }
 
-export type FlagsInput =
-  | readonly FlagReading[]
-  | (() => readonly FlagReading[]);
+export type FlagsInput = readonly FlagReading[] | (() => readonly FlagReading[]);
 
 /**
  * One flag pinned into the bar as its own control, per `plans/dev-bar.md` §7.
@@ -218,10 +216,7 @@ export function formatValue(value: FlagValue | undefined): string {
  * to the running application. A refused edit is recoverable; a wrong one that
  * looks deliberate is not.
  */
-export function parseValue(
-  type: FlagType,
-  raw: string,
-): FlagValue | undefined {
+export function parseValue(type: FlagType, raw: string): FlagValue | undefined {
   const trimmed = raw.trim();
   if (type === "boolean") {
     if (trimmed === "true") return true;

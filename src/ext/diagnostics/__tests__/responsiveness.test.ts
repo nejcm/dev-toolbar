@@ -7,10 +7,7 @@
  * driven deliberately rather than hoped for.
  */
 import { afterEach, describe, expect, it, vi } from "vitest";
-import {
-  LONG_TASK_THRESHOLD_MS,
-  createResponsivenessMonitor,
-} from "../responsiveness";
+import { LONG_TASK_THRESHOLD_MS, createResponsivenessMonitor } from "../responsiveness";
 
 type Callback = (list: { getEntries(): unknown[] }) => void;
 
@@ -29,10 +26,7 @@ interface FakeObserverControl {
  *   which is the older-engine shape where the only way to ask is to try.
  * @param throwFor entry types whose `observe()` throws, the Safari shape.
  */
-function installObserver(
-  supported: string[] | null,
-  throwFor: string[] = [],
-): FakeObserverControl {
+function installObserver(supported: string[] | null, throwFor: string[] = []): FakeObserverControl {
   const control: FakeObserverControl = {
     observed: [],
     disconnects: 0,

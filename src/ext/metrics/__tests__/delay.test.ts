@@ -9,10 +9,7 @@ interface Installed {
   disconnected: number;
 }
 
-const original = Object.getOwnPropertyDescriptor(
-  globalThis,
-  "PerformanceObserver",
-);
+const original = Object.getOwnPropertyDescriptor(globalThis, "PerformanceObserver");
 
 function install(options: {
   supportedEntryTypes?: string[];
@@ -46,8 +43,7 @@ function install(options: {
 
 function uninstall() {
   if (original) Object.defineProperty(globalThis, "PerformanceObserver", original);
-  else
-    delete (globalThis as { PerformanceObserver?: unknown }).PerformanceObserver;
+  else delete (globalThis as { PerformanceObserver?: unknown }).PerformanceObserver;
 }
 
 afterEach(uninstall);
@@ -133,9 +129,7 @@ describe("delay collector — Event Timing present", () => {
     target.className = "primary large";
     observer.emit([entry({ target })]);
 
-    expect(Object.fromEntries(collector.read(0).detail)["Worst target"]).toBe(
-      "button#buy.primary",
-    );
+    expect(Object.fromEntries(collector.read(0).detail)["Worst target"]).toBe("button#buy.primary");
     controller.abort();
   });
 
@@ -161,9 +155,7 @@ describe("delay collector — Event Timing present", () => {
     target.className = "Bearer sk-live-abcdef123456";
     observer.emit([entry({ target })]);
 
-    const described = Object.fromEntries(collector.read(0).detail)[
-      "Worst target"
-    ] as string;
+    const described = Object.fromEntries(collector.read(0).detail)["Worst target"] as string;
     expect(described).not.toContain("eyJhbGciOiJIUzI1NiJ9");
     expect(described).not.toContain("sk-live-abcdef123456");
     expect(described).toBe("button#[redacted].Bearer");
@@ -182,9 +174,7 @@ describe("delay collector — Event Timing present", () => {
     target.className = "btn btn-primary";
     observer.emit([entry({ target })]);
 
-    expect(
-      Object.fromEntries(collector.read(0).detail)["Worst target"],
-    ).toBe("a#checkout-cta.btn");
+    expect(Object.fromEntries(collector.read(0).detail)["Worst target"]).toBe("a#checkout-cta.btn");
     controller.abort();
   });
 

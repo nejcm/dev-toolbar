@@ -70,9 +70,7 @@ function signature(snapshot: MetricsSnapshot): string {
   return out;
 }
 
-export function createMetricsRuntime(
-  options: MetricsRuntimeOptions,
-): MetricsRuntime {
+export function createMetricsRuntime(options: MetricsRuntimeOptions): MetricsRuntime {
   const { collectors, updateHz = 2 } = options;
   const order = collectors.map((collector) => collector.id);
   const tickMs = Math.max(100, Math.round(1000 / Math.max(0.5, updateHz)));
@@ -178,8 +176,7 @@ export function createMetricsRuntime(
       const at = now();
       const payload: Record<string, unknown> = {
         generatedAt: new Date().toISOString(),
-        userAgent:
-          typeof navigator === "undefined" ? null : navigator.userAgent,
+        userAgent: typeof navigator === "undefined" ? null : navigator.userAgent,
         // Explicitly, not by hoping `redact()` recognises it: the page URL is
         // the single most likely credential carrier in the whole dump. An OAuth
         // implicit-flow callback is `?access_token=…` in the address bar, and

@@ -61,11 +61,8 @@ describe("overlay slot", () => {
     const build = (hidden: boolean) =>
       makeExtension({ id: "a", overlay: true, ...(hidden ? { hidden } : {}) });
 
-    const { rerender, unmount } = render(
-      <DevToolbar extensions={[build(false)]} storage={null} />,
-    );
-    const overlay = () =>
-      document.querySelector('[data-dtb-part="overlay"][data-dtb-ext-id="a"]');
+    const { rerender, unmount } = render(<DevToolbar extensions={[build(false)]} storage={null} />);
+    const overlay = () => document.querySelector('[data-dtb-part="overlay"][data-dtb-ext-id="a"]');
     expect(overlay()).not.toBeNull();
     rerender(<DevToolbar extensions={[build(true)]} storage={null} />);
     expect(overlay()).toBeNull();
@@ -153,9 +150,7 @@ describe("overlay slot", () => {
       ["CORE_CSS", CORE_CSS],
       ["styles.css", readFileSync(resolve(process.cwd(), "src/styles.css"), "utf8")],
     ] as const) {
-      const rule = css.match(
-        /\[data-dtb-part="overlay"\]\s*\{([^}]*)\}/,
-      )?.[1];
+      const rule = css.match(/\[data-dtb-part="overlay"\]\s*\{([^}]*)\}/)?.[1];
       expect(rule, name).toBeDefined();
       expect(rule?.replace(/\s+/g, " "), name).toContain("display: contents;");
     }

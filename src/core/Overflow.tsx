@@ -1,10 +1,4 @@
-import {
-  useCallback,
-  useEffect,
-  useLayoutEffect,
-  useRef,
-  useState,
-} from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import type { DevToolbarClassNames, DevToolbarExtension } from "./contract";
 import { cx } from "./context";
@@ -32,24 +26,18 @@ export function computeOverflow(
   if (!(available > 0) || items.length === 0) return overflow;
 
   const widthOf = (list: readonly MeasuredItem[]) =>
-    list.reduce((sum, item) => sum + item.width, 0) +
-    Math.max(0, list.length - 1) * gap;
+    list.reduce((sum, item) => sum + item.width, 0) + Math.max(0, list.length - 1) * gap;
 
   if (widthOf(items) <= available) return overflow;
 
   const candidates = items
     .map((item, index) => ({ item, index }))
-    .sort(
-      (a, b) => a.item.priority - b.item.priority || b.index - a.index,
-    );
+    .sort((a, b) => a.item.priority - b.item.priority || b.index - a.index);
 
   for (const candidate of candidates) {
     overflow.add(candidate.item.id);
     const remaining = items.filter((item) => !overflow.has(item.id));
-    const needed =
-      widthOf(remaining) +
-      (remaining.length > 0 ? gap : 0) +
-      overflowButtonWidth;
+    const needed = widthOf(remaining) + (remaining.length > 0 ? gap : 0) + overflowButtonWidth;
     if (needed <= available) break;
   }
 
@@ -59,10 +47,7 @@ export function computeOverflow(
 export interface OverflowBarProps {
   startItems: readonly DevToolbarExtension[];
   endItems: readonly DevToolbarExtension[];
-  renderItem: (
-    extension: DevToolbarExtension,
-    options: { isOverflowed: boolean },
-  ) => ReactNode;
+  renderItem: (extension: DevToolbarExtension, options: { isOverflowed: boolean }) => ReactNode;
   classNames?: DevToolbarClassNames | undefined;
   gap?: number;
   overflowLabel?: string;
@@ -101,9 +86,7 @@ export function OverflowBar({
   const gapRef = useRef(gap);
   const buttonWidthRef = useRef(DEFAULT_OVERFLOW_BUTTON_WIDTH);
   const [available, setAvailable] = useState(0);
-  const [overflowIds, setOverflowIds] = useState<Set<string>>(
-    () => new Set<string>(),
-  );
+  const [overflowIds, setOverflowIds] = useState<Set<string>>(() => new Set<string>());
   const [menuOpen, setMenuOpen] = useState(false);
 
   const all = [...startItems, ...endItems];
@@ -112,25 +95,15 @@ export function OverflowBar({
   const listRef = useRef(all);
   listRef.current = all;
 
-  const recompute = useCallback(
-    (width: number) => {
-      const items: MeasuredItem[] = listRef.current.map((extension) => ({
-        id: extension.id,
-        priority: extension.priority ?? 0,
-        width: widthsRef.current.get(extension.id) ?? 0,
-      }));
-      const next = computeOverflow(
-        items,
-        width,
-        buttonWidthRef.current,
-        gapRef.current,
-      );
-      setOverflowIds((previous) =>
-        sameSet(previous, next) ? previous : next,
-      );
-    },
-    [],
-  );
+  const recompute = useCallback((width: number) => {
+    const items: MeasuredItem[] = listRef.current.map((extension) => ({
+      id: extension.id,
+      priority: extension.priority ?? 0,
+      width: widthsRef.current.get(extension.id) ?? 0,
+    }));
+    const next = computeOverflow(items, width, buttonWidthRef.current, gapRef.current);
+    setOverflowIds((previous) => (sameSet(previous, next) ? previous : next));
+  }, []);
 
   // Cache natural widths of whatever is currently rendered in the bar, then
   // recompute. Widths are sticky, so a collapsed item can expand again.
@@ -210,8 +183,7 @@ export function OverflowBar({
     };
   }, [menuOpen]);
 
-  const isOverflowed = (extension: DevToolbarExtension) =>
-    overflowIds.has(extension.id);
+  const isOverflowed = (extension: DevToolbarExtension) => overflowIds.has(extension.id);
   const overflowed = all.filter(isOverflowed);
   const visibleStart = startItems.filter((item) => !isOverflowed(item));
   const visibleEnd = endItems.filter((item) => !isOverflowed(item));
@@ -224,23 +196,11 @@ export function OverflowBar({
       role="toolbar"
       aria-label="Developer toolbar"
     >
-      <div
-        data-dtb-part="region"
-        data-dtb-align="start"
-        className={cx(classNames?.region)}
-      >
-        {visibleStart.map((extension) =>
-          renderItem(extension, { isOverflowed: false }),
-        )}
+      <div data-dtb-part="region" data-dtb-align="start" className={cx(classNames?.region)}>
+        {visibleStart.map((extension) => renderItem(extension, { isOverflowed: false }))}
       </div>
-      <div
-        data-dtb-part="region"
-        data-dtb-align="end"
-        className={cx(classNames?.region)}
-      >
-        {visibleEnd.map((extension) =>
-          renderItem(extension, { isOverflowed: false }),
-        )}
+      <div data-dtb-part="region" data-dtb-align="end" className={cx(classNames?.region)}>
+        {visibleEnd.map((extension) => renderItem(extension, { isOverflowed: false }))}
         {overflowed.length > 0 ? (
           <button
             ref={buttonRef}

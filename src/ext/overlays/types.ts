@@ -51,12 +51,7 @@
 export type OverlayId = "boxes" | "grid" | "inspect" | "focus";
 
 /** Stable order. Every surface — panel, palette, storage — reads this one. */
-export const OVERLAY_IDS: readonly OverlayId[] = [
-  "boxes",
-  "grid",
-  "inspect",
-  "focus",
-];
+export const OVERLAY_IDS: readonly OverlayId[] = ["boxes", "grid", "inspect", "focus"];
 
 export interface OverlayMeta {
   id: OverlayId;
@@ -76,8 +71,7 @@ export const OVERLAY_META: Record<OverlayId, OverlayMeta> = {
     label: "Layout boxes",
     summary:
       "Outlines every element in the page, so nesting, stray wrappers and collapsed boxes are visible.",
-    cost:
-      "One stylesheet, no measurement. Costs a full repaint on toggle and slightly more paint work per frame after that; the only overlay whose cost grows with document size.",
+    cost: "One stylesheet, no measurement. Costs a full repaint on toggle and slightly more paint work per frame after that; the only overlay whose cost grows with document size.",
     touchesHost: true,
   },
   grid: {
@@ -90,18 +84,15 @@ export const OVERLAY_META: Record<OverlayId, OverlayMeta> = {
   inspect: {
     id: "inspect",
     label: "Element inspector",
-    summary:
-      "Follows the pointer: box model, size and accessible name of whatever is under it.",
-    cost:
-      "One rect and one getComputedStyle on one element — never the document — per animation frame in which the pointer moved, the page scrolled or the window resized.",
+    summary: "Follows the pointer: box model, size and accessible name of whatever is under it.",
+    cost: "One rect and one getComputedStyle on one element — never the document — per animation frame in which the pointer moved, the page scrolled or the window resized.",
   },
   focus: {
     id: "focus",
     label: "Focus order",
     summary:
       "Numbers every tabbable element in tab order and flags the ones with no accessible name.",
-    cost:
-      "One narrow querySelectorAll per application DOM-mutation burst (debounced), which is also where accessible names are resolved. A scroll or resize frame then costs one rect per element and nothing else. Capped at 200.",
+    cost: "One narrow querySelectorAll per application DOM-mutation burst (debounced), which is also where accessible names are resolved. A scroll or resize frame then costs one rect per element and nothing else. Capped at 200.",
   },
 };
 
@@ -228,10 +219,7 @@ export const TABBABLE_SELECTOR = [
  */
 export function isInToolbar(node: Node | null): boolean {
   if (node === null) return false;
-  const element =
-    node.nodeType === 1
-      ? (node as Element)
-      : (node.parentElement as Element | null);
+  const element = node.nodeType === 1 ? (node as Element) : (node.parentElement as Element | null);
   if (!element || typeof element.closest !== "function") return false;
   return element.closest("[data-dev-toolbar]") !== null;
 }
@@ -353,9 +341,7 @@ export function accessibleName(element: Element): string | null {
       if (alt !== null) return alt;
     }
     if (control.labels && control.labels.length > 0) {
-      const text = trim(
-        [...control.labels].map((label) => visibleText(label) ?? "").join(" "),
-      );
+      const text = trim([...control.labels].map((label) => visibleText(label) ?? "").join(" "));
       if (text !== null) return text;
     }
     const wrapping = element.closest("label");
@@ -404,10 +390,7 @@ const px = (value: string | undefined): number => {
 };
 
 /** `margin` / `padding` edges out of one computed style. Never throws. */
-export function edgesOf(
-  style: CSSStyleDeclaration | null,
-  which: "margin" | "padding",
-): Edges {
+export function edgesOf(style: CSSStyleDeclaration | null, which: "margin" | "padding"): Edges {
   if (style === null) return ZERO_EDGES;
   return {
     top: px(style.getPropertyValue(`${which}-top`)),
@@ -468,9 +451,7 @@ export function parseFlags(raw: string | null): OverlayFlags {
 }
 
 export const serializeFlags = (flags: OverlayFlags): string =>
-  JSON.stringify(
-    Object.fromEntries(OVERLAY_IDS.map((id) => [id, flags[id] === true])),
-  );
+  JSON.stringify(Object.fromEntries(OVERLAY_IDS.map((id) => [id, flags[id] === true])));
 
 /* -------------------------------------------------------------------------- */
 /* Snapshot comparison                                                         */
@@ -480,10 +461,7 @@ const sameRect = (a: RectLike, b: RectLike): boolean =>
   a.x === b.x && a.y === b.y && a.width === b.width && a.height === b.height;
 
 const sameEdges = (a: Edges, b: Edges): boolean =>
-  a.top === b.top &&
-  a.right === b.right &&
-  a.bottom === b.bottom &&
-  a.left === b.left;
+  a.top === b.top && a.right === b.right && a.bottom === b.bottom && a.left === b.left;
 
 /**
  * Every field the inspector *draws* from, not just the ones that identify the
@@ -532,11 +510,7 @@ export function sameSnapshot(a: OverlaysSnapshot, b: OverlaysSnapshot): boolean 
   for (let index = 0; index < a.focusItems.length; index += 1) {
     const left = a.focusItems[index] as FocusItem;
     const right = b.focusItems[index] as FocusItem;
-    if (
-      left.key !== right.key ||
-      left.name !== right.name ||
-      !sameRect(left.rect, right.rect)
-    ) {
+    if (left.key !== right.key || left.name !== right.name || !sameRect(left.rect, right.rect)) {
       return false;
     }
   }

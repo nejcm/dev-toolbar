@@ -61,14 +61,9 @@
 import { createDiagnosticsRuntime } from "./runtime";
 import { DiagnosticsChip, DiagnosticsPanel } from "./ui";
 import type { DiagnosticsRuntimeOptions } from "./runtime";
-import type {
-  DevToolbarExtension,
-  ExtensionRuntimeApi,
-  ToolbarAlign,
-} from "../../core/contract";
+import type { DevToolbarExtension, ExtensionRuntimeApi, ToolbarAlign } from "../../core/contract";
 
-export interface DiagnosticsOptions
-  extends Omit<DiagnosticsRuntimeOptions, "id"> {
+export interface DiagnosticsOptions extends Omit<DiagnosticsRuntimeOptions, "id"> {
   /** Extension id. Default `"diagnostics"`. */
   id?: string;
   /** Bar label, used by the error chip and the panel's accessible name. Default `"Diagnostics"`. */
@@ -100,9 +95,7 @@ export interface DiagnosticsOptions
  * Builds the extension. Call it once — the returned object owns the store and,
  * once started, the `PerformanceObserver`s.
  */
-export function diagnostics(
-  options: DiagnosticsOptions = {},
-): DevToolbarExtension {
+export function diagnostics(options: DiagnosticsOptions = {}): DevToolbarExtension {
   const {
     id = "diagnostics",
     label = "Diagnostics",
@@ -145,13 +138,7 @@ export function diagnostics(
       />
     ),
 
-    panel: () => (
-      <DiagnosticsPanel
-        runtime={runtime}
-        label={label}
-        injectStyles={injectStyles}
-      />
-    ),
+    panel: () => <DiagnosticsPanel runtime={runtime} label={label} injectStyles={injectStyles} />,
 
     /**
      * This extension declares **no** `diagnostics()`, deliberately.
@@ -264,19 +251,9 @@ export type {
   Revoker,
 } from "./runtime";
 export { DIAGNOSTICS_CSS, ensureDiagnosticsStyles } from "./css";
-export {
-  LONG_TASK_THRESHOLD_MS,
-  createResponsivenessMonitor,
-} from "./responsiveness";
-export type {
-  ResponsivenessMonitor,
-  ResponsivenessOptions,
-} from "./responsiveness";
-export {
-  NO_SNAPSHOT,
-  SNAPSHOT_FORMATS,
-  describeSupport,
-} from "./types";
+export { LONG_TASK_THRESHOLD_MS, createResponsivenessMonitor } from "./responsiveness";
+export type { ResponsivenessMonitor, ResponsivenessOptions } from "./responsiveness";
+export { NO_SNAPSHOT, SNAPSHOT_FORMATS, describeSupport } from "./types";
 export type {
   ContributionStatus,
   DiagnosticContribution,

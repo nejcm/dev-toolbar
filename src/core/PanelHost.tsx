@@ -72,9 +72,7 @@ export function PanelHost({
     // panels, which have no active id to close.
     if (extension.hidden === true) return false;
     if (extension.id === activePanelId) return true;
-    return (
-      extension.keepMounted === true && openedRef.current.has(extension.id)
-    );
+    return extension.keepMounted === true && openedRef.current.has(extension.id);
   });
 
   if (mounted.length === 0) return null;
@@ -93,9 +91,7 @@ export function PanelHost({
     let latest = startHeight;
     const onMove = (moveEvent: PointerEvent) => {
       const delta = moveEvent.clientY - startY;
-      latest = clampPanelHeight(
-        position === "bottom" ? startHeight - delta : startHeight + delta,
-      );
+      latest = clampPanelHeight(position === "bottom" ? startHeight - delta : startHeight + delta);
       setDragHeight(latest);
     };
     const onUp = () => {
@@ -166,9 +162,7 @@ export function PanelHost({
                 classNames={classNames}
               >
                 <Slot
-                  render={
-                    extension.panel as (props: PanelSlotProps) => ReactNode
-                  }
+                  render={extension.panel as (props: PanelSlotProps) => ReactNode}
                   props={slotProps}
                 />
               </ExtensionBoundary>

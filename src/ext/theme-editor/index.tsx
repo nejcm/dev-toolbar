@@ -97,9 +97,7 @@ export interface ThemeEditorOptions extends ThemeEditorRuntimeOptions {
  * Builds the extension. Call it once — the returned object owns the store, the
  * edit map and, once started, the hold on the surface element.
  */
-export function themeEditor(
-  options: ThemeEditorOptions = {},
-): DevToolbarExtension {
+export function themeEditor(options: ThemeEditorOptions = {}): DevToolbarExtension {
   const {
     id = "theme-editor",
     label = "Theme",
@@ -169,9 +167,7 @@ export function themeEditor(
       />
     ),
 
-    panel: () => (
-      <ThemePanel runtime={runtime} label={label} injectStyles={injectStyles} />
-    ),
+    panel: () => <ThemePanel runtime={runtime} label={label} injectStyles={injectStyles} />,
 
     /**
      * The redacted edit list, for `/ext/diagnostics` — display strings, never

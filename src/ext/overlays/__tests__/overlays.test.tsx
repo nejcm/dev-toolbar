@@ -12,12 +12,7 @@ import { act, fireEvent } from "@testing-library/react";
 import { renderWithToolbar } from "@nejcm/dev-toolbar/testing";
 import { createMemoryStorage } from "../../../core/storage";
 import { overlays } from "../index";
-import {
-  BOXES_REFS_ATTRIBUTE,
-  BOXES_STYLE_ENTRY,
-  ENABLED_KEY,
-  setHostOutlines,
-} from "../runtime";
+import { BOXES_REFS_ATTRIBUTE, BOXES_STYLE_ENTRY, ENABLED_KEY, setHostOutlines } from "../runtime";
 import { OVERLAYS_CSS } from "../css";
 import type { OverlaysOptions } from "../index";
 import type { ToolbarStorage } from "../../../core/contract";
@@ -66,23 +61,17 @@ const frame = async () => {
 };
 
 const surface = () => document.querySelector('[data-dtb-part="ovl-surface"]');
-const rows = () => [
-  ...document.querySelectorAll<HTMLElement>('[data-dtb-part="ovl-row"]'),
-];
+const rows = () => [...document.querySelectorAll<HTMLElement>('[data-dtb-part="ovl-row"]')];
 const toggleRow = (id: string) => {
   const row = document.querySelector<HTMLElement>(
     `[data-dtb-part="ovl-row"][data-dtb-overlay="${id}"]`,
   );
-  const button = row?.querySelector<HTMLButtonElement>(
-    '[data-dtb-part="ovl-toggle"]',
-  );
+  const button = row?.querySelector<HTMLButtonElement>('[data-dtb-part="ovl-toggle"]');
   if (!button) throw new Error(`no toggle for ${id}`);
   act(() => button.click());
 };
 const boxesSheets = () =>
-  document.head.querySelectorAll(
-    `style[data-dev-toolbar-styles="${BOXES_STYLE_ENTRY}"]`,
-  );
+  document.head.querySelectorAll(`style[data-dev-toolbar-styles="${BOXES_STYLE_ENTRY}"]`);
 const badges = () => [
   ...document.querySelectorAll<HTMLElement>('[data-dtb-part="ovl-focus-badge"]'),
 ];
@@ -132,9 +121,9 @@ describe("the extension object", () => {
     expect(extension.id).toBe("overlays");
     expect(typeof extension.overlay).toBe("function");
     expect(typeof extension.commands).toBe("function");
-    const ids = (
-      extension.commands as () => readonly { id: string }[]
-    )().map((command) => command.id);
+    const ids = (extension.commands as () => readonly { id: string }[])().map(
+      (command) => command.id,
+    );
     expect(ids).toEqual([
       "overlays.toggle.boxes",
       "overlays.toggle.grid",
@@ -158,9 +147,7 @@ describe("toggling, off and on, from every surface", () => {
     expect(rows()).toHaveLength(4);
 
     toggleRow("grid");
-    expect(
-      document.querySelector('[data-dtb-part="ovl-grid"]'),
-    ).not.toBeNull();
+    expect(document.querySelector('[data-dtb-part="ovl-grid"]')).not.toBeNull();
     expect(
       document
         .querySelector('[data-dtb-part="ovl-row"][data-dtb-overlay="grid"] [role="switch"]')
@@ -271,9 +258,7 @@ describe("what it refuses to touch", () => {
     // toolbar gone it matches nothing, and re-injecting it on every mount would
     // be the more surprising behaviour.
     expect(
-      document.head.querySelector(
-        'style[data-dev-toolbar-styles="ext-overlays"]',
-      ),
+      document.head.querySelector('style[data-dev-toolbar-styles="ext-overlays"]'),
     ).not.toBeNull();
     // Appended outside Testing Library's container, so `cleanup` will not take
     // it away — and a stray tabbable node would change what later tests scan.
@@ -288,9 +273,9 @@ describe("what it refuses to touch", () => {
     // The structural half of the guarantee: there is nothing in here to
     // interact with in the first place.
     expect(layer.getAttribute("aria-hidden")).toBe("true");
-    expect(
-      layer.querySelectorAll("button, a, input, select, textarea, [tabindex]"),
-    ).toHaveLength(0);
+    expect(layer.querySelectorAll("button, a, input, select, textarea, [tabindex]")).toHaveLength(
+      0,
+    );
     expect(layer.querySelectorAll("[onclick]")).toHaveLength(0);
     expect(toolbar.bar()).not.toBeNull();
   });
@@ -323,10 +308,7 @@ describe("what it refuses to touch", () => {
     // jsdom rejects a sheet containing `@layer` outright, so the wrapper comes
     // off before the parser sees it. The declarations are untouched.
     const sheet = document.createElement("style");
-    sheet.textContent = OVERLAYS_CSS.replace(
-      /^@layer dev-toolbar \{/,
-      "",
-    ).replace(/\}\s*$/, "");
+    sheet.textContent = OVERLAYS_CSS.replace(/^@layer dev-toolbar \{/, "").replace(/\}\s*$/, "");
     document.head.appendChild(sheet);
     const rules = [...(sheet.sheet?.cssRules ?? [])] as CSSStyleRule[];
     expect(rules.length).toBeGreaterThan(10);
@@ -337,23 +319,20 @@ describe("what it refuses to touch", () => {
       return found.style;
     };
 
-    const surfaceRule = ruleFor(
-      '[data-dev-toolbar] [data-dtb-part="ovl-surface"]',
-    );
+    const surfaceRule = ruleFor('[data-dev-toolbar] [data-dtb-part="ovl-surface"]');
     // A click must always reach the page; the surface must stay below the bar
     // and the palette; and it must stay out of the toolbar's own layout.
     for (const property of ["pointer-events", "z-index", "position", "inset"]) {
-      expect(
-        surfaceRule.getPropertyPriority(property),
-        `${property} on the surface`,
-      ).toBe("important");
+      expect(surfaceRule.getPropertyPriority(property), `${property} on the surface`).toBe(
+        "important",
+      );
     }
     // Descendants are covered by their own rule rather than by inheritance, so
     // a hostile rule matching them has to be beaten separately.
     expect(
-      ruleFor(
-        '[data-dev-toolbar] [data-dtb-part="ovl-surface"] *',
-      ).getPropertyPriority("pointer-events"),
+      ruleFor('[data-dev-toolbar] [data-dtb-part="ovl-surface"] *').getPropertyPriority(
+        "pointer-events",
+      ),
     ).toBe("important");
 
     // And the guard stays narrow: everything else is ordinary layered CSS a
@@ -382,9 +361,9 @@ describe("what it refuses to touch", () => {
     pointAt(target);
     fireEvent.pointerMove(window, { clientX: 20, clientY: 50 });
     await frame();
-    expect(
-      document.querySelector('[data-dtb-part="ovl-label-target"]')?.textContent,
-    ).toBe("button");
+    expect(document.querySelector('[data-dtb-part="ovl-label-target"]')?.textContent).toBe(
+      "button",
+    );
 
     // The pointer moves over the bar. `elementFromPoint` hit-tests the real
     // page, so it returns the toolbar — and inspecting the tool instead of the
@@ -403,20 +382,12 @@ describe("what it refuses to touch", () => {
     withRect(unnamed, { x: 100, y: 40, width: 24, height: 24 });
     // The toolbar's own trigger is a real, tabbable button with a real rect.
     // The only reason it is not numbered is that the scan excludes it.
-    const trigger = toolbar
-      .item("overlays")
-      ?.querySelector("button") as HTMLElement;
+    const trigger = toolbar.item("overlays")?.querySelector("button") as HTMLElement;
     withRect(trigger, { x: 0, y: 700, width: 60, height: 20 });
 
     await frame();
-    expect(badges().map((badge) => badge.dataset["dtbFocusIndex"])).toEqual([
-      "1",
-      "2",
-    ]);
-    expect(badges().map((badge) => badge.dataset["dtbNamed"])).toEqual([
-      "true",
-      "false",
-    ]);
+    expect(badges().map((badge) => badge.dataset["dtbFocusIndex"])).toEqual(["1", "2"]);
+    expect(badges().map((badge) => badge.dataset["dtbNamed"])).toEqual(["true", "false"]);
     expect(badges()[1]?.textContent).toContain("button — unnamed");
   });
 });
@@ -439,9 +410,12 @@ describe("visibility and teardown", () => {
     await frame();
     expect(boxesSheets()).toHaveLength(1);
     // ...and the toggles survived being hidden, rather than being reset.
-    expect(toolbar.context().getCommands().find(
-      (command) => command.id === "overlays.toggle.boxes",
-    )?.label).toBe("Hide overlay: Layout boxes");
+    expect(
+      toolbar
+        .context()
+        .getCommands()
+        .find((command) => command.id === "overlays.toggle.boxes")?.label,
+    ).toBe("Hide overlay: Layout boxes");
   });
 
   it("is never started, and draws nothing, while it is hidden from the actor", () => {
@@ -459,37 +433,27 @@ describe("visibility and teardown", () => {
   it("removes every listener it added, so nothing survives as a ghost", async () => {
     // The types this extension binds. Core binds none of them outside a panel
     // drag, so an outstanding one here belongs to the overlays.
-    const watched = new Set([
-      "pointermove",
-      "pointerdown",
-      "pointerleave",
-      "scroll",
-      "resize",
-    ]);
+    const watched = new Set(["pointermove", "pointerdown", "pointerleave", "scroll", "resize"]);
     const outstanding = new Map<string, number>();
     const key = (type: string, options: unknown) =>
       `${type}|${typeof options === "object" && options !== null && (options as AddEventListenerOptions).capture === true}`;
     const patch = (target: EventTarget) => {
       const add = target.addEventListener.bind(target);
       const remove = target.removeEventListener.bind(target);
-      vi.spyOn(target, "addEventListener").mockImplementation(
-        (type, listener, options) => {
-          if (watched.has(type)) {
-            const id = key(type, options);
-            outstanding.set(id, (outstanding.get(id) ?? 0) + 1);
-          }
-          add(type, listener, options);
-        },
-      );
-      vi.spyOn(target, "removeEventListener").mockImplementation(
-        (type, listener, options) => {
-          if (watched.has(type)) {
-            const id = key(type, options);
-            outstanding.set(id, (outstanding.get(id) ?? 0) - 1);
-          }
-          remove(type, listener, options);
-        },
-      );
+      vi.spyOn(target, "addEventListener").mockImplementation((type, listener, options) => {
+        if (watched.has(type)) {
+          const id = key(type, options);
+          outstanding.set(id, (outstanding.get(id) ?? 0) + 1);
+        }
+        add(type, listener, options);
+      });
+      vi.spyOn(target, "removeEventListener").mockImplementation((type, listener, options) => {
+        if (watched.has(type)) {
+          const id = key(type, options);
+          outstanding.set(id, (outstanding.get(id) ?? 0) - 1);
+        }
+        remove(type, listener, options);
+      });
     };
     patch(window);
     patch(document);
@@ -499,9 +463,7 @@ describe("visibility and teardown", () => {
     expect([...outstanding.values()].some((count) => count > 0)).toBe(true);
 
     for (const unmount of unmountAll.splice(0)) unmount();
-    expect(
-      [...outstanding.entries()].filter(([, count]) => count !== 0),
-    ).toEqual([]);
+    expect([...outstanding.entries()].filter(([, count]) => count !== 0)).toEqual([]);
   });
 
   it("detaches its listeners on teardown, so a later event measures nothing", async () => {
@@ -510,9 +472,7 @@ describe("visibility and teardown", () => {
     withRect(target, { x: 10, y: 40, width: 80, height: 24 });
     let hits = 0;
     pointAt(target);
-    (
-      document as Document & { elementFromPoint: () => Element | null }
-    ).elementFromPoint = () => {
+    (document as Document & { elementFromPoint: () => Element | null }).elementFromPoint = () => {
       hits += 1;
       return target;
     };
@@ -620,8 +580,7 @@ describe("what it costs, asserted rather than claimed", () => {
     const scans = vi.spyOn(document, "querySelectorAll");
     const scanCount = () =>
       scans.mock.calls.filter(
-        ([selector]) =>
-          typeof selector === "string" && selector.includes("audio[controls]"),
+        ([selector]) => typeof selector === "string" && selector.includes("audio[controls]"),
       ).length;
 
     // A mutation whose every record is inside the toolbar — which is exactly
@@ -647,9 +606,7 @@ describe("what it costs, asserted rather than claimed", () => {
 
 describe("two toolbars on one page", () => {
   const sheet = () =>
-    document.head.querySelector(
-      `style[data-dev-toolbar-styles="${BOXES_STYLE_ENTRY}"]`,
-    );
+    document.head.querySelector(`style[data-dev-toolbar-styles="${BOXES_STYLE_ENTRY}"]`);
 
   it("does not take one instance's outlines away when another unmounts", async () => {
     const first = renderWithToolbar(app, {
@@ -708,9 +665,7 @@ describe("the focus scan describes the real tab sequence", () => {
     // aria-disabled is a promise to assistive technology, not a change to focus
     // behaviour: leaving it out described a sequence with a missing stop. The
     // `disabled` attribute on a button genuinely does remove it.
-    expect(badges().map((badge) => badge.textContent)).toEqual([
-      "1Save the document",
-    ]);
+    expect(badges().map((badge) => badge.textContent)).toEqual(["1Save the document"]);
   });
 
   it("skips controls inside a disabled fieldset, but not its legend", async () => {
@@ -723,9 +678,7 @@ describe("the focus scan describes the real tab sequence", () => {
     document.body.prepend(form);
 
     mount({ defaults: { focus: true } });
-    const legendButton = form.querySelector(
-      '[data-testid="legend-button"]',
-    ) as Element;
+    const legendButton = form.querySelector('[data-testid="legend-button"]') as Element;
     const inside = form.querySelector('[data-testid="inside"]') as Element;
     const named = document.querySelector('[data-testid="named"]') as Element;
     withRect(legendButton, { x: 0, y: 10, width: 40, height: 20 });
@@ -789,9 +742,7 @@ describe("failing closed", () => {
     expect(document.querySelector('[role="alert"]')?.textContent).toContain(
       "layout is not available",
     );
-    expect(
-      rows().map((row) => row.dataset["dtbOn"]),
-    ).toEqual(["false", "false", "false", "false"]);
+    expect(rows().map((row) => row.dataset["dtbOn"])).toEqual(["false", "false", "false", "false"]);
   });
 
   it("leaves the stored toggles alone when a measurement throws", async () => {

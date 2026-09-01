@@ -36,10 +36,7 @@ let unmountAll: (() => void)[] = [];
 let written: string[] = [];
 let applied: [string, FlagValue | undefined][] = [];
 
-const mount = (
-  options: FlagsOptions = {},
-  storage?: ToolbarStorage | null,
-) => {
+const mount = (options: FlagsOptions = {}, storage?: ToolbarStorage | null) => {
   const extension = flags({ flags: CATALOGUE, ...options });
   const result = renderWithToolbar(null, {
     extensions: [extension],
@@ -55,8 +52,7 @@ const text = (element: Element | null | undefined) =>
   element?.textContent?.replace(/\s+/g, " ").trim() ?? "";
 
 const row = (panel: HTMLElement | null, key: string) =>
-  panel?.querySelector<HTMLElement>(`[data-dtb-part="flag-row"][data-dtb-flag="${key}"]`) ??
-  null;
+  panel?.querySelector<HTMLElement>(`[data-dtb-part="flag-row"][data-dtb-flag="${key}"]`) ?? null;
 
 beforeEach(() => {
   written = [];
@@ -86,9 +82,7 @@ const record = (key: string, value: FlagValue | undefined) => {
 describe("the compact chip", () => {
   it("counts the flags and shouts when an override is live", () => {
     const { toolbar } = mount({ onOverride: record });
-    expect(
-      text(toolbar.item("flags")?.querySelector('[data-dtb-part="flag-count"]')),
-    ).toBe("3");
+    expect(text(toolbar.item("flags")?.querySelector('[data-dtb-part="flag-count"]'))).toBe("3");
 
     act(() => {
       toolbar.openPanel("flags");
@@ -101,20 +95,14 @@ describe("the compact chip", () => {
       switchButton?.click();
     });
 
-    const chip = toolbar
-      .item("flags")
-      ?.querySelector('[data-dtb-part="flag-chip"]');
-    expect(text(chip?.querySelector('[data-dtb-part="flag-count"]'))).toBe(
-      "1 overridden",
-    );
+    const chip = toolbar.item("flags")?.querySelector('[data-dtb-part="flag-chip"]');
+    expect(text(chip?.querySelector('[data-dtb-part="flag-count"]'))).toBe("1 overridden");
     expect(chip?.getAttribute("data-dtb-overridden")).toBe("true");
   });
 
   it("says so when the consumer supplied no flags", () => {
     const { toolbar } = mount({ flags: [] });
-    expect(
-      text(toolbar.item("flags")?.querySelector('[data-dtb-part="flag-count"]')),
-    ).toBe("0");
+    expect(text(toolbar.item("flags")?.querySelector('[data-dtb-part="flag-count"]'))).toBe("0");
     act(() => {
       toolbar.openPanel("flags");
     });
@@ -198,22 +186,16 @@ describe("the panel", () => {
       toolbar.openPanel("flags");
     });
     const target = row(toolbar.panel("flags"), "checkout.copy");
-    const input = target?.querySelector<HTMLInputElement>(
-      '[data-dtb-part="flag-input"]',
-    );
+    const input = target?.querySelector<HTMLInputElement>('[data-dtb-part="flag-input"]');
     act(() => {
       fireEvent.change(input as HTMLInputElement, { target: { value: "new" } });
       fireEvent.keyDown(input as HTMLInputElement, { key: "Enter" });
     });
 
     const updated = row(toolbar.panel("flags"), "checkout.copy");
-    expect(
-      text(updated?.querySelector('[data-dtb-role="effective"]')),
-    ).toBe("new");
+    expect(text(updated?.querySelector('[data-dtb-role="effective"]'))).toBe("new");
     expect(text(updated?.querySelector('[data-dtb-role="base"]'))).toBe("old");
-    expect(text(updated?.querySelector('[data-dtb-role="default"]'))).toBe(
-      "old",
-    );
+    expect(text(updated?.querySelector('[data-dtb-role="default"]'))).toBe("old");
     expect(updated?.getAttribute("data-dtb-source")).toBe("local-override");
     // severityFor() drives the row, so a restyled bar restyles this too.
     expect(updated?.getAttribute("data-dtb-severity")).toBe("override");
@@ -225,10 +207,9 @@ describe("the panel", () => {
     act(() => {
       toolbar.openPanel("flags");
     });
-    const input = row(
-      toolbar.panel("flags"),
-      "checkout.copy",
-    )?.querySelector<HTMLInputElement>('[data-dtb-part="flag-input"]');
+    const input = row(toolbar.panel("flags"), "checkout.copy")?.querySelector<HTMLInputElement>(
+      '[data-dtb-part="flag-input"]',
+    );
     act(() => {
       fireEvent.change(input as HTMLInputElement, { target: { value: "new" } });
       fireEvent.keyDown(input as HTMLInputElement, { key: "Enter" });
@@ -244,10 +225,9 @@ describe("the panel", () => {
       toolbar.openPanel("flags");
     });
     for (const key of ["ui-facelift", "new-header"]) {
-      const button = row(
-        toolbar.panel("flags"),
-        key,
-      )?.querySelector<HTMLButtonElement>('[data-dtb-part="flag-switch"]');
+      const button = row(toolbar.panel("flags"), key)?.querySelector<HTMLButtonElement>(
+        '[data-dtb-part="flag-switch"]',
+      );
       act(() => {
         button?.click();
       });
@@ -259,25 +239,14 @@ describe("the panel", () => {
     act(() => {
       clearAll?.click();
     });
-    expect(
-      text(
-        toolbar
-          .item("flags")
-          ?.querySelector('[data-dtb-part="flag-count"]'),
-      ),
-    ).toBe("3");
-    expect(applied.slice(-2).every(([, value]) => value === undefined)).toBe(
-      true,
-    );
+    expect(text(toolbar.item("flags")?.querySelector('[data-dtb-part="flag-count"]'))).toBe("3");
+    expect(applied.slice(-2).every(([, value]) => value === undefined)).toBe(true);
   });
 
   it("searches by key, label, description and owner", () => {
     const { toolbar } = mount({
       onOverride: record,
-      flags: [
-        ...CATALOGUE,
-        { key: "zzz", label: "Payments", owner: "growth", type: "boolean" },
-      ],
+      flags: [...CATALOGUE, { key: "zzz", label: "Payments", owner: "growth", type: "boolean" }],
     });
     act(() => {
       toolbar.openPanel("flags");
@@ -290,9 +259,7 @@ describe("the panel", () => {
         target: { value: "growth" },
       });
     });
-    const rows = toolbar
-      .panel("flags")
-      ?.querySelectorAll('[data-dtb-part="flag-row"]');
+    const rows = toolbar.panel("flags")?.querySelectorAll('[data-dtb-part="flag-row"]');
     expect(rows).toHaveLength(1);
     expect(rows?.[0]?.getAttribute("data-dtb-flag")).toBe("zzz");
   });
@@ -306,26 +273,16 @@ describe("read-only mode", () => {
     });
     const panel = toolbar.panel("flags");
     expect(
-      panel
-        ?.querySelector('[data-dtb-part="flag-panel"]')
-        ?.getAttribute("data-dtb-writable"),
+      panel?.querySelector('[data-dtb-part="flag-panel"]')?.getAttribute("data-dtb-writable"),
     ).toBe("false");
     expect(text(panel)).toContain("Read-only");
-    expect(panel?.querySelectorAll('[data-dtb-part="flag-switch"]')).toHaveLength(
-      0,
+    expect(panel?.querySelectorAll('[data-dtb-part="flag-switch"]')).toHaveLength(0);
+    expect(panel?.querySelectorAll('[data-dtb-part="flag-input"]')).toHaveLength(0);
+    expect(panel?.querySelector<HTMLButtonElement>('[data-dtb-action="clear-all"]')?.disabled).toBe(
+      true,
     );
-    expect(panel?.querySelectorAll('[data-dtb-part="flag-input"]')).toHaveLength(
-      0,
-    );
-    expect(
-      panel
-        ?.querySelector<HTMLButtonElement>('[data-dtb-action="clear-all"]')
-        ?.disabled,
-    ).toBe(true);
     // Copying still works: reading is the whole point of a read-only panel.
-    expect(
-      panel?.querySelector('[data-dtb-action="copy-recipe"]'),
-    ).not.toBeNull();
+    expect(panel?.querySelector('[data-dtb-action="copy-recipe"]')).not.toBeNull();
   });
 });
 
@@ -341,9 +298,7 @@ describe("persistence across a reload", () => {
         ?.querySelector<HTMLButtonElement>('[data-dtb-part="flag-switch"]')
         ?.click();
     });
-    expect(
-      storage.getItem(`dtb:v1:test:ext:flags:${OVERRIDES_KEY}`),
-    ).toBe('{"ui-facelift":true}');
+    expect(storage.getItem(`dtb:v1:test:ext:flags:${OVERRIDES_KEY}`)).toBe('{"ui-facelift":true}');
 
     first.unmount();
     unmountAll.pop();
@@ -353,13 +308,9 @@ describe("persistence across a reload", () => {
     // object over the same storage.
     const second = mount({ onOverride: record }, storage);
     expect(applied).toEqual([["ui-facelift", true]]);
-    expect(
-      text(
-        second.toolbar
-          .item("flags")
-          ?.querySelector('[data-dtb-part="flag-count"]'),
-      ),
-    ).toBe("1 overridden");
+    expect(text(second.toolbar.item("flags")?.querySelector('[data-dtb-part="flag-count"]'))).toBe(
+      "1 overridden",
+    );
   });
 
   it("readStoredOverrides() reads the same map without mounting anything", () => {
@@ -428,9 +379,7 @@ describe("failing closed", () => {
       expect(text(failed)).toContain("override not applied");
       expect(failed?.getAttribute("data-dtb-severity")).toBe("bad");
       expect(
-        failed
-          ?.querySelector('[data-dtb-tag="not-applied"]')
-          ?.getAttribute("title"),
+        failed?.querySelector('[data-dtb-tag="not-applied"]')?.getAttribute("title"),
       ).toContain("provider is offline");
     } finally {
       spy.mockRestore();
@@ -465,9 +414,9 @@ describe("orphaned overrides", () => {
   it("still applies them, and says so instead of hiding them", () => {
     const { toolbar } = mount({ onOverride: record }, stored());
     expect(applied).toEqual([["checkout.v2", "on"]]);
-    expect(
-      text(toolbar.item("flags")?.querySelector('[data-dtb-part="flag-count"]')),
-    ).toBe("1 overridden");
+    expect(text(toolbar.item("flags")?.querySelector('[data-dtb-part="flag-count"]'))).toBe(
+      "1 overridden",
+    );
 
     act(() => {
       toolbar.openPanel("flags");
@@ -507,16 +456,10 @@ describe("orphaned overrides", () => {
       toolbar.openPanel("flags");
     });
     const orphan = row(toolbar.panel("flags"), "checkout.v2");
-    expect(orphan?.querySelectorAll('[data-dtb-part="flag-input"]')).toHaveLength(
-      0,
-    );
-    expect(
-      orphan?.querySelectorAll('[data-dtb-part="flag-switch"]'),
-    ).toHaveLength(0);
+    expect(orphan?.querySelectorAll('[data-dtb-part="flag-input"]')).toHaveLength(0);
+    expect(orphan?.querySelectorAll('[data-dtb-part="flag-switch"]')).toHaveLength(0);
     act(() => {
-      orphan
-        ?.querySelector<HTMLButtonElement>('[data-dtb-action="clear"]')
-        ?.click();
+      orphan?.querySelector<HTMLButtonElement>('[data-dtb-action="clear"]')?.click();
     });
     expect(applied.at(-1)).toEqual(["checkout.v2", undefined]);
   });
@@ -531,10 +474,9 @@ describe("the editor refuses what it cannot parse", () => {
     act(() => {
       toolbar.openPanel("flags");
     });
-    const input = row(
-      toolbar.panel("flags"),
-      "rank",
-    )?.querySelector<HTMLInputElement>('[data-dtb-part="flag-input"]');
+    const input = row(toolbar.panel("flags"), "rank")?.querySelector<HTMLInputElement>(
+      '[data-dtb-part="flag-input"]',
+    );
     act(() => {
       fireEvent.change(input as HTMLInputElement, { target: { value: "abc" } });
       fireEvent.keyDown(input as HTMLInputElement, { key: "Enter" });
@@ -545,9 +487,7 @@ describe("the editor refuses what it cannot parse", () => {
     expect(text(target?.querySelector('[data-dtb-role="effective"]'))).toBe("2");
     // Blur must not commit it either — tabbing away is the quieter path in.
     act(() => {
-      fireEvent.blur(
-        target?.querySelector('[data-dtb-part="flag-input"]') as HTMLInputElement,
-      );
+      fireEvent.blur(target?.querySelector('[data-dtb-part="flag-input"]') as HTMLInputElement);
     });
     expect(applied).toEqual([]);
     // The draft survives so it can be corrected.
@@ -609,9 +549,9 @@ describe("commands", () => {
       "flags.refresh",
     ]);
     // Core aggregated them.
-    expect(
-      toolbar.context().commands.map((command) => command.id),
-    ).toContain("flags.toggle.ui-facelift");
+    expect(toolbar.context().commands.map((command) => command.id)).toContain(
+      "flags.toggle.ui-facelift",
+    );
 
     await act(async () => {
       await toolbar.runCommand("flags.toggle.ui-facelift");
@@ -682,10 +622,9 @@ describe("commands", () => {
     act(() => {
       toolbar.openPanel("flags");
     });
-    const input = row(
-      toolbar.panel("flags"),
-      "checkout.apiToken",
-    )?.querySelector<HTMLInputElement>('[data-dtb-part="flag-input"]');
+    const input = row(toolbar.panel("flags"), "checkout.apiToken")?.querySelector<HTMLInputElement>(
+      '[data-dtb-part="flag-input"]',
+    );
     act(() => {
       fireEvent.change(input as HTMLInputElement, {
         target: { value: "tok-secret-2" },
@@ -708,9 +647,9 @@ describe("commands", () => {
     // rather than round-tripping the masked one.
     expect(text(toolbar.panel("flags"))).not.toContain("tok-secret");
     expect(
-      row(toolbar.panel("flags"), "checkout.apiToken")
-        ?.querySelector<HTMLInputElement>('[data-dtb-part="flag-input"]')
-        ?.value,
+      row(toolbar.panel("flags"), "checkout.apiToken")?.querySelector<HTMLInputElement>(
+        '[data-dtb-part="flag-input"]',
+      )?.value,
     ).toBe("");
   });
 });

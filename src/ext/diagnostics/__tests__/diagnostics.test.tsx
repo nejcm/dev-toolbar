@@ -42,8 +42,7 @@ const mount = (
   return { extension, ...result };
 };
 
-const preview = (): HTMLElement | null =>
-  document.querySelector('[data-dtb-part="diag-preview"]');
+const preview = (): HTMLElement | null => document.querySelector('[data-dtb-part="diag-preview"]');
 
 const button = (action: string): HTMLButtonElement => {
   const found = document.querySelector<HTMLButtonElement>(
@@ -58,9 +57,7 @@ afterEach(() => {
   unmountAll = [];
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
-  for (const style of document.head.querySelectorAll(
-    "style[data-dev-toolbar-styles]",
-  )) {
+  for (const style of document.head.querySelectorAll("style[data-dev-toolbar-styles]")) {
     style.remove();
   }
 });
@@ -83,9 +80,7 @@ describe("the chip", () => {
     act(() => toolbar.openPanel("diagnostics"));
     const chip = toolbar.item("diagnostics");
     expect(chip?.textContent).toContain("1 missing");
-    expect(
-      chip?.querySelector('[data-dtb-incomplete="true"]'),
-    ).not.toBeNull();
+    expect(chip?.querySelector('[data-dtb-incomplete="true"]')).not.toBeNull();
   });
 });
 
@@ -140,9 +135,7 @@ describe("the panel", () => {
 
     expect(preview()?.getAttribute("data-dtb-format")).toBe("json");
     expect(preview()?.textContent).toContain('"generatedAt"');
-    expect(storage.getItem(`dtb:v1:test:ext:diagnostics:${FORMAT_KEY}`)).toBe(
-      "json",
-    );
+    expect(storage.getItem(`dtb:v1:test:ext:diagnostics:${FORMAT_KEY}`)).toBe("json");
   });
 
   it("copies exactly what it displays", async () => {
@@ -150,9 +143,7 @@ describe("the panel", () => {
     vi.stubGlobal("navigator", {
       clipboard: { writeText: async (text: string) => void writes.push(text) },
     });
-    const { toolbar } = mount({}, [
-      { id: "n", label: "N", diagnostics: () => ({ n: 1 }) },
-    ]);
+    const { toolbar } = mount({}, [{ id: "n", label: "N", diagnostics: () => ({ n: 1 }) }]);
     act(() => toolbar.openPanel("diagnostics"));
     const displayed = preview()?.textContent ?? "";
 
@@ -188,9 +179,7 @@ describe("the panel", () => {
     act(() => fireEvent.click(button("download")));
     HTMLAnchorElement.prototype.click = realClick;
 
-    expect(document.body.textContent).toMatch(
-      /Downloading dev-toolbar-diagnostics-.*\.md\./,
-    );
+    expect(document.body.textContent).toMatch(/Downloading dev-toolbar-diagnostics-.*\.md\./);
   });
 
   it("says downloads are unavailable where they are", () => {
@@ -235,7 +224,6 @@ describe("the contract it uses", () => {
     // not subject to that rule, so the drift is caught here instead.
     expect(TARGET_CONTRACT_VERSION).toBe(CONTRACT_VERSION);
   });
-
 
   it("does not contribute to the aggregation it reads", () => {
     const { toolbar } = mount();

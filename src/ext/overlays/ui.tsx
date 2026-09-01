@@ -2,13 +2,7 @@ import { useEffect, useSyncExternalStore } from "react";
 import type { CSSProperties, ReactNode } from "react";
 import { ensureOverlaysStyles } from "./css";
 import { OVERLAY_IDS, OVERLAY_META } from "./types";
-import type {
-  FocusItem,
-  GridSettings,
-  HoverTarget,
-  OverlaysSnapshot,
-  RectLike,
-} from "./types";
+import type { FocusItem, GridSettings, HoverTarget, OverlaysSnapshot, RectLike } from "./types";
 import type { OverlaysRuntime } from "./runtime";
 
 /**
@@ -87,12 +81,8 @@ export function OverlaysChip({
       <span data-dtb-part="ovl-chip" data-dtb-active={on ? "true" : "false"}>
         <span data-dtb-part="ovl-dot" aria-hidden="true" />
         <span>{isOverflowed ? label : "overlays"}</span>
-        <span data-dtb-part="ovl-value">
-          {on ? `${snapshot.activeCount} on` : "off"}
-        </span>
-        {snapshot.error === null ? null : (
-          <span data-dtb-part="ovl-tag">error</span>
-        )}
+        <span data-dtb-part="ovl-value">{on ? `${snapshot.activeCount} on` : "off"}</span>
+        {snapshot.error === null ? null : <span data-dtb-part="ovl-tag">error</span>}
       </span>
     </button>
   );
@@ -108,11 +98,7 @@ export interface PanelProps {
   injectStyles: boolean;
 }
 
-export function OverlaysPanel({
-  runtime,
-  label,
-  injectStyles,
-}: PanelProps): ReactNode {
+export function OverlaysPanel({ runtime, label, injectStyles }: PanelProps): ReactNode {
   useOverlayStyles(injectStyles);
   const snapshot = useSnapshot(runtime);
 
@@ -158,14 +144,13 @@ export function OverlaysPanel({
               {id === "focus" && on ? (
                 <p data-dtb-part="ovl-note" role="status">
                   {snapshot.focusItems.length} badge
-                  {snapshot.focusItems.length === 1 ? "" : "s"} on screen,{" "}
-                  {snapshot.unnamedCount} with no accessible name
+                  {snapshot.focusItems.length === 1 ? "" : "s"} on screen, {snapshot.unnamedCount}{" "}
+                  with no accessible name
                   {snapshot.focusTruncated
                     ? " — the scan stopped at the badge limit, so the numbering past that point is incomplete"
                     : ""}
-                  . Names are computed by a documented heuristic, not the full
-                  accname algorithm; treat a flag as a prompt to check, not a
-                  verdict.
+                  . Names are computed by a documented heuristic, not the full accname algorithm;
+                  treat a flag as a prompt to check, not a verdict.
                 </p>
               ) : null}
             </li>
@@ -184,9 +169,9 @@ export function OverlaysPanel({
         </button>
         <span data-dtb-part="ovl-note" role="status">
           Nothing drawn here can be clicked: the surface is{" "}
-          <code>pointer-events: none !important</code>, which no ordinary app
-          rule can undo, and it paints below the bar — so a click reaches your
-          page and the toolbar and palette are never covered.
+          <code>pointer-events: none !important</code>, which no ordinary app rule can undo, and it
+          paints below the bar — so a click reaches your page and the toolbar and palette are never
+          covered.
         </span>
       </div>
     </div>
@@ -206,10 +191,7 @@ export interface SurfaceProps {
  * Rendered by the `overlay` slot on every toolbar render; `null` whenever no
  * overlay is on, which is the common case.
  */
-export function OverlaysSurface({
-  runtime,
-  injectStyles,
-}: SurfaceProps): ReactNode {
+export function OverlaysSurface({ runtime, injectStyles }: SurfaceProps): ReactNode {
   useOverlayStyles(injectStyles);
   const snapshot = useSnapshot(runtime);
   if (snapshot.activeCount === 0) return null;
@@ -300,25 +282,16 @@ function Inspector({ hover }: { hover: HoverTarget }): ReactNode {
     padding.top + padding.right + padding.bottom + padding.left > 0 &&
     contentBox.width > 0 &&
     contentBox.height > 0;
-  const showMargin =
-    margin.top + margin.right + margin.bottom + margin.left > 0;
+  const showMargin = margin.top + margin.right + margin.bottom + margin.left > 0;
 
   return (
     <>
       {showMargin ? (
-        <div
-          data-dtb-part="ovl-box"
-          data-dtb-box="margin"
-          style={box(marginBox)}
-        />
+        <div data-dtb-part="ovl-box" data-dtb-box="margin" style={box(marginBox)} />
       ) : null}
       <div data-dtb-part="ovl-box" data-dtb-box="border" style={box(rect)} />
       {showPadding ? (
-        <div
-          data-dtb-part="ovl-box"
-          data-dtb-box="content"
-          style={box(contentBox)}
-        />
+        <div data-dtb-part="ovl-box" data-dtb-box="content" style={box(contentBox)} />
       ) : null}
       <div data-dtb-part="ovl-label" style={labelStyle}>
         <span data-dtb-part="ovl-label-target">{hover.description}</span>
@@ -330,12 +303,8 @@ function Inspector({ hover }: { hover: HoverTarget }): ReactNode {
             {hover.name.length > 40 ? `${hover.name.slice(0, 40)}…` : hover.name}
           </span>
         )}
-        {hover.role === null ? null : (
-          <span data-dtb-part="ovl-label-note">role={hover.role}</span>
-        )}
-        {hover.pinned ? (
-          <span data-dtb-part="ovl-label-note">fixed</span>
-        ) : null}
+        {hover.role === null ? null : <span data-dtb-part="ovl-label-note">role={hover.role}</span>}
+        {hover.pinned ? <span data-dtb-part="ovl-label-note">fixed</span> : null}
       </div>
     </>
   );
@@ -360,9 +329,7 @@ function FocusBadge({ item }: { item: FocusItem }): ReactNode {
         }}
       >
         <span>{item.index}</span>
-        {item.tabIndex !== null && item.tabIndex > 0 ? (
-          <span>tabindex={item.tabIndex}</span>
-        ) : null}
+        {item.tabIndex !== null && item.tabIndex > 0 ? <span>tabindex={item.tabIndex}</span> : null}
         <span>
           {named
             ? (item.name as string).length > 24

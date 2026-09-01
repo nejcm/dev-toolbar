@@ -5,7 +5,7 @@ import { writeClipboardText } from "../../runtime";
 import { ensureMetricsStyles } from "./css";
 import { formatBytes, formatMs, shortenUrl } from "./format";
 import type { MetricsRuntime } from "./runtime";
-import type { MetricId, MetricView, MetricsSnapshot } from "./types";
+import type { MetricId, MetricsSnapshot } from "./types";
 
 /**
  * The rendered surface. [dev-toolbar/ext/metrics]
@@ -121,9 +121,7 @@ export function MetricsPanel({ runtime, injectStyles }: PanelProps): ReactNode {
   // persisted tab is readable here — unlike during the bar's first render.
   const [active, setActive] = useState<MetricId>(() => {
     const stored = runtime.storage()?.getItem(STORAGE_TAB_KEY);
-    return stored && snapshot.order.includes(stored as MetricId)
-      ? (stored as MetricId)
-      : first;
+    return stored && snapshot.order.includes(stored as MetricId) ? (stored as MetricId) : first;
   });
   const [copied, setCopied] = useState<"idle" | "ok" | "failed">("idle");
 
@@ -176,11 +174,7 @@ export function MetricsPanel({ runtime, injectStyles }: PanelProps): ReactNode {
         <p data-dtb-part="metrics-hint">{view.hint}</p>
 
         {collector && view.status === "ok" ? (
-          <Sparkline
-            series={collector.series}
-            revision={snapshot.revision}
-            label={view.title}
-          />
+          <Sparkline series={collector.series} revision={snapshot.revision} label={view.title} />
         ) : null}
 
         {view.detail.length > 0 ? (
@@ -191,14 +185,10 @@ export function MetricsPanel({ runtime, injectStyles }: PanelProps): ReactNode {
           </dl>
         ) : null}
 
-        {view.id === "network" ? (
-          <RequestTable requests={snapshot.requests} />
-        ) : null}
+        {view.id === "network" ? <RequestTable requests={snapshot.requests} /> : null}
 
         {collector ? (
-          <p data-dtb-part="metrics-note">
-            Collector cost: {collector.estimatedCost}.
-          </p>
+          <p data-dtb-part="metrics-note">Collector cost: {collector.estimatedCost}.</p>
         ) : null}
       </div>
 
@@ -211,12 +201,7 @@ export function MetricsPanel({ runtime, injectStyles }: PanelProps): ReactNode {
         >
           Reset
         </button>
-        <button
-          type="button"
-          data-dtb-part="metrics-action"
-          data-dtb-action="copy"
-          onClick={copy}
-        >
+        <button type="button" data-dtb-part="metrics-action" data-dtb-action="copy" onClick={copy}>
           Copy diagnostic data
         </button>
         <span data-dtb-part="metrics-note" role="status">
@@ -240,11 +225,7 @@ function Row({ label, value }: { label: string; value: string }): ReactNode {
   );
 }
 
-function RequestTable({
-  requests,
-}: {
-  requests: MetricsSnapshot["requests"];
-}): ReactNode {
+function RequestTable({ requests }: { requests: MetricsSnapshot["requests"] }): ReactNode {
   if (requests.length === 0) {
     return <p data-dtb-part="metrics-note">No requests observed yet.</p>;
   }
@@ -265,9 +246,7 @@ function RequestTable({
             <td>{request.method}</td>
             <td>{request.status ?? request.state}</td>
             <td>{formatMs(request.duration)}</td>
-            <td>
-              {request.bytes === undefined ? "—" : formatBytes(request.bytes, 1)}
-            </td>
+            <td>{request.bytes === undefined ? "—" : formatBytes(request.bytes, 1)}</td>
             <td data-dtb-url="">{shortenUrl(request.url, 96)}</td>
           </tr>
         ))}

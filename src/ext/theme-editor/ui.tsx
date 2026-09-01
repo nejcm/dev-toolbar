@@ -135,11 +135,7 @@ function Editor({
   if (view.refusal !== null) {
     return (
       <>
-        <span
-          data-dtb-part="thm-tag"
-          data-dtb-tag="refused"
-          title={describeRefusal(view.refusal)}
-        >
+        <span data-dtb-part="thm-tag" data-dtb-tag="refused" title={describeRefusal(view.refusal)}>
           {view.refusal === "reserved" ? "reserved name" : "unusable name"}
         </span>
         {/* No clear button, and that is now *provably* right rather than an
@@ -205,9 +201,7 @@ function Editor({
         // A masked value never round-trips through the editor: seeding the input
         // with it is the one place the redacted snapshot would leak back onto
         // the screen, and out again through the next copy. §12.6.
-        placeholder={
-          view.masked ? "masked — type a new value" : (view.effectiveText ?? "")
-        }
+        placeholder={view.masked ? "masked — type a new value" : (view.effectiveText ?? "")}
         title={rejected ?? `Edit ${view.name}`}
         value={draft}
         onChange={(event) => {
@@ -255,11 +249,7 @@ function Row({
           </span>
         ) : null}
         {view.applyError ? (
-          <span
-            data-dtb-part="thm-tag"
-            data-dtb-tag="not-applied"
-            title={view.applyError}
-          >
+          <span data-dtb-part="thm-tag" data-dtb-tag="not-applied" title={view.applyError}>
             not applied
           </span>
         ) : null}
@@ -316,9 +306,7 @@ function Row({
         </span>
       </div>
 
-      {view.description ? (
-        <p data-dtb-part="thm-meta">{view.description}</p>
-      ) : null}
+      {view.description ? <p data-dtb-part="thm-meta">{view.description}</p> : null}
     </li>
   );
 }
@@ -337,11 +325,7 @@ export interface PanelProps {
   injectStyles: boolean;
 }
 
-export function ThemePanel({
-  runtime,
-  label,
-  injectStyles,
-}: PanelProps): ReactNode {
+export function ThemePanel({ runtime, label, injectStyles }: PanelProps): ReactNode {
   useThemeStyles(injectStyles);
   const snapshot = useSnapshot(runtime);
   const [query, setQuery] = useState("");
@@ -444,9 +428,7 @@ export function ThemePanel({
                 ? "Flip the application's own colour mode through the adapter you supplied."
                 : "Read-only: themeEditor({ mode }) had no set(), so the mode is reported rather than driven."
             }
-            onClick={() =>
-              runtime.setMode(snapshot.mode === "dark" ? "light" : "dark")
-            }
+            onClick={() => runtime.setMode(snapshot.mode === "dark" ? "light" : "dark")}
           >
             mode: {snapshot.mode}
           </button>
@@ -461,17 +443,15 @@ export function ThemePanel({
 
       {failed.length > 0 ? (
         <p data-dtb-part="thm-banner" data-dtb-tone="error" role="alert">
-          {failed.length} edit{failed.length === 1 ? "" : "s"} could not be
-          applied: {failed.join(", ")}. Those rows are marked; the page did not
-          take them.
+          {failed.length} edit{failed.length === 1 ? "" : "s"} could not be applied:{" "}
+          {failed.join(", ")}. Those rows are marked; the page did not take them.
         </p>
       ) : null}
 
       {snapshot.writable ? null : (
         <p data-dtb-part="thm-banner" data-dtb-tone="warn" role="status">
-          Nothing on this page matches the{" "}
-          <code>{snapshot.surface.selector}</code> surface, so edits are stored
-          but not shown.
+          Nothing on this page matches the <code>{snapshot.surface.selector}</code> surface, so
+          edits are stored but not shown.
         </p>
       )}
 
@@ -483,12 +463,9 @@ export function ThemePanel({
 
       {snapshot.supplied ? null : (
         <p data-dtb-part="thm-note">
-          No tokens were supplied. This extension owns no design system and
-          generates no palette — pass the tokens your application publishes:{" "}
-          <code>
-            {'themeEditor({ tokens: [{ name: "--brand-500", type: "color" }] })'}
-          </code>
-          .
+          No tokens were supplied. This extension owns no design system and generates no palette —
+          pass the tokens your application publishes:{" "}
+          <code>{'themeEditor({ tokens: [{ name: "--brand-500", type: "color" }] })'}</code>.
         </p>
       )}
 
@@ -497,12 +474,7 @@ export function ThemePanel({
           <h3 data-dtb-part="thm-group-name">{group.name}</h3>
           <ul data-dtb-part="thm-list">
             {group.tokens.map((view) => (
-              <Row
-                key={view.name}
-                view={view}
-                runtime={runtime}
-                writable={snapshot.writable}
-              />
+              <Row key={view.name} view={view} runtime={runtime} writable={snapshot.writable} />
             ))}
           </ul>
         </section>
@@ -537,9 +509,7 @@ export function ThemePanel({
             data-dtb-role="format"
             aria-label="Export format"
             value={format}
-            onChange={(event) =>
-              setFormat(event.target.value as ExportFormat)
-            }
+            onChange={(event) => setFormat(event.target.value as ExportFormat)}
           >
             {(Object.keys(FORMAT_LABEL) as ExportFormat[]).map((key) => (
               <option key={key} value={key}>
@@ -604,24 +574,21 @@ export function ThemePanel({
       {/* §14.4's standard: what was left out, and what leaving it out costs,
           next to the thing itself rather than only in a design document. */}
       <p data-dtb-part="thm-note" data-dtb-role="limits">
-        Edits are written as inline custom properties on{" "}
-        <code>{snapshot.surface.selector}</code>, so an application rule marked{" "}
-        <code>!important</code> still wins and this panel will show an edit the
-        page is not honouring. Nothing here generates a palette from a base
-        colour: this editor changes the tokens your design system already
-        publishes, and a generated scale belongs in a <code>preset</code> your
-        code computes. The Figma export is the W3C design-tokens shape — the
-        deterministic, versioned half of §3H's pipeline; no plugin ships here.
-        Names beginning <code>--dtb-</code> or <code>--dev-toolbar</code> are
-        never written, so an edit cannot restyle this toolbar; restyle the bar
-        from your own stylesheet instead.
+        Edits are written as inline custom properties on <code>{snapshot.surface.selector}</code>,
+        so an application rule marked <code>!important</code> still wins and this panel will show an
+        edit the page is not honouring. Nothing here generates a palette from a base colour: this
+        editor changes the tokens your design system already publishes, and a generated scale
+        belongs in a <code>preset</code> your code computes. The Figma export is the W3C
+        design-tokens shape — the deterministic, versioned half of §3H's pipeline; no plugin ships
+        here. Names beginning <code>--dtb-</code> or <code>--dev-toolbar</code> are never written,
+        so an edit cannot restyle this toolbar; restyle the bar from your own stylesheet instead.
       </p>
 
       {snapshot.overriddenCount > 0 ? (
         <p data-dtb-part="thm-note" data-dtb-role="escape-hatch">
-          Edits persist across reloads in this browser. Reset them above, or
-          load any page with <code>?dtb-theme=reset</code> if an edit has made
-          the app unreadable enough that you cannot reach this panel.
+          Edits persist across reloads in this browser. Reset them above, or load any page with{" "}
+          <code>?dtb-theme=reset</code> if an edit has made the app unreadable enough that you
+          cannot reach this panel.
         </p>
       ) : null}
     </div>

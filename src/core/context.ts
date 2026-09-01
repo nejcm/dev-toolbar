@@ -51,9 +51,7 @@ export interface DevToolbarContextValue {
   register(extension: DevToolbarExtension): () => void;
 }
 
-export const DevToolbarContext = createContext<DevToolbarContextValue | null>(
-  null,
-);
+export const DevToolbarContext = createContext<DevToolbarContextValue | null>(null);
 
 /** Internal: does not throw, for parts that must degrade outside a provider. */
 export function useOptionalDevToolbar(): DevToolbarContextValue | null {
@@ -64,9 +62,7 @@ export function useOptionalDevToolbar(): DevToolbarContextValue | null {
 export function useDevToolbar(): DevToolbarContextValue {
   const value = useContext(DevToolbarContext);
   if (!value) {
-    throw new Error(
-      "[dev-toolbar] useDevToolbar() must be called inside <DevToolbar>.",
-    );
+    throw new Error("[dev-toolbar] useDevToolbar() must be called inside <DevToolbar>.");
   }
   return value;
 }
@@ -85,9 +81,7 @@ export function useToolbarCommands(): readonly ToolbarCommand[] {
   return useDevToolbar().commands;
 }
 
-export function cx(
-  ...values: (string | false | null | undefined)[]
-): string | undefined {
+export function cx(...values: (string | false | null | undefined)[]): string | undefined {
   const joined = values.filter(Boolean).join(" ");
   return joined === "" ? undefined : joined;
 }

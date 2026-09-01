@@ -94,9 +94,8 @@ export function parseShortcut(input: string): ParsedShortcut | null {
  */
 export function isApplePlatform(): boolean {
   if (typeof navigator === "undefined") return false;
-  const data = (
-    navigator as Navigator & { userAgentData?: { platform?: string } }
-  ).userAgentData?.platform;
+  const data = (navigator as Navigator & { userAgentData?: { platform?: string } }).userAgentData
+    ?.platform;
   const value = String(data ?? navigator.platform ?? navigator.userAgent ?? "");
   return /mac|iphone|ipad|ipod|darwin/i.test(value);
 }
