@@ -1,0 +1,120 @@
+name: CI
+
+on:
+  # No `branches:` filter here on purpose. `pull_request.branches` filters on the
+  # PR's *base* branch, which silently matches nothing for stacked PRs and for
+  # slash-named branches. sugarwork and project-ai-interviewer were both bitten
+  # by this; run on every PR instead.
+  #
+  # `types:` must be spelled out because `ready_for_review` is NOT one of the
+  # defaults (opened, synchronize, reopened). A job skipped by a job-level `if:`
+  # reports as PASSING to required status checks rather than staying pending, so
+  # with the draft skip below and the default types a PR could be opened as a
+  # draft (job skips, check goes green), then marked ready for review — firing no
+  # event at all — and merge with a green `verify` that never ran lint,
+  # typecheck, test or build. `ready_for_review` is what re-runs it for real.
+  # `converted_to_draft` is deliberately absent; see the note on the job's `if:`.
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+  push:
+    branches: [main]
+  # Exposed so the Phase 4 release workflow can call CI as its release gate.
+  workflow_call:
+    inputs:
+      called:
+        description: >-
+          Always true when this workflow runs as a reusable workflow. Callers do
+          not need to pass it; the default supplies it. It exists only so the
+          release-commit skip below can tell "a push of a release commit" apart
+          from "a release workflow calling CI as its gate" — on `workflow_call`
+          the whole `github` context (including `event_name`) belongs to the
+          *caller's* triggering event, so `github` alone cannot distinguish them.
+        type: boolean
+        required: false
+        default: true
+
+permissions:
+  contents: read
+
+# `github.workflow` and `github.ref` both resolve to the *caller's* values on a
+# `workflow_call` run, so a release-triggered CI run lands in the caller's group
+# (e.g. "Release-refs/heads/main") and cannot cancel, or be cancelled by, this
+# workflow's own runs (group "CI-..."). The residual risk belongs to the caller:
+# a second push to main while a release is in flight would cancel the release's
+# in-flight CI. The Phase 4 release workflow must therefore declare its own
+# `concurrency` with `cancel-in-progress: false`.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: verify
+    runs-on: ubuntu-latest
+    # Two independent skips, each scoped to the trigger it makes sense for:
+    #
+    #  1. Release-bot commits. `github.event.commits` exists only on `push`, so
+    #     the check is scoped to `push` — unscoped it is a no-op on
+    #     `pull_request` (toJSON(null) == "null") but is actively dangerous on
+    #     `workflow_call`, where the payload is the caller's push of the
+    #     `chore(release):` commit: CI would skip itself and the release would be
+    #     gated on nothing. `inputs.called` is only ever set on `workflow_call`,
+    #     so a called run never skips.
+    #     Note this skip is all-or-nothing per push: a push mixing a
+    #     `chore(release):` commit with real changes skips CI for the whole
+    #     push. That is inherent to the pattern. Truncation of `event.commits`
+    #     (capped at 2048 commits per push payload) fails safe: the marker drops
+    #     out of the JSON, so CI runs. And until the Phase 4 release workflow
+    #     exists, nothing else covers a `chore(release):` push to main — it
+    #     simply gets no CI.
+    #  2. Draft PRs. Scoped to `pull_request`; on other events
+    #     `github.event.pull_request` is null and the term is vacuously true.
+    #     `converted_to_draft` is not a declared trigger type on purpose: a
+    #     ready->draft flip changes no code, and a run on that event would skip
+    #     and report green for a SHA whose real check may have failed, replacing
+    #     a red status with a green one. Not declaring it leaves the existing
+    #     verified result standing.
+    if: >-
+      (inputs.called || github.event_name != 'push'
+      || !contains(toJSON(github.event.commits.*.message), 'chore(release):'))
+      && (github.event_name != 'pull_request'
+      || github.event.pull_request.draft != true)
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          # Pinned explicitly: `bun-version-file: package.json` needs a
+          # `packageManager` field, which is a Phase 3 item. Bump this by hand
+          # (or switch to the version file) once Phase 3 lands.
+          bun-version: 1.3.14
+          # The explicit actions/cache step below owns the install cache.
+          no-cache: true
+
+      - name: Cache bun install cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.bun/install/cache
+          key: ${{ runner.os }}-bun-${{ hashFiles('bun.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-bun-
+
+      # --frozen-lockfile is not only about speed: oxlint is pinned to exactly
+      # 1.81.0 in bun.lock, which is what makes the `--max-warnings=59` ratchet
+      # in `bun run lint` deterministic.
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Verify (typecheck, lint, test, build)
+        run: bun run verify
+
+      # Deliberately uncached and after verify: audit results depend on the
+      # advisory database rather than on repo contents, so keying them to a
+      # lockfile hash would be wrong. `continue-on-error` while the baseline is
+      # noisy — advisories surface without blocking merges. Tighten once quiet.
+      - name: Audit dependencies
+        run: bun audit
+        continue-on-error: true
