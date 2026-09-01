@@ -32,7 +32,7 @@ The individual pieces, when you want a faster loop:
 | Command | What it does |
 | --- | --- |
 | `bun run typecheck` | `tsc --noEmit` |
-| `bun run lint` | `oxlint --max-warnings=59` |
+| `bun run lint` | `oxlint --max-warnings=0` |
 | `bun run lint:fix` | `oxlint --fix` |
 | `bun run format` | `oxfmt` (JS/TS only) |
 | `bun run format:check` | `oxfmt --check` |
@@ -42,11 +42,10 @@ The individual pieces, when you want a faster loop:
 
 Two things about `lint` that catch people out:
 
-- **`--max-warnings=59` is a ratchet, not a suggestion.** It is pinned to the
-  exact number of warnings in the tree today. Adding one warning fails the
-  build. If you legitimately reduce the count, lower the number in
-  `package.json` in the same PR so the budget tightens instead of leaving slack
-  for someone else's new warning.
+- **`--max-warnings=0` is a ratchet, not a suggestion.** The tree has no
+  warnings, and adding one fails the build. If a rule is wrong about your code,
+  suppress it on the line that earns it with an `oxlint-disable-next-line`
+  comment and a sentence saying why — do not raise the budget.
 - **oxfmt handles JS and TS only.** CSS, JSON and Markdown have no formatter
   here. `.editorconfig` is what keeps them consistent, so install the
   EditorConfig extension (`.vscode/extensions.json` recommends it).

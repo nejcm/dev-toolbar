@@ -120,6 +120,7 @@ export function FlagsChip({
       type="button"
       data-dtb-part={isOverflowed ? "flag-overflow-trigger" : "trigger"}
       aria-expanded={isPanelOpen}
+      aria-label={label}
       onClick={onToggle}
       title={title}
     >

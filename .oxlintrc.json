@@ -7,6 +7,11 @@
   "rules": {
     "react/no-unstable-nested-components": "error",
     "react/rules-of-hooks": "error",
+    // The toolbar is built from custom widgets, so ARIA roles on generic
+    // elements are the point, not an oversight: the rule's advice here is to
+    // swap an <svg role="img"> for <img>, a portalled role="dialog" for
+    // <dialog>, and a command palette's role="listbox" for <select>.
+    "jsx-a11y/prefer-tag-over-role": "off",
     "jsx-a11y/no-autofocus": "error",
     "jsx-a11y/tabindex-no-positive": "error"
   },

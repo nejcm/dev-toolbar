@@ -85,7 +85,8 @@ export function createToolbarStore(options: ToolbarStoreOptions): ToolbarStore {
   const listeners = new Set<() => void>();
 
   const emit = () => {
-    for (const listener of [...listeners]) listener();
+    // Copied: a listener may unsubscribe itself while being notified.
+    for (const listener of Array.from(listeners)) listener();
   };
 
   const set = (patch: Partial<ToolbarState>) => {

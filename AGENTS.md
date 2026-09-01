@@ -29,7 +29,7 @@ Each extension directory follows the same convention: `index.tsx` (the factory),
 bun install                  # also installs the git hooks (simple-git-hooks)
 bun run verify               # typecheck && lint && build && test — the CI gate
 bun run typecheck            # tsc --noEmit
-bun run lint                 # oxlint --max-warnings=59  (a ratchet, see below)
+bun run lint                 # oxlint --max-warnings=0  (a ratchet, see below)
 bun run lint:fix             # oxlint --fix
 bun run format               # oxfmt — JS/TS only
 bun run format:check         # oxfmt --check
@@ -60,8 +60,9 @@ CI; `.github/workflows/ci.yml` runs exactly it.
   `src/styles.css` is excluded from the formatter for that reason.
 - **Conventional Commits, enforced.** The `commit-msg` hook runs commitlint. The
   `pre-commit` hook runs `oxfmt` + `oxlint --fix` over staged JS/TS.
-- **`--max-warnings=59` is a ratchet.** A new warning fails the build; if you reduce
-  the count, lower the number in `package.json` in the same PR.
+- **`--max-warnings=0` is a ratchet.** A new warning fails the build. The tree is
+  clean; keep it that way, or suppress a warning at the line that earns it with a
+  comment saying why.
 - **Tests are colocated** in `__tests__/` next to what they cover. New behaviour needs
   a test; a bug fix needs a test that fails before the fix. `src/testing/` is both the
   published test helper surface and what the internal tests use — if you are writing

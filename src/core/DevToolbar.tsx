@@ -121,6 +121,9 @@ function DevToolbarRoot({
   // Client-only mount: the bar is never part of server HTML, so there is
   // nothing to hydrate and nothing to mismatch.
   const [mounted, setMounted] = useState(false);
+  // Whether we have mounted on the client cannot be derived during render —
+  // that the effect ran at all is the signal.
+  // oxlint-disable-next-line react/set-state-in-effect
   useEffect(() => setMounted(true), []);
 
   const extensions = useMemo(() => {
@@ -139,6 +142,9 @@ function DevToolbarRoot({
   // of the moment it was taken, so every *imperative* path re-enumerates
   // instead of reading a stale array. See `getCommands` below.
   const extensionsRef = useRef(extensions);
+  // Written in render, not in an effect: an effect would leave `getCommands()`
+  // a render behind the list it exists to enumerate.
+  // oxlint-disable-next-line react/refs
   extensionsRef.current = extensions;
 
   const getCommands = useCallback(() => collectCommands(extensionsRef.current), []);
@@ -206,7 +212,7 @@ function DevToolbarRoot({
     // Disabling at runtime is a real teardown: abort every signal and run every
     // dispose, rather than leaving timers alive until unmount.
     if (!enabled) {
-      for (const [id, entry] of [...running]) stopExtension(id, entry);
+      for (const [id, entry] of Array.from(running)) stopExtension(id, entry);
       running.clear();
       return;
     }
@@ -219,7 +225,8 @@ function DevToolbarRoot({
       extensions.filter((extension) => extension.hidden !== true).map((extension) => extension.id),
     );
 
-    for (const [id, entry] of [...running]) {
+    // Copied: the loop deletes from `running`.
+    for (const [id, entry] of Array.from(running)) {
       if (present.has(id)) continue;
       stopExtension(id, entry);
       running.delete(id);
@@ -290,7 +297,7 @@ function DevToolbarRoot({
   useEffect(() => {
     const running = runningRef.current;
     return () => {
-      for (const [id, entry] of [...running]) stopExtension(id, entry);
+      for (const [id, entry] of Array.from(running)) stopExtension(id, entry);
       running.clear();
     };
   }, []);

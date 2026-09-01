@@ -337,7 +337,8 @@ class SurfaceHold {
   }
 
   releaseAll(): void {
-    for (const name of [...this.prior.keys()]) this.release(name);
+    // Copied: `release` deletes from the map being iterated.
+    for (const name of Array.from(this.prior.keys())) this.release(name);
     this.tidy();
   }
 

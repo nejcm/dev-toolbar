@@ -190,6 +190,8 @@ function Dialog({
 
   return (
     <>
+      {/* The scrim is a decorative click-catcher; Escape and the dialog's own
+          controls are the keyboard path out of the menu. */}
       <div
         data-dtb-part="cmd-scrim"
         // A right-click reaching for a context menu, or a stylus barrel press,
@@ -203,6 +205,9 @@ function Dialog({
         }}
         aria-hidden="true"
       />
+      {/* The dialog owns the menu's key handling — arrows, Enter and Escape —
+          because focus stays in the input, not on the option list. */}
+      {/* oxlint-disable-next-line jsx-a11y/no-noninteractive-element-interactions */}
       <div
         data-dtb-part="cmd-dialog"
         role="dialog"

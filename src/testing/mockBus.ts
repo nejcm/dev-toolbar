@@ -163,10 +163,10 @@ export function createMockBus(options: CreateMockBusOptions = {}): MockBus {
         history = history.slice(history.length - historyLimit);
       }
       // Snapshot: a handler may unsubscribe itself mid-dispatch.
-      for (const handler of [...(handlers.get(type) ?? [])]) {
+      for (const handler of Array.from(handlers.get(type) ?? [])) {
         (handler as MockBusHandler<T>)(event.payload, event);
       }
-      for (const handler of [...anyHandlers]) {
+      for (const handler of Array.from(anyHandlers)) {
         handler(event.payload, event as MockBusEvent);
       }
       return event;
