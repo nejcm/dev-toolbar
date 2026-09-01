@@ -102,7 +102,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:jest-consumer": "bun run build && npm --prefix test/fixtures/jest-consumer run test",
-    "lint": "oxlint --max-warnings=59",
+    "lint": "oxlint --max-warnings=0",
     "lint:fix": "oxlint --fix",
     "format": "oxfmt",
     "format:check": "oxfmt --check",

@@ -123,7 +123,8 @@ export function installToolbarLayout(
   };
 
   const flush = () => {
-    for (const observer of [...observers]) {
+    // Copied: a callback may disconnect its observer mid-flush.
+    for (const observer of Array.from(observers)) {
       observer.callback([], observer.instance);
     }
   };

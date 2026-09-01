@@ -93,6 +93,7 @@ export function OverflowBar({
   // Read through a ref so `recompute` — and therefore the ResizeObserver
   // effect — stays stable across renders that only rebuild the item arrays.
   const listRef = useRef(all);
+  // oxlint-disable-next-line react/refs -- written in render on purpose, above.
   listRef.current = all;
 
   const recompute = useCallback((width: number) => {
@@ -151,7 +152,11 @@ export function OverflowBar({
     return () => observer.disconnect();
   }, [recompute]);
 
+  // Nothing overflows any more, so the ··· menu has no contents and no button
+  // to sit under. Deriving this during render instead would silently reopen the
+  // menu the next time the bar narrows.
   useEffect(() => {
+    // oxlint-disable-next-line react/set-state-in-effect
     if (overflowIds.size === 0) setMenuOpen(false);
   }, [overflowIds]);
 

@@ -1,4 +1,4 @@
-import { useMemo, useRef } from "react";
+import { useMemo } from "react";
 import type { ReactNode } from "react";
 import type { TimeSeries } from "../../runtime";
 
@@ -20,11 +20,9 @@ const WIDTH = 240;
 const HEIGHT = 40;
 
 export function Sparkline({ series, revision, label }: SparklineProps): ReactNode {
-  const scratch = useRef<Float64Array | null>(null);
-  if (scratch.current === null || scratch.current.length !== series.capacity) {
-    scratch.current = new Float64Array(series.capacity);
-  }
-  const buffer = scratch.current;
+  // One allocation per capacity, not per render. A dropped memo only costs
+  // another allocation: `copyInto` rewrites the whole buffer anyway.
+  const buffer = useMemo(() => new Float64Array(series.capacity), [series.capacity]);
 
   const path = useMemo(() => {
     void revision;

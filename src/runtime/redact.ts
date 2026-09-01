@@ -198,6 +198,7 @@ function walk(
   if (Array.isArray(value)) {
     seen.add(object);
     const limit = Math.min(value.length, resolved.maxArrayLength);
+    // oxlint-disable-next-line unicorn/no-new-array -- preallocated to `limit`, filled below
     const output: unknown[] = new Array(limit);
     for (let index = 0; index < limit; index += 1) {
       output[index] = walk(value[index], resolved, depth + 1, seen);
@@ -283,7 +284,8 @@ function maskUrl(url: string, resolved: ResolvedOptions): UrlPass {
     masked = true;
   }
 
-  for (const key of [...parsed.searchParams.keys()]) {
+  // Copied: `set` below mutates the params being iterated.
+  for (const key of Array.from(parsed.searchParams.keys())) {
     if (matches(key, resolved)) {
       parsed.searchParams.set(key, resolved.mask);
       masked = true;
@@ -295,7 +297,8 @@ function maskUrl(url: string, resolved: ResolvedOptions): UrlPass {
     const separator = raw.startsWith("?") ? "?" : "";
     const params = new URLSearchParams(separator ? raw.slice(1) : raw);
     let touched = false;
-    for (const key of [...params.keys()]) {
+    // Copied: `set` below mutates the params being iterated.
+    for (const key of Array.from(params.keys())) {
       if (matches(key, resolved)) {
         params.set(key, resolved.mask);
         touched = true;

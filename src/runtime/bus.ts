@@ -108,14 +108,14 @@ export function createEventBus<Events extends Record<string, unknown> = Record<s
     emit<K extends keyof Events & string>(type: K, payload: Events[K]) {
       const event: BusEvent<Events[K]> = { type, payload, at: now() };
       // Snapshot both sets: a handler may unsubscribe itself mid-dispatch.
-      for (const handler of [...(handlers.get(type) ?? [])]) {
+      for (const handler of Array.from(handlers.get(type) ?? [])) {
         try {
           (handler as unknown as BusHandler<Events[K]>)(payload, event);
         } catch (error) {
           onError(error, event as BusEvent);
         }
       }
-      for (const handler of [...anyHandlers]) {
+      for (const handler of Array.from(anyHandlers)) {
         try {
           (handler as unknown as BusHandler<Events[K]>)(payload, event);
         } catch (error) {

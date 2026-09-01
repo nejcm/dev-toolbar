@@ -77,6 +77,7 @@ export function DiagnosticsChip({
       type="button"
       data-dtb-part="trigger"
       aria-expanded={isPanelOpen}
+      aria-label={label}
       onClick={onToggle}
       title={
         captured
@@ -244,6 +245,10 @@ export function DiagnosticsPanel({ runtime, label, injectStyles }: PanelProps): 
         <pre
           data-dtb-part="diag-preview"
           data-dtb-format={format}
+          // A scrollable region must be reachable by keyboard; the role and the
+          // label are what make the tab stop meaningful.
+          role="region"
+          // oxlint-disable-next-line jsx-a11y/no-noninteractive-tabindex
           tabIndex={0}
           aria-label={`${label} snapshot, ${FORMAT_LABEL[format]}`}
         >

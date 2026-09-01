@@ -1,3 +1,5 @@
+// oxlint-disable react/refs -- `openedRef` is render-time bookkeeping, read and
+// updated during render on purpose; see `opened` below.
 import { useRef, useState } from "react";
 import type {
   CSSProperties,
@@ -51,15 +53,20 @@ export function PanelHost({
   const [dragHeight, setDragHeight] = useState<number | null>(null);
   const height = dragHeight ?? panelHeight;
 
-  if (activePanelId && !openedRef.current.has(activePanelId)) {
-    openedRef.current.add(activePanelId);
+  // Which panels have ever been open is bookkeeping, not rendered state, and it
+  // has to be current in *this* commit: `keepMounted` is decided below, and an
+  // effect would decide it a frame late.
+  const opened = openedRef.current;
+
+  if (activePanelId && !opened.has(activePanelId)) {
+    opened.add(activePanelId);
   }
 
   // A hidden extension has been torn down (`start()`'s signal aborted), so a
   // `keepMounted` panel of its must not come back holding pre-teardown state
   // when the consumer un-hides it. Forget it was ever opened.
   for (const extension of extensions) {
-    if (extension.hidden === true) openedRef.current.delete(extension.id);
+    if (extension.hidden === true) opened.delete(extension.id);
   }
 
   const mounted = extensions.filter((extension) => {
@@ -72,7 +79,7 @@ export function PanelHost({
     // panels, which have no active id to close.
     if (extension.hidden === true) return false;
     if (extension.id === activePanelId) return true;
-    return extension.keepMounted === true && openedRef.current.has(extension.id);
+    return extension.keepMounted === true && opened.has(extension.id);
   });
 
   if (mounted.length === 0) return null;

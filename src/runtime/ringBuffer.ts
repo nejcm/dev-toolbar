@@ -37,6 +37,7 @@ export interface RingBuffer<T> {
 export function createRingBuffer<T>(capacity: number): RingBuffer<T> {
   const slots = Math.max(1, Math.floor(capacity) || 1);
   // Allocated once, here. Nothing below this line grows it.
+  // oxlint-disable-next-line unicorn/no-new-array -- fixed-capacity preallocation, not an element
   const store = new Array<T | undefined>(slots);
   let head = 0;
   let size = 0;

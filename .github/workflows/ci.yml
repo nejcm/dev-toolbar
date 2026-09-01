@@ -101,9 +101,9 @@ jobs:
         with:
           # Reads the `packageManager` field, so CI runs the same bun the
           # contributor does. Pinning matters here beyond reproducibility: the
-          # `lint` script is a warning-count ratchet (`--max-warnings=59`), and
-          # a different oxlint-hosting bun picking up different defaults would
-          # move that count and fail the run for no real reason.
+          # `lint` script allows zero warnings, and a different oxlint-hosting
+          # bun picking up different defaults would surface new ones and fail
+          # the run for no real reason.
           bun-version-file: package.json
           # The explicit actions/cache step below owns the install cache.
           no-cache: true
@@ -126,8 +126,8 @@ jobs:
             ${{ runner.os }}-bun-
 
       # --frozen-lockfile is not only about speed: oxlint is pinned to exactly
-      # 1.81.0 in bun.lock, which is what makes the `--max-warnings=59` ratchet
-      # in `bun run lint` deterministic.
+      # 1.81.0 in bun.lock, which is what makes the zero-warning gate in
+      # `bun run lint` deterministic.
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
