@@ -108,14 +108,10 @@ jobs:
           # The explicit actions/cache step below owns the install cache.
           no-cache: true
 
-      # bun runs the scripts, but vitest and tsup both spawn real Node workers,
-      # so the Node major is part of the test environment whether or not it is
-      # declared. Left unpinned, the runner's default Node decided it: below
-      # Node 22 there is no `globalThis.localStorage` getter, jsdom's own
-      # `Storage` survives instead of the shim in vitest.setup.ts, and a spy on
-      # `setItem` silently stops seeing writes. That failed CI against correct
-      # code. `.nvmrc` is the single source of truth here, the same way
-      # `packageManager` is for bun above; `engines.node` is `>=24` to match.
+      # vitest and tsup spawn real Node workers, so the Node major is part of
+      # the test environment. Unpinned, below Node 22, jsdom's `Storage` replaces
+      # the shim in vitest.setup.ts and a `setItem` spy stops seeing writes.
+      # `.nvmrc` is the source of truth, as `packageManager` is for bun above.
       - name: Set up Node
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:

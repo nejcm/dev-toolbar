@@ -184,8 +184,7 @@ describe("the panel", () => {
   });
 
   it("says downloads are unavailable where they are", () => {
-    // jsdom implements `URL.createObjectURL` as of 30, so a host without it is
-    // staged rather than assumed.
+    // jsdom implements `URL.createObjectURL` as of 30; stage its absence.
     vi.stubGlobal("URL", { ...URL, createObjectURL: undefined, revokeObjectURL: undefined });
     const { toolbar } = mount();
     act(() => toolbar.openPanel("diagnostics"));

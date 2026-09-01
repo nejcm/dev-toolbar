@@ -34,8 +34,8 @@ describe("createRingBuffer", () => {
     const ArrayConstructor = globalThis.Array;
     const spy = vi
       .spyOn(globalThis, "Array")
-      // A `function` expression, not an arrow: the spy is invoked with `new`,
-      // and an arrow is not constructible.
+      // Not an arrow: the spy is invoked with `new`, and arrows aren't
+      // constructible.
       .mockImplementation(function (...args: unknown[]) {
         return new ArrayConstructor(...(args as [number])) as unknown as never;
       });
