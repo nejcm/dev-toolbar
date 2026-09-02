@@ -1,33 +1,35 @@
 name: Release
 
-# One workflow file, on purpose: npm's trusted publisher matches on the
-# *entry-point* workflow's filename (docs.npmjs.com/trusted-publishers), so
-# `npm publish` must live here in `release.yml` — this filename is what's
-# registered on npmjs.com. Renaming it breaks publishing until the trusted
-# publisher is reconfigured.
+# npm's trusted publisher matches on the *entry-point* workflow's filename
+# (docs.npmjs.com/trusted-publishers), so `npm publish` has to live in this
+# file. Renaming it breaks publishing until npmjs.com is reconfigured.
 
 on:
-  # Temporarily disabled — automatic trigger removed, manual dispatch only.
-  # Restore `push: branches: [main]` to re-enable.
+  # Every merge to `main` releases: bump, changelog, tag, npm. There is no
+  # loop, on two counts — the release commit lands under `GITHUB_TOKEN`, which
+  # triggers no workflows, and a run over it would find nothing releasable and
+  # stop at `release-please` anyway.
+  push:
+    branches: [main]
+  # Kept for re-running a release by hand — e.g. after a failed `publish`.
   workflow_dispatch: {}
 
 # Least privilege at the top; each job widens only what it needs.
 permissions:
   contents: read
 
-# REQUIRED, not decoration: on `workflow_call`, `github.workflow`/`github.ref`
-# resolve to the *caller's* values (see `ci.yml`), so the gate's CI run lands
-# in this workflow's concurrency group, not CI's own. Without a group here,
-# CI's `cancel-in-progress: true` default could cancel an in-flight release —
-# possibly between "tag created" and "published to npm". Fixed group name
-# (not keyed on `ref`) because there's only one release line: main.
+# Load-bearing: on `workflow_call` `github.workflow`/`github.ref` are the
+# *caller's*, so the gate's CI run lands in this group rather than CI's own.
+# Without it, CI's `cancel-in-progress` could cancel a release between tagging
+# and publishing. One release line, so a fixed name — and `cancel-in-progress:
+# false` queues rapid merges to `main` instead of cancelling a release
+# in flight; each queued run releases whatever is unreleased by its turn.
 concurrency:
   group: release
   cancel-in-progress: false
 
 jobs:
-  # 1. Compute the version/changelog, groom the release PR, and — once it
-  #    lands — tag it and create the GitHub release.
+  # 1. Version + changelog: open the release PR, merge it, tag it.
   release-please:
     name: release-please
     runs-on: ubuntu-latest
@@ -36,62 +38,77 @@ jobs:
       pull-requests: write # open, update and label the release PR
     timeout-minutes: 10
     outputs:
-      # Set to `true` only when a root-component release was actually created
-      # (the action never sets it otherwise, so it resolves to ''). Not
-      # `releases_created`, which the action always sets — to the *string*
-      # "false" when nothing released, which GitHub does not treat as falsy,
-      # so a bare `if:` on it would be truthy every push. Downstream jobs
-      # compare against 'true' explicitly.
-      release_created: ${{ steps.release.outputs.release_created }}
-      # `vX.Y.Z`, only because `release-please-config.json` sets
-      # `include-component-in-tag: false` — otherwise the `node` release type
-      # would derive a component from the package name and tag
-      # `dev-toolbar-vX.Y.Z`, missing the hand-pushed `v0.1.0` bootstrap tag.
-      tag_name: ${{ steps.release.outputs.tag_name }}
-      version: ${{ steps.release.outputs.version }}
-    steps:
-      # Third-party actions here are SHA-pinned the same way as `ci.yml`.
+      # `release_created`, not `releases_created`: the latter is always set —
+      # to the *string* "false", which GitHub does not treat as falsy.
       #
-      # Uses the default `GITHUB_TOKEN`, so the release PR release-please opens
-      # does NOT trigger workflows and gets no CI of its own — that's why the
-      # `gate` job below exists, as the only CI the release commit ever gets.
-      # A PAT would fix that at the cost of a long-lived credential; not worth
-      # it while `gate` covers it.
+      # `tag` releases in the steady state; `release` does so only if an
+      # earlier release PR was merged by hand. Unset outputs are '', so all
+      # three fall back together. If both release, `tag` wins and the older
+      # tag is left tagged-but-unpublished (see CONTRIBUTING.md).
+      release_created: ${{ steps.tag.outputs.release_created || steps.release.outputs.release_created }}
+      # `vX.Y.Z` only because of `include-component-in-tag: false`; otherwise
+      # the `node` release type tags `dev-toolbar-vX.Y.Z` and never finds the
+      # hand-pushed `v0.1.0`.
+      tag_name: ${{ steps.tag.outputs.tag_name || steps.release.outputs.tag_name }}
+      version: ${{ steps.tag.outputs.version || steps.release.outputs.version }}
+    steps:
+      # SHA-pinned as in `ci.yml`. The PR this opens lives for one API round
+      # trip (next step); it exists to carry the squash subject.
       - name: Run release-please
         id: release
         uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5.0.0
         with:
-          # Manifest mode; `release-type` is set per-package in the config
-          # file, not here.
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
 
-  # 2. The release gate: run real CI against the release commit.
+      # `prs_created` is a string, same trap as above. Squash so the subject
+      # is `chore(release): release X.Y.Z (#N)` — what the config's title
+      # patterns parse next. The retry is a real race: GitHub computes
+      # mergeability asynchronously and rejects a merge made before it has a
+      # verdict. PR number via env, never `${{ }}` into the script.
+      - name: Merge the release PR
+        id: merge
+        if: steps.release.outputs.prs_created == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ fromJSON(steps.release.outputs.pr).number }}
+        run: |
+          for attempt in 1 2 3 4 5; do
+            if gh pr merge "$PR_NUMBER" --squash --delete-branch; then
+              echo "Merged release PR #$PR_NUMBER."
+              exit 0
+            fi
+            echo "Merge attempt $attempt for #$PR_NUMBER failed; retrying in 10s."
+            sleep 10
+          done
+          echo "::error::Could not merge release PR #$PR_NUMBER after 5 attempts."
+          exit 1
+
+      # Tags the commit the merge just landed, and sets `release_created`. A
+      # step rather than a second run of this workflow because the merge lands
+      # under `GITHUB_TOKEN`, so the `push` trigger above never sees it. Opens
+      # no new PR — nothing releasable is left.
+      - name: Run release-please (tag the merged release)
+        id: tag
+        if: steps.merge.outcome == 'success'
+        uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5.0.0
+        with:
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
+
+  # 2. The only CI the release commit gets: `ci.yml` skips it both as a PR and
+  #    as a push, so without this the version bump and generated changelog
+  #    reach npm unverified.
   #
-  # `uses:` calls `ci.yml` as a reusable workflow — why `workflow_call` and its
-  # `called` input exist there; do not remove them. `called` defaults to
-  # `true`, so nothing needs passing here; it's what stops CI's
-  # `chore(release):` skip from skipping the gate itself (on `workflow_call`
-  # the `github` context belongs to the caller's push, which *is* the
-  # `chore(release):` push).
+  # `ci.yml`'s `workflow_call` and its `called` input exist for this; do not
+  # remove them. `called` defaults to `true` and is what stops CI's
+  # `chore(release):` skip from skipping the gate itself.
   #
-  # Conditional on `release_created` because `ci.yml`'s own `push` trigger
-  # already runs on every main push except the `chore(release):` one it skips
-  # by design — gating here makes the two exactly complementary. Unconditional,
-  # every main-branch push would get CI twice.
-  #
-  # That complementarity depends on config, and it's the least obvious
-  # coupling in this file: release-please's default title pattern fills
-  # `${scope}` from the target branch, so out of the box the release commit
-  # would be titled `chore(main): release ... X.Y.Z` — missing the
-  # `chore(release):` marker `ci.yml` greps for, doubling CI on every release.
-  # `pull-request-title-pattern`/`group-pull-request-title-pattern` in
-  # `release-please-config.json` restore the marker (see CONTRIBUTING.md's
-  # "Releasing" section for why both keys are needed). Change or remove them
-  # and this job's premise silently stops holding.
-  #
-  # `publish` carries the identical condition and `needs: gate`, so a skipped
-  # gate always means a skipped publish.
+  # The skips rest on the `chore(release):` marker, which
+  # `release-please-config.json`'s two title patterns restore over
+  # release-please's default `chore(main):` (CONTRIBUTING.md's "Releasing"
+  # explains why both keys). Break them and only `ci.yml`'s branch-prefix
+  # check still holds.
   gate:
     name: gate (CI on the release commit)
     needs: [release-please]
@@ -102,19 +119,17 @@ jobs:
 
   # 3. Publish to npm via trusted publishing (OIDC). No token, anywhere.
   #
-  # No GitHub Environment gate, deliberately: solo-maintainer repo, so
-  # `prevent_self_review` would lock out the only maintainer, and without it
-  # the "approval" is just a pause with an audit trail. The trusted publisher
-  # config on npmjs.com already pins repo + workflow filename, which is the
-  # one real protection an Environment would add — do not re-litigate without
-  # a second maintainer. `npm stage publish` (needs npm >= 11.15.0), binding
-  # the human check to the artifact instead of the job, is the upgrade worth
-  # revisiting later.
+  # No GitHub Environment gate, deliberately: solo-maintainer repo, where
+  # `prevent_self_review` locks out the only maintainer and without it the
+  # approval is just a pause. npmjs.com's trusted publisher already pins repo
+  # + filename, the one real protection an Environment adds — don't
+  # re-litigate without a second maintainer. `npm stage publish` (npm >=
+  # 11.15.0) is the upgrade worth revisiting.
   #
-  # If this job (or `gate`) fails, the tag and GitHub release already exist —
-  # release-please creates them first, so the repo ends up one version ahead
-  # of npm. Recover with "Re-run failed jobs", never "Re-run all jobs"; see
-  # CONTRIBUTING.md's "When a release is tagged but not published".
+  # A failure here or in `gate` leaves the tag and GitHub release in place,
+  # one version ahead of npm. Recover with "Re-run failed jobs", never
+  # "Re-run all jobs" — CONTRIBUTING.md, "When a release is tagged but not
+  # published".
   publish:
     name: publish to npm
     needs: [release-please, gate]
@@ -122,10 +137,9 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      # Mints the OIDC token npm exchanges for a publish credential, and that
-      # Sigstore signs provenance with. NOT the authentication — that's the
-      # trusted publisher on npmjs.com; without it this fails with E401/E404
-      # regardless of permissions.
+      # Mints the OIDC token npm exchanges for a publish credential and
+      # Sigstore signs provenance with. Not the authentication — that's the
+      # trusted publisher on npmjs.com; without it, E401/E404 regardless.
       id-token: write
     timeout-minutes: 20
     steps:
@@ -138,12 +152,9 @@ jobs:
           bun-version-file: package.json
           no-cache: true
 
-      # `.nvmrc` is the source of truth for Node, same convention as `ci.yml`.
-      # Nothing here runs on Node directly — this step exists because trusted
-      # publishing needs npm >= 11.5.1 and Node >= 22.14.0
-      # (docs.npmjs.com/trusted-publishers), above the runner's preinstalled
-      # npm. `package-manager-cache: false` since the bun cache step below owns
-      # caching.
+      # Nothing here runs on Node directly; this step exists because trusted
+      # publishing needs npm >= 11.5.1 and Node >= 22.14.0, above the runner's
+      # preinstalled npm. The bun cache step below owns caching.
       - name: Set up Node
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
@@ -151,13 +162,11 @@ jobs:
           registry-url: https://registry.npmjs.org
           package-manager-cache: false
 
-      # Load-bearing because Node comes from `.nvmrc`, which is owned by the
-      # test environment, not publishing: a lower Node major would bring an
-      # npm below the trusted-publishing floor and fail with an opaque
-      # E401/E404. Assert here and repair in place, pinning an exact fallback
-      # rather than `npm@latest` — an unpinned install would be an unreviewed
-      # dependency in the step holding the publish credential. Dependabot does
-      # not watch this fallback; it only matters if `.nvmrc` regresses.
+      # `.nvmrc` is owned by the test environment, not publishing, so a Node
+      # downgrade would drop npm below the floor and fail with an opaque
+      # E401/E404. The fallback is pinned, not `npm@latest` — an unpinned
+      # install in the step that holds the publish credential. Dependabot does
+      # not watch it.
       - name: Assert npm supports trusted publishing
         run: |
           required=11.5.1
@@ -180,34 +189,24 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
-      # `test:jest-consumer` lives here, not in the `gate` CI call, on purpose:
-      # it verifies packaging — the CJS build's `module.require` fallback for
-      # the optional `@testing-library/react` peer, which no ESM runner can
-      # exercise — not correctness, which is why it's excluded from PR CI.
-      # Running it here also tests the exact `dist/` this job is about to
-      # pack, against the same checkout. Needs its own `npm ci` first since the
-      # root script doesn't install the fixture; from a clean checkout it
-      # otherwise fails with `jest: command not found`.
+      # Here rather than in `gate` because it verifies packaging, not
+      # correctness: the CJS build's `module.require` fallback for the optional
+      # `@testing-library/react` peer, which no ESM runner can exercise. It
+      # also tests the exact `dist/` this job packs. `npm ci` first — the root
+      # script doesn't install the fixture, so `jest: command not found`.
       - name: Install the jest-consumer fixture
         run: npm ci --prefix test/fixtures/jest-consumer
 
       - name: Verify the packaged CommonJS consumer
         run: bun run test:jest-consumer
 
-      # Lifecycle scripts left on (no `--ignore-scripts`):
-      # `npm publish` runs prepublishOnly -> prepack -> prepare -> pack
-      # (docs.npmjs.com/cli/v11/using-npm/scripts). `prepublishOnly`
-      # (`typecheck && build`) guarantees the tarball's `dist/` was built from
-      # committed source at pack time rather than leftovers — duplicating ~15s
-      # of the gate's work, but making the tarball self-evidently correct and
-      # giving a manual emergency publish a safety net. `prepare`
-      # (`simple-git-hooks`) is a harmless no-op here.
+      # Lifecycle scripts left on so `prepublishOnly` (`typecheck && build`)
+      # rebuilds `dist/` from committed source at pack time rather than
+      # packing leftovers — ~15s duplicated from the gate, and the safety net
+      # under a manual emergency publish.
       #
-      # No `--provenance`: trusted publishing attaches it automatically.
-      # `--access public` is explicit even though `publishConfig.access`
-      # already says so — not a place to depend on one file agreeing with
-      # another. `npm`, never `bun publish`: bun supports neither OIDC nor
-      # provenance, and silently ignores `publishConfig.provenance`
-      # (oven-sh/bun#18611).
+      # No `--provenance`: trusted publishing attaches it. `npm`, never `bun
+      # publish` — bun supports neither OIDC nor provenance and silently
+      # ignores `publishConfig.provenance` (oven-sh/bun#18611).
       - name: Publish to npm
         run: npm publish --access public

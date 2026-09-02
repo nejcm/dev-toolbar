@@ -31,20 +31,20 @@ it passes in CI, and a PR that fails it will not merge.
 
 The individual pieces, when you want a faster loop:
 
-| Command | What it does |
-| --- | --- |
-| `bun run typecheck` | `tsc --noEmit` |
-| `bun run lint` | `oxlint --max-warnings=0` |
-| `bun run lint:fix` | `oxlint --fix` |
-| `bun run format` | `oxfmt` (JS, TS and YAML) |
-| `bun run format:check` | `oxfmt --check` (the first step of `verify`) |
-| `bun run test` | `vitest run` |
-| `bun run test:watch` | `vitest` |
-| `bun run test:coverage` | `vitest run --coverage` |
-| `bun run build` | `tsup` |
-| `bun run check:package` | `publint` + `attw` over a packed tarball |
-| `bun run knip` | unused files, exports and dependencies — also part of `verify` |
-| `bun run size` | builds, then prints a per-entrypoint size table |
+| Command                 | What it does                                                   |
+| ----------------------- | -------------------------------------------------------------- |
+| `bun run typecheck`     | `tsc --noEmit`                                                 |
+| `bun run lint`          | `oxlint --max-warnings=0`                                      |
+| `bun run lint:fix`      | `oxlint --fix`                                                 |
+| `bun run format`        | `oxfmt` (JS, TS and YAML)                                      |
+| `bun run format:check`  | `oxfmt --check` (the first step of `verify`)                   |
+| `bun run test`          | `vitest run`                                                   |
+| `bun run test:watch`    | `vitest`                                                       |
+| `bun run test:coverage` | `vitest run --coverage`                                        |
+| `bun run build`         | `tsup`                                                         |
+| `bun run check:package` | `publint` + `attw` over a packed tarball                       |
+| `bun run knip`          | unused files, exports and dependencies — also part of `verify` |
+| `bun run size`          | builds, then prints a per-entrypoint size table                |
 
 `check:package` runs `attw` with `--profile node16` on purpose. Subpath exports
 are invisible to the pre-`exports` `node10` algorithm, so a consumer needs
@@ -103,7 +103,7 @@ surface is the better answer to "but the test imports it".
 sizes. Read `scripts/bundle-size.mjs`'s header before changing it — the obvious
 implementations of this report are all wrong for a code-split build.
 
-`bun run test:jest-consumer` is deliberately *not* part of `bun run test`. It
+`bun run test:jest-consumer` is deliberately _not_ part of `bun run test`. It
 builds the package and runs a real jest-based consumer against `dist/`, which is
 slow. Run it when you change the build output, the `exports` map, or anything
 about how the package is packaged.
@@ -190,7 +190,7 @@ title — with the ` (#<number>)` suffix, so the length limit is checked against
 the real subject — through the same `commitlint` and the same
 `.commitlintrc.json` as the `commit-msg` hook. The rules are the same as the
 hook's, but the budget is not: `header-max-length` is checked against the title
-*plus* that suffix, so a title in the high nineties passes the `commit-msg`
+_plus_ that suffix, so a title in the high nineties passes the `commit-msg`
 hook locally and still fails here. It runs on drafts too, and re-runs when you
 edit the title.
 
@@ -237,7 +237,7 @@ Rules that the code actually enforces or depends on:
   because that means the extension is being rebuilt every render.
 - **Slot functions must be cheap.** `compact`, `panel` and `overlay` run on
   every toolbar render.
-- **Import only types from this package where you can.** A *value* import from a
+- **Import only types from this package where you can.** A _value_ import from a
   subpath is not guaranteed by the bundler to resolve to the same module
   instance as the host's core. This is why `src/ext/diagnostics/runtime.ts`
   keeps its own `TARGET_CONTRACT_VERSION` constant instead of importing
@@ -273,7 +273,7 @@ candidate policies and what each costs, and settles none of them. Read it before
 raising the question, so the PR argues about the options rather than rediscovering
 them.
 
-If you add an extension that needs to *state* a contract version, copy the
+If you add an extension that needs to _state_ a contract version, copy the
 equality assertion alongside the constant, not just the constant —
 `src/ext/diagnostics/__tests__/diagnostics.test.tsx` asserts
 `TARGET_CONTRACT_VERSION === CONTRACT_VERSION` so the hand-maintained copy
@@ -295,27 +295,48 @@ not write changelog entries by hand.
 1. Land a conventional commit on `main`. `feat:` and `fix:` are what move the
    version; `chore:`, `docs:`, `refactor:` and friends do not, unless they carry
    a `BREAKING CHANGE:` footer.
-2. `.github/workflows/release.yml` runs `release-please`, which opens (or
-   updates) a **release PR** titled `chore(release): release X.Y.Z`. That PR
-   carries the version bump and the generated `CHANGELOG.md` section. Nothing
-   has been published at this point — the PR is the proposal, and closing it
-   without merging is how you decline a release.
-3. Merge the release PR when you want the release. release-please tags it
-   (`vX.Y.Z`) and creates the GitHub release.
-4. The same workflow run then gates on CI and publishes to npm. The gate is
-   `ci.yml` called as a reusable workflow, because the release PR itself gets no
-   CI — release-please opens it with `GITHUB_TOKEN`, and GitHub does not trigger
-   workflows from that. The gate is the only CI the release commit ever gets.
-5. Publishing uses npm **trusted publishing** (OIDC). There is no npm token in
+2. That push triggers `.github/workflows/release.yml`, which runs
+   `release-please`. It opens a **release PR** titled
+   `chore(release): release X.Y.Z`, carrying the version bump and the generated
+   `CHANGELOG.md` section.
+3. The same job **squash-merges that PR immediately** and deletes its branch.
+   The PR is not a review step and is never left open — it exists because
+   merging it is how release-please recognises a release, and because the squash
+   subject (`chore(release): release X.Y.Z (#N)`) is what it parses afterwards.
+4. A second `release-please` step in the same job then reads that merged commit,
+   tags it (`vX.Y.Z`) and creates the GitHub release. It is a second step rather
+   than a second workflow run because the merge lands through the API under
+   `GITHUB_TOKEN`, which triggers no workflows — so the `push` trigger never
+   sees it. One push to `main` is one whole release.
+5. The same run then gates on CI and publishes to npm. The gate is `ci.yml`
+   called as a reusable workflow, and it is the only CI the release commit
+   gets: `ci.yml` skips the release PR itself (by release-please's
+   `release-please--*` branch prefix, or the `chore(release):` title marker)
+   and skips `chore(release):` pushes.
+6. Publishing uses npm **trusted publishing** (OIDC). There is no npm token in
    this repository, and there should never be one again.
+
+**There is no point at which a release is declined.** Every `feat:` or `fix:`
+that reaches `main` is on npm minutes later, under a version nobody chose by
+hand. The gate can stop a _broken_ release, not an unwanted one. If a change
+should not ship on its own, it must not land on `main` on its own — hold it on
+its branch, or land it behind `chore:`/`refactor:`, which move no version.
+
+`workflow_dispatch` is still declared, for re-running a release by hand after a
+failed `publish`. Two merges in quick succession do not race: `concurrency`
+uses a fixed `release` group with `cancel-in-progress: false`, so the second
+run queues and releases whatever is still unreleased when its turn comes —
+often nothing, which is a clean no-op.
 
 That title is not release-please's default, and the exact string is
 load-bearing. The default pattern is `chore${scope}: release${component}
 ${version}` with `${scope}` always filled from the target branch, so left alone
 the PR would be titled `chore(main): release dev-toolbar X.Y.Z`. `ci.yml` skips
-CI on pushes whose commit message contains `chore(release):`, because
-`release.yml` re-runs CI itself as its gate; with the default title that skip
-never fires and every release is verified twice.
+the release commit — both as a PR and as a push to `main` — by looking for
+`chore(release):`, because `release.yml` re-runs CI itself as its gate; with
+the default title that skip never fires and every release is verified twice.
+(The PR skip has a second, independent signal — the `release-please--*` branch
+prefix — so it survives the title pattern breaking. The push skip does not.)
 `pull-request-title-pattern` in `release-please-config.json` substitutes the
 literal `chore(release)` for `chore${scope}` to keep the marker. The substitute
 still parses as a conventional commit, and — this is the part that is easy to
@@ -332,7 +353,7 @@ have to stay. They are not duplicates of each other:
   when the config declares exactly one package.
 - The **top-level** `group-pull-request-title-pattern` is still used, as the
   second pattern release-please tries when parsing a merged release PR's title
-  while creating the GitHub release. It also becomes the operative *titling*
+  while creating the GitHub release. It also becomes the operative _titling_
   pattern the day a second package is added, because that flips
   `separate-pull-requests` to `false` and hands the title to the merge plugin —
   whose own default, `chore: release ${branch}`, contains neither the marker nor
@@ -361,7 +382,7 @@ comment at the top of that file explains what anchors the insertion point.
 
 ### When a release is tagged but not published
 
-`release-please` creates the git tag and the GitHub release *before* the gate
+`release-please` creates the git tag and the GitHub release _before_ the gate
 and the publish job run. So a failure in either leaves the repo one version
 ahead of npm: `vX.Y.Z` is tagged, the GitHub release is live, `package.json` and
 `CHANGELOG.md` say `X.Y.Z` on `main`, and the registry has never heard of it.
@@ -373,20 +394,20 @@ keeps the outputs of the jobs that already succeeded, so `release-please`'s
 `release_created` is still `true` and `publish` runs on the second attempt
 against the same commit.
 
-A *full* re-run is the trap, and it does not announce itself. When
+A _full_ re-run is the trap, and it does not announce itself. When
 `release-please` tagged the release it also relabelled the release PR from
 `autorelease: pending` to `autorelease: tagged`, and release-please finds merged
-release PRs by filtering for the *pending* label. So a full re-run finds nothing
+release PRs by filtering for the _pending_ label. So a full re-run finds nothing
 to release: `release_created` is never set, `gate` and `publish` skip, and the
 whole run **completes green having published nothing**. That is worse than a
 failure, because the only signal is a green check on a release that does not
 exist on npm. (A duplicate-release error — the other thing you might expect — is
-reachable only if the very first run died *between* tagging and relabelling,
+reachable only if the very first run died _between_ tagging and relabelling,
 leaving a pending PR next to an existing tag.)
 
 **If the failure was real** — the gate caught something — a re-run cannot help,
 because the commit is unchanged. Fix it forward: the fix lands on `main` as its
-own commit and produces a *new* release PR for the next version. `X.Y.Z` stays
+own commit and produces a _new_ release PR for the next version. `X.Y.Z` stays
 tagged and unpublished, and that is usually the right outcome — let `X.Y.Z+1` be
 the first published version. There is no gap to explain, because npm never saw
 `X.Y.Z`. Do not delete and re-push the tag to reuse the number: a GitHub
@@ -405,8 +426,8 @@ rolling forward.
 **This has to happen once, in this order, before any of the above works.** npm
 trusted publishing cannot create a package that does not exist yet
 ([npm/cli#8544](https://github.com/npm/cli/issues/8544)), and `0.1.0` has never
-been published. Until these steps are done, `release.yml` will open release PRs
-that cannot publish.
+been published. Until these steps are done, `release.yml` will tag and release
+versions it cannot publish.
 
 `0.1.0` is published **by hand, from a laptop**. That is the maintainer's own
 call, made when this section was written: a one-off CI job with a short-lived
@@ -462,6 +483,7 @@ provenance added.
    Do **not** use `bun publish`. It supports neither provenance nor OIDC and
    silently ignores `publishConfig.provenance` ([oven-sh/bun#18611](https://github.com/oven-sh/bun/issues/18611))
    — a failure that looks like success.
+
 5. **Tag the published commit and push the tag.**
 
    ```sh
@@ -475,6 +497,7 @@ provenance added.
    it, the first release PR will summarise the entire history instead of only
    what came after `0.1.0`. If that happens anyway, close the bad PR and set
    `bootstrap-sha` in `release-please-config.json` to this commit.
+
 6. **Wait ~5 minutes** for npm's publish-time malware scan before expecting the
    package to be installable.
 7. **Configure the Trusted Publisher on npmjs.com**: GitHub Actions, repository
