@@ -130,16 +130,26 @@ function stringify(value: unknown): string {
   // `redact()` renders a Date as a bare ISO string. Matching that here keeps
   // the two sides of the `masked` comparison comparable; JSON-quoting one side
   // and not the other made every Date look like it had been masked.
-  if (value instanceof Date) return value.toISOString();
+  //
+  // `toISOString()` throws `RangeError` on an invalid Date (`new Date(NaN)`)
+  // rather than returning a string — this runs on the raw side of the
+  // comparison, which `redact()` has not touched yet, so an invalid Date
+  // reaches here exactly as the consumer supplied it. Mirror `redact()`'s own
+  // guard rather than letting that throw out of `redactValues` and degrade
+  // the whole snapshot.
+  if (value instanceof Date) {
+    return Number.isNaN(value.getTime()) ? "[invalid date]" : value.toISOString();
+  }
   if (typeof value === "object") {
     try {
       return JSON.stringify(value) ?? String(value);
     } catch {
       // A cycle. `redact()` already turns those into "[circular]", so this is
       // the raw side of the comparison only. It is *not* a guard against a
-      // throwing getter: `redact()` walks with `Object.entries`, which invokes
-      // getters, and it has already run by the time we get here. That case is
-      // caught around the whole snapshot build instead — see `build`.
+      // throwing getter: `redact()` tags that itself (`"[getter threw]"`)
+      // while it walks, and it has already run by the time we get here. A
+      // getter on the context object or on `ctx.extra` directly is a
+      // different case, read before `redact()` is even called — see `build`.
       return "[unserialisable]";
     }
   }
@@ -335,8 +345,15 @@ export function createEnvironmentRuntime(
 
   /**
    * The snapshot is built from data the consumer owns, and reading it can
-   * throw: a getter on the context object, or a getter nested inside `extra`,
-   * which `redact()` invokes when it walks the graph with `Object.entries`.
+   * throw: a getter on the context object itself (`ctx.userId` and friends,
+   * read directly above), or a top-level getter on `ctx.extra` (the
+   * `Object.entries(ctx.extra ?? {})` above, which separates extras from the
+   * allowlist before any of them reach `redact()`). `redact()` no longer
+   * needs this guard on its own account: it now catches a throwing getter
+   * *inside* a value it walks and tags that property `"[getter threw]"`
+   * rather than propagating — a getter nested deeper than `ctx.extra`'s own
+   * keys is exactly that case. This wrapper stays for the two direct reads
+   * above, which are this file's own, not `redact()`'s.
    *
    * Nothing here may propagate. The first `build()` runs inside `environment()`
    * — at factory time, before core has mounted anything — so a throw there does

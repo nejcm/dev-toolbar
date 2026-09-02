@@ -450,13 +450,13 @@ describe("live context", () => {
           },
         },
       });
-      // Not an error chip: the bar rendered normally, because the throw was
-      // contained where it happened rather than escaping the factory.
+      // Not an error chip: the bar rendered normally, because `redact()`
+      // contained the throw where it happened (tagging the property
+      // "[getter threw]") instead of it escaping the factory.
       expect(toolbar.item("environment")).not.toBeNull();
       toolbar.openPanel("environment");
-      expect(text(row(toolbar.panel("environment"), "contextError"))).toContain(
-        "could not be read",
-      );
+      expect(text(row(toolbar.panel("environment"), "extra:bad"))).toContain("[getter threw]");
+      expect(spy).not.toHaveBeenCalled();
     } finally {
       spy.mockRestore();
     }

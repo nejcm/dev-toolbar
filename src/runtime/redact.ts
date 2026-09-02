@@ -193,47 +193,157 @@ function walk(
   if (depth >= resolved.maxDepth) return "[truncated]";
 
   const object = value as object;
-  if (seen.has(object)) return "[circular]";
+  // `Array.isArray` throws a `TypeError` on a revoked Proxy — bundled here
+  // with the (never-throwing) `seen.has` check next to it so both reads that
+  // precede every other guard in this function share one guard of their own.
+  let alreadySeen: boolean;
+  let isArray: boolean;
+  try {
+    alreadySeen = seen.has(object);
+    isArray = Array.isArray(value);
+  } catch {
+    return "[unwalkable]";
+  }
+  if (alreadySeen) return "[circular]";
 
-  if (Array.isArray(value)) {
+  if (isArray) {
+    // `isArray` came from `Array.isArray`, but through a local boolean
+    // rather than an inline `if (Array.isArray(value))`, so it no longer
+    // narrows `value`'s type here — recover that with one cast.
+    const array = value as unknown[];
     seen.add(object);
-    const limit = Math.min(value.length, resolved.maxArrayLength);
+    // `.length` is an ordinary data property on a real array, but `array` can
+    // be a Proxy wrapping one with a throwing `get` trap on "length" — same
+    // family of hostile input as everything else this function guards
+    // against, so it gets the same treatment rather than an assumption.
+    let length: number;
+    try {
+      length = array.length;
+    } catch {
+      seen.delete(object);
+      return "[unwalkable]";
+    }
+    const limit = Math.min(length, resolved.maxArrayLength);
     // oxlint-disable-next-line unicorn/no-new-array -- preallocated to `limit`, filled below
     const output: unknown[] = new Array(limit);
     for (let index = 0; index < limit; index += 1) {
-      output[index] = walk(value[index], resolved, depth + 1, seen);
+      // An index accessor throwing (a getter on a sparse array, or a Proxy
+      // `get` trap) must tag just that slot, not lose every element already
+      // collected.
+      let entry: unknown;
+      let threw = false;
+      try {
+        entry = array[index];
+      } catch {
+        threw = true;
+      }
+      output[index] = threw ? "[getter threw]" : walk(entry, resolved, depth + 1, seen);
     }
     seen.delete(object);
-    if (value.length > limit) {
-      output.push(`[+${value.length - limit} more]`);
+    if (length > limit) {
+      output.push(`[+${length - limit} more]`);
     }
     return output;
   }
 
-  if (value instanceof Date) return value.toISOString();
-  if (value instanceof Error) {
-    return { name: value.name, message: redactString(value.message, resolved) };
+  // `instanceof` is not the plain check it looks like: `OrdinaryHasInstance`
+  // walks `value`'s prototype chain via its `[[GetPrototypeOf]]` internal
+  // method, so every check below is itself trap-observable on a Proxy with a
+  // throwing `getPrototypeOf` trap — the throw happens on the first
+  // `instanceof`, long before the explicit `Object.getPrototypeOf` call
+  // further down gets a chance to guard anything. One try around the whole
+  // cascade, before `seen.add`, so there is nothing to unwind on the early
+  // return.
+  try {
+    if (value instanceof Date) {
+      // `toISOString()` throws `RangeError` on an invalid Date (`new
+      // Date(NaN)`, `new Date("not a date")`) rather than returning a
+      // string — the one case here that can throw on ordinary,
+      // non-hostile input rather than a hostile trap.
+      return Number.isNaN(value.getTime()) ? "[invalid date]" : value.toISOString();
+    }
+    if (value instanceof Error) {
+      // `name` and `message` are ordinary string properties on a real
+      // `Error`, but nothing stops a subclass or a manually constructed
+      // object from shadowing either with a throwing getter — this module
+      // does not control what reaches it, only that reading it must not
+      // propagate.
+      let name: string;
+      try {
+        name = value.name;
+      } catch {
+        name = "[getter threw]";
+      }
+      let message: string;
+      try {
+        message = redactString(value.message, resolved);
+      } catch {
+        message = "[getter threw]";
+      }
+      return { name, message };
+    }
+    if (value instanceof URL) return redactUrl(value.href, options(resolved));
+    if (typeof Headers !== "undefined" && value instanceof Headers) {
+      return redactHeaders(value, options(resolved));
+    }
+    if (value instanceof Map) return "[Map]";
+    if (value instanceof Set) return "[Set]";
+  } catch {
+    return "[unwalkable]";
   }
-  if (value instanceof URL) return redactUrl(value.href, options(resolved));
-  if (typeof Headers !== "undefined" && value instanceof Headers) {
-    return redactHeaders(value, options(resolved));
-  }
-  if (value instanceof Map) return "[Map]";
-  if (value instanceof Set) return "[Set]";
 
-  const proto = Object.getPrototypeOf(value) as object | null;
+  let proto: object | null;
+  try {
+    proto = Object.getPrototypeOf(value) as object | null;
+  } catch {
+    return "[unwalkable]";
+  }
   if (proto !== null && proto !== Object.prototype) {
-    return `[${(value as { constructor?: { name?: string } }).constructor?.name ?? "object"}]`;
+    let ctorName: string | undefined;
+    try {
+      ctorName = (value as { constructor?: { name?: string } }).constructor?.name;
+    } catch {
+      ctorName = undefined;
+    }
+    return `[${ctorName ?? "object"}]`;
   }
 
   seen.add(object);
   const output: Record<string, unknown> = {};
-  for (const [key, entry] of Object.entries(value as Record<string, unknown>)) {
-    define(
-      output,
-      key,
-      matches(key, resolved) ? resolved.mask : walk(entry, resolved, depth + 1, seen),
-    );
+  // Enumerating and reading are two separate steps, deliberately: either can
+  // throw on data this module does not control, and a diagnostics dump is not
+  // the place to discover a serializer bug (see the module doc comment).
+  //
+  // `Object.keys` fails the same way `Object.entries` does — both call the
+  // object's `[[OwnPropertyKeys]]` internal method, so a Proxy with a
+  // throwing `ownKeys` trap throws here regardless of which one is used. That
+  // makes the guard free: nothing here walks a nested object without one.
+  let keys: string[];
+  try {
+    keys = Object.keys(value as Record<string, unknown>);
+  } catch {
+    seen.delete(object);
+    return "[unwalkable]";
+  }
+  for (const key of keys) {
+    // Checked before the property is ever read: a masked key is replaced by
+    // the mask outright, so a sensitive-named getter is never invoked at
+    // all — not read-then-discarded, never called.
+    if (matches(key, resolved)) {
+      define(output, key, resolved.mask);
+      continue;
+    }
+    // A getter throws when *read*, not when merely named by `Object.keys` —
+    // reading has to be its own try/catch so one hostile accessor tags just
+    // its own key instead of losing every property gathered so far.
+    let entry: unknown;
+    let threw = false;
+    try {
+      entry = (value as Record<string, unknown>)[key];
+    } catch {
+      threw = true;
+    }
+    define(output, key, threw ? "[getter threw]" : walk(entry, resolved, depth + 1, seen));
   }
   seen.delete(object);
   return output;

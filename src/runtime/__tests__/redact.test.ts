@@ -139,6 +139,106 @@ describe("redact", () => {
     });
   });
 
+  it("tags a throwing getter instead of propagating it — top-level, nested, and in an array", () => {
+    const hostile = {
+      get boom(): string {
+        throw new Error("getter blew up");
+      },
+      fine: "ok",
+    };
+    expect(redact(hostile)).toEqual({ boom: "[getter threw]", fine: "ok" });
+
+    expect(redact({ nested: hostile })).toEqual({
+      nested: { boom: "[getter threw]", fine: "ok" },
+    });
+
+    expect(redact([hostile, "plain"])).toEqual([{ boom: "[getter threw]", fine: "ok" }, "plain"]);
+  });
+
+  it("tags an object whose own keys cannot even be enumerated", () => {
+    const hostile = new Proxy(
+      {},
+      {
+        ownKeys() {
+          throw new Error("ownKeys blew up");
+        },
+      },
+    );
+    expect(redact({ nested: hostile })).toEqual({ nested: "[unwalkable]" });
+  });
+
+  it("tags an invalid Date instead of letting toISOString() throw", () => {
+    expect(redact({ when: new Date(NaN) })).toEqual({ when: "[invalid date]" });
+    expect(redact({ when: new Date("not a date") })).toEqual({ when: "[invalid date]" });
+  });
+
+  it("tags a throwing array-index accessor instead of losing the whole array", () => {
+    const hostile: unknown[] = [1, 2, 3];
+    Object.defineProperty(hostile, 1, {
+      enumerable: true,
+      configurable: true,
+      get(): number {
+        throw new Error("index blew up");
+      },
+    });
+    expect(redact(hostile)).toEqual([1, "[getter threw]", 3]);
+  });
+
+  it("tags an Error whose name or message getter throws", () => {
+    const hostileMessage = new Error("fine");
+    Object.defineProperty(hostileMessage, "message", {
+      get(): string {
+        throw new Error("message blew up");
+      },
+    });
+    expect(redact(hostileMessage)).toEqual({ name: "Error", message: "[getter threw]" });
+
+    const hostileName = new Error("fine");
+    Object.defineProperty(hostileName, "name", {
+      get(): string {
+        throw new Error("name blew up");
+      },
+    });
+    expect(redact(hostileName)).toEqual({ name: "[getter threw]", message: "fine" });
+  });
+
+  it("tags a Proxy whose getPrototypeOf trap throws", () => {
+    const hostile = new Proxy(
+      {},
+      {
+        getPrototypeOf() {
+          throw new Error("getPrototypeOf blew up");
+        },
+      },
+    );
+    expect(redact({ nested: hostile })).toEqual({ nested: "[unwalkable]" });
+  });
+
+  it("tags a revoked Proxy instead of letting Array.isArray throw", () => {
+    // `Array.isArray` throws a `TypeError` on a revoked Proxy — the one read
+    // in `walk()` that used to sit above every guard, before the object and
+    // array branches even get to decide which one they are.
+    const revokedObject = Proxy.revocable({}, {});
+    revokedObject.revoke();
+    expect(redact({ nested: revokedObject.proxy })).toEqual({ nested: "[unwalkable]" });
+
+    const revokedArray = Proxy.revocable([], {});
+    revokedArray.revoke();
+    expect(redact({ nested: revokedArray.proxy })).toEqual({ nested: "[unwalkable]" });
+  });
+
+  it("never invokes a sensitive-named getter — masked before it is read", () => {
+    let invoked = false;
+    const hostile = {
+      get token(): string {
+        invoked = true;
+        return "secret";
+      },
+    };
+    expect(redact(hostile)).toEqual({ token: REDACTED });
+    expect(invoked).toBe(false);
+  });
+
   it("passes primitives straight through", () => {
     expect(redact(42)).toBe(42);
     expect(redact(true)).toBe(true);

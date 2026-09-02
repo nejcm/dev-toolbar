@@ -368,21 +368,17 @@ export function createDiagnosticsRuntime(
     return finish(entry, raw);
   };
 
-  /** Redact, then prove it serialises. In that order, always. */
+  /**
+   * Redact, then prove it serialises. In that order, always.
+   *
+   * `redact()` used to be able to throw here: it walked with `Object.entries`,
+   * which invokes getters, and a getter that threw anywhere at any depth
+   * propagated out of this call. It now catches that itself and tags the
+   * property `"[getter threw]"` instead, so there is nothing left for this
+   * function to guard against on `redact()`'s side.
+   */
   const finish = (entry: { id: string; label: string }, raw: unknown): DiagnosticContribution => {
-    let redacted: unknown;
-    try {
-      redacted = redact(raw, redactOptions);
-    } catch (error) {
-      // `redact()` walks with `Object.entries`, which invokes getters. A getter
-      // that throws anywhere at any depth lands here.
-      return {
-        id: entry.id,
-        label: entry.label,
-        status: "failed",
-        error: `redacting it threw — ${describeSafely(error)}`,
-      };
-    }
+    const redacted = redact(raw, redactOptions);
     if (redacted === undefined) {
       return {
         id: entry.id,

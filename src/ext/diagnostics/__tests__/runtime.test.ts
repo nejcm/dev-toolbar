@@ -338,10 +338,15 @@ describe("redaction on the way in", () => {
     stop();
   });
 
-  it("redacts the message of a getter that throws while redact() walks it", () => {
-    // `finish()`'s path, which prefixed twice: "redacting it threw — Error: …".
+  it("tags a getter that throws while redact() walks it, instead of surfacing its message", () => {
+    // `redact()` used to be able to throw here, and `finish()` caught that and
+    // reported it as a failure (masking the exception's own message via
+    // `describeSafely` → `redactText` first). `redact()` now absorbs the
+    // throw itself and tags the property, so the contribution comes back
+    // "ok" with the one hostile property tagged, instead of the whole
+    // contribution failing.
     const hostile = {
-      get token(): string {
+      get detail(): string {
         throw new Error("https://api.test/x?client_secret=WALK-LEAK");
       },
     };
@@ -349,9 +354,8 @@ describe("redaction on the way in", () => {
     const snapshot = runtime.capture();
 
     expect(renderJson(snapshot)).not.toContain("WALK-LEAK");
-    expect(find(snapshot, "g")?.error).toBe(
-      "redacting it threw — Error: https://api.test/x?client_secret=%5Bredacted%5D",
-    );
+    expect(find(snapshot, "g")?.status).toBe("ok");
+    expect(find(snapshot, "g")?.data).toEqual({ detail: "[getter threw]" });
     stop();
   });
 
@@ -563,17 +567,20 @@ describe("omissions are visible", () => {
     stop();
   });
 
-  it("survives a contribution whose getter throws while redact walks it", () => {
+  it("turns a contribution whose getter throws into a tagged property, not an omission", () => {
+    // `redact()` now tags a throwing getter (`"[getter threw]"`) rather than
+    // throwing itself, so this no longer costs the reader an omission line —
+    // the contribution comes back "ok" with the one hostile property tagged.
     const hostile = {
-      get token(): string {
+      get detail(): string {
         throw new Error("getter exploded");
       },
     };
     const { runtime, stop } = started({}, [{ id: "g", label: "G", status: "ok", data: hostile }]);
     const snapshot = runtime.capture();
-    expect(find(snapshot, "g")?.status).toBe("failed");
-    expect(find(snapshot, "g")?.error).toContain("redacting it threw");
-    expect(snapshot.omissions).toHaveLength(1);
+    expect(find(snapshot, "g")?.status).toBe("ok");
+    expect(find(snapshot, "g")?.data).toEqual({ detail: "[getter threw]" });
+    expect(snapshot.omissions).toHaveLength(0);
     stop();
   });
 
