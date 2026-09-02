@@ -283,6 +283,179 @@ describe("redact", () => {
   });
 });
 
+describe("isSensitiveKey", () => {
+  // Every default entry, spelled the way a real payload spells it, plus the
+  // separator and case variants the normaliser is supposed to fold together.
+  const SENSITIVE = [
+    ...DEFAULT_SENSITIVE_KEYS,
+    "Authorization",
+    "auth",
+    "authToken",
+    "X-Auth-Token",
+    "x-auth-token",
+    "apiKey",
+    "api_key",
+    "X-Api-Key",
+    "APIKey",
+    "accessToken",
+    "access_token",
+    "refreshToken",
+    "refresh_token",
+    "idToken",
+    "sessionId",
+    "session-id",
+    "session",
+    "sid",
+    "X-CSRF-Token",
+    "csrfToken",
+    "xsrfToken",
+    "password",
+    "userPassword",
+    "passwd",
+    "pwd",
+    "secret",
+    "clientSecret",
+    "client_secret",
+    "privateKey",
+    "private_key",
+    "accessKey",
+    "cookie",
+    "set-cookie",
+    "Set-Cookie",
+    "signature",
+    // Plural tolerance: the one inflection the segment rule folds, so
+    // `credential` still covers the `credentials` bag every SDK ships.
+    "credential",
+    "credentials",
+    "tokens",
+    "cookies",
+    "ssn",
+    "creditCard",
+    "credit_card",
+    "cardNumber",
+    "cvv",
+    "otp",
+    "otpCode",
+    // A PIN *is* the credential: `pin` matching the `pin` segment of `pinCode`
+    // is the rule working, not the over-match `spinner` was.
+    "pin",
+    "pinCode",
+    // Run-together compounds have no boundary to segment on, so they are only
+    // matched because the list carries the concatenation itself.
+    "accesstoken",
+    "authtoken",
+    "secretkey",
+    // Standard session cookie names, all-caps and unsegmentable, listed for
+    // the same reason.
+    "JSESSIONID",
+    "PHPSESSID",
+    // `auth` no longer reaches inside a word, so the spellings it used to cover
+    // by substring are entries of their own.
+    "Authentication",
+    "authorisation",
+    "bearer",
+    // Named credential fields the substring rule caught inside a longer word
+    // and the segment rule releases unless the word itself is listed: Django's
+    // CSRF form field, the abbreviated session ids, the TOTP/HOTP spellings of
+    // a one-time code, and `xauth` written without its separator.
+    "csrfmiddlewaretoken",
+    "sessid",
+    "SESSID",
+    "sess_id",
+    "sess",
+    "totp",
+    "hotp",
+    "xauth",
+    "x_auth",
+  ];
+
+  it.each(SENSITIVE)("treats %j as sensitive", (key) => {
+    expect(isSensitiveKey(key)).toBe(true);
+  });
+
+  // Substring matching over the normalised key redacted every one of these:
+  // `auth` hit `author`, `pin` hit `shipping` and `spinner`, `sid` hit
+  // `inside`, `residual` and `consider`. In a diagnostics dump a masked
+  // `author` is a lie by omission, so the matcher reads word segments instead.
+  const INNOCENT = [
+    "author",
+    "authorName",
+    "oauthClientName",
+    "inside",
+    "shipping",
+    "residual",
+    "consider",
+    "spinner",
+    "--spinner-size",
+    "--sidebar-bg",
+    "considered",
+    "userId",
+    "id",
+    "tokenizer",
+    "secretary",
+    "cwd",
+    "keystone",
+    "pinnacle",
+    // A public key is the half of the pair that is meant to be published.
+    "publicKey",
+    // Not a credential: the response header naming the challenge scheme.
+    "www-authenticate",
+  ];
+
+  it.each(INNOCENT)("leaves %j alone", (key) => {
+    expect(isSensitiveKey(key)).toBe(false);
+  });
+
+  // A key name is whatever the consumer called it. `[^a-z\\d]+` as the segment
+  // separator treated every non-ASCII letter as punctuation, so `contraseña`
+  // segmented to `contrase`/`a` and `пароль` to nothing at all — and an
+  // `extraKeys` entry that HEAD matched by substring stopped matching.
+  it("segments a non-ASCII key, so extraKeys can name one", () => {
+    expect(isSensitiveKey("contraseña", { extraKeys: ["contraseña"] })).toBe(true);
+    expect(isSensitiveKey("Contraseña", { extraKeys: ["contraseña"] })).toBe(true);
+    expect(isSensitiveKey("пароль", { extraKeys: ["пароль"] })).toBe(true);
+    expect(isSensitiveKey("密码", { extraKeys: ["密码"] })).toBe(true);
+    expect(isSensitiveKey("mot_de_passe", { extraKeys: ["motdepasse"] })).toBe(true);
+    // And the non-ASCII letter is a letter, not a boundary: an entry cannot
+    // reach half a word.
+    expect(isSensitiveKey("contraseña", { extraKeys: ["contrase"] })).toBe(false);
+    expect(isSensitiveKey("Passwörter", { extraKeys: ["contraseña"] })).toBe(false);
+  });
+
+  // An entry is canonicalised through the same segmenter as the key, so it
+  // cannot carry a character no run of segments can hold. Stripping only
+  // `-_.` and whitespace left `x/y` unmatchable.
+  it("accepts an extraKey spelled with any separator", () => {
+    expect(isSensitiveKey("x/y", { extraKeys: ["x/y"] })).toBe(true);
+    expect(isSensitiveKey("x-y", { extraKeys: ["x/y"] })).toBe(true);
+    expect(isSensitiveKey("xY", { extraKeys: ["x y"] })).toBe(true);
+    expect(isSensitiveKey("a.b:c", { extraKeys: ["a-b-c"] })).toBe(true);
+    // An entry of pure punctuation segments to nothing and matches nothing,
+    // rather than matching every key the way `includes("")` did.
+    expect(isSensitiveKey("anything", { keys: ["---"] })).toBe(false);
+  });
+
+  it("still lets allowKeys win over a match", () => {
+    expect(isSensitiveKey("sessionName")).toBe(true);
+    expect(isSensitiveKey("sessionName", { allowKeys: ["sessionName"] })).toBe(false);
+    expect(isSensitiveKey("session-name", { allowKeys: ["sessionName"] })).toBe(false);
+    expect(isSensitiveKey("session_name", { allowKeys: ["session name"] })).toBe(false);
+    // And extraKeys still land on the same segment rule.
+    expect(isSensitiveKey("tenantCode", { extraKeys: ["tenantcode"] })).toBe(true);
+    expect(isSensitiveKey("tenant_code", { extraKeys: ["tenant-code"] })).toBe(true);
+  });
+
+  it("matches header names and URL parameters through the same rule", () => {
+    expect(redactHeaders({ "x-auth-token": "t", "x-author": "nejcm" })).toEqual({
+      "x-auth-token": REDACTED,
+      "x-author": "nejcm",
+    });
+    expect(redactUrl("/p?author=nejcm&auth=t")).toBe(
+      `/p?author=nejcm&auth=${encodeURIComponent(REDACTED)}`,
+    );
+  });
+});
+
 describe("redactUrl", () => {
   it("masks sensitive query parameters and keeps the rest", () => {
     expect(redactUrl("https://api.example.com/v1/users?page=2&access_token=abc123")).toBe(

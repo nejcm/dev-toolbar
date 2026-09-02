@@ -16,12 +16,45 @@
 export const REDACTED = "[redacted]";
 
 /**
- * Matched case-insensitively, ignoring `-`, `_`, `.` and spaces — so `token`
- * covers `Token`, `access_token`, `X-Access-Token` and `accessToken` alike,
- * because matching is by substring on the normalised key.
+ * Matched case-insensitively against the key's **word segments** — split on
+ * separators, case boundaries and letter/digit boundaries (see `isSensitiveKey`
+ * for the rule) — so `token` covers `Token`, `access_token`,
+ * `X-Access-Token` and `accessToken` alike, and `apikey` covers `apiKey`,
+ * `api_key` and `X-Api-Key`, without `auth` also covering `author`.
+ *
+ * The entries fall into four kinds, and knowing which is which is how to
+ * extend the list:
+ *
+ * - **Whole words** — `authorization`, `bearer`, `cookie`, `token`, `secret`,
+ *   `password`, `passwd`, `pwd`, `credential`, `session`, `sid`, `csrf`,
+ *   `xsrf`, `signature`, `otp`, `totp`, `hotp`, `pin`, `ssn`, `cvv`, and the
+ *   abbreviated `sess`. Each matches that segment of a key, wherever it sits:
+ *   `auth` hits `authToken` and `X-Auth-Token`, `pin` hits `pinCode`, `secret`
+ *   hits `clientSecret`, `sess` hits `sess_id`.
+ * - **Concatenations** — `setcookie`, `apikey`, `sessionid`, `privatekey`,
+ *   `accesskey`, `clientsecret`, `refreshtoken`, `idtoken`, `accesstoken`,
+ *   `authtoken`, `apitoken`, `apisecret`, `secretkey`, `creditcard`,
+ *   `cardnumber`, `sessid`, `xauth`, `csrfmiddlewaretoken` (Django's form
+ *   field), plus the two standard all-caps session cookies `jsessionid` and
+ *   `phpsessid`. These match a *run* of adjacent segments, which is what
+ *   makes `setcookie` cover `set-cookie` and `apikey` cover `x-api-key`. They
+ *   also carry the only case segments cannot reach: a run-together key with no
+ *   separator and no case boundary (`accesstoken`, `secretkey`, `JSESSIONID`)
+ *   has exactly one segment, so it is matched only because the concatenation is
+ *   listed here. A compound spelled without separators and *not* listed
+ *   (`bearertoken`) is the known gap; add it with `extraKeys`.
+ * - **Spelling variants** — `authorisation` and `authentication` sit next to
+ *   `authorization` because `auth` no longer reaches inside a word to cover
+ *   them, and both name a header that carries a credential.
+ * - **Redundant on purpose** — `clientsecret` and `refreshtoken` are already
+ *   covered by `secret` and `token`. They stay because they document the shapes
+ *   the list is aimed at, and because removing them would silently drop the
+ *   run-together spellings above.
  */
 export const DEFAULT_SENSITIVE_KEYS: readonly string[] = [
   "authorization",
+  "authorisation",
+  "authentication",
   "auth",
   "bearer",
   "cookie",
@@ -35,16 +68,29 @@ export const DEFAULT_SENSITIVE_KEYS: readonly string[] = [
   "credential",
   "session",
   "sessionid",
+  "jsessionid",
+  "phpsessid",
+  "sess",
+  "sessid",
   "sid",
   "csrf",
+  "csrfmiddlewaretoken",
   "xsrf",
+  "xauth",
   "signature",
   "privatekey",
   "accesskey",
   "clientsecret",
   "refreshtoken",
   "idtoken",
+  "accesstoken",
+  "authtoken",
+  "apitoken",
+  "apisecret",
+  "secretkey",
   "otp",
+  "totp",
+  "hotp",
   "pin",
   "ssn",
   "creditcard",
@@ -78,10 +124,98 @@ export interface RedactOptions {
   values?: boolean;
 }
 
-const normalise = (key: string): string => key.toLowerCase().replace(/[-_.\s]/g, "");
+// The boundaries a key name carries besides its separators, each turned into an
+// explicit space before the split below. `ACRONYM` runs first so `APIKey`
+// breaks as `API`/`Key` rather than `APIKe`/`y`, and the digit pair keeps
+// `sha256` and `token2` from welding a number onto a word.
+//
+// Every class is a Unicode property, not `[A-Za-z]`: a key name is whatever the
+// consumer called it, and `contraseña`, `пароль` and `密码` are key names. The
+// case classes matter for the scripts that *have* case (`ПарольToken` breaks in
+// two), and `NOT_WORD` matters for every script at once — as `[^a-z\d]+` it
+// treated `ñ` as a separator and split `contraseña` into `contrase`/`a`.
+const ACRONYM = /(\p{Lu}+)(\p{Lu}\p{Ll})/gu;
+const CAMEL = /([\p{Ll}\p{N}])(\p{Lu})/gu;
+const LETTER_DIGIT = /(\p{L})(\p{N})/gu;
+const DIGIT_LETTER = /(\p{N})(\p{L})/gu;
+const NOT_WORD = /[^\p{L}\p{N}]+/u;
+
+/**
+ * The key's lowercase word segments: `X-Api-Key` and `apiKey` both become
+ * `["api", "key"]`, `--sidebar-bg` becomes `["sidebar", "bg"]`, `authorization`
+ * and `contraseña` each stay one segment.
+ *
+ * Empty pieces are dropped, so a leading `--` (a CSS custom property) or a
+ * trailing `[0]` contributes nothing, and a key of pure punctuation segments to
+ * nothing at all.
+ */
+function segments(key: string): string[] {
+  return key
+    .replace(ACRONYM, "$1 $2")
+    .replace(CAMEL, "$1 $2")
+    .replace(LETTER_DIGIT, "$1 $2")
+    .replace(DIGIT_LETTER, "$1 $2")
+    .toLowerCase()
+    .split(NOT_WORD)
+    .filter((segment) => segment.length > 0);
+}
+
+/**
+ * One canonical form, used for both a *list entry* and an `allowKeys` entry: the
+ * key's segments with the boundaries closed up. `X-Custom-Secret`, `x_custom
+ * secret` and `xCustomSecret` all canonicalise to `xcustomsecret`.
+ *
+ * Entries go through the same segmenter as the keys they are matched against,
+ * which is the only way an entry can be *reachable*: `matchesAny` compares the
+ * entries against a run of segments, and a run can only ever contain characters a
+ * segment contains. An entry canonicalised any other way could carry a
+ * character no run can hold and so match nothing — which is exactly what
+ * `extraKeys: ["x/y"]` did when entries were merely stripped of `-_.` and
+ * whitespace.
+ */
+const canonical = (key: string): string => segments(key).join("");
+
+/**
+ * True when any entry names one or more *adjacent whole* segments of the key.
+ *
+ * The runs are built from every start position, growing one segment at a time,
+ * and looked up in the entry set — rather than the set being looped over per
+ * run — so the cost is the key's length times the longest entry, and does not
+ * grow with the size of the list. A run is abandoned as soon as it is longer
+ * than the longest entry can be, which is what keeps a hostile key cheap: at
+ * `"a-".repeat(50000)` (50 000 one-character segments) the per-entry loop this
+ * replaced took 160 ms, in a module whose whole job is to survive whatever a
+ * diagnostics dump hands it.
+ *
+ * A trailing `s` on the run is tolerated, which is the one inflection the rule
+ * folds: `credential` has to cover the `credentials` bag every SDK ships, and
+ * `token`/`cookie`/`secret` their plurals. It cannot resurrect the substring
+ * over-matches — `auths` is not `author` — because the tolerance is still an
+ * equality, not a prefix.
+ */
+function matchesAny(
+  parts: readonly string[],
+  entries: ReadonlySet<string>,
+  longest: number,
+): boolean {
+  if (entries.size === 0) return false;
+  for (let start = 0; start < parts.length; start += 1) {
+    let run = "";
+    for (let end = start; end < parts.length; end += 1) {
+      run += parts[end] as string;
+      if (run.length > longest + 1) break;
+      if (entries.has(run)) return true;
+      if (run.length > 1 && run.endsWith("s") && entries.has(run.slice(0, -1))) return true;
+    }
+  }
+  return false;
+}
 
 interface ResolvedOptions {
-  keys: string[];
+  /** Canonicalised, deduplicated; the empty entry a punctuation-only one folds to is dropped. */
+  keys: Set<string>;
+  /** The longest entry, i.e. how far a run of segments is worth growing. */
+  longestKey: number;
   allow: string[];
   mask: string;
   maxDepth: number;
@@ -91,9 +225,17 @@ interface ResolvedOptions {
 
 function resolve(options: RedactOptions | undefined): ResolvedOptions {
   const base = options?.keys ?? DEFAULT_SENSITIVE_KEYS;
+  const keys = new Set(
+    [...base, ...(options?.extraKeys ?? [])].map(canonical).filter((entry) => entry.length > 0),
+  );
+  let longestKey = 0;
+  for (const entry of keys) {
+    if (entry.length > longestKey) longestKey = entry.length;
+  }
   return {
-    keys: [...base, ...(options?.extraKeys ?? [])].map(normalise),
-    allow: (options?.allowKeys ?? []).map(normalise),
+    keys,
+    longestKey,
+    allow: (options?.allowKeys ?? []).map(canonical),
     mask: options?.mask ?? REDACTED,
     maxDepth: options?.maxDepth ?? 8,
     maxArrayLength: options?.maxArrayLength ?? 200,
@@ -101,16 +243,47 @@ function resolve(options: RedactOptions | undefined): ResolvedOptions {
   };
 }
 
-/** True when a key name should have its value masked. Exported for reuse. */
+/**
+ * True when a key name should have its value masked. Exported for reuse.
+ *
+ * The rule, in one sentence: **an entry matches when it equals one or more
+ * adjacent whole word segments of the key, give or take a trailing `s`.**
+ *
+ * The key is split into segments on its separators (`-`, `_`, `.`, whitespace
+ * and anything else non-alphanumeric) and on its case and letter/digit
+ * boundaries, so `X-Auth-Token`, `authToken` and `auth_token` all segment to
+ * `["auth", "token"]` and match `auth` and `token`; `x-api-key` segments to
+ * `["x", "api", "key"]` and matches the concatenation `apikey` through the
+ * adjacent run `api`+`key`. `allowKeys` still wins, and is still an exact match
+ * rather than a segment one — against the key's segments closed up, so
+ * `allowKeys: ["sessionName"]` exempts `session-name` and `session_name` too.
+ *
+ * This used to be `normalise(key).includes(entry)`, which over-redacted eight
+ * ordinary words for every dump that contained one: `auth` matched `author` and
+ * `authorName`, `pin` matched `shipping` and `spinner`, `sid` matched `inside`,
+ * `residual` and `consider`. Over-redaction is the safe direction but it is
+ * still a lie — a diagnostics dump that renders `{ author: "nejcm" }` as
+ * `[redacted]` is hiding data that was never sensitive, and `/ext/theme-editor`
+ * had to route its token names *around* this pass to keep `--sidebar-bg` and
+ * `--spinner-size` readable at all.
+ *
+ * The cost is that a compound spelled with no separator and no case boundary
+ * has one segment and matches nothing inside it: `accesstoken` is caught only
+ * because `DEFAULT_SENSITIVE_KEYS` lists that concatenation. That is a list
+ * problem with a list fix (`extraKeys`), not a matcher that guesses.
+ */
 export function isSensitiveKey(key: string, options?: RedactOptions): boolean {
   const resolved = resolve(options);
   return matches(key, resolved);
 }
 
 function matches(key: string, resolved: ResolvedOptions): boolean {
-  const normalised = normalise(key);
-  if (resolved.allow.some((entry) => normalised === entry)) return false;
-  return resolved.keys.some((entry) => normalised.includes(entry));
+  const parts = segments(key);
+  if (resolved.allow.length > 0) {
+    const joined = parts.join("");
+    if (resolved.allow.some((entry) => joined === entry)) return false;
+  }
+  return matchesAny(parts, resolved.keys, resolved.longestKey);
 }
 
 // `xxxxx.yyyyy.zzzzz` with base64url segments.
@@ -390,7 +563,7 @@ function walk(
 /** Rebuilds a `RedactOptions` from resolved state, for the nested calls above. */
 function options(resolved: ResolvedOptions): RedactOptions {
   return {
-    keys: resolved.keys,
+    keys: [...resolved.keys],
     allowKeys: resolved.allow,
     mask: resolved.mask,
     maxDepth: resolved.maxDepth,

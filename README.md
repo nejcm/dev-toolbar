@@ -354,7 +354,11 @@ import {
   `getSnapshot` stays stable between notifications, which is what
   `useSyncExternalStore` requires. A 60 Hz sampler becomes a 4 Hz re-render.
 - **`redact(value)` / `redactUrl(url)` / `redactHeaders(headers)`** — masks
-  credentials by key name, plus `Bearer …`, bare JWTs, and URL values carrying a
+  credentials by key name — an entry of the word list matches one or more adjacent
+  whole *segments* of the key, splitting on every non-alphanumeric character and on
+  case and letter/digit boundaries, so `apikey` covers `apiKey` and `x-api-key` while
+  `auth` does **not** cover `author` —
+  plus `Bearer …`, bare JWTs, and URL values carrying a
   sensitive parameter (the OAuth-callback shape, where the secret is in the value and
   no key matching will find it). A URL with nothing to mask is returned unchanged, so
   two dumps that are identical still diff as identical. This is hygiene for anything
@@ -934,9 +938,10 @@ mid-sentence in your own prose survives.
 
 The recipe JSON and the share link are built by one function and carry the **raw**
 values, masked ones omitted with a count. They deliberately do *not* get a second
-key-matching pass: a token called `--sidebar-bg` or `--spinner-size` collides with the
-credential word list by substring, and masking it in a document something is about to
-apply is how a theme stops round-tripping.
+key-matching pass: a token called `--session-panel-bg` collides with the credential
+word list, and masking it in a document something is about to apply is how a theme
+stops round-tripping. (`--sidebar-bg` and `--spinner-size` used to collide too, when
+the list was matched by substring rather than by word segment.)
 
 Persisted edits are re-checked on load rather than trusted: `localStorage` is writable
 by anything on the origin, and an unchecked custom-property value is accepted by the

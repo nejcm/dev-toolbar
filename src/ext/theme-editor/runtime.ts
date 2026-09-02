@@ -1149,16 +1149,23 @@ export function createThemeEditorRuntime(
    * The belt-and-braces `redact()` pass is applied in **two pieces**, and that
    * split is the whole point of this function.
    *
-   * `redact()` walks an object graph and matches *every* key it meets by
-   * substring, at every depth. `recipe.overrides` is keyed by **token names**,
-   * so handing the whole payload to it re-applies, one level down, exactly the
-   * treatment §16.3 classified out: `--sidebar-bg` normalises to `sidebarbg`
-   * and contains `sid`; `--spinner-size` contains `pin`. Both came back as
-   * `"[redacted]"` in a document a machine applies — while the panel and
-   * `cssText()` showed the real values — and re-importing that recipe applied
-   * nothing at all, because `sanitize()` refuses the mask sentinel. A total
-   * round-trip loss, on ordinary token names, from a pass that was only ever
-   * meant to be a safety net.
+   * `redact()` walks an object graph and matches *every* key it meets by word
+   * segment, at every depth. `recipe.overrides` is keyed by **token names**, so
+   * handing the whole payload to it re-applies, one level down, exactly the
+   * treatment §16.3 classified out: `--session-panel-bg` segments to
+   * `session`/`panel`/`bg` and matches `session`; `--token-color` matches
+   * `token`. Both come back as `"[redacted]"` in a document a machine applies —
+   * while the panel and `cssText()` show the real values — and re-importing
+   * that recipe applies nothing at all, because `sanitize()` refuses the mask
+   * sentinel. A total round-trip loss, on ordinary token names, from a pass
+   * that was only ever meant to be a safety net.
+   *
+   * The collision was originally found with `--sidebar-bg` and
+   * `--spinner-size`, back when the key list was tested as a *substring* of the
+   * normalised key: `sidebarbg` contains `sid` and `spinnersize` contains
+   * `pin`. Segment matching retired those two names, not the problem — a token
+   * whose name genuinely *is* a credential word still collides, so the split
+   * below stays load-bearing.
    *
    * So: the metadata goes through the object walk, because that is the pass
    * that catches a *structural field of our own* whose name collides (it is how
