@@ -32,7 +32,7 @@ describe("computeOverflow", () => {
   });
 });
 
-const widths: Record<string, number> = { a: 60, b: 60, c: 60, d: 60 };
+const widths: Record<string, number> = { a: 60, b: 60, c: 60, d: 60, e: 60 };
 let containerWidth = 100;
 
 const patchLayout = () => {
@@ -110,6 +110,40 @@ const renderBar = () =>
         </div>
       )}
     />,
+  );
+
+/** `renderBar` with both regions under the test's control. */
+const renderRegions = (
+  startItems: readonly DevToolbarExtension[],
+  endItems: readonly DevToolbarExtension[],
+) =>
+  render(
+    <OverflowBar
+      startItems={startItems}
+      endItems={endItems}
+      renderItem={(extension, { isOverflowed }) => (
+        <div
+          key={extension.id}
+          data-dtb-part="item"
+          data-dtb-ext-id={extension.id}
+          data-dtb-overflowed={isOverflowed ? "true" : undefined}
+        >
+          {extension.id}
+        </div>
+      )}
+    />,
+  );
+
+const regionIds = (align: "start" | "end") =>
+  [
+    ...document.querySelectorAll(
+      `[data-dtb-part="region"][data-dtb-align="${align}"] > [data-dtb-part="item"]`,
+    ),
+  ].map((node) => (node as HTMLElement).dataset["dtbExtId"]);
+
+const menuIds = () =>
+  [...document.querySelectorAll('[data-dtb-part="overflow-menu-item"]')].map(
+    (node) => (node as HTMLElement).dataset["dtbExtId"],
   );
 
 describe("OverflowBar", () => {
@@ -203,6 +237,95 @@ describe("OverflowBar", () => {
 
     const bar = document.querySelector('[data-dtb-part="bar"]')!;
     expect(bar.querySelectorAll('[data-dtb-part="item"]').length).toBe(3);
+    expect(document.querySelector('[data-dtb-part="overflow-button"]')).toBeNull();
+  });
+});
+
+/**
+ * The `···` button lives *inside* the end region, sharing its width with
+ * whatever end-aligned items stayed in the bar. Every case above passes
+ * `endItems={[]}`, so none of them exercises that.
+ *
+ * `docs/architecture.md` §5 documents the parts these pin — `align` picks a
+ * region, lowest `priority` collapses first, and the button's width is read
+ * back out of the DOM so it counts against the space available. That the
+ * button sits in the end region rather than a region of its own is a fact
+ * about the markup (`Overflow.tsx`), not something the docs promise.
+ */
+describe("OverflowBar with a non-empty end region", () => {
+  const setUp = (width: number) => {
+    containerWidth = width;
+    restore = patchLayout();
+    vi.stubGlobal("ResizeObserver", MockResizeObserver);
+  };
+
+  it("collapses across both regions by priority, ignoring which region an item is in", () => {
+    // Every item is 60 wide, the gap is 2 and the ··· button 28. At an
+    // available 160 the two lowest priorities have to go — b (start, 1) then
+    // e (end, 2) — and the sums are what force it:
+    //   drop b:        3×60 + 2×2 + 2 + 28 = 214 > 160, so keep going
+    //   drop b and e:  2×60 + 2   + 2 + 28 = 152 ≤ 160, so stop
+    // (`remaining widths + inter-item gaps + one gap before the button + the
+    // button`, which is the arithmetic in `computeOverflow`.)
+    setUp(160);
+    renderRegions([ext("a", 3), ext("b", 1)], [ext("d", 5), ext("e", 2)]);
+
+    expect(regionIds("start")).toEqual(["a"]);
+    expect(regionIds("end")).toEqual(["d"]);
+
+    fireEvent.click(screen.getByRole("button", { name: "More developer toolbar items" }));
+    // Menu order is start-region items then end-region items, matching the bar.
+    expect(menuIds()).toEqual(["b", "e"]);
+  });
+
+  it("puts the ··· button in the end region, after the end items that stayed", () => {
+    // 60 more room than above, and one item's worth of collapse now suffices:
+    //   drop b: 3×60 + 2×2 + 2 + 28 = 214 ≤ 220, so e stays in the end region
+    // next to the button, which is the arrangement this test is about.
+    setUp(220);
+    renderRegions([ext("a", 3), ext("b", 1)], [ext("d", 5), ext("e", 2)]);
+
+    expect(regionIds("start")).toEqual(["a"]);
+    expect(regionIds("end")).toEqual(["d", "e"]);
+
+    const region = document.querySelector(
+      '[data-dtb-part="region"][data-dtb-align="end"]',
+    ) as HTMLElement;
+    const button = document.querySelector('[data-dtb-part="overflow-button"]') as HTMLElement;
+    expect(button.parentElement).toBe(region);
+    expect(button.previousElementSibling).toBe(region.querySelector('[data-dtb-ext-id="e"]'));
+    expect([...region.children].at(-1)).toBe(button);
+  });
+
+  it("collapses an end-only bar into a button that shares its own region", () => {
+    // Two end items, nothing in the start region:
+    //   as rendered: 2×60 + 2 = 122 > 100, so something must collapse
+    //   drop e:      60 + 2 + 28 = 90 ≤ 100
+    setUp(100);
+    renderRegions([], [ext("d", 5), ext("e", 2)]);
+
+    expect(regionIds("start")).toEqual([]);
+    expect(regionIds("end")).toEqual(["d"]);
+    expect(document.querySelector('[data-dtb-part="overflow-button"]')).not.toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "More developer toolbar items" }));
+    expect(menuIds()).toEqual(["e"]);
+  });
+
+  it("re-expands the end region and drops the button when the width returns", () => {
+    // Starts from the 160 case above (b and e collapsed), then widens to 1000,
+    // where all four fit in 4×60 + 3×2 = 246 and nothing collapses.
+    setUp(160);
+    renderRegions([ext("a", 3), ext("b", 1)], [ext("d", 5), ext("e", 2)]);
+    expect(regionIds("end")).toEqual(["d"]);
+
+    containerWidth = 1000;
+    act(() => {
+      for (const instance of MockResizeObserver.instances) instance.trigger();
+    });
+
+    expect(regionIds("start")).toEqual(["a", "b"]);
+    expect(regionIds("end")).toEqual(["d", "e"]);
     expect(document.querySelector('[data-dtb-part="overflow-button"]')).toBeNull();
   });
 });

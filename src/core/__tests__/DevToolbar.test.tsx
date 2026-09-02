@@ -621,3 +621,193 @@ describe("DevToolbarInset", () => {
     expect(screen.getByTestId("inset").style.paddingBottom).toBe("0px");
   });
 });
+
+describe("duplicate extension ids", () => {
+  /**
+   * The merge in `DevToolbar` is documented in `docs/architecture.md` §3 only
+   * as "props first, then dynamic registrations, de-duplicated by `id`". That
+   * fixes which *source* wins; which entry wins inside one `extensions` array
+   * is not written down anywhere, so the first two tests pin what the code
+   * does rather than specify it: the first occurrence wins and the later one is
+   * dropped whole — no render, no `start()`, no commands, and no warning.
+   */
+  const dup = (
+    label: string,
+    overrides: Partial<DevToolbarExtension> = {},
+  ): DevToolbarExtension => ({
+    id: "dup",
+    label,
+    compact: () => <span data-testid={`compact-${label}`}>{label}</span>,
+    ...overrides,
+  });
+
+  it("renders only the first of a duplicated id", () => {
+    render(
+      <DevToolbar instanceId="t" extensions={[dup("first"), dup("second")]}>
+        <div />
+      </DevToolbar>,
+    );
+
+    expect(document.querySelectorAll('[data-dtb-ext-id="dup"]').length).toBe(1);
+    expect(screen.getByTestId("compact-first")).toBeTruthy();
+    expect(screen.queryByTestId("compact-second")).toBeNull();
+  });
+
+  it("never starts the dropped duplicate, and takes none of its commands", () => {
+    const firstStart = vi.fn();
+    const secondStart = vi.fn();
+    const Commands = () => {
+      const commands = useToolbarCommands();
+      return <span data-testid="commands">{commands.map((c) => c.id).join(",")}</span>;
+    };
+
+    render(
+      <DevToolbar
+        instanceId="t"
+        extensions={[
+          dup("first", {
+            start: firstStart,
+            commands: [{ id: "dup.first", label: "First", run: () => {} }],
+          }),
+          dup("second", {
+            start: secondStart,
+            commands: [{ id: "dup.second", label: "Second", run: () => {} }],
+          }),
+        ]}
+      >
+        <Commands />
+      </DevToolbar>,
+    );
+
+    expect(firstStart).toHaveBeenCalledTimes(1);
+    expect(secondStart).not.toHaveBeenCalled();
+    expect(screen.getByTestId("commands").textContent).toBe("dup.first");
+    // The duplicate is dropped before the identity check ever sees it, so the
+    // "rebuilt after it started" warning must not fire for a second object
+    // that simply lost the merge.
+    expect(warn).not.toHaveBeenCalled();
+  });
+
+  it("lets a prop entry win over a dynamic registration of the same id", () => {
+    // This half *is* documented: §3 says props come first in the merge.
+    const Register = () => {
+      const { register } = useDevToolbar();
+      useEffect(() => register(dup("registered")), [register]);
+      return null;
+    };
+
+    render(
+      <DevToolbar instanceId="t" extensions={[dup("from-props")]}>
+        <Register />
+      </DevToolbar>,
+    );
+
+    expect(document.querySelectorAll('[data-dtb-ext-id="dup"]').length).toBe(1);
+    expect(screen.getByTestId("compact-from-props")).toBeTruthy();
+    expect(screen.queryByTestId("compact-registered")).toBeNull();
+  });
+});
+
+describe("the container prop", () => {
+  let host: HTMLElement | null = null;
+
+  afterEach(() => {
+    host?.remove();
+    host = null;
+  });
+
+  const makeHost = () => {
+    host = document.createElement("div");
+    host.id = "toolbar-host";
+    document.body.append(host);
+    return host;
+  };
+
+  it("portals the bar into the given element instead of document.body", () => {
+    const target = makeHost();
+    render(
+      <DevToolbar instanceId="t" container={target} extensions={[panelExtension("a")]}>
+        <div />
+      </DevToolbar>,
+    );
+
+    const root = document.querySelector("[data-dev-toolbar]");
+    expect(root).not.toBeNull();
+    expect(root!.parentElement).toBe(target);
+    expect([...document.body.children].includes(root!)).toBe(false);
+    // Everything the bar hosts moves with it, not just the root.
+    expect(target.querySelector('[data-dtb-part="bar"]')).not.toBeNull();
+  });
+
+  it("falls back to document.body for container={null}", () => {
+    // `container` is typed `HTMLElement | null` and the default is documented
+    // as `document.body`; `null` is coalesced, so it means "the default"
+    // rather than "nowhere".
+    render(
+      <DevToolbar instanceId="t" container={null} extensions={[panelExtension("a")]}>
+        <div />
+      </DevToolbar>,
+    );
+
+    const root = document.querySelector("[data-dev-toolbar]");
+    expect(root!.parentElement).toBe(document.body);
+  });
+
+  it("moves the bar when the container changes", () => {
+    const target = makeHost();
+    const view = render(
+      <DevToolbar instanceId="t" extensions={[panelExtension("a")]}>
+        <div />
+      </DevToolbar>,
+    );
+    expect(document.querySelector("[data-dev-toolbar]")!.parentElement).toBe(document.body);
+
+    view.rerender(
+      <DevToolbar instanceId="t" container={target} extensions={[panelExtension("a")]}>
+        <div />
+      </DevToolbar>,
+    );
+
+    const roots = document.querySelectorAll("[data-dev-toolbar]");
+    expect(roots.length).toBe(1);
+    expect(roots[0]!.parentElement).toBe(target);
+  });
+});
+
+describe("an extension list with nothing visible in it", () => {
+  it("renders the bar chrome empty rather than dropping it", () => {
+    // Not written down as such, but it follows from §2's `hidden` table plus
+    // the fact that the bar is chrome: a hidden extension is absent, and an
+    // empty bar is still a bar. Pins that the toolbar does not collapse to
+    // nothing — the height variable a consumer insets by stays published.
+    render(
+      <DevToolbar
+        instanceId="t"
+        extensions={[panelExtension("a", { hidden: true }), panelExtension("b", { hidden: true })]}
+      >
+        <div />
+      </DevToolbar>,
+    );
+
+    expect(document.querySelector("[data-dev-toolbar]")).not.toBeNull();
+    const bar = document.querySelector('[data-dtb-part="bar"]');
+    expect(bar).not.toBeNull();
+    expect(bar!.querySelectorAll('[data-dtb-part="item"]').length).toBe(0);
+    expect(document.querySelector('[data-dtb-part="overflow-button"]')).toBeNull();
+    expect(document.querySelector('[data-dtb-part="panel"]')).toBeNull();
+    expect(document.documentElement.style.getPropertyValue("--dev-toolbar-height")).toBe("0px");
+  });
+
+  it("renders the same empty bar for extensions={[]}", () => {
+    render(
+      <DevToolbar instanceId="t" extensions={[]}>
+        <div />
+      </DevToolbar>,
+    );
+
+    const bar = document.querySelector('[data-dtb-part="bar"]');
+    expect(bar).not.toBeNull();
+    expect(bar!.querySelectorAll('[data-dtb-part="item"]').length).toBe(0);
+    expect(bar!.querySelectorAll('[data-dtb-part="region"]').length).toBe(2);
+  });
+});
