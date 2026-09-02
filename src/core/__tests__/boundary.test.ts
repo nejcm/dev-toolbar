@@ -177,7 +177,7 @@ describe("core boundary (source)", () => {
       // Dynamic, which the static-clause pattern cannot see at all.
       'const core = await import("../core/storage");',
       'void import("../../core/storage");',
-      // CommonJS, in case a `.cjs`-shaped helper ever lands here.
+      // CommonJS: catches `require()` calls inside `.ts`/`.tsx` sources.
       'const { createMemoryStorage } = require("../core/storage");',
       // Re-exports: `export *` and a named re-export both bind values.
       'export * from "../core/storage";',

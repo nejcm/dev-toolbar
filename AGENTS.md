@@ -17,7 +17,7 @@ The contract an extension is written against is the real public API.
 | `src/ext/<name>/` | First-party extensions, one directory each | React + `src/runtime`, **types only** from core | `src/runtime`, core's *types* |
 | `src/testing/` | `renderWithToolbar`, `makeExtension`, `mockBus`, fake layout | React + optional `@testing-library/react` peer | core's *types* relatively, core's *values* through `@nejcm/dev-toolbar` |
 | `examples/playground/` | Vite app consuming the built package via `file:../..` | Vite, React | `dist/`, as a real consumer does |
-| `test/fixtures/jest-consumer/` | A real Jest 29 + CommonJS consumer of `dist/` | Jest, npm | `dist/`, as a CommonJS consumer does |
+| `test/fixtures/jest-consumer/` | A real Jest 30 + CommonJS consumer of `dist/` | Jest, npm | `dist/`, as a CommonJS consumer does |
 | `docs/` | Durable architecture reference and ADRs | Markdown | — |
 | `scripts/` | Repo tooling with no home in `src/`: currently the per-entrypoint size report | Plain ESM `.mjs`, no deps | `dist/`, `package.json` `exports` |
 | `.github/actions/` | Composite actions the workflows share: `setup-job`, `report-bundle-size`, `knip-check` | GitHub Actions | `.github/workflows/` |
