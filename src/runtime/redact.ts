@@ -257,20 +257,50 @@ interface UrlPass {
   masked: boolean;
 }
 
+/** The origin every relative reference is resolved against, and un-resolved from. */
+const BASE = "http://dtb.invalid";
+
+// Leading `/` or `\` — WHATWG treats a backslash as a slash for special schemes,
+// so `\\host\x` is a protocol-relative reference too.
+const SLASHES = /^[/\\]{1,2}/;
+
+/**
+ * How many characters of a resolved serialisation `BASE` contributed in front
+ * of a relative reference, so slicing them off restores the form it arrived in.
+ *
+ * A flat `slice(BASE.length)` is wrong for two of the three relative forms:
+ *
+ * - A protocol-relative reference resolves to a URL on *another* host, so only
+ *   the scheme came from the base. Cutting `BASE.length` characters ate into
+ *   the real authority — `//cdn.example.com/lib.js` came back as `.com/lib.js`,
+ *   and `/ext/metrics`, which routes every observed request URL through here,
+ *   rendered third-party CDN requests as same-origin paths.
+ * - A reference with no leading slash at all (`cb?token=1`, `?x=1`, `#top`)
+ *   gains the `/` that `BASE`'s empty path normalises to, so the base
+ *   contributed one character more than its own length. Slicing only
+ *   `BASE.length` rooted a document-relative reference, changing what it means.
+ */
+function baseContribution(url: string): number {
+  const slashes = SLASHES.exec(url)?.[0].length ?? 0;
+  if (slashes === 2) return BASE.indexOf("//");
+  return slashes === 1 ? BASE.length : BASE.length + 1;
+}
+
 /**
  * The actual work behind `redactUrl`, plus the one bit callers inside this
  * module need and callers outside do not: whether anything was masked.
  */
 function maskUrl(url: string, resolved: ResolvedOptions): UrlPass {
-  const base = "http://dtb.invalid";
   let parsed: URL;
-  let relative = false;
+  // How many leading characters of the serialisation came from `BASE` rather
+  // than from `url`, i.e. how much to slice back off to un-resolve.
+  let contributed = 0;
   try {
     parsed = new URL(url);
   } catch {
     try {
-      parsed = new URL(url, base);
-      relative = true;
+      parsed = new URL(url, BASE);
+      contributed = baseContribution(url);
     } catch {
       return maskQueryString(url, resolved);
     }
@@ -310,29 +340,33 @@ function maskUrl(url: string, resolved: ResolvedOptions): UrlPass {
     }
   }
 
-  const serialised = parsed.toString();
-  return {
-    output: relative ? serialised.slice(base.length) : serialised,
-    masked,
-  };
+  return { output: parsed.toString().slice(contributed), masked };
 }
 
 /**
  * Masks credentials in a URL: `user:pass@` userinfo, sensitive query
  * parameters, and sensitive parameters in a `#`-fragment query.
  *
- * Relative URLs stay relative. An unparseable string falls back to a query
- * rewrite rather than being returned untouched.
+ * Every reference form keeps its shape: an absolute URL stays absolute, a
+ * protocol-relative one keeps its `//host`, a root-relative one keeps its
+ * single leading `/`, and a document-relative one gains neither.
  *
- * Note that a parseable URL comes back through `URL.toString()`, so it is
- * normalised whether or not anything was masked: `https://a.test?x=1` gains its
- * empty path, an uppercase scheme or host is lowercased, and an IDN is
- * punycoded. That is the right trade for a caller who has said "this is a URL";
- * `redact()`, which only *guesses* that a string is one, keeps the original
- * unless it actually masked something.
+ * A string with nothing to mask comes back byte-for-byte, the same rule
+ * `redact()` applies to a URL-shaped value (see `redactString`) and for the
+ * same reason: `URL.toString()` normalises — it adds a missing path, lowercases
+ * scheme and host, punycodes an IDN and percent-encodes a path — so returning
+ * it unconditionally would rewrite every innocent URL in a diagnostic dump and
+ * anyone diffing two dumps would read those as changes. It also matters that
+ * "this is a URL" is a claim about the argument, not a fact: a `fetch()` URL is
+ * whatever the app passed, so plain text reaches here, and `just some text`
+ * came back as `/just%20some%20text`. This is a redactor, not a canonicaliser.
+ *
+ * Only a masked value is rewritten, and then normalisation is the point. An
+ * unparseable string falls back to a query rewrite rather than being skipped.
  */
 export function redactUrl(url: string, redactOptions?: RedactOptions): string {
-  return maskUrl(url, resolve(redactOptions)).output;
+  const pass = maskUrl(url, resolve(redactOptions));
+  return pass.masked ? pass.output : url;
 }
 
 function maskQueryString(url: string, resolved: ResolvedOptions): UrlPass {

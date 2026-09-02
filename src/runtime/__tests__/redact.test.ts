@@ -196,6 +196,65 @@ describe("redactUrl", () => {
   it("leaves a URL with nothing sensitive untouched", () => {
     expect(redactUrl("/api/orders")).toBe("/api/orders");
   });
+
+  it("keeps the origin of a protocol-relative URL", () => {
+    expect(redactUrl("//cdn.example.com/lib.js")).toBe("//cdn.example.com/lib.js");
+    expect(redactUrl("//example.com/a?access_token=1")).toBe(
+      `//example.com/a?access_token=${encodeURIComponent(REDACTED)}`,
+    );
+  });
+
+  it("does not turn a bare string into a rooted, encoded path", () => {
+    expect(redactUrl("just some text")).toBe("just some text");
+    expect(redactUrl("#top")).toBe("#top");
+    expect(redactUrl("cb?x=1")).toBe("cb?x=1");
+    expect(redactUrl("cb?token=1")).toBe(`cb?token=${encodeURIComponent(REDACTED)}`);
+  });
+
+  // One table, every reference form the callers actually hand over: absolute,
+  // the three relative forms, and the strings that are not URLs at all but
+  // reach here anyway because a fetch argument is whatever the app passed.
+  const UNMASKED = [
+    "https://api.test/v1/users?page=2",
+    "HTTPS://App.Test/path",
+    "https://api.test?x=1",
+    "/api/orders?limit=10",
+    "//cdn.example.com/lib.js",
+    "#section-2",
+    "?page=2&sort=asc",
+    "cb?x=1",
+    "http://bad host/?%zz=1",
+    "just some text",
+    "::::",
+  ];
+
+  it.each(UNMASKED)("returns %j byte-for-byte when nothing matched", (input) => {
+    expect(redactUrl(input)).toBe(input);
+  });
+
+  const MASKED: readonly (readonly [string, string])[] = [
+    [
+      "https://api.test/v1?page=2&access_token=a",
+      `https://api.test/v1?page=2&access_token=${encodeURIComponent(REDACTED)}`,
+    ],
+    ["/api/orders?token=t&limit=10", `/api/orders?token=${encodeURIComponent(REDACTED)}&limit=10`],
+    ["//example.com/a?api_key=k", `//example.com/a?api_key=${encodeURIComponent(REDACTED)}`],
+    ["cb?token=t", `cb?token=${encodeURIComponent(REDACTED)}`],
+    ["?token=t", `?token=${encodeURIComponent(REDACTED)}`],
+    ["#access_token=a&state=1", `#access_token=${encodeURIComponent(REDACTED)}&state=1`],
+    [
+      "https://alice:hunter2@example.com/x",
+      `https://${encodeURIComponent(REDACTED)}:${encodeURIComponent(REDACTED)}@example.com/x`,
+    ],
+    [
+      "http://bad host/?%zz=1&api_key=a",
+      `http://bad host/?%zz=1&api_key=${encodeURIComponent(REDACTED)}`,
+    ],
+  ];
+
+  it.each(MASKED)("keeps the shape of %j while masking it", (input, expected) => {
+    expect(redactUrl(input)).toBe(expected);
+  });
 });
 
 describe("redactHeaders", () => {
