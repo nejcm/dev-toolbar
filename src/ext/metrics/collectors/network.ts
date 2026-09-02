@@ -12,7 +12,7 @@
  * bodies are never read, let alone stored.
  */
 import { createRingBuffer, createTimeSeries, redactUrl } from "../../../runtime";
-import type { RedactOptions, ToolbarBus } from "../../../runtime";
+import type { BusLike, RedactOptions, ToolbarEventMap } from "../../../runtime";
 import { formatCount, formatMs } from "../format";
 import type { Collector, CollectorContext, MetricView, NetworkEntryView } from "../types";
 
@@ -37,8 +37,12 @@ export interface NetworkCollectorOptions {
   /**
    * Consume `network-start` / `network-end` from a `/runtime` bus, so an app
    * can report its own client instead of being patched.
+   *
+   * Typed as `BusLike`, not `ToolbarBus`: only `emit` and `on` are needed, so
+   * `createMockBus()` from `./testing` — which cannot import `./runtime` — and
+   * an adapter over an app's own emitter both satisfy it.
    */
-  bus?: ToolbarBus;
+  bus?: BusLike<ToolbarEventMap>;
   /** Requests retained for the panel list. Default `100`. */
   historySize?: number;
   /** Longer than this counts as slow. Default `1000` ms. */

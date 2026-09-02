@@ -16,6 +16,13 @@ export type Unsubscribe = () => void;
 export interface ThrottledStore<T> {
   /** Stable between notifications. Safe as a `useSyncExternalStore` snapshot. */
   getSnapshot(): T;
+  /**
+   * After `destroy()`, this is a no-op that returns a no-op unsubscribe: the
+   * listener is never added, so it is never retained or notified. Safe when a
+   * `useSyncExternalStore` consumer's `subscribe` races a concurrent
+   * `destroy()`, since React only ever invokes the returned unsubscribe — it
+   * never inspects it.
+   */
   subscribe(listener: () => void): Unsubscribe;
   /** The most recent write, published or not. For tests and diagnostics. */
   peek(): T;
@@ -23,8 +30,26 @@ export interface ThrottledStore<T> {
   update(next: (previous: T) => T): void;
   /** Publishes any pending write immediately and cancels the trailing timer. */
   flush(): void;
-  /** Cancels the timer and drops every listener. */
-  destroy(): void;
+  /**
+   * Cancels the timer and drops every listener. Idempotent, and permanent:
+   * `set`, `update` and `flush` stop changing the store afterward (`update`
+   * still evaluates its callback, then discards the result), and `subscribe`
+   * stops adding listeners rather than accepting ones that would never fire.
+   *
+   * A pending trailing write — the last value of a burst that hasn't been
+   * published yet — is discarded by default; `getSnapshot()` keeps whatever
+   * was last published. Pass `{ flush: true }` to publish it first,
+   * synchronously notifying listeners still subscribed, before tearing
+   * down. Off by default: publishing during teardown can re-enter a caller
+   * (e.g. a React tree) that is itself unwinding, and no first-party
+   * extension destroys its store today — see the "deliberately NOT
+   * destroyed" comments in src/ext/<name>/runtime.ts — so there is no
+   * observed call site that needs the trailing value badly enough to risk
+   * that by default. A store that is already destroyed stays inert: passing
+   * `{ flush: true }` again does not publish or notify — destroy is
+   * idempotent regardless of the option.
+   */
+  destroy(destroyOptions?: { flush?: boolean }): void;
   /** Notifications emitted so far. The coalescing assertion in the tests. */
   readonly published: number;
 }
@@ -41,8 +66,19 @@ export interface CreateThrottledStoreOptions<T> {
   schedule?: (callback: () => void, delayMs: number) => () => void;
   /** Skip the notification when the published value did not change. `Object.is` by default. */
   equals?: (a: T, b: T) => boolean;
+  /**
+   * Called when a listener throws. A throwing listener must never stop the
+   * remaining listeners, and must never propagate into the caller — which is
+   * usually a `set()` or `flush()` call in the middle of a render or an
+   * event handler.
+   */
+  onError?: (error: unknown, value: T) => void;
 }
 
+// Byte-identical to bus.ts's defaultNow. Deliberately not shared: runtime
+// talks to nothing in this package (AGENTS.md), and outside the barrel no
+// runtime module imports another; a three-line clock fallback is not the
+// reason to start.
 const defaultNow = (): number =>
   typeof performance !== "undefined" && typeof performance.now === "function"
     ? performance.now()
@@ -62,6 +98,10 @@ export function createThrottledStore<T>(
     now = defaultNow,
     schedule = defaultSchedule,
     equals = Object.is,
+    onError = (error: unknown, _value: T) => {
+      // eslint-disable-next-line no-console
+      console.error("[dev-toolbar/runtime] a store listener threw.", error);
+    },
   } = options;
 
   let published = initial;
@@ -74,13 +114,24 @@ export function createThrottledStore<T>(
   const listeners = new Set<() => void>();
 
   const emit = () => {
+    // Captured once: a listener can call set()/flush() re-entrantly, which
+    // publishes again and advances the module-level `published` before a
+    // later listener in this same pass throws. Reading `published` at throw
+    // time would then report the re-entrant publish's value for a pass that
+    // is still delivering an earlier one — so onError gets the value this
+    // pass is actually notifying about, not whatever is newest by the time
+    // the throw happens.
+    const value = published;
     // Copied: a listener may unsubscribe itself while being notified.
     for (const listener of Array.from(listeners)) {
       try {
         listener();
       } catch (error) {
-        // eslint-disable-next-line no-console
-        console.error("[dev-toolbar/runtime] a store listener threw.", error);
+        // Same shape as bus.ts's dispatch: onError is called outside its own
+        // try/catch, so a throwing onError propagates to the caller (and, as
+        // there, stops the remaining listeners in this pass) instead of
+        // being silently swallowed.
+        onError(error, value);
       }
     }
   };
@@ -119,6 +170,7 @@ export function createThrottledStore<T>(
     getSnapshot: () => published,
     peek: () => pending,
     subscribe(listener) {
+      if (destroyed) return () => {};
       listeners.add(listener);
       return () => {
         listeners.delete(listener);
@@ -132,7 +184,12 @@ export function createThrottledStore<T>(
       if (destroyed) return;
       publish();
     },
-    destroy() {
+    destroy(destroyOptions) {
+      // Guard on !destroyed: an already-destroyed store must stay inert, or a
+      // second destroy({ flush: true }) could publish and mutate getSnapshot()
+      // with no listener left to notify — silent tearing, and it would break
+      // the "idempotent, and permanent" contract documented above.
+      if (!destroyed && destroyOptions?.flush === true) publish();
       destroyed = true;
       if (cancelTimer) {
         cancelTimer();

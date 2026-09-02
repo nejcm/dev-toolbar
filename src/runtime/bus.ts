@@ -7,15 +7,81 @@
  * reasons core has no global extension registry.
  */
 
-/** Metadata the bus adds to every delivery. */
-export interface BusEvent<T = unknown> {
-  type: string;
+/**
+ * Metadata the bus adds to every delivery.
+ *
+ * `K` carries the event name as a literal, so `emit("network-end", …)` hands
+ * back a `BusEvent<…, "network-end">` rather than something whose `type` has
+ * been widened to `string`. It defaults to `string`, so `BusEvent<Payload>`
+ * still means what it always did.
+ */
+export interface BusEvent<T = unknown, K extends string = string> {
+  type: K;
   payload: T;
   /** `options.now()` at emit time. Defaults to `performance.now()`. */
   at: number;
 }
 
 export type BusHandler<T = unknown> = (payload: T, event: BusEvent<T>) => void;
+
+/**
+ * The names an event map actually declares.
+ *
+ * `Events extends Record<string, unknown>` is what lets an *interface* serve as
+ * an event map: an interface has no implicit index signature, so without that
+ * base it fails the constraint — which is why `ToolbarEventMap` extends it. The
+ * cost is that `keyof ToolbarEventMap & string` widens to `string`, and a
+ * mapped type over `string` collapses to a single index signature, which would
+ * leave `AnyBusEvent` un-narrowable. So strip the index signature back off.
+ *
+ * A map that really is nothing but `Record<string, unknown>` — the default type
+ * argument for `createEventBus()` with no event map — declares no names at all,
+ * and there `string` is the honest answer; hence the fallback.
+ *
+ * Only the bare `string` and `number` signatures are stripped. A
+ * template-literal pattern signature — `` [k: `evt:${string}`]: Payload `` — is
+ * deliberately kept: `string` does not extend the pattern, so the filter leaves
+ * it alone. That is the intent, not an oversight — such a pattern is a name the
+ * map means to declare, and it stays narrowable alongside the literal ones.
+ */
+type DeclaredEventName<Events> = keyof {
+  [K in keyof Events as string extends K ? never : number extends K ? never : K]: 0;
+} &
+  string;
+
+/** The event names of `Events`, with the constraint's index signature removed. */
+export type BusEventName<Events> = [DeclaredEventName<Events>] extends [never]
+  ? keyof Events & string
+  : DeclaredEventName<Events>;
+
+/**
+ * Every delivery a bus over `Events` can make, as a union discriminated on
+ * `type`. `onAny` is the one place a caller has to switch on the event name, so
+ * it is the one place that needs `if (event.type === "network-end")` to narrow
+ * `event.payload` along with it.
+ *
+ * The union covers the *declared* names. `emit` and `on` still take
+ * `keyof Events & string`, which on a map extending `Record<string, unknown>`
+ * is `string` — so `bus.emit("not-declared", …)` compiles, and an `onAny`
+ * handler can be handed a `type` this union does not list. Widening `emit`
+ * would be the breaking change, so the narrowing is optimistic on purpose:
+ * switch on the names you care about, and do not `assertNever` on `event.type`
+ * in a default branch.
+ */
+export type AnyBusEvent<Events extends Record<string, unknown>> = {
+  [K in BusEventName<Events>]: BusEvent<Events[K], K>;
+}[BusEventName<Events>];
+
+/**
+ * An `onAny` subscriber. `payload` is the union of every declared payload —
+ * useful, but not correlated with the name, because nothing on a bare payload
+ * says which event it came from. Narrow `event` instead: `event.payload` is the
+ * same value, discriminated.
+ */
+export type AnyBusHandler<Events extends Record<string, unknown>> = (
+  payload: Events[BusEventName<Events>],
+  event: AnyBusEvent<Events>,
+) => void;
 
 export interface BusSubscribeOptions {
   /**
@@ -25,22 +91,36 @@ export interface BusSubscribeOptions {
   signal?: AbortSignal;
 }
 
-export interface EventBus<Events extends Record<string, unknown>> {
-  emit<K extends keyof Events & string>(type: K, payload: Events[K]): BusEvent<Events[K]>;
+/**
+ * The two methods a consumer of a bus actually needs: publish, and subscribe.
+ *
+ * This exists so an option like `metrics`' `bus` can be typed *structurally*
+ * rather than as the whole `EventBus`. `./testing` may not import `./runtime`
+ * (see AGENTS.md), so `createMockBus()` reimplements the contract by hand;
+ * asking a test double for `once`, `onAny`, `listenerCount` and `clear` — none
+ * of which a collector calls — is what made the shipped double unusable as the
+ * real thing and pushed tests onto `createEventBus()` instead.
+ *
+ * Take `BusLike<…>` in an option, not `EventBus<…>`, unless you really call the
+ * rest. Anything assignable to it can drive the collector: the real bus, the
+ * mock, or an adapter over an app's own emitter.
+ */
+export interface BusLike<Events extends Record<string, unknown>> {
+  emit<K extends keyof Events & string>(type: K, payload: Events[K]): BusEvent<Events[K], K>;
   on<K extends keyof Events & string>(
     type: K,
     handler: BusHandler<Events[K]>,
     options?: BusSubscribeOptions,
   ): () => void;
+}
+
+export interface EventBus<Events extends Record<string, unknown>> extends BusLike<Events> {
   once<K extends keyof Events & string>(
     type: K,
     handler: BusHandler<Events[K]>,
     options?: BusSubscribeOptions,
   ): () => void;
-  onAny(
-    handler: BusHandler<Events[keyof Events & string]>,
-    options?: BusSubscribeOptions,
-  ): () => void;
+  onAny(handler: AnyBusHandler<Events>, options?: BusSubscribeOptions): () => void;
   /** Live subscribers, optionally for one type. `onAny` counts toward the total. */
   listenerCount(type?: keyof Events & string): number;
   /** Drops every subscriber. */
@@ -77,6 +157,38 @@ export function createEventBus<Events extends Record<string, unknown> = Record<s
   const handlers = new Map<string, Set<BusHandler<never>>>();
   const anyHandlers = new Set<BusHandler<never>>();
 
+  // Nobody listening: bail before allocating anything. One listener: the
+  // load-bearing bit is that `handler` is read out of `set` before it is
+  // called, not while a loop is still touching `set` — so whatever the call
+  // does to `set` (unsubscribe itself, subscribe another) happens after we
+  // already have our reference, and there is no snapshot to need. A live
+  // `for...of set` here instead — even one that calls the sole handler and
+  // then returns — would still be a bug: unlike our up-front read, a live
+  // iterator that hasn't finished visits elements added while it runs, so it
+  // would go on to yield a replacement the handler subscribed mid-call,
+  // which the `Array.from` snapshot below never would. Two or more: a
+  // handler may unsubscribe itself (or another) mid-dispatch, so we still
+  // iterate a copy — `Array.from` — rather than the live set.
+  const dispatch = <T>(set: Set<BusHandler<never>> | undefined, payload: T, event: BusEvent<T>) => {
+    if (!set || set.size === 0) return;
+    if (set.size === 1) {
+      const [handler] = set;
+      try {
+        (handler as unknown as BusHandler<T>)(payload, event);
+      } catch (error) {
+        onError(error, event as BusEvent);
+      }
+      return;
+    }
+    for (const handler of Array.from(set)) {
+      try {
+        (handler as unknown as BusHandler<T>)(payload, event);
+      } catch (error) {
+        onError(error, event as BusEvent);
+      }
+    }
+  };
+
   const bind = (unsubscribe: () => void, signal?: AbortSignal) => {
     if (!signal) return unsubscribe;
     if (signal.aborted) {
@@ -98,30 +210,25 @@ export function createEventBus<Events extends Record<string, unknown> = Record<s
     const set = handlers.get(type) ?? new Set<BusHandler<never>>();
     handlers.set(type, set);
     set.add(handler as unknown as BusHandler<never>);
+    // Unsubscribing twice must be a no-op: `once()` hands back the very function
+    // it calls on delivery, so a React effect returning it runs it a second time
+    // on cleanup, and so does a manual call after `signal` aborted. Without the
+    // latch the second run would find the captured set already empty and evict
+    // whatever set the map holds for `type` by then — someone else's subscribers.
+    let live = true;
     return bind(() => {
+      if (!live) return;
+      live = false;
       set.delete(handler as unknown as BusHandler<never>);
-      if (set.size === 0) handlers.delete(type);
+      if (set.size === 0 && handlers.get(type) === set) handlers.delete(type);
     }, subscribeOptions?.signal);
   };
 
   return {
     emit<K extends keyof Events & string>(type: K, payload: Events[K]) {
-      const event: BusEvent<Events[K]> = { type, payload, at: now() };
-      // Snapshot both sets: a handler may unsubscribe itself mid-dispatch.
-      for (const handler of Array.from(handlers.get(type) ?? [])) {
-        try {
-          (handler as unknown as BusHandler<Events[K]>)(payload, event);
-        } catch (error) {
-          onError(error, event as BusEvent);
-        }
-      }
-      for (const handler of Array.from(anyHandlers)) {
-        try {
-          (handler as unknown as BusHandler<Events[K]>)(payload, event);
-        } catch (error) {
-          onError(error, event as BusEvent);
-        }
-      }
+      const event: BusEvent<Events[K], K> = { type, payload, at: now() };
+      dispatch(handlers.get(type), payload, event);
+      dispatch(anyHandlers, payload, event);
       return event;
     },
     on,
@@ -138,7 +245,13 @@ export function createEventBus<Events extends Record<string, unknown> = Record<s
     },
     onAny(handler, subscribeOptions) {
       anyHandlers.add(handler as unknown as BusHandler<never>);
+      // Latched for the same reason as `on`. There is no map entry to evict
+      // here, but a stale second call would still delete the handler out from
+      // under a later `onAny(sameHandler)`.
+      let live = true;
       return bind(() => {
+        if (!live) return;
+        live = false;
         anyHandlers.delete(handler as unknown as BusHandler<never>);
       }, subscribeOptions?.signal);
     },

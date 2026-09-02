@@ -403,11 +403,15 @@ for consumers who deliver CSS themselves. Threading core's flag down would mean
 extensions importing core's React context at runtime, which only works if both resolve
 to the same module instance; see §7.
 
-The *injection* itself is shared: `ensureStyleSheet(entry, css)` in `/runtime`. It keys
-on a `style[data-dev-toolbar-styles="<entry>"]` element, so the DOM rather than a
-module flag is the deduplication truth and two bundled copies still inject once. It
-sits in `/runtime` rather than core because importing core's injector would drag core's
-whole stylesheet string into an extension's bundle — and extensions already import
+The *injection* itself is shared: `ensureStyleSheet(entry, css, doc?, nonce?)` in
+`/runtime`. It keys on the `data-dev-toolbar-styles` attribute by comparing the
+attribute directly rather than interpolating `entry` into a selector string, so an
+`entry` containing a quote can't be mistaken for another entry's element or throw a
+`SyntaxError`; the DOM rather than a module flag is the deduplication truth, so two
+bundled copies still inject once. The optional `nonce` sets the element's `nonce`
+property for hosts running a nonce-based CSP. It sits in `/runtime`
+rather than core because importing core's injector would drag core's whole
+stylesheet string into an extension's bundle — and extensions already import
 `/runtime`, while core never does.
 
 ### 4.3 `classNames`

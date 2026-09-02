@@ -447,9 +447,10 @@ describe("redaction", () => {
   });
 
   it("does not mask its own structural fields, at any depth", () => {
-    // Found by writing the test above. `redact()` matches key names by
-    // substring, so this field was first called `omittedMaskedTokens` — which
-    // contains "token" — and came back as `"[redacted]"` where a count belongs.
+    // Found by writing the test above. `redact()` matches key names by word
+    // segment, so this field was first called `omittedMaskedTokens` — whose
+    // `Tokens` segment matches `token` — and came back as `"[redacted]"` where
+    // a count belongs.
     // A count that reads as a credential is a wrong fact in an outbound
     // document, which is exactly what §15.3 is about; the difference is only
     // that the foreign key here was *ours*.
@@ -462,20 +463,24 @@ describe("redaction", () => {
     const runtime = createThemeEditorRuntime({
       tokens: [
         { name: "--api-token", type: "string", value: "public" },
-        // Ordinary names that collide with the credential word list purely by
-        // substring: `sidebarbg` contains `sid`, `spinnersize` contains `pin`,
-        // `authradius` contains `auth`.
-        { name: "--sidebar-bg", type: "color", value: "#ffffff" },
-        { name: "--spinner-size", type: "length", value: "16px" },
-        { name: "--auth-radius", type: "length", value: "2px" },
+        // Ordinary names whose *segments* are credential words — `session`,
+        // `token` and `auth` each stand alone here, so the word list matches
+        // them however carefully it is matched. (The names this test was
+        // written with, `--sidebar-bg` and `--spinner-size`, collided only
+        // while the list was tested as a substring of the normalised key; they
+        // stopped colliding, and stopped testing anything, when it became
+        // segment matching.)
+        { name: "--session-panel-bg", type: "color", value: "#ffffff" },
+        { name: "--token-color", type: "color", value: "#000000" },
+        { name: "--auth-panel-radius", type: "length", value: "2px" },
       ],
       now: () => 0,
     });
     runtime.start(fakeApi(createMemoryStorage()));
     runtime.setOverride("--api-token", "sk-live-x");
-    runtime.setOverride("--sidebar-bg", "#101418");
-    runtime.setOverride("--spinner-size", "24px");
-    runtime.setOverride("--auth-radius", "6px");
+    runtime.setOverride("--session-panel-bg", "#101418");
+    runtime.setOverride("--token-color", "#f5f5f5");
+    runtime.setOverride("--auth-panel-radius", "6px");
 
     const offenders: string[] = [];
     const walk = (node: unknown, path: string): void => {
@@ -506,27 +511,34 @@ describe("redaction", () => {
     expect(offenders).toEqual([]);
   });
 
-  it("round-trips an ordinary name that collides with the credential list", () => {
+  it("round-trips a colour whose own name is a credential word", () => {
     // The acceptance criterion this defect broke: `plans/dev-bar.md` says the
-    // JSON round-trips without loss. It did not, for `--sidebar-bg` and
-    // `--spinner-size`, because a belt-and-braces `redact()` pass downstream of
-    // the classified join re-applied key matching to the token names — masking
-    // them in the one document that gets applied, where `sanitize()` then
-    // refuses the mask sentinel and drops them entirely.
+    // JSON round-trips without loss. It did not, because a belt-and-braces
+    // `redact()` pass downstream of the classified join re-applied key matching
+    // to the token names — masking them in the one document that gets applied,
+    // where `sanitize()` then refuses the mask sentinel and drops them
+    // entirely.
+    //
+    // The names are `--session-panel-bg` and `--token-color`: a `session` and a
+    // `token` segment, so they collide with the word list on their own terms
+    // rather than through the substring rule the original repro
+    // (`--sidebar-bg`, `--spinner-size`) depended on. A colour is a colour —
+    // §16.3 classifies both out of name matching, and the two-piece split in
+    // `executablePayload` is what keeps that true one level down.
     const runtime = createThemeEditorRuntime({
       tokens: [
-        { name: "--sidebar-bg", type: "color", value: "#ffffff" },
-        { name: "--spinner-size", type: "length", value: "16px" },
+        { name: "--session-panel-bg", type: "color", value: "#ffffff" },
+        { name: "--token-color", type: "color", value: "#000000" },
       ],
       now: () => 0,
     });
     runtime.start(fakeApi(createMemoryStorage()));
-    runtime.setOverride("--sidebar-bg", "#101418");
-    runtime.setOverride("--spinner-size", "24px");
+    runtime.setOverride("--session-panel-bg", "#101418");
+    runtime.setOverride("--token-color", "#f5f5f5");
 
     const text = runtime.recipeText();
-    expect(text).toContain('"--sidebar-bg": "#101418"');
-    expect(text).toContain('"--spinner-size": "24px"');
+    expect(text).toContain('"--session-panel-bg": "#101418"');
+    expect(text).toContain('"--token-color": "#f5f5f5"');
 
     runtime.resetAll();
     expect(runtime.importRecipe(text)).toEqual({
@@ -535,8 +547,8 @@ describe("redaction", () => {
       error: null,
     });
     expect(runtime.overrides()).toEqual({
-      "--sidebar-bg": "#101418",
-      "--spinner-size": "24px",
+      "--session-panel-bg": "#101418",
+      "--token-color": "#f5f5f5",
     });
   });
 

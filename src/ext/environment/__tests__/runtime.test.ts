@@ -349,10 +349,12 @@ describe("a context that throws while being read", () => {
   });
 
   it("does not throw out of the factory — a getter inside `extra`", () => {
-    // `redact()` walks with `Object.entries`, which invokes getters, and the
-    // first build runs at factory time: before core has mounted anything, so
-    // there is no error boundary to catch this. It would take down the host
-    // app's render, not degrade to an error chip.
+    // A getter nested inside `extra` is read by `redact()`'s own walk
+    // (`Object.keys` plus a per-key read, deep inside the object graph), not
+    // by this file's code directly. `redact()` now tags a throwing getter itself
+    // (`"[getter threw]"`) rather than propagating, so this no longer
+    // degrades the whole snapshot — it produces a normal one with the one
+    // hostile property tagged.
     const spy = vi.spyOn(console, "error").mockImplementation(() => {});
     try {
       const runtime = createEnvironmentRuntime({
@@ -360,10 +362,10 @@ describe("a context that throws while being read", () => {
         context: throwingExtra(),
       });
       const snapshot = runtime.store.getSnapshot();
-      expect(snapshot.fields.find((field) => field.id === "contextError")?.value).toContain(
-        "could not be read",
-      );
-      expect(spy).toHaveBeenCalled();
+      const field = snapshot.fields.find((field) => field.id === "extra:bad");
+      expect(field?.value).toContain("[getter threw]");
+      expect(snapshot.fields.some((field) => field.id === "contextError")).toBe(false);
+      expect(spy).not.toHaveBeenCalled();
     } finally {
       spy.mockRestore();
     }
@@ -395,15 +397,19 @@ describe("a context that throws while being read", () => {
         detect: false,
         context: throwingExtra(),
       });
-      expect(runtime.snapshotText()).toContain("could not be read");
-      expect(JSON.stringify(runtime.diagnostics())).toContain("could not be read");
+      expect(runtime.snapshotText()).toContain("[getter threw]");
+      expect(JSON.stringify(runtime.diagnostics())).toContain("[getter threw]");
     } finally {
       spy.mockRestore();
     }
   });
 
   it("does not throw uncaught from the poll interval", () => {
-    // Inside a setInterval a throw is nobody's to catch.
+    // Inside a setInterval a throw is nobody's to catch. `throwingExtra()`
+    // no longer exercises this: `redact()` absorbs that throw on its own
+    // account now, so `build()`'s catch never runs for it. A getter directly
+    // on the context object is still read outside `redact()` and still hits
+    // `build()`'s catch — that is what this test needs to be about.
     vi.useFakeTimers();
     const spy = vi.spyOn(console, "error").mockImplementation(() => {});
     const controller = new AbortController();
@@ -411,7 +417,11 @@ describe("a context that throws while being read", () => {
       const runtime = createEnvironmentRuntime({
         pollMs: 250,
         detect: false,
-        context: () => throwingExtra(),
+        context: () => ({
+          get userId(): string {
+            throw new Error("getter blew up");
+          },
+        }),
       });
       const stop = runtime.start({
         signal: controller.signal,
@@ -427,6 +437,7 @@ describe("a context that throws while being read", () => {
         },
       });
       expect(() => vi.advanceTimersByTime(1000)).not.toThrow();
+      expect(spy).toHaveBeenCalled();
       stop();
     } finally {
       controller.abort();
@@ -487,5 +498,27 @@ describe("`masked` on a Date-valued extra", () => {
       .fields.find((entry) => entry.id === "extra:deployedAt");
     expect(field?.value).toBe("2026-08-28T00:00:00.000Z");
     expect(field?.masked).toBe(false);
+  });
+
+  it("tags an invalid Date instead of degrading the whole snapshot", () => {
+    // `new Date(NaN).toISOString()` throws `RangeError`. That used to escape
+    // `stringify()` unguarded, which `redactValues` does not catch, so it
+    // took down `build()`'s whole snapshot rather than costing this one
+    // field. `redact()` itself already mirrors this guard for the redacted
+    // side; `stringify()` needs the same one for the raw side.
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const runtime = createEnvironmentRuntime({
+        detect: false,
+        context: { extra: { bad: new Date(NaN) } },
+      });
+      const snapshot = runtime.store.getSnapshot();
+      const field = snapshot.fields.find((entry) => entry.id === "extra:bad");
+      expect(field?.value).toBe("[invalid date]");
+      expect(snapshot.fields.some((entry) => entry.id === "contextError")).toBe(false);
+      expect(spy).not.toHaveBeenCalled();
+    } finally {
+      spy.mockRestore();
+    }
   });
 });

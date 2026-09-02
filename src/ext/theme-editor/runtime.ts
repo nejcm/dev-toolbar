@@ -655,10 +655,17 @@ export function createThemeEditorRuntime(
   ): { text: string; masked: boolean } => {
     if (value === null) return { text: "—", masked: false };
     if (sensitive) return { text: maskText, masked: true };
-    const after =
+    // The bare-string branch needs no cast — `redact()` returns a string for a
+    // string. The keyed branch still does: the object walk is honestly
+    // `unknown`, because a bag can come back as a tag string instead of a
+    // record (a hostile `redactOptions` with `maxDepth: 0` is enough), and then
+    // the lookup below is `undefined`. That is what the `typeof` guard is for,
+    // so the lookup stays `unknown` rather than being asserted into a string it
+    // may not be.
+    const after: unknown =
       type === "string"
-        ? ((redact({ [name]: value }, redactOptions) as Record<string, unknown>)[name] as string)
-        : (redact(value, redactOptions) as string);
+        ? (redact({ [name]: value }, redactOptions) as Record<string, unknown>)[name]
+        : redact(value, redactOptions);
     const text = typeof after === "string" ? after : maskText;
     return { text, masked: text !== value };
   };
@@ -720,12 +727,12 @@ export function createThemeEditorRuntime(
       const description =
         definition.description === undefined
           ? undefined
-          : (redact(definition.description, redactOptions) as string);
+          : redact(definition.description, redactOptions);
       // The group is a JSON *key* in the Figma export, so injection is not the
       // hazard — prose carrying a credential is, exactly as for the description.
       // Shape-only, because a bare string has no key to match against.
       const rawGroup = definition.group ?? "Tokens";
-      const group = redact(rawGroup, redactOptions) as string;
+      const group = redact(rawGroup, redactOptions);
 
       views.push({
         name,
@@ -1142,16 +1149,23 @@ export function createThemeEditorRuntime(
    * The belt-and-braces `redact()` pass is applied in **two pieces**, and that
    * split is the whole point of this function.
    *
-   * `redact()` walks an object graph and matches *every* key it meets by
-   * substring, at every depth. `recipe.overrides` is keyed by **token names**,
-   * so handing the whole payload to it re-applies, one level down, exactly the
-   * treatment §16.3 classified out: `--sidebar-bg` normalises to `sidebarbg`
-   * and contains `sid`; `--spinner-size` contains `pin`. Both came back as
-   * `"[redacted]"` in a document a machine applies — while the panel and
-   * `cssText()` showed the real values — and re-importing that recipe applied
-   * nothing at all, because `sanitize()` refuses the mask sentinel. A total
-   * round-trip loss, on ordinary token names, from a pass that was only ever
-   * meant to be a safety net.
+   * `redact()` walks an object graph and matches *every* key it meets by word
+   * segment, at every depth. `recipe.overrides` is keyed by **token names**, so
+   * handing the whole payload to it re-applies, one level down, exactly the
+   * treatment §16.3 classified out: `--session-panel-bg` segments to
+   * `session`/`panel`/`bg` and matches `session`; `--token-color` matches
+   * `token`. Both come back as `"[redacted]"` in a document a machine applies —
+   * while the panel and `cssText()` show the real values — and re-importing
+   * that recipe applies nothing at all, because `sanitize()` refuses the mask
+   * sentinel. A total round-trip loss, on ordinary token names, from a pass
+   * that was only ever meant to be a safety net.
+   *
+   * The collision was originally found with `--sidebar-bg` and
+   * `--spinner-size`, back when the key list was tested as a *substring* of the
+   * normalised key: `sidebarbg` contains `sid` and `spinnersize` contains
+   * `pin`. Segment matching retired those two names, not the problem — a token
+   * whose name genuinely *is* a credential word still collides, so the split
+   * below stays load-bearing.
    *
    * So: the metadata goes through the object walk, because that is the pass
    * that catches a *structural field of our own* whose name collides (it is how
@@ -1178,7 +1192,7 @@ export function createThemeEditorRuntime(
 
     const redactedOverrides: Record<string, string> = {};
     for (const [name, value] of Object.entries((rawOverrides ?? {}) as Record<string, string>)) {
-      define(redactedOverrides, name, redact(value, redactOptions) as string);
+      define(redactedOverrides, name, redact(value, redactOptions));
     }
 
     // Rebuilt in the original key order rather than spread, so the document a

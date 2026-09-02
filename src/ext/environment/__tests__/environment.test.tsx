@@ -268,9 +268,9 @@ describe("redaction of consumer-supplied data", () => {
     expect(html).not.toContain("super-secret");
     expect(html).not.toContain("abcdef123456");
     expect(html).not.toContain("deadbeef");
-    // The mask lands inside a query string, so it arrives percent-encoded —
-    // ugly, and much better than the token.
-    expect(text(row(panel, "apiEndpoint"))).toContain("access_token=%5Bredacted%5D");
+    // The mask lands inside a query string and still arrives literally, so the
+    // row reads as a masked URL rather than as escape noise.
+    expect(text(row(panel, "apiEndpoint"))).toContain("access_token=[redacted]");
     expect(text(row(panel, "extra:authToken"))).toContain("[redacted]");
   });
 
@@ -450,13 +450,13 @@ describe("live context", () => {
           },
         },
       });
-      // Not an error chip: the bar rendered normally, because the throw was
-      // contained where it happened rather than escaping the factory.
+      // Not an error chip: the bar rendered normally, because `redact()`
+      // contained the throw where it happened (tagging the property
+      // "[getter threw]") instead of it escaping the factory.
       expect(toolbar.item("environment")).not.toBeNull();
       toolbar.openPanel("environment");
-      expect(text(row(toolbar.panel("environment"), "contextError"))).toContain(
-        "could not be read",
-      );
+      expect(text(row(toolbar.panel("environment"), "extra:bad"))).toContain("[getter threw]");
+      expect(spy).not.toHaveBeenCalled();
     } finally {
       spy.mockRestore();
     }

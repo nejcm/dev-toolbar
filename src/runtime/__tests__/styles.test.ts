@@ -24,4 +24,29 @@ describe("ensureStyleSheet", () => {
     expect(other?.getAttribute(STYLE_ATTRIBUTE)).toBe("test-entry-2");
     other?.remove();
   });
+
+  it("does not let a quote in entry impersonate a different entry", () => {
+    const first = ensureStyleSheet("ext-metrics", ".m{}");
+    const spoofed = ensureStyleSheet('nope"], style[data-dev-toolbar-styles="ext-metrics', ".h{}");
+    expect(spoofed).not.toBe(first);
+    expect(spoofed?.getAttribute(STYLE_ATTRIBUTE)).toBe(
+      'nope"], style[data-dev-toolbar-styles="ext-metrics',
+    );
+    expect(spoofed?.textContent).toBe(".h{}");
+    first?.remove();
+    spoofed?.remove();
+  });
+
+  it("does not throw on an unbalanced quote in entry", () => {
+    expect(() => ensureStyleSheet('unbalanced"quote', ".u{}")).not.toThrow();
+    const el = ensureStyleSheet('unbalanced"quote', ".u{}");
+    expect(el?.getAttribute(STYLE_ATTRIBUTE)).toBe('unbalanced"quote');
+    el?.remove();
+  });
+
+  it("sets the nonce property when provided", () => {
+    const el = ensureStyleSheet("test-entry", ".a{}", document, "abc");
+    expect(el?.nonce).toBe("abc");
+    el?.remove();
+  });
 });

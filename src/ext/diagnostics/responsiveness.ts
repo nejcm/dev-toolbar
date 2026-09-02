@@ -115,10 +115,16 @@ interface EntryLike {
 const numberOr = (value: unknown, fallback: number): number =>
   typeof value === "number" && Number.isFinite(value) ? value : fallback;
 
-/** One foreign field, masked before it is joined to anything. See below. */
+/**
+ * One foreign field, masked before it is joined to anything. See below.
+ *
+ * A string in, a string out — `redact()`'s own overload says so, so nothing
+ * here re-coerces the result. Every caller either narrows with `typeof` first
+ * or runs the value through `safeString()`, so the parameter type is a fact.
+ */
 const part = (value: string): string => {
   try {
-    return String(redact(value));
+    return redact(value);
   } catch {
     return "[unreadable]";
   }
@@ -275,7 +281,10 @@ export function createResponsivenessMonitor(
       // pattern as the error paths in `runtime.ts`, and `part()` masks the
       // message on its own rather than behind a prefix, which is the whole
       // point of that fix. One line is cheaper than an exception.
-      detail[entryType] = part(error instanceof Error ? error.message : safeString(error));
+      // `safeString` over both halves: `error.message` is declared `string`
+      // and is nothing of the kind on a hostile subclass, and `part()` masks a
+      // string.
+      detail[entryType] = part(safeString(error instanceof Error ? error.message : error));
     }
   };
 

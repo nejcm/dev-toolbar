@@ -5,6 +5,20 @@
  * in P1 behind the `./runtime` subpath, and `./testing` must stay usable
  * without it. When `/runtime` ships, this stays: it is a test double, not a
  * re-export.
+ *
+ * Because it may not import the contract, it restates it. The shapes below are
+ * therefore matched *by hand* to `BusLike<Events>` in `src/runtime/bus.ts`, so
+ * that `createMockBus()` is structurally assignable to a `BusLike` option
+ * without either module importing the other — structural typing needs no
+ * import. `src/ext/metrics/__tests__/network.test.ts` asserts that
+ * assignability, so drift fails a test rather than being discovered by a
+ * consumer whose `bus:` option rejects the shipped double. In particular:
+ * `MockBusEvent` carries the event name as a literal `K`, exactly as `BusEvent`
+ * does, and `on`/`once`/`onAny` take an `options.signal`.
+ *
+ * The mock is deliberately *wider* than the contract — `type: string` rather
+ * than a key of an event map, and a recorded history — which is the direction
+ * assignability needs: wider parameters, equal-or-narrower returns.
  */
 
 export interface MockClock {
@@ -24,8 +38,8 @@ export interface MockClock {
   pending(): number;
 }
 
-export interface MockBusEvent<T = unknown> {
-  type: string;
+export interface MockBusEvent<T = unknown, K extends string = string> {
+  type: K;
   payload: T;
   /** `clock.now()` at emit time. */
   at: number;
@@ -33,16 +47,22 @@ export interface MockBusEvent<T = unknown> {
 
 export type MockBusHandler<T = unknown> = (payload: T, event: MockBusEvent<T>) => void;
 
+/** Matched by hand to `BusSubscribeOptions` in `src/runtime/bus.ts`. */
+export interface MockBusSubscribeOptions {
+  /** Unsubscribes when the signal aborts, as the real bus does. */
+  signal?: AbortSignal;
+}
+
 export interface MockBus {
   clock: MockClock;
   /** Publishes an event to `type` subscribers and to every `onAny` subscriber. */
-  emit<T>(type: string, payload?: T): MockBusEvent<T>;
+  emit<T, K extends string = string>(type: K, payload?: T): MockBusEvent<T, K>;
   /** Subscribes to one type. Returns an unsubscribe function. */
-  on<T>(type: string, handler: MockBusHandler<T>): () => void;
+  on<T>(type: string, handler: MockBusHandler<T>, options?: MockBusSubscribeOptions): () => void;
   /** Fires once, then unsubscribes. */
-  once<T>(type: string, handler: MockBusHandler<T>): () => void;
+  once<T>(type: string, handler: MockBusHandler<T>, options?: MockBusSubscribeOptions): () => void;
   /** Subscribes to every type. */
-  onAny(handler: MockBusHandler): () => void;
+  onAny(handler: MockBusHandler, options?: MockBusSubscribeOptions): () => void;
   /** Recorded events, newest last. Pass a `type` to filter. */
   events(type?: string): readonly MockBusEvent[];
   /** Payloads only — the common assertion shape. */
@@ -140,20 +160,46 @@ export function createMockBus(options: CreateMockBusOptions = {}): MockBus {
   const anyHandlers = new Set<MockBusHandler>();
   let history: MockBusEvent[] = [];
 
-  const on = <T>(type: string, handler: MockBusHandler<T>) => {
+  // `signal` support, latched so a second call is a no-op: `once()` hands back
+  // the very function it calls on delivery, and an aborted signal has already
+  // run it. Same reasoning as the real bus.
+  const bind = (unsubscribe: () => void, signal?: AbortSignal) => {
+    let live = true;
+    const off = () => {
+      if (!live) return;
+      live = false;
+      unsubscribe();
+    };
+    if (!signal) return off;
+    if (signal.aborted) {
+      off();
+      return () => {};
+    }
+    signal.addEventListener("abort", off, { once: true });
+    return () => {
+      signal.removeEventListener("abort", off);
+      off();
+    };
+  };
+
+  const on = <T>(
+    type: string,
+    handler: MockBusHandler<T>,
+    options?: MockBusSubscribeOptions,
+  ): (() => void) => {
     const set = handlers.get(type) ?? new Set();
     handlers.set(type, set);
     set.add(handler as MockBusHandler<never>);
-    return () => {
+    return bind(() => {
       set.delete(handler as MockBusHandler<never>);
-      if (set.size === 0) handlers.delete(type);
-    };
+      if (set.size === 0 && handlers.get(type) === set) handlers.delete(type);
+    }, options?.signal);
   };
 
   return {
     clock,
-    emit<T>(type: string, payload?: T) {
-      const event: MockBusEvent<T> = {
+    emit<T, K extends string = string>(type: K, payload?: T) {
+      const event: MockBusEvent<T, K> = {
         type,
         payload: payload as T,
         at: clock.now(),
@@ -172,18 +218,22 @@ export function createMockBus(options: CreateMockBusOptions = {}): MockBus {
       return event;
     },
     on,
-    once<T>(type: string, handler: MockBusHandler<T>) {
-      const off = on<T>(type, (payload, event) => {
-        off();
-        handler(payload, event);
-      });
+    once<T>(type: string, handler: MockBusHandler<T>, options?: MockBusSubscribeOptions) {
+      const off = on<T>(
+        type,
+        (payload, event) => {
+          off();
+          handler(payload, event);
+        },
+        options,
+      );
       return off;
     },
-    onAny(handler) {
+    onAny(handler, options) {
       anyHandlers.add(handler);
-      return () => {
+      return bind(() => {
         anyHandlers.delete(handler);
-      };
+      }, options?.signal);
     },
     events: (type) =>
       type === undefined ? history : history.filter((event) => event.type === type),
