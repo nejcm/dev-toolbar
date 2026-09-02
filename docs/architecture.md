@@ -129,8 +129,16 @@ what chrome needs. Putting them in core would mean every consumer downloads the
 machinery for measurement even when their toolbar is three buttons. They ship as an
 opt-in `./runtime` subpath, which core never imports.
 
-The same applies in reverse to `./testing`: it imports from `core/` only, so it stays
-usable without `/runtime`.
+The same applies in reverse to `./testing`: it reaches nothing but core, so it stays
+usable without `/runtime`. It reaches core through the package's own specifier
+(`@nejcm/dev-toolbar`, marked `external` in `tsup.config.ts`) rather than a relative
+path, for the reason in §7 — CJS output has no code splitting, so a relative *value*
+import is inlined, and a CommonJS consumer mixing `.` with `./testing` would get two
+cores, two React contexts and a `useDevToolbar()` that throws inside
+`renderWithToolbar()`. Types erase and carry no instance identity, so those stay
+relative. `src/core/__tests__/boundary.test.ts` asserts the import shape and the built
+bytes; `test/fixtures/jest-consumer/shared-instance.test.js` asserts the consequence in
+a real CommonJS consumer.
 
 This rule is why core cannot redact anything it aggregates — see §10.
 

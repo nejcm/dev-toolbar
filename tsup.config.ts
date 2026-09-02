@@ -41,6 +41,9 @@ export default defineConfig({
   target: "es2022",
   banner: { js: '"use client";' },
   external: [
+    // The package's own name, so `./testing` reaches core through the consumer's
+    // one copy rather than inlining a second. See AGENTS.md, *Conventions*.
+    "@nejcm/dev-toolbar",
     "react",
     "react-dom",
     "react/jsx-runtime",

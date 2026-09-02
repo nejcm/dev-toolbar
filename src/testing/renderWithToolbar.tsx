@@ -1,16 +1,18 @@
 import type { RenderOptions, RenderResult } from "@testing-library/react";
 import type { ReactNode } from "react";
+// Core's *values* through the package's own specifier, its *types* relatively:
+// a relative value import would inline a second core into `dist/testing.cjs`.
+// The rule, and why, is in AGENTS.md, *Conventions*.
 import {
-  DEFAULT_INSTANCE_ID,
   DevToolbar,
   HEIGHT_VARIABLE,
-  instanceHeightVariable,
-} from "../core/DevToolbar";
+  createMemoryStorage,
+  useDevToolbar,
+} from "@nejcm/dev-toolbar";
+import { DEFAULT_INSTANCE_ID, instanceHeightVariable } from "./heightVariable";
 import type { DevToolbarProps } from "../core/DevToolbar";
-import { useDevToolbar } from "../core/context";
 import type { DevToolbarContextValue } from "../core/context";
 import type { DevToolbarExtension, ToolbarCommand, ToolbarPosition } from "../core/contract";
-import { createMemoryStorage } from "../core/storage";
 import { installToolbarLayout } from "./layout";
 import type { InstallToolbarLayoutOptions, ToolbarLayoutHandle } from "./layout";
 import { requireTestingLibrary } from "./reactTestingLibrary";

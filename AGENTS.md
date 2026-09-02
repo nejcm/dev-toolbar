@@ -15,7 +15,7 @@ The contract an extension is written against is the real public API.
 | `src/core/` | The shell: portal, bar, overflow, panel host, overlay host, storage, styles, aggregations | React 18/19, `useSyncExternalStore`, no deps | Nothing. **Never imports `runtime/` or `ext/`.** |
 | `src/runtime/` | Opt-in primitives for extensions that measure: event bus, ring buffers, throttled store, `redact()`, style injection | Framework-free TS | Nothing in this package |
 | `src/ext/<name>/` | First-party extensions, one directory each | React + `src/runtime`, **types only** from core | `src/runtime`, core's *types* |
-| `src/testing/` | `renderWithToolbar`, `makeExtension`, `mockBus`, fake layout | React + optional `@testing-library/react` peer | `src/core` only |
+| `src/testing/` | `renderWithToolbar`, `makeExtension`, `mockBus`, fake layout | React + optional `@testing-library/react` peer | core's *types* relatively, core's *values* through `@nejcm/dev-toolbar` |
 | `examples/playground/` | Vite app consuming the built package via `file:../..` | Vite, React | `dist/`, as a real consumer does |
 | `test/fixtures/jest-consumer/` | A real Jest 29 + CommonJS consumer of `dist/` | Jest, npm | `dist/`, as a CommonJS consumer does |
 | `docs/` | Durable architecture reference and ADRs | Markdown | — |
@@ -68,6 +68,14 @@ gate is the `knip` inside `verify`, so unused code fails on your machine first.
   core — a value import is not guaranteed by the bundler to resolve to the same module
   instance as the host's copy. This is why `ExtensionRuntimeApi` carries
   `getCommands()`, `runCommand()` and `getDiagnostics()`.
+- **`src/testing/` value-imports core through `@nejcm/dev-toolbar`, never `../core/*`.**
+  The CJS build does not code-split, so a relative value import is *inlined* into
+  `dist/testing.cjs` and a CommonJS consumer who requires both `.` and `./testing` gets
+  two cores — two React contexts, and `useDevToolbar()` throwing inside
+  `renderWithToolbar()`. The package's own name is in `external` in `tsup.config.ts`
+  so both formats resolve to the host's copy. `import type` from `../core/*` is fine:
+  types erase. Guarded by `src/core/__tests__/boundary.test.ts` and
+  `test/fixtures/jest-consumer/shared-instance.test.js`.
 - **A new subpath must be added explicitly** to the `exports` map in `package.json`
   *and* to `entry` and `dts.entry` in `tsup.config.ts`. Never a wildcard. Missing from
   either means silently unpublishable or untyped.

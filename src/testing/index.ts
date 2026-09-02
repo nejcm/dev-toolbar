@@ -2,7 +2,9 @@
  * `@nejcm/dev-toolbar/testing`
  *
  * Test helpers for people writing extensions — in this repo and outside it.
- * Imports only from `src/core/*`; never from `src/runtime/` or `src/ext/*`.
+ * Reaches nothing but core, and never `src/runtime/` or `src/ext/*`. Core
+ * *values* come through `@nejcm/dev-toolbar` so that a CommonJS consumer shares
+ * the host's one instance; only types come from `../core/*`.
  *
  * `renderWithToolbar` needs `@testing-library/react`, which is an optional peer
  * dependency. Nothing else here does — and nothing here imports it statically,
@@ -35,4 +37,5 @@ export type {
 export { installToolbarLayout } from "./layout";
 export type { InstallToolbarLayoutOptions, ToolbarLayoutHandle } from "./layout";
 
-export { createMemoryStorage, createNullStorage } from "../core/storage";
+// The package's own specifier, not `../core/storage` — AGENTS.md, *Conventions*.
+export { createMemoryStorage, createNullStorage } from "@nejcm/dev-toolbar";

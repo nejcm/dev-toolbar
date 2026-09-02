@@ -4,8 +4,16 @@
 
 ## What it guards
 
-`@nejcm/dev-toolbar/testing` loads `@testing-library/react` — an *optional* peer —
-through two different paths, and both are invisible to the main test suite:
+Two things, both invisible to the main test suite.
+
+**One core instance across entry points.** `src/testing` must value-import core through
+`@nejcm/dev-toolbar` (external in `tsup.config.ts`), not `../core/*`: the CJS build has
+no code splitting, so a relative value import is inlined and a consumer requiring both
+`.` and `./testing` gets two cores. The vitest suite cannot see this — it aliases both
+specifiers to the same files in `src/`.
+
+**The optional Testing Library peer.** `@nejcm/dev-toolbar/testing` loads
+`@testing-library/react` — an *optional* peer — through two different paths:
 
 - **ESM runners** get a cached dynamic `import()`, so `act` and `render` come from
   the host's own module graph. A `createRequire()` here would return a second copy
@@ -42,6 +50,7 @@ dynamic-import-only load that broke every Jest consumer even with it installed.
 | File | Asserts |
 | --- | --- |
 | `render.test.js` | The DOM-free helpers work; `renderWithToolbar()` renders **with no `setTestingLibrary()` call**; and Testing Library's `cleanup()`, called through the *test file's own* `require`, unmounts what the toolbar rendered — proving one shared registry copy rather than two instances. |
+| `shared-instance.test.js` | The main entry and `./testing` resolve to **one** core: their `createMemoryStorage` is identical, the main entry's `useDevToolbar()` works inside `renderWithToolbar()`, and `<DevToolbarInset>` reads the height variable the rendered toolbar publishes. `dist/testing.cjs` used to inline its own copy of core — CJS has no code splitting — so all three failed. Invisible to vitest, which aliases both specifiers to `src/`. |
 | `missing-rtl.test.js` | With Testing Library mocked unresolvable: the subpath still imports and the non-DOM helpers still work, and `renderWithToolbar()` throws a message naming the `require(...)` remedy and the `setupFilesAfterEnv` note — not the `await import(...)` form, which is the one thing that cannot work here. |
 
 ## Running it
