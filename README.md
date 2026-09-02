@@ -343,7 +343,11 @@ import {
 - **`createEventBus<Events>()`** — typed pub/sub, one per instance (never a
   singleton). `on(type, handler, { signal })` unsubscribes on the `AbortSignal`
   `start(api)` already gave you. A throwing handler is contained, not propagated into
-  whatever emitted; pass `onError` to replace the default `console.error`.
+  whatever emitted; pass `onError` to replace the default `console.error`. Where the
+  library asks *you* for a bus — `metrics`' `network.bus` — the option is typed
+  `BusLike<ToolbarEventMap>`: emit and subscribe, nothing else. So a hand-rolled
+  adapter over your own emitter, or `createMockBus()` from `/testing`, goes wherever a
+  bus is wanted; you do not have to hold a whole `EventBus`.
 - **`createRingBuffer<T>(n)` / `createNumericRing(n)` / `createTimeSeries(n)`** —
   bounded and *allocation-stable*: storage is allocated once, `push` writes into a
   slot that already exists, and every read that could allocate takes a caller-owned
@@ -443,6 +447,9 @@ const extensions = [
 bus.emit("network-start", { requestId, method, url });
 bus.emit("network-end", { requestId, ok, status, duration, bytes });
 ```
+
+In a test, hand it `createMockBus()` from `@nejcm/dev-toolbar/testing` instead and
+drive the two events by hand — no `fetch` to stub, and a clock you control.
 
 URLs are run through `redactUrl()` before they are retained, and headers and bodies
 are never read at all. "Copy diagnostic data" passes the whole dump through
@@ -1145,6 +1152,11 @@ opens, so `item(id)` returns `null` for one until you call `toolbar.openOverflow
 hand-cranked clock, and `installToolbarLayout()` if you would rather drive the fake
 layout yourself. Storage defaults to a fresh in-memory adapter, so tests never leak
 preferences into each other.
+
+`createMockBus()` satisfies the `BusLike<ToolbarEventMap>` that `metrics`' `network.bus`
+asks for, so it stands in for a real bus rather than merely resembling one — and its
+`on` / `once` / `onAny` honour `{ signal }`, so a collector under test tears down on
+its `AbortSignal` exactly as it does in production.
 
 One caveat on the fake layout: it patches `HTMLElement.prototype.offsetWidth` and
 `clientWidth` globally for the duration of the test, so it will fight a test that
