@@ -163,3 +163,189 @@ describe("createMockBus — emit", () => {
     expect(event).toEqual({ type: "navigation", payload: { route: "/orders" }, at: 500 });
   });
 });
+
+describe("createMockBus — clock", () => {
+  it("advances now(), fires setTimeout once and drops it, and leaves later timers pending", () => {
+    const bus = createMockBus();
+    const fired = vi.fn();
+    const later = vi.fn();
+    bus.clock.setTimeout(fired, 10);
+    bus.clock.setTimeout(later, 100);
+
+    bus.clock.advance(10);
+
+    expect(fired).toHaveBeenCalledTimes(1);
+    expect(later).not.toHaveBeenCalled();
+    expect(bus.clock.now()).toBe(10);
+    expect(bus.clock.pending()).toBe(1);
+  });
+
+  it("fires a setInterval repeatedly and keeps it pending", () => {
+    const bus = createMockBus();
+    const tick = vi.fn();
+    bus.clock.setInterval(tick, 5);
+
+    bus.clock.advance(23);
+
+    // due at 5, 10, 15, 20 — 25 is past the advanced target.
+    expect(tick).toHaveBeenCalledTimes(4);
+    expect(bus.clock.now()).toBe(23);
+    expect(bus.clock.pending()).toBe(1);
+  });
+
+  it("clearTimers() drops every pending timer without firing it", () => {
+    const bus = createMockBus();
+    const timeoutCb = vi.fn();
+    const intervalCb = vi.fn();
+    bus.clock.setTimeout(timeoutCb, 10);
+    bus.clock.setInterval(intervalCb, 5);
+    expect(bus.clock.pending()).toBe(2);
+
+    bus.clock.clearTimers();
+
+    expect(bus.clock.pending()).toBe(0);
+    bus.clock.advance(100);
+    expect(timeoutCb).not.toHaveBeenCalled();
+    expect(intervalCb).not.toHaveBeenCalled();
+  });
+
+  it("the cancel function returned by setTimeout/setInterval removes only that timer", () => {
+    const bus = createMockBus();
+    const kept = vi.fn();
+    const cancelled = vi.fn();
+    bus.clock.setTimeout(kept, 10);
+    const cancel = bus.clock.setTimeout(cancelled, 10);
+    expect(bus.clock.pending()).toBe(2);
+
+    cancel();
+    expect(bus.clock.pending()).toBe(1);
+
+    bus.clock.advance(10);
+    expect(kept).toHaveBeenCalledTimes(1);
+    expect(cancelled).not.toHaveBeenCalled();
+  });
+
+  it("advance(0) is allowed and leaves now() unchanged", () => {
+    const bus = createMockBus();
+    expect(() => bus.clock.advance(0)).not.toThrow();
+    expect(bus.clock.now()).toBe(0);
+  });
+
+  it("advance() rejects a negative number of ms", () => {
+    const bus = createMockBus();
+    expect(() => bus.clock.advance(-1)).toThrow(/non-negative/);
+  });
+
+  it("setInterval(cb, 0) fires on a consistent 1ms cadence rather than immediately then 1ms", () => {
+    const bus = createMockBus();
+    const fireTimes: number[] = [];
+    bus.clock.setInterval(() => fireTimes.push(bus.clock.now()), 0);
+
+    bus.clock.advance(3);
+
+    // Every firing — including the first — is spaced 1ms apart, so the very
+    // first fire lands at 1ms, not at 0ms (which would mean "immediately").
+    expect(fireTimes).toEqual([1, 2, 3]);
+  });
+
+  it("setTimeout(cb, 0) still fires immediately, since one-shot delays may be 0", () => {
+    const bus = createMockBus();
+    const cb = vi.fn();
+    bus.clock.setTimeout(cb, 0);
+
+    bus.clock.advance(0);
+
+    expect(cb).toHaveBeenCalledTimes(1);
+  });
+
+  it("throws a descriptive error instead of silently truncating a runaway timer loop", () => {
+    const bus = createMockBus();
+    let count = 0;
+    bus.clock.setInterval(() => {
+      count += 1;
+    }, 1);
+
+    // Requesting far more firings than the 100,000-firing guard allows must
+    // throw rather than quietly returning a wrong `now()`/fire-count.
+    expect(() => bus.clock.advance(200_000)).toThrow(/exceeded 100000 timer firings.*200000ms/s);
+
+    // The throw aborts mid-advance rather than unwinding it: state reflects
+    // exactly the 100,000 firings that already happened, and the timer that
+    // tripped the guard is still pending, not lost.
+    expect(count).toBe(100_000);
+    expect(bus.clock.now()).toBe(100_000);
+    expect(bus.clock.pending()).toBe(1);
+  });
+
+  it("does not throw for a legitimate high fire count within the guard", () => {
+    const bus = createMockBus();
+    let count = 0;
+    bus.clock.setInterval(() => {
+      count += 1;
+    }, 1);
+
+    bus.clock.advance(20_000);
+
+    expect(count).toBe(20_000);
+    expect(bus.clock.now()).toBe(20_000);
+  });
+
+  it("completes exactly at the firing cap without a false-positive throw", () => {
+    const bus = createMockBus();
+    let count = 0;
+    bus.clock.setInterval(() => {
+      count += 1;
+    }, 1);
+
+    // Exactly 100,000 firings for a plain 1ms interval must succeed: the
+    // guard should only trip when a timer is genuinely still due afterward.
+    expect(() => bus.clock.advance(100_000)).not.toThrow();
+    expect(count).toBe(100_000);
+    expect(bus.clock.now()).toBe(100_000);
+
+    const bus2 = createMockBus();
+    bus2.clock.setInterval(() => {}, 1);
+    expect(() => bus2.clock.advance(100_001)).toThrow(/exceeded 100000 timer firings/);
+  });
+
+  it("setTime() jumps backward without firing timers, and forward while firing due ones", () => {
+    const bus = createMockBus({ now: 50 });
+    const cb = vi.fn();
+    bus.clock.setTimeout(cb, 10); // due at 60
+
+    bus.clock.setTime(20);
+    expect(bus.clock.now()).toBe(20);
+    expect(cb).not.toHaveBeenCalled();
+
+    bus.clock.setTime(60);
+    expect(bus.clock.now()).toBe(60);
+    expect(cb).toHaveBeenCalledTimes(1);
+  });
+
+  it("setTime() rejects a non-finite value instead of leaving now() as NaN", () => {
+    const bus = createMockBus();
+    expect(() => bus.clock.setTime(Number.NaN)).toThrow(/finite/);
+    expect(bus.clock.now()).toBe(0);
+  });
+
+  it("setInterval(cb, NaN) is treated as a 1ms interval rather than a dead pending timer", () => {
+    const bus = createMockBus();
+    const cb = vi.fn();
+    bus.clock.setInterval(cb, Number.NaN);
+
+    bus.clock.advance(3);
+
+    expect(cb).toHaveBeenCalledTimes(3);
+  });
+
+  it("setInterval(cb, Infinity) never fires, unlike NaN", () => {
+    const bus = createMockBus();
+    const cb = vi.fn();
+    bus.clock.setInterval(cb, Number.POSITIVE_INFINITY);
+
+    bus.clock.advance(10_000);
+
+    expect(cb).not.toHaveBeenCalled();
+    expect(bus.clock.pending()).toBe(1);
+  });
+});

@@ -24,13 +24,28 @@
 export interface MockClock {
   /** Current virtual time in milliseconds. Starts at `0` unless seeded. */
   now(): number;
-  /** Moves time forward, firing every timer that comes due, in order. */
+  /**
+   * Moves time forward by `ms` (must be `>= 0`), firing every timer that
+   * comes due, in order. Throws if a single call would need more than
+   * 100,000 timer firings — that is almost always a timer rescheduling
+   * itself faster than time is advancing, not a legitimate test.
+   */
   advance(ms: number): void;
-  /** Jumps to an absolute time. Fires due timers when moving forwards. */
+  /**
+   * Jumps to an absolute time. Fires due timers when moving forwards, and can
+   * throw the same runaway-timer error as `advance()` when it does. `ms` must
+   * be finite.
+   */
   setTime(ms: number): void;
-  /** Clock-driven `setTimeout`. Returns a cancel function. */
+  /**
+   * Clock-driven `setTimeout`. Returns a cancel function. A non-finite delay
+   * fires immediately.
+   */
   setTimeout(callback: () => void, delay: number): () => void;
-  /** Clock-driven `setInterval`. Returns a cancel function. */
+  /**
+   * Clock-driven `setInterval`. Returns a cancel function. A delay below 1ms,
+   * or `NaN`, is clamped to 1ms; an infinite delay never fires.
+   */
   setInterval(callback: () => void, interval: number): () => void;
   /** Drops every pending timer without firing it. */
   clearTimers(): void;
@@ -94,14 +109,24 @@ function createClock(start: number): MockClock {
   let nextId = 0;
   let timers: Timer[] = [];
 
+  // Runaway guard for `runDueUpTo`: a legitimate test can genuinely need many
+  // fires (e.g. `setInterval(cb, 1); advance(20_000)` needs 20,000), so the
+  // cap is generous. When it is hit, `advance`/`setTime` throw rather than
+  // silently truncating — a wrong-but-plausible `now()`/fire-count is worse
+  // than a loud failure naming the runaway timer.
+  const MAX_TIMER_FIRINGS = 100_000;
+
   const runDueUpTo = (target: number) => {
     // Re-read the queue each pass: a timer callback may schedule another one
     // that is itself due before `target`.
-    for (let guard = 0; guard < 10_000; guard += 1) {
+    for (let guard = 0; guard < MAX_TIMER_FIRINGS; guard += 1) {
       const due = timers
         .filter((timer) => timer.at <= target)
         .sort((a, b) => a.at - b.at || a.id - b.id)[0];
-      if (!due) break;
+      if (!due) {
+        time = target;
+        return;
+      }
       time = due.at;
       if (due.interval === null) {
         timers = timers.filter((timer) => timer !== due);
@@ -110,16 +135,43 @@ function createClock(start: number): MockClock {
       }
       due.callback();
     }
-    time = target;
+    // The loop above ran exactly MAX_TIMER_FIRINGS times without exhausting
+    // the due queue — recompute with the identical sort/tiebreak to find out
+    // whether a timer is still genuinely due. `advance(100_000)` for a plain
+    // 1ms interval must finish cleanly rather than throw a false diagnosis.
+    const due = timers
+      .filter((timer) => timer.at <= target)
+      .sort((a, b) => a.at - b.at || a.id - b.id)[0];
+    if (!due) {
+      time = target;
+      return;
+    }
+    throw new Error(
+      `[dev-toolbar/testing] clock.advance()/setTime() aborted: exceeded ${MAX_TIMER_FIRINGS} timer firings ` +
+        `while advancing to ${target}ms (currently at ${time}ms). ` +
+        `Runaway timer #${due.id} (interval=${due.interval ?? "one-shot"}) is still due at ${due.at}ms — ` +
+        `check for a timer that reschedules itself faster than time advances, or more distinct timers than ` +
+        `the guard allows in a single call.`,
+    );
   };
 
   const schedule = (callback: () => void, delay: number, interval: number | null) => {
-    const safeDelay = Number.isFinite(delay) && delay > 0 ? delay : 0;
+    // `null` means a one-shot timer (setTimeout): delay may legitimately be 0.
+    // A recurring timer (setInterval) is normalized to a minimum of 1ms for
+    // *both* its first firing and every subsequent one, so `setInterval(cb, 0)`
+    // has a consistent cadence instead of firing immediately once and then
+    // settling into 1ms ticks. `NaN` falls back to that same 1ms floor, but
+    // `Infinity` is left alone — it is a legitimate "never fires" interval,
+    // not a runaway.
+    const safeInterval =
+      interval === null ? null : Number.isNaN(interval) ? 1 : Math.max(1, interval);
+    const safeDelay =
+      safeInterval !== null ? safeInterval : Number.isFinite(delay) && delay > 0 ? delay : 0;
     nextId += 1;
     const timer: Timer = {
       id: nextId,
       at: time + safeDelay,
-      interval: interval === null ? null : Math.max(1, interval),
+      interval: safeInterval,
       callback,
     };
     timers.push(timer);
@@ -132,11 +184,14 @@ function createClock(start: number): MockClock {
     now: () => time,
     advance(ms) {
       if (!Number.isFinite(ms) || ms < 0) {
-        throw new Error("[dev-toolbar/testing] advance() needs a positive number of ms.");
+        throw new Error("[dev-toolbar/testing] advance() needs a non-negative number of ms.");
       }
       runDueUpTo(time + ms);
     },
     setTime(ms) {
+      if (!Number.isFinite(ms)) {
+        throw new Error("[dev-toolbar/testing] setTime() needs a finite number of ms.");
+      }
       if (ms < time) {
         time = ms;
         return;
