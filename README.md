@@ -348,7 +348,9 @@ import {
   bounded and *allocation-stable*: storage is allocated once, `push` writes into a
   slot that already exists, and every read that could allocate takes a caller-owned
   destination. `createNumericRing` is a `Float64Array` underneath; that is what the
-  sparklines read.
+  sparklines read. `n` is clamped to 1…16,777,216 slots, so a zero, negative,
+  fractional, or non-finite capacity never throws and never silently swallows
+  every sample.
 - **`createThrottledStore(initial, { intervalMs })`** — accepts every write,
   publishes at most once per interval, leading edge first and trailing edge after.
   `getSnapshot` stays stable between notifications, which is what

@@ -85,6 +85,21 @@ describe("createRingBuffer", () => {
       expect(ring.toArray()).toEqual([2]);
     }
   });
+
+  it("clamps +Infinity to the max capacity instead of throwing", () => {
+    const ring = createRingBuffer<number>(Number.POSITIVE_INFINITY);
+    expect(ring.capacity).toBe(1 << 24);
+    ring.push(1);
+    expect(ring.last()).toBe(1);
+  });
+
+  it("clamps -Infinity to one slot, same as other nonsense capacities", () => {
+    const ring = createRingBuffer<number>(Number.NEGATIVE_INFINITY);
+    expect(ring.capacity).toBe(1);
+    ring.push(1);
+    ring.push(2);
+    expect(ring.toArray()).toEqual([2]);
+  });
 });
 
 describe("createNumericRing", () => {
@@ -132,6 +147,35 @@ describe("createNumericRing", () => {
     expect(ring.copyInto(into)).toBe(3);
     expect([...into]).toEqual([4, 5, 6]);
   });
+
+  it("visits oldest-to-newest without materialising an array", () => {
+    const ring = createNumericRing(3);
+    for (const value of [1, 2, 3, 4]) ring.push(value);
+    const seen: Array<[number, number]> = [];
+    ring.forEach((value, index) => seen.push([value, index]));
+    expect(seen).toEqual([
+      [2, 0],
+      [3, 1],
+      [4, 2],
+    ]);
+  });
+
+  it("clamps +Infinity to the max capacity instead of throwing", () => {
+    const ring = createNumericRing(Number.POSITIVE_INFINITY);
+    expect(ring.capacity).toBe(1 << 24);
+    ring.push(1);
+    expect(ring.last()).toBe(1);
+  });
+
+  it("clamps -Infinity and NaN to one slot, same as other nonsense capacities", () => {
+    for (const capacity of [Number.NEGATIVE_INFINITY, Number.NaN]) {
+      const ring = createNumericRing(capacity);
+      expect(ring.capacity).toBe(1);
+      ring.push(1);
+      ring.push(2);
+      expect(ring.copyInto(new Float64Array(1))).toBe(1);
+    }
+  });
 });
 
 describe("createTimeSeries", () => {
@@ -150,5 +194,12 @@ describe("createTimeSeries", () => {
     series.clear();
     expect(series.size).toBe(0);
     expect(series.countSince(0)).toBe(0);
+  });
+
+  it("clamps an unbounded capacity instead of throwing", () => {
+    const series = createTimeSeries(Number.POSITIVE_INFINITY);
+    expect(series.capacity).toBe(1 << 24);
+    series.push(1, 10);
+    expect(series.last()).toBe(10);
   });
 });

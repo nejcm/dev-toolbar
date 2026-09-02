@@ -8,6 +8,31 @@
  * could allocate accepts a caller-owned destination instead.
  */
 
+/**
+ * Upper bound on ring capacity: 1 << 24 (16 777 216 slots). A `Float64Array`
+ * that size is 128 MB, which is already far past anything a sparkline history
+ * needs; it also sits comfortably under every engine's typed-array length
+ * limit, so `new Float64Array(slots)` / `new Array(slots)` never throw here
+ * even though both constructors would throw a `RangeError` for `Infinity` or
+ * for a length past the platform's limit.
+ */
+const MAX_CAPACITY = 1 << 24;
+
+/**
+ * Clamps a requested capacity to a sane, allocatable slot count: at least 1
+ * (a zero-length ring silently swallowing every sample is never what the
+ * caller meant) and at most `MAX_CAPACITY`. Non-finite input (`Infinity`,
+ * `-Infinity`, `NaN`) and fractions are folded in the same pass, since an
+ * unclamped `Infinity` reaches `new Array()` / `new Float64Array()` and
+ * throws a `RangeError` there instead of failing predictably here.
+ */
+function clampCapacity(capacity: number): number {
+  // `NaN > 0` and `-Infinity > 0` are both false, so both take the `: 1`
+  // branch here; only `+Infinity` needs the ceiling.
+  if (!Number.isFinite(capacity)) return capacity > 0 ? MAX_CAPACITY : 1;
+  return Math.max(1, Math.min(MAX_CAPACITY, Math.floor(capacity) || 1));
+}
+
 export interface RingBuffer<T> {
   /** Fixed slot count. Never changes after construction. */
   readonly capacity: number;
@@ -31,11 +56,13 @@ export interface RingBuffer<T> {
 }
 
 /**
- * `capacity` is clamped to at least 1: a zero-length ring silently swallowing
- * every sample is never what the caller meant.
+ * `capacity` is clamped by {@link clampCapacity}: at least 1 (a zero-length
+ * ring silently swallowing every sample is never what the caller meant) and
+ * at most `MAX_CAPACITY`, so a non-finite or absurd request never reaches
+ * `new Array()` and throws a `RangeError`.
  */
 export function createRingBuffer<T>(capacity: number): RingBuffer<T> {
-  const slots = Math.max(1, Math.floor(capacity) || 1);
+  const slots = clampCapacity(capacity);
   // Allocated once, here. Nothing below this line grows it.
   // oxlint-disable-next-line unicorn/no-new-array -- fixed-capacity preallocation, not an element
   const store = new Array<T | undefined>(slots);
@@ -131,8 +158,14 @@ export interface NumericRing {
   clear(): void;
 }
 
+/**
+ * `capacity` is clamped by {@link clampCapacity}: at least 1 (a zero-length
+ * ring silently swallowing every sample is never what the caller meant) and
+ * at most `MAX_CAPACITY`, so a non-finite or absurd request never reaches
+ * `new Float64Array()` and throws a `RangeError`.
+ */
 export function createNumericRing(capacity: number): NumericRing {
-  const slots = Math.max(1, Math.floor(capacity) || 1);
+  const slots = clampCapacity(capacity);
   const store = new Float64Array(slots);
   let head = 0;
   let size = 0;
