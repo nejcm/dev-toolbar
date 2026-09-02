@@ -44,6 +44,14 @@ The root entry is chrome plus hosting, and nothing else. It:
 It does **not** know what a metric is, what a flag is, what "healthy" means, who the
 user is, or what may be shown to them. Every one of those is an extension's job.
 
+Everything the root entry exports is public and versioned, escape hatches included —
+`CORE_CSS`, `ensureStyles`, the storage adapter factories, `STORAGE_PREFIX`,
+`DEFAULT_SHORTCUT` and the panel-height bounds. The list, one line each, is
+[README § Other exports](../README.md#other-exports). The aggregation functions
+themselves are not exported: `collectCommands` and `collectDiagnostics` only ever
+see the array they are handed, while `api.getCommands()` / `api.getDiagnostics()` and
+`useToolbarCommands()` see the merged list the toolbar actually renders.
+
 ## 2. Boundary rationale
 
 ### Light DOM, not Shadow DOM

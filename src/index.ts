@@ -25,9 +25,15 @@ export type { DevToolbarInsetProps } from "./core/DevToolbarInset";
 export { useDevToolbar, useToolbarCommands } from "./core/context";
 export type { DevToolbarContextValue } from "./core/context";
 
-export { collectCommands, resolveExtensionCommands, runCommand } from "./core/commands";
-
-export { collectDiagnostics } from "./core/diagnostics";
+// `collectCommands`, `resolveExtensionCommands` and `collectDiagnostics` are
+// deliberately *not* exported. An extension reads the aggregation through
+// `api.getCommands()` / `api.getDiagnostics()` and the host through
+// `useToolbarCommands()` / `useDevToolbar().getCommands()`; both aggregate over
+// the merged list — props plus dynamic registrations, with `hidden` extensions
+// filtered out. A root-level aggregator would only ever see an array the caller
+// assembled by hand, which is a different — and always staler — thing wearing
+// the same name. `useDevToolbar().extensions` is the unfiltered list.
+export { runCommand } from "./core/commands";
 
 export {
   createLocalStorage,

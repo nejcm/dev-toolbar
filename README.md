@@ -116,6 +116,52 @@ It fires wherever focus is, text fields included, but not for an auto-repeat, no
 mid-IME-composition, and not when something else already called `preventDefault()`
 — the listener is on `window`, so your own `document` handler wins the chord.
 
+### Other exports
+
+`DevToolbar`, `DevToolbarInset`, `useDevToolbar` and `useToolbarCommands` are the
+whole surface most apps touch. The rest of the root entry is a short list of escape
+hatches; everything here is public and covered by the package's versioning.
+
+| Export | What it is for |
+| --- | --- |
+| `runCommand(id, scope?)` | Runs an aggregated command from code with no React context — a hotkey, a console, a test. Resolves `false` when no mounted toolbar declares the id. `scope`, a `readonly ToolbarCommand[]`, is searched instead of the mounted toolbars. Inside components prefer `useDevToolbar().runCommand`. |
+| `CONTRACT_VERSION` | The extension contract's version, currently `1`. See [ADR-003](./docs/adr/ADR-003-contract-version-policy.md). |
+| `HEIGHT_VARIABLE` | The name of the CSS variable the shell publishes — `"--dev-toolbar-height"` — so a CSS-in-JS host need not retype the string. |
+| `createLocalStorage()` | The default adapter: `localStorage`, but it never throws. Useful as the base of your own wrapper. |
+| `createMemoryStorage(seed?)` | In-memory adapter for tests and non-browser hosts. `seed` is a plain key/value map of already-persisted JSON. |
+| `createNullStorage()` | Swallows every write and reads `null` — what `storage={null}` installs. |
+| `STORAGE_PREFIX` | `"dtb:v1"`, the first segment of every key the shell writes. Enough to find or clear persisted preferences from outside React; the key shapes are in [docs/architecture.md](./docs/architecture.md#3-state-storage-and-lifecycle). |
+| `CORE_CSS` | Core's stylesheet as a string, for a host that injects CSS itself — a nonce-based CSP, or a `<style>` it controls. Same bytes as `@nejcm/dev-toolbar/styles.css`. |
+| `ensureStyles(entry?, css?, doc?)` | Injects a stylesheet once per document, keyed on `entry`. Pass `doc` to reach a second document, which is what a `container` inside an iframe or a popped-out window needs. |
+| `DEFAULT_SHORTCUT` | `"Mod+Shift+."`, so your own UI can show the binding it actually has. |
+| `MIN_PANEL_HEIGHT` / `MAX_PANEL_HEIGHT` / `DEFAULT_PANEL_HEIGHT` | `160` / `800` / `320`. The range `defaultPanelHeight` and the resizer are clamped to. |
+
+The aggregation helpers behind `getCommands()` and `getDiagnostics()` are **not**
+exported. They only ever see an extension array the caller assembled by hand, which
+is not the merged list the toolbar renders — read the aggregation through
+`api.getCommands()` / `api.getDiagnostics()` in an extension, or
+`useToolbarCommands()` / `useDevToolbar().getCommands()` in the host.
+
+### Types
+
+Every type the root entry exports. The slot props, `DevToolbarExtension`,
+`ExtensionRuntimeApi`, `ToolbarCommand` and friends are described under
+[the extension contract](#the-extension-contract).
+
+| Type | What it types |
+| --- | --- |
+| `DevToolbarProps` / `DevToolbarInsetProps` | The two components' props. |
+| `DevToolbarExtension` | One extension object. |
+| `ToolbarCommand` / `ToolbarCommandsInput` | A command, and the array-or-function form `commands` accepts. |
+| `ExtensionRuntimeApi` | What `start(api)` receives. |
+| `CompactSlotProps` / `PanelSlotProps` / `OverlaySlotProps` | What each slot renders with. |
+| `ExtensionDiagnostics` / `DiagnosticStatus` | One entry in the diagnostics roster, and its `"ok" \| "absent" \| "failed"` status. |
+| `ToolbarStorage` | The three-method storage adapter. |
+| `ToolbarAlign` / `ToolbarPosition` / `ToolbarDensity` / `ToolbarColorScheme` | `"start" \| "end"`, `"bottom" \| "top"`, `"compact" \| "comfortable"`, `"light" \| "dark" \| "system"`. |
+| `DevToolbarClassNames` | The per-part class map the `classNames` prop takes. |
+| `DevToolbarContextValue` | What `useDevToolbar()` returns. |
+| `ToolbarState` | The store snapshot: `visible`, `position`, `activePanelId`, `panelHeight`. Its `registered` field is marked `@internal` — it holds only the dynamic registrations, so it is not the extension list; use `useDevToolbar().extensions` for that. |
+
 ## The extension contract
 
 An extension is a plain object.

@@ -17,7 +17,15 @@ export interface ToolbarState {
   position: ToolbarPosition;
   activePanelId: string | null;
   panelHeight: number;
-  /** Extensions registered at runtime through `useDevToolbar().register()`. */
+  /**
+   * Extensions registered at runtime through `useDevToolbar().register()`.
+   *
+   * @internal Not part of the public surface, despite `ToolbarState` being
+   * exported. It holds *only* the dynamic registrations — never the
+   * `extensions` prop — so it is not "the extension list" and reading it is a
+   * bug waiting to happen. The merged list is `useDevToolbar().extensions`.
+   * This field may change shape or disappear in a patch release.
+   */
   registered: readonly DevToolbarExtension[];
 }
 
