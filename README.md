@@ -355,6 +355,8 @@ import {
   publishes at most once per interval, leading edge first and trailing edge after.
   `getSnapshot` stays stable between notifications, which is what
   `useSyncExternalStore` requires. A 60 Hz sampler becomes a 4 Hz re-render.
+  `destroy()` drops a pending trailing write by default; pass
+  `destroy({ flush: true })` to publish it first.
 - **`redact(value)` / `redactUrl(url)` / `redactHeaders(headers)`** — masks
   credentials by key name — an entry of the word list matches one or more adjacent
   whole *segments* of the key, splitting on every non-alphanumeric character and on

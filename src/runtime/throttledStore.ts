@@ -35,8 +35,21 @@ export interface ThrottledStore<T> {
    * `set`, `update` and `flush` stop changing the store afterward (`update`
    * still evaluates its callback, then discards the result), and `subscribe`
    * stops adding listeners rather than accepting ones that would never fire.
+   *
+   * A pending trailing write — the last value of a burst that hasn't been
+   * published yet — is discarded by default; `getSnapshot()` keeps whatever
+   * was last published. Pass `{ flush: true }` to publish it first,
+   * synchronously notifying listeners still subscribed, before tearing
+   * down. Off by default: publishing during teardown can re-enter a caller
+   * (e.g. a React tree) that is itself unwinding, and no first-party
+   * extension destroys its store today — see the "deliberately NOT
+   * destroyed" comments in src/ext/<name>/runtime.ts — so there is no
+   * observed call site that needs the trailing value badly enough to risk
+   * that by default. A store that is already destroyed stays inert: passing
+   * `{ flush: true }` again does not publish or notify — destroy is
+   * idempotent regardless of the option.
    */
-  destroy(): void;
+  destroy(destroyOptions?: { flush?: boolean }): void;
   /** Notifications emitted so far. The coalescing assertion in the tests. */
   readonly published: number;
 }
@@ -145,7 +158,12 @@ export function createThrottledStore<T>(
       if (destroyed) return;
       publish();
     },
-    destroy() {
+    destroy(destroyOptions) {
+      // Guard on !destroyed: an already-destroyed store must stay inert, or a
+      // second destroy({ flush: true }) could publish and mutate getSnapshot()
+      // with no listener left to notify — silent tearing, and it would break
+      // the "idempotent, and permanent" contract documented above.
+      if (!destroyed && destroyOptions?.flush === true) publish();
       destroyed = true;
       if (cancelTimer) {
         cancelTimer();
