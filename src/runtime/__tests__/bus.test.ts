@@ -127,4 +127,96 @@ describe("createEventBus", () => {
     expect(done.mock.calls[0]?.[0]).toEqual({ duration: 82, boundary: "root" });
     expect(failed).toHaveBeenCalledTimes(1);
   });
+  it("survives an unsubscribe called twice without dropping a later subscriber", () => {
+    const bus = createEventBus<Events>();
+    const off = bus.on("tick", () => {});
+    off();
+
+    const later = vi.fn();
+    bus.on("tick", later);
+    off();
+
+    bus.emit("tick", { n: 1 });
+    expect(later).toHaveBeenCalledTimes(1);
+    expect(bus.listenerCount("tick")).toBe(1);
+  });
+
+  it("survives a once() unsubscribe reused as an effect cleanup after it fired", () => {
+    // once() returns the same function it calls internally, so any React effect
+    // returning it unsubscribes twice by construction.
+    const bus = createEventBus<Events>();
+    const off = bus.once("tick", () => {});
+    bus.emit("tick", { n: 1 });
+
+    const later = vi.fn();
+    bus.on("tick", later);
+    off();
+
+    bus.emit("tick", { n: 2 });
+    expect(later).toHaveBeenCalledTimes(1);
+    expect(bus.listenerCount("tick")).toBe(1);
+  });
+
+  it("survives a manual unsubscribe after the signal already aborted", () => {
+    const bus = createEventBus<Events>();
+    const controller = new AbortController();
+    const off = bus.on("tick", () => {}, { signal: controller.signal });
+    controller.abort();
+
+    const later = vi.fn();
+    bus.on("tick", later);
+    off();
+
+    bus.emit("tick", { n: 1 });
+    expect(later).toHaveBeenCalledTimes(1);
+    expect(bus.listenerCount("tick")).toBe(1);
+  });
+
+  it("detaches the abort listener when unsubscribed by hand first", () => {
+    const bus = createEventBus<Events>();
+    const controller = new AbortController();
+    const off = bus.on("tick", () => {}, { signal: controller.signal });
+    off();
+    expect(bus.listenerCount("tick")).toBe(0);
+
+    const later = vi.fn();
+    bus.on("tick", later);
+    controller.abort();
+
+    bus.emit("tick", { n: 1 });
+    expect(later).toHaveBeenCalledTimes(1);
+    expect(bus.listenerCount("tick")).toBe(1);
+  });
+
+  it("does not let a stale unsubscribe undo a re-subscribed handler", () => {
+    const bus = createEventBus<Events>();
+    const handler = vi.fn();
+    const off = bus.on("tick", handler);
+    const offAny = bus.onAny(handler);
+    off();
+    offAny();
+
+    bus.on("tick", handler);
+    bus.onAny(handler);
+    off();
+    offAny();
+
+    bus.emit("tick", { n: 1 });
+    expect(handler).toHaveBeenCalledTimes(2);
+    expect(bus.listenerCount()).toBe(2);
+  });
+
+  it("survives an onAny unsubscribe called twice", () => {
+    const bus = createEventBus<Events>();
+    const offAny = bus.onAny(() => {});
+    offAny();
+
+    const later = vi.fn();
+    bus.onAny(later);
+    offAny();
+
+    bus.emit("tick", { n: 1 });
+    expect(later).toHaveBeenCalledTimes(1);
+    expect(bus.listenerCount()).toBe(1);
+  });
 });

@@ -98,9 +98,17 @@ export function createEventBus<Events extends Record<string, unknown> = Record<s
     const set = handlers.get(type) ?? new Set<BusHandler<never>>();
     handlers.set(type, set);
     set.add(handler as unknown as BusHandler<never>);
+    // Unsubscribing twice must be a no-op: `once()` hands back the very function
+    // it calls on delivery, so a React effect returning it runs it a second time
+    // on cleanup, and so does a manual call after `signal` aborted. Without the
+    // latch the second run would find the captured set already empty and evict
+    // whatever set the map holds for `type` by then — someone else's subscribers.
+    let live = true;
     return bind(() => {
+      if (!live) return;
+      live = false;
       set.delete(handler as unknown as BusHandler<never>);
-      if (set.size === 0) handlers.delete(type);
+      if (set.size === 0 && handlers.get(type) === set) handlers.delete(type);
     }, subscribeOptions?.signal);
   };
 
@@ -138,7 +146,13 @@ export function createEventBus<Events extends Record<string, unknown> = Record<s
     },
     onAny(handler, subscribeOptions) {
       anyHandlers.add(handler as unknown as BusHandler<never>);
+      // Latched for the same reason as `on`. There is no map entry to evict
+      // here, but a stale second call would still delete the handler out from
+      // under a later `onAny(sameHandler)`.
+      let live = true;
       return bind(() => {
+        if (!live) return;
+        live = false;
         anyHandlers.delete(handler as unknown as BusHandler<never>);
       }, subscribeOptions?.signal);
     },
