@@ -2,6 +2,7 @@ import { describe, expect, expectTypeOf, it } from "vitest";
 import {
   DEFAULT_SENSITIVE_KEYS,
   REDACTED,
+  type RedactOptions,
   isSensitiveKey,
   redact,
   redactHeaders,
@@ -513,6 +514,27 @@ describe("isSensitiveKey", () => {
     // And extraKeys still land on the same segment rule.
     expect(isSensitiveKey("tenantCode", { extraKeys: ["tenantcode"] })).toBe(true);
     expect(isSensitiveKey("tenant_code", { extraKeys: ["tenant-code"] })).toBe(true);
+  });
+
+  // `isSensitiveKey` memoises the resolved form of an options object by its
+  // identity (see `resolveCached` in redact.ts), so a caller that hoists its
+  // options and reuses the same object gets it resolved once. That means the
+  // resolution is a snapshot taken the first time the object is seen: mutating
+  // a field on an already-used options object is not picked up by later calls
+  // sharing that same object. A fresh object literal per call is unaffected —
+  // there is nothing to reuse, so each one resolves independently, correctly.
+  it("resolves an options object once: later mutation of that same object is not observed", () => {
+    const shared: RedactOptions = { extraKeys: ["tenantcode"] };
+    expect(isSensitiveKey("tenantCode", shared)).toBe(true);
+    expect(isSensitiveKey("shipCode", shared)).toBe(false);
+
+    // Mutating the same object after it has already been resolved once.
+    (shared.extraKeys as string[]).push("shipcode");
+    expect(isSensitiveKey("shipCode", shared)).toBe(false);
+
+    // A fresh object with the same new content matches immediately: nothing
+    // is cached against content, only against the object's own identity.
+    expect(isSensitiveKey("shipCode", { extraKeys: ["shipcode"] })).toBe(true);
   });
 
   it("matches header names and URL parameters through the same rule", () => {

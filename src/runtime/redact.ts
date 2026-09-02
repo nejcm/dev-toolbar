@@ -299,6 +299,55 @@ function resolve(options: RedactOptions | undefined): ResolvedOptions {
   };
 }
 
+/** Options-object identity to its resolved form; see `resolveCached`. */
+const resolvedCache = new WeakMap<RedactOptions, ResolvedOptions>();
+/** The no-options resolution, built lazily on first use; see `resolveCached`. */
+let defaultResolved: ResolvedOptions | undefined;
+
+/**
+ * Memoised `resolve`. Canonicalising ~44 default entries through the
+ * segmenter and building a `Set` is cheap once but not free enough to pay on
+ * every `isSensitiveKey` call in a per-header or per-key loop — that call is
+ * a public export with no top-level `resolve` above it the way `redact()`
+ * and `redactHeaders` have.
+ *
+ * Two tiers:
+ *
+ * - **No options** (the common case for a hot loop) resolves once, lazily,
+ *   into a module-level constant. That first resolution snapshots
+ *   `DEFAULT_SENSITIVE_KEYS` — a JS consumer (nothing in TS can) that reaches
+ *   past the `readonly` type and mutates the exported array afterwards is not
+ *   observed by later no-options calls; the array is typed `readonly` for
+ *   exactly this reason, but it is not frozen, so this is the one guarantee
+ *   that actually holds the line.
+ * - **An options object** is cached in a `WeakMap` keyed on that object's
+ *   identity, not its contents. A caller that builds its options once and
+ *   reuses the same object across calls — the pattern this cache is for —
+ *   gets it resolved once. A caller that passes a fresh object literal each
+ *   call (`isSensitiveKey(k, { extraKeys: [...] })` inline) gets no reuse and
+ *   pays full price every time, same as before this cache existed; the
+ *   `WeakMap` key is never reachable a second time so nothing leaks either.
+ *
+ * Reading is snapshot-once, not live: `resolve` is called the first time an
+ * options object is seen, so mutating `extraKeys` (or any other field) on an
+ * object already cached does not change what later calls with that same
+ * object see. `ResolvedOptions` itself is never mutated after `resolve`
+ * builds it — every consumer only ever reads its fields — so it's safe to
+ * hand the identical cached object back to every caller sharing the same
+ * options identity.
+ */
+function resolveCached(options: RedactOptions | undefined): ResolvedOptions {
+  if (options === undefined) {
+    defaultResolved ??= resolve(undefined);
+    return defaultResolved;
+  }
+  const cached = resolvedCache.get(options);
+  if (cached !== undefined) return cached;
+  const resolved = resolve(options);
+  resolvedCache.set(options, resolved);
+  return resolved;
+}
+
 /**
  * True when a key name should have its value masked. Exported for reuse.
  *
@@ -329,7 +378,7 @@ function resolve(options: RedactOptions | undefined): ResolvedOptions {
  * problem with a list fix (`extraKeys`), not a matcher that guesses.
  */
 export function isSensitiveKey(key: string, options?: RedactOptions): boolean {
-  const resolved = resolve(options);
+  const resolved = resolveCached(options);
   return matches(key, resolved);
 }
 
@@ -438,7 +487,7 @@ export function redact<T extends number | boolean | bigint | null | undefined>(
 ): T;
 export function redact<T>(value: T, options?: RedactOptions): unknown;
 export function redact(value: unknown, options?: RedactOptions): unknown {
-  return walk(value, resolve(options), 0, new WeakSet<object>(), { count: 0 });
+  return walk(value, resolveCached(options), 0, new WeakSet<object>(), { count: 0 });
 }
 
 /** Mutable node budget shared across one top-level `redact()` call. */
@@ -562,9 +611,9 @@ function walk(
       }
       return { name, message };
     }
-    if (value instanceof URL) return redactUrl(value.href, options(resolved));
+    if (value instanceof URL) return redactUrlResolved(value.href, resolved);
     if (typeof Headers !== "undefined" && value instanceof Headers) {
-      return redactHeaders(value, options(resolved));
+      return redactHeadersResolved(value, resolved);
     }
     if (value instanceof Map) return "[Map]";
     if (value instanceof Set) return "[Set]";
@@ -627,19 +676,6 @@ function walk(
   }
   seen.delete(object);
   return output;
-}
-
-/** Rebuilds a `RedactOptions` from resolved state, for the nested calls above. */
-function options(resolved: ResolvedOptions): RedactOptions {
-  return {
-    keys: [...resolved.keys],
-    allowKeys: resolved.allow,
-    mask: resolved.mask,
-    maxDepth: resolved.maxDepth,
-    maxArrayLength: resolved.maxArrayLength,
-    maxNodes: resolved.maxNodes,
-    values: resolved.values,
-  };
 }
 
 interface UrlPass {
@@ -775,7 +811,12 @@ function maskUrl(url: string, resolved: ResolvedOptions): UrlPass {
  * unparseable string falls back to a query rewrite rather than being skipped.
  */
 export function redactUrl(url: string, redactOptions?: RedactOptions): string {
-  const pass = maskUrl(url, resolve(redactOptions));
+  return redactUrlResolved(url, resolveCached(redactOptions));
+}
+
+/** The resolved-options-taking half of `redactUrl`, for callers already holding one. */
+function redactUrlResolved(url: string, resolved: ResolvedOptions): string {
+  const pass = maskUrl(url, resolved);
   return pass.masked ? pass.output : url;
 }
 
@@ -819,7 +860,14 @@ export function redactHeaders(
   headers: HeaderLike,
   redactOptions?: RedactOptions,
 ): Record<string, string> {
-  const resolved = resolve(redactOptions);
+  return redactHeadersResolved(headers, resolveCached(redactOptions));
+}
+
+/** The resolved-options-taking half of `redactHeaders`, for callers already holding one. */
+function redactHeadersResolved(
+  headers: HeaderLike,
+  resolved: ResolvedOptions,
+): Record<string, string> {
   const output: Record<string, string> = {};
 
   const put = (key: string, value: string) => {
