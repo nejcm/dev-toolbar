@@ -16,8 +16,6 @@ on:
   # `converted_to_draft` is deliberately absent; see the note on the job's `if:`.
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
-  push:
-    branches: [main]
   # Exposed so the Phase 4 release workflow can call CI as its release gate.
   workflow_call:
     inputs:
