@@ -189,6 +189,46 @@ describe("panel resize", () => {
 
     setItem.mockRestore();
   });
+
+  it("removes the drag listeners when the toolbar unmounts mid-drag", () => {
+    const addSpy = vi.spyOn(window, "addEventListener");
+    const removeSpy = vi.spyOn(window, "removeEventListener");
+
+    const { unmount } = render(
+      <DevToolbar instanceId="resize-unmount" extensions={[panelExtension("a")]}>
+        <div />
+      </DevToolbar>,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "a" }));
+
+    const resizer = document.querySelector('[data-dtb-part="panel-resizer"]')!;
+    const pointer = (type: string, clientY: number) =>
+      new MouseEvent(type, { clientY, bubbles: true });
+
+    fireEvent(resizer, pointer("pointerdown", 500));
+
+    const dragTypes = ["pointermove", "pointerup", "pointercancel"];
+    const addedTypes = addSpy.mock.calls
+      .filter((call) => dragTypes.includes(call[0] as string))
+      .map((call) => call[0]);
+    expect(addedTypes.sort()).toEqual([...dragTypes].sort());
+
+    unmount();
+
+    const removedTypes = removeSpy.mock.calls
+      .filter((call) => call[0] && dragTypes.includes(call[0] as string))
+      .map((call) => call[0]);
+    expect(removedTypes.sort()).toEqual([...dragTypes].sort());
+
+    // Firing move/up after unmount must not throw or touch React state.
+    expect(() => {
+      fireEvent(window, pointer("pointermove", 400));
+      fireEvent(window, pointer("pointerup", 400));
+    }).not.toThrow();
+
+    addSpy.mockRestore();
+    removeSpy.mockRestore();
+  });
 });
 
 describe("error containment", () => {
