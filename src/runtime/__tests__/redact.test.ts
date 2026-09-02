@@ -516,6 +516,21 @@ describe("isSensitiveKey", () => {
     expect(isSensitiveKey("tenant_code", { extraKeys: ["tenant-code"] })).toBe(true);
   });
 
+  // `keys`/`extraKeys` match a *run* of segments; `allowKeys` matches the
+  // *whole* canonical key. An entry that would sensitise a key as a substring
+  // does not, by itself, exempt a longer key built from it.
+  it("does not let allowKeys exempt by partial match", () => {
+    // "session" alone still sensitises "sessionName" — allowKeys has to name
+    // the whole key, not just the segment that triggered the match.
+    expect(isSensitiveKey("sessionName", { allowKeys: ["session"] })).toBe(true);
+    // allowKeys still tolerates the same separator/case variance keys do...
+    expect(isSensitiveKey("session-name", { allowKeys: ["sessionName"] })).toBe(false);
+    expect(isSensitiveKey("SESSION_NAME", { allowKeys: ["sessionName"] })).toBe(false);
+    // ...but it is still equality against the *entire* key, not a run inside
+    // it: an extra trailing segment is enough to miss.
+    expect(isSensitiveKey("sessionNameV2", { allowKeys: ["sessionName"] })).toBe(true);
+  });
+
   // `isSensitiveKey` memoises the resolved form of an options object by its
   // identity (see `resolveCached` in redact.ts), so a caller that hoists its
   // options and reuses the same object gets it resolved once. That means the

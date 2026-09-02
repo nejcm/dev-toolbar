@@ -108,11 +108,33 @@ export const DEFAULT_SENSITIVE_KEYS: readonly string[] = [
 ];
 
 export interface RedactOptions {
-  /** Replaces the default list outright. */
+  /**
+   * Replaces the default list outright. An entry matches when it equals one or
+   * more *adjacent* whole segments of the key — a run, not the whole key — so
+   * `"token"` matches `refreshToken` and `x-auth-token` alike. See
+   * `isSensitiveKey` for the segmenting rule, and `allowKeys` below for why
+   * that is *not* how exemptions are matched.
+   */
   keys?: readonly string[];
-  /** Added to whichever list is in force. The common case. */
+  /** Added to whichever list is in force. The common case. Matched the same way as `keys`, against a run of segments. */
   extraKeys?: readonly string[];
-  /** Keys that survive even when they match. Wins over the lists above. */
+  /**
+   * Keys that survive even when they match. Wins over the lists above.
+   *
+   * Unlike `keys`/`extraKeys`, an entry here is matched against the key's
+   * **entire** canonicalised form, not a run inside it — so it reads as
+   * "exempt this key," not "stop this word from counting." `allowKeys:
+   * ["sessionName"]` exempts `session-name` and `SESSION_NAME` (case and
+   * separators still fold away), but does *not* exempt `sessionNameV2` — the
+   * extra segment breaks the equality even though `sessionName` is still a
+   * run inside it. And naming the segment that triggered a match is not
+   * enough either: `allowKeys: ["session"]` still leaves `sessionName`
+   * redacted, because `"session"` is not the whole key. The trailing-`s`
+   * tolerance `matchesAny` gives `keys`/`extraKeys` (`credential` also
+   * catching `credentials`) is not extended here either: `allowKeys:
+   * ["sessionName"]` does not exempt `sessionNames`. Name the exact key
+   * (or all of its shapes) you mean to exempt.
+   */
   allowKeys?: readonly string[];
   /**
    * Replacement value. Default `"[redacted]"`.
@@ -385,7 +407,10 @@ function resolveCached(options: RedactOptions | undefined): ResolvedOptions {
  * `["x", "api", "key"]` and matches the concatenation `apikey` through the
  * adjacent run `api`+`key`. `allowKeys` still wins, and is still an exact match
  * rather than a segment one — against the key's segments closed up, so
- * `allowKeys: ["sessionName"]` exempts `session-name` and `session_name` too.
+ * `allowKeys: ["sessionName"]` exempts `session-name` and `session_name` too,
+ * but not `sessionNameV2`, and the trailing-`s` tolerance above is not
+ * extended to it either: `allowKeys: ["sessionName"]` does not exempt
+ * `sessionNames`. See `RedactOptions.allowKeys` for the full asymmetry.
  *
  * This used to be `normalise(key).includes(entry)`, which over-redacted eight
  * ordinary words for every dump that contained one: `auth` matched `author` and

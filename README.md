@@ -367,10 +367,14 @@ import {
   credentials by key name — an entry of the word list matches one or more adjacent
   whole *segments* of the key, splitting on every non-alphanumeric character and on
   case and letter/digit boundaries, so `apikey` covers `apiKey` and `x-api-key` while
-  `auth` does **not** cover `author` —
-  plus `Bearer …`, bare JWTs, and URL values carrying a
+  `auth` does **not** cover `author` — plus `Bearer …`, bare JWTs, and URL values carrying a
   sensitive parameter (the OAuth-callback shape, where the secret is in the value and
-  no key matching will find it). A URL with nothing to mask is returned unchanged, so
+  no key matching will find it). `allowKeys` is not the mirror image of that word list:
+  an allow entry is checked against the key's *entire* canonicalised form, not a run
+  inside it, so `allowKeys: ["sessionName"]` exempts `session-name` and `SESSION_NAME`
+  but not `sessionNameV2`, and `allowKeys: ["session"]` does not exempt `sessionName` at
+  all — name the exact key you mean to keep, not the word that would otherwise redact it.
+  A URL with nothing to mask is returned unchanged, so
   two dumps that are identical still diff as identical. Inside a URL the mask is
   written literally — `?token=[redacted]`, not `%5Bredacted%5D` — so a masked URL
   stays readable, still parses, and still contains the exported `REDACTED`; a custom
