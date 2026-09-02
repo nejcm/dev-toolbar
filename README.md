@@ -368,8 +368,11 @@ import {
   names, so a secret under `data` survives. A string in gives a string back and a
   number, boolean, bigint, `null` or `undefined` comes back as itself — masking a
   value before you join it into a sentence needs no cast. Anything else is
-  `unknown`, because a cycle, a depth limit or an unwalkable object comes back as a
-  short tag string rather than the shape you handed in.
+  `unknown`, because a cycle, a depth limit, a spent `maxNodes` budget (default
+  50,000 — bounds the total nodes one call walks, including a shared reference
+  walked once per path to it, which neither `maxDepth` nor `maxArrayLength`
+  catches) or an unwalkable object comes back as a short tag string rather than
+  the shape you handed in.
 - **`ensureStyleSheet(entry, css, doc?, nonce?)`** — injects a stylesheet once per
   document, keyed on a `style[data-dev-toolbar-styles]` element rather than a module
   flag, so two bundled copies of your package still inject once. Core's

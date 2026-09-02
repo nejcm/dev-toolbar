@@ -114,6 +114,76 @@ describe("redact", () => {
     expect(redact(long, { maxArrayLength: 3 })).toEqual([0, 1, 2, "[+2 more]"]);
   });
 
+  it("bounds a shared (DAG) reference walked once per path with maxNodes", () => {
+    // `seen` (the cycle guard) is scoped to one path: it is added before
+    // recursing into a value and removed after, so a value reachable through
+    // several paths is walked once per path, not once overall. A structure
+    // where every one of 8 keys at each of 7 levels aliases the *same* child
+    // costs 8^7 walks of the innermost object with no bound on the count —
+    // only on width (`maxArrayLength`) and depth (`maxDepth`), neither of
+    // which this shape exceeds. A `Proxy`'s `ownKeys` trap (which `walk` hits
+    // once per object it walks, via `Object.keys`) counts how many times the
+    // shared leaf is actually visited.
+    let leafWalks = 0;
+    function buildLevel(depth: number): unknown {
+      if (depth === 0) {
+        return new Proxy(
+          { value: "leaf" },
+          {
+            ownKeys(target) {
+              leafWalks += 1;
+              return Reflect.ownKeys(target);
+            },
+          },
+        );
+      }
+      const child = buildLevel(depth - 1);
+      const level: Record<string, unknown> = {};
+      for (let index = 0; index < 8; index += 1) level[`k${index}`] = child;
+      return level;
+    }
+    const sharedGraph = buildLevel(7);
+
+    const output = redact(sharedGraph, { maxNodes: 50 });
+
+    // The budget is spent well before every path to the leaf is walked: far
+    // fewer than the 8^7 = 2_097_152 an unbounded walk would produce.
+    expect(leafWalks).toBeLessThan(200);
+    expect(JSON.stringify(output)).toContain("[truncated]");
+
+    // The budget is shared by the whole call, not per-branch: once it is
+    // spent, a sibling key that has not even been reached yet is truncated
+    // too, not just the branch that used up the count.
+    const record = output as Record<string, unknown>;
+    expect(record["k7"]).toBe("[truncated]");
+  });
+
+  it("falls back to the default maxArrayLength instead of throwing when it is NaN", () => {
+    // `Math.min(length, NaN)` is `NaN`, and `new Array(NaN)` throws a
+    // `RangeError` — straight out of `redact()`, defeating its one
+    // guarantee: it does not throw. Before the fix this call threw; after,
+    // a malformed bound falls back to the default rather than being read as
+    // "unbounded".
+    const array = Array.from({ length: 250 }, (_, index) => index);
+    expect(() => redact(array, { maxArrayLength: Number.NaN })).not.toThrow();
+    expect(redact(array, { maxArrayLength: Number.NaN })).toEqual(
+      redact(array, { maxArrayLength: 200 }),
+    );
+  });
+
+  it("falls back to the default maxDepth when it is NaN", () => {
+    function buildDeep(depth: number): unknown {
+      return depth === 0 ? { value: 1 } : { next: buildDeep(depth - 1) };
+    }
+    const value = buildDeep(9);
+    expect(redact(value, { maxDepth: Number.NaN })).toEqual(redact(value, { maxDepth: 8 }));
+  });
+
+  it("falls back to the default maxNodes when it is NaN", () => {
+    const value = { a: 1, b: { c: 2 } };
+    expect(redact(value, { maxNodes: Number.NaN })).toEqual(redact(value, { maxNodes: 50_000 }));
+  });
+
   it("tags values a diagnostics dump should not walk", () => {
     class Widget {
       token = "nope";

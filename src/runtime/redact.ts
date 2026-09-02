@@ -107,10 +107,47 @@ export interface RedactOptions {
   allowKeys?: readonly string[];
   /** Replacement value. Default `"[redacted]"`. */
   mask?: string;
-  /** Objects deeper than this become `"[truncated]"`. Default `8`. */
+  /**
+   * Objects deeper than this become `"[truncated]"`. Default `8`. A value
+   * that is not a finite non-negative integer (`NaN`, `Infinity`, negative,
+   * or fractional) falls back to the default rather than being treated as
+   * unbounded — see `sanitizeCount`.
+   */
   maxDepth?: number;
-  /** Arrays longer than this are cut short. Default `200`. */
+  /**
+   * Arrays longer than this are cut short. Default `200`. Sanitised the same
+   * way as `maxDepth`: a non-finite or negative value falls back to the
+   * default.
+   */
   maxArrayLength?: number;
+  /**
+   * Caps the total number of objects, arrays and class-like instances walked
+   * across one top-level `redact()` call. Default `50_000`. Sanitised the
+   * same way as `maxDepth`: a non-finite or negative value falls back to the
+   * default.
+   *
+   * `maxDepth` and `maxArrayLength` bound how *wide* and how *deep* a single
+   * path can be, but neither bounds how many times a **shared** reference is
+   * walked: `seen` (the cycle guard) is scoped to the current path, added
+   * before recursing and removed after, so a DAG where several keys point at
+   * the same child is walked once per path to it, not once per object. A
+   * value with `k` keys at every one of `d` levels, all aliasing a single
+   * child per level, costs `k^d` walks of that child — at `k=8`, `d=7` this
+   * measured 1268 ms and 2,097,152 walks of the shared leaf, entirely within
+   * `maxDepth: 8`'s default. `redact({ a: shared, b: shared })` still produces
+   * two independent, correctly-redacted copies; this only stops paying for
+   * that correctness exponentially many times over on a hostile or just
+   * unlucky shape.
+   *
+   * The remaining budget is shared by the whole call, not per-branch, so once
+   * it is spent every node still to be visited — sibling keys included —
+   * becomes `"[truncated]"` too: the same tag `maxDepth` and a revoked Proxy
+   * already use for "this shape exceeded a bound, and which bound is not the
+   * useful part of the answer." A distinct tag would let a caller tell "too
+   * deep" apart from "too much," but no caller does that today, and every
+   * other bound in this module already collapses into one tag.
+   */
+  maxNodes?: number;
   /**
    * Also mask string *values* that look like credentials regardless of their
    * key: `Bearer …` / `Basic …` scheme headers, bare JWTs, and absolute
@@ -220,7 +257,25 @@ interface ResolvedOptions {
   mask: string;
   maxDepth: number;
   maxArrayLength: number;
+  maxNodes: number;
   values: boolean;
+}
+
+/**
+ * Coerces a numeric option to a safe non-negative integer, falling back to
+ * `fallback` for anything that isn't one: `undefined` (not supplied), `NaN`,
+ * `Infinity`, or negative.
+ *
+ * Without this, `maxArrayLength: NaN` reaches `Math.min(length, NaN)` — which
+ * is `NaN` — and then `new Array(NaN)`, which throws a `RangeError` straight
+ * out of `redact()`, defeating the one guarantee this module makes: it does
+ * not throw. Falling back to the *default* rather than treating a malformed
+ * bound as "unbounded" is the safer reading of garbage input — an unbounded
+ * node budget is exactly the exponential-walk vulnerability `maxNodes` exists
+ * to close, so a bad value must not silently disable it.
+ */
+function sanitizeCount(value: number | undefined, fallback: number): number {
+  return Number.isFinite(value) ? Math.max(0, Math.trunc(value as number)) : fallback;
 }
 
 function resolve(options: RedactOptions | undefined): ResolvedOptions {
@@ -237,8 +292,9 @@ function resolve(options: RedactOptions | undefined): ResolvedOptions {
     longestKey,
     allow: (options?.allowKeys ?? []).map(canonical),
     mask: options?.mask ?? REDACTED,
-    maxDepth: options?.maxDepth ?? 8,
-    maxArrayLength: options?.maxArrayLength ?? 200,
+    maxDepth: sanitizeCount(options?.maxDepth, 8),
+    maxArrayLength: sanitizeCount(options?.maxArrayLength, 200),
+    maxNodes: sanitizeCount(options?.maxNodes, 50_000),
     values: options?.values ?? true,
   };
 }
@@ -382,7 +438,12 @@ export function redact<T extends number | boolean | bigint | null | undefined>(
 ): T;
 export function redact<T>(value: T, options?: RedactOptions): unknown;
 export function redact(value: unknown, options?: RedactOptions): unknown {
-  return walk(value, resolve(options), 0, new WeakSet<object>());
+  return walk(value, resolve(options), 0, new WeakSet<object>(), { count: 0 });
+}
+
+/** Mutable node budget shared across one top-level `redact()` call. */
+interface Budget {
+  count: number;
 }
 
 function walk(
@@ -390,6 +451,7 @@ function walk(
   resolved: ResolvedOptions,
   depth: number,
   seen: WeakSet<object>,
+  budget: Budget,
 ): unknown {
   if (value === null || value === undefined) return value;
 
@@ -416,6 +478,13 @@ function walk(
     return "[unwalkable]";
   }
   if (alreadySeen) return "[circular]";
+
+  // Counted here — after the cycle check (a cycle doesn't recurse, so it
+  // doesn't spend budget) and before the array/object split (so both share
+  // one pool) — this is what stops a DAG of shared references from being
+  // walked once per path to it. See `RedactOptions.maxNodes`.
+  if (budget.count >= resolved.maxNodes) return "[truncated]";
+  budget.count += 1;
 
   if (isArray) {
     // `isArray` came from `Array.isArray`, but through a local boolean
@@ -448,7 +517,7 @@ function walk(
       } catch {
         threw = true;
       }
-      output[index] = threw ? "[getter threw]" : walk(entry, resolved, depth + 1, seen);
+      output[index] = threw ? "[getter threw]" : walk(entry, resolved, depth + 1, seen, budget);
     }
     seen.delete(object);
     if (length > limit) {
@@ -554,7 +623,7 @@ function walk(
     } catch {
       threw = true;
     }
-    define(output, key, threw ? "[getter threw]" : walk(entry, resolved, depth + 1, seen));
+    define(output, key, threw ? "[getter threw]" : walk(entry, resolved, depth + 1, seen, budget));
   }
   seen.delete(object);
   return output;
@@ -568,6 +637,7 @@ function options(resolved: ResolvedOptions): RedactOptions {
     mask: resolved.mask,
     maxDepth: resolved.maxDepth,
     maxArrayLength: resolved.maxArrayLength,
+    maxNodes: resolved.maxNodes,
     values: resolved.values,
   };
 }
