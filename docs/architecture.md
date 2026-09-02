@@ -258,6 +258,43 @@ reload of the playground's `extensions.tsx`, which re-evaluated the module, buil
 second extension, and left the chips frozen while the first one carried on collecting.
 The warning says so, and says to reload the page.
 
+### Render-phase ref writes
+
+Three sites write to a ref during render instead of in an effect, each carrying an
+`oxlint-disable` (or `-next-line`) comment for `react/refs`. An effect always runs a
+render behind the render that scheduled it; each of these three needs the value
+current in the same commit that reads it, so an effect would be one render late. Two
+of the three are pinned under `<StrictMode>` in `src/core/__tests__/strict-mode.test.tsx`,
+which double-invokes render (not commit) and is exactly the thing that would expose a
+stale or duplicated write.
+
+The general hazard a render-phase write invites: React may render without
+committing (a discarded speculative render, or `<StrictMode>`'s double-invoke in
+development), so a write that only makes sense for a committed render can record
+state for a render that never happened. Each site below is safe for a different
+reason, stated as the invariant that has to keep holding for it to stay safe.
+
+| Site | Records | Invariant that makes it safe |
+| --- | --- | --- |
+| `DevToolbar.tsx`, `extensionsRef` (`extensionsRef.current = extensions`) | The merged extension list, for `getCommands()`/`getDiagnostics()` to re-enumerate imperatively. | The write is a pure, unconditional overwrite of the previous value with a value derived only from this render's props/state. A discarded render's write is simply replaced by the next render's write before anything imperative reads the ref — nothing observes the intermediate value. |
+| `Overflow.tsx`, `listRef` (`listRef.current = all`) | The current `[...startItems, ...endItems]`, so `recompute` (called from a `ResizeObserver` effect) reads the live list without depending on it and re-subscribing every render. | Same shape as `extensionsRef`: an unconditional overwrite of a value that is a pure function of this render's props. `recompute` only runs from the `ResizeObserver` callback and the layout effect below it, both of which fire after commit, so they only ever see the value from a render that committed. |
+| `PanelHost.tsx`, `openedRef` (`opened.add(id)` / `opened.delete(id)`) | Which panel ids have ever been opened, so a closed `keepMounted` panel stays mounted. | Different shape from the other two: this mutates a persistent `Set` in place rather than overwriting the ref, so a discarded render's mutation is not automatically superseded by the next render the way a plain overwrite is. What keeps it safe is that `activePanelId` reaches this component only through `useSyncExternalStore` (`DevToolbar.tsx`, read ~line 151, passed down ~line 493), which opts store-derived props out of concurrent/deferred rendering, and core uses neither `startTransition` nor `useDeferredValue` — see below for what a hypothetical abandoned render would cost anyway. |
+
+Pinning tests: `"keeps getCommands() current despite the doubled render-time ref
+write"` (`extensionsRef`), `"keeps the render-time openedRef bookkeeping in
+PanelHost correct"` (`openedRef`), both in `strict-mode.test.tsx`. `Overflow.tsx`'s
+`listRef` has no dedicated StrictMode test; the overflow suite
+(`src/core/__tests__/overflow.test.tsx`) exercises `recompute` reading through it but
+not under `<StrictMode>`.
+
+No render path in this codebase can actually produce an `openedRef` mutation ahead of
+the committed render: `useSyncExternalStore` forces `activePanelId` to stay
+synchronous with the store, and nothing under `src/core` calls `startTransition` or
+`useDeferredValue` to defer it. Even in the hypothetical where a consumer's own
+concurrent-mode usage produced an abandoned render anyway, the blast radius is small —
+one `keepMounted` panel mounting a render early with `hidden={!isActive}`, which
+self-corrects the next time that panel closes.
+
 ## 4. Style API
 
 Three surfaces, in the order you should reach for them.
