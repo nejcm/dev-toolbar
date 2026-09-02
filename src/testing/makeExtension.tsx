@@ -7,16 +7,28 @@ import type {
   ToolbarCommand,
 } from "../core/contract";
 
-let counter = 0;
+const extensionCounter = { current: 0 };
+const commandCounter = { current: 0 };
 
 /**
- * Resets the auto-generated id counter.
+ * Generates the next `<prefix>-N` id from its own counter, mutating it as a
+ * side effect. Passing an explicit `id` bypasses this helper entirely, so it
+ * never advances the sequence — only a generated id consumes a number.
+ */
+const nextId = (prefix: string, counter: { current: number }): string =>
+  `${prefix}-${++counter.current}`;
+
+/**
+ * Resets both auto-generated id counters — `makeExtension`'s `fake-N` and
+ * `makeCommand`'s `fake-command-N` — back to zero. They are independent: a
+ * call to one never shifts the other's numbering.
  *
- * Only needed when a test asserts on a generated `fake-N` id; prefer passing an
- * explicit `id`.
+ * Only needed when a test asserts on a generated id; prefer passing an
+ * explicit `id`, which consumes no number from either sequence.
  */
 export function resetExtensionIds(): void {
-  counter = 0;
+  extensionCounter.current = 0;
+  commandCounter.current = 0;
 }
 
 export interface MakeExtensionOptions extends Partial<
@@ -66,8 +78,7 @@ export function makeExtension(options: MakeExtensionOptions = {}): DevToolbarExt
     ...rest
   } = options;
 
-  counter += 1;
-  const id = rest.id ?? `fake-${counter}`;
+  const id = rest.id ?? nextId("fake", extensionCounter);
   const label = rest.label ?? id;
 
   const extension: DevToolbarExtension = { ...rest, id, label };
@@ -128,8 +139,7 @@ export interface MakeCommandOptions extends Partial<ToolbarCommand> {}
 
 /** A `ToolbarCommand` with sensible defaults. Pass your own spy as `run`. */
 export function makeCommand(options: MakeCommandOptions = {}): ToolbarCommand {
-  counter += 1;
-  const id = options.id ?? `fake-command-${counter}`;
+  const id = options.id ?? nextId("fake-command", commandCounter);
   return {
     ...options,
     id,
