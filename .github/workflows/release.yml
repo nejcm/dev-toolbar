@@ -9,8 +9,9 @@ name: Release
 # trusted publisher is reconfigured.
 
 on:
-  push:
-    branches: [main]
+  # Temporarily disabled — automatic trigger removed, manual dispatch only.
+  # Restore `push: branches: [main]` to re-enable.
+  workflow_dispatch: {}
 
 # Least privilege at the top; each job widens only what it needs.
 permissions:
