@@ -54,6 +54,15 @@ export function supportsEventTiming(): boolean {
   return Array.isArray(types) && types.includes("event");
 }
 
+/** `String(value)` on a hostile object can itself throw. */
+const safeString = (value: unknown): string => {
+  try {
+    return String(value);
+  } catch {
+    return "[unreadable]";
+  }
+};
+
 /**
  * One part of a target description, masked **before** it is joined.
  *
@@ -61,10 +70,15 @@ export function supportsEventTiming(): boolean {
  * is the correct treatment here: there is no key, and the hazard is a value
  * that *looks* like a credential. Same helper, same reasoning, as `part()` in
  * `/ext/diagnostics`' `responsiveness.ts`.
+ *
+ * A string in, a string out — `redact()`'s own overload says so, so nothing
+ * here re-coerces the result. Coercing a value whose *type* is a claim rather
+ * than a fact is the caller's job, and `describe()` below does it where it
+ * applies.
  */
 const part = (value: string): string => {
   try {
-    return String(redact(value));
+    return redact(value);
   } catch {
     // Only reachable through a hostile global, and this runs inside a
     // `PerformanceObserver` callback where nothing upstream would catch it.
@@ -95,7 +109,13 @@ function describe(target: Element | null | undefined): string {
   // it costs nothing to run it through the same helper, and doing so removes
   // the question of which of the three parts was exempt and why.
   const tag = part(target.tagName.toLowerCase());
-  const id = target.id ? `#${part(target.id)}` : "";
+  // Coerced, and not for the type: `id` is a live DOM attribute, so "declared
+  // `string`" is a claim about the lib types rather than a fact about the
+  // object that arrived. `part()` masks a string; making it one is this line's
+  // business — through `safeString`, because a bare `String()` here would sit
+  // outside every guard, and `describe()` runs inside a `PerformanceObserver`
+  // callback where a throw has nothing above it to catch.
+  const id = target.id ? `#${part(safeString(target.id))}` : "";
   const first =
     typeof target.className === "string" && target.className.trim() !== ""
       ? `.${part(target.className.trim().split(/\s+/)[0] as string)}`

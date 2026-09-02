@@ -655,10 +655,17 @@ export function createThemeEditorRuntime(
   ): { text: string; masked: boolean } => {
     if (value === null) return { text: "—", masked: false };
     if (sensitive) return { text: maskText, masked: true };
-    const after =
+    // The bare-string branch needs no cast — `redact()` returns a string for a
+    // string. The keyed branch still does: the object walk is honestly
+    // `unknown`, because a bag can come back as a tag string instead of a
+    // record (a hostile `redactOptions` with `maxDepth: 0` is enough), and then
+    // the lookup below is `undefined`. That is what the `typeof` guard is for,
+    // so the lookup stays `unknown` rather than being asserted into a string it
+    // may not be.
+    const after: unknown =
       type === "string"
-        ? ((redact({ [name]: value }, redactOptions) as Record<string, unknown>)[name] as string)
-        : (redact(value, redactOptions) as string);
+        ? (redact({ [name]: value }, redactOptions) as Record<string, unknown>)[name]
+        : redact(value, redactOptions);
     const text = typeof after === "string" ? after : maskText;
     return { text, masked: text !== value };
   };
@@ -720,12 +727,12 @@ export function createThemeEditorRuntime(
       const description =
         definition.description === undefined
           ? undefined
-          : (redact(definition.description, redactOptions) as string);
+          : redact(definition.description, redactOptions);
       // The group is a JSON *key* in the Figma export, so injection is not the
       // hazard — prose carrying a credential is, exactly as for the description.
       // Shape-only, because a bare string has no key to match against.
       const rawGroup = definition.group ?? "Tokens";
-      const group = redact(rawGroup, redactOptions) as string;
+      const group = redact(rawGroup, redactOptions);
 
       views.push({
         name,
@@ -1178,7 +1185,7 @@ export function createThemeEditorRuntime(
 
     const redactedOverrides: Record<string, string> = {};
     for (const [name, value] of Object.entries((rawOverrides ?? {}) as Record<string, string>)) {
-      define(redactedOverrides, name, redact(value, redactOptions) as string);
+      define(redactedOverrides, name, redact(value, redactOptions));
     }
 
     // Rebuilt in the original key order rather than spread, so the document a

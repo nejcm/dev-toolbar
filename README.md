@@ -359,7 +359,11 @@ import {
   no key matching will find it). A URL with nothing to mask is returned unchanged, so
   two dumps that are identical still diff as identical. This is hygiene for anything
   headed to a screenshot or a clipboard, **not** a security boundary: it matches
-  names, so a secret under `data` survives.
+  names, so a secret under `data` survives. A string in gives a string back and a
+  number, boolean, bigint, `null` or `undefined` comes back as itself — masking a
+  value before you join it into a sentence needs no cast. Anything else is
+  `unknown`, because a cycle, a depth limit or an unwalkable object comes back as a
+  short tag string rather than the shape you handed in.
 - **`ensureStyleSheet(entry, css)`** — injects a stylesheet once per document, keyed
   on a `style[data-dev-toolbar-styles]` element rather than a module flag, so two
   bundled copies of your package still inject once. Core's `injectStyles` is a prop

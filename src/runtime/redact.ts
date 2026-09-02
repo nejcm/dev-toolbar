@@ -169,8 +169,46 @@ function define(target: Record<string, unknown>, key: string, value: unknown): v
  * `"[circular]"`; class instances, `Map`, `Set`, functions and symbols become
  * a short tag rather than being walked, because a diagnostics dump is not the
  * place to discover a serializer bug.
+ *
+ * The overloads say only what `walk` actually guarantees, which is why there
+ * are exactly three of them:
+ *
+ * - **A string in, a string out.** Masked or not, `redactString` returns a
+ *   string on every path. This is the overload that earns its keep: masking a
+ *   value before it is joined into a sentence is the module's most common use
+ *   (`/ext/diagnostics`, `/ext/metrics`, `/ext/theme-editor` all do it), and
+ *   every one of those call sites used to pay for the missing overload with a
+ *   `String(…)` wrap or an `as string`.
+ * - **A number, boolean, bigint, `null` or `undefined` in, itself out.** These
+ *   are returned by identity, so the parameter's own type is the honest return.
+ * - **Anything else, `unknown` out.** Not because the type is unknowable but
+ *   because it is a union nobody can use: a plain object normally comes back as
+ *   `Record<string, unknown>`, yet a cycle, `maxDepth: 0`, a revoked Proxy or a
+ *   hostile trap makes it a tag *string*, an array comes back as an array (or a
+ *   tag string), and a `Date`, `URL`, `Map`, `Set`, function or class instance
+ *   comes back as a string or a different shape entirely. Declaring
+ *   `string | Record<string, unknown>` would be true for a statically-plain
+ *   object and useless: every caller that indexes the result would have to add
+ *   a narrowing branch for a case it deliberately does not handle, and would
+ *   write the cast back to silence it. `unknown` says the same thing without
+ *   pretending the union buys safety it does not.
+ *
+ * The catch-all keeps a type parameter it does not use in its return, which is
+ * the very thing this signature was fixed for — but as the *last* overload it
+ * is the only landing place for an explicit type argument. `redact<Payload>(x)`
+ * and `redact<string>(x)` compiled before, and TS only considers overloads
+ * whose type-parameter count matches, so without it both fall on the primitive
+ * constraint above and fail with TS2344. It costs nothing (the return is
+ * already `unknown`) and it keeps a published signature from breaking a caller
+ * who spelled the argument type out.
  */
-export function redact<T>(value: T, options?: RedactOptions): unknown {
+export function redact(value: string, options?: RedactOptions): string;
+export function redact<T extends number | boolean | bigint | null | undefined>(
+  value: T,
+  options?: RedactOptions,
+): T;
+export function redact<T>(value: T, options?: RedactOptions): unknown;
+export function redact(value: unknown, options?: RedactOptions): unknown {
   return walk(value, resolve(options), 0, new WeakSet<object>());
 }
 

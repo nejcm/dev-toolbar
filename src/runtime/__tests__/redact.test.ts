@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, expectTypeOf, it } from "vitest";
 import {
   DEFAULT_SENSITIVE_KEYS,
   REDACTED,
@@ -246,6 +246,36 @@ describe("redact", () => {
     expect(redact("plain")).toBe("plain");
   });
 
+  it("keeps the type it was handed, where `walk` actually guarantees one", () => {
+    // Type-level, and it fails on the single `<T>(value: T) => unknown`
+    // signature this replaced: `T` appeared only in the parameter, so every
+    // caller paid for a return of `unknown` with a cast or a `String()` wrap.
+    // The runtime assertions are the same values, so a signature that drifts
+    // from the behaviour fails twice.
+    const text: string = "https://app.test/about";
+    expectTypeOf(redact(text)).toEqualTypeOf<string>();
+    expectTypeOf(redact(text, { mask: "***" })).toEqualTypeOf<string>();
+    expect(redact(text)).toBe(text);
+
+    expectTypeOf(redact(1 as number)).toEqualTypeOf<number>();
+    expectTypeOf(redact(true as boolean)).toEqualTypeOf<boolean>();
+    expectTypeOf(redact(1n as bigint)).toEqualTypeOf<bigint>();
+    expectTypeOf(redact(null)).toEqualTypeOf<null>();
+    expectTypeOf(redact(undefined)).toEqualTypeOf<undefined>();
+
+    // Everything else stays `unknown`, because a plain object comes back as a
+    // record *or* as a tag string (a cycle, `maxDepth: 0`, a hostile Proxy).
+    expectTypeOf(redact({ a: 1 })).toBeUnknown();
+    expectTypeOf(redact([1, 2])).toBeUnknown();
+    // An explicit type argument still lands on the catch-all overload, the way
+    // it did under the single `<T>(value: T) => unknown` signature. Without a
+    // type parameter there, TS matches only the primitive-constrained overload
+    // and fails with TS2344 — a break for a caller who spelled the type out.
+    expectTypeOf(redact<{ a: 1 }>({ a: 1 })).toBeUnknown();
+    expectTypeOf(redact<string>("x")).toBeUnknown();
+    expect(redact({ deep: { a: 1 } }, { maxDepth: 0 })).toBe("[truncated]");
+  });
+
   it("exposes its default key list and a predicate", () => {
     expect(DEFAULT_SENSITIVE_KEYS).toContain("authorization");
     expect(isSensitiveKey("X-CSRF-Token")).toBe(true);
@@ -399,7 +429,9 @@ describe("a key called __proto__", () => {
   // setter swallows the write. Nothing was polluted; the value was replaced by
   // a lie, which is worse in a redactor than in most places.
   it("survives the rebuild as data", () => {
-    const output = redact({ __proto__: undefined, a: 1 } as never) as Record<string, unknown>;
+    // `as object`, not `as never`: `never` is assignable to `string`, so it
+    // picks the string overload and the cast below stops making sense.
+    const output = redact({ __proto__: undefined, a: 1 } as object) as Record<string, unknown>;
     // Build the input by definition too — an object *literal* `__proto__:` sets
     // the prototype rather than creating a key.
     const input: Record<string, unknown> = {};

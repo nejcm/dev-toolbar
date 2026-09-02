@@ -312,6 +312,14 @@ export function createDiagnosticsRuntime(
    */
   const redactText = (value: string): string => {
     try {
+      // `String()` coerces unproven input; it is not a workaround for
+      // `redact()`'s return type, which is already `string` for a `string`.
+      // Every caller here passes a *declared* string that this module treats as
+      // foreign — `error.name` and `error.message` off a subclass that may
+      // shadow either, and core's `entry.error` / `entry.errorName` — so an
+      // object can arrive where the type says string, and then `redact()`
+      // returns a walked record. That record would land in a `string` field and
+      // reach React as a child. Do not remove the wrap.
       return String(redact(value, redactOptions));
     } catch {
       // Only reachable through hostile `redactOptions`, but this runs on the
