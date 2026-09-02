@@ -6,7 +6,7 @@
  */
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { act } from "@testing-library/react";
-import { renderWithToolbar } from "@nejcm/dev-toolbar/testing";
+import { cleanupToolbar, mountToolbar } from "@nejcm/dev-toolbar/testing";
 import { metrics } from "../index";
 
 const memoryRead = () => ({
@@ -15,25 +15,20 @@ const memoryRead = () => ({
   jsHeapSizeLimit: 128 * 1024 * 1024,
 });
 
-let unmountAll: (() => void)[] = [];
-
 const mount = (options: Parameters<typeof metrics>[0] = {}) => {
   const extension = metrics({
     only: ["memory"],
     memory: { read: memoryRead, sampleMs: 50 },
     ...options,
   });
-  const result = renderWithToolbar(null, {
+  const result = mountToolbar(null, {
     extensions: [extension],
     layout: { barWidth: 900, itemWidth: 200 },
   });
-  unmountAll.push(result.unmount);
   return { extension, ...result };
 };
 
-afterEach(() => {
-  for (const unmount of unmountAll.splice(0)) unmount();
-});
+afterEach(cleanupToolbar);
 
 describe("metrics extension in the bar", () => {
   it("renders a live chip whose value comes from the collector", () => {

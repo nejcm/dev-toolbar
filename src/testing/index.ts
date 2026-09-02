@@ -18,6 +18,8 @@ export type {
   ToolbarHandle,
 } from "./renderWithToolbar";
 
+export { cleanupToolbar, mountToolbar } from "./lifecycle";
+
 export { setTestingLibrary, testingLibraryReady } from "./reactTestingLibrary";
 export type { ReactTestingLibrary } from "./reactTestingLibrary";
 

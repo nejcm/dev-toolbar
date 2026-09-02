@@ -663,6 +663,27 @@ unmount();
 `throwInCompact` / `throwInPanel` / `throwInStart`), and `createMockBus()` gives a
 pub/sub bus with a hand-cranked clock for collectors that poll or sample.
 
+`mountToolbar()` is `renderWithToolbar()` that remembers what it mounted, and
+`cleanupToolbar()` unmounts all of it — newest first — and restores any fake layout
+still installed. Together they replace the array-of-`unmount`s-plus-`afterEach` that
+every multi-mount suite in this repo used to keep for itself; the repo's own
+`vitest.setup.ts` calls `cleanupToolbar()` ahead of Testing Library's `cleanup()`. That
+hook is not optional for a `mountToolbar()` user: the tracked list is ours and never
+hears about RTL's auto-cleanup, so nothing else drains it.
+
+The net is only a net. The fake layout patches `HTMLElement.prototype` and
+`globalThis.ResizeObserver`, which are shared by the whole file, so two things make it
+safe. First, `installToolbarLayout()` keeps a module-level *stack* of live installs
+rather than each install remembering "the previous value" — the newest install
+measures, the prototype is patched once when the stack fills and unpatched once when it
+empties, and `restore()` is therefore idempotent and order-independent. (Per-install
+capture was only correct in exact reverse order; drained in insertion order it put one
+fake back on the prototype permanently.) Second, `renderWithToolbar({ layout })` owns
+the teardown from *inside* the rendered tree, as an effect cleanup. Testing Library
+exposes no hook into `cleanup()`, but it does unmount every tree it rendered — so
+`cleanup()`, RTL auto-cleanup and `unmount()` all restore the prototype, whether or not
+the test remembered to.
+
 `@testing-library/react` is an optional peer that only `renderWithToolbar` needs, and
 nothing on the subpath imports it statically — so `@nejcm/dev-toolbar/testing` imports
 cleanly without it, and `renderWithToolbar()` throws an actionable message if it is

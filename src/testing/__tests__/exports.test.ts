@@ -43,12 +43,14 @@ const mustBeBuilt = Boolean(process.env["CI"]);
 // so this holds for the committed source too — but the assertion itself
 // reads the built files, not `src/testing/index.ts` directly.
 const EXPECTED_EXPORTS = [
+  "cleanupToolbar",
   "createMemoryStorage",
   "createMockBus",
   "createNullStorage",
   "installToolbarLayout",
   "makeCommand",
   "makeExtension",
+  "mountToolbar",
   "renderWithToolbar",
   "resetExtensionIds",
   "setTestingLibrary",

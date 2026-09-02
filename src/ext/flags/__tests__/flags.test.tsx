@@ -4,7 +4,7 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, fireEvent } from "@testing-library/react";
-import { renderWithToolbar } from "@nejcm/dev-toolbar/testing";
+import { cleanupToolbar, mountToolbar } from "@nejcm/dev-toolbar/testing";
 import { collectCommands } from "../../../core/commands";
 import { createMemoryStorage } from "../../../core/storage";
 import { flags, readStoredOverrides } from "../index";
@@ -32,19 +32,17 @@ const CATALOGUE: FlagReading[] = [
   },
 ];
 
-let unmountAll: (() => void)[] = [];
 let written: string[] = [];
 let applied: [string, FlagValue | undefined][] = [];
 
 const mount = (options: FlagsOptions = {}, storage?: ToolbarStorage | null) => {
   const extension = flags({ flags: CATALOGUE, ...options });
-  const result = renderWithToolbar(null, {
+  const result = mountToolbar(null, {
     extensions: [extension],
     instanceId: "test",
     ...(storage === undefined ? {} : { storage }),
     layout: { barWidth: 1200, itemWidth: 120 },
   });
-  unmountAll.push(result.unmount);
   return { extension, ...result };
 };
 
@@ -69,7 +67,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-  for (const unmount of unmountAll.splice(0)) unmount();
+  cleanupToolbar();
   document.head
     .querySelectorAll('style[data-dev-toolbar-styles="ext-flags"]')
     .forEach((node) => node.remove());
@@ -301,7 +299,6 @@ describe("persistence across a reload", () => {
     expect(storage.getItem(`dtb:v1:test:ext:flags:${OVERRIDES_KEY}`)).toBe('{"ui-facelift":true}');
 
     first.unmount();
-    unmountAll.pop();
     applied = [];
 
     // A second mount is what a reload looks like from here: a fresh extension

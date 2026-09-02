@@ -12,6 +12,11 @@ import { afterEach } from "vitest";
  */
 if (typeof document !== "undefined") {
   const { cleanup } = await import("@testing-library/react");
+  // The toolbar's own net: unmounts anything `mountToolbar()` mounted and
+  // restores a fake layout that outlived its tree. `renderWithToolbar` already
+  // ties both to RTL's cleanup below, so this only catches a bare
+  // `installToolbarLayout()` whose `restore()` was missed.
+  const { cleanupToolbar } = await import("@nejcm/dev-toolbar/testing");
 
   /**
    * Install a minimal in-memory Storage, unconditionally.
@@ -56,6 +61,7 @@ if (typeof document !== "undefined") {
   }
 
   afterEach(() => {
+    cleanupToolbar();
     cleanup();
     document.documentElement.removeAttribute("style");
     for (const style of document.head.querySelectorAll("style[data-dev-toolbar-styles]")) {

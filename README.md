@@ -28,7 +28,7 @@ Subpaths, each opt-in and each with its own bundle:
 | `@nejcm/dev-toolbar/ext/overlays` | Layout boxes, a column grid, an element inspector and focus order — drawn over your page, never in the way of it. |
 | `@nejcm/dev-toolbar/ext/diagnostics` | One snapshot for a bug report: the page, long tasks, and every other extension's own diagnostics. Reviewed before it is sent. |
 | `@nejcm/dev-toolbar/ext/theme-editor` | Edit your design tokens live, see the before and after, hand the result to a designer. The tokens stay yours. |
-| `@nejcm/dev-toolbar/testing` | `renderWithToolbar`, fake extensions, mock bus, fake layout. |
+| `@nejcm/dev-toolbar/testing` | `renderWithToolbar`, mount lifecycle, fake extensions, mock bus, fake layout. |
 | `@nejcm/dev-toolbar/styles.css` | The stylesheet, if you would rather not inject it at runtime. |
 
 > **Status:** complete. The shell (P0), `/runtime` and `/ext/metrics` (P1),
@@ -1162,6 +1162,29 @@ hand-cranked clock, and `installToolbarLayout()` if you would rather drive the f
 layout yourself. Storage defaults to a fresh in-memory adapter, so tests never leak
 preferences into each other.
 
+**`mountToolbar()` / `cleanupToolbar()`.** A suite that mounts more than once tends to
+grow an array of `unmount` functions and an `afterEach` that drains it. `mountToolbar()`
+is `renderWithToolbar()` that keeps that list for you, and `cleanupToolbar()` drains it
+— newest mount first — and restores any fake layout still installed. The returned
+`unmount` is idempotent and de-registers the mount, so a test that tears its own
+toolbar down to assert teardown behaviour needs no bookkeeping either.
+
+**`afterEach(cleanupToolbar)` is required if you use `mountToolbar()`**, not optional
+tidying. The tracked list is this package's own, and nothing tells it about RTL's
+auto-cleanup: without the hook it is never drained, so it accumulates every mount in
+the file and the last-in-first-out teardown it exists to provide never happens. Add
+the hook, or use plain `renderWithToolbar()` and add nothing — its own teardown, the
+layout included, rides entirely on RTL's cleanup.
+
+```tsx
+import { afterEach } from "vitest";
+import { cleanupToolbar, mountToolbar } from "@nejcm/dev-toolbar/testing";
+
+afterEach(cleanupToolbar);
+
+const { toolbar } = mountToolbar(<App />, { extensions: [myExtension], layout: true });
+```
+
 `createMockBus()` satisfies the `BusLike<ToolbarEventMap>` that `metrics`' `network.bus`
 asks for, so it stands in for a real bus rather than merely resembling one — and its
 `on` / `once` / `onAny` honour `{ signal }`, so a collector under test tears down on
@@ -1169,8 +1192,15 @@ its `AbortSignal` exactly as it does in production.
 
 One caveat on the fake layout: it patches `HTMLElement.prototype.offsetWidth` and
 `clientWidth` globally for the duration of the test, so it will fight a test that
-stubs those for its own components — `unmount()` restores them, and
-`installToolbarLayout().restore()` does the same when you drive it yourself.
+stubs those for its own components.
+
+Its teardown is tied to the rendered tree, so `unmount()`, Testing Library's
+`cleanup()` and RTL's auto-cleanup all restore the real prototypes — a test that
+renders with `layout` and never unmounts leaves nothing behind for the next one.
+When you drive it yourself, `installToolbarLayout().restore()` does the same;
+`restore()` is idempotent and order-independent, so nested installs and a shared
+teardown list that drains in insertion order are both safe. `cleanupToolbar()` is
+the net for a `restore()` you forgot.
 
 **Jest.** Inside Jest's sandbox a dynamic `import()` never settles, so Testing Library
 is loaded through the runner's own `require` instead — which returns the copy already
@@ -1226,7 +1256,7 @@ through its `exports` map exactly as a real consumer does. After editing `src/`,
 
 ### CommonJS / Jest consumer fixture
 
-`test/fixtures/jest-consumer` is a real Jest 29 + jsdom + Testing Library project
+`test/fixtures/jest-consumer` is a real Jest 30 + jsdom + Testing Library project
 that consumes the **built** `dist/` the way a CommonJS user does. It exists because
 the vitest suite runs in an ESM host and therefore only ever exercises one of the two
 paths by which `/testing` loads its optional Testing Library peer — it can grep the

@@ -10,15 +10,13 @@
  */
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { act, fireEvent } from "@testing-library/react";
-import { renderWithToolbar } from "@nejcm/dev-toolbar/testing";
+import { cleanupToolbar, mountToolbar } from "@nejcm/dev-toolbar/testing";
 import { createMemoryStorage } from "../../../core/storage";
 import { CONTRACT_VERSION } from "../../../core/contract";
 import { diagnostics } from "../index";
 import { FORMAT_KEY, TARGET_CONTRACT_VERSION } from "../runtime";
 import type { DiagnosticsOptions } from "../index";
 import type { DevToolbarExtension, ToolbarStorage } from "../../../core/contract";
-
-let unmountAll: (() => void)[] = [];
 
 const app = (
   <main data-testid="app">
@@ -32,13 +30,12 @@ const mount = (
   storage?: ToolbarStorage,
 ) => {
   const extension = diagnostics(options);
-  const result = renderWithToolbar(app, {
+  const result = mountToolbar(app, {
     extensions: [...neighbours, extension],
     instanceId: "test",
     layout: { barWidth: 1200, itemWidth: 90 },
     ...(storage === undefined ? {} : { storage }),
   });
-  unmountAll.push(result.unmount);
   return { extension, ...result };
 };
 
@@ -53,8 +50,7 @@ const button = (action: string): HTMLButtonElement => {
 };
 
 afterEach(() => {
-  for (const unmount of unmountAll) unmount();
-  unmountAll = [];
+  cleanupToolbar();
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
   for (const style of document.head.querySelectorAll("style[data-dev-toolbar-styles]")) {

@@ -9,15 +9,13 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, fireEvent } from "@testing-library/react";
-import { renderWithToolbar } from "@nejcm/dev-toolbar/testing";
+import { cleanupToolbar, mountToolbar } from "@nejcm/dev-toolbar/testing";
 import { createMemoryStorage } from "../../../core/storage";
 import { overlays } from "../index";
 import { BOXES_REFS_ATTRIBUTE, BOXES_STYLE_ENTRY, ENABLED_KEY, setHostOutlines } from "../runtime";
 import { OVERLAYS_CSS } from "../css";
 import type { OverlaysOptions } from "../index";
 import type { ToolbarStorage } from "../../../core/contract";
-
-let unmountAll: (() => void)[] = [];
 
 const STORAGE_KEY = `dtb:v1:test:ext:overlays:${ENABLED_KEY}`;
 
@@ -37,12 +35,11 @@ const app = (
 
 const mount = (options: OverlaysOptions = {}, storage?: ToolbarStorage) => {
   const extension = overlays(options);
-  const result = renderWithToolbar(app, {
+  const result = mountToolbar(app, {
     extensions: [extension],
     instanceId: "test",
     ...(storage === undefined ? {} : { storage }),
   });
-  unmountAll.push(result.unmount);
   return { extension, ...result };
 };
 
@@ -108,7 +105,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-  for (const unmount of unmountAll.splice(0)) unmount();
+  cleanupToolbar();
   delete (document as Partial<Document>).elementFromPoint;
   vi.restoreAllMocks();
 });
@@ -197,7 +194,6 @@ describe("toggling, off and on, from every surface", () => {
     });
 
     first.unmount();
-    unmountAll.splice(unmountAll.indexOf(first.unmount), 1);
     expect(boxesSheets()).toHaveLength(0);
 
     mount({}, storage);
@@ -240,7 +236,7 @@ describe("what it refuses to touch", () => {
     expect(getByTestId("app").outerHTML).toBe(appBefore);
     expect(host.outerHTML).toBe(hostBefore);
 
-    for (const unmount of unmountAll.splice(0)) unmount();
+    cleanupToolbar();
 
     // Exactly as it was found: same host markup, no toolbar root left in the
     // body, and the one stylesheet it adds to a document it does not own gone.
@@ -420,11 +416,10 @@ describe("visibility and teardown", () => {
 
   it("is never started, and draws nothing, while it is hidden from the actor", () => {
     const extension = overlays({ hidden: true, defaults: { boxes: true } });
-    const result = renderWithToolbar(app, {
+    const result = mountToolbar(app, {
       extensions: [extension],
       instanceId: "test",
     });
-    unmountAll.push(result.unmount);
     expect(boxesSheets()).toHaveLength(0);
     expect(surface()).toBeNull();
     expect(result.toolbar.getCommands()).toEqual([]);
@@ -462,7 +457,7 @@ describe("visibility and teardown", () => {
     await frame();
     expect([...outstanding.values()].some((count) => count > 0)).toBe(true);
 
-    for (const unmount of unmountAll.splice(0)) unmount();
+    cleanupToolbar();
     expect([...outstanding.entries()].filter(([, count]) => count !== 0)).toEqual([]);
   });
 
@@ -481,7 +476,7 @@ describe("visibility and teardown", () => {
     expect(hits).toBeGreaterThan(0);
     expect(toolbar.overlay("overlays")).not.toBeNull();
 
-    for (const unmount of unmountAll.splice(0)) unmount();
+    cleanupToolbar();
     const after = hits;
     fireEvent.pointerMove(window, { clientX: 30, clientY: 60 });
     await frame();
@@ -609,22 +604,20 @@ describe("two toolbars on one page", () => {
     document.head.querySelector(`style[data-dev-toolbar-styles="${BOXES_STYLE_ENTRY}"]`);
 
   it("does not take one instance's outlines away when another unmounts", async () => {
-    const first = renderWithToolbar(app, {
+    const first = mountToolbar(app, {
       extensions: [overlays({ defaults: { boxes: true } })],
       instanceId: "one",
       storage: createMemoryStorage(),
     });
-    const second = renderWithToolbar(<p>second</p>, {
+    const second = mountToolbar(<p>second</p>, {
       extensions: [overlays({ defaults: { boxes: true } })],
       instanceId: "two",
       storage: createMemoryStorage(),
     });
-    unmountAll.push(first.unmount, second.unmount);
     expect(sheet()).not.toBeNull();
     expect(sheet()?.getAttribute(BOXES_REFS_ATTRIBUTE)).toBe("2");
 
     second.unmount();
-    unmountAll.splice(unmountAll.indexOf(second.unmount), 1);
     // The first instance's chip and panel still say boxes is on, so the
     // outlines have to still be there. Unconditional removal used to make those
     // two disagree.
@@ -632,7 +625,6 @@ describe("two toolbars on one page", () => {
     expect(sheet()?.getAttribute(BOXES_REFS_ATTRIBUTE)).toBe("1");
 
     first.unmount();
-    unmountAll.splice(unmountAll.indexOf(first.unmount), 1);
     expect(sheet()).toBeNull();
   });
 

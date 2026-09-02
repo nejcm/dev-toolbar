@@ -1,23 +1,18 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { renderWithToolbar } from "../renderWithToolbar";
+import { cleanupToolbar, mountToolbar } from "../lifecycle";
 import { makeCommand, makeExtension, resetExtensionIds } from "../makeExtension";
-
-let unmountAll: (() => void)[] = [];
 
 beforeEach(() => {
   vi.spyOn(console, "error").mockImplementation(() => {});
 });
 
 afterEach(() => {
-  for (const unmount of unmountAll.splice(0)) unmount();
+  cleanupToolbar();
   vi.restoreAllMocks();
 });
 
-const mount = (...args: Parameters<typeof renderWithToolbar>) => {
-  const result = renderWithToolbar(...args);
-  unmountAll.push(result.unmount);
-  return result;
-};
+/** Tracked by `mountToolbar`, so the `afterEach` above tears every mount down. */
+const mount = mountToolbar;
 
 describe("makeExtension", () => {
   it("only consumes a counter value when generating an id", () => {

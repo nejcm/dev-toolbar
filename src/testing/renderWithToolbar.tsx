@@ -1,4 +1,5 @@
 import type { RenderOptions, RenderResult } from "@testing-library/react";
+import { useEffect } from "react";
 import type { ReactNode } from "react";
 // Core's *values* through the package's own specifier, its *types* relatively:
 // a relative value import would inline a second core into `dist/testing.cjs`.
@@ -13,14 +14,18 @@ import { DEFAULT_INSTANCE_ID, instanceHeightVariable } from "./heightVariable";
 import type { DevToolbarProps } from "../core/DevToolbar";
 import type { DevToolbarContextValue } from "../core/context";
 import type { DevToolbarExtension, ToolbarCommand, ToolbarPosition } from "../core/contract";
-import { installToolbarLayout } from "./layout";
+import { installToolbarLayout, reinstallToolbarLayout } from "./layout";
 import type { InstallToolbarLayoutOptions, ToolbarLayoutHandle } from "./layout";
 import { requireTestingLibrary } from "./reactTestingLibrary";
 
 export interface RenderWithToolbarOptions extends Omit<DevToolbarProps, "children"> {
   /**
    * Install the fake layout so overflow collapse and `--dev-toolbar-height`
-   * work under jsdom. `true` uses the defaults. Torn down on `unmount()`.
+   * work under jsdom. `true` uses the defaults.
+   *
+   * Its lifetime is the rendered tree's, so `unmount()`, Testing Library's
+   * `cleanup()` and RTL auto-cleanup all tear it down. Nothing is left on
+   * `HTMLElement.prototype` for the next test in the file.
    */
   layout?: boolean | InstallToolbarLayoutOptions;
   /** Passed straight through to Testing Library's `render`. */
@@ -98,6 +103,38 @@ export interface RenderWithToolbarResult extends RenderResult {
   toolbar: ToolbarHandle;
 }
 
+/**
+ * Ties the fake layout's lifetime to the React tree.
+ *
+ * Testing Library exposes no hook into `cleanup()`, but it does unmount every
+ * tree it rendered — so an effect cleanup inside that tree *is* the hook. This
+ * is what makes `cleanup()` (and RTL's auto-cleanup, which consumers get for
+ * free) restore the prototype, rather than leaving the fake installed for the
+ * rest of the file because the test never called `unmount()` itself.
+ *
+ * The effect re-installs on mount because StrictMode invokes effects
+ * mount → cleanup → mount, and a cleanup-only owner would leave the layout
+ * restored while the test was still running.
+ *
+ * Rendered as the **first** sibling, which is load-bearing under StrictMode:
+ * React runs every cleanup in tree order and only then every re-mount, so an
+ * owner rendered last has already deleted `globalThis.ResizeObserver` before
+ * the rest of the tree re-mounts against it — ordinary consumer code that
+ * constructs one in a mount effect throws `ReferenceError` on the second pass.
+ * First means the reinstall leads that pass instead. Unmount ordering costs
+ * nothing in return: core's own teardown only calls `disconnect()` on fake
+ * instances it already holds, and never constructs or measures.
+ */
+function LayoutOwner({ handle }: { handle: ToolbarLayoutHandle }): null {
+  useEffect(() => {
+    reinstallToolbarLayout(handle);
+    return () => {
+      handle.restore();
+    };
+  }, [handle]);
+  return null;
+}
+
 function Probe({ onRender }: { onRender: (value: DevToolbarContextValue) => void }): null {
   // Captured during render rather than in an effect so the handle always sees
   // the value from the most recent commit, including the very first one.
@@ -139,10 +176,13 @@ export function renderWithToolbar(
   };
 
   const result = render(
-    <DevToolbar {...props}>
-      <Probe onRender={captured} />
-      {ui}
-    </DevToolbar>,
+    <>
+      {layoutHandle ? <LayoutOwner handle={layoutHandle} /> : null}
+      <DevToolbar {...props}>
+        <Probe onRender={captured} />
+        {ui}
+      </DevToolbar>
+    </>,
     renderOptions,
   );
 
@@ -256,6 +296,10 @@ export function renderWithToolbar(
 
   const unmount = () => {
     result.unmount();
+    // Redundant with `LayoutOwner`'s effect cleanup in every ordinary case, and
+    // kept because `restore()` is idempotent and free: it is the one teardown
+    // left if the owner never mounted, e.g. under a consumer `wrapper` whose
+    // error boundary swallowed the first render.
     layoutHandle?.restore();
   };
 

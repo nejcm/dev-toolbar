@@ -4,7 +4,7 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, fireEvent } from "@testing-library/react";
-import { renderWithToolbar } from "@nejcm/dev-toolbar/testing";
+import { cleanupToolbar, mountToolbar } from "@nejcm/dev-toolbar/testing";
 import { collectCommands } from "../../../core/commands";
 import { CONTRACT_VERSION } from "../../../core/contract";
 import { createMemoryStorage } from "../../../core/storage";
@@ -28,7 +28,6 @@ const TOKENS: DesignTokenDefinition[] = [
   { name: "--dtb-bg", type: "color", value: "#f6f6f7" },
 ];
 
-let unmountAll: (() => void)[] = [];
 let written: string[] = [];
 
 /**
@@ -48,13 +47,12 @@ const mount = (options: ThemeEditorOptions = {}, storage?: ToolbarStorage | null
     surfaces: [{ id: "app", label: "App", selector: "#app" }],
     ...options,
   });
-  const result = renderWithToolbar(null, {
+  const result = mountToolbar(null, {
     extensions: [extension],
     instanceId: "test",
     ...(storage === undefined ? {} : { storage }),
     layout: { barWidth: 1200, itemWidth: 120 },
   });
-  unmountAll.push(result.unmount);
   return { extension, ...result };
 };
 
@@ -88,7 +86,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-  for (const unmount of unmountAll.splice(0)) unmount();
+  cleanupToolbar();
   document.getElementById("app")?.remove();
   root().removeAttribute("style");
   document.head
@@ -579,7 +577,6 @@ describe("the shell contract", () => {
     act(() => {
       first.unmount();
     });
-    unmountAll.pop();
     expect(app().hasAttribute("style")).toBe(false);
 
     const second = mount({}, storage);

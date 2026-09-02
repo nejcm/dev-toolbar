@@ -8,7 +8,7 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act } from "@testing-library/react";
-import { renderWithToolbar, makeExtension } from "@nejcm/dev-toolbar/testing";
+import { cleanupToolbar, makeExtension, mountToolbar } from "@nejcm/dev-toolbar/testing";
 import {
   collectCommands,
   resetCommandWarnings,
@@ -17,7 +17,6 @@ import {
 } from "../commands";
 import type { DevToolbarExtension, ToolbarCommand } from "../contract";
 
-let unmountAll: (() => void)[] = [];
 let errors: unknown[][] = [];
 let warns: unknown[][] = [];
 
@@ -34,15 +33,11 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-  for (const unmount of unmountAll.splice(0)) unmount();
+  cleanupToolbar();
   vi.restoreAllMocks();
 });
 
-const mount = (extensions: DevToolbarExtension[]) => {
-  const result = renderWithToolbar(null, { extensions });
-  unmountAll.push(result.unmount);
-  return result;
-};
+const mount = (extensions: DevToolbarExtension[]) => mountToolbar(null, { extensions });
 
 const command = (id: string, run: () => void = () => {}): ToolbarCommand => ({
   id,
@@ -262,7 +257,6 @@ describe("aggregation through a mounted toolbar", () => {
       makeExtension({ id: "a", commands: () => [command("a.one")] }),
     ]);
     expect(await toolbar.runCommand("a.one")).toBe(true);
-    unmountAll = unmountAll.filter((fn) => fn !== unmount);
     unmount();
     expect(await runCommand("a.one")).toBe(false);
     expect(String(warns.at(-1)?.[0])).toContain("no command registered");
