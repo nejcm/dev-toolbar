@@ -31,6 +31,19 @@ const bar = () => {
   return element;
 };
 
+const item = (id: string) => {
+  const element = document.createElement("div");
+  element.dataset["dtbPart"] = "item";
+  element.dataset["dtbExtId"] = id;
+  return element;
+};
+
+const root = () => {
+  const element = document.createElement("div");
+  element.dataset["dtbPart"] = "root";
+  return element;
+};
+
 /** Every patch this module makes, back the way jsdom had it. */
 const isPristine = () =>
   Object.getOwnPropertyDescriptor(HTMLElement.prototype, "offsetWidth")?.get ===
@@ -126,11 +139,64 @@ describe("installToolbarLayout", () => {
 
   it("leaves getBoundingClientRect alone for anything but the root", () => {
     const handle = installToolbarLayout({ barWidth: 640, rootHeight: 42 });
-    const root = document.createElement("div");
-    root.dataset["dtbPart"] = "root";
-    expect(root.getBoundingClientRect().height).toBe(42);
+    expect(root().getBoundingClientRect().height).toBe(42);
     // A plain element still gets jsdom's own zero rect, not the fake one.
     expect(document.createElement("div").getBoundingClientRect().height).toBe(0);
+    handle.restore();
+  });
+
+  it("setItemWidth() overrides one item's measured width and notifies observers", () => {
+    const handle = installToolbarLayout({ itemWidth: 80 });
+    const seen: number[] = [];
+    const observer = new ResizeObserver(() => seen.push(item("a").offsetWidth));
+    observer.observe(document.body);
+
+    // Items without an override still read the default.
+    expect(item("a").offsetWidth).toBe(80);
+    expect(item("b").offsetWidth).toBe(80);
+
+    handle.setItemWidth("a", 150);
+
+    expect(item("a").offsetWidth).toBe(150);
+    // Unrelated items are untouched.
+    expect(item("b").offsetWidth).toBe(80);
+    // And every observer under this install fired, exactly like resize().
+    expect(seen).toEqual([150]);
+
+    handle.restore();
+  });
+
+  it("setRootHeight() changes the height getBoundingClientRect() reports for the root", () => {
+    const handle = installToolbarLayout({ barWidth: 700, rootHeight: 30 });
+    const seen: number[] = [];
+    const observer = new ResizeObserver(() => seen.push(root().getBoundingClientRect().height));
+    observer.observe(document.body);
+
+    expect(root().getBoundingClientRect().height).toBe(30);
+
+    handle.setRootHeight(64);
+
+    expect(root().getBoundingClientRect().height).toBe(64);
+    // The width reported alongside it is unaffected.
+    expect(root().getBoundingClientRect().width).toBe(700);
+    expect(seen).toEqual([64]);
+
+    handle.restore();
+  });
+
+  it("flush() fires every observer without changing any measurement", () => {
+    const handle = installToolbarLayout({ barWidth: 500 });
+    const seen: number[] = [];
+    const observer = new ResizeObserver(() => seen.push(bar().offsetWidth));
+    observer.observe(document.body);
+
+    expect(seen).toEqual([]);
+    handle.flush();
+    expect(seen).toEqual([500]);
+    handle.flush();
+    expect(seen).toEqual([500, 500]);
+    expect(bar().offsetWidth).toBe(500);
+
     handle.restore();
   });
 });
