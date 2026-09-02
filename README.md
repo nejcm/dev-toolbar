@@ -112,6 +112,10 @@ The default is `Mod+Shift+.` — and `Mod` is **exclusive**, not "either modifie
 Pass your own (`shortcut="Ctrl+Alt+D"`) or `shortcut={null}` to disable. Matching is
 by `key` or by physical `code`, so a shifted punctuation key works on any layout.
 
+It fires wherever focus is, text fields included, but not for an auto-repeat, not
+mid-IME-composition, and not when something else already called `preventDefault()`
+— the listener is on `window`, so your own `document` handler wins the chord.
+
 ## The extension contract
 
 An extension is a plain object.

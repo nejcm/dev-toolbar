@@ -27,12 +27,16 @@ const panelExtension = (
 });
 
 /** Fires the default toggle chord for whichever platform the test host reports. */
-const fireToggleShortcut = () =>
-  fireEvent.keyDown(window, {
+const fireToggleShortcut = (
+  target: Window | Element = window,
+  overrides: Record<string, unknown> = {},
+) =>
+  fireEvent.keyDown(target, {
     key: ".",
     code: "Period",
     shiftKey: true,
     ...(isApplePlatform() ? { metaKey: true } : { ctrlKey: true }),
+    ...overrides,
   });
 
 const activePanelIds = () =>
@@ -357,6 +361,64 @@ describe("toggle shortcut", () => {
     );
     fireToggleShortcut();
     expect(document.querySelector("[data-dev-toolbar]")).not.toBeNull();
+  });
+
+  it("ignores a chord the host app already handled", () => {
+    render(
+      <DevToolbar instanceId="t" extensions={[panelExtension("a")]}>
+        <div />
+      </DevToolbar>,
+    );
+
+    const handled = (event: KeyboardEvent) => event.preventDefault();
+    document.addEventListener("keydown", handled);
+    try {
+      // Dispatched on the body so it bubbles document -> window, the order a
+      // real app handler sees.
+      fireToggleShortcut(document.body);
+    } finally {
+      document.removeEventListener("keydown", handled);
+    }
+
+    expect(document.querySelector("[data-dev-toolbar]")).not.toBeNull();
+  });
+
+  it("ignores a chord fired mid-composition", () => {
+    render(
+      <DevToolbar instanceId="t" extensions={[panelExtension("a")]}>
+        <div />
+      </DevToolbar>,
+    );
+
+    fireToggleShortcut(window, { isComposing: true });
+    expect(document.querySelector("[data-dev-toolbar]")).not.toBeNull();
+  });
+
+  it("ignores auto-repeat while the chord is held", () => {
+    render(
+      <DevToolbar instanceId="t" extensions={[panelExtension("a")]}>
+        <div />
+      </DevToolbar>,
+    );
+
+    fireToggleShortcut();
+    expect(document.querySelector("[data-dev-toolbar]")).toBeNull();
+
+    fireToggleShortcut(window, { repeat: true });
+    expect(document.querySelector("[data-dev-toolbar]")).toBeNull();
+  });
+
+  it("still toggles from an editable target", () => {
+    render(
+      <DevToolbar instanceId="t" extensions={[panelExtension("a")]}>
+        <input aria-label="host input" />
+      </DevToolbar>,
+    );
+
+    const input = screen.getByLabelText("host input");
+    input.focus();
+    fireToggleShortcut(input);
+    expect(document.querySelector("[data-dev-toolbar]")).toBeNull();
   });
 });
 

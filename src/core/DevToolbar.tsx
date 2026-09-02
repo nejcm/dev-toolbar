@@ -62,7 +62,11 @@ export interface DevToolbarProps {
   /** `false` skips runtime CSS injection; import `./styles.css` instead. */
   injectStyles?: boolean;
   classNames?: DevToolbarClassNames;
-  /** e.g. `"Mod+Shift+."`. `null` disables the toggle shortcut. */
+  /**
+   * e.g. `"Mod+Shift+."`. `null` disables the toggle shortcut. Ignored when the
+   * event is already `defaultPrevented`, mid-IME-composition, or an auto-repeat;
+   * the focused element does not matter.
+   */
   shortcut?: string | null;
   /** Portal target. Defaults to `document.body`. */
   container?: HTMLElement | null;
@@ -337,6 +341,11 @@ function DevToolbarRoot({
   useEffect(() => {
     if (!enabled || !parsedShortcut || typeof window === "undefined") return;
     const onKeyDown = (event: KeyboardEvent) => {
+      // The listener is on `window`, so app handlers on `document` have already
+      // run by the time this fires: `defaultPrevented` is how a host says the
+      // chord was theirs. `isComposing` keeps an IME session out of it, and
+      // `repeat` keeps a held chord from flickering the bar.
+      if (event.defaultPrevented || event.isComposing || event.repeat) return;
       if (!matchesShortcut(event, parsedShortcut)) return;
       event.preventDefault();
       store.toggleVisible();
