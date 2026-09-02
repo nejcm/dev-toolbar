@@ -202,4 +202,21 @@ describe("createTimeSeries", () => {
     series.push(1, 10);
     expect(series.last()).toBe(10);
   });
+
+  it("types `times`/`values` as read-only views with no `push`/`clear`", () => {
+    const series = createTimeSeries(8);
+    series.push(1, 10);
+    series.push(2, 20);
+    expect(series.times.size).toBe(2);
+
+    // `times`/`values` are typed as `NumericRingView`, which has no `push`/`clear` —
+    // this guards against a caller pushing into one ring and desyncing the pair
+    // (`ts-expect-error` fails the build if `NumericRingView` ever regains these
+    // methods, e.g. by widening back to `NumericRing`). The compile-time error is
+    // the point of this test, not the runtime effect of the calls below.
+    // @ts-expect-error -- `push` is not on `NumericRingView`.
+    series.times.push(3);
+    // @ts-expect-error -- `clear` is not on `NumericRingView`.
+    series.values.clear();
+  });
 });

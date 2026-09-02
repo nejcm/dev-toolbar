@@ -137,17 +137,18 @@ export interface NumericRingStats {
 }
 
 /**
- * A ring of numbers backed by a `Float64Array`.
- *
- * Structurally allocation-free: a typed array cannot grow, `push` writes a
- * double into a slot, and `stats()` fills a caller-owned object. This is what
- * the sparklines read.
+ * Read-only view of a {@link NumericRing}: every inspection method, minus
+ * `push`/`clear`. `TimeSeries` exposes its two backing rings through this
+ * type so a consumer can read `times`/`values` (`copyInto`, `at`, `written`,
+ * …) without a route to push or clear one ring out of step with the other —
+ * `times.push()` with no matching `values.push()` desyncs the pair, and
+ * `last()`/`lastAt()` then describe two different samples. This is what the
+ * sparklines read.
  */
-export interface NumericRing {
+export interface NumericRingView {
   readonly capacity: number;
   readonly size: number;
   readonly written: number;
-  push(value: number): void;
   at(index: number): number;
   last(): number;
   /** Fills `into` oldest-to-newest and returns how many values were written. */
@@ -155,6 +156,16 @@ export interface NumericRing {
   /** Fills and returns `into` when given; allocates a fresh object otherwise. */
   stats(into?: NumericRingStats): NumericRingStats;
   forEach(visit: (value: number, index: number) => void): void;
+}
+
+/**
+ * A ring of numbers backed by a `Float64Array`.
+ *
+ * Structurally allocation-free: a typed array cannot grow, `push` writes a
+ * double into a slot, and `stats()` fills a caller-owned object.
+ */
+export interface NumericRing extends NumericRingView {
+  push(value: number): void;
   clear(): void;
 }
 
@@ -252,8 +263,10 @@ export function createNumericRing(capacity: number): NumericRing {
 export interface TimeSeries {
   readonly capacity: number;
   readonly size: number;
-  readonly times: NumericRing;
-  readonly values: NumericRing;
+  /** Read-only: push through {@link TimeSeries.push} so it stays paired with `values`. */
+  readonly times: NumericRingView;
+  /** Read-only: push through {@link TimeSeries.push} so it stays paired with `times`. */
+  readonly values: NumericRingView;
   push(at: number, value: number): void;
   /** Newest value, or `NaN`. */
   last(): number;
