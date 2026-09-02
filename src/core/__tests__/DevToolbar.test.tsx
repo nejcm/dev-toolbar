@@ -459,6 +459,41 @@ describe("lifecycle", () => {
     );
     expect(window.localStorage.getItem(`${STORAGE_PREFIX}:inst:ext:e:k`)).toBe("v");
   });
+
+  it("keeps the mount-time instanceId after the prop changes", () => {
+    const written: string[] = [];
+    const storage = {
+      getItem: () => null,
+      setItem: (key: string) => {
+        written.push(key);
+      },
+      removeItem: (key: string) => {
+        written.push(key);
+      },
+    };
+    const write = (api: ExtensionRuntimeApi) => {
+      api.storage.setItem("k", "v");
+    };
+    const a: DevToolbarExtension = { id: "a", label: "A", start: write };
+    const b: DevToolbarExtension = { id: "b", label: "B", start: write };
+
+    const { rerender } = render(
+      <DevToolbar instanceId="one" storage={storage} extensions={[a]}>
+        <div />
+      </DevToolbar>,
+    );
+    rerender(
+      <DevToolbar instanceId="two" storage={storage} extensions={[a, b]}>
+        <div />
+      </DevToolbar>,
+    );
+
+    expect(written).toContain(`${STORAGE_PREFIX}:one:ext:b:k`);
+    expect(written.filter((key) => !key.startsWith(`${STORAGE_PREFIX}:one:`))).toEqual([]);
+    expect(
+      document.querySelector('[data-dtb-part="root"]')?.getAttribute("data-dtb-instance"),
+    ).toBe("one");
+  });
 });
 
 describe("commands and dynamic registration", () => {

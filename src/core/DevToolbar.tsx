@@ -85,7 +85,7 @@ function DevToolbarRoot({
   children,
   extensions: extensionsProp = EMPTY_EXTENSIONS,
   enabled = true,
-  instanceId = "default",
+  instanceId: instanceIdProp = "default",
   density = "compact",
   colorScheme = "system",
   defaultVisible = true,
@@ -102,9 +102,9 @@ function DevToolbarRoot({
   // `storage` and `instanceId` are captured once, on mount, so that the store
   // and everything derived from it can never disagree about where preferences
   // live. See the prop docs above.
-  const [{ raw: rawStorage, base: baseStorage }] = useState(() => {
+  const [{ raw: rawStorage, base: baseStorage, instance: instanceId }] = useState(() => {
     const raw = resolveStorage(storageProp);
-    return { raw, base: createInstanceStorage(raw, instanceId) };
+    return { raw, base: createInstanceStorage(raw, instanceIdProp), instance: instanceIdProp };
   });
 
   const [store] = useState(() =>
