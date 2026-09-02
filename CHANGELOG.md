@@ -14,6 +14,28 @@
   style break at the boundary is accepted, not an oversight.
 -->
 
+## [0.2.0](https://github.com/nejcm/dev-toolbar/compare/v0.1.0...v0.2.0) (2026-09-01)
+
+
+### Features
+
+* **command-menu:** add /ext/command-menu and settle dynamic commands ([1b95b18](https://github.com/nejcm/dev-toolbar/commit/1b95b189d706148bb2adccfcf168c899ad8d8341))
+* **core:** implement P0 shell — portal, bar, overflow, panels, storage ([50da8c5](https://github.com/nejcm/dev-toolbar/commit/50da8c5c6bf0726714b7deba6a26ced1fd34c725))
+* **diagnostics:** add /ext/diagnostics — the bug-report snapshot ([8685770](https://github.com/nejcm/dev-toolbar/commit/86857700e4c768281f3d68309166c338b6465bcc))
+* **environment:** add /ext/environment — environment and actor context ([efbff55](https://github.com/nejcm/dev-toolbar/commit/efbff55e48c86dd2db924ff4ab9aa50be595344f))
+* **flags:** add /ext/flags — local flag overrides and the promoted flag ([8205763](https://github.com/nejcm/dev-toolbar/commit/8205763649462c6fd25d9dcadf253de89afb96c0))
+* **overlays:** add /ext/overlays — layout, grid, inspector and focus order ([c52e416](https://github.com/nejcm/dev-toolbar/commit/c52e4164eaad09a08aeceeb582a9dbb5a993a5f6))
+* **runtime,metrics:** implement P1 — /runtime and the metrics extension ([7a19fb6](https://github.com/nejcm/dev-toolbar/commit/7a19fb68a6430fb10757040f743e23074b8dbe5b))
+* **testing:** complete P0 — /testing subpath, playground, architecture docs ([9d0c742](https://github.com/nejcm/dev-toolbar/commit/9d0c74273da9f18b6de6c3bff1ca445259f60062))
+* **theme-editor:** add /ext/theme-editor — live design-token editing ([abe4faf](https://github.com/nejcm/dev-toolbar/commit/abe4faf3308b01a4340fd9ea94f71f8b4e34f09e))
+
+
+### Bug Fixes
+
+* **ci:** build before test, and pin the Node major CI runs ([7e6dd33](https://github.com/nejcm/dev-toolbar/commit/7e6dd333acd09ad8d1bea9e3fd4dc9bff927c9bb))
+* **lint:** clear the warning backlog and drop the ratchet to zero ([#4](https://github.com/nejcm/dev-toolbar/issues/4)) ([0300bc1](https://github.com/nejcm/dev-toolbar/commit/0300bc1953efb9171a5e81d2b89f21cc075fc86e))
+* **playground:** default the bar inset on and cover the header for top position ([29663a7](https://github.com/nejcm/dev-toolbar/commit/29663a7ae6264bacedec93b5dfc47c6d76c36bfd))
+
 ## 0.1.0 (2026-09-02)
 
 First publish, and the whole of the accepted plan. The shell (P0), the runtime
