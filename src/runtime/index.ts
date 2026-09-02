@@ -15,7 +15,10 @@
 
 export { createEventBus } from "./bus";
 export type {
+  AnyBusEvent,
+  AnyBusHandler,
   BusEvent,
+  BusEventName,
   BusHandler,
   BusSubscribeOptions,
   CreateEventBusOptions,
@@ -25,7 +28,13 @@ export type {
 } from "./bus";
 
 export { createNumericRing, createRingBuffer, createTimeSeries } from "./ringBuffer";
-export type { NumericRing, NumericRingStats, RingBuffer, TimeSeries } from "./ringBuffer";
+export type {
+  NumericRing,
+  NumericRingStats,
+  NumericRingView,
+  RingBuffer,
+  TimeSeries,
+} from "./ringBuffer";
 
 export { createThrottledStore } from "./throttledStore";
 export type { CreateThrottledStoreOptions, ThrottledStore, Unsubscribe } from "./throttledStore";

@@ -7,15 +7,81 @@
  * reasons core has no global extension registry.
  */
 
-/** Metadata the bus adds to every delivery. */
-export interface BusEvent<T = unknown> {
-  type: string;
+/**
+ * Metadata the bus adds to every delivery.
+ *
+ * `K` carries the event name as a literal, so `emit("network-end", …)` hands
+ * back a `BusEvent<…, "network-end">` rather than something whose `type` has
+ * been widened to `string`. It defaults to `string`, so `BusEvent<Payload>`
+ * still means what it always did.
+ */
+export interface BusEvent<T = unknown, K extends string = string> {
+  type: K;
   payload: T;
   /** `options.now()` at emit time. Defaults to `performance.now()`. */
   at: number;
 }
 
 export type BusHandler<T = unknown> = (payload: T, event: BusEvent<T>) => void;
+
+/**
+ * The names an event map actually declares.
+ *
+ * `Events extends Record<string, unknown>` is what lets an *interface* serve as
+ * an event map: an interface has no implicit index signature, so without that
+ * base it fails the constraint — which is why `ToolbarEventMap` extends it. The
+ * cost is that `keyof ToolbarEventMap & string` widens to `string`, and a
+ * mapped type over `string` collapses to a single index signature, which would
+ * leave `AnyBusEvent` un-narrowable. So strip the index signature back off.
+ *
+ * A map that really is nothing but `Record<string, unknown>` — the default type
+ * argument for `createEventBus()` with no event map — declares no names at all,
+ * and there `string` is the honest answer; hence the fallback.
+ *
+ * Only the bare `string` and `number` signatures are stripped. A
+ * template-literal pattern signature — `` [k: `evt:${string}`]: Payload `` — is
+ * deliberately kept: `string` does not extend the pattern, so the filter leaves
+ * it alone. That is the intent, not an oversight — such a pattern is a name the
+ * map means to declare, and it stays narrowable alongside the literal ones.
+ */
+type DeclaredEventName<Events> = keyof {
+  [K in keyof Events as string extends K ? never : number extends K ? never : K]: 0;
+} &
+  string;
+
+/** The event names of `Events`, with the constraint's index signature removed. */
+export type BusEventName<Events> = [DeclaredEventName<Events>] extends [never]
+  ? keyof Events & string
+  : DeclaredEventName<Events>;
+
+/**
+ * Every delivery a bus over `Events` can make, as a union discriminated on
+ * `type`. `onAny` is the one place a caller has to switch on the event name, so
+ * it is the one place that needs `if (event.type === "network-end")` to narrow
+ * `event.payload` along with it.
+ *
+ * The union covers the *declared* names. `emit` and `on` still take
+ * `keyof Events & string`, which on a map extending `Record<string, unknown>`
+ * is `string` — so `bus.emit("not-declared", …)` compiles, and an `onAny`
+ * handler can be handed a `type` this union does not list. Widening `emit`
+ * would be the breaking change, so the narrowing is optimistic on purpose:
+ * switch on the names you care about, and do not `assertNever` on `event.type`
+ * in a default branch.
+ */
+export type AnyBusEvent<Events extends Record<string, unknown>> = {
+  [K in BusEventName<Events>]: BusEvent<Events[K], K>;
+}[BusEventName<Events>];
+
+/**
+ * An `onAny` subscriber. `payload` is the union of every declared payload —
+ * useful, but not correlated with the name, because nothing on a bare payload
+ * says which event it came from. Narrow `event` instead: `event.payload` is the
+ * same value, discriminated.
+ */
+export type AnyBusHandler<Events extends Record<string, unknown>> = (
+  payload: Events[BusEventName<Events>],
+  event: AnyBusEvent<Events>,
+) => void;
 
 export interface BusSubscribeOptions {
   /**
@@ -26,7 +92,7 @@ export interface BusSubscribeOptions {
 }
 
 export interface EventBus<Events extends Record<string, unknown>> {
-  emit<K extends keyof Events & string>(type: K, payload: Events[K]): BusEvent<Events[K]>;
+  emit<K extends keyof Events & string>(type: K, payload: Events[K]): BusEvent<Events[K], K>;
   on<K extends keyof Events & string>(
     type: K,
     handler: BusHandler<Events[K]>,
@@ -37,10 +103,7 @@ export interface EventBus<Events extends Record<string, unknown>> {
     handler: BusHandler<Events[K]>,
     options?: BusSubscribeOptions,
   ): () => void;
-  onAny(
-    handler: BusHandler<Events[keyof Events & string]>,
-    options?: BusSubscribeOptions,
-  ): () => void;
+  onAny(handler: AnyBusHandler<Events>, options?: BusSubscribeOptions): () => void;
   /** Live subscribers, optionally for one type. `onAny` counts toward the total. */
   listenerCount(type?: keyof Events & string): number;
   /** Drops every subscriber. */
@@ -146,7 +209,7 @@ export function createEventBus<Events extends Record<string, unknown> = Record<s
 
   return {
     emit<K extends keyof Events & string>(type: K, payload: Events[K]) {
-      const event: BusEvent<Events[K]> = { type, payload, at: now() };
+      const event: BusEvent<Events[K], K> = { type, payload, at: now() };
       dispatch(handlers.get(type), payload, event);
       dispatch(anyHandlers, payload, event);
       return event;

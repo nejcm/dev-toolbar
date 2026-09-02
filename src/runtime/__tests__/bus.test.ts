@@ -1,6 +1,6 @@
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, expectTypeOf, it, vi } from "vitest";
 import { createEventBus } from "../bus";
-import type { ToolbarEventMap } from "../bus";
+import type { AnyBusEvent, BusEvent, BusEventName, ToolbarEventMap } from "../bus";
 
 interface Events extends Record<string, unknown> {
   tick: { n: number };
@@ -301,6 +301,59 @@ describe("createEventBus", () => {
       bus.emit("tick", { n: 1 });
       expect(any).not.toHaveBeenCalled();
       expect(bus.listenerCount()).toBe(0);
+    });
+  });
+
+  // Type-level guards for the one place a caller has to switch on `event.type`.
+  // Before `BusEvent` carried the name as a second parameter, `type` was
+  // `string` and every `payload` in an `onAny` handler was `unknown` — the
+  // index signature `Events extends Record<string, unknown>` forces onto
+  // `ToolbarEventMap` swallowed the declared names whole.
+  describe("event types", () => {
+    it("keeps the emitted name as a literal on the returned event", () => {
+      const bus = createEventBus<ToolbarEventMap>();
+      expectTypeOf(bus.emit("navigation", { route: "/" })).toEqualTypeOf<
+        BusEvent<ToolbarEventMap["navigation"], "navigation">
+      >();
+    });
+
+    it("narrows an onAny payload when the handler switches on event.type", () => {
+      const bus = createEventBus<ToolbarEventMap>();
+
+      bus.onAny((payload, event) => {
+        expectTypeOf(event).toEqualTypeOf<AnyBusEvent<ToolbarEventMap>>();
+        expectTypeOf(event.type).toEqualTypeOf<BusEventName<ToolbarEventMap>>();
+        expectTypeOf<BusEventName<ToolbarEventMap>>().toEqualTypeOf<
+          | "navigation"
+          | "interaction"
+          | "long-task"
+          | "network-start"
+          | "network-end"
+          | "react-commit"
+          | "flag-changed"
+          | "hydration"
+          | "hydration-error"
+        >();
+        expectTypeOf(payload).toEqualTypeOf<ToolbarEventMap[BusEventName<ToolbarEventMap>]>();
+        expectTypeOf(payload).not.toBeUnknown();
+
+        if (event.type === "network-end") {
+          expectTypeOf(event.payload).toEqualTypeOf<ToolbarEventMap["network-end"]>();
+        }
+        if (event.type === "navigation") {
+          expectTypeOf(event.payload).toEqualTypeOf<{ route: string }>();
+        }
+      });
+    });
+
+    it("falls back to string for a bus with no event map", () => {
+      const bus = createEventBus();
+      bus.onAny((payload, event) => {
+        expectTypeOf(event.type).toEqualTypeOf<string>();
+        expectTypeOf(payload).toBeUnknown();
+        expectTypeOf(event.payload).toBeUnknown();
+      });
+      expectTypeOf(bus.emit("anything", 1)).toEqualTypeOf<BusEvent<unknown, "anything">>();
     });
   });
 });
