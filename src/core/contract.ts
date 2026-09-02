@@ -152,6 +152,12 @@ export interface ExtensionRuntimeApi {
   signal: AbortSignal;
   /** Core reports visibility; it never pauses an extension on its behalf. */
   isVisible(): boolean;
+  /**
+   * The subscription is released automatically when `signal` aborts, so
+   * relying only on the signal for cleanup is safe. The returned function is
+   * still here for releasing it earlier, and calling it more than once — or
+   * after `signal` has already aborted — is a no-op.
+   */
   subscribeVisibility(cb: (visible: boolean) => void): () => void;
   /** Storage namespaced to this extension id. No-op when persistence is disabled. */
   storage: ToolbarStorage;
@@ -166,9 +172,12 @@ export interface ExtensionRuntimeApi {
    */
   getCommands(): readonly ToolbarCommand[];
   /**
-   * Runs an aggregated command by id. Resolves `false` when nothing declares
-   * it — including a command that existed when it was listed and does not any
-   * more, which a palette has to be able to tell its user.
+   * Runs an aggregated command by id. Resolves `true` once the command's
+   * `run()` has completed, `false` when nothing declares it — including a
+   * command that existed when it was listed and does not any more, which a
+   * palette has to be able to tell its user. If `run()` throws or returns a
+   * rejected promise, `runCommand()` rejects with that same error — callers
+   * must catch it (`/ext/command-menu` does, and shows the message).
    */
   runCommand(id: string): Promise<boolean>;
   /**
@@ -187,6 +196,12 @@ export interface ExtensionRuntimeApi {
 }
 
 export interface DevToolbarExtension {
+  /**
+   * Identity, and the namespace for this extension's persisted storage
+   * (`dtb:v1:<instanceId>:ext:<id>:*`, `docs/architecture.md` §3). The `:`
+   * separators are not escaped, so an id containing `:` can alias another
+   * extension's or instance's storage scope. Safest as `[A-Za-z0-9_-]`.
+   */
   id: string;
   label: string;
   /** Core warns when this does not equal `CONTRACT_VERSION`. */

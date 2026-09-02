@@ -1,6 +1,6 @@
 // oxlint-disable react/refs -- `openedRef` is render-time bookkeeping, read and
 // updated during render on purpose; see `opened` below.
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type {
   CSSProperties,
   KeyboardEvent as ReactKeyboardEvent,
@@ -53,6 +53,21 @@ export function PanelHost({
   const [dragHeight, setDragHeight] = useState<number | null>(null);
   const height = dragHeight ?? panelHeight;
 
+  // Tears down the in-flight drag's window listeners, if any. Idempotent so
+  // it can safely run from both the normal pointerup path and the unmount
+  // cleanup below without double-removing.
+  const endDragRef = useRef<(() => void) | null>(null);
+
+  // A drag started with `window.addEventListener` outlives the component if
+  // the toolbar is hidden or unmounted mid-drag; the listeners would then
+  // sit on `window` until the next pointerup fires `setDragHeight` on an
+  // unmounted component. Remove them on unmount too.
+  useEffect(() => {
+    return () => {
+      endDragRef.current?.();
+    };
+  }, []);
+
   // Which panels have ever been open is bookkeeping, not rendered state, and it
   // has to be current in *this* commit: `keepMounted` is decided below, and an
   // effect would decide it a frame late.
@@ -101,13 +116,20 @@ export function PanelHost({
       latest = clampPanelHeight(position === "bottom" ? startHeight - delta : startHeight + delta);
       setDragHeight(latest);
     };
-    const onUp = () => {
+    // Idempotent: the normal pointerup/pointercancel path and the unmount
+    // cleanup can both call this without double-removing listeners.
+    const removeDragListeners = () => {
       window.removeEventListener("pointermove", onMove);
       window.removeEventListener("pointerup", onUp);
       window.removeEventListener("pointercancel", onUp);
+      if (endDragRef.current === removeDragListeners) endDragRef.current = null;
+    };
+    const onUp = () => {
+      removeDragListeners();
       setPanelHeight(latest);
       setDragHeight(null);
     };
+    endDragRef.current = removeDragListeners;
     window.addEventListener("pointermove", onMove);
     window.addEventListener("pointerup", onUp);
     window.addEventListener("pointercancel", onUp);

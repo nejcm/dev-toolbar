@@ -532,7 +532,7 @@ describe("the shell contract", () => {
     expect(root().style.getPropertyValue("--brand-500")).toBe("#ff0000");
     // ...the toolbar's did not, and neither did anything it resolves.
     expect(root().style.getPropertyValue("--dtb-bg")).toBe("");
-    expect(root().style.getPropertyValue("--dev-toolbar-height")).not.toBe("");
+    expect(root().style.getPropertyValue("--dev-toolbar-height-test")).not.toBe("");
     expect(barShape()).toEqual(before);
     expect(toolbar.root()?.getAttribute("style") ?? null).toBe(null);
   });

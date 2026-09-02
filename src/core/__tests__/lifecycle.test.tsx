@@ -43,6 +43,38 @@ describe("hidden extensions", () => {
   });
 });
 
+describe("subscribeVisibility is released when api.signal aborts", () => {
+  it("stops delivering after the extension is unregistered, without calling the returned unsubscribe", () => {
+    // `contract.ts` promises `api.signal` is aborted on teardown, and an
+    // extension that keeps only the signal (never calling the function
+    // `subscribeVisibility` returns) is a legal reading of that contract. Its
+    // subscription must still be released when the signal aborts.
+    const seen: boolean[] = [];
+    const start = (api: {
+      signal: AbortSignal;
+      subscribeVisibility: (cb: (v: boolean) => void) => () => void;
+    }) => {
+      api.subscribeVisibility((visible) => seen.push(visible));
+    };
+
+    const { toolbar, unmount } = renderWithToolbar(null, { extensions: [] });
+    const unregister = toolbar.register({ id: "leaky", label: "Leaky", start });
+
+    toolbar.setVisible(false);
+    expect(seen).toEqual([false]);
+
+    // Tear the extension down: its `api.signal` aborts.
+    unregister();
+    toolbar.setVisible(true);
+
+    // The callback must not fire again — the subscription was released along
+    // with the signal, not left listening on the store.
+    expect(seen).toEqual([false]);
+
+    unmount();
+  });
+});
+
 describe("hidden means absent everywhere, not just in the bar", () => {
   const panelExt = (hidden: boolean): DevToolbarExtension => ({
     id: "restricted",
@@ -237,5 +269,63 @@ describe("start(api) ordering", () => {
     expect(order[0]).toBe("compact");
     expect(order).toContain("start");
     unmount();
+  });
+});
+
+describe("a throwing subscribeVisibility callback", () => {
+  it("is contained: it neither escapes nor starves the next extension", () => {
+    // The shell isolates failures. An extension that throws while being told
+    // about a visibility change must not surface as an exception in whatever
+    // flipped visibility (the toggle shortcut, a consumer calling
+    // `setVisible`), and must not stop the extensions notified after it.
+    const errors: unknown[][] = [];
+    const spy = vi.spyOn(console, "error").mockImplementation((...args: unknown[]) => {
+      errors.push(args);
+    });
+    const seen: boolean[] = [];
+    const extensions: DevToolbarExtension[] = [
+      {
+        id: "broken",
+        label: "Broken",
+        start: (api) => {
+          api.subscribeVisibility(() => {
+            throw new Error("boom");
+          });
+        },
+      },
+      {
+        id: "healthy",
+        label: "Healthy",
+        start: (api) => {
+          api.subscribeVisibility((visible) => seen.push(visible));
+        },
+      },
+    ];
+
+    const { toolbar, unmount } = renderWithToolbar(null, { extensions, storage: null });
+
+    // try/finally, not a trailing restore: a failing expect below must not
+    // leave the console spy installed for the rest of the file.
+    try {
+      expect(() => toolbar.setVisible(false)).not.toThrow();
+      expect(seen).toEqual([false]);
+      // Reported the way every other extension failure is: console.error, the
+      // `[dev-toolbar]` prefix, the offending extension id.
+      expect(errors).toHaveLength(1);
+      expect(String(errors[0]?.[0])).toContain('extension "broken"');
+      expect(String(errors[0]?.[0])).toContain("subscribeVisibility");
+
+      // The throw must not desynchronise the broken extension's own `last`
+      // bookkeeping either: the next transition still reaches both of them,
+      // so a healthy extension misses no change and the broken one is
+      // reported again rather than falling silent.
+      expect(() => toolbar.setVisible(true)).not.toThrow();
+      expect(seen).toEqual([false, true]);
+      expect(errors).toHaveLength(2);
+      expect(String(errors[1]?.[0])).toContain('extension "broken"');
+    } finally {
+      spy.mockRestore();
+      unmount();
+    }
   });
 });

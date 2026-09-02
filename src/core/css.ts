@@ -1,7 +1,7 @@
 /**
- * Single source of truth for the core stylesheet: this constant is generated
- * from src/styles.css (shipped as the ./styles.css subpath export) and a unit
- * test fails if the two drift.
+ * Single source of truth for the core stylesheet: this constant is a
+ * hand-maintained byte-identical copy of src/styles.css (shipped as the
+ * ./styles.css subpath export) and a unit test fails if the two drift.
  */
 export const CORE_CSS = String.raw`/**
  * @nejcm/dev-toolbar core styles.
@@ -11,8 +11,8 @@ export const CORE_CSS = String.raw`/**
  * !important. Shipped both as this file and as a runtime injection
  * (injectStyles={false} opts out).
  *
- * Single source of truth: CORE_CSS in src/core/css.ts is generated from this
- * file and a unit test fails if the two drift.
+ * Single source of truth: CORE_CSS in src/core/css.ts is a hand-maintained
+ * byte-identical copy of this file and a unit test fails if the two drift.
  */
 @layer dev-toolbar {
   [data-dev-toolbar] {
@@ -45,8 +45,7 @@ export const CORE_CSS = String.raw`/**
     --dtb-warn-bg: rgba(168, 115, 12, 0.14);
 
     position: fixed;
-    left: 0;
-    right: 0;
+    inset-inline: 0;
     display: flex;
     flex-direction: column;
     max-height: 90vh;
@@ -205,7 +204,7 @@ export const CORE_CSS = String.raw`/**
 
   [data-dev-toolbar] [data-dtb-part="overflow-menu"] {
     position: absolute;
-    right: var(--dtb-padding-x);
+    inset-inline-end: var(--dtb-padding-x);
     display: flex;
     flex-direction: column;
     gap: var(--dtb-gap);
@@ -296,6 +295,24 @@ export const CORE_CSS = String.raw`/**
     color: var(--dtb-danger);
     font-family: var(--dtb-font-mono);
     white-space: nowrap;
+  }
+
+  [data-dev-toolbar] [data-dtb-part="error-retry"] {
+    border: 0;
+    padding: 0;
+    background: none;
+    color: inherit;
+    font: inherit;
+    cursor: pointer;
+  }
+
+  [data-dev-toolbar] [data-dtb-part="error-retry"]:hover {
+    text-decoration: underline;
+  }
+
+  [data-dev-toolbar] [data-dtb-part="error-retry"]:focus-visible {
+    outline: 2px solid var(--dtb-accent);
+    outline-offset: 2px;
   }
 
   [data-dev-toolbar] [data-dtb-part="error-chip"][data-dtb-slot="panel"] {

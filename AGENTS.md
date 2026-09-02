@@ -71,8 +71,10 @@ gate is the `knip` inside `verify`, so unused code fails on your machine first.
 - **A new subpath must be added explicitly** to the `exports` map in `package.json`
   *and* to `entry` and `dts.entry` in `tsup.config.ts`. Never a wildcard. Missing from
   either means silently unpublishable or untyped.
-- **`src/core/css.ts` is generated from `src/styles.css`** and must stay in sync;
-  `src/styles.css` is excluded from the formatter for that reason.
+- **`src/core/css.ts` is a hand-maintained byte-identical copy of `src/styles.css`**,
+  enforced by `src/core/__tests__/css.test.ts`. Edit `src/styles.css`, then paste its
+  contents into the template literal in `css.ts`; `src/styles.css` is excluded from
+  the formatter so the bytes stay identical.
 - **Conventional Commits, enforced.** The `commit-msg` hook runs commitlint. The
   `pre-commit` hook runs `oxfmt` + `oxlint --fix` over staged JS/TS. The repo is
   configured **squash-only**, with the squash commit's subject taken from the

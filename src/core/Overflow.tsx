@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import type { DevToolbarClassNames, DevToolbarExtension } from "./contract";
 import { cx } from "./context";
@@ -57,13 +57,55 @@ export interface OverflowBarProps {
 const DEFAULT_GAP = 2;
 const DEFAULT_OVERFLOW_BUTTON_WIDTH = 28;
 
-function readGap(element: HTMLElement, fallback: number): number {
-  if (typeof getComputedStyle !== "function") return fallback;
-  const style = getComputedStyle(element);
-  const raw = style.columnGap || style.gap;
+function readPx(raw: string | undefined, fallback: number): number {
   const parsed = Number.parseFloat(raw ?? "");
   return Number.isFinite(parsed) ? parsed : fallback;
 }
+
+function readGap(element: HTMLElement, fallback: number): number {
+  if (typeof getComputedStyle !== "function") return fallback;
+  const style = getComputedStyle(element);
+  return readPx(style.columnGap || style.gap, fallback);
+}
+
+/**
+ * Width of the bar that items may not fill: its own horizontal padding, which
+ * `clientWidth` includes, plus any gap between the two regions that the item
+ * math does not already charge for.
+ *
+ * `computeOverflow` charges one gap between every adjacent pair of items in
+ * the flattened list, plus one before the `···` button. Counting the gaps the
+ * bar actually renders — both region elements are always present, so an empty
+ * one still takes a gap — leaves two cases short:
+ *
+ * - the start region renders no items (all collapsed, or none to begin with):
+ *   the empty element still takes the gap before the end region;
+ * - the end region has no items *by props*: with nothing overflowed it holds
+ *   no children either, and the gap charged before the button is not rendered
+ *   because there is no button. Reading this from the props rather than from
+ *   the rendered children keeps it constant as items collapse, so available
+ *   width only ever shrinks and the recompute cannot oscillate; the cost is
+ *   over-charging one gap once such a bar has collapsed.
+ */
+function readReserved(
+  bar: HTMLElement,
+  gap: number,
+  startRegionEmpty: boolean,
+  endItemsEmpty: boolean,
+): number {
+  const interRegionGaps = (startRegionEmpty ? gap : 0) + (endItemsEmpty ? gap : 0);
+  if (typeof getComputedStyle !== "function") return interRegionGaps;
+  const style = getComputedStyle(bar);
+  return readPx(style.paddingLeft, 0) + readPx(style.paddingRight, 0) + interRegionGaps;
+}
+
+/**
+ * What can take focus inside the `···` popup. Deliberately shallow: the popup
+ * holds extensions' compact slots, and the first thing in the first of them is
+ * where a keyboard user expects to land.
+ */
+const FOCUSABLE =
+  'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), summary, [contenteditable]:not([contenteditable="false"]), [tabindex]:not([tabindex="-1"])';
 
 /**
  * The bar row itself. Measures rendered items with a `ResizeObserver` and
@@ -85,9 +127,14 @@ export function OverflowBar({
   // restyling the ··· button, keeps the collapse math honest.
   const gapRef = useRef(gap);
   const buttonWidthRef = useRef(DEFAULT_OVERFLOW_BUTTON_WIDTH);
+  const reservedRef = useRef(0);
+  // The last measured `clientWidth`, i.e. the padding box. What is reserved
+  // out of it is applied at use, so a collapse that changes it takes effect
+  // without waiting for the next resize.
   const [available, setAvailable] = useState(0);
   const [overflowIds, setOverflowIds] = useState<Set<string>>(() => new Set<string>());
   const [menuOpen, setMenuOpen] = useState(false);
+  const menuId = `dtb-overflow-menu-${useId()}`;
 
   const all = [...startItems, ...endItems];
   // Read through a ref so `recompute` — and therefore the ResizeObserver
@@ -95,6 +142,9 @@ export function OverflowBar({
   const listRef = useRef(all);
   // oxlint-disable-next-line react/refs -- written in render on purpose, above.
   listRef.current = all;
+
+  /** A measured padding-box width minus everything that is not item space. */
+  const contentWidth = (barWidth: number) => Math.max(0, barWidth - reservedRef.current);
 
   const recompute = useCallback((width: number) => {
     const items: MeasuredItem[] = listRef.current.map((extension) => ({
@@ -114,6 +164,15 @@ export function OverflowBar({
 
     const region = bar.querySelector<HTMLElement>('[data-dtb-part="region"]');
     if (region) gapRef.current = readGap(region, gap);
+    const startRegion = bar.querySelector<HTMLElement>(
+      '[data-dtb-part="region"][data-dtb-align="start"]',
+    );
+    reservedRef.current = readReserved(
+      bar,
+      gapRef.current,
+      !startRegion?.querySelector('[data-dtb-part="item"]'),
+      endItems.length === 0,
+    );
     const buttonWidth = buttonRef.current?.offsetWidth ?? 0;
     if (buttonWidth > 0) buttonWidthRef.current = buttonWidth;
 
@@ -126,7 +185,7 @@ export function OverflowBar({
       const width = node.offsetWidth;
       if (width > 0) widthsRef.current.set(id, width);
     }
-    recompute(available || bar.clientWidth);
+    recompute(contentWidth(available || bar.clientWidth));
   });
 
   useEffect(() => {
@@ -136,7 +195,7 @@ export function OverflowBar({
     const read = () => {
       const width = bar.clientWidth;
       setAvailable(width);
-      recompute(width);
+      recompute(contentWidth(width));
     };
 
     read();
@@ -160,7 +219,18 @@ export function OverflowBar({
     if (overflowIds.size === 0) setMenuOpen(false);
   }, [overflowIds]);
 
-  // Dismiss the ··· menu on Escape or a click outside it.
+  // Move focus into the ··· popup when it opens, so a keyboard user reaches
+  // the collapsed items at all. The popup itself is the fallback target when
+  // no entry can take focus — a bar of static badges, say.
+  useEffect(() => {
+    if (!menuOpen) return;
+    const menu = menuRef.current;
+    if (!menu) return;
+    (menu.querySelector<HTMLElement>(FOCUSABLE) ?? menu).focus();
+  }, [menuOpen]);
+
+  // Dismiss the ··· menu on Escape or a click outside it. Escape hands focus
+  // back to the button; an outside click leaves it wherever the click put it.
   useEffect(() => {
     if (!menuOpen || typeof document === "undefined") return;
 
@@ -212,8 +282,8 @@ export function OverflowBar({
             type="button"
             data-dtb-part="overflow-button"
             className={cx(classNames?.overflowButton)}
-            aria-haspopup="menu"
             aria-expanded={menuOpen}
+            aria-controls={menuOpen ? menuId : undefined}
             aria-label={overflowLabel}
             onClick={() => setMenuOpen((open) => !open)}
           >
@@ -221,13 +291,23 @@ export function OverflowBar({
           </button>
         ) : null}
       </div>
+      {/* A disclosure, not an ARIA menu. Each entry is an extension's compact
+          slot, which usually renders its own button — and a `menuitem` may not
+          contain interactive content, so the menu pattern would put the
+          focusable thing inside the item instead of being it. What the popup
+          promises instead: `aria-expanded`/`aria-controls` on the button,
+          focus moved in on open, Escape out, and `Tab` walking the entries as
+          it walks the bar. Positioned with `inset-inline-end` in styles.css, not
+          `right`, so this mirrors correctly under `dir="rtl"`. */}
       {menuOpen && overflowed.length > 0 ? (
         <div
           ref={menuRef}
+          id={menuId}
           data-dtb-part="overflow-menu"
           className={cx(classNames?.overflowMenu)}
-          role="menu"
+          role="group"
           aria-label={overflowLabel}
+          tabIndex={-1}
         >
           {overflowed.map((extension) => (
             <div
@@ -235,7 +315,6 @@ export function OverflowBar({
               data-dtb-part="overflow-menu-item"
               data-dtb-ext-id={extension.id}
               className={cx(classNames?.overflowMenuItem)}
-              role="menuitem"
             >
               {renderItem(extension, { isOverflowed: true })}
             </div>

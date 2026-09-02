@@ -31,6 +31,29 @@ import { ensureStyles } from "./styles";
  */
 export const HEIGHT_VARIABLE = "--dev-toolbar-height";
 
+/**
+ * The `instanceId` default, and the one instance that owns `HEIGHT_VARIABLE`.
+ *
+ * Internal: exported for `src/testing` only, not from any entry point.
+ */
+export const DEFAULT_INSTANCE_ID = "default";
+
+/**
+ * The per-instance form of {@link HEIGHT_VARIABLE}, e.g.
+ * `--dev-toolbar-height-admin`. Every mounted toolbar publishes this one, so
+ * two instances on a page (§2, *No global registry*) never overwrite or remove
+ * each other's value; the unsuffixed name stays the default instance's, which
+ * is what a consumer who never set `instanceId` already reads.
+ *
+ * `instanceId` is an arbitrary string, so anything outside the CSS identifier
+ * characters is folded to `_` rather than escaped. Two ids that differ only in
+ * punctuation therefore collide — the same rule that already asks for distinct
+ * ids so persisted preferences do not.
+ */
+export function instanceHeightVariable(instanceId: string): string {
+  return `${HEIGHT_VARIABLE}-${instanceId.replace(/[^A-Za-z0-9_-]+/g, "_")}`;
+}
+
 export interface DevToolbarProps {
   /** Rendered untouched, in a fragment. The bar itself portals to the body. */
   children?: ReactNode;
@@ -43,6 +66,11 @@ export interface DevToolbarProps {
    *
    * Read once, on mount. Changing it later is ignored — remount the toolbar
    * (e.g. with a `key`) to move an instance to a different namespace.
+   *
+   * Joined unescaped with `:` into the storage key (`docs/architecture.md`
+   * §3), so an id containing `:` can alias another instance's or extension's
+   * scope. Safest as `[A-Za-z0-9_-]` — the same set `instanceHeightVariable`
+   * already folds non-conforming ids down to.
    */
   instanceId?: string;
   density?: ToolbarDensity;
@@ -62,7 +90,11 @@ export interface DevToolbarProps {
   /** `false` skips runtime CSS injection; import `./styles.css` instead. */
   injectStyles?: boolean;
   classNames?: DevToolbarClassNames;
-  /** e.g. `"Mod+Shift+."`. `null` disables the toggle shortcut. */
+  /**
+   * e.g. `"Mod+Shift+."`. `null` disables the toggle shortcut. Ignored when the
+   * event is already `defaultPrevented`, mid-IME-composition, or an auto-repeat;
+   * the focused element does not matter.
+   */
   shortcut?: string | null;
   /** Portal target. Defaults to `document.body`. */
   container?: HTMLElement | null;
@@ -85,7 +117,7 @@ function DevToolbarRoot({
   children,
   extensions: extensionsProp = EMPTY_EXTENSIONS,
   enabled = true,
-  instanceId = "default",
+  instanceId: instanceIdProp = DEFAULT_INSTANCE_ID,
   density = "compact",
   colorScheme = "system",
   defaultVisible = true,
@@ -102,9 +134,9 @@ function DevToolbarRoot({
   // `storage` and `instanceId` are captured once, on mount, so that the store
   // and everything derived from it can never disagree about where preferences
   // live. See the prop docs above.
-  const [{ raw: rawStorage, base: baseStorage }] = useState(() => {
+  const [{ raw: rawStorage, base: baseStorage, instance: instanceId }] = useState(() => {
     const raw = resolveStorage(storageProp);
-    return { raw, base: createInstanceStorage(raw, instanceId) };
+    return { raw, base: createInstanceStorage(raw, instanceIdProp), instance: instanceIdProp };
   });
 
   const [store] = useState(() =>
@@ -168,14 +200,21 @@ function DevToolbarRoot({
     [getCommands],
   );
 
-  // Contract version check.
+  // Contract version check. Deduped by id, not by object: the contract promises
+  // one warning per extension id, and an `extensions` array rebuilt inside
+  // render — the misuse ADR-001 calls likely — re-runs this effect on every
+  // render, which without the ref would flood the console in exactly the case
+  // the warning exists to report.
+  const contractWarnedRef = useRef(new Set<string>());
   useEffect(() => {
     if (!enabled) return;
     for (const extension of extensions) {
       if (
         extension.contractVersion !== undefined &&
-        extension.contractVersion !== CONTRACT_VERSION
+        extension.contractVersion !== CONTRACT_VERSION &&
+        !contractWarnedRef.current.has(extension.id)
       ) {
+        contractWarnedRef.current.add(extension.id);
         // eslint-disable-next-line no-console
         console.warn(
           `[dev-toolbar] extension "${extension.id}" targets contract version ` +
@@ -262,13 +301,48 @@ function DevToolbarRoot({
         signal: controller.signal,
         isVisible: () => store.getSnapshot().visible,
         subscribeVisibility: (callback) => {
+          // `signal` is documented as aborted on teardown, and this is the
+          // subscription that abort must release — an extension that keeps
+          // only the signal (never calling the function returned here) is a
+          // legal reading of the contract. Already aborted at call time (the
+          // extension started, then unregistered before this ran): subscribe
+          // to nothing rather than leak a listener nothing will ever release.
+          if (controller.signal.aborted) return () => {};
+
           let last = store.getSnapshot().visible;
-          return store.subscribe(() => {
+          const unsubscribeStore = store.subscribe(() => {
             const next = store.getSnapshot().visible;
             if (next === last) return;
             last = next;
-            callback(next);
+            // Contained here rather than in the store's `emit`: this callback
+            // is extension code running inside whatever flipped visibility —
+            // the toggle shortcut, a consumer's `setVisible`. Letting it throw
+            // would surface in that caller and abort the notification loop, so
+            // every extension after this one would never hear the change.
+            try {
+              callback(next);
+            } catch (error) {
+              // eslint-disable-next-line no-console
+              console.error(
+                `[dev-toolbar] extension "${extension.id}" threw from its ` +
+                  "subscribeVisibility() callback.",
+                error,
+              );
+            }
           });
+
+          // Idempotent, and removes the abort listener too, so nothing leaks
+          // regardless of which fires first: the extension's own unsubscribe,
+          // or the signal aborting on teardown.
+          let released = false;
+          const unsubscribe = () => {
+            if (released) return;
+            released = true;
+            unsubscribeStore();
+            controller.signal.removeEventListener("abort", unsubscribe);
+          };
+          controller.signal.addEventListener("abort", unsubscribe, { once: true });
+          return unsubscribe;
         },
         storage: createExtensionStorage(rawStorage, instanceId, extension.id),
         // The aggregation, reachable without importing a value from core.
@@ -316,6 +390,11 @@ function DevToolbarRoot({
   useEffect(() => {
     if (!enabled || !parsedShortcut || typeof window === "undefined") return;
     const onKeyDown = (event: KeyboardEvent) => {
+      // The listener is on `window`, so app handlers on `document` have already
+      // run by the time this fires: `defaultPrevented` is how a host says the
+      // chord was theirs. `isComposing` keeps an IME session out of it, and
+      // `repeat` keeps a held chord from flickering the bar.
+      if (event.defaultPrevented || event.isComposing || event.repeat) return;
       if (!matchesShortcut(event, parsedShortcut)) return;
       event.preventDefault();
       store.toggleVisible();
@@ -324,36 +403,50 @@ function DevToolbarRoot({
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [enabled, parsedShortcut, store]);
 
-  // Publish --dev-toolbar-height on the document element.
+  // Publish the height variables on the document element.
   const rootRef = useRef<HTMLDivElement | null>(null);
   const shouldRender = enabled && mounted && state.visible;
+  // What this instance owns, and therefore all it ever removes.
+  const heightVariables = useMemo(
+    () =>
+      instanceId === DEFAULT_INSTANCE_ID
+        ? [HEIGHT_VARIABLE, instanceHeightVariable(instanceId)]
+        : [instanceHeightVariable(instanceId)],
+    [instanceId],
+  );
   useEffect(() => {
     if (!enabled || typeof document === "undefined") return;
     const root = document.documentElement;
     const node = rootRef.current;
+    const write = (value: string) => {
+      for (const name of heightVariables) root.style.setProperty(name, value);
+    };
+    const clear = () => {
+      for (const name of heightVariables) root.style.removeProperty(name);
+    };
     if (!shouldRender || !node) {
-      root.style.setProperty(HEIGHT_VARIABLE, "0px");
-      return () => root.style.removeProperty(HEIGHT_VARIABLE);
+      write("0px");
+      return clear;
     }
 
-    const publish = () => {
-      root.style.setProperty(
-        HEIGHT_VARIABLE,
-        `${Math.round(node.getBoundingClientRect().height)}px`,
-      );
-    };
+    const publish = () => write(`${Math.round(node.getBoundingClientRect().height)}px`);
     publish();
 
-    if (typeof ResizeObserver === "undefined") {
-      return () => root.style.removeProperty(HEIGHT_VARIABLE);
-    }
+    if (typeof ResizeObserver === "undefined") return clear;
     const observer = new ResizeObserver(publish);
     observer.observe(node);
     return () => {
       observer.disconnect();
-      root.style.removeProperty(HEIGHT_VARIABLE);
+      clear();
     };
-  }, [enabled, shouldRender, state.position, state.panelHeight, state.activePanelId]);
+  }, [
+    enabled,
+    shouldRender,
+    heightVariables,
+    state.position,
+    state.panelHeight,
+    state.activePanelId,
+  ]);
 
   const contextValue = useMemo<DevToolbarContextValue>(
     () => ({

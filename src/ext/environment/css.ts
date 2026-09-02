@@ -128,7 +128,7 @@ export const ENVIRONMENT_CSS = String.raw`@layer dev-toolbar {
   }
 
   [data-dev-toolbar] [data-dtb-part="env-tag"] {
-    margin-left: 6px;
+    margin-inline-start: 6px;
     padding: 0 4px;
     border-radius: var(--dtb-radius);
     font-family: var(--dtb-font-family);
@@ -195,7 +195,7 @@ export const ENVIRONMENT_CSS = String.raw`@layer dev-toolbar {
     color: inherit;
     font: inherit;
     cursor: pointer;
-    text-align: left;
+    text-align: start;
   }
 }
 `;

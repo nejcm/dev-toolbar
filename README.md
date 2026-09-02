@@ -13,6 +13,7 @@ own subpath exports.
 - Light DOM, so Tailwind and CSS-in-JS work inside extensions
 - Restyleable from your own CSS without `!important`
 - SSR-safe: your app server-renders untouched, the bar is client-only
+- Positioned with logical CSS properties, so `dir="rtl"` mirrors the bar, the `···` popup and every first-party extension's UI correctly
 
 Subpaths, each opt-in and each with its own bundle:
 
@@ -82,6 +83,13 @@ The shell also publishes `--dev-toolbar-height` on `<html>` — the whole toolba
 .my-layout { padding-bottom: var(--dev-toolbar-height, 0px); }
 ```
 
+Every instance also publishes `--dev-toolbar-height-<instanceId>` — the `instanceId`
+with anything outside `A-Za-z0-9_-` folded to `_` — and the unsuffixed name belongs to
+the `"default"` instance alone. So two toolbars on one page never overwrite or remove
+each other's value; inset by the suffixed name when you mount more than one.
+`<DevToolbarInset>` already pads by its own instance's, falling back to the unsuffixed
+one.
+
 ### Props
 
 | Prop | Default | Notes |
@@ -112,6 +120,67 @@ The default is `Mod+Shift+.` — and `Mod` is **exclusive**, not "either modifie
 Pass your own (`shortcut="Ctrl+Alt+D"`) or `shortcut={null}` to disable. Matching is
 by `key` or by physical `code`, so a shifted punctuation key works on any layout.
 
+It fires wherever focus is, text fields included, but not for an auto-repeat, not
+mid-IME-composition, and not when something else already called `preventDefault()`
+— the listener is on `window`, so your own `document` handler wins the chord.
+
+### The `···` menu
+
+Items that do not fit the bar collapse into a `···` popup, lowest `priority` first. It is a
+disclosure, not an ARIA menu: its entries are your own compact slots, buttons and all,
+and a `menuitem` may not contain interactive content. So the `···` button carries
+`aria-expanded` and, while open, `aria-controls`; the popup is a labelled
+`role="group"`; opening it moves focus to the first focusable thing inside it — the
+popup itself if there is none — and `Tab` walks the rest; `Escape` closes it and hands
+focus back to the button; a click outside closes it and leaves focus where the click
+put it.
+
+### Other exports
+
+`DevToolbar`, `DevToolbarInset`, `useDevToolbar` and `useToolbarCommands` are the
+whole surface most apps touch. The rest of the root entry is a short list of escape
+hatches; everything here is public and covered by the package's versioning.
+
+| Export | What it is for |
+| --- | --- |
+| `runCommand(id, scope?)` | Runs an aggregated command from code with no React context — a hotkey, a console, a test. Resolves `false` when no mounted toolbar declares the id, `true` once the command's `run()` completes. Rejects with `run()`'s own error if it throws or rejects — callers must catch it. `scope`, a `readonly ToolbarCommand[]`, is searched instead of the mounted toolbars. Inside components prefer `useDevToolbar().runCommand`. |
+| `CONTRACT_VERSION` | The extension contract's version, currently `1`. See [ADR-003](./docs/adr/ADR-003-contract-version-policy.md). |
+| `HEIGHT_VARIABLE` | The name of the CSS variable the shell publishes — `"--dev-toolbar-height"` — so a CSS-in-JS host need not retype the string. It is the `"default"` instance's; every instance also publishes `<HEIGHT_VARIABLE>-<instanceId>`. |
+| `createLocalStorage()` | The default adapter: `localStorage`, but it never throws. Useful as the base of your own wrapper. |
+| `createMemoryStorage(seed?)` | In-memory adapter for tests and non-browser hosts. `seed` is a plain key/value map of already-persisted JSON. |
+| `createNullStorage()` | Swallows every write and reads `null` — what `storage={null}` installs. |
+| `STORAGE_PREFIX` | `"dtb:v1"`, the first segment of every key the shell writes. Enough to find or clear persisted preferences from outside React; the key shapes are in [docs/architecture.md](./docs/architecture.md#3-state-storage-and-lifecycle). |
+| `CORE_CSS` | Core's stylesheet as a string, for a host that injects CSS itself — a nonce-based CSP, or a `<style>` it controls. Same bytes as `@nejcm/dev-toolbar/styles.css`. |
+| `ensureStyles(entry?, css?, doc?)` | Injects a stylesheet once per document, keyed on `entry`. Pass `doc` to reach a second document, which is what a `container` inside an iframe or a popped-out window needs. |
+| `DEFAULT_SHORTCUT` | `"Mod+Shift+."`, so your own UI can show the binding it actually has. |
+| `MIN_PANEL_HEIGHT` / `MAX_PANEL_HEIGHT` / `DEFAULT_PANEL_HEIGHT` | `160` / `800` / `320`. The range `defaultPanelHeight` and the resizer are clamped to. |
+
+The aggregation helpers behind `getCommands()` and `getDiagnostics()` are **not**
+exported. They only ever see an extension array the caller assembled by hand, which
+is not the merged list the toolbar renders — read the aggregation through
+`api.getCommands()` / `api.getDiagnostics()` in an extension, or
+`useToolbarCommands()` / `useDevToolbar().getCommands()` in the host.
+
+### Types
+
+Every type the root entry exports. The slot props, `DevToolbarExtension`,
+`ExtensionRuntimeApi`, `ToolbarCommand` and friends are described under
+[the extension contract](#the-extension-contract).
+
+| Type | What it types |
+| --- | --- |
+| `DevToolbarProps` / `DevToolbarInsetProps` | The two components' props. |
+| `DevToolbarExtension` | One extension object. |
+| `ToolbarCommand` / `ToolbarCommandsInput` | A command, and the array-or-function form `commands` accepts. |
+| `ExtensionRuntimeApi` | What `start(api)` receives. |
+| `CompactSlotProps` / `PanelSlotProps` / `OverlaySlotProps` | What each slot renders with. |
+| `ExtensionDiagnostics` / `DiagnosticStatus` | One entry in the diagnostics roster, and its `"ok" \| "absent" \| "failed"` status. |
+| `ToolbarStorage` | The three-method storage adapter. |
+| `ToolbarAlign` / `ToolbarPosition` / `ToolbarDensity` / `ToolbarColorScheme` | `"start" \| "end"`, `"bottom" \| "top"`, `"compact" \| "comfortable"`, `"light" \| "dark" \| "system"`. |
+| `DevToolbarClassNames` | The per-part class map the `classNames` prop takes. |
+| `DevToolbarContextValue` | What `useDevToolbar()` returns. |
+| `ToolbarState` | The store snapshot: `visible`, `position`, `activePanelId`, `panelHeight`. Its `registered` field is marked `@internal` — it holds only the dynamic registrations, so it is not the extension list; use `useDevToolbar().extensions` for that. |
+
 ## The extension contract
 
 An extension is a plain object.
@@ -132,6 +201,8 @@ interface DevToolbarExtension {
   // Core aggregates; it renders no palette. A function is re-enumerated on
   // every pass, so a command that only exists later is still reachable.
   commands?: ToolbarCommand[] | (() => ToolbarCommand[]);
+  // Aggregated the same way as commands; /ext/diagnostics renders the roster.
+  diagnostics?: () => unknown;
   start?(api: ExtensionRuntimeApi): void | (() => void);
 }
 ```
@@ -190,12 +261,15 @@ interface ExtensionRuntimeApi {
   storage: ToolbarStorage;                              // scoped to this extension
   getCommands(): readonly ToolbarCommand[];             // the live aggregation
   runCommand(id: string): Promise<boolean>;             // false = nothing declares it
+  getDiagnostics(): readonly ExtensionDiagnostics[];    // one entry per present extension
 }
 ```
 
-`getCommands()` / `runCommand()` are how an extension reads the aggregation without
-importing a *value* from core — `useToolbarCommands()` is for the host application.
-Both re-enumerate on call, so they are never behind.
+`getCommands()` / `runCommand()` / `getDiagnostics()` are how an extension reads the
+aggregation without importing a *value* from core — `useToolbarCommands()` and
+`useDevToolbar().getCommands()` are for the host application. All three re-enumerate
+on call, so they are never behind. `runCommand()` rejects with the command's own error
+if its `run()` throws or rejects, instead of swallowing it — catch it at the call site.
 
 Core **reports** visibility and never pauses you on your own behalf — a cumulative
 counter that silently stops counting is worse than one that keeps going.
@@ -243,7 +317,8 @@ There is no global registry — it would break SSR, break two toolbars on one pa
 and leak between tests.
 
 A slot that throws degrades to an error chip. The bar and every other extension keep
-working.
+working. In the `compact` and `panel` slots the chip is itself a retry button, so a slot
+that threw on transient state can be brought back without reloading.
 [docs/architecture.md](./docs/architecture.md#7-writing-an-extension).
 
 ## `@nejcm/dev-toolbar/runtime`
@@ -891,7 +966,8 @@ panel.
 
 **2. `data-dtb-part` attributes.** Every part carries one — `root`, `bar`, `region`,
 `item`, `trigger`, `overflow-button`, `overflow-menu`, `overflow-menu-item`,
-`overlay`, `panel`, `panel-resizer`, `panel-body`, `error-chip`, `inset`.
+`overlay`, `panel`, `panel-resizer`, `panel-body`, `error-chip`, `error-retry`,
+`inset`.
 
 Core owns the unprefixed names. An extension that ships its own CSS namespaces its
 parts *by kind* — `/ext/metrics` uses `metrics-chip`, `metrics-panel` and so on for

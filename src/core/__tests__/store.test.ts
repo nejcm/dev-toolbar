@@ -78,6 +78,21 @@ describe("toolbar store", () => {
     expect(store.getSnapshot().registered).toEqual([]);
   });
 
+  it("re-registering an existing id updates it in place instead of moving it to the end", () => {
+    const { store } = makeStore();
+    const a = { id: "a", label: "A" };
+    const b = { id: "b", label: "B" };
+    const c = { id: "c", label: "C" };
+    store.register(a);
+    store.register(b);
+    store.register(c);
+
+    const updatedB = { id: "b", label: "B updated" };
+    store.register(updatedB);
+
+    expect(store.getSnapshot().registered).toEqual([a, updatedB, c]);
+  });
+
   it("survives a storage adapter that throws", () => {
     const hostile = {
       getItem() {

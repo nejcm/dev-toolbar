@@ -27,6 +27,11 @@ export const COMMAND_MENU_CSS = String.raw`@layer dev-toolbar {
     position: fixed;
     z-index: 2;
     top: 12vh;
+    /* Horizontal centring, not a pinned edge: left: 50% + translateX(-50%) is
+       symmetric and needs no RTL mirroring. inset-inline-start: 50% would NOT
+       be equivalent — under dir="rtl" that resolves to the right edge at the
+       midpoint while translateX(-50%) still shifts left by half the width,
+       landing the dialog a full width off-centre. Left deliberately physical. */
     left: 50%;
     transform: translateX(-50%);
     width: min(560px, calc(100vw - 32px));

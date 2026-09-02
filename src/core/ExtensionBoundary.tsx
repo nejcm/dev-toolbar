@@ -18,6 +18,11 @@ interface ExtensionBoundaryState {
 /**
  * One boundary per extension slot. A throwing `compact` or `panel` degrades to
  * an error chip; the rest of the bar keeps rendering.
+ *
+ * The chip is a retry button in the `compact` and `panel` slots: a slot that
+ * threw on transient state would otherwise stay a chip for as long as the
+ * toolbar lives, since nothing else clears the caught error. The `overlay`
+ * chip is inert — an overlay has no reliable visible surface to click.
  */
 export class ExtensionBoundary extends Component<ExtensionBoundaryProps, ExtensionBoundaryState> {
   override state: ExtensionBoundaryState = { error: null };
@@ -37,20 +42,38 @@ export class ExtensionBoundary extends Component<ExtensionBoundaryProps, Extensi
     );
   }
 
+  private readonly retry = (): void => {
+    this.setState({ error: null });
+  };
+
   override render(): ReactNode {
     const { error } = this.state;
     if (!error) return this.props.children;
 
+    const { extensionId, label, slot, classNames } = this.props;
+    const text = `${label}: error`;
+
     return (
       <span
         data-dtb-part="error-chip"
-        data-dtb-ext-id={this.props.extensionId}
-        data-dtb-slot={this.props.slot}
-        className={cx(this.props.classNames?.errorChip)}
+        data-dtb-ext-id={extensionId}
+        data-dtb-slot={slot}
+        className={cx(classNames?.errorChip)}
         title={error.message}
         role="status"
       >
-        {this.props.label}: error
+        {slot === "overlay" ? (
+          text
+        ) : (
+          <button
+            type="button"
+            data-dtb-part="error-retry"
+            aria-label={`${text}. Retry`}
+            onClick={this.retry}
+          >
+            {text}
+          </button>
+        )}
       </span>
     );
   }

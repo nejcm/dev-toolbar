@@ -1,6 +1,11 @@
 import type { RenderOptions, RenderResult } from "@testing-library/react";
 import type { ReactNode } from "react";
-import { DevToolbar, HEIGHT_VARIABLE } from "../core/DevToolbar";
+import {
+  DEFAULT_INSTANCE_ID,
+  DevToolbar,
+  HEIGHT_VARIABLE,
+  instanceHeightVariable,
+} from "../core/DevToolbar";
 import type { DevToolbarProps } from "../core/DevToolbar";
 import { useDevToolbar } from "../core/context";
 import type { DevToolbarContextValue } from "../core/context";
@@ -59,7 +64,11 @@ export interface ToolbarHandle {
   barIds(): string[];
   /** Clicks the `···` button. Throws when there is nothing collapsed. */
   openOverflow(): void;
-  /** Current `--dev-toolbar-height` on the document element, e.g. `"30px"`. */
+  /**
+   * The height this instance publishes, e.g. `"30px"` — read from
+   * `--dev-toolbar-height-<instanceId>`, falling back to the unsuffixed
+   * `--dev-toolbar-height` the default instance also writes.
+   */
   height(): string;
   /** Layout handle, when `layout` was requested. */
   layout: ToolbarLayoutHandle | null;
@@ -205,7 +214,13 @@ export function renderWithToolbar(
       }
       run(() => button.click());
     },
-    height: () => document.documentElement.style.getPropertyValue(HEIGHT_VARIABLE),
+    height: () => {
+      const style = document.documentElement.style;
+      return (
+        style.getPropertyValue(instanceHeightVariable(props.instanceId ?? DEFAULT_INSTANCE_ID)) ||
+        style.getPropertyValue(HEIGHT_VARIABLE)
+      );
+    },
     layout: layoutHandle,
     resize(width) {
       if (!layoutHandle) {

@@ -89,6 +89,12 @@ export const OVERLAYS_CSS = String.raw`@layer dev-toolbar {
   }
 
   [data-dev-toolbar] [data-dtb-part="ovl-grid-columns"] {
+    /* Horizontal centring, not a pinned edge: left: 50% + translateX(-50%) is
+       symmetric and needs no RTL mirroring. inset-inline-start: 50% would NOT
+       be equivalent — under dir="rtl" that resolves to the right edge at the
+       midpoint while translateX(-50%) still shifts left by half the width,
+       landing this (explicitly-widthed) element a full width off-centre.
+       Left deliberately physical. */
     left: 50%;
     right: auto;
     transform: translateX(-50%);
@@ -179,6 +185,11 @@ export const OVERLAYS_CSS = String.raw`@layer dev-toolbar {
   [data-dev-toolbar] [data-dtb-part="ovl-notice"] {
     position: absolute;
     top: 8px;
+    /* Horizontal centring, not a pinned edge: left: 50% + translateX(-50%) is
+       symmetric and needs no RTL mirroring. inset-inline-start: 50% would NOT
+       be equivalent — under dir="rtl" that resolves to the right edge at the
+       midpoint while translateX(-50%) still shifts left by half the width,
+       landing the notice a full width off-centre. Left deliberately physical. */
     left: 50%;
     transform: translateX(-50%);
     padding: 2px 8px;
@@ -253,7 +264,7 @@ export const OVERLAYS_CSS = String.raw`@layer dev-toolbar {
     padding: 0;
     color: inherit;
     font: inherit;
-    text-align: left;
+    text-align: start;
     cursor: pointer;
   }
 
