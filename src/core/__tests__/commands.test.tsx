@@ -268,3 +268,33 @@ describe("aggregation through a mounted toolbar", () => {
     expect(String(warns.at(-1)?.[0])).toContain("no command registered");
   });
 });
+
+describe("runCommand rejection", () => {
+  it("rejects with the command's error when run() throws synchronously", async () => {
+    const extension = makeExtension({
+      id: "a",
+      commands: [
+        command("a.throws", () => {
+          throw new Error("run boom");
+        }),
+      ],
+    });
+    const { toolbar } = mount([extension]);
+    await expect(toolbar.runCommand("a.throws")).rejects.toThrow("run boom");
+  });
+
+  it("rejects with the command's error when run() returns a rejected promise", async () => {
+    const extension = makeExtension({
+      id: "a",
+      commands: [
+        {
+          id: "a.rejects",
+          label: "a.rejects",
+          run: () => Promise.reject(new Error("run boom")),
+        },
+      ],
+    });
+    const { toolbar } = mount([extension]);
+    await expect(toolbar.runCommand("a.rejects")).rejects.toThrow("run boom");
+  });
+});

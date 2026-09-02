@@ -166,9 +166,12 @@ export interface ExtensionRuntimeApi {
    */
   getCommands(): readonly ToolbarCommand[];
   /**
-   * Runs an aggregated command by id. Resolves `false` when nothing declares
-   * it — including a command that existed when it was listed and does not any
-   * more, which a palette has to be able to tell its user.
+   * Runs an aggregated command by id. Resolves `true` once the command's
+   * `run()` has completed, `false` when nothing declares it — including a
+   * command that existed when it was listed and does not any more, which a
+   * palette has to be able to tell its user. If `run()` throws or returns a
+   * rejected promise, `runCommand()` rejects with that same error — callers
+   * must catch it (`/ext/command-menu` does, and shows the message).
    */
   runCommand(id: string): Promise<boolean>;
   /**

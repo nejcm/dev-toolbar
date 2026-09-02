@@ -142,7 +142,7 @@ hatches; everything here is public and covered by the package's versioning.
 
 | Export | What it is for |
 | --- | --- |
-| `runCommand(id, scope?)` | Runs an aggregated command from code with no React context — a hotkey, a console, a test. Resolves `false` when no mounted toolbar declares the id. `scope`, a `readonly ToolbarCommand[]`, is searched instead of the mounted toolbars. Inside components prefer `useDevToolbar().runCommand`. |
+| `runCommand(id, scope?)` | Runs an aggregated command from code with no React context — a hotkey, a console, a test. Resolves `false` when no mounted toolbar declares the id, `true` once the command's `run()` completes. Rejects with `run()`'s own error if it throws or rejects — callers must catch it. `scope`, a `readonly ToolbarCommand[]`, is searched instead of the mounted toolbars. Inside components prefer `useDevToolbar().runCommand`. |
 | `CONTRACT_VERSION` | The extension contract's version, currently `1`. See [ADR-003](./docs/adr/ADR-003-contract-version-policy.md). |
 | `HEIGHT_VARIABLE` | The name of the CSS variable the shell publishes — `"--dev-toolbar-height"` — so a CSS-in-JS host need not retype the string. It is the `"default"` instance's; every instance also publishes `<HEIGHT_VARIABLE>-<instanceId>`. |
 | `createLocalStorage()` | The default adapter: `localStorage`, but it never throws. Useful as the base of your own wrapper. |
@@ -263,7 +263,9 @@ interface ExtensionRuntimeApi {
 
 `getCommands()` / `runCommand()` are how an extension reads the aggregation without
 importing a *value* from core — `useToolbarCommands()` is for the host application.
-Both re-enumerate on call, so they are never behind.
+Both re-enumerate on call, so they are never behind. `runCommand()` rejects with the
+command's own error if its `run()` throws or rejects, instead of swallowing it —
+catch it at the call site.
 
 Core **reports** visibility and never pauses you on your own behalf — a cumulative
 counter that silently stops counting is worse than one that keeps going.

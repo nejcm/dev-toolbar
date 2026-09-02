@@ -154,6 +154,9 @@ function findCommand(id: string, scope?: readonly ToolbarCommand[]): ToolbarComm
  * form of `commands`, a list captured a render ago may already be stale, and
  * "the command is gone" and "the command was never there" must not be told
  * apart by how recently the caller happened to enumerate.
+ *
+ * If the command's `run()` throws, or returns a promise that rejects, this
+ * rejects with that same error instead of resolving — callers must catch it.
  */
 export async function runCommand(id: string, scope?: readonly ToolbarCommand[]): Promise<boolean> {
   const command = findCommand(id, scope);
