@@ -258,6 +258,40 @@ describe("contract version", () => {
     expect(messages.some((message) => message.includes('"new"'))).toBe(false);
     expect(messages.some((message) => message.includes('"silent"'))).toBe(false);
   });
+
+  it("warns once per extension id across re-renders with fresh inline arrays", () => {
+    const view = render(
+      <DevToolbar
+        instanceId="t"
+        extensions={[
+          { id: "old", label: "Old", contractVersion: CONTRACT_VERSION + 1 },
+          { id: "older", label: "Older", contractVersion: CONTRACT_VERSION + 2 },
+        ]}
+      >
+        <div />
+      </DevToolbar>,
+    );
+
+    // A fresh array literal on every render is the misuse ADR-001 calls likely,
+    // and is exactly what an un-deduped warning would flood the console for.
+    for (let index = 0; index < 2; index += 1) {
+      view.rerender(
+        <DevToolbar
+          instanceId="t"
+          extensions={[
+            { id: "old", label: "Old", contractVersion: CONTRACT_VERSION + 1 },
+            { id: "older", label: "Older", contractVersion: CONTRACT_VERSION + 2 },
+          ]}
+        >
+          <div />
+        </DevToolbar>,
+      );
+    }
+
+    const messages = warn.mock.calls.map((call) => String(call[0]));
+    expect(messages.filter((message) => message.includes('"old"')).length).toBe(1);
+    expect(messages.filter((message) => message.includes('"older"')).length).toBe(1);
+  });
 });
 
 describe("persistence", () => {

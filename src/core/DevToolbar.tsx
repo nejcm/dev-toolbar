@@ -168,14 +168,21 @@ function DevToolbarRoot({
     [getCommands],
   );
 
-  // Contract version check.
+  // Contract version check. Deduped by id, not by object: the contract promises
+  // one warning per extension id, and an `extensions` array rebuilt inside
+  // render — the misuse ADR-001 calls likely — re-runs this effect on every
+  // render, which without the ref would flood the console in exactly the case
+  // the warning exists to report.
+  const contractWarnedRef = useRef(new Set<string>());
   useEffect(() => {
     if (!enabled) return;
     for (const extension of extensions) {
       if (
         extension.contractVersion !== undefined &&
-        extension.contractVersion !== CONTRACT_VERSION
+        extension.contractVersion !== CONTRACT_VERSION &&
+        !contractWarnedRef.current.has(extension.id)
       ) {
+        contractWarnedRef.current.add(extension.id);
         // eslint-disable-next-line no-console
         console.warn(
           `[dev-toolbar] extension "${extension.id}" targets contract version ` +
