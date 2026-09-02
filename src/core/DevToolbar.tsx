@@ -66,6 +66,11 @@ export interface DevToolbarProps {
    *
    * Read once, on mount. Changing it later is ignored — remount the toolbar
    * (e.g. with a `key`) to move an instance to a different namespace.
+   *
+   * Joined unescaped with `:` into the storage key (`docs/architecture.md`
+   * §3), so an id containing `:` can alias another instance's or extension's
+   * scope. Safest as `[A-Za-z0-9_-]` — the same set `instanceHeightVariable`
+   * already folds non-conforming ids down to.
    */
   instanceId?: string;
   density?: ToolbarDensity;

@@ -199,6 +199,14 @@ State lives in a small store read through `useSyncExternalStore`. Four keys pers
 Each extension's `start(api)` gets `api.storage`, scoped to
 `dtb:v1:<instanceId>:ext:<extensionId>:`.
 
+`:` is the delimiter and is not escaped: `instanceId` and extension `id`s are
+joined into the key as-is, so one containing `:` can alias another instance's
+or extension's scope (`instanceId: "a:ext:b"` reads and writes the same keys
+as `instanceId: "a"` with extension id `"b"`). ADR-001 already treats `id`
+collisions as the consumer's responsibility; the same applies here. Keep both
+ids to `[A-Za-z0-9_-]` — the set `instanceHeightVariable` (`DevToolbar.tsx`)
+already folds non-conforming `instanceId`s down to.
+
 The adapter is a synchronous three-method interface (`getItem`/`setItem`/`removeItem`),
 which is exactly `localStorage`'s shape — that is why `localStorage` is the default.
 `storage={null}` disables persistence. A throwing adapter degrades to defaults rather

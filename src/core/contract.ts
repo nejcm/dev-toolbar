@@ -190,6 +190,12 @@ export interface ExtensionRuntimeApi {
 }
 
 export interface DevToolbarExtension {
+  /**
+   * Identity, and the namespace for this extension's persisted storage
+   * (`dtb:v1:<instanceId>:ext:<id>:*`, `docs/architecture.md` §3). The `:`
+   * separators are not escaped, so an id containing `:` can alias another
+   * extension's or instance's storage scope. Safest as `[A-Za-z0-9_-]`.
+   */
   id: string;
   label: string;
   /** Core warns when this does not equal `CONTRACT_VERSION`. */

@@ -27,6 +27,19 @@ describe("storage adapters", () => {
     expect(window.localStorage.getItem(`${STORAGE_PREFIX}:app:ext:flags:enabled`)).toBe("1");
   });
 
+  it("pins current behaviour: an unescaped `:` in instanceId aliases another scope", () => {
+    // Not a spec — `:` is documented (contract.ts, DevToolbar.tsx, architecture.md
+    // §3) as an unescaped delimiter that ids should avoid. This pins what actually
+    // happens today if one is used anyway, so a future change to the key format is
+    // a deliberate, visible decision rather than an accidental fix.
+    const backing = createMemoryStorage();
+    const aliasedInstance = createInstanceStorage(backing, "a:ext:b");
+    const nestedExtension = createExtensionStorage(backing, "a", "b");
+
+    aliasedInstance.setItem("visible", "true");
+    expect(nestedExtension.getItem("visible")).toBe("true");
+  });
+
   it("round-trips in memory", () => {
     const storage = createMemoryStorage({ a: "1" });
     expect(storage.getItem("a")).toBe("1");
