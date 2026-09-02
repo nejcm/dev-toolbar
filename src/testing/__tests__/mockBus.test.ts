@@ -349,3 +349,215 @@ describe("createMockBus — clock", () => {
     expect(bus.clock.pending()).toBe(1);
   });
 });
+
+describe("createMockBus — emit error handling", () => {
+  it("does not let a throwing handler stop the rest, or propagate to the emitter", () => {
+    const bus = createMockBus({ onError: vi.fn() });
+    const boom = vi.fn(() => {
+      throw new Error("boom");
+    });
+    const after = vi.fn();
+    bus.on("navigation", boom);
+    bus.on("navigation", after);
+
+    expect(() => bus.emit("navigation", { route: "/a" })).not.toThrow();
+    expect(after).toHaveBeenCalledTimes(1);
+  });
+
+  it("routes a thrown error to onError with the error and the event, defaulting to console.error", () => {
+    const onError = vi.fn();
+    const bus = createMockBus({ onError });
+    const error = new Error("boom");
+    bus.on("navigation", () => {
+      throw error;
+    });
+
+    const event = bus.emit("navigation", { route: "/a" });
+
+    expect(onError).toHaveBeenCalledTimes(1);
+    expect(onError).toHaveBeenCalledWith(error, event);
+  });
+
+  it("logs via console.error when no onError is supplied", () => {
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const bus = createMockBus();
+    bus.on("navigation", () => {
+      throw new Error("boom");
+    });
+
+    bus.emit("navigation", { route: "/a" });
+
+    expect(spy).toHaveBeenCalledTimes(1);
+    spy.mockRestore();
+  });
+
+  it("also protects onAny subscribers from a throwing type handler and each other", () => {
+    const onError = vi.fn();
+    const bus = createMockBus({ onError });
+    const survivor = vi.fn();
+    bus.on("navigation", () => {
+      throw new Error("type handler boom");
+    });
+    bus.onAny(() => {
+      throw new Error("onAny boom");
+    });
+    bus.onAny(survivor);
+
+    bus.emit("navigation", { route: "/a" });
+
+    expect(onError).toHaveBeenCalledTimes(2);
+    expect(survivor).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("createMockBus — events()", () => {
+  it("returns a snapshot copy, not the live internal history", () => {
+    const bus = createMockBus();
+    bus.emit("navigation", { route: "/a" });
+    const captured = bus.events();
+
+    bus.emit("navigation", { route: "/b" });
+
+    expect(captured).toHaveLength(1);
+    expect(bus.events()).toHaveLength(2);
+  });
+
+  it("clearEvents() does not retroactively affect an already-captured snapshot", () => {
+    const bus = createMockBus();
+    bus.emit("navigation", { route: "/a" });
+    const captured = bus.events();
+
+    bus.clearEvents();
+
+    expect(captured).toHaveLength(1);
+    expect(bus.events()).toHaveLength(0);
+  });
+
+  it("evicts the oldest events once historyLimit is exceeded", () => {
+    const bus = createMockBus({ historyLimit: 2 });
+    bus.emit("navigation", { route: "/a" });
+    bus.emit("navigation", { route: "/b" });
+    bus.emit("navigation", { route: "/c" });
+
+    const events = bus.events("navigation");
+    expect(events).toHaveLength(2);
+    expect(events.map((event) => event.payload)).toEqual([{ route: "/b" }, { route: "/c" }]);
+  });
+});
+
+describe("createMockBus — once() and onAny() without a signal", () => {
+  it("once() fires exactly one time then unsubscribes", () => {
+    const bus = createMockBus();
+    const handler = vi.fn();
+    bus.once("navigation", handler);
+
+    bus.emit("navigation", { route: "/a" });
+    bus.emit("navigation", { route: "/b" });
+
+    expect(handler).toHaveBeenCalledTimes(1);
+    expect(handler).toHaveBeenCalledWith(
+      { route: "/a" },
+      expect.objectContaining({ type: "navigation" }),
+    );
+    expect(bus.listenerCount("navigation")).toBe(0);
+  });
+
+  it("once()'s returned unsubscribe is a no-op if called after it already fired", () => {
+    const bus = createMockBus();
+    const handler = vi.fn();
+    const off = bus.once("navigation", handler);
+
+    bus.emit("navigation", { route: "/a" });
+    expect(() => off()).not.toThrow();
+    expect(handler).toHaveBeenCalledTimes(1);
+  });
+
+  it("onAny() receives every emitted event regardless of type", () => {
+    const bus = createMockBus();
+    const seen: string[] = [];
+    bus.onAny((_payload, event) => seen.push(event.type));
+
+    bus.emit("navigation", { route: "/a" });
+    bus.emit("long-task", { duration: 5 });
+
+    expect(seen).toEqual(["navigation", "long-task"]);
+  });
+
+  it("onAny()'s returned unsubscribe stops future deliveries", () => {
+    const bus = createMockBus();
+    const handler = vi.fn();
+    const off = bus.onAny(handler);
+
+    bus.emit("navigation", { route: "/a" });
+    off();
+    bus.emit("navigation", { route: "/b" });
+
+    expect(handler).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("createMockBus — listenerCount()", () => {
+  it("counts subscribers across on(), once() and onAny(), total and per-type", () => {
+    const bus = createMockBus();
+    bus.on("navigation", vi.fn());
+    bus.on("navigation", vi.fn());
+    bus.on("long-task", vi.fn());
+    bus.once("navigation", vi.fn());
+    bus.onAny(vi.fn());
+
+    expect(bus.listenerCount("navigation")).toBe(3);
+    expect(bus.listenerCount("long-task")).toBe(1);
+    expect(bus.listenerCount("interaction")).toBe(0);
+    expect(bus.listenerCount()).toBe(5);
+  });
+
+  it("drops to 0 once every subscriber unsubscribes", () => {
+    const bus = createMockBus();
+    const offA = bus.on("navigation", vi.fn());
+    const offB = bus.onAny(vi.fn());
+
+    offA();
+    offB();
+
+    expect(bus.listenerCount()).toBe(0);
+  });
+});
+
+describe("createMockBus — reset()", () => {
+  it("drops subscribers, history and pending timers", () => {
+    const bus = createMockBus();
+    const handler = vi.fn();
+    bus.on("navigation", handler);
+    bus.onAny(vi.fn());
+    bus.emit("navigation", { route: "/a" });
+    bus.clock.setTimeout(vi.fn(), 10);
+
+    bus.reset();
+
+    expect(bus.listenerCount()).toBe(0);
+    expect(bus.events()).toHaveLength(0);
+    expect(bus.clock.pending()).toBe(0);
+
+    bus.emit("navigation", { route: "/b" });
+    expect(handler).toHaveBeenCalledTimes(1); // still just the pre-reset call
+  });
+});
+
+describe("createMockBus — clearEvents()", () => {
+  it("drops recorded history but leaves subscribers and timers untouched", () => {
+    const bus = createMockBus();
+    const handler = vi.fn();
+    bus.on("navigation", handler);
+    bus.emit("navigation", { route: "/a" });
+    bus.clock.setTimeout(vi.fn(), 10);
+
+    bus.clearEvents();
+
+    expect(bus.events()).toHaveLength(0);
+    expect(bus.listenerCount("navigation")).toBe(1);
+    expect(bus.clock.pending()).toBe(1);
+
+    bus.emit("navigation", { route: "/b" });
+    expect(handler).toHaveBeenCalledTimes(2);
+  });
+});

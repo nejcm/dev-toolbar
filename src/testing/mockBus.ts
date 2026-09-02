@@ -1,10 +1,12 @@
 /**
  * A self-contained pub/sub bus with a hand-cranked clock.
  *
- * Deliberately *not* an import from `src/runtime/` — the real event bus lands
- * in P1 behind the `./runtime` subpath, and `./testing` must stay usable
- * without it. When `/runtime` ships, this stays: it is a test double, not a
- * re-export.
+ * Deliberately *not* an import from `src/runtime/bus.ts`, even though that
+ * module has shipped and is published behind the `./runtime` subpath:
+ * `src/testing/` may not import `src/runtime/` at all — not even `import
+ * type` — per the layering table in AGENTS.md, and `./testing` must stay
+ * usable without it regardless. This file is a test double, not a re-export,
+ * and it stays that way permanently, not just until something else ships.
  *
  * Because it may not import the contract, it restates it. The shapes below are
  * therefore matched *by hand* to `BusLike<Events>` in `src/runtime/bus.ts`, so
@@ -19,6 +21,19 @@
  * The mock is deliberately *wider* than the contract — `type: string` rather
  * than a key of an event map, and a recorded history — which is the direction
  * assignability needs: wider parameters, equal-or-narrower returns.
+ *
+ * Known divergences from `createEventBus()` in `src/runtime/bus.ts`, beyond
+ * structural typing:
+ * - `MockBus` is not generic over an `Events` map the way `EventBus<Events>`
+ *   is — `emit`/`on`/`once` take `type: string` everywhere. Making it generic
+ *   is a public-type change and out of scope here; a caller that wants
+ *   payload-level type safety narrows at the call site instead.
+ * - The mock's `reset()` and the real bus's `clear()` are *not* the same
+ *   operation, despite both being "start over": `EventBus.clear()` drops only
+ *   subscribers, while `MockBus.reset()` also wipes recorded history and
+ *   pending timers. Deliberately not aliased under one name — a shared name
+ *   with different scope would be a footgun for anyone porting a test between
+ *   the two buses.
  */
 
 export interface MockClock {
@@ -68,9 +83,20 @@ export interface MockBusSubscribeOptions {
   signal?: AbortSignal;
 }
 
+/**
+ * See the "Known divergences" list in this file's header comment for where
+ * `MockBus` deliberately departs from `EventBus` in `src/runtime/bus.ts`.
+ */
 export interface MockBus {
   clock: MockClock;
-  /** Publishes an event to `type` subscribers and to every `onAny` subscriber. */
+  /**
+   * Publishes an event to `type` subscribers and to every `onAny` subscriber.
+   *
+   * Matches the real bus: a handler that throws does not stop the remaining
+   * handlers, and the error never propagates to the caller of `emit()`. It is
+   * instead routed to `onError` (see `CreateMockBusOptions.onError`), exactly
+   * as `createEventBus()`'s `CreateEventBusOptions.onError` does.
+   */
   emit<T, K extends string = string>(type: K, payload?: T): MockBusEvent<T, K>;
   /** Subscribes to one type. Returns an unsubscribe function. */
   on<T>(type: string, handler: MockBusHandler<T>, options?: MockBusSubscribeOptions): () => void;
@@ -78,13 +104,24 @@ export interface MockBus {
   once<T>(type: string, handler: MockBusHandler<T>, options?: MockBusSubscribeOptions): () => void;
   /** Subscribes to every type. */
   onAny(handler: MockBusHandler, options?: MockBusSubscribeOptions): () => void;
-  /** Recorded events, newest last. Pass a `type` to filter. */
+  /**
+   * Recorded events, newest last. Pass a `type` to filter.
+   *
+   * Returns a snapshot copy: a later `clearEvents()` or further `emit()`
+   * calls never mutate an array you already hold, unlike returning the live
+   * internal history would.
+   */
   events(type?: string): readonly MockBusEvent[];
   /** Payloads only — the common assertion shape. */
   payloads<T = unknown>(type: string): T[];
   /** Drops the recorded history. Subscribers and timers are untouched. */
   clearEvents(): void;
-  /** Drops subscribers, history and timers. */
+  /**
+   * Drops subscribers, history and timers — a wider teardown than
+   * `EventBus.clear()` on the real bus, which drops only subscribers. Not
+   * aliased as `clear()` on purpose: same name, different scope, is a
+   * footgun. See the header comment's divergence list.
+   */
   reset(): void;
   /** Number of live subscribers, optionally for one type. */
   listenerCount(type?: string): number;
@@ -95,6 +132,12 @@ export interface CreateMockBusOptions {
   now?: number;
   /** Cap on recorded events. Oldest are dropped. Default `1000`. */
   historyLimit?: number;
+  /**
+   * Called when a handler throws during `emit()`, mirroring
+   * `CreateEventBusOptions.onError` on the real bus. Defaults to logging via
+   * `console.error`, same as the real bus's default.
+   */
+  onError?: (error: unknown, event: MockBusEvent) => void;
 }
 
 interface Timer {
@@ -210,6 +253,12 @@ function createClock(start: number): MockClock {
 /** Creates an isolated bus. One per test — never share a module-level instance. */
 export function createMockBus(options: CreateMockBusOptions = {}): MockBus {
   const { now = 0, historyLimit = 1000 } = options;
+  const onError =
+    options.onError ??
+    ((error: unknown, event: MockBusEvent) => {
+      // eslint-disable-next-line no-console
+      console.error(`[dev-toolbar/testing] a "${event.type}" handler threw.`, error);
+    });
   const clock = createClock(now);
   const handlers = new Map<string, Set<MockBusHandler<never>>>();
   const anyHandlers = new Set<MockBusHandler>();
@@ -263,12 +312,22 @@ export function createMockBus(options: CreateMockBusOptions = {}): MockBus {
       if (history.length > historyLimit) {
         history = history.slice(history.length - historyLimit);
       }
-      // Snapshot: a handler may unsubscribe itself mid-dispatch.
+      // Snapshot: a handler may unsubscribe itself mid-dispatch. A throwing
+      // handler must not stop the rest, or propagate to the emitter — same
+      // contract as the real bus's `dispatch()`.
       for (const handler of Array.from(handlers.get(type) ?? [])) {
-        (handler as MockBusHandler<T>)(event.payload, event);
+        try {
+          (handler as MockBusHandler<T>)(event.payload, event);
+        } catch (error) {
+          onError(error, event as MockBusEvent);
+        }
       }
       for (const handler of Array.from(anyHandlers)) {
-        handler(event.payload, event as MockBusEvent);
+        try {
+          handler(event.payload, event as MockBusEvent);
+        } catch (error) {
+          onError(error, event as MockBusEvent);
+        }
       }
       return event;
     },
@@ -291,7 +350,7 @@ export function createMockBus(options: CreateMockBusOptions = {}): MockBus {
       }, options?.signal);
     },
     events: (type) =>
-      type === undefined ? history : history.filter((event) => event.type === type),
+      type === undefined ? history.slice() : history.filter((event) => event.type === type),
     payloads<T = unknown>(type: string) {
       return history.filter((event) => event.type === type).map((event) => event.payload as T);
     },
