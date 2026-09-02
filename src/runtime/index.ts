@@ -20,6 +20,7 @@ export type {
   BusEvent,
   BusEventName,
   BusHandler,
+  BusLike,
   BusSubscribeOptions,
   CreateEventBusOptions,
   EventBus,

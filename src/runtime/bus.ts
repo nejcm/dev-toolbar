@@ -91,13 +91,30 @@ export interface BusSubscribeOptions {
   signal?: AbortSignal;
 }
 
-export interface EventBus<Events extends Record<string, unknown>> {
+/**
+ * The two methods a consumer of a bus actually needs: publish, and subscribe.
+ *
+ * This exists so an option like `metrics`' `bus` can be typed *structurally*
+ * rather than as the whole `EventBus`. `./testing` may not import `./runtime`
+ * (see AGENTS.md), so `createMockBus()` reimplements the contract by hand;
+ * asking a test double for `once`, `onAny`, `listenerCount` and `clear` — none
+ * of which a collector calls — is what made the shipped double unusable as the
+ * real thing and pushed tests onto `createEventBus()` instead.
+ *
+ * Take `BusLike<…>` in an option, not `EventBus<…>`, unless you really call the
+ * rest. Anything assignable to it can drive the collector: the real bus, the
+ * mock, or an adapter over an app's own emitter.
+ */
+export interface BusLike<Events extends Record<string, unknown>> {
   emit<K extends keyof Events & string>(type: K, payload: Events[K]): BusEvent<Events[K], K>;
   on<K extends keyof Events & string>(
     type: K,
     handler: BusHandler<Events[K]>,
     options?: BusSubscribeOptions,
   ): () => void;
+}
+
+export interface EventBus<Events extends Record<string, unknown>> extends BusLike<Events> {
   once<K extends keyof Events & string>(
     type: K,
     handler: BusHandler<Events[K]>,

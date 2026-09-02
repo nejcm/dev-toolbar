@@ -1,6 +1,7 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, expectTypeOf, it, vi } from "vitest";
 import { createEventBus } from "../../../runtime";
-import type { ToolbarEventMap } from "../../../runtime";
+import type { BusLike, ToolbarEventMap } from "../../../runtime";
+import { createMockBus } from "../../../testing";
 import { createNetworkCollector } from "../collectors/network";
 import { REDACTED } from "../../../runtime";
 
@@ -317,6 +318,45 @@ describe("network collector — instrumented client instead of a patch", () => {
     expect(collector.read(clock.t).display).toBe("0");
 
     // The signal unsubscribes both handlers.
+    controller.abort();
+    expect(bus.listenerCount()).toBe(0);
+  });
+
+  // The point of shipping a bus double in `./testing` is that it can stand in
+  // here. It could not: `./testing` may not import `./runtime` (AGENTS.md), so
+  // `MockBus` restates the contract and had drifted out of assignability — no
+  // `clear()`, no `options.signal`, an unkeyed `on`. The `bus` option now asks
+  // for `BusLike`, the two methods a collector calls, and the mock matches it.
+  // Assert that here rather than in `src/testing/__tests__`, which the core
+  // boundary test forbids from naming `runtime` at all.
+  //
+  // The type assertion is necessary and not sufficient: a callee may declare
+  // *fewer* parameters than its caller passes, so a mock whose `on` ignored
+  // `options` entirely would still satisfy `BusLike` and then silently leak
+  // every subscription past teardown. The `listenerCount()` assertion after
+  // `controller.abort()` below is what actually holds the mock to the `signal`
+  // half of the contract; `src/testing/__tests__/mockBus.test.ts` covers the
+  // rest of that parity from the double's own side.
+  it("takes the shipped createMockBus() double, which satisfies BusLike", () => {
+    expectTypeOf(createMockBus()).toExtend<BusLike<ToolbarEventMap>>();
+
+    const bus = createMockBus();
+    const clock = { t: 0 };
+    const collector = createNetworkCollector({ patchFetch: false, patchXhr: false, bus });
+    const controller = new AbortController();
+    collector.start(context(controller, clock));
+
+    bus.emit("network-start", { requestId: "abc", method: "GET", url: "/api/me?token=leak" });
+    expect(collector.read(clock.t).display).toBe("1");
+
+    clock.t = 40;
+    bus.emit("network-end", { requestId: "abc", ok: true, status: 200, duration: 40 });
+
+    const [entry] = collector.entries?.(clock.t) ?? [];
+    expect(entry).toMatchObject({ method: "GET", status: 200, state: "ok" });
+    expect(entry?.url).not.toContain("leak");
+    // The double honours `options.signal` too, or a collector's teardown would
+    // silently leak in every test that used it.
     controller.abort();
     expect(bus.listenerCount()).toBe(0);
   });

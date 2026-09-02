@@ -28,6 +28,7 @@ export type {
   MockBus,
   MockBusEvent,
   MockBusHandler,
+  MockBusSubscribeOptions,
   MockClock,
 } from "./mockBus";
 
