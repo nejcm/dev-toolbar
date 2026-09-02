@@ -31,6 +31,29 @@ import { ensureStyles } from "./styles";
  */
 export const HEIGHT_VARIABLE = "--dev-toolbar-height";
 
+/**
+ * The `instanceId` default, and the one instance that owns `HEIGHT_VARIABLE`.
+ *
+ * Internal: exported for `src/testing` only, not from any entry point.
+ */
+export const DEFAULT_INSTANCE_ID = "default";
+
+/**
+ * The per-instance form of {@link HEIGHT_VARIABLE}, e.g.
+ * `--dev-toolbar-height-admin`. Every mounted toolbar publishes this one, so
+ * two instances on a page (§2, *No global registry*) never overwrite or remove
+ * each other's value; the unsuffixed name stays the default instance's, which
+ * is what a consumer who never set `instanceId` already reads.
+ *
+ * `instanceId` is an arbitrary string, so anything outside the CSS identifier
+ * characters is folded to `_` rather than escaped. Two ids that differ only in
+ * punctuation therefore collide — the same rule that already asks for distinct
+ * ids so persisted preferences do not.
+ */
+export function instanceHeightVariable(instanceId: string): string {
+  return `${HEIGHT_VARIABLE}-${instanceId.replace(/[^A-Za-z0-9_-]+/g, "_")}`;
+}
+
 export interface DevToolbarProps {
   /** Rendered untouched, in a fragment. The bar itself portals to the body. */
   children?: ReactNode;
@@ -89,7 +112,7 @@ function DevToolbarRoot({
   children,
   extensions: extensionsProp = EMPTY_EXTENSIONS,
   enabled = true,
-  instanceId: instanceIdProp = "default",
+  instanceId: instanceIdProp = DEFAULT_INSTANCE_ID,
   density = "compact",
   colorScheme = "system",
   defaultVisible = true,
@@ -354,36 +377,50 @@ function DevToolbarRoot({
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [enabled, parsedShortcut, store]);
 
-  // Publish --dev-toolbar-height on the document element.
+  // Publish the height variables on the document element.
   const rootRef = useRef<HTMLDivElement | null>(null);
   const shouldRender = enabled && mounted && state.visible;
+  // What this instance owns, and therefore all it ever removes.
+  const heightVariables = useMemo(
+    () =>
+      instanceId === DEFAULT_INSTANCE_ID
+        ? [HEIGHT_VARIABLE, instanceHeightVariable(instanceId)]
+        : [instanceHeightVariable(instanceId)],
+    [instanceId],
+  );
   useEffect(() => {
     if (!enabled || typeof document === "undefined") return;
     const root = document.documentElement;
     const node = rootRef.current;
+    const write = (value: string) => {
+      for (const name of heightVariables) root.style.setProperty(name, value);
+    };
+    const clear = () => {
+      for (const name of heightVariables) root.style.removeProperty(name);
+    };
     if (!shouldRender || !node) {
-      root.style.setProperty(HEIGHT_VARIABLE, "0px");
-      return () => root.style.removeProperty(HEIGHT_VARIABLE);
+      write("0px");
+      return clear;
     }
 
-    const publish = () => {
-      root.style.setProperty(
-        HEIGHT_VARIABLE,
-        `${Math.round(node.getBoundingClientRect().height)}px`,
-      );
-    };
+    const publish = () => write(`${Math.round(node.getBoundingClientRect().height)}px`);
     publish();
 
-    if (typeof ResizeObserver === "undefined") {
-      return () => root.style.removeProperty(HEIGHT_VARIABLE);
-    }
+    if (typeof ResizeObserver === "undefined") return clear;
     const observer = new ResizeObserver(publish);
     observer.observe(node);
     return () => {
       observer.disconnect();
-      root.style.removeProperty(HEIGHT_VARIABLE);
+      clear();
     };
-  }, [enabled, shouldRender, state.position, state.panelHeight, state.activePanelId]);
+  }, [
+    enabled,
+    shouldRender,
+    heightVariables,
+    state.position,
+    state.panelHeight,
+    state.activePanelId,
+  ]);
 
   const contextValue = useMemo<DevToolbarContextValue>(
     () => ({

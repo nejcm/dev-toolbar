@@ -1,6 +1,6 @@
 import type { CSSProperties, HTMLAttributes, ReactNode } from "react";
 import { useOptionalDevToolbar } from "./context";
-import { HEIGHT_VARIABLE } from "./DevToolbar";
+import { HEIGHT_VARIABLE, instanceHeightVariable } from "./DevToolbar";
 
 export interface DevToolbarInsetProps extends HTMLAttributes<HTMLDivElement> {
   children?: ReactNode;
@@ -19,7 +19,12 @@ export function DevToolbarInset({ children, style, ...rest }: DevToolbarInsetPro
   const settled = toolbar !== null && toolbar.mounted;
   const position = settled ? toolbar.position : "bottom";
   const active = settled && toolbar.enabled && toolbar.visible;
-  const padding = active ? `var(${HEIGHT_VARIABLE}, 0px)` : "0px";
+  // Its own instance's variable first: with two toolbars mounted, only the
+  // default instance's is the unsuffixed one. The unsuffixed name stays as the
+  // fallback so a host that writes it by hand still drives the inset.
+  const padding = active
+    ? `var(${instanceHeightVariable(toolbar.instanceId)}, var(${HEIGHT_VARIABLE}, 0px))`
+    : "0px";
 
   const insetStyle: CSSProperties = {
     ...(position === "bottom" ? { paddingBottom: padding } : { paddingTop: padding }),

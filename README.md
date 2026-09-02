@@ -82,6 +82,13 @@ The shell also publishes `--dev-toolbar-height` on `<html>` — the whole toolba
 .my-layout { padding-bottom: var(--dev-toolbar-height, 0px); }
 ```
 
+Every instance also publishes `--dev-toolbar-height-<instanceId>` — the `instanceId`
+with anything outside `A-Za-z0-9_-` folded to `_` — and the unsuffixed name belongs to
+the `"default"` instance alone. So two toolbars on one page never overwrite or remove
+each other's value; inset by the suffixed name when you mount more than one.
+`<DevToolbarInset>` already pads by its own instance's, falling back to the unsuffixed
+one.
+
 ### Props
 
 | Prop | Default | Notes |
@@ -126,7 +133,7 @@ hatches; everything here is public and covered by the package's versioning.
 | --- | --- |
 | `runCommand(id, scope?)` | Runs an aggregated command from code with no React context — a hotkey, a console, a test. Resolves `false` when no mounted toolbar declares the id. `scope`, a `readonly ToolbarCommand[]`, is searched instead of the mounted toolbars. Inside components prefer `useDevToolbar().runCommand`. |
 | `CONTRACT_VERSION` | The extension contract's version, currently `1`. See [ADR-003](./docs/adr/ADR-003-contract-version-policy.md). |
-| `HEIGHT_VARIABLE` | The name of the CSS variable the shell publishes — `"--dev-toolbar-height"` — so a CSS-in-JS host need not retype the string. |
+| `HEIGHT_VARIABLE` | The name of the CSS variable the shell publishes — `"--dev-toolbar-height"` — so a CSS-in-JS host need not retype the string. It is the `"default"` instance's; every instance also publishes `<HEIGHT_VARIABLE>-<instanceId>`. |
 | `createLocalStorage()` | The default adapter: `localStorage`, but it never throws. Useful as the base of your own wrapper. |
 | `createMemoryStorage(seed?)` | In-memory adapter for tests and non-browser hosts. `seed` is a plain key/value map of already-persisted JSON. |
 | `createNullStorage()` | Swallows every write and reads `null` — what `storage={null}` installs. |

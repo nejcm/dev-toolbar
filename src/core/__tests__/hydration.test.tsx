@@ -86,7 +86,9 @@ describe("hydration over server HTML", () => {
 
     expect(inset.dataset["dtbPosition"]).toBe("bottom");
     // After the mount effect the inset is settled and pads by the variable.
-    expect(inset.style.paddingBottom).toBe("var(--dev-toolbar-height, 0px)");
+    expect(inset.style.paddingBottom).toBe(
+      "var(--dev-toolbar-height-hydrate, var(--dev-toolbar-height, 0px))",
+    );
     expect(error!.mock.calls).toEqual([]);
   });
 });

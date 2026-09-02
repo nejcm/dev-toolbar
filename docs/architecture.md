@@ -32,7 +32,8 @@ The root entry is chrome plus hosting, and nothing else. It:
   width, and lets them back out when the width returns;
 - hosts at most one panel at a time, resizable and persisted;
 - renders every extension's `overlay` slot, uncollapsed, for modal surfaces;
-- publishes `--dev-toolbar-height` and ships an opt-in `<DevToolbarInset>`;
+- publishes `--dev-toolbar-height`, and `--dev-toolbar-height-<instanceId>` per
+  instance, and ships an opt-in `<DevToolbarInset>`;
 - owns the token set, the `data-dtb-part` attributes and the `classNames` map;
 - persists visibility, position, active panel and panel height through an injectable
   storage adapter;
@@ -103,6 +104,15 @@ one would:
 - break two toolbars on one page — a second root would see the first one's items;
 - leak between tests — registration would outlive the test that did it;
 - make ordering depend on import order, which nobody controls.
+
+Two toolbars on one page therefore have to share the one thing core does write
+globally: the height custom property on `<html>`. Each instance owns
+`--dev-toolbar-height-<instanceId>` (the id folded to `A-Za-z0-9_-`) and removes only
+that on unmount; the unsuffixed `--dev-toolbar-height` is the `"default"` instance's,
+which is what a consumer who never set `instanceId` already reads. `<DevToolbarInset>`
+pads by its own instance's name and falls back to the unsuffixed one. Two instances
+sharing an `instanceId` still collide — the same reason they may not share one for
+persisted preferences (§3).
 
 The one module-level structure in core is the command *host* set in
 `src/core/commands.ts`. It is not a registry: entries are added on mount and removed

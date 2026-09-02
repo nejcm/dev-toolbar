@@ -506,6 +506,10 @@ describe("lifecycle", () => {
       </DevToolbar>,
     );
 
+    // The instance's own name is the one it would have written; the unsuffixed
+    // name is not `t`'s to write at all, and is asserted only so a future
+    // default-instance regression cannot hide here.
+    expect(document.documentElement.style.getPropertyValue("--dev-toolbar-height-t")).toBe("");
     expect(document.documentElement.style.getPropertyValue("--dev-toolbar-height")).toBe("");
     expect(warn).not.toHaveBeenCalled();
   });
@@ -615,10 +619,101 @@ describe("DevToolbarInset", () => {
     );
 
     const inset = screen.getByTestId("inset");
-    expect(inset.style.paddingBottom).toBe("var(--dev-toolbar-height, 0px)");
+    expect(inset.style.paddingBottom).toBe(
+      "var(--dev-toolbar-height-t, var(--dev-toolbar-height, 0px))",
+    );
 
     fireToggleShortcut();
     expect(screen.getByTestId("inset").style.paddingBottom).toBe("0px");
+  });
+});
+
+describe("the height variable", () => {
+  /**
+   * jsdom measures everything as 0x0, so the height a root reports is stubbed
+   * per instance — `data-dtb-instance` is on the portalled root, which is the
+   * element the effect observes.
+   */
+  const stubHeights = (heights: Record<string, number>) =>
+    vi
+      .spyOn(HTMLElement.prototype, "getBoundingClientRect")
+      .mockImplementation(function (this: HTMLElement): DOMRect {
+        const instance = this.dataset["dtbInstance"];
+        const height = instance === undefined ? 0 : (heights[instance] ?? 0);
+        return {
+          height,
+          width: 0,
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: height,
+          x: 0,
+          y: 0,
+          toJSON: () => ({}),
+        } as DOMRect;
+      });
+
+  const read = (name: string) => document.documentElement.style.getPropertyValue(name);
+
+  it("publishes the unsuffixed variable for the default instance", () => {
+    const rect = stubHeights({ default: 24 });
+    render(
+      <DevToolbar extensions={[]}>
+        <div />
+      </DevToolbar>,
+    );
+
+    expect(read("--dev-toolbar-height")).toBe("24px");
+    expect(read("--dev-toolbar-height-default")).toBe("24px");
+    rect.mockRestore();
+  });
+
+  it("gives each instance its own variable, and a survivor keeps its value", () => {
+    const rect = stubHeights({ alpha: 24, beta: 36 });
+    const alpha = render(
+      <DevToolbar instanceId="alpha" extensions={[]}>
+        <div />
+      </DevToolbar>,
+    );
+    render(
+      <DevToolbar instanceId="beta" extensions={[]}>
+        <div />
+      </DevToolbar>,
+    );
+
+    expect(read("--dev-toolbar-height-alpha")).toBe("24px");
+    expect(read("--dev-toolbar-height-beta")).toBe("36px");
+
+    alpha.unmount();
+
+    expect(read("--dev-toolbar-height-alpha")).toBe("");
+    expect(read("--dev-toolbar-height-beta")).toBe("36px");
+    rect.mockRestore();
+  });
+
+  it("keeps a non-default instance out of the unsuffixed variable", () => {
+    const rect = stubHeights({ alpha: 24 });
+    render(
+      <DevToolbar instanceId="alpha" extensions={[]}>
+        <div />
+      </DevToolbar>,
+    );
+
+    expect(read("--dev-toolbar-height-alpha")).toBe("24px");
+    expect(read("--dev-toolbar-height")).toBe("");
+    rect.mockRestore();
+  });
+
+  it("reduces an instanceId to characters a custom property can carry", () => {
+    const rect = stubHeights({ "a b/c": 24 });
+    render(
+      <DevToolbar instanceId="a b/c" extensions={[]}>
+        <div />
+      </DevToolbar>,
+    );
+
+    expect(read("--dev-toolbar-height-a_b_c")).toBe("24px");
+    rect.mockRestore();
   });
 });
 
@@ -795,7 +890,7 @@ describe("an extension list with nothing visible in it", () => {
     expect(bar!.querySelectorAll('[data-dtb-part="item"]').length).toBe(0);
     expect(document.querySelector('[data-dtb-part="overflow-button"]')).toBeNull();
     expect(document.querySelector('[data-dtb-part="panel"]')).toBeNull();
-    expect(document.documentElement.style.getPropertyValue("--dev-toolbar-height")).toBe("0px");
+    expect(document.documentElement.style.getPropertyValue("--dev-toolbar-height-t")).toBe("0px");
   });
 
   it("renders the same empty bar for extensions={[]}", () => {

@@ -123,7 +123,9 @@ describe("@nejcm/dev-toolbar/testing", () => {
 
     expect(toolbar.height()).toBe("30px");
     const inset = container.querySelector<HTMLElement>('[data-dtb-part="inset"]');
-    expect(inset?.style.paddingBottom).toBe("var(--dev-toolbar-height, 0px)");
+    expect(inset?.style.paddingBottom).toBe(
+      "var(--dev-toolbar-height-test, var(--dev-toolbar-height, 0px))",
+    );
 
     toolbar.setVisible(false);
     expect(toolbar.root()).toBeNull();
