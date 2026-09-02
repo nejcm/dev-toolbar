@@ -1,11 +1,9 @@
 name: Report bundle size
 description: Write a per-entrypoint size table for the built package to the job summary.
 
-# Descended from sugarwork-ui's `.github/actions/report-bundle-size`, which
-# reports one JS/CSS/total triple for a build directory. That shape does not
-# work for a library with 11 entry points and a code-split ESM build — see the
-# header of `scripts/bundle-size.mjs` for why — so the measurement moved into a
-# script and this action is the thin reporting wrapper around it.
+# A single JS/CSS/total triple doesn't fit an 11-entry-point, code-split ESM
+# build (see `scripts/bundle-size.mjs`), so the measurement lives in that
+# script and this action is a thin reporting wrapper around it.
 #
 # Requires a build to have run and `actions/checkout` before it. Node is used
 # rather than bun only because the script is plain ESM with no dependencies;
@@ -22,11 +20,9 @@ runs:
   steps:
     - name: Report bundle size
       shell: bash
-      # The heading goes through `env` rather than being interpolated into the
-      # script body. Repo-controlled today — ci.yml does not even pass it — but
-      # `${{ }}` inside `run:` is textual substitution before bash sees it, which
-      # is the shape every Actions script-injection advisory is about. Cheap to
-      # get right once.
+      # The heading goes through `env`, not interpolated into the script body:
+      # `${{ }}` inside `run:` is textual substitution before bash sees it —
+      # the shape every Actions script-injection advisory is about.
       env:
         HEADING: ${{ inputs.heading }}
       run: |

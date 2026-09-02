@@ -2,34 +2,25 @@
  * Everything `/ext/diagnostics` owns that is not React.
  * [dev-toolbar/ext/diagnostics]
  *
- * This extension's entire output is a document that leaves the machine, so the
- * §11.3 rules are not guidance here, they are the design:
+ * This extension's entire output is a document that leaves the machine, so
+ * §11.3's rules are the design here:
  *
- * 1. **Redact on the way in.** Every foreign value — the consumer's `app`
- *    context, every `source`, every extension contribution, the page URL, a
- *    long task's container attribution, even another extension's error message
- *    — is redacted at the moment it enters the snapshot. The panel, the
- *    clipboard, the download and the four commands then all read *that one
- *    object*. There is no path from a raw value to any output.
- * 2. **Never serialise before redacting.** `redact()` finds sensitive keys by
- *    walking an object graph; a value that was stringified first is a string,
- *    and every key inside it is now just characters. The whole first cut of
- *    `/ext/environment` had this bug and its panel still displayed a "masked"
- *    badge over the leak. Here it would be worse, because the output goes
- *    straight into a ticket. `render()` therefore takes the *already redacted*
- *    snapshot and nothing else; the builder is the only thing that ever sees a
- *    raw value, and it hands `redact()` objects, never JSON.
+ * 1. **Redact on the way in.** Every foreign value (consumer `app` context,
+ *    each `source`, extension contributions, the page URL, error messages) is
+ *    redacted the moment it enters the snapshot. Panel, clipboard, download
+ *    and commands all read that one already-redacted object.
+ * 2. **Never serialise before redacting.** `redact()` walks an object graph;
+ *    a pre-stringified value's keys are just characters to it (the bug that
+ *    hit `/ext/environment`'s first cut). `render()` only ever takes an
+ *    *already redacted* snapshot — the builder is the sole place a raw value
+ *    is touched, and it hands `redact()` objects, never JSON.
  * 3. **Masking is visible.** `maskedCount` is derived from the rendered output
- *    and shown next to the copy buttons, because a redaction nobody can see is
+ *    and shown next to the copy buttons — invisible redaction is
  *    indistinguishable from a value that was never supplied.
- *
- * And one rule this extension adds, from §3J's purpose rather than from §6:
- *
- * 4. **Omission is visible.** Every present extension appears with a status,
- *    and everything that is not `"ok"` is repeated in a top-level `omissions`
- *    list and in a banner at the top of the Markdown. A snapshot that silently
- *    drops the one failing extension reads as complete, and the person holding
- *    the bug report has no way to know it is not.
+ * 4. **Omission is visible** (this extension's own addition, from §3J).
+ *    Every present extension appears with a status; anything not `"ok"` is
+ *    repeated in top-level `omissions` and in a Markdown banner, so a
+ *    silently-dropped failure can't read as a complete report.
  */
 import {
   REDACTED,
@@ -72,20 +63,15 @@ export interface DiagnosticsRuntimeOptions extends ResponsivenessOptions {
   /** This extension's id, so the snapshot can name what captured it. */
   id?: string;
   /**
-   * §3J's `app` and `session` blocks. Core has no `ctx`, so whatever the
-   * snapshot is to say about the release, the actor or the workspace, the
-   * consumer says. An object, or a function read at capture time.
-   *
-   * Redacted like everything else, and the function form is called inside the
-   * same `try` as the rest of the build — a getter that throws degrades to a
+   * §3J's `app`/`session` blocks. An object, or a function read at capture
+   * time. Redacted like everything else; a throwing getter degrades to a
    * visible omission rather than an exception out of a click handler.
    */
   app?: AppContextInput;
   /**
-   * Extra named sections — a router's state, a store's last actions, whatever
-   * the consumer wants in the ticket. Treated exactly like an extension
-   * contribution: fail-closed, status-tracked, and visible in `omissions` when
-   * it cannot be read.
+   * Extra named sections for the ticket (router state, last actions, etc).
+   * Treated like an extension contribution: fail-closed, status-tracked,
+   * visible in `omissions` when unreadable.
    */
   sources?: readonly DiagnosticSource[];
   /** Merged into every `redact()` call. `extraKeys` is the usual reason. */
@@ -136,6 +122,11 @@ export interface DiagnosticsRuntime {
  * left on in a dev build) would otherwise throw straight out of a click
  * handler on the one path whose whole job is to survive.
  */
+/**
+ * A monotonic-ish timestamp that cannot throw (same rule as `nowIso` below).
+ * `capture()` reads this outside the build's guard to stamp the store, so a
+ * hostile `performance.now` must not throw out of a click handler.
+ */
 const now = (): number => {
   try {
     if (typeof performance !== "undefined" && typeof performance.now === "function") {
@@ -152,15 +143,9 @@ const now = (): number => {
 };
 
 /**
- * A wall-clock timestamp that cannot throw.
- *
- * This matters only on the failure path, and it is exactly the bug a test
- * found: `failedSnapshot` — the thing that exists so a broken capture still
- * produces a usable snapshot — called `new Date().toISOString()` itself, so a
- * host that had monkey-patched `Date` (an instrumentation library, a clock mock
- * left on in a dev build) turned "the capture failed" into a throw out of a
- * click handler. An error path that can fail the same way as the happy path is
- * not an error path.
+ * A wall-clock timestamp that cannot throw. Matters on the failure path:
+ * `failedSnapshot` exists so a broken capture still produces a usable
+ * snapshot, and a monkey-patched `Date` must not turn that into a throw too.
  */
 const nowIso = (): string => {
   try {
@@ -210,13 +195,9 @@ function readNavigation(): NavigationReport | null {
 }
 
 /**
- * The browser's own answers. Every field is `null` when the browser did not
- * answer — never a zero or an empty string standing in for "unknown".
- *
- * `url` and `referrer` get `redactUrl` by name. That is not belt-and-braces
- * over the generic value pass: it is the primary defence, because the address
- * bar after an OAuth implicit callback is `?access_token=…` and this string is
- * going into a ticket.
+ * The browser's own answers. `null` means "not answered", never a stand-in
+ * zero/empty-string. `url` and `referrer` get `redactUrl` explicitly, since
+ * an OAuth implicit-callback address bar (`?access_token=…`) is going into a ticket.
  */
 function readPage(options: RedactOptions | undefined): PageReport {
   const nav = (globalThis as { navigator?: NavigatorLike }).navigator;
@@ -295,47 +276,32 @@ export function createDiagnosticsRuntime(
   let revocations: Revoker[] = [];
 
   /**
-   * A foreign string on its way into a ticket.
-   *
-   * Worth being precise about what this can and cannot do, because it is easy
-   * to mistake for a scanner. `redact()`'s value matching is **anchored**: it
-   * masks a string that *is* a `Bearer …` header, *is* a bare JWT, or *is* a
-   * URL carrying a credential-shaped parameter. It does not find one embedded
-   * in a sentence, and nothing here pretends otherwise — an error message
-   * reading "refresh failed for Bearer abc…" survives, and the panel showing
-   * you the text before you send it is the mitigation, as always.
-   *
-   * The corollary is the one that mattered: **never assemble a sentence out of
-   * foreign parts and then redact the sentence.** Anchoring means the parts
-   * were findable and the sentence is not. See `describeAttribution` in
-   * `responsiveness.ts`, which masks each field before joining them.
+   * A foreign string on its way into a ticket. `redact()`'s value matching is
+   * **anchored** — it masks a string that *is* a `Bearer …` header or JWT, not
+   * one embedded in a sentence ("refresh failed for Bearer abc…" survives).
+   * Corollary: **never assemble a sentence from foreign parts and then redact
+   * the sentence** — redact the parts first. See `describeAttribution` in
+   * `responsiveness.ts`.
    */
   const redactText = (value: string): string => {
     try {
-      // `String()` coerces unproven input; it is not a workaround for
-      // `redact()`'s return type, which is already `string` for a `string`.
-      // Every caller here passes a *declared* string that this module treats as
-      // foreign — `error.name` and `error.message` off a subclass that may
-      // shadow either, and core's `entry.error` / `entry.errorName` — so an
-      // object can arrive where the type says string, and then `redact()`
-      // returns a walked record. That record would land in a `string` field and
-      // reach React as a child. Do not remove the wrap.
+      // Callers pass a *declared* string that may actually be foreign data
+      // (error.name/message off a hostile subclass, core's entry.error) — an
+      // object can arrive where the type says string, and redact() would then
+      // return a walked record that reaches React as a child. Do not remove the wrap.
       return String(redact(value, redactOptions));
     } catch {
-      // Only reachable through hostile `redactOptions`, but this runs on the
-      // failure path, and the failure path may not fail.
+      // Only reachable via hostile redactOptions, but the failure path may not fail.
       return "[unreadable]";
     }
   };
 
   /**
-   * A thrown value rendered for the snapshot: **message redacted, then joined
-   * to the name.** Never the other way round — see `describeParts`.
-   *
-   * The message itself may still hide a credential mid-sentence, which is the
-   * documented anchored-matching limit and is pinned by its own test. What this
-   * guarantees is only that *this package's own prefix* is not what defeated
-   * the matcher.
+   * A thrown value rendered for the snapshot: message redacted, *then* joined
+   * to the name — never the other way round (see `describeParts`). The
+   * message can still hide a credential mid-sentence (anchored-matching
+   * limit, pinned by its own test); this only guarantees the package's own
+   * prefix isn't what defeated the matcher.
    */
   const describeSafely = (error: unknown): string => {
     const { name, message } = describeParts(error);
@@ -343,20 +309,15 @@ export function createDiagnosticsRuntime(
     if (name === undefined) {
       return masked === "" ? "an error with no message" : masked;
     }
-    // The name is foreign too. `error.name` is a writable own property, not a
-    // class identifier the runtime guarantees — `Object.assign(err, { name })`
-    // is all it takes — so a name of `Bearer …` or a bare JWT reached the
-    // report untouched while the message beside it was being masked. Both
-    // halves of a join this package performs are foreign until proven
-    // otherwise; masking one of them is not the rule, it is half the rule.
+    // `error.name` is a writable own property, not a guaranteed class
+    // identifier, so it's foreign too — must be masked like the message.
     const maskedName = redactText(name);
     return masked === "" ? maskedName : `${maskedName}: ${masked}`;
   };
 
   /**
    * The one place a raw foreign value is touched. Order is load-bearing:
-   * `redact()` walks the **object**, and only then is the result serialised
-   * anywhere. Reversing these two lines is the §11.3 leak.
+   * `redact()` walks the object, and only then is the result serialised.
    */
   const takeData = (
     entry: { id: string; label: string },
@@ -376,15 +337,7 @@ export function createDiagnosticsRuntime(
     return finish(entry, raw);
   };
 
-  /**
-   * Redact, then prove it serialises. In that order, always.
-   *
-   * `redact()` used to be able to throw here: it walked with `Object.entries`,
-   * which invokes getters, and a getter that threw anywhere at any depth
-   * propagated out of this call. It now catches that itself and tags the
-   * property `"[getter threw]"` instead, so there is nothing left for this
-   * function to guard against on `redact()`'s side.
-   */
+  /** Redact, then prove it serialises — in that order, always. `redact()` tags a throwing getter as `"[getter threw]"` rather than propagating. */
   const finish = (entry: { id: string; label: string }, raw: unknown): DiagnosticContribution => {
     const redacted = redact(raw, redactOptions);
     if (redacted === undefined) {
@@ -395,8 +348,8 @@ export function createDiagnosticsRuntime(
       };
     }
     try {
-      // Not the output — the *check*. A `BigInt` survives `redact()` and throws
-      // here, and one extension must not cost the reader the whole snapshot.
+      // Check only — not the output. A BigInt survives redact() and throws
+      // here; one extension must not cost the reader the whole snapshot.
       JSON.stringify(redacted);
     } catch (error) {
       return {
@@ -420,9 +373,8 @@ export function createDiagnosticsRuntime(
       try {
         roster = api.getDiagnostics();
       } catch (error) {
-        // Core contains the per-extension throws already, so this is
-        // unreachable today — but a reader that lets a failure in what it reads
-        // escape takes the toolbar down with it (§13.4).
+        // Unreachable today (core already contains per-extension throws), but
+        // a reader that lets this escape takes the toolbar down with it (§13.4).
         contributions.push({
           id: "*",
           label: "Extension roster",
@@ -435,9 +387,7 @@ export function createDiagnosticsRuntime(
       return { contributions, gathered: false };
     }
     for (const entry of roster) {
-      // This extension is the reader, not a contributor: listing itself would
-      // be a line saying "the thing writing this said nothing", and declaring a
-      // `diagnostics()` here would recurse.
+      // Reader, not a contributor: declaring diagnostics() here would recurse.
       if (entry.id === id) continue;
       if (entry.status === "absent") {
         contributions.push({
@@ -448,13 +398,9 @@ export function createDiagnosticsRuntime(
         continue;
       }
       if (entry.status === "failed") {
-        // Core hands over the message and the name separately, precisely so
-        // this line can mask the message *before* prefixing it. Joining first
-        // is what put `refresh_token=…` in a ticket.
+        // Core hands message and name over separately so this can mask the
+        // message *before* prefixing it — joining first is the leak.
         const message = redactText(entry.error ?? "diagnostics() threw.");
-        // `errorName` gets the same pass, for the reason `describeSafely`
-        // gives: it is `error.name`, which is writable, so it is foreign data
-        // like everything else core hands over.
         const name = entry.errorName === undefined ? undefined : redactText(entry.errorName);
         contributions.push({
           id: entry.id,
@@ -505,11 +451,7 @@ export function createDiagnosticsRuntime(
     return omissions;
   };
 
-  /**
-   * Responsiveness, with the attribution strings redacted. Those are the only
-   * foreign data in the report — they come from the host page's own markup —
-   * and everything else in it is a number this extension computed.
-   */
+  /** Responsiveness, with attribution strings redacted — the only foreign data in the report; everything else is a number this extension computed. */
   const readResponsiveness = (): ResponsivenessReport => {
     const report = monitor.report();
     const clean = (sample: LongTaskSample): LongTaskSample => ({
@@ -568,12 +510,7 @@ export function createDiagnosticsRuntime(
     };
   };
 
-  /**
-   * Nothing in a capture may propagate. It runs from a click handler and from
-   * an aggregated command, and it reads consumer-owned data through getters
-   * `redact()` invokes — so a throw anywhere becomes a snapshot that says the
-   * capture failed, which is still a usable bug report.
-   */
+  /** Nothing in a capture may propagate — a throw anywhere becomes a snapshot that says the capture failed, still a usable bug report. */
   const build = (): DiagnosticSnapshot => {
     try {
       return buildSnapshot();
@@ -589,7 +526,7 @@ export function createDiagnosticsRuntime(
     }
   };
 
-  /** Same rule as `nowIso`: nothing on the failure path may itself fail. */
+  /** Same rule as `nowIso`: the failure path may not itself fail. */
   const safeReport = (): ResponsivenessReport => {
     try {
       return monitor.report();
@@ -654,9 +591,8 @@ export function createDiagnosticsRuntime(
       {
         id: "*",
         label: "The whole snapshot",
-        // Redacted like every other foreign string. This one was not, and it
-        // is the worst place to miss: the omissions banner of the very report
-        // that says nothing below it is complete.
+        // Redacted like every other foreign string — this is the omissions
+        // banner itself, the worst place to leak.
         reason: `building it threw — ${describeSafely(error)}. Nothing below is complete.`,
       },
     ],
@@ -664,11 +600,8 @@ export function createDiagnosticsRuntime(
 
   const store = createThrottledStore<DiagnosticsSnapshotState>(NO_SNAPSHOT, {
     intervalMs: 100,
-    // The store's own default clock is `performance.now()`, unguarded, and
-    // `set()` reads it — so a host with a hostile `performance.now` would throw
-    // from inside the publish that follows a *failed* capture. Handing it the
-    // guarded clock keeps the whole path fail-closed rather than only the part
-    // of it this file owns.
+    // The store's default clock is unguarded performance.now(); handing it
+    // the guarded `now` keeps a failed capture's publish step fail-closed too.
     now,
   });
 
@@ -690,9 +623,8 @@ export function createDiagnosticsRuntime(
     format === "json" ? renderJson(ensure()) : renderMarkdown(ensure(), mask);
 
   const filename = (format: SnapshotFormat): string => {
-    // `:` is illegal in a filename on Windows and awkward everywhere; `.` would
-    // read as a second extension. `generatedAt` can also be the literal
-    // "unknown" on the failure path, which is a perfectly good stamp.
+    // `:`/`.` are illegal or awkward in a filename; the failure path's literal
+    // "unknown" stamp works fine through the same replace.
     const stamp = ensure().generatedAt.replace(/[:.]/g, "-");
     return `dev-toolbar-diagnostics-${stamp}.${format === "json" ? "json" : "md"}`;
   };
@@ -727,11 +659,9 @@ export function createDiagnosticsRuntime(
         format === "json" ? "application/json;charset=utf-8" : "text/markdown;charset=utf-8";
       const revoke = startDownload(text, filename(format), mime);
       if (revoke === null) return false;
-      // Bounded, but never by revoking early: forcing the oldest revoker at a
-      // fixed depth could cancel a download that was still in flight — a large
-      // snapshot over a slow disk, or nine captures in quick succession. Each
-      // revoker self-clears on its own timer, so the only thing that needs
-      // bounding is the list of already-spent closures.
+      // Bounded, but never by revoking early — that could cancel an in-flight
+      // download. Each revoker self-clears on its own timer; only the list of
+      // already-spent closures needs trimming.
       revocations.push(revoke);
       revocations = revocations.filter((entry) => !entry.spent());
       return true;
@@ -752,17 +682,14 @@ export function createDiagnosticsRuntime(
       api = runtimeApi;
       storage = runtimeApi.storage;
 
-      // The monitor keeps observing while the bar is hidden. Core reports
-      // visibility and never pauses anybody (§2), and this is the case where
-      // that matters most: the long task you want in the bug report happened
-      // while you were using the application, not while you were reading the
-      // toolbar. `PerformanceObserver` costs nothing between entries.
+      // Keeps observing while the bar is hidden (§2: core never pauses
+      // anybody) — the long task you want in the report happens while using
+      // the app, not while reading the toolbar.
       monitor.start();
 
       const dispose = () => {
         monitor.stop();
-        // Object URLs outlive the extension unless something revokes them, and
-        // a revoke that has not happened yet is a retained Blob.
+        // An un-revoked object URL is a retained Blob.
         for (const revoke of revocations) revoke();
         revocations = [];
         api = null;
@@ -781,9 +708,8 @@ export function renderJson(snapshot: DiagnosticSnapshot): string {
   try {
     return JSON.stringify(snapshot, null, 2);
   } catch (error) {
-    // Every contribution was proved serialisable on the way in, so this is
-    // unreachable — and a copy button that throws is worse than one that
-    // reports a problem.
+    // Unreachable (every contribution was proved serialisable going in), but
+    // a copy button that throws is worse than one that reports a problem.
     return JSON.stringify(
       {
         generatedAt: snapshot.generatedAt,
@@ -802,11 +728,10 @@ const fence = (value: unknown): string => {
   } catch (error) {
     body = `"unserialisable — ${safeDescribe(error)}"`;
   }
-  // A fenced block must be delimited by a longer run of backticks than anything
-  // inside it. Hard-coding four was one better than the naive three and no
-  // better than that: a contribution holding four — a README that itself
-  // escapes a fence — would have ended the block early and spilled the rest of
-  // the snapshot into the surrounding prose. Measure instead of guessing.
+  // A fenced block needs more backticks than any run inside it, or the block
+  // ends early and spills the rest of the snapshot into the surrounding
+  // prose (e.g. a README contribution that itself escapes a fence). Measure
+  // instead of guessing a fixed count.
   let longest = 0;
   for (const run of body.match(/`+/g) ?? []) {
     if (run.length > longest) longest = run.length;
@@ -816,13 +741,9 @@ const fence = (value: unknown): string => {
 };
 
 /**
- * One row of the Page table.
- *
- * Cells are escaped, which is not cosmetic: every value in this table is
- * foreign (a user agent, a URL, a time zone), a raw `|` splits the row into
- * extra columns and a newline ends the table outright — so a hostile or merely
- * unusual value could push the rest of the snapshot out of the rendered table
- * and into whatever the ticket system does with loose text.
+ * One row of the Page table. Escaping cells isn't cosmetic — a raw `|` splits
+ * the row and a newline ends the table, so an unusual value could push the
+ * rest of the snapshot out of the table into loose text.
  */
 const cell = (value: unknown): string => {
   if (value === null || value === undefined) return "_unknown_";
@@ -837,10 +758,7 @@ const cell = (value: unknown): string => {
 
 const row = (label: string, value: unknown): string => `| ${label} | ${cell(value)} |`;
 
-/**
- * Markdown, for pasting into a ticket. Built entirely from the already-redacted
- * snapshot: this function receives no raw value and has no access to one.
- */
+/** Markdown for pasting into a ticket. Built entirely from the already-redacted snapshot — no raw value ever reaches this function. */
 export function renderMarkdown(snapshot: DiagnosticSnapshot, mask: string = REDACTED): string {
   const lines: string[] = [];
   const total = snapshot.contributions.length;
@@ -854,8 +772,7 @@ export function renderMarkdown(snapshot: DiagnosticSnapshot, mask: string = REDA
   );
   lines.push("");
 
-  // The banner comes before the data, not after it. A completeness warning at
-  // the bottom of a long paste is a warning nobody reads.
+  // Before the data, not after — a completeness warning at the bottom of a long paste goes unread.
   if (snapshot.omissions.length > 0) {
     lines.push(
       `## Incomplete — ${snapshot.omissions.length} thing${snapshot.omissions.length === 1 ? "" : "s"} could not be included`,
@@ -949,9 +866,8 @@ export function renderMarkdown(snapshot: DiagnosticSnapshot, mask: string = REDA
   const events = responsiveness.interactions;
   lines.push(
     `- **Interactions:** ${events.count === null ? "_unknown_" : events.count}` +
-      // `worst null ms (null)` is what the naive version printed for a window
-      // with nothing in it. A report is read by somebody who was not there, and
-      // a stray `null` reads as a bug in the tool rather than as an empty window.
+      // Avoids printing a stray `worst null ms (null)` for an empty window,
+      // which would read as a tool bug rather than an empty window.
       (events.count === null || events.worstDurationMs === null
         ? ""
         : `, ${events.slowCount} slow, worst ${events.worstDurationMs} ms (${events.worstType})`),
@@ -1003,33 +919,14 @@ export function renderMarkdown(snapshot: DiagnosticSnapshot, mask: string = REDA
 /* -------------------------------------------------------------------------- */
 
 /**
- * How many values the mask replaced, counted once, canonically.
+ * How many values the mask replaced, counted once, canonically, from the
+ * snapshot's JSON (not the rendered Markdown, whose own footer mentions the
+ * mask and would count itself).
  *
- * Two browser-found defects live in this function, and they are the same
- * defect twice: **the count and the thing it counts must be the same thing.**
- *
- * The first was that it counted occurrences in the rendered *Markdown*, whose
- * own footer says ``masked as `[redacted]` `` — so it counted its own sentence,
- * and the panel's toolbar disagreed with the footer of the very text it was
- * displaying: 6 against 5. Counting from the snapshot's JSON fixed that.
- *
- * The second is that counting the *literal* mask could undercount. A mask
- * written into a URL query used to go in through `URLSearchParams.set`, which
- * percent-encoded it: `?access_token=%5Bredacted%5D`. That shape is invisible
- * to a literal search — and it was not an edge case, it is the OAuth-callback
- * shape that §11.3 and this file both call the most likely credential carrier
- * in the whole snapshot. A page whose *only* sensitive datum was a token in the
- * address bar therefore masked it correctly and then printed "No values were
- * masked… none matched here", which is a false statement in a document whose
- * entire argument is that masking is visible.
- *
- * `redactUrl` now writes a **URL-safe** mask into a URL literally — the default
- * `[redacted]` included — so the OAuth-callback shape is caught by the literal
- * search, which is where the count belongs. The encoded search stays for the
- * masks that still cannot go into a URL literally: a custom `mask` carrying a
- * URL delimiter or a non-ASCII character (`██`, below) is percent-encoded
- * there exactly as before. Both encodings are counted, and the encoded form is
- * only searched for when it actually differs.
+ * Also counts the URL-percent-encoded form of the mask: `redactUrl` writes a
+ * URL-safe mask directly for the common case, but a custom mask with a URL
+ * delimiter or non-ASCII character still gets percent-encoded there, so that
+ * form is searched for too when it differs from the literal.
  */
 export function countMasked(snapshot: DiagnosticSnapshot, mask: string = REDACTED): number {
   let serialised: string;
@@ -1043,7 +940,7 @@ export function countMasked(snapshot: DiagnosticSnapshot, mask: string = REDACTE
   try {
     encoded = encodeURIComponent(mask);
   } catch {
-    // A lone surrogate in a custom mask. Nothing to add.
+    // Lone surrogate in a custom mask — nothing to add.
     return total;
   }
   if (encoded !== mask) total += countOccurrences(serialised, encoded);
@@ -1062,16 +959,9 @@ export function countOccurrences(haystack: string, needle: string): number {
 }
 
 /**
- * Splits a thrown value into name and message, **unjoined** — the same split
- * core's `describe` makes, and for the same reason.
- *
- * Joining before redacting is the leak. `redact()`'s value matching is anchored
- * to the whole string, so `"Error: https://api.test/refresh?refresh_token=…"`
- * defeats it while the bare message does not. Three sibling paths here had it:
- * a source that throws, an `app` getter that throws, and a getter that throws
- * while `redact()` walks a contribution. All three now redact the message first
- * and prefix afterwards, via `describeSafely` inside the factory — which is
- * where `redactOptions` lives.
+ * Splits a thrown value into name and message, **unjoined** (same split as
+ * core's `describe`, same reason): joining before redacting is the leak,
+ * since `redact()`'s anchored matching won't catch a credential mid-sentence.
  */
 function describeParts(error: unknown): { name?: string; message: string } {
   if (error instanceof Error) {
@@ -1091,19 +981,11 @@ function safeDescribe(value: unknown): string {
 
 /**
  * Starts a download and returns its revoker, or `null` when the environment
- * cannot do it.
- *
- * A download from a page is a real user action, so this is legitimate here in a
- * way it would not be on a timer. It is also the one place this extension
- * touches the host document, so the trade is worth stating: the anchor is
- * appended and removed synchronously in the same task, because Firefox has
- * historically ignored `click()` on a detached anchor, and appending it is
- * strictly less invasive than the alternative of asking the consumer to provide
- * a mount point.
- *
- * The object URL is *not* revoked synchronously — several browsers cancel the
- * download when it is — so revocation is deferred and the revoker is also
- * handed back so teardown can run it early rather than retaining the Blob.
+ * can't do it. The anchor is appended and removed synchronously in the same
+ * task, since Firefox has historically ignored `click()` on a detached
+ * anchor. The object URL is *not* revoked synchronously — several browsers
+ * cancel the download if it is — so revocation is deferred, with the revoker
+ * handed back so teardown can run it early rather than retain the Blob.
  */
 /** A revoker that can be asked whether it has already run. */
 export interface Revoker {
@@ -1143,9 +1025,8 @@ export function startDownload(text: string, name: string, mime: string): Revoker
   try {
     timer = setTimeout(revoke, 60_000);
   } catch {
-    // A hostile or exhausted `setTimeout` must not throw out of the click that
-    // started a download. Without a timer the URL is revoked on teardown
-    // instead, which is later than intended and never never.
+    // Must not throw out of the click that started a download. Without a
+    // timer the URL is revoked on teardown instead — later than intended.
     timer = null;
   }
 

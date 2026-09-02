@@ -1,25 +1,18 @@
 /**
  * Shared vocabulary for `/ext/diagnostics`. [dev-toolbar/ext/diagnostics]
  *
- * `plans/dev-bar.md` §3J is one sentence with a large consequence: *capture a
- * diagnostic snapshot for a bug report*. Everything this extension produces is
- * **data that leaves the machine** — into a ticket, a chat message, an email —
- * which makes it the one extension in this package whose entire output is
- * outbound. Two rules follow, and they shape every type below.
+ * §3J: capture a diagnostic snapshot for a bug report. All output here is
+ * outbound (ticket, chat, email), so two rules shape every type below:
  *
- * **Redaction happens on the way in.** §11.3 records the trap and predicts this
- * extension has the same shape, so: the snapshot object is redacted as it is
- * built, and the panel, the clipboard, the download and the commands all read
- * that one object. Nothing here holds a raw value that a later rendering pass
- * could reach.
+ * **Redaction happens on the way in** (§11.3) — the snapshot is redacted as
+ * it's built, and every consumer (panel, clipboard, download, commands) reads
+ * that one already-redacted object.
  *
- * **Omission is a first-class outcome.** A snapshot that silently drops a
- * failing extension is worse than one that says "this could not be read": the
- * reader of a bug report was not there, cannot tell absence from failure, and
- * will conclude from a missing section that there was nothing to see. So every
- * present extension appears in `contributions` with a `status`, and everything
- * that is not `"ok"` is *also* summarised in `omissions`, at the top level,
- * where neither a skim of the Markdown nor a `jq` over the JSON can miss it.
+ * **Omission is first-class.** A silently-dropped failing extension is worse
+ * than an explicit "could not be read" — the reader wasn't there and can't
+ * tell absence from failure. So every extension appears in `contributions`
+ * with a `status`, and anything not `"ok"` is *also* summarised at the top
+ * level in `omissions`, where it can't be missed.
  */
 
 /** How the snapshot is rendered for copying and downloading. */
@@ -32,14 +25,10 @@ export const SNAPSHOT_FORMATS: readonly SnapshotFormat[] = ["markdown", "json"];
 /* -------------------------------------------------------------------------- */
 
 /**
- * Whether one `PerformanceObserver` entry type is being observed — and, when it
- * is not, *why*, because the four reasons are not interchangeable.
- *
- * This is the whole reason the numbers below are `number | null` rather than
- * `number`. "No long tasks occurred" and "this browser cannot tell me about
- * long tasks" are opposite claims, and a zero that means the second one is a
- * lie in a document somebody will make a decision from. Firefox ships no
- * `longtask` at all; Safari ships neither `longtask` nor `layout-shift`.
+ * Whether one `PerformanceObserver` entry type is observed — and if not, why,
+ * since the reasons aren't interchangeable. This is why counts below are
+ * `number | null`: "no long tasks occurred" and "can't tell" are opposite
+ * claims, and a zero standing for the latter is a lie someone acts on.
  */
 export type SupportState =
   /** Being observed. The counts mean what they say. */
@@ -50,12 +39,7 @@ export type SupportState =
   | "unavailable"
   /** `observe()` threw for this type. The message is in the note. */
   | "failed"
-  /**
-   * It *was* being observed and no longer is, because the extension was torn
-   * down. Distinct from `"unavailable"`: the browser can do this, we stopped
-   * asking. A report taken after teardown that still said `"supported"` would
-   * claim live observation over counts that had stopped moving.
-   */
+  /** Was being observed, no longer is — the extension was torn down. Distinct from `"unavailable"`: the browser can do this, we stopped asking. */
   | "stopped";
 
 export interface LongTaskReport {
@@ -64,11 +48,7 @@ export interface LongTaskReport {
   count: number | null;
   /** Sum of every task's duration, ms. `null` unless observed. */
   totalDurationMs: number | null;
-  /**
-   * Sum of `duration - 50` over the window, ms — the Long Tasks API's own
-   * measure of time the main thread was unavailable beyond the 50 ms threshold
-   * that defines a long task. `null` unless observed.
-   */
+  /** Sum of `duration - 50` over the window, ms — time beyond the 50ms long-task threshold. `null` unless observed. */
   totalBlockingMs: number | null;
   worst: LongTaskSample | null;
   /** Most recent first, capped. Empty when nothing was observed. */
@@ -81,11 +61,7 @@ export interface LongTaskSample {
   /** `performance.now()` origin, ms. */
   startTime: number;
   durationMs: number;
-  /**
-   * `TaskAttributionTiming` boiled down to one line, or `null`. Container names
-   * come from the host page's own markup, so this is redacted like everything
-   * else; `containerSrc` is a URL and goes through `redactUrl` specifically.
-   */
+  /** `TaskAttributionTiming` boiled down to one line, or `null`. Container names are redacted; `containerSrc` goes through `redactUrl` specifically. */
   attribution: string | null;
 }
 
@@ -126,14 +102,10 @@ export interface ResponsivenessReport {
 /* -------------------------------------------------------------------------- */
 
 /**
- * What the browser can answer about itself. Every field is nullable and `null`
- * means "this browser did not tell us", never "zero" — same rule as above.
- *
- * `url` and `referrer` go through `redactUrl` **explicitly**, not by hoping the
- * generic value pass recognises them. An OAuth implicit-flow callback puts
- * `access_token=…` in the address bar, and this is the single most likely
- * credential carrier in the whole snapshot. `/ext/metrics` makes the same call
- * for the same reason.
+ * What the browser can answer about itself. `null` means "not told", never
+ * "zero". `url` and `referrer` go through `redactUrl` explicitly, since an
+ * OAuth implicit-flow callback can put `access_token=…` in the address bar —
+ * the likeliest credential carrier in the snapshot (same call `/ext/metrics` makes).
  */
 export interface PageReport {
   url: string | null;
@@ -164,15 +136,10 @@ export interface NavigationReport {
 /* -------------------------------------------------------------------------- */
 
 /**
- * Core's three statuses plus the one only the reader can detect.
- *
- * `redact()` already turns cycles, `Map`s, `Set`s, functions and class
- * instances into short tags, so most unserialisable shapes never reach
- * `JSON.stringify`. `BigInt` does: `redact()` passes it through as a number-like
- * primitive and `JSON.stringify(1n)` throws `TypeError`. One extension
- * returning one `BigInt` must not cost the reader the entire snapshot, so each
- * contribution is serialised on its own and a failure is recorded next to the
- * id that caused it.
+ * Core's three statuses plus one only the reader can detect: `redact()` turns
+ * most unserialisable shapes into tags, but passes `BigInt` through, and
+ * `JSON.stringify(1n)` throws. So each contribution is serialised on its own,
+ * and a failure is recorded against just the id that caused it.
  */
 export type ContributionStatus = "ok" | "absent" | "failed" | "unserialisable";
 
@@ -186,11 +153,7 @@ export interface DiagnosticContribution {
   error?: string;
 }
 
-/**
- * One line per thing the snapshot could not say. Duplicated deliberately from
- * `contributions` — a summary that lives only inside the detail is a summary
- * nobody reads.
- */
+/** One line per thing the snapshot could not say. Duplicated from `contributions` deliberately — a summary buried only in the detail goes unread. */
 export interface DiagnosticOmission {
   id: string;
   label: string;

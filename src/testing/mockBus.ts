@@ -1,61 +1,43 @@
 /**
  * A self-contained pub/sub bus with a hand-cranked clock.
  *
- * Deliberately *not* an import from `src/runtime/bus.ts`, even though that
- * module has shipped and is published behind the `./runtime` subpath:
- * `src/testing/` may not import `src/runtime/` at all — not even `import
- * type` — per the layering table in AGENTS.md, and `./testing` must stay
- * usable without it regardless. This file is a test double, not a re-export,
- * and it stays that way permanently, not just until something else ships.
+ * Deliberately *not* an import from `src/runtime/bus.ts`: `src/testing/` may
+ * not import `src/runtime/` at all (per AGENTS.md's layering table), and this
+ * stays a test double, not a re-export, permanently.
  *
- * Because it may not import the contract, it restates it. The shapes below are
- * therefore matched *by hand* to `BusLike<Events>` in `src/runtime/bus.ts`, so
- * that `createMockBus()` is structurally assignable to a `BusLike` option
- * without either module importing the other — structural typing needs no
- * import. `src/ext/metrics/__tests__/network.test.ts` asserts that
- * assignability, so drift fails a test rather than being discovered by a
- * consumer whose `bus:` option rejects the shipped double. In particular:
- * `MockBusEvent` carries the event name as a literal `K`, exactly as `BusEvent`
- * does, and `on`/`once`/`onAny` take an `options.signal`.
+ * Since it can't import the contract, it restates it: the shapes here are
+ * matched *by hand* to `BusLike<Events>` in `src/runtime/bus.ts` so that
+ * `createMockBus()` stays structurally assignable to a `BusLike` option
+ * without either module importing the other. `src/ext/metrics/__tests__/network.test.ts`
+ * asserts that assignability, so drift fails a test rather than surprising a
+ * consumer. The mock is deliberately *wider* than the contract (`type: string`
+ * rather than a key of an event map, plus a recorded history) — the direction
+ * assignability needs.
  *
- * The mock is deliberately *wider* than the contract — `type: string` rather
- * than a key of an event map, and a recorded history — which is the direction
- * assignability needs: wider parameters, equal-or-narrower returns.
- *
- * Known divergences from `createEventBus()` in `src/runtime/bus.ts`, beyond
- * structural typing:
- * - `MockBus` is not generic over an `Events` map the way `EventBus<Events>`
- *   is — `emit`/`on`/`once` take `type: string` everywhere. Making it generic
- *   is a public-type change and out of scope here; a caller that wants
- *   payload-level type safety narrows at the call site instead.
- * - The mock's `reset()` and the real bus's `clear()` are *not* the same
- *   operation, despite both being "start over": `EventBus.clear()` drops only
- *   subscribers, while `MockBus.reset()` also wipes recorded history and
- *   pending timers. Deliberately not aliased under one name — a shared name
- *   with different scope would be a footgun for anyone porting a test between
- *   the two buses.
+ * Known divergences from `createEventBus()`:
+ * - `MockBus` is not generic over an `Events` map — `emit`/`on`/`once` take
+ *   `type: string` everywhere. A caller wanting payload type safety narrows at
+ *   the call site.
+ * - `MockBus.reset()` also wipes recorded history and pending timers, unlike
+ *   `EventBus.clear()` which drops only subscribers — deliberately not aliased
+ *   under one name since the scopes differ.
  */
 
 export interface MockClock {
   /** Current virtual time in milliseconds. Starts at `0` unless seeded. */
   now(): number;
   /**
-   * Moves time forward by `ms` (must be `>= 0`), firing every timer that
-   * comes due, in order. Throws if a single call would need more than
-   * 100,000 timer firings — that is almost always a timer rescheduling
-   * itself faster than time is advancing, not a legitimate test.
+   * Moves time forward by `ms` (must be `>= 0`), firing every timer that comes
+   * due, in order. Throws if a single call would need more than 100,000 timer
+   * firings — almost always a timer rescheduling faster than time advances.
    */
   advance(ms: number): void;
   /**
-   * Jumps to an absolute time. Fires due timers when moving forwards, and can
-   * throw the same runaway-timer error as `advance()` when it does. `ms` must
-   * be finite.
+   * Jumps to an absolute time, firing due timers when moving forwards (and
+   * throwing the same runaway-timer error `advance()` can). `ms` must be finite.
    */
   setTime(ms: number): void;
-  /**
-   * Clock-driven `setTimeout`. Returns a cancel function. A non-finite delay
-   * fires immediately.
-   */
+  /** Clock-driven `setTimeout`. Returns a cancel function. A non-finite delay fires immediately. */
   setTimeout(callback: () => void, delay: number): () => void;
   /**
    * Clock-driven `setInterval`. Returns a cancel function. A delay below 1ms,
@@ -83,19 +65,13 @@ export interface MockBusSubscribeOptions {
   signal?: AbortSignal;
 }
 
-/**
- * See the "Known divergences" list in this file's header comment for where
- * `MockBus` deliberately departs from `EventBus` in `src/runtime/bus.ts`.
- */
+/** See the "Known divergences" list in this file's header comment. */
 export interface MockBus {
   clock: MockClock;
   /**
-   * Publishes an event to `type` subscribers and to every `onAny` subscriber.
-   *
-   * Matches the real bus: a handler that throws does not stop the remaining
-   * handlers, and the error never propagates to the caller of `emit()`. It is
-   * instead routed to `onError` (see `CreateMockBusOptions.onError`), exactly
-   * as `createEventBus()`'s `CreateEventBusOptions.onError` does.
+   * Publishes an event to `type` subscribers and every `onAny` subscriber.
+   * Matches the real bus: a throwing handler doesn't stop the rest or
+   * propagate to the caller — it's routed to `onError` instead.
    */
   emit<T, K extends string = string>(type: K, payload?: T): MockBusEvent<T, K>;
   /** Subscribes to one type. Returns an unsubscribe function. */
@@ -105,11 +81,9 @@ export interface MockBus {
   /** Subscribes to every type. */
   onAny(handler: MockBusHandler, options?: MockBusSubscribeOptions): () => void;
   /**
-   * Recorded events, newest last. Pass a `type` to filter.
-   *
-   * Returns a snapshot copy: a later `clearEvents()` or further `emit()`
-   * calls never mutate an array you already hold, unlike returning the live
-   * internal history would.
+   * Recorded events, newest last. Pass a `type` to filter. Returns a snapshot
+   * copy, so a later `clearEvents()` or `emit()` never mutates an array you
+   * already hold.
    */
   events(type?: string): readonly MockBusEvent[];
   /** Payloads only — the common assertion shape. */
@@ -117,10 +91,8 @@ export interface MockBus {
   /** Drops the recorded history. Subscribers and timers are untouched. */
   clearEvents(): void;
   /**
-   * Drops subscribers, history and timers — a wider teardown than
-   * `EventBus.clear()` on the real bus, which drops only subscribers. Not
-   * aliased as `clear()` on purpose: same name, different scope, is a
-   * footgun. See the header comment's divergence list.
+   * Drops subscribers, history and timers — wider than the real bus's
+   * `EventBus.clear()`. Not aliased as `clear()` on purpose (see header).
    */
   reset(): void;
   /** Number of live subscribers, optionally for one type. */
@@ -133,9 +105,8 @@ export interface CreateMockBusOptions {
   /** Cap on recorded events. Oldest are dropped. Default `1000`. */
   historyLimit?: number;
   /**
-   * Called when a handler throws during `emit()`, mirroring
-   * `CreateEventBusOptions.onError` on the real bus. Defaults to logging via
-   * `console.error`, same as the real bus's default.
+   * Called when a handler throws during `emit()`, mirroring the real bus's
+   * `CreateEventBusOptions.onError`. Defaults to `console.error`.
    */
   onError?: (error: unknown, event: MockBusEvent) => void;
 }
@@ -152,16 +123,14 @@ function createClock(start: number): MockClock {
   let nextId = 0;
   let timers: Timer[] = [];
 
-  // Runaway guard for `runDueUpTo`: a legitimate test can genuinely need many
-  // fires (e.g. `setInterval(cb, 1); advance(20_000)` needs 20,000), so the
-  // cap is generous. When it is hit, `advance`/`setTime` throw rather than
-  // silently truncating — a wrong-but-plausible `now()`/fire-count is worse
-  // than a loud failure naming the runaway timer.
+  // Generous cap for legitimate heavy use (e.g. `setInterval(cb, 1);
+  // advance(20_000)`); when hit, `advance`/`setTime` throw naming the runaway
+  // timer rather than silently truncating.
   const MAX_TIMER_FIRINGS = 100_000;
 
   const runDueUpTo = (target: number) => {
-    // Re-read the queue each pass: a timer callback may schedule another one
-    // that is itself due before `target`.
+    // Re-read the queue each pass: a callback may schedule another timer due
+    // before `target`.
     for (let guard = 0; guard < MAX_TIMER_FIRINGS; guard += 1) {
       const due = timers
         .filter((timer) => timer.at <= target)
@@ -178,10 +147,8 @@ function createClock(start: number): MockClock {
       }
       due.callback();
     }
-    // The loop above ran exactly MAX_TIMER_FIRINGS times without exhausting
-    // the due queue — recompute with the identical sort/tiebreak to find out
-    // whether a timer is still genuinely due. `advance(100_000)` for a plain
-    // 1ms interval must finish cleanly rather than throw a false diagnosis.
+    // Recompute to check whether a timer is still genuinely due — otherwise
+    // `advance(100_000)` for a plain 1ms interval would throw a false positive.
     const due = timers
       .filter((timer) => timer.at <= target)
       .sort((a, b) => a.at - b.at || a.id - b.id)[0];
@@ -199,13 +166,11 @@ function createClock(start: number): MockClock {
   };
 
   const schedule = (callback: () => void, delay: number, interval: number | null) => {
-    // `null` means a one-shot timer (setTimeout): delay may legitimately be 0.
-    // A recurring timer (setInterval) is normalized to a minimum of 1ms for
-    // *both* its first firing and every subsequent one, so `setInterval(cb, 0)`
-    // has a consistent cadence instead of firing immediately once and then
-    // settling into 1ms ticks. `NaN` falls back to that same 1ms floor, but
-    // `Infinity` is left alone — it is a legitimate "never fires" interval,
-    // not a runaway.
+    // `null` = one-shot (setTimeout): delay may legitimately be 0. A recurring
+    // timer (setInterval) is floored to 1ms for both its first and every later
+    // firing, so `setInterval(cb, 0)` has a consistent cadence rather than
+    // firing immediately once. `NaN` falls back to that same floor; `Infinity`
+    // is left alone as a legitimate "never fires" interval.
     const safeInterval =
       interval === null ? null : Number.isNaN(interval) ? 1 : Math.max(1, interval);
     const safeDelay =
@@ -264,9 +229,8 @@ export function createMockBus(options: CreateMockBusOptions = {}): MockBus {
   const anyHandlers = new Set<MockBusHandler>();
   let history: MockBusEvent[] = [];
 
-  // `signal` support, latched so a second call is a no-op: `once()` hands back
-  // the very function it calls on delivery, and an aborted signal has already
-  // run it. Same reasoning as the real bus.
+  // `signal` support, latched so a second call is a no-op — `once()` hands
+  // back the same function it calls on delivery. Same reasoning as the real bus.
   const bind = (unsubscribe: () => void, signal?: AbortSignal) => {
     let live = true;
     const off = () => {
@@ -312,9 +276,8 @@ export function createMockBus(options: CreateMockBusOptions = {}): MockBus {
       if (history.length > historyLimit) {
         history = history.slice(history.length - historyLimit);
       }
-      // Snapshot: a handler may unsubscribe itself mid-dispatch. A throwing
-      // handler must not stop the rest, or propagate to the emitter — same
-      // contract as the real bus's `dispatch()`.
+      // Snapshot: a handler may unsubscribe itself mid-dispatch. Matches the
+      // real bus's `dispatch()` contract.
       for (const handler of Array.from(handlers.get(type) ?? [])) {
         try {
           (handler as MockBusHandler<T>)(event.payload, event);

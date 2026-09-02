@@ -3,14 +3,12 @@
  *
  * Opt-in machinery for extensions that *measure* something: an event bus,
  * bounded ring buffers, a store that coalesces high-frequency writes, and
- * `redact()`.
+ * `redact()`. The root entry never imports this subpath, so a toolbar that
+ * is three buttons doesn't ship a ring buffer.
  *
- * The root entry never imports any of this. A toolbar that is three buttons
- * should not ship a ring buffer, and this subpath is how that stays true.
- *
- * It is also framework-free on purpose — nothing here imports React, so a
- * collector can run in a worker. `createThrottledStore()` exposes exactly the
- * `subscribe` / `getSnapshot` pair `useSyncExternalStore` wants.
+ * Framework-free on purpose — nothing here imports React, so a collector
+ * can run in a worker. `createThrottledStore()` exposes the `subscribe` /
+ * `getSnapshot` pair `useSyncExternalStore` wants.
  */
 
 export { createEventBus } from "./bus";

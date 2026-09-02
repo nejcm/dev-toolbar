@@ -35,19 +35,17 @@ export default defineConfig({
   },
   sourcemap: true,
   clean: true,
-  // rollup's treeshake pass hoists imports above the banner and drops the
-  // "use client" directive; esbuild already tree-shakes this bundle.
+  // rollup's treeshake pass drops the "use client" banner; esbuild already tree-shakes.
   treeshake: false,
   target: "es2022",
   banner: { js: '"use client";' },
   external: [
-    // The package's own name, so `./testing` reaches core through the consumer's
-    // one copy rather than inlining a second. See AGENTS.md, *Conventions*.
+    // So `./testing` reaches core via the consumer's copy, not a bundled second one.
     "@nejcm/dev-toolbar",
     "react",
     "react-dom",
     "react/jsx-runtime",
-    // ./testing only. An optional peer, so it must never be bundled.
+    // Optional peer for ./testing; must never be bundled.
     "@testing-library/react",
   ],
 });

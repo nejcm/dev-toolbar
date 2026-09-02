@@ -1,10 +1,9 @@
 /**
  * `/ext/environment` styles. [dev-toolbar/ext/environment]
  *
- * Same rules as core and as `/ext/metrics`: inside the `dev-toolbar` cascade
- * layer, every selector scoped by `[data-dev-toolbar]`, every colour from a
- * `--dtb-*` token, and every `data-dtb-part` name namespaced by kind (`env-*`)
- * rather than by the id a particular instance carries.
+ * Same rules as core and `/ext/metrics`: scoped by `[data-dev-toolbar]` inside
+ * the `dev-toolbar` cascade layer, colours from `--dtb-*` tokens, `data-dtb-part`
+ * names namespaced by kind (`env-*`) rather than instance id.
  */
 import { ensureStyleSheet } from "../../runtime";
 
@@ -203,13 +202,11 @@ export const ENVIRONMENT_CSS = String.raw`@layer dev-toolbar {
 const ENVIRONMENT_STYLE_ENTRY = "ext-environment";
 
 /**
- * Injects the stylesheet once per document, through `/runtime`'s shared
- * injector — the dedup key is a DOM attribute, so two bundled copies of the
- * package still inject once.
- *
- * Core's `injectStyles` prop is a prop, invisible to extensions, so this
- * extension carries its own switch — `environment({ injectStyles: false })` —
- * and exports `ENVIRONMENT_CSS` for consumers who ship CSS themselves.
+ * Injects the stylesheet once per document via `/runtime`'s shared injector
+ * (dedup key is a DOM attribute, so two bundled copies still inject once).
+ * Core's `injectStyles` prop isn't visible to extensions, so this extension
+ * has its own switch — `environment({ injectStyles: false })` — and exports
+ * `ENVIRONMENT_CSS` for consumers who ship CSS themselves.
  */
 export function ensureEnvironmentStyles(doc?: Document): HTMLStyleElement | null {
   return ensureStyleSheet(ENVIRONMENT_STYLE_ENTRY, ENVIRONMENT_CSS, doc);

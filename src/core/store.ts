@@ -20,11 +20,11 @@ export interface ToolbarState {
   /**
    * Extensions registered at runtime through `useDevToolbar().register()`.
    *
-   * @internal Not part of the public surface, despite `ToolbarState` being
-   * exported. It holds *only* the dynamic registrations — never the
-   * `extensions` prop — so it is not "the extension list" and reading it is a
-   * bug waiting to happen. The merged list is `useDevToolbar().extensions`.
-   * This field may change shape or disappear in a patch release.
+   * @internal Not part of the public surface despite `ToolbarState` being
+   * exported. Holds *only* the dynamic registrations, never the `extensions`
+   * prop, so reading it as "the extension list" is a bug — use
+   * `useDevToolbar().extensions` for the merged list. May change shape or
+   * disappear in a patch release.
    */
   registered: readonly DevToolbarExtension[];
 }

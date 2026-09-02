@@ -12,14 +12,9 @@ import type { DesignTokenDefinition } from "@nejcm/dev-toolbar/ext/theme-editor"
 import type { FlagReading, FlagValue } from "@nejcm/dev-toolbar/ext/flags";
 
 /**
- * Placeholder extensions with deliberately varied `priority`, so narrowing the
- * window collapses them into the `···` menu in a predictable order:
- *
- *   boom (5) → diagnostics (10) → hydr (20) → metrics (35) → overlays (55)
- *   → tw (70) → flags (80) → cmds (85) → env (90) → user (100, aligned end)
- *
- * The fake ones are the placeholders; `metrics`, `env` and `flags` are the real
- * `@nejcm/dev-toolbar/ext/metrics`, `.../ext/environment` and `.../ext/flags`.
+ * Deliberately varied `priority` so narrowing the window collapses extensions into `···` in order:
+ * boom (5) → diagnostics (10) → hydr (20) → metrics (35) → overlays (55) → tw (70) → flags (80)
+ * → cmds (85) → env (90) → user (100, aligned end). metrics/env/flags are the real extensions; the rest are placeholders.
  */
 
 function Chip({
@@ -73,15 +68,12 @@ function Definition({ children }: { children: React.ReactNode }) {
 }
 
 /**
- * The real `@nejcm/dev-toolbar/ext/environment`, driven by a getter so the
- * playground can flip impersonation and the sync status at runtime and watch
- * the chip react.
+ * The real `@nejcm/dev-toolbar/ext/environment`, driven by a getter so the playground can flip
+ * impersonation/sync status at runtime and watch the chip react.
  *
- * The context deliberately contains four things that must never reach the
- * screen or the clipboard as typed: an email address, an API endpoint with a
- * token in its query string, an `extra` key called `authToken`, and a
- * `refreshToken` nested one level down inside `extra.identity` — whose own key is innocent,
- * so only a redactor that walks the object finds it.
+ * The context deliberately carries four things that must never reach the screen or clipboard as
+ * typed: an email, a token in a query string, `extra.authToken`, and a `refreshToken` nested
+ * inside `extra.identity` (innocent key name, so only a redactor that walks the object finds it).
  */
 export const playgroundContext = {
   impersonating: false,
@@ -112,9 +104,7 @@ const runtimeEnvironment = environment({
             : false,
           roles: ["admin", "support"],
           syncStatus: playgroundContext.syncStatus,
-          // The nested one is the interesting case: `redact()` only finds
-          // `refreshToken` if it walks the object, which means the object must
-          // reach it unserialised.
+          // Nested case: redact() only finds refreshToken by walking the object unserialised.
           extra: {
             authToken: "abcdef123456",
             bundler: "vite",
@@ -183,18 +173,12 @@ function CommandsPanel() {
   );
 }
 
-/* -------------------------------------------------------------------------- */
-/* The real @nejcm/dev-toolbar/ext/flags, over a fake flag backend.             */
-/* -------------------------------------------------------------------------- */
+// The real @nejcm/dev-toolbar/ext/flags, over a fake flag backend.
 
 /**
- * The application's own flag state — a stand-in for whatever provider a real
- * app uses. `base` is what the app resolves on its own; `overrides` is where
- * the toolbar's overrides land, and the app reads `overrides ?? base`.
- *
- * Keeping them in two maps is the whole integration contract: the extension
- * needs the value *before* the override to be able to show both, and §3C's
- * precedence table puts the local override on top of it.
+ * The application's own flag state, standing in for a real provider. `base` is what the app
+ * resolves on its own; `overrides` is where the toolbar's overrides land, and the app reads
+ * `overrides ?? base`. Keeping them separate lets the extension show both values side by side.
  */
 const flagBase: Record<string, FlagValue> = {
   "ui-facelift": false,
@@ -202,17 +186,11 @@ const flagBase: Record<string, FlagValue> = {
   "checkout.copy": "classic",
   "search.rank": 2,
   "billing.tier": "standard",
-  // A flag whose key is credential-shaped on purpose: it must never render or
-  // copy as typed, in the panel or through a command.
+  // Credential-shaped key on purpose: must never render or copy as typed.
   "checkout.apiToken": "tok-live-abcdef123456",
 };
 
-/**
- * Seeded from storage *before the first paint*, which is the point of
- * `readStoredOverrides()`: the extension re-applies overrides in `start()`,
- * inside an effect, so without this the app would render one frame with the
- * un-overridden values after every reload.
- */
+/** Seeded from storage before first paint, so the app doesn't flash un-overridden values on reload. */
 const flagOverrides: Record<string, FlagValue> = readStoredOverrides({
   instanceId: "playground",
 });
@@ -237,13 +215,7 @@ export const playgroundFlags = {
     flagBase[key] = !(flagBase[key] === true);
     flagListeners.forEach((listener) => listener());
   },
-  /**
-   * Adds a flag to the catalogue *after* the toolbar has mounted.
-   *
-   * This is the P2c contract change made visible: `commands` is a function
-   * core calls on each aggregation pass, so the new flag's toggle command shows
-   * up in the palette on the next open. It used to need a page reload.
-   */
+  /** Adds a flag after the toolbar has mounted — its toggle command shows up in the palette on next open, no reload needed. */
   addFlag(key: string) {
     if (Object.prototype.hasOwnProperty.call(flagBase, key)) return;
     flagBase[key] = false;
@@ -290,8 +262,7 @@ const CATALOGUE: Omit<FlagReading, "value">[] = [
     label: "Search ranking version",
     type: "number",
     defaultValue: 1,
-    // Read once at boot in this pretend app, so an override needs a reload.
-    reloadBehavior: "full-reload",
+    reloadBehavior: "full-reload", // read once at boot, so an override needs a reload
   },
   { key: "billing.tier", label: "Billing tier", type: "string", defaultValue: "standard" },
   { key: "checkout.apiToken", label: "Checkout API token", type: "string" },
@@ -304,8 +275,7 @@ const runtimeFlags = flags({
   flags: () =>
     CATALOGUE.map((definition) => ({
       ...definition,
-      // BEFORE the toolbar's overrides — that is what makes the panel able to
-      // show the application's own value next to the override.
+      // Base value, before overrides — lets the panel show both side by side.
       value: flagBase[definition.key],
       source: "server-rule" as const,
     })),
@@ -332,11 +302,7 @@ const hydration: DevToolbarExtension = {
   compact: () => <Chip label="hydr" value="NA" tone="neutral" />,
 };
 
-/**
- * The Shadow DOM regression test. Every class here comes from the Tailwind Play
- * CDN, whose rules live in `document.head`. The bar renders in the light DOM, so
- * they apply; inside a shadow root this item would render unstyled.
- */
+/** Shadow DOM regression test: classes come from the Tailwind Play CDN in `document.head`, which only applies because the bar renders in the light DOM. */
 const tailwind: DevToolbarExtension = {
   id: "tw",
   label: "Tailwind",
@@ -402,27 +368,16 @@ const user: DevToolbarExtension = {
 };
 
 /**
- * The real thing, from `@nejcm/dev-toolbar/ext/metrics`. It replaces the fake
- * `delay` / `jank` / `net` chips this file used to ship.
- *
- * Built ONCE, at module scope. Calling `metrics()` inside a component would
- * hand the bar a new object on every render while the running collectors stayed
- * with the first one — core warns about exactly that.
- */
-/**
- * The real `@nejcm/dev-toolbar/ext/command-menu`. It contributes no commands of
- * its own — it is the only extension here that reads the aggregation instead of
- * adding to it — and its surface is the `overlay` slot, so `⌘K` keeps working
- * when its chip collapses into the `···` menu.
+ * The real `@nejcm/dev-toolbar/ext/command-menu`. It contributes no commands of its own — it
+ * only reads the aggregation — and its surface is the `overlay` slot, so `⌘K` keeps working
+ * when its chip collapses into `···`.
  */
 const runtimeCommandMenu = commandMenu();
 
 /**
- * The real `@nejcm/dev-toolbar/ext/overlays`. It draws over this page from the
- * `overlay` slot, below the bar and above the app, and takes no pointer events
- * — every button under an overlay still works. The grid below is deliberately
- * the same 12/24/1100 the playground's own cards are laid out on, so "Column
- * grid" has something true to line up with.
+ * The real `@nejcm/dev-toolbar/ext/overlays`, drawing from the `overlay` slot below the bar and
+ * above the app with no pointer events. The grid below matches the playground's own card layout
+ * (12/24/1100) so "Column grid" has something real to line up with.
  */
 const runtimeOverlays = overlays({
   order: 20,
@@ -431,17 +386,12 @@ const runtimeOverlays = overlays({
 });
 
 /**
- * The real `@nejcm/dev-toolbar/ext/diagnostics`. It contributes nothing to the
- * aggregation; it *reads* it, so what its panel shows is metrics', environment's
- * and flags' own `diagnostics()` output plus the page's facts and §3E's long
- * tasks. The placeholder extensions here declare none, so they show up as
- * present-and-absent — which is the completeness property made visible.
- *
- * The `app` context and the `source` below deliberately carry credentials in
- * three different shapes: a key `redact()` matches (`sessionToken`), a *value*
- * it matches under an innocent key (`Bearer …`), and a token nested two levels
- * down under keys that look fine (`billing.identity.refreshToken`). None of the
- * three may appear in the panel, on the clipboard or in the downloaded file.
+ * The real `@nejcm/dev-toolbar/ext/diagnostics`. It contributes nothing to the aggregation —
+ * it *reads* it, showing metrics'/environment's/flags' own `diagnostics()` output plus page
+ * facts. `app`/`source` below deliberately carry credentials three ways: a matched key
+ * (`sessionToken`), a matched value under an innocent key (`Bearer …`), and a token nested
+ * under innocent-looking keys (`billing.identity.refreshToken`). None may leak to the panel,
+ * clipboard, or downloaded file.
  */
 const runtimeDiagnostics = diagnostics({
   order: 5,
@@ -473,32 +423,20 @@ const runtimeDiagnostics = diagnostics({
   ],
 });
 
-/* -------------------------------------------------------------------------- */
-/* The real @nejcm/dev-toolbar/ext/theme-editor, over the page's own tokens.    */
-/* -------------------------------------------------------------------------- */
+// The real @nejcm/dev-toolbar/ext/theme-editor, over the page's own tokens.
 
 /**
- * The token catalogue. Every name here is a custom property `playground.css`
- * actually declares **and actually consumes**, which is the only way to tell
- * whether the extension does anything: edit `--pg-radius` and the cards round
- * off, edit `--pg-brand` and the tiles, links and buttons follow.
- *
- * Four of them are here to exercise a rule rather than to be pretty:
- *
- * - `--dtb-accent` is declared on purpose and is **refused**. It is the
- *   toolbar's own token, and writing it onto `:root` — an ancestor of the
- *   portalled toolbar root — would restyle the bar instead of the app. The row
- *   says so rather than silently disappearing.
- * - `--pg-session-panel-bg` normalises to `sessionpanelbg`, which contains
- *   `session`, one of `redact()`'s default sensitive keys. It is a **colour**,
- *   so it stays readable: a colour cannot carry a credential, and masking it
- *   would make the token you most need to see the one you cannot.
- * - `--pg-font-license-token` is a free **string** whose name matches, so it is
- *   masked in the panel and in every export, and the editor refuses to
- *   round-trip the mask back through the input.
- * - `--pg-font-scale` is a `number`, so `parseValue`'s refusal is reachable:
- *   type `big` into it and the row says "not a number" instead of pinning the
- *   page's font size to zero.
+ * The token catalogue. Every name is a custom property `playground.css` actually declares and
+ * consumes — edit `--pg-radius` and the cards round off, edit `--pg-brand` and tiles/links/buttons
+ * follow. Four exist to exercise a rule rather than to be pretty:
+ * - `--dtb-accent`: the toolbar's own token, **refused** — writing it to `:root` would restyle
+ *   the bar instead of the app, and the row says so rather than silently disappearing.
+ * - `--pg-session-panel-bg`: normalises to a `redact()`-sensitive key but is a **colour**, so it
+ *   stays readable (a colour can't carry a credential).
+ * - `--pg-font-license-token`: a credential-shaped **string**, masked in the panel and every
+ *   export; the mask never round-trips back through the input.
+ * - `--pg-font-scale`: a **number**, so `parseValue`'s refusal is reachable — type `big` and the
+ *   row says "not a number" instead of zeroing the page's font size.
  */
 const PLAYGROUND_TOKENS: DesignTokenDefinition[] = [
   {
@@ -579,14 +517,13 @@ const runtimeThemeEditor = themeEditor({
   priority: 45,
   tokens: PLAYGROUND_TOKENS,
   createdBy: "playground",
-  // §3H's surface/subtree selection: the whole app, or just the demo card.
+  // Subtree selection: the whole app, or just the demo card.
   surfaces: [
     { id: "root", label: "Whole application (:root)", selector: ":root" },
     { id: "demo", label: "Just the demo card", selector: ".pg-theme-demo" },
   ],
-  // §3H's presets, computed by the consumer — which is where a palette
-  // generator belongs. The extension owns no colour model and generates
-  // nothing; a preset is a plain recipe, the same shape Import accepts.
+  // Presets are computed by the consumer — the extension owns no colour model;
+  // a preset is a plain recipe, the same shape Import accepts.
   presets: [
     {
       schemaVersion: 1,
@@ -609,13 +546,10 @@ const runtimeThemeEditor = themeEditor({
       createdAt: "2026-08-28T10:04:00.000Z",
     },
   ],
-  // The app's own colour mode. The extension has no idea what a mode is; this
-  // is consumer code, exactly like /ext/flags' `onOverride`.
+  // The app's own colour mode — the extension has no idea what a mode is.
   mode: {
-    // Falls back to the media query rather than assuming "light", because an
-    // unset attribute means "follow the system" here — and a recipe that
-    // recorded `mode: "light"` while the page was rendering dark would be a
-    // wrong fact in a document somebody hands to a designer.
+    // Falls back to the media query rather than assuming "light": an unset
+    // attribute means "follow the system", so a recorded recipe reflects reality.
     read: () => {
       const chosen = document.documentElement.dataset["pgMode"];
       if (chosen === "dark" || chosen === "light") return chosen;
@@ -629,6 +563,7 @@ const runtimeThemeEditor = themeEditor({
   },
 });
 
+/** Built once at module scope — calling `metrics()` inside a component would hand the bar a new object every render while collectors stayed with the first one; core warns about this. */
 const runtimeMetrics = metrics({
   order: 30,
   priority: 35,

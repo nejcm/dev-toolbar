@@ -1,64 +1,40 @@
 /**
- * `redact()` — the one survivor of the dropped §6 access-control model.
- * [dev-toolbar/runtime]
- *
- * Core has no identity, no session and no server, so an authorization check
- * inside it would be theatre. What *is* real is that a diagnostics panel puts
- * URLs, headers and payloads on a screen somebody may screenshot, and a
- * "copy diagnostic data" button puts them on the clipboard. This masks the
- * values that must not travel.
- *
- * It is a hygiene helper, not a security boundary: it matches on key names, so
- * a secret stored under `data` stays visible. Do not send anything anywhere on
- * the strength of having called it.
+ * `redact()` masks values that must not be screenshotted or copied from a
+ * diagnostics panel. Core has no identity, session or server, so it is a
+ * hygiene helper, not a security boundary: it matches on key names, so a
+ * secret stored under `data` stays visible.
  */
 
 /**
- * The default replacement value, and the one every consumer compares against.
- *
- * It reads the same everywhere, including *inside* a URL: `redactUrl` writes the
- * mask into userinfo, a query parameter and a fragment parameter literally, so a
- * masked URL contains `[redacted]`, not the `%5Bredacted%5D` a percent-encoding
- * serialiser would have produced. See `maskUrl` for how, and
- * `RedactOptions.mask` for the custom masks that cannot be written that way.
+ * The default replacement value. Written literally even inside a URL (a
+ * masked URL contains `[redacted]`, not `%5Bredacted%5D`) — see `maskUrl` and
+ * `RedactOptions.mask` for the custom masks that can't be written that way.
  */
 export const REDACTED = "[redacted]";
 
 /**
- * Matched case-insensitively against the key's **word segments** — split on
- * separators, case boundaries and letter/digit boundaries (see `isSensitiveKey`
- * for the rule) — so `token` covers `Token`, `access_token`,
- * `X-Access-Token` and `accessToken` alike, and `apikey` covers `apiKey`,
- * `api_key` and `X-Api-Key`, without `auth` also covering `author`.
+ * Matched case-insensitively against the key's **word segments** (split on
+ * separators, case and letter/digit boundaries — see `isSensitiveKey`), so
+ * `token` covers `Token`, `access_token`, `X-Access-Token`, `accessToken`,
+ * and `apikey` covers `apiKey`/`api_key`/`X-Api-Key`, without `auth` also
+ * matching `author`.
  *
- * The entries fall into four kinds, and knowing which is which is how to
- * extend the list:
- *
- * - **Whole words** — `authorization`, `bearer`, `cookie`, `token`, `secret`,
- *   `password`, `passwd`, `pwd`, `credential`, `session`, `sid`, `csrf`,
- *   `xsrf`, `signature`, `otp`, `totp`, `hotp`, `pin`, `ssn`, `cvv`, and the
- *   abbreviated `sess`. Each matches that segment of a key, wherever it sits:
- *   `auth` hits `authToken` and `X-Auth-Token`, `pin` hits `pinCode`, `secret`
- *   hits `clientSecret`, `sess` hits `sess_id`.
- * - **Concatenations** — `setcookie`, `apikey`, `sessionid`, `privatekey`,
- *   `accesskey`, `clientsecret`, `refreshtoken`, `idtoken`, `accesstoken`,
- *   `authtoken`, `apitoken`, `apisecret`, `secretkey`, `creditcard`,
- *   `cardnumber`, `sessid`, `xauth`, `csrfmiddlewaretoken` (Django's form
- *   field), plus the two standard all-caps session cookies `jsessionid` and
- *   `phpsessid`. These match a *run* of adjacent segments, which is what
- *   makes `setcookie` cover `set-cookie` and `apikey` cover `x-api-key`. They
- *   also carry the only case segments cannot reach: a run-together key with no
- *   separator and no case boundary (`accesstoken`, `secretkey`, `JSESSIONID`)
- *   has exactly one segment, so it is matched only because the concatenation is
- *   listed here. A compound spelled without separators and *not* listed
- *   (`bearertoken`) is the known gap; add it with `extraKeys`.
- * - **Spelling variants** — `authorisation` and `authentication` sit next to
- *   `authorization` because `auth` no longer reaches inside a word to cover
- *   them, and both name a header that carries a credential.
- * - **Redundant on purpose** — `clientsecret` and `refreshtoken` are already
- *   covered by `secret` and `token`. They stay because they document the shapes
- *   the list is aimed at, and because removing them would silently drop the
- *   run-together spellings above.
+ * Entries are one of four kinds:
+ * - **Whole words** (`authorization`, `bearer`, `cookie`, `token`, `secret`,
+ *   `password`, `session`, `sid`, `csrf`, `signature`, `otp`, `pin`, `ssn`,
+ *   `cvv`, `sess`, etc.) match that segment wherever it sits, e.g. `auth`
+ *   hits `authToken`, `sess` hits `sess_id`.
+ * - **Concatenations** (`apikey`, `sessionid`, `accesstoken`,
+ *   `csrfmiddlewaretoken`, `jsessionid`, etc.) match a *run* of adjacent
+ *   segments — needed for run-together keys with no separator or case
+ *   boundary (`accesstoken`, `JSESSIONID`), which have exactly one segment
+ *   and match only because the concatenation is listed. A compound not
+ *   listed (`bearertoken`) is a gap to fill via `extraKeys`.
+ * - **Spelling variants** (`authorisation`, `authentication`) sit next to
+ *   `authorization` since `auth` no longer reaches inside a word.
+ * - **Redundant on purpose** (`clientsecret`, `refreshtoken` — already
+ *   covered by `secret`/`token`) document the shapes the list targets and
+ *   preserve the run-together spellings above.
  */
 export const DEFAULT_SENSITIVE_KEYS: readonly string[] = [
   "authorization",
@@ -109,110 +85,84 @@ export const DEFAULT_SENSITIVE_KEYS: readonly string[] = [
 
 export interface RedactOptions {
   /**
-   * Replaces the default list outright. An entry matches when it equals one or
-   * more *adjacent* whole segments of the key — a run, not the whole key — so
+   * Replaces the default list outright. An entry matches one or more
+   * *adjacent* whole segments of the key (a run, not the whole key), so
    * `"token"` matches `refreshToken` and `x-auth-token` alike. See
-   * `isSensitiveKey` for the segmenting rule, and `allowKeys` below for why
-   * that is *not* how exemptions are matched.
+   * `isSensitiveKey` for segmenting; `allowKeys` matches differently.
    */
   keys?: readonly string[];
-  /** Added to whichever list is in force. The common case. Matched the same way as `keys`, against a run of segments. */
+  /** Added to whichever list is in force. Matched the same way as `keys`. */
   extraKeys?: readonly string[];
   /**
    * Keys that survive even when they match. Wins over the lists above.
    *
-   * Unlike `keys`/`extraKeys`, an entry here is matched against the key's
-   * **entire** canonicalised form, not a run inside it — so it reads as
-   * "exempt this key," not "stop this word from counting." `allowKeys:
-   * ["sessionName"]` exempts `session-name` and `SESSION_NAME` (case and
-   * separators still fold away), but does *not* exempt `sessionNameV2` — the
-   * extra segment breaks the equality even though `sessionName` is still a
-   * run inside it. And naming the segment that triggered a match is not
-   * enough either: `allowKeys: ["session"]` still leaves `sessionName`
-   * redacted, because `"session"` is not the whole key. The trailing-`s`
-   * tolerance `matchesAny` gives `keys`/`extraKeys` (`credential` also
-   * catching `credentials`) is not extended here either: `allowKeys:
-   * ["sessionName"]` does not exempt `sessionNames`. Name the exact key
-   * (or all of its shapes) you mean to exempt.
+   * Unlike `keys`/`extraKeys`, an entry here must match the key's **entire**
+   * canonicalised form, not just a run inside it: `allowKeys: ["sessionName"]`
+   * exempts `session-name`/`SESSION_NAME` but not `sessionNameV2`, and naming
+   * just the triggering segment (`allowKeys: ["session"]`) does not exempt
+   * `sessionName` either. The trailing-`s` tolerance `keys`/`extraKeys` get
+   * is not extended here: it does not exempt `sessionNames`. Name the exact
+   * key shape you mean to exempt.
    */
   allowKeys?: readonly string[];
   /**
    * Replacement value. Default `"[redacted]"`.
    *
-   * Inside a URL the mask is written literally as long as it is URL-safe —
-   * ASCII alphanumerics and the punctuation that cannot change how the result
-   * parses (see `URL_SAFE_MASK`), which the default `[redacted]` is. Anything
-   * else is percent-encoded in a URL instead: a mask carrying a delimiter
-   * (`&`, `=`, `#`, `%`, a space) because writing it literally would rewrite
-   * the URL's structure rather than one of its values, and a mask carrying a
-   * non-ASCII character (`██`) because `new URL` re-encodes it the moment the
-   * result is reparsed, so the literal form would not survive a round trip.
+   * Written literally into a URL when URL-safe (ASCII alphanumerics plus
+   * punctuation that can't change parsing — see `URL_SAFE_MASK`), which the
+   * default is. Otherwise percent-encoded: a mask with a delimiter (`&`,
+   * `=`, `#`, `%`, space) would rewrite the URL's structure, and a non-ASCII
+   * mask (`██`) wouldn't survive `new URL`'s re-encoding on reparse.
    */
   mask?: string;
   /**
-   * Objects deeper than this become `"[truncated]"`. Default `8`. A value
-   * that is not a finite non-negative integer (`NaN`, `Infinity`, negative,
-   * or fractional) falls back to the default rather than being treated as
-   * unbounded — see `sanitizeCount`.
+   * Objects deeper than this become `"[truncated]"`. Default `8`. A
+   * non-finite, negative, or fractional value falls back to the default —
+   * see `sanitizeCount`.
    */
   maxDepth?: number;
   /**
-   * Arrays longer than this are cut short. Default `200`. Sanitised the same
-   * way as `maxDepth`: a non-finite or negative value falls back to the
-   * default.
+   * Arrays longer than this are cut short. Default `200`. Sanitised the
+   * same way as `maxDepth`.
    */
   maxArrayLength?: number;
   /**
    * Caps the total number of objects, arrays and class-like instances walked
    * across one top-level `redact()` call. Default `50_000`. Sanitised the
-   * same way as `maxDepth`: a non-finite or negative value falls back to the
-   * default.
+   * same way as `maxDepth`.
    *
-   * `maxDepth` and `maxArrayLength` bound how *wide* and how *deep* a single
-   * path can be, but neither bounds how many times a **shared** reference is
-   * walked: `seen` (the cycle guard) is scoped to the current path, added
-   * before recursing and removed after, so a DAG where several keys point at
-   * the same child is walked once per path to it, not once per object. A
-   * value with `k` keys at every one of `d` levels, all aliasing a single
-   * child per level, costs `k^d` walks of that child — at `k=8`, `d=7` this
-   * measured 1268 ms and 2,097,152 walks of the shared leaf, entirely within
-   * `maxDepth: 8`'s default. `redact({ a: shared, b: shared })` still produces
-   * two independent, correctly-redacted copies; this only stops paying for
-   * that correctness exponentially many times over on a hostile or just
-   * unlucky shape.
+   * `maxDepth`/`maxArrayLength` bound width and depth of a single path, but
+   * not how many times a **shared** reference is walked: the cycle guard
+   * (`seen`) is scoped per-path, so a DAG where several keys alias the same
+   * child is walked once per path to it. A value with `k` keys at each of
+   * `d` levels all aliasing one child costs `k^d` walks — at `k=8, d=7` that
+   * measured 1268 ms and ~2.1M walks, well within `maxDepth: 8`'s default.
+   * `maxNodes` caps the shared total instead, without changing correctness
+   * (`redact({ a: shared, b: shared })` still produces two independent
+   * copies).
    *
-   * The remaining budget is shared by the whole call, not per-branch, so once
-   * it is spent every node still to be visited — sibling keys included —
-   * becomes `"[truncated]"` too: the same tag `maxDepth` and a revoked Proxy
-   * already use for "this shape exceeded a bound, and which bound is not the
-   * useful part of the answer." A distinct tag would let a caller tell "too
-   * deep" apart from "too much," but no caller does that today, and every
-   * other bound in this module already collapses into one tag.
+   * The budget is shared by the whole call: once spent, every remaining
+   * node — sibling keys included — becomes `"[truncated]"` too, the same tag
+   * used for exceeding `maxDepth`, since no caller distinguishes the bounds.
    */
   maxNodes?: number;
   /**
-   * Also mask string *values* that look like credentials regardless of their
-   * key: `Bearer …` / `Basic …` scheme headers, bare JWTs, and absolute
-   * `http(s)` URLs carrying a sensitive query or fragment parameter — the
-   * OAuth-callback shape, where the secret hides in the value and no amount of
-   * key matching will find it. Default `true`.
+   * Also mask string *values* that look like credentials regardless of key:
+   * `Bearer …`/`Basic …` scheme headers, bare JWTs, and absolute `http(s)`
+   * URLs with a sensitive query/fragment parameter (the OAuth-callback
+   * shape, where key matching can't find the secret). Default `true`.
    *
-   * A URL value that has nothing to mask is returned byte-for-byte unchanged;
-   * only one that was actually masked comes back rewritten.
+   * A URL with nothing to mask is returned byte-for-byte unchanged.
    */
   values?: boolean;
 }
 
-// The boundaries a key name carries besides its separators, each turned into an
-// explicit space before the split below. `ACRONYM` runs first so `APIKey`
-// breaks as `API`/`Key` rather than `APIKe`/`y`, and the digit pair keeps
-// `sha256` and `token2` from welding a number onto a word.
-//
-// Every class is a Unicode property, not `[A-Za-z]`: a key name is whatever the
-// consumer called it, and `contraseña`, `пароль` and `密码` are key names. The
-// case classes matter for the scripts that *have* case (`ПарольToken` breaks in
-// two), and `NOT_WORD` matters for every script at once — as `[^a-z\d]+` it
-// treated `ñ` as a separator and split `contraseña` into `contrase`/`a`.
+// Boundaries besides separators, turned into explicit spaces before the split
+// below. `ACRONYM` runs first so `APIKey` breaks as `API`/`Key`, not
+// `APIKe`/`y`; the digit pairs keep `sha256`/`token2` from welding a number
+// onto a word. Unicode properties (not `[A-Za-z]`) so `contraseña`, `пароль`,
+// `密码` segment correctly too — `NOT_WORD` as `[^a-z\d]+` used to treat `ñ`
+// as a separator and split `contraseña` into `contrase`/`a`.
 const ACRONYM = /(\p{Lu}+)(\p{Lu}\p{Ll})/gu;
 const CAMEL = /([\p{Ll}\p{N}])(\p{Lu})/gu;
 const LETTER_DIGIT = /(\p{L})(\p{N})/gu;
@@ -220,13 +170,9 @@ const DIGIT_LETTER = /(\p{N})(\p{L})/gu;
 const NOT_WORD = /[^\p{L}\p{N}]+/u;
 
 /**
- * The key's lowercase word segments: `X-Api-Key` and `apiKey` both become
- * `["api", "key"]`, `--sidebar-bg` becomes `["sidebar", "bg"]`, `authorization`
- * and `contraseña` each stay one segment.
- *
- * Empty pieces are dropped, so a leading `--` (a CSS custom property) or a
- * trailing `[0]` contributes nothing, and a key of pure punctuation segments to
- * nothing at all.
+ * The key's lowercase word segments: `X-Api-Key`/`apiKey` both become
+ * `["api", "key"]`, `--sidebar-bg` becomes `["sidebar", "bg"]`. Empty pieces
+ * are dropped, so a leading `--` or trailing `[0]` contributes nothing.
  */
 function segments(key: string): string[] {
   return key
@@ -240,37 +186,30 @@ function segments(key: string): string[] {
 }
 
 /**
- * One canonical form, used for both a *list entry* and an `allowKeys` entry: the
- * key's segments with the boundaries closed up. `X-Custom-Secret`, `x_custom
- * secret` and `xCustomSecret` all canonicalise to `xcustomsecret`.
+ * One canonical form for a *list entry* and an `allowKeys` entry: the key's
+ * segments closed up. `X-Custom-Secret`/`x_custom secret`/`xCustomSecret` all
+ * canonicalise to `xcustomsecret`.
  *
- * Entries go through the same segmenter as the keys they are matched against,
- * which is the only way an entry can be *reachable*: `matchesAny` compares the
- * entries against a run of segments, and a run can only ever contain characters a
- * segment contains. An entry canonicalised any other way could carry a
- * character no run can hold and so match nothing — which is exactly what
- * `extraKeys: ["x/y"]` did when entries were merely stripped of `-_.` and
- * whitespace.
+ * Entries go through the same segmenter as the keys matched against them —
+ * required for reachability, since `matchesAny` compares entries against a
+ * run of segments and a run can only contain segment characters. Any other
+ * canonicalisation could produce an entry no run can match (as `extraKeys:
+ * ["x/y"]` once did when entries were merely stripped of `-_.` and whitespace).
  */
 const canonical = (key: string): string => segments(key).join("");
 
 /**
  * True when any entry names one or more *adjacent whole* segments of the key.
  *
- * The runs are built from every start position, growing one segment at a time,
- * and looked up in the entry set — rather than the set being looped over per
- * run — so the cost is the key's length times the longest entry, and does not
- * grow with the size of the list. A run is abandoned as soon as it is longer
- * than the longest entry can be, which is what keeps a hostile key cheap: at
- * `"a-".repeat(50000)` (50 000 one-character segments) the per-entry loop this
- * replaced took 160 ms, in a module whose whole job is to survive whatever a
- * diagnostics dump hands it.
+ * Runs are built from every start position, growing one segment at a time,
+ * and looked up in the entry set rather than looping the set per run, so cost
+ * scales with the key's length times the longest entry, not the list size. A
+ * run is abandoned once longer than the longest entry, keeping a hostile key
+ * cheap (`"a-".repeat(50000)` took 160ms with the old per-entry loop).
  *
- * A trailing `s` on the run is tolerated, which is the one inflection the rule
- * folds: `credential` has to cover the `credentials` bag every SDK ships, and
- * `token`/`cookie`/`secret` their plurals. It cannot resurrect the substring
- * over-matches — `auths` is not `author` — because the tolerance is still an
- * equality, not a prefix.
+ * A trailing `s` is tolerated (`credential`/`token`/`cookie`/`secret` also
+ * catch their plurals) but only as an equality, not a prefix — `auths` still
+ * isn't `author`.
  */
 function matchesAny(
   parts: readonly string[],
@@ -291,9 +230,9 @@ function matchesAny(
 }
 
 interface ResolvedOptions {
-  /** Canonicalised, deduplicated; the empty entry a punctuation-only one folds to is dropped. */
+  /** Canonicalised, deduplicated; empty entries (punctuation-only) dropped. */
   keys: Set<string>;
-  /** The longest entry, i.e. how far a run of segments is worth growing. */
+  /** Longest entry length, i.e. how far a run of segments is worth growing. */
   longestKey: number;
   allow: string[];
   mask: string;
@@ -307,16 +246,11 @@ interface ResolvedOptions {
 
 /**
  * Coerces a numeric option to a safe non-negative integer, falling back to
- * `fallback` for anything that isn't one: `undefined` (not supplied), `NaN`,
- * `Infinity`, or negative.
- *
- * Without this, `maxArrayLength: NaN` reaches `Math.min(length, NaN)` — which
- * is `NaN` — and then `new Array(NaN)`, which throws a `RangeError` straight
- * out of `redact()`, defeating the one guarantee this module makes: it does
- * not throw. Falling back to the *default* rather than treating a malformed
- * bound as "unbounded" is the safer reading of garbage input — an unbounded
- * node budget is exactly the exponential-walk vulnerability `maxNodes` exists
- * to close, so a bad value must not silently disable it.
+ * `fallback` for anything that isn't one (`undefined`, `NaN`, `Infinity`,
+ * negative). Without this, `maxArrayLength: NaN` reaches `new Array(NaN)`,
+ * which throws — defeating the guarantee that `redact()` never throws.
+ * Falling back to the default rather than "unbounded" also matters because
+ * an unbounded node budget is exactly the exploit `maxNodes` exists to close.
  */
 function sanitizeCount(value: number | undefined, fallback: number): number {
   return Number.isFinite(value) ? Math.max(0, Math.trunc(value as number)) : fallback;
@@ -351,36 +285,17 @@ const resolvedCache = new WeakMap<RedactOptions, ResolvedOptions>();
 let defaultResolved: ResolvedOptions | undefined;
 
 /**
- * Memoised `resolve`. Canonicalising ~44 default entries through the
- * segmenter and building a `Set` is cheap once but not free enough to pay on
- * every `isSensitiveKey` call in a per-header or per-key loop — that call is
- * a public export with no top-level `resolve` above it the way `redact()`
- * and `redactHeaders` have.
+ * Memoised `resolve`, since `isSensitiveKey` is a public export that may be
+ * called per-header or per-key in a hot loop, unlike `redact()`/`redactHeaders`.
  *
  * Two tiers:
+ * - **No options** resolves once lazily into a module-level constant.
+ * - **An options object** is cached in a `WeakMap` keyed on identity, not
+ *   contents — a caller reusing the same options object gets it resolved
+ *   once; a fresh literal each call gets no reuse (same as no cache).
  *
- * - **No options** (the common case for a hot loop) resolves once, lazily,
- *   into a module-level constant. That first resolution snapshots
- *   `DEFAULT_SENSITIVE_KEYS` — a JS consumer (nothing in TS can) that reaches
- *   past the `readonly` type and mutates the exported array afterwards is not
- *   observed by later no-options calls; the array is typed `readonly` for
- *   exactly this reason, but it is not frozen, so this is the one guarantee
- *   that actually holds the line.
- * - **An options object** is cached in a `WeakMap` keyed on that object's
- *   identity, not its contents. A caller that builds its options once and
- *   reuses the same object across calls — the pattern this cache is for —
- *   gets it resolved once. A caller that passes a fresh object literal each
- *   call (`isSensitiveKey(k, { extraKeys: [...] })` inline) gets no reuse and
- *   pays full price every time, same as before this cache existed; the
- *   `WeakMap` key is never reachable a second time so nothing leaks either.
- *
- * Reading is snapshot-once, not live: `resolve` is called the first time an
- * options object is seen, so mutating `extraKeys` (or any other field) on an
- * object already cached does not change what later calls with that same
- * object see. `ResolvedOptions` itself is never mutated after `resolve`
- * builds it — every consumer only ever reads its fields — so it's safe to
- * hand the identical cached object back to every caller sharing the same
- * options identity.
+ * Resolution is snapshot-once: mutating fields on an already-cached options
+ * object doesn't change what later calls with that object see.
  */
 function resolveCached(options: RedactOptions | undefined): ResolvedOptions {
   if (options === undefined) {
@@ -397,34 +312,23 @@ function resolveCached(options: RedactOptions | undefined): ResolvedOptions {
 /**
  * True when a key name should have its value masked. Exported for reuse.
  *
- * The rule, in one sentence: **an entry matches when it equals one or more
- * adjacent whole word segments of the key, give or take a trailing `s`.**
+ * The rule: **an entry matches when it equals one or more adjacent whole
+ * word segments of the key, give or take a trailing `s`.** The key is split
+ * on separators and case/letter-digit boundaries, so `X-Auth-Token`,
+ * `authToken`, `auth_token` all segment to `["auth", "token"]`; `x-api-key`
+ * segments to `["x", "api", "key"]` and matches `apikey` via the adjacent
+ * run. `allowKeys` wins and is an exact match against the closed-up segments
+ * (not a segment match): see `RedactOptions.allowKeys` for the asymmetry.
  *
- * The key is split into segments on its separators (`-`, `_`, `.`, whitespace
- * and anything else non-alphanumeric) and on its case and letter/digit
- * boundaries, so `X-Auth-Token`, `authToken` and `auth_token` all segment to
- * `["auth", "token"]` and match `auth` and `token`; `x-api-key` segments to
- * `["x", "api", "key"]` and matches the concatenation `apikey` through the
- * adjacent run `api`+`key`. `allowKeys` still wins, and is still an exact match
- * rather than a segment one — against the key's segments closed up, so
- * `allowKeys: ["sessionName"]` exempts `session-name` and `session_name` too,
- * but not `sessionNameV2`, and the trailing-`s` tolerance above is not
- * extended to it either: `allowKeys: ["sessionName"]` does not exempt
- * `sessionNames`. See `RedactOptions.allowKeys` for the full asymmetry.
+ * This used to be `normalise(key).includes(entry)`, which over-redacted
+ * ordinary words containing a sensitive substring (`auth` matched `author`,
+ * `pin` matched `spinner`, `sid` matched `inside`) — a lie in the other
+ * direction, since it hid data that was never sensitive and forced
+ * `/ext/theme-editor` to route `--sidebar-bg`/`--spinner-size` around it.
  *
- * This used to be `normalise(key).includes(entry)`, which over-redacted eight
- * ordinary words for every dump that contained one: `auth` matched `author` and
- * `authorName`, `pin` matched `shipping` and `spinner`, `sid` matched `inside`,
- * `residual` and `consider`. Over-redaction is the safe direction but it is
- * still a lie — a diagnostics dump that renders `{ author: "nejcm" }` as
- * `[redacted]` is hiding data that was never sensitive, and `/ext/theme-editor`
- * had to route its token names *around* this pass to keep `--sidebar-bg` and
- * `--spinner-size` readable at all.
- *
- * The cost is that a compound spelled with no separator and no case boundary
- * has one segment and matches nothing inside it: `accesstoken` is caught only
- * because `DEFAULT_SENSITIVE_KEYS` lists that concatenation. That is a list
- * problem with a list fix (`extraKeys`), not a matcher that guesses.
+ * Cost: a compound with no separator or case boundary (`accesstoken`) is one
+ * segment and matches only because `DEFAULT_SENSITIVE_KEYS` lists that exact
+ * concatenation — a list problem with a list fix (`extraKeys`), not a guess.
  */
 export function isSensitiveKey(key: string, options?: RedactOptions): boolean {
   const resolved = resolveCached(options);
@@ -454,16 +358,10 @@ function redactString(value: string, resolved: ResolvedOptions): string {
     return `${scheme} ${resolved.mask}`;
   }
   if (JWT.test(value)) return resolved.mask;
-  // A URL is the one string shape that carries credentials in a place key-name
-  // matching cannot see: `?access_token=…` sits inside the *value*. Without
-  // this, `redact()` is only as safe as every call site remembering to run
-  // `redactUrl()` first — and the OAuth-callback shape is exactly what leaks.
-  //
-  // Only a URL that was actually masked comes back rewritten. `URL.toString()`
-  // normalises — it adds a missing path, lowercases the scheme and host, and
-  // punycodes an IDN — so returning it unconditionally would quietly rewrite
-  // every innocent URL in a diagnostic dump, and anyone diffing two dumps would
-  // read those as changes. This is a redactor, not a canonicaliser.
+  // A URL can carry credentials in the value itself (`?access_token=…`),
+  // which key matching alone can't see. Only rewritten if actually masked —
+  // `URL.toString()` normalises (missing path, lowercased host, IDN
+  // punycoding), and this is a redactor, not a canonicaliser.
   if (ABSOLUTE_URL.test(value)) {
     const pass = maskUrl(value, resolved);
     return pass.masked ? pass.output : value;
@@ -472,15 +370,11 @@ function redactString(value: string, resolved: ResolvedOptions): string {
 }
 
 /**
- * Writes one own data property, by definition rather than by assignment.
- *
- * `output[key] = value` invokes a setter, and `Object.prototype` has one for
- * `__proto__`: assigning there silently *drops* the entry and rebuilds nothing.
- * A key literally called `__proto__` then read back through the prototype and
- * rendered as `"[object Object]"` — with a "masked" badge, because the before
- * and after forms differed. No pollution (the value is a string and the setter
- * ignores it), but a value replaced by a lie is exactly what this module exists
- * to prevent. `/ext/flags` made it observable; `/ext/environment` had it too.
+ * Writes one own data property, by definition rather than assignment.
+ * `output[key] = value` invokes `Object.prototype`'s `__proto__` setter,
+ * which silently drops a key literally named `__proto__` instead of storing
+ * it — no pollution, but a value replaced by a lie is what this module exists
+ * to prevent (`/ext/flags`, `/ext/environment` made it observable).
  */
 function define(target: Record<string, unknown>, key: string, value: unknown): void {
   Object.defineProperty(target, key, {
@@ -494,40 +388,22 @@ function define(target: Record<string, unknown>, key: string, value: unknown): v
 /**
  * Returns a masked deep copy. The input is never mutated. Cycles become
  * `"[circular]"`; class instances, `Map`, `Set`, functions and symbols become
- * a short tag rather than being walked, because a diagnostics dump is not the
- * place to discover a serializer bug.
+ * a short tag rather than being walked.
  *
- * The overloads say only what `walk` actually guarantees, which is why there
- * are exactly three of them:
+ * Three overloads, matching what `walk` actually guarantees:
+ * - **string in, string out** — the common case (`/ext/diagnostics`,
+ *   `/ext/metrics`, `/ext/theme-editor` mask a value before using it inline).
+ * - **number/boolean/bigint/null/undefined in, itself out** — returned by
+ *   identity.
+ * - **anything else, `unknown` out** — a plain object is usually
+ *   `Record<string, unknown>`, but a cycle/`maxDepth: 0`/hostile Proxy makes
+ *   it a tag string instead, and other types come back in varying shapes;
+ *   `unknown` avoids claiming a union safety it doesn't have.
  *
- * - **A string in, a string out.** Masked or not, `redactString` returns a
- *   string on every path. This is the overload that earns its keep: masking a
- *   value before it is joined into a sentence is the module's most common use
- *   (`/ext/diagnostics`, `/ext/metrics`, `/ext/theme-editor` all do it), and
- *   every one of those call sites used to pay for the missing overload with a
- *   `String(…)` wrap or an `as string`.
- * - **A number, boolean, bigint, `null` or `undefined` in, itself out.** These
- *   are returned by identity, so the parameter's own type is the honest return.
- * - **Anything else, `unknown` out.** Not because the type is unknowable but
- *   because it is a union nobody can use: a plain object normally comes back as
- *   `Record<string, unknown>`, yet a cycle, `maxDepth: 0`, a revoked Proxy or a
- *   hostile trap makes it a tag *string*, an array comes back as an array (or a
- *   tag string), and a `Date`, `URL`, `Map`, `Set`, function or class instance
- *   comes back as a string or a different shape entirely. Declaring
- *   `string | Record<string, unknown>` would be true for a statically-plain
- *   object and useless: every caller that indexes the result would have to add
- *   a narrowing branch for a case it deliberately does not handle, and would
- *   write the cast back to silence it. `unknown` says the same thing without
- *   pretending the union buys safety it does not.
- *
- * The catch-all keeps a type parameter it does not use in its return, which is
- * the very thing this signature was fixed for — but as the *last* overload it
- * is the only landing place for an explicit type argument. `redact<Payload>(x)`
- * and `redact<string>(x)` compiled before, and TS only considers overloads
- * whose type-parameter count matches, so without it both fall on the primitive
- * constraint above and fail with TS2344. It costs nothing (the return is
- * already `unknown`) and it keeps a published signature from breaking a caller
- * who spelled the argument type out.
+ * The unused type parameter on the catch-all overload exists only so
+ * `redact<Payload>(x)` still compiles — without a last overload matching an
+ * explicit type argument, TS falls through to the primitive-constrained
+ * overload and errors (TS2344).
  */
 export function redact(value: string, options?: RedactOptions): string;
 export function redact<T extends number | boolean | bigint | null | undefined>(
@@ -564,9 +440,8 @@ function walk(
   if (depth >= resolved.maxDepth) return "[truncated]";
 
   const object = value as object;
-  // `Array.isArray` throws a `TypeError` on a revoked Proxy — bundled here
-  // with the (never-throwing) `seen.has` check next to it so both reads that
-  // precede every other guard in this function share one guard of their own.
+  // `Array.isArray` throws on a revoked Proxy; bundled with `seen.has` so
+  // both pre-guard reads share one try.
   let alreadySeen: boolean;
   let isArray: boolean;
   try {
@@ -577,23 +452,16 @@ function walk(
   }
   if (alreadySeen) return "[circular]";
 
-  // Counted here — after the cycle check (a cycle doesn't recurse, so it
-  // doesn't spend budget) and before the array/object split (so both share
-  // one pool) — this is what stops a DAG of shared references from being
-  // walked once per path to it. See `RedactOptions.maxNodes`.
+  // Counted after the cycle check (a cycle spends no budget) and before the
+  // array/object split (so both share one pool); see `RedactOptions.maxNodes`.
   if (budget.count >= resolved.maxNodes) return "[truncated]";
   budget.count += 1;
 
   if (isArray) {
-    // `isArray` came from `Array.isArray`, but through a local boolean
-    // rather than an inline `if (Array.isArray(value))`, so it no longer
-    // narrows `value`'s type here — recover that with one cast.
+    // Local boolean doesn't narrow `value`'s type, so recover it with a cast.
     const array = value as unknown[];
     seen.add(object);
-    // `.length` is an ordinary data property on a real array, but `array` can
-    // be a Proxy wrapping one with a throwing `get` trap on "length" — same
-    // family of hostile input as everything else this function guards
-    // against, so it gets the same treatment rather than an assumption.
+    // `array` can be a Proxy with a throwing `get` trap on "length".
     let length: number;
     try {
       length = array.length;
@@ -605,9 +473,7 @@ function walk(
     // oxlint-disable-next-line unicorn/no-new-array -- preallocated to `limit`, filled below
     const output: unknown[] = new Array(limit);
     for (let index = 0; index < limit; index += 1) {
-      // An index accessor throwing (a getter on a sparse array, or a Proxy
-      // `get` trap) must tag just that slot, not lose every element already
-      // collected.
+      // A throwing index accessor tags just that slot, not the whole array.
       let entry: unknown;
       let threw = false;
       try {
@@ -624,28 +490,18 @@ function walk(
     return output;
   }
 
-  // `instanceof` is not the plain check it looks like: `OrdinaryHasInstance`
-  // walks `value`'s prototype chain via its `[[GetPrototypeOf]]` internal
-  // method, so every check below is itself trap-observable on a Proxy with a
-  // throwing `getPrototypeOf` trap — the throw happens on the first
-  // `instanceof`, long before the explicit `Object.getPrototypeOf` call
-  // further down gets a chance to guard anything. One try around the whole
-  // cascade, before `seen.add`, so there is nothing to unwind on the early
-  // return.
+  // `instanceof` walks the prototype chain via `[[GetPrototypeOf]]`, so it's
+  // trap-observable on a Proxy with a throwing `getPrototypeOf` trap — one
+  // try around the whole cascade, before `seen.add`.
   try {
     if (value instanceof Date) {
-      // `toISOString()` throws `RangeError` on an invalid Date (`new
-      // Date(NaN)`, `new Date("not a date")`) rather than returning a
-      // string — the one case here that can throw on ordinary,
-      // non-hostile input rather than a hostile trap.
+      // `toISOString()` throws `RangeError` on an invalid Date — the one
+      // case here that can throw on ordinary input, not just a hostile trap.
       return Number.isNaN(value.getTime()) ? "[invalid date]" : value.toISOString();
     }
     if (value instanceof Error) {
-      // `name` and `message` are ordinary string properties on a real
-      // `Error`, but nothing stops a subclass or a manually constructed
-      // object from shadowing either with a throwing getter — this module
-      // does not control what reaches it, only that reading it must not
-      // propagate.
+      // A subclass or manually constructed Error can shadow `name`/`message`
+      // with a throwing getter.
       let name: string;
       try {
         name = value.name;
@@ -688,14 +544,9 @@ function walk(
 
   seen.add(object);
   const output: Record<string, unknown> = {};
-  // Enumerating and reading are two separate steps, deliberately: either can
-  // throw on data this module does not control, and a diagnostics dump is not
-  // the place to discover a serializer bug (see the module doc comment).
-  //
-  // `Object.keys` fails the same way `Object.entries` does — both call the
-  // object's `[[OwnPropertyKeys]]` internal method, so a Proxy with a
-  // throwing `ownKeys` trap throws here regardless of which one is used. That
-  // makes the guard free: nothing here walks a nested object without one.
+  // Enumerating and reading are separate steps: either can throw on data
+  // this module doesn't control. `Object.keys` can throw the same way as a
+  // Proxy's `ownKeys` trap.
   let keys: string[];
   try {
     keys = Object.keys(value as Record<string, unknown>);
@@ -704,16 +555,13 @@ function walk(
     return "[unwalkable]";
   }
   for (const key of keys) {
-    // Checked before the property is ever read: a masked key is replaced by
-    // the mask outright, so a sensitive-named getter is never invoked at
-    // all — not read-then-discarded, never called.
+    // Checked before the property is read: a sensitive-named getter is
+    // never invoked at all.
     if (matches(key, resolved)) {
       define(output, key, resolved.mask);
       continue;
     }
-    // A getter throws when *read*, not when merely named by `Object.keys` —
-    // reading has to be its own try/catch so one hostile accessor tags just
-    // its own key instead of losing every property gathered so far.
+    // Its own try/catch so one hostile accessor tags just its own key.
     let entry: unknown;
     let threw = false;
     try {
@@ -736,43 +584,36 @@ interface UrlPass {
 /** The origin every relative reference is resolved against, and un-resolved from. */
 const BASE = "http://dtb.invalid";
 
-// Leading `/` or `\` — WHATWG treats a backslash as a slash for special schemes,
-// so `\\host\x` is a protocol-relative reference too.
+// Leading `/` or `\` — WHATWG treats a backslash as a slash for special
+// schemes, so `\\host\x` is protocol-relative too.
 const SLASHES = /^[/\\]{1,2}/;
 
-// What the parser discards before it reaches the slashes: leading C0 controls
-// and spaces, then every tab, newline and carriage return anywhere in the input.
-// The control characters are the point here: this is the exact range the URL
-// parser strips, so the class has to name it.
+// The exact range the URL parser strips before reaching the slashes: leading
+// C0 controls/spaces, then every tab/newline/CR anywhere in the input.
 // oxlint-disable-next-line eslint/no-control-regex -- see above
 const LEADING_JUNK = /^[\u0000-\u0020]+/;
 const STRIPPED = /[\t\n\r]/g;
 
 /**
- * How many characters of a resolved serialisation `BASE` contributed in front
- * of a relative reference, so slicing them off restores the form it arrived in.
+ * How many characters of a resolved serialisation `BASE` contributed in
+ * front of a relative reference, so slicing them off restores the original
+ * form. A flat `slice(BASE.length)` is wrong for two of the three relative
+ * forms:
+ * - Protocol-relative resolves onto *another* host, so only the scheme came
+ *   from the base — slicing `BASE.length` used to eat into the real
+ *   authority (`//cdn.example.com/lib.js` came back as `.com/lib.js`).
+ * - A reference with no leading slash (`cb?token=1`, `#top`) gains the `/`
+ *   that `BASE`'s empty path normalises to, one character more than
+ *   `BASE.length` — slicing only that much rooted a document-relative
+ *   reference, changing its meaning.
  *
- * A flat `slice(BASE.length)` is wrong for two of the three relative forms:
+ * The count runs over input normalised the way the parser normalises it
+ * (leading junk stripped, tabs/newlines removed), so e.g. `"  //host.test/p"`
+ * is correctly read as protocol-relative.
  *
- * - A protocol-relative reference resolves to a URL on *another* host, so only
- *   the scheme came from the base. Cutting `BASE.length` characters ate into
- *   the real authority — `//cdn.example.com/lib.js` came back as `.com/lib.js`,
- *   and `/ext/metrics`, which routes every observed request URL through here,
- *   rendered third-party CDN requests as same-origin paths.
- * - A reference with no leading slash at all (`cb?token=1`, `?x=1`, `#top`)
- *   gains the `/` that `BASE`'s empty path normalises to, so the base
- *   contributed one character more than its own length. Slicing only
- *   `BASE.length` rooted a document-relative reference, changing what it means.
- *
- * The count runs over the input normalised the way the parser normalises it:
- * leading C0 controls and spaces are stripped and tabs and newlines removed
- * before the slashes are read, so `"  //host.test/p"` is protocol-relative and
- * a raw count mistook it for document-relative, returning the query alone.
- *
- * Dot segments are the one form not restored: `../x?token=1` resolves to
- * `x?token=…`, because `new URL` collapses `..` and there is nothing left in
- * the serialisation to recover it from. Only a masked value is rewritten at
- * all, so an untouched reference keeps its `../` either way.
+ * Dot segments aren't restored: `../x?token=1` resolves to `x?token=…`
+ * because `new URL` collapses `..` with nothing left to recover it from —
+ * harmless since only a masked value is rewritten at all.
  */
 function baseContribution(url: string): number {
   const normalised = url.replace(LEADING_JUNK, "").replace(STRIPPED, "");
@@ -782,66 +623,47 @@ function baseContribution(url: string): number {
 }
 
 /**
- * Which masks can be written into a URL literally.
+ * Which masks can be written into a URL literally: ASCII alphanumerics plus
+ * punctuation legal unescaped in userinfo, a query and a fragment *at once*,
+ * that can't change how the result parses. Deliberately absent: `%`, `#`,
+ * `?`, `&`, `=`, `/`, `\`, `:`, `@`, `+` (delimiters, or a space once
+ * form-decoded), space, every control character, and non-ASCII (`new URL`
+ * re-encodes it on reparse, so it wouldn't survive a round trip). Brackets
+ * and braces are the point: the default `[redacted]` passes.
  *
- * ASCII alphanumerics plus the punctuation that is legal unescaped in userinfo,
- * a query and a fragment *at once* and cannot change how the result parses.
- * Deliberately absent: `%` (it would read as the start of an escape), `#`, `?`,
- * `&`, `=`, `/`, `\`, `:`, `@`, `+` (a delimiter, or a space once
- * form-decoded), space and every control character, and everything non-ASCII
- * (which `new URL` re-encodes the moment the result is reparsed, so the literal
- * form would not survive a round trip anyway). Brackets and braces are the
- * point of the exercise: the default `[redacted]` passes.
- *
- * A mask that fails keeps the percent-encoded treatment — for a mask carrying a
- * delimiter that is not a cosmetic difference, it is the difference between
- * masking a value and rewriting the URL's structure.
+ * A mask that fails keeps percent-encoding — for a mask with a delimiter,
+ * that's the difference between masking a value and rewriting the URL.
  */
 const URL_SAFE_MASK = /^[A-Za-z0-9\-._~!()*[\]{}]+$/;
 
 /**
- * The placeholder a URL-safe mask travels in, and why one is needed at all.
+ * The placeholder a URL-safe mask travels in. Nothing here ever asks for
+ * percent-encoding; two serialisers apply it on their own:
  *
- * Nothing in this module ever asked for percent-encoding; two different
- * serialisers apply it on their own:
- *
- * - **The query and the fragment** go through `URLSearchParams`, whose
- *   serialiser is `application/x-www-form-urlencoded` — it encodes everything
- *   except ASCII alphanumerics and `*-._`, and writes a space as `+`. That is
- *   *not* the URL query percent-encode set, which does not contain `[` or `]`
- *   at all: `url.search = "?token=[redacted]"` keeps the brackets, and only
- *   `searchParams.set` turns them into `%5B`/`%5D`.
- * - **Userinfo** goes through the `username`/`password` setters, which use the
- *   userinfo percent-encode set — and that one really does contain `[` and `]`,
- *   so no amount of assigning around `URLSearchParams` avoids it there.
+ * - **Query/fragment** go through `URLSearchParams`
+ *   (`application/x-www-form-urlencoded`), which encodes everything except
+ *   ASCII alphanumerics and `*-._` and writes a space as `+` — not the URL
+ *   query percent-encode set, which doesn't contain `[`/`]` at all, so
+ *   `url.search = "?token=[redacted]"` keeps the brackets while
+ *   `searchParams.set` would turn them into `%5B`/`%5D`.
+ * - **Userinfo** goes through the `username`/`password` setters, whose
+ *   percent-encode set does contain `[`/`]`, unavoidably.
  *
  * So the mask is written as a placeholder both serialisers pass through
- * untouched (ASCII letters and `*`), and the placeholder is swapped for the
- * literal mask once, on the finished serialisation. `URLSearchParams` keeps
- * doing the encoding for every *other* part of the query, which is the part
- * that has to stay correct.
+ * untouched (ASCII letters and `*`), then swapped for the literal mask once
+ * the serialisation is finished.
  *
- * The swap is only allowed to rewrite the slots this pass wrote, so the
- * placeholder ends in a run of `*` longer than any run in the serialisation it
- * is about to be written into — which is what makes an occurrence of it there
- * impossible rather than merely unlikely. Two runs are measured, and both are
- * needed: the one in the serialisation itself, and the one in its escapes
- * decoded a single level, because `%2A` is a `*` that `URLSearchParams` decodes
- * and re-encodes back to a literal one. Nothing else in the output can hold a
- * character the placeholder is made of: re-serialising only ever *adds* `%XX`
- * escapes and a `+` for a space, and neither is a letter or a `*`.
+ * The placeholder ends in a run of `*` longer than any run already present,
+ * so the swap can't touch anything but the slots this pass wrote. Two runs
+ * are measured — the serialisation itself, and its escapes decoded one
+ * level (since `%2A` round-trips to a literal `*` through `URLSearchParams`)
+ * — because re-serialising can only *add* `%XX` escapes or `+`, never a
+ * letter or `*`.
  *
- * The run is measured against `parsed.href`, **not** the argument. The output
- * is built from `parsed.toString()`, and the parser normalises on the way in:
- * it lowercases the host and strips every tab, newline and carriage return
- * anywhere in the input. So a host of `DTB*MASK*.test`, or a path segment
- * spelled `dtb*ma\tsk*`, is not in the argument in the form it reaches the
- * output in — and a placeholder cleared against the argument alone then
- * matched the *host*, whose rewrite left the output unparseable, and matched
- * ordinary path and query text, which reported as masked something that never
- * matched. `href` is read inside `slot`, which is memoised and first called
- * before this function mutates anything, so what it measures is the fully
- * normalised, still-untouched serialisation.
+ * The run is measured against `parsed.href`, not the argument, since the
+ * parser normalises on the way in (lowercases host, strips tabs/newlines) —
+ * measuring the raw argument could under-count and let the placeholder
+ * collide with normalised output.
  */
 const PLACEHOLDER_PREFIX = "dtb*mask";
 
@@ -849,11 +671,9 @@ const PLACEHOLDER_PREFIX = "dtb*mask";
 const PERCENT_ESCAPE = /%[0-9a-f]{2}/gi;
 
 /**
- * The input with its percent-escapes decoded one level, character by character
- * and without `decodeURIComponent` — this runs on arbitrary input inside a
- * patched `fetch`, and `decodeURIComponent` throws on a malformed escape and
- * on a valid escape that is not valid UTF-8. Byte-wise is also the right
- * reading here: the question is only which substrings the output could contain.
+ * The input with its percent-escapes decoded one level, byte-wise rather
+ * than via `decodeURIComponent` — which throws on a malformed escape or
+ * invalid UTF-8, and this runs on arbitrary input inside a patched `fetch`.
  */
 function looseDecode(url: string): string {
   return url.replace(PERCENT_ESCAPE, (escape) =>
@@ -880,12 +700,10 @@ function longestStarRun(source: string): number {
 /**
  * A placeholder that cannot occur in `href`; see `PLACEHOLDER_PREFIX`.
  *
- * One pass for the longest `*` run, then one longer than it — rather than
- * appending a `*` and re-scanning until the string no longer occurs, which was
- * quadratic in that run and is reachable from a URL: `?n=dtb*mask` followed by
- * 100 000 `*` took 1.2 s, 300 000 took 11.5 s, synchronously inside a patched
- * `fetch`. The bound this reads is the only thing the loop was ever
- * establishing.
+ * One pass for the longest `*` run, then use one longer than it — appending
+ * `*` and re-scanning until unique was quadratic and reachable from a URL
+ * (`?n=dtb*mask` + 300,000 `*` took 11.5s synchronously inside a patched
+ * `fetch`).
  */
 function placeholderFor(href: string): string {
   const longest = Math.max(longestStarRun(href), longestStarRun(looseDecode(href)));
@@ -967,30 +785,21 @@ function maskUrl(url: string, resolved: ResolvedOptions): UrlPass {
  * Masks credentials in a URL: `user:pass@` userinfo, sensitive query
  * parameters, and sensitive parameters in a `#`-fragment query.
  *
- * The mask goes in **literally** — `https://[redacted]:[redacted]@a.test/p`,
- * `?token=[redacted]` — so a dump is readable and greppable and a masked URL
- * contains the exported `REDACTED` rather than a percent-encoded spelling of
- * it. The result still parses as a URL. See `PLACEHOLDER` for what forces the
- * encoding and how it is undone, and `URL_SAFE_MASK` for the custom masks that
- * keep the encoded form because they could not go in literally without
- * changing what the URL means.
+ * The mask goes in **literally** (`https://[redacted]:[redacted]@a.test/p`,
+ * `?token=[redacted]`) so a dump stays greppable, and the result still
+ * parses as a URL. See `URL_SAFE_MASK` for custom masks that must stay
+ * percent-encoded instead.
  *
- * Every reference form keeps its shape: an absolute URL stays absolute, a
- * protocol-relative one keeps its `//host`, a root-relative one keeps its
- * single leading `/`, and a document-relative one gains neither.
+ * Every reference form keeps its shape: absolute stays absolute,
+ * protocol-relative keeps `//host`, root-relative keeps its leading `/`.
  *
- * A string with nothing to mask comes back byte-for-byte, the same rule
- * `redact()` applies to a URL-shaped value (see `redactString`) and for the
- * same reason: `URL.toString()` normalises — it adds a missing path, lowercases
- * scheme and host, punycodes an IDN and percent-encodes a path — so returning
- * it unconditionally would rewrite every innocent URL in a diagnostic dump and
- * anyone diffing two dumps would read those as changes. It also matters that
- * "this is a URL" is a claim about the argument, not a fact: a `fetch()` URL is
- * whatever the app passed, so plain text reaches here, and `just some text`
- * came back as `/just%20some%20text`. This is a redactor, not a canonicaliser.
- *
- * Only a masked value is rewritten, and then normalisation is the point. An
- * unparseable string falls back to a query rewrite rather than being skipped.
+ * A string with nothing to mask comes back byte-for-byte — same rule as
+ * `redact()` for URL-shaped values, since `URL.toString()` normalises
+ * (adds a missing path, lowercases scheme/host, punycodes, percent-encodes
+ * the path), and returning that unconditionally would silently rewrite
+ * every innocent URL in a dump. This is a redactor, not a canonicaliser, and
+ * plain text can reach here too (a `fetch()` argument is whatever the app
+ * passed) — an unparseable string falls back to a raw query rewrite.
  */
 export function redactUrl(url: string, redactOptions?: RedactOptions): string {
   return redactUrlResolved(url, resolveCached(redactOptions));

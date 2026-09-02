@@ -1,18 +1,14 @@
 /**
  * `/ext/flags` styles. [dev-toolbar/ext/flags]
  *
- * Same rules as core, `/ext/metrics` and `/ext/environment`: inside the
- * `dev-toolbar` cascade layer, every selector scoped by `[data-dev-toolbar]`,
- * every colour from a `--dtb-*` token, and every `data-dtb-part` name
- * namespaced by kind (`flag-*`) rather than by the id an instance carries.
+ * Same rules as core, `/ext/metrics` and `/ext/environment`: scoped under
+ * `[data-dev-toolbar]`, colours from `--dtb-*` tokens, `data-dtb-part` names
+ * namespaced `flag-*`.
  *
- * Two extension-level judgements live here. An **active override is loud**.
- * §7's colour table reserves purple/blue for "active override or non-default
- * state", and core ships no such token, so this maps it onto `--dtb-accent`,
- * which a restyled bar restyles with everything else. And an override the
- * application never received outranks it — that row is graded `bad` and takes
- * the danger tokens, because the row claiming "overridden" while the app
- * disagrees is the one failure this panel exists to make impossible.
+ * An active override maps to `--dtb-accent` (§7's colour table). An override
+ * the application never received outranks it and is graded `bad` (danger
+ * tokens) — a row claiming "overridden" while the app disagrees is the one
+ * failure this panel exists to make impossible.
  */
 import { ensureStyleSheet } from "../../runtime";
 
@@ -99,7 +95,7 @@ export const FLAGS_CSS = String.raw`@layer dev-toolbar {
     padding: 2px 4px;
   }
 
-  /* Panel ------------------------------------------------------------- */
+  /* Panel */
 
   [data-dev-toolbar] [data-dtb-part="flag-panel"] {
     display: flex;
@@ -327,11 +323,7 @@ export const FLAGS_CSS = String.raw`@layer dev-toolbar {
 
 const FLAGS_STYLE_ENTRY = "ext-flags";
 
-/**
- * Injects the stylesheet once per document, through `/runtime`'s shared
- * injector — the dedup key is a DOM attribute, so two bundled copies of the
- * package still inject once.
- */
+/** Injects the stylesheet once per document, via `/runtime`'s shared injector. */
 export function ensureFlagsStyles(doc?: Document): HTMLStyleElement | null {
   return ensureStyleSheet(FLAGS_STYLE_ENTRY, FLAGS_CSS, doc);
 }

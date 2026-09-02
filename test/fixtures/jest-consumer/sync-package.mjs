@@ -1,13 +1,11 @@
 /**
  * Copies the freshly built `dist/` into this fixture's own `node_modules` as
- * `@nejcm/dev-toolbar`, together with a package.json carrying the *real*
- * `exports` map.
+ * `@nejcm/dev-toolbar`, with a package.json carrying the real `exports` map.
  *
- * A `file:` link would be simpler but wrong here: Jest resolves through
- * realpath, so the linked `dist/` would pull React from the repo root's
- * node_modules while the test file pulls it from this fixture's — two React
- * copies, and an "invalid hook call" that has nothing to do with what is under
- * test. Copying keeps one React and still exercises the exports map.
+ * A `file:` link would be simpler but wrong: Jest resolves through realpath,
+ * so the linked `dist/` would pull React from the repo root's node_modules
+ * while the test pulls it from this fixture's, causing an "invalid hook
+ * call". Copying keeps one React copy.
  */
 import { cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";

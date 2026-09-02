@@ -2,18 +2,16 @@
  * A tiny typed event bus. [dev-toolbar/runtime]
  *
  * Deliberately not a singleton: create one per toolbar instance (or per
- * extension) and pass it around. A module-level bus would leak between SSR
- * requests, between two toolbars on one page, and between tests — the same
- * reasons core has no global extension registry.
+ * extension) and pass it around, to avoid leaking between SSR requests,
+ * toolbars on one page, or tests.
  */
 
 /**
  * Metadata the bus adds to every delivery.
  *
  * `K` carries the event name as a literal, so `emit("network-end", …)` hands
- * back a `BusEvent<…, "network-end">` rather than something whose `type` has
- * been widened to `string`. It defaults to `string`, so `BusEvent<Payload>`
- * still means what it always did.
+ * back a `BusEvent<…, "network-end">` rather than one widened to `string`.
+ * Defaults to `string`, so `BusEvent<Payload>` still means what it did.
  */
 export interface BusEvent<T = unknown, K extends string = string> {
   type: K;
@@ -27,22 +25,17 @@ export type BusHandler<T = unknown> = (payload: T, event: BusEvent<T>) => void;
 /**
  * The names an event map actually declares.
  *
- * `Events extends Record<string, unknown>` is what lets an *interface* serve as
- * an event map: an interface has no implicit index signature, so without that
- * base it fails the constraint — which is why `ToolbarEventMap` extends it. The
- * cost is that `keyof ToolbarEventMap & string` widens to `string`, and a
- * mapped type over `string` collapses to a single index signature, which would
- * leave `AnyBusEvent` un-narrowable. So strip the index signature back off.
+ * `Events extends Record<string, unknown>` lets an *interface* serve as an
+ * event map (interfaces have no implicit index signature otherwise — why
+ * `ToolbarEventMap` extends it), but that widens `keyof Events & string` to
+ * `string`, collapsing a mapped type over it to a single index signature and
+ * leaving `AnyBusEvent` un-narrowable. So strip the index signature back off.
+ * A map that really is bare `Record<string, unknown>` (the default with no
+ * event map) declares no names, so `string` is the honest fallback there.
  *
- * A map that really is nothing but `Record<string, unknown>` — the default type
- * argument for `createEventBus()` with no event map — declares no names at all,
- * and there `string` is the honest answer; hence the fallback.
- *
- * Only the bare `string` and `number` signatures are stripped. A
- * template-literal pattern signature — `` [k: `evt:${string}`]: Payload `` — is
- * deliberately kept: `string` does not extend the pattern, so the filter leaves
- * it alone. That is the intent, not an oversight — such a pattern is a name the
- * map means to declare, and it stays narrowable alongside the literal ones.
+ * Only bare `string`/`number` signatures are stripped — a template-literal
+ * pattern (`` [k: \`evt:${string}\`]: Payload ``) is kept, since `string`
+ * doesn't extend it and it's a name the map means to declare.
  */
 type DeclaredEventName<Events> = keyof {
   [K in keyof Events as string extends K ? never : number extends K ? never : K]: 0;
@@ -56,27 +49,24 @@ export type BusEventName<Events> = [DeclaredEventName<Events>] extends [never]
 
 /**
  * Every delivery a bus over `Events` can make, as a union discriminated on
- * `type`. `onAny` is the one place a caller has to switch on the event name, so
- * it is the one place that needs `if (event.type === "network-end")` to narrow
- * `event.payload` along with it.
+ * `type`. `onAny` handlers can narrow `event.payload` via
+ * `if (event.type === "network-end")`.
  *
- * The union covers the *declared* names. `emit` and `on` still take
- * `keyof Events & string`, which on a map extending `Record<string, unknown>`
- * is `string` — so `bus.emit("not-declared", …)` compiles, and an `onAny`
- * handler can be handed a `type` this union does not list. Widening `emit`
- * would be the breaking change, so the narrowing is optimistic on purpose:
- * switch on the names you care about, and do not `assertNever` on `event.type`
- * in a default branch.
+ * The union covers only *declared* names — `emit`/`on` still accept
+ * `keyof Events & string`, which widens to `string` on a
+ * `Record<string, unknown>`-extending map, so `bus.emit("not-declared", …)`
+ * compiles and an `onAny` handler can see a `type` this union doesn't list.
+ * The narrowing is optimistic on purpose: switch on names you care about,
+ * don't `assertNever` on `event.type` in a default branch.
  */
 export type AnyBusEvent<Events extends Record<string, unknown>> = {
   [K in BusEventName<Events>]: BusEvent<Events[K], K>;
 }[BusEventName<Events>];
 
 /**
- * An `onAny` subscriber. `payload` is the union of every declared payload —
- * useful, but not correlated with the name, because nothing on a bare payload
- * says which event it came from. Narrow `event` instead: `event.payload` is the
- * same value, discriminated.
+ * An `onAny` subscriber. `payload` is the union of every declared payload,
+ * but not correlated with the name — narrow `event` instead, since
+ * `event.payload` is the same value, discriminated.
  */
 export type AnyBusHandler<Events extends Record<string, unknown>> = (
   payload: Events[BusEventName<Events>],
@@ -84,26 +74,18 @@ export type AnyBusHandler<Events extends Record<string, unknown>> = (
 ) => void;
 
 export interface BusSubscribeOptions {
-  /**
-   * Unsubscribes when the signal aborts. `start(api)` hands you exactly such a
-   * signal, so a collector rarely needs to keep the returned function.
-   */
+  /** Unsubscribes when the signal aborts, so a collector rarely needs to keep the returned function. */
   signal?: AbortSignal;
 }
 
 /**
- * The two methods a consumer of a bus actually needs: publish, and subscribe.
+ * The two methods a consumer of a bus actually needs: publish and subscribe.
  *
- * This exists so an option like `metrics`' `bus` can be typed *structurally*
- * rather than as the whole `EventBus`. `./testing` may not import `./runtime`
- * (see AGENTS.md), so `createMockBus()` reimplements the contract by hand;
- * asking a test double for `once`, `onAny`, `listenerCount` and `clear` — none
- * of which a collector calls — is what made the shipped double unusable as the
- * real thing and pushed tests onto `createEventBus()` instead.
- *
- * Take `BusLike<…>` in an option, not `EventBus<…>`, unless you really call the
- * rest. Anything assignable to it can drive the collector: the real bus, the
- * mock, or an adapter over an app's own emitter.
+ * Lets an option like `metrics`' `bus` be typed *structurally* rather than
+ * as the whole `EventBus`. `./testing` may not import `./runtime`, so
+ * `createMockBus()` reimplements this contract by hand — take `BusLike<…>`
+ * in an option, not `EventBus<…>`, unless you really need the rest, so the
+ * real bus, the mock, or an app's own emitter adapter can all drive it.
  */
 export interface BusLike<Events extends Record<string, unknown>> {
   emit<K extends keyof Events & string>(type: K, payload: Events[K]): BusEvent<Events[K], K>;
@@ -132,8 +114,8 @@ export interface CreateEventBusOptions {
   now?: () => number;
   /**
    * Called when a handler throws. A throwing subscriber must never stop the
-   * remaining subscribers, and must never propagate into the emitter — which is
-   * usually a `fetch` wrapper or a `PerformanceObserver` callback.
+   * remaining subscribers or propagate into the emitter (usually a `fetch`
+   * wrapper or `PerformanceObserver` callback).
    */
   onError?: (error: unknown, event: BusEvent) => void;
 }
@@ -157,18 +139,11 @@ export function createEventBus<Events extends Record<string, unknown> = Record<s
   const handlers = new Map<string, Set<BusHandler<never>>>();
   const anyHandlers = new Set<BusHandler<never>>();
 
-  // Nobody listening: bail before allocating anything. One listener: the
-  // load-bearing bit is that `handler` is read out of `set` before it is
-  // called, not while a loop is still touching `set` — so whatever the call
-  // does to `set` (unsubscribe itself, subscribe another) happens after we
-  // already have our reference, and there is no snapshot to need. A live
-  // `for...of set` here instead — even one that calls the sole handler and
-  // then returns — would still be a bug: unlike our up-front read, a live
-  // iterator that hasn't finished visits elements added while it runs, so it
-  // would go on to yield a replacement the handler subscribed mid-call,
-  // which the `Array.from` snapshot below never would. Two or more: a
-  // handler may unsubscribe itself (or another) mid-dispatch, so we still
-  // iterate a copy — `Array.from` — rather than the live set.
+  // No listeners: bail early. One listener: read `handler` out of `set`
+  // before calling it (not via a live `for...of`, which would also visit a
+  // handler subscribed mid-call). Two or more: a handler may unsubscribe
+  // itself or another mid-dispatch, so iterate a copy (`Array.from`), not
+  // the live set.
   const dispatch = <T>(set: Set<BusHandler<never>> | undefined, payload: T, event: BusEvent<T>) => {
     if (!set || set.size === 0) return;
     if (set.size === 1) {
@@ -210,11 +185,10 @@ export function createEventBus<Events extends Record<string, unknown> = Record<s
     const set = handlers.get(type) ?? new Set<BusHandler<never>>();
     handlers.set(type, set);
     set.add(handler as unknown as BusHandler<never>);
-    // Unsubscribing twice must be a no-op: `once()` hands back the very function
-    // it calls on delivery, so a React effect returning it runs it a second time
-    // on cleanup, and so does a manual call after `signal` aborted. Without the
-    // latch the second run would find the captured set already empty and evict
-    // whatever set the map holds for `type` by then — someone else's subscribers.
+    // Unsubscribing twice must be a no-op: `once()` hands back the function
+    // it calls on delivery, and a React effect cleanup or a post-abort manual
+    // call can run it again. Without the latch, the second run could evict
+    // someone else's subscribers from a since-reused set.
     let live = true;
     return bind(() => {
       if (!live) return;
@@ -245,9 +219,8 @@ export function createEventBus<Events extends Record<string, unknown> = Record<s
     },
     onAny(handler, subscribeOptions) {
       anyHandlers.add(handler as unknown as BusHandler<never>);
-      // Latched for the same reason as `on`. There is no map entry to evict
-      // here, but a stale second call would still delete the handler out from
-      // under a later `onAny(sameHandler)`.
+      // Latched for the same reason as `on`: a stale second call could
+      // delete the handler out from under a later `onAny(sameHandler)`.
       let live = true;
       return bind(() => {
         if (!live) return;
@@ -271,11 +244,11 @@ export function createEventBus<Events extends Record<string, unknown> = Record<s
 }
 
 /**
- * The shared vocabulary from `plans/dev-bar.md` §5, so three extensions do not
- * invent three names for "a request finished". Nothing forces you to use it —
- * `createEventBus<YourEvents>()` is the general case — but `/ext/metrics` reads
- * `network-start` / `network-end` off a bus shaped like this, which is how an
- * app instruments its own HTTP client instead of being monkey-patched.
+ * Shared event vocabulary so extensions don't invent separate names for
+ * the same thing (e.g. "a request finished"). Not required —
+ * `createEventBus<YourEvents>()` is the general case — but `/ext/metrics`
+ * reads `network-start`/`network-end` off a bus shaped like this, letting an
+ * app instrument its own HTTP client instead of being monkey-patched.
  */
 export interface ToolbarEventMap extends Record<string, unknown> {
   navigation: { route: string };
@@ -301,14 +274,9 @@ export interface ToolbarEventMap extends Record<string, unknown> {
   "react-commit": { duration: number };
   "flag-changed": { key: string };
   /**
-   * One hydrated root or Suspense boundary finished. Named now, before the
-   * collector that consumes it exists (§3D Hydration is not in P1), because a
-   * shared vocabulary that grows a name per release is not shared — and adding
-   * one later would be a `ToolbarEventMap` change nobody can adopt gradually.
-   *
-   * Emit one per boundary rather than one per page: under streaming SSR there
-   * is no single moment hydration is "done", and claiming otherwise is what
-   * makes a hydration number wrong.
+   * One hydrated root or Suspense boundary finished. Emit one per boundary
+   * rather than one per page: under streaming SSR there is no single moment
+   * hydration is "done".
    */
   hydration: {
     /** Milliseconds, e.g. from a `performance.measure`. */

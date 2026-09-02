@@ -1,19 +1,15 @@
 /**
  * `@nejcm/dev-toolbar/ext/metrics`
  *
- * Memory, delay, jank and network, per `plans/dev-bar.md` §3D. Written strictly
- * as a consumer of the public extension contract: nothing here imports a value
- * from `src/core/*` — only types, which erase at build time. That is deliberate.
- * If this extension needed a runtime import from core, so would every other
- * extension, and the two would have to be resolved to the same module instance
- * to share React context. Types-only keeps `/ext/metrics` a genuinely external
- * consumer of the same contract a stranger's package would use.
+ * Memory, delay, jank and network, per `plans/dev-bar.md` §3D. Imports only
+ * types from `src/core/*` (no runtime values), keeping this a genuinely
+ * external consumer of the public extension contract.
  *
  * ```tsx
  * import { metrics } from "@nejcm/dev-toolbar/ext/metrics";
  *
- * // Build it ONCE, outside render. The object identity is the extension's
- * // lifecycle: rebuilding it every render throws away every sample.
+ * // Build it ONCE, outside render — rebuilding it every render throws away
+ * // every sample.
  * const extensions = [metrics()];
  *
  * <DevToolbar extensions={extensions}><App /></DevToolbar>
@@ -48,10 +44,9 @@ export interface MetricsOptions {
   /** Aggregation rate. Default `2` Hz; §5 caps compact updates at 4. */
   updateHz?: number;
   /**
-   * Inject this extension's stylesheet. Default `true`.
-   *
-   * Core's own `injectStyles` prop is not visible to extensions, so if you
-   * turned that off you must turn this off too and ship `METRICS_CSS` yourself.
+   * Inject this extension's stylesheet. Default `true`. Core's `injectStyles`
+   * prop isn't visible to extensions, so if you turned that off, turn this
+   * off too and ship `METRICS_CSS` yourself.
    */
   injectStyles?: boolean;
   /** `false` switches a metric off entirely; an object configures it. */
@@ -67,10 +62,7 @@ function optionsFor<T extends object>(value: boolean | T | undefined): T | null 
   return value;
 }
 
-/**
- * Builds the extension. Call it once — the returned object owns the collectors,
- * the ring buffers and the store.
- */
+/** Builds the extension. Call it once — the returned object owns the collectors, ring buffers and store. */
 export function metrics(options: MetricsOptions = {}): DevToolbarExtension {
   const {
     id = "metrics",
@@ -109,8 +101,7 @@ export function metrics(options: MetricsOptions = {}): DevToolbarExtension {
     if (collector) collectors.push(collector);
   }
 
-  // Built here, not in start(api): slot functions run during the toolbar's
-  // first render, which is before any effect fires.
+  // Built here, not in start(api): slot functions run before any effect fires.
   const runtime = createMetricsRuntime({ collectors, updateHz });
 
   return {
@@ -136,11 +127,7 @@ export function metrics(options: MetricsOptions = {}): DevToolbarExtension {
       />
     ),
 
-    /**
-     * The redacted collector dump, for `/ext/diagnostics` — **P3**. The same
-     * builder `metrics.copy` uses; every request URL is already masked on the
-     * way into the ring and the whole payload goes through `redact()` again.
-     */
+    /** The redacted collector dump, for `/ext/diagnostics`. Same builder `metrics.copy` uses. */
     diagnostics: () => runtime.diagnostics(),
 
     panel: () => <MetricsPanel runtime={runtime} injectStyles={injectStyles} />,
@@ -158,9 +145,7 @@ export function metrics(options: MetricsOptions = {}): DevToolbarExtension {
         label: "Copy performance diagnostics",
         group: "Metrics",
         keywords: ["diagnostics", "clipboard", "report"],
-        // Through `/runtime`, which throws when the write did not happen —
-        // the palette reports a throw and closes over a resolve (§13.4), so
-        // the old optional-chained call silently did nothing and looked fine.
+        // Throws when the write fails, so the palette can report it.
         run: async () => {
           await writeClipboardTextOrThrow(JSON.stringify(runtime.diagnostics(), null, 2));
         },

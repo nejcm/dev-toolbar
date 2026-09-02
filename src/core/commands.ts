@@ -1,17 +1,16 @@
 import type { DevToolbarExtension, ToolbarCommand, ToolbarCommandsInput } from "./contract";
 
 /**
- * Failures already reported, so a broken `commands()` logs once, not per
- * render. Keyed by `<id>:<reason>`, not by id alone: a `commands()` that throws
- * and one that returns the wrong shape are different defects, and sharing a
- * suppression slot means fixing one hides the other.
+ * Failures already reported, so a broken `commands()` logs once, not per render.
+ * Keyed by `<id>:<reason>` — a throw and a wrong-shape return are different
+ * defects and shouldn't share a suppression slot.
  */
 const warned = new Set<string>();
 
 /**
- * Reentrancy guard. `ExtensionRuntimeApi.getCommands()` aggregates, and an
- * extension could — by accident — call it from inside its own `commands()`.
- * Without this that recurses until the stack ends, inside a render.
+ * Reentrancy guard against an extension accidentally calling
+ * `ExtensionRuntimeApi.getCommands()` from inside its own `commands()`, which
+ * would otherwise recurse until the stack ends, inside a render.
  */
 let aggregating = false;
 
@@ -37,12 +36,9 @@ export function resetCommandWarnings(): void {
 }
 
 /**
- * Resolves one extension's `commands`, fail-closed.
- *
- * The function form runs *consumer code during core's render*, outside any
- * error boundary, so a throw here would take down the host application rather
- * than degrade to an error chip. It is contained instead: the extension
- * contributes nothing and core says so once.
+ * Resolves one extension's `commands`, fail-closed. The function form runs
+ * consumer code during core's render, outside any error boundary, so a throw is
+ * contained here instead: the extension contributes nothing and core logs it once.
  */
 export function resolveExtensionCommands(
   extension: DevToolbarExtension,
@@ -77,21 +73,16 @@ export function resolveExtensionCommands(
 }
 
 /**
- * Flattens extension-declared commands. Later duplicates of an id are dropped.
- *
- * Order is extension order, then declaration order, and it is the order a
- * palette renders — so it has to be a pure function of the extension list.
- *
- * `hidden` extensions contribute nothing. `hidden` means the extension does not
- * exist for this actor, so leaving its commands runnable — by `runCommand(id)`,
- * or through the `/ext/command-menu` palette — would hand back exactly what
- * hiding it took away.
+ * Flattens extension-declared commands, dropping later duplicates of an id.
+ * Order is extension order then declaration order — the order a palette
+ * renders, so this must be a pure function of the extension list. `hidden`
+ * extensions contribute nothing, since a hidden extension's commands must not
+ * stay runnable via `runCommand(id)` or the palette.
  */
 export function collectCommands(extensions: readonly DevToolbarExtension[]): ToolbarCommand[] {
   if (aggregating) {
-    // Through `warnOnce` like every other failure on this path: it is reached
-    // during render, and under StrictMode a recursive `commands()` would
-    // otherwise log twice per render for as long as the page is open.
+    // warnOnce, not console directly: under StrictMode a recursive commands()
+    // would otherwise log twice per render for as long as the page is open.
     warnOnce(
       "*:reentrant",
       "getCommands() was called from inside a commands() enumeration. The " +
@@ -122,10 +113,9 @@ export interface CommandHost {
 }
 
 /**
- * Mounted instances, most recent last. This is not an extension registry — it
- * only exists so the module-level `runCommand(id)` can reach a mounted
- * toolbar. Entries are added on mount and removed on unmount, so test and
- * multi-root isolation hold.
+ * Mounted instances, most recent last — exists only so the module-level
+ * `runCommand(id)` can reach a mounted toolbar. Added on mount, removed on
+ * unmount, so test and multi-root isolation hold.
  */
 const hosts = new Set<CommandHost>();
 
@@ -147,16 +137,14 @@ function findCommand(id: string, scope?: readonly ToolbarCommand[]): ToolbarComm
 
 /**
  * Runs an aggregated command by id. Resolves `false` when no mounted toolbar
- * declares it. Prefer `useDevToolbar().runCommand` inside React code — this
- * exists for call sites that have no context (hotkeys, consoles, tests).
+ * declares it. Prefer `useDevToolbar().runCommand` inside React code — this is
+ * for call sites with no context (hotkeys, consoles, tests).
  *
- * `scope` is resolved *at call time*, not from a snapshot: with the function
- * form of `commands`, a list captured a render ago may already be stale, and
- * "the command is gone" and "the command was never there" must not be told
- * apart by how recently the caller happened to enumerate.
+ * `scope` is resolved at call time, not from a snapshot, since a list captured
+ * a render ago may already be stale with the function form of `commands`.
  *
- * If the command's `run()` throws, or returns a promise that rejects, this
- * rejects with that same error instead of resolving — callers must catch it.
+ * If `run()` throws or returns a rejected promise, this rejects with that same
+ * error — callers must catch it.
  */
 export async function runCommand(id: string, scope?: readonly ToolbarCommand[]): Promise<boolean> {
   const command = findCommand(id, scope);

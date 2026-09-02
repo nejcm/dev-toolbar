@@ -1,16 +1,14 @@
 /**
  * Dropped frames. [dev-toolbar/ext/metrics]
  *
- * A rAF loop that only does arithmetic, plus the exclusions §3D asks for: a
- * backgrounded tab, a minimised window, a machine waking from sleep and
- * browser throttling all produce enormous frame deltas that are *not* jank.
- * Anything longer than `idleGapMs` is discarded rather than counted as a
- * hundred dropped frames.
+ * A rAF loop plus the exclusions §3D asks for: a backgrounded tab, a
+ * minimised window, sleep/wake and browser throttling all produce enormous
+ * frame deltas that are *not* jank, so anything longer than `idleGapMs` is
+ * discarded rather than counted as dropped frames.
  *
- * Note the lifecycle decision this depends on: core reports visibility but
- * never pauses an extension. Frame counting here is a rolling window rather
- * than a cumulative total precisely so that stopping the loop while the bar is
- * hidden cannot corrupt it.
+ * Core reports visibility but never pauses an extension, so counting uses a
+ * rolling window rather than a cumulative total — stopping the loop while the
+ * bar is hidden can't corrupt it.
  */
 import { createRingBuffer, createTimeSeries } from "../../../runtime";
 import { formatMs, formatPercent, NOT_AVAILABLE } from "../format";
@@ -100,8 +98,7 @@ export function createJankCollector(options: JankCollectorOptions = {}): Collect
         handle = requestAnimationFrame(loop);
         if (previous !== 0) {
           const delta = timestamp - previous;
-          // A backgrounded tab, a sleeping machine or a throttled timer: not
-          // a dropped frame, an absent one.
+          // Backgrounded tab, sleep, or throttling: not a dropped frame, an absent one.
           const hidden = typeof document !== "undefined" && document.visibilityState === "hidden";
           if (delta > idleGapMs || hidden) {
             discarded += 1;

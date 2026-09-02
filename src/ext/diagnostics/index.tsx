@@ -1,10 +1,9 @@
 /**
  * `@nejcm/dev-toolbar/ext/diagnostics`
  *
- * §3J's diagnostic snapshot — "capture a diagnostic snapshot for a bug report" —
- * with §3E's long-task and responsiveness data as one of its inputs. Written
- * strictly as a consumer of the public extension contract: nothing here imports
- * a *value* from `src/core/*`, only types, which erase at build time.
+ * §3J's diagnostic snapshot for bug reports, plus §3E's long-task and
+ * responsiveness data. Written strictly as a consumer of the public extension
+ * contract: nothing here imports a *value* from `src/core/*`, only types.
  *
  * ```tsx
  * import { diagnostics } from "@nejcm/dev-toolbar/ext/diagnostics";
@@ -21,42 +20,32 @@
  *
  * ## It aggregates; it does not re-collect
  *
- * §3J's shape lists flags, metrics and session context. Every one of those is
- * already owned by an extension that knows more about it than this one could,
- * and re-deriving them here would produce a second, subtly different answer for
- * every field — the worst possible property in a bug report. So the snapshot
- * *asks*: core aggregates `DevToolbarExtension.diagnostics()` the way it
- * aggregates `commands`, and this extension reads the roster through
- * `api.getDiagnostics()`. What it collects for itself is only what no other
- * extension owns: the page's own facts, and §3E's `PerformanceObserver` data.
+ * Flags, metrics and session context are already owned by extensions that
+ * know more about them than this one could, so the snapshot *asks*: core
+ * aggregates `DevToolbarExtension.diagnostics()` the way it aggregates
+ * `commands`, and this extension reads the roster via `api.getDiagnostics()`.
+ * It collects for itself only what no other extension owns — page facts and
+ * §3E's `PerformanceObserver` data.
  *
  * ## What it promises
  *
  * - **Nothing leaves the machine on its own.** The panel shows the exact text
- *   the copy and download buttons produce, before either is pressed. Reviewing
- *   before sending is the feature.
- * - **Redaction happens on the way in**, once, and the panel, the clipboard,
- *   the download and every command read the same redacted object. §11.3's
- *   order-of-operations trap — serialise before redacting and every nested key
- *   becomes invisible to the key matcher — is what the builder is arranged
- *   around.
- * - **Omissions are visible.** A contributing extension that throws, returns
- *   nothing, or returns something that will not serialise gets a status, a line
- *   in a top-level `omissions` list, a banner in the panel and a heading in the
- *   Markdown. A snapshot that quietly drops the failing extension is worse than
- *   one that says it could not be read: the person holding the ticket cannot
- *   tell the difference between "nothing to report" and "the report is missing".
- * - **It never claims to know what it does not.** §3E's entry types vary by
- *   engine — `longtask` and `layout-shift` are Chromium-only today — so every
- *   count is `null` rather than `0` when it could not be observed, and each
- *   carries a note saying which of the two it is.
+ *   the copy/download buttons would produce, before either is pressed.
+ * - **Redaction happens on the way in**, once — panel, clipboard, download and
+ *   every command read the same already-redacted object (§11.3: serialise
+ *   before redacting and nested keys become invisible to the matcher).
+ * - **Omissions are visible.** A contributing extension that throws or fails
+ *   to serialise gets a status, a line in top-level `omissions`, a panel
+ *   banner and a Markdown heading — never a silent drop.
+ * - **It never claims to know what it does not.** §3E entry types vary by
+ *   engine, so counts are `null` rather than `0` when unobservable, each with
+ *   a note explaining why.
  *
  * ## What it is not
  *
- * It is not a security boundary. `redact()` is key- and value-shape matching
- * (see its own documentation), so a credential stored under an innocent key
- * with an innocent shape survives. That is exactly why the panel shows you the
- * text: **you** are the last check before it reaches a ticket.
+ * Not a security boundary — `redact()` is key/value-shape matching, so a
+ * credential under an innocent key can survive. The panel shows you the text
+ * because **you** are the last check before it reaches a ticket.
  */
 import { createDiagnosticsRuntime } from "./runtime";
 import { DiagnosticsChip, DiagnosticsPanel } from "./ui";
@@ -108,9 +97,8 @@ export function diagnostics(options: DiagnosticsOptions = {}): DevToolbarExtensi
     ...runtimeOptions
   } = options;
 
-  // Built here, not in start(api): slot functions run during the toolbar's
-  // first render, which is before any effect fires — and a persisted open panel
-  // renders on that very first pass.
+  // Built here, not in start(api): slot functions run on the toolbar's first
+  // render, before any effect fires, and a persisted open panel needs it then.
   const runtime = createDiagnosticsRuntime({ ...runtimeOptions, id });
 
   return {
@@ -141,42 +129,22 @@ export function diagnostics(options: DiagnosticsOptions = {}): DevToolbarExtensi
     panel: () => <DiagnosticsPanel runtime={runtime} label={label} injectStyles={injectStyles} />,
 
     /**
-     * This extension declares **no** `diagnostics()`, deliberately.
-     *
-     * It is the reader of the aggregation, not a contributor to it. Declaring
-     * one would make the snapshot contain itself — core's `getDiagnostics()`
-     * enumerates every present extension, this one included — and the
-     * reentrancy guard would then be load-bearing rather than a safety net. The
-     * gather step skips its own id for the same reason.
+     * Deliberately declares **no** `diagnostics()` — it's the reader of the
+     * aggregation, not a contributor. Declaring one would make the snapshot
+     * contain itself via core's `getDiagnostics()`. The gather step skips its
+     * own id for the same reason.
      */
 
     /**
-     * Four commands, and the distinction between the first and the next three
-     * is worth stating because an earlier version of these comments got it
-     * wrong in both directions.
+     * Four commands. `capture` freezes state now (mid-repro) for reading
+     * later; it does not copy. The copy/download commands re-capture fresh
+     * rather than reuse a stale snapshot, and since redaction happens on the
+     * way in, `runtime.copy()` can only ever reach the same masked object the
+     * panel renders — a blind copy is still one you can go back and read,
+     * because every command captures into the same store the panel shows.
      *
-     * **Reviewing is about the panel's shape, not about forbidding a blind
-     * copy.** §3J asks for a one-click *Copy debug report*, and that is
-     * defensible here for the reason the whole builder is arranged around:
-     * redaction happens on the way in, so `runtime.copy()` can only ever reach
-     * the same masked object the panel renders. There is no unredacted path for
-     * a command to take.
-     *
-     * What the panel guarantees is something else — that when you *do* look,
-     * you are looking at the exact string that was or will be sent. That
-     * survives a blind copy, because every command captures into the same
-     * store: the chip updates, and opening the panel afterwards shows precisely
-     * what went to the clipboard. A copy you did not read is still a copy you
-     * can go and read.
-     *
-     * `capture` exists separately because the useful moment and the convenient
-     * moment differ: freeze the state *now*, mid-repro, and read it when your
-     * hands are free. It does not copy because a snapshot taken to be examined
-     * is not a snapshot taken to be pasted.
-     *
-     * (A command cannot open its own panel — `ExtensionRuntimeApi` exposes no
-     * panel control, deliberately, since core owns single-active-panel state.
-     * Adding one for this would be a contract change for a convenience.)
+     * (A command can't open its own panel — `ExtensionRuntimeApi` exposes no
+     * panel control, since core owns single-active-panel state.)
      */
     commands: [
       {
@@ -184,7 +152,6 @@ export function diagnostics(options: DiagnosticsOptions = {}): DevToolbarExtensi
         label: "Capture a diagnostic snapshot",
         group: "Diagnostics",
         keywords: ["debug", "report", "bug", "snapshot", "longtask"],
-        // Freeze it now; read it in the panel when you are ready.
         run: () => {
           runtime.capture();
         },
@@ -194,10 +161,6 @@ export function diagnostics(options: DiagnosticsOptions = {}): DevToolbarExtensi
         label: "Copy diagnostic snapshot (Markdown)",
         group: "Diagnostics",
         keywords: ["debug", "report", "bug", "clipboard", "markdown"],
-        // Captures fresh rather than copying whatever was last taken: a bug
-        // report about *now* is the whole point, and a stale paste is worse
-        // than no paste. The capture stays in the store, so the panel can show
-        // afterwards exactly what this put on the clipboard.
         run: async () => {
           runtime.capture();
           await runtime.copyOrThrow("markdown");
@@ -218,9 +181,7 @@ export function diagnostics(options: DiagnosticsOptions = {}): DevToolbarExtensi
         label: "Download diagnostic snapshot (JSON)",
         group: "Diagnostics",
         keywords: ["debug", "report", "bug", "file", "save", "json"],
-        // Same signal as the copy commands: a palette entry that reported
-        // nothing when the download never started would be a command that
-        // silently did nothing, which is what §13.4 exists to prevent.
+        // Throws rather than failing silently, per §13.4.
         run: () => {
           runtime.capture();
           if (!runtime.download("json")) {

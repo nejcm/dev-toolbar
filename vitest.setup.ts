@@ -2,30 +2,23 @@ import { afterEach } from "vitest";
 
 /**
  * Everything below needs a DOM. A test file may opt into
- * `@vitest-environment node` — `src/core/__tests__/ssr.test.tsx` does, so that
- * "the server render touches no DOM global" is enforced by their genuine
- * absence rather than by a mock. Guarding here is what keeps that environment
- * bare: an unconditional `localStorage` shim would hand the store an adapter no
- * real server has, and importing Testing Library eagerly would evaluate
- * `@testing-library/dom`'s `screen`, which binds to `document.body` at module
- * scope.
+ * `@vitest-environment node` (e.g. `src/core/__tests__/ssr.test.tsx`) to
+ * verify SSR touches no DOM global for real, rather than via a mock — so this
+ * guard must not run there: an unconditional shim would hand the store an
+ * adapter no real server has, and eagerly importing Testing Library would
+ * evaluate `screen`, which binds to `document.body` at module scope.
  */
 if (typeof document !== "undefined") {
   const { cleanup } = await import("@testing-library/react");
-  // The toolbar's own net: unmounts anything `mountToolbar()` mounted and
-  // restores a fake layout that outlived its tree. `renderWithToolbar` already
-  // ties both to RTL's cleanup below, so this only catches a bare
-  // `installToolbarLayout()` whose `restore()` was missed.
+  // Safety net for a bare `installToolbarLayout()` whose `restore()` was missed;
+  // `renderWithToolbar` already ties cleanup to RTL's below.
   const { cleanupToolbar } = await import("@nejcm/dev-toolbar/testing");
 
   /**
-   * Install a minimal in-memory Storage, unconditionally.
-   *
-   * Node's `globalThis.localStorage` getter shadows jsdom's and is `undefined`
-   * without `--localstorage-file`, but only exists from Node 22 — so the Node
-   * major used to pick the implementation. It matters: jsdom keeps `setItem` on
-   * the prototype behind a Proxy, where a `vi.spyOn` records zero writes while
-   * the write succeeds.
+   * Install a minimal in-memory Storage, unconditionally: Node 22+'s
+   * `globalThis.localStorage` getter shadows jsdom's and is `undefined`
+   * without `--localstorage-file`. jsdom's own version keeps `setItem` behind
+   * a Proxy where `vi.spyOn` would record zero writes despite the write succeeding.
    */
   {
     const map = new Map<string, string>();

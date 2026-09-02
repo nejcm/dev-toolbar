@@ -1,16 +1,11 @@
-// oxfmt and oxlint are separate binaries, and oxfmt is configured here for JS,
-// TS and YAML while oxlint has no YAML rules at all — so JS/TS gets both
-// commands and the YAML entry gets oxfmt alone. YAML is here because `format:check` in `verify`
-// covers `.github/`, and without this entry a hand-edited workflow would pass
-// `pre-commit` and fail CI.
+// oxlint has no YAML rules, so YAML gets oxfmt alone while JS/TS gets both.
+// YAML is included because `format:check` in `verify` covers `.github/`, and
+// without this entry a hand-edited workflow would pass pre-commit and fail CI.
 //
-// `--no-error-on-unmatched-pattern` on every entry is load-bearing, not
-// decorative.
-// lint-staged matches this glob on basename, so a staged file under an ignored
-// directory (`examples/playground`, `test/fixtures`) is still handed to the
-// tools, which then exclude it by their own ignore rules and exit non-zero on
-// having nothing left to do — oxfmt with 2, oxlint with 1. Without these flags
-// that blocks the commit outright.
+// `--no-error-on-unmatched-pattern` is load-bearing: lint-staged matches this
+// glob on basename, so a staged file under an ignored directory still gets
+// handed to the tools, which then exclude it and exit non-zero on having
+// nothing to do (oxfmt: 2, oxlint: 1) — without the flag that blocks the commit.
 export default {
   "*.{ts,tsx,js,jsx}": [
     "oxfmt --no-error-on-unmatched-pattern",

@@ -1,9 +1,8 @@
 /**
  * Matching and ordering for the palette. [dev-toolbar/ext/command-menu]
  *
- * Pure functions, deliberately: what a palette shows for a given query and a
- * given aggregation is the part worth pinning down in tests, and it is the part
- * with no DOM in it.
+ * Pure functions, deliberately: what the palette shows for a given query and
+ * aggregation is the part worth pinning down in tests, with no DOM involved.
  */
 import type { ToolbarCommand } from "../../core/contract";
 
@@ -87,19 +86,17 @@ export function scoreCommand(command: ToolbarCommand, query: string): number {
 }
 
 /**
- * The displayed list, in display order.
+ * The displayed list, in display order. Two modes:
  *
- * Two modes, on purpose:
+ * - **No query** — browsing. Recents first under their own heading, then
+ *   everything else in aggregation order (consecutive same-`group` runs
+ *   become sections).
+ * - **A query** — searching. One flat list ordered by score, no headings
+ *   (a scored order would keep re-splitting them); each row still shows its
+ *   own group.
  *
- * - **No query** — browsing. Recently run commands first under their own
- *   heading, then everything else in aggregation order, which already clusters
- *   by extension; consecutive runs of the same `group` become the sections.
- * - **A query** — searching. One flat list ordered by score, with no headings,
- *   because a heading that a scored order keeps re-splitting is noise. Each row
- *   still shows its own group.
- *
- * Ordering is total and deterministic in both modes — score, then recency, then
- * the aggregation order — so the row under the cursor does not move when an
+ * Ordering is total and deterministic in both modes (score, then recency,
+ * then aggregation order), so the row under the cursor doesn't move when an
  * unrelated pass re-enumerates.
  */
 export function filterCommands(

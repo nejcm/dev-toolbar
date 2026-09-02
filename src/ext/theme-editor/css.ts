@@ -5,19 +5,13 @@
  * layer, every selector scoped by `[data-dev-toolbar]`, every colour from a
  * `--dtb-*` token, every part name namespaced by kind (`thm-*`).
  *
- * No declaration here carries `!important`, and that is worth stating in an
- * extension whose subject matter is CSS. §14.7 put four `!important`s on
- * `/ext/overlays`' drawing surface because a guard must not sit in a layer
- * designed to lose. Nothing in *this* file is a guard: this extension's guard is
- * a refusal to write reserved names at all (`RESERVED_PREFIXES` in `./types`),
- * which no stylesheet can defeat because no declaration is ever produced. The
- * generalisation is worth keeping: prefer a guard you can express as "never
- * emit it" over one you have to win a cascade argument for.
+ * No declaration carries `!important` — this extension's guard against writing
+ * reserved names (`RESERVED_PREFIXES` in `./types`) is a refusal to ever emit
+ * them, not a cascade fight, so no `!important` is needed to win one.
  *
- * The one thing this file must not do is style the *application*. Every
- * selector starts at `[data-dev-toolbar]`, so it cannot: what the app looks
- * like is decided by the custom properties the runtime writes, and those are
- * the consumer's own tokens, never ours.
+ * Every selector starts at `[data-dev-toolbar]`, so this file cannot style the
+ * application: app appearance is decided by the custom properties the runtime
+ * writes, which are the consumer's own tokens, never ours.
  */
 import { ensureStyleSheet } from "../../runtime";
 

@@ -10,10 +10,9 @@ import type { MetricId, MetricsSnapshot } from "./types";
 /**
  * The rendered surface. [dev-toolbar/ext/metrics]
  *
- * Slot functions must be cheap — they run on every toolbar render — so they
- * return these components and the components subscribe to the metrics store
- * themselves. The bar re-renders when *it* changes; the chips re-render when
- * the store publishes, at most `updateHz` times a second.
+ * Slot functions must be cheap, so they just return these components, which
+ * subscribe to the metrics store themselves and re-render only when it
+ * publishes (at most `updateHz` times a second).
  */
 
 function useSnapshot(runtime: MetricsRuntime): MetricsSnapshot {
@@ -48,8 +47,7 @@ export function MetricsChips({
   useMetricsStyles(injectStyles);
   const snapshot = useSnapshot(runtime);
 
-  // Collapsed into the ··· menu there is vertical room, so spell the metrics
-  // out instead of shrinking them.
+  // In the ··· menu there's vertical room, so spell metrics out instead of shrinking them.
   if (isOverflowed) {
     return (
       <div data-dtb-part="metrics-overflow-list">
@@ -117,8 +115,8 @@ export function MetricsPanel({ runtime, injectStyles }: PanelProps): ReactNode {
   useMetricsStyles(injectStyles);
   const snapshot = useSnapshot(runtime);
   const first = snapshot.order[0] ?? "memory";
-  // start(api) has already run by the time a panel can be opened, so the
-  // persisted tab is readable here — unlike during the bar's first render.
+  // start(api) has already run by the time a panel can open, so the
+  // persisted tab is readable here.
   const [active, setActive] = useState<MetricId>(() => {
     const stored = runtime.storage()?.getItem(STORAGE_TAB_KEY);
     return stored && snapshot.order.includes(stored as MetricId) ? (stored as MetricId) : first;
@@ -133,7 +131,6 @@ export function MetricsPanel({ runtime, injectStyles }: PanelProps): ReactNode {
   const view = snapshot.views[snapshot.order.includes(active) ? active : first];
   const collector = runtime.collectors.find((entry) => entry.id === view.id);
 
-  // `/runtime`'s shared writer. See `runtime/clipboard.ts`.
   const copy = () => {
     const text = JSON.stringify(runtime.diagnostics(), null, 2);
     void writeClipboardText(text).then((ok) => setCopied(ok ? "ok" : "failed"));

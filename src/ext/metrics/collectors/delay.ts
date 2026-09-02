@@ -1,15 +1,12 @@
 /**
  * Interaction latency, INP-shaped. [dev-toolbar/ext/metrics]
  *
- * Event Timing is the only way to see the whole interaction — input delay,
- * handler processing and the paint that follows — and it is not available
- * everywhere. `PerformanceObserver.supportedEntryTypes` is checked first, the
- * `observe()` call is still wrapped, and both `durationThreshold` and
- * `buffered` are treated as optional: Safari has historically thrown on
- * unknown options rather than ignoring them.
+ * Event Timing (input delay + handler processing + paint) isn't available
+ * everywhere: `supportedEntryTypes` is checked first, and `observe()` is
+ * still wrapped since Safari has historically thrown on unknown options.
  *
- * The chip shows the *worst* interaction in a rolling window, not the latest.
- * Which one it is has to be unambiguous, so the panel says both.
+ * The chip shows the *worst* interaction in the rolling window, not the
+ * latest; the panel shows both to avoid ambiguity.
  */
 import { createRingBuffer, createTimeSeries, redact } from "../../../runtime";
 import { formatMs, NOT_AVAILABLE } from "../format";
@@ -49,8 +46,7 @@ export function supportsEventTiming(): boolean {
   if (typeof PerformanceObserver === "undefined") return false;
   const types = (PerformanceObserver as unknown as { supportedEntryTypes?: readonly string[] })
     .supportedEntryTypes;
-  // No list at all means an old polyfill; assume unsupported rather than
-  // throwing inside observe().
+  // No list at all means an old polyfill; assume unsupported rather than throwing in observe().
   return Array.isArray(types) && types.includes("event");
 }
 
@@ -64,23 +60,16 @@ const safeString = (value: unknown): string => {
 };
 
 /**
- * One part of a target description, masked **before** it is joined.
+ * Masks one part of a target description **before** it is joined.
  *
- * `redact()` on a bare string is value-shape matching and nothing else, which
- * is the correct treatment here: there is no key, and the hazard is a value
- * that *looks* like a credential. Same helper, same reasoning, as `part()` in
- * `/ext/diagnostics`' `responsiveness.ts`.
- *
- * A string in, a string out — `redact()`'s own overload says so, so nothing
- * here re-coerces the result. Coercing a value whose *type* is a claim rather
- * than a fact is the caller's job, and `describe()` below does it where it
- * applies.
+ * `redact()` on a bare string does value-shape matching only — correct here
+ * since there's no key, just a value that might *look* like a credential.
  */
 const part = (value: string): string => {
   try {
     return redact(value);
   } catch {
-    // Only reachable through a hostile global, and this runs inside a
+    // Only reachable through a hostile global; this runs inside a
     // `PerformanceObserver` callback where nothing upstream would catch it.
     return "[unreadable]";
   }
@@ -88,33 +77,15 @@ const part = (value: string): string => {
 
 /**
  * A DOM target reduced to `tag#id.class`, **with each part masked before the
- * join**.
- *
- * This was the last known instance of the join defect `/ext/diagnostics`
- * §15.3 named and P4's §16.8 turned into a checklist, and it was recorded in
- * §15.7 as deliberately unfixed. `id` and `className` are live DOM attributes,
- * so they are foreign; the assembled string was handed to metrics' `redact()`
- * pass, whose value matching is anchored to the *whole* string, so a
- * credential-shaped `id` was findable on its own and unfindable the moment
- * `tag` was in front of it.
- *
- * Plausibility is lower here than in the diagnostics cases — a DOM `id` or
- * class would have to *be* credential-shaped rather than merely contain
- * something — but the fix is the same line, and leaving the register's last
- * open item open would make its own standard look optional.
+ * join**. Joining first and redacting after would let a credential-shaped
+ * `id` hide behind the `tag` prefix, since redact's value matching is
+ * anchored to the whole string.
  */
 function describe(target: Element | null | undefined): string {
   if (!target || typeof target.tagName !== "string") return "unknown";
-  // The tag name is not foreign — it comes from a fixed HTML vocabulary — but
-  // it costs nothing to run it through the same helper, and doing so removes
-  // the question of which of the three parts was exempt and why.
   const tag = part(target.tagName.toLowerCase());
-  // Coerced, and not for the type: `id` is a live DOM attribute, so "declared
-  // `string`" is a claim about the lib types rather than a fact about the
-  // object that arrived. `part()` masks a string; making it one is this line's
-  // business — through `safeString`, because a bare `String()` here would sit
-  // outside every guard, and `describe()` runs inside a `PerformanceObserver`
-  // callback where a throw has nothing above it to catch.
+  // `id` is a live DOM attribute, so it's foreign despite the declared type;
+  // safeString avoids a bare String() throwing inside this observer callback.
   const id = target.id ? `#${part(safeString(target.id))}` : "";
   const first =
     typeof target.className === "string" && target.className.trim() !== ""
@@ -182,8 +153,7 @@ export function createDelayCollector(options: DelayCollectorOptions = {}): Colle
         context.invalidate();
       });
 
-      // Three attempts, narrowing: the full option set, then without the
-      // threshold, then the legacy entryTypes form. Any of them may throw.
+      // Narrowing attempts: full option set, then without threshold, then legacy entryTypes.
       const attempts: PerformanceObserverInit[] = [
         { type: "event", buffered: true, durationThreshold } as PerformanceObserverInit,
         { type: "event", buffered: true },

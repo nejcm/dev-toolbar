@@ -1,22 +1,17 @@
 /**
  * Everything `/ext/command-menu` owns that is not React. [dev-toolbar/ext/command-menu]
  *
- * This extension is the odd one out: the other three *produce* commands, and
- * this one is the only consumer of the aggregation core has been building since
- * P0. It reads that aggregation through `ExtensionRuntimeApi.getCommands()`,
- * not through `useToolbarCommands()` — an extension on its own subpath cannot
- * import a *value* from core (§7), and the hook is a value.
+ * Unlike the other extensions, which *produce* commands, this one only
+ * consumes core's aggregation — via `ExtensionRuntimeApi.getCommands()`, not
+ * `useToolbarCommands()`, since an extension can't import a *value* from core
+ * (§7) and the hook is a value.
  *
- * Two consequences shape everything below.
- *
- * **The list is only ever correct at the moment it is asked for.** With the
- * function form of `commands`, an extension can start contributing one without
- * anything telling core. So the palette re-enumerates when it opens, every
- * time, and runs by `id` through core rather than by holding a captured object.
- *
- * **Running a command runs somebody else's code.** It may throw, it may reject,
- * and it may have vanished between being listed and being chosen. All three are
- * shown in the palette rather than thrown at the host application.
+ * Two consequences: the list is only ever correct at the moment it's asked
+ * for (the function form of `commands` can start contributing without notice,
+ * so the palette re-enumerates on every open and runs by `id` through core
+ * rather than holding a captured object), and running a command runs
+ * somebody else's code — it may throw, reject, or have vanished since being
+ * listed, all shown in the palette rather than thrown at the host app.
  */
 import { createThrottledStore } from "../../runtime";
 import type { ThrottledStore } from "../../runtime";
@@ -94,12 +89,10 @@ export interface ParsedHotkey {
 }
 
 /**
- * A local parser, not core's.
- *
- * `parseShortcut` in core is a *value*, and the one rule this extension keeps
- * absolutely is that it imports only types from core (§7). This is the first
- * duplication of it; if a second extension needs one, it moves to `/runtime`
- * the way `ensureStyleSheet` did (§11.2) rather than becoming a third copy.
+ * A local parser, not core's `parseShortcut` — that's a *value*, and this
+ * extension imports only types from core (§7). If a second extension needs
+ * one, move it to `/runtime` (as `ensureStyleSheet` was, §11.2) rather than
+ * making a third copy.
  */
 export function parseHotkey(input: string): ParsedHotkey | null {
   const parsed: ParsedHotkey = {
@@ -250,9 +243,9 @@ export function createCommandMenuRuntime(
       ready: false,
       recent: [],
     },
-    // A palette answers keystrokes. Coalescing them would drop the frame the
-    // typist is steering by, so this store publishes on write; it is used for
-    // the `useSyncExternalStore` shape, not for the throttling.
+    // Publishes on write (intervalMs: 0): coalescing keystrokes would drop the
+    // frame the typist is steering by. Used for the `useSyncExternalStore`
+    // shape, not the throttling.
     { intervalMs: 0 },
   );
 
@@ -263,9 +256,9 @@ export function createCommandMenuRuntime(
     try {
       return api.getCommands();
     } catch (error) {
-      // Core contains a throwing `commands()` already, so this should be
-      // unreachable — but the palette is a *reader*, and a reader that lets an
-      // aggregation failure escape takes the toolbar down with it.
+      // Should be unreachable (core already guards a throwing `commands()`),
+      // but a reader that lets an aggregation failure escape takes the
+      // toolbar down with it.
       // eslint-disable-next-line no-console
       console.error(
         "[dev-toolbar/ext/command-menu] the command aggregation threw. " +
@@ -302,9 +295,8 @@ export function createCommandMenuRuntime(
   const open = () => {
     store.update((snapshot) => {
       const commands = enumerate();
-      // Prune recents that no longer exist. The display filtered them already,
-      // but storage did not, so a renamed command sat in the six-slot list
-      // forever, crowding out real ones nobody could see it displacing.
+      // Prune recents that no longer exist from storage too, or a renamed
+      // command sits in the six-slot list forever, crowding out real ones.
       const live = new Set(commands.map((command) => command.id));
       const recent = snapshot.recent.filter((id) => live.has(id));
       if (recent.length !== snapshot.recent.length) persistRecent(recent);
@@ -335,9 +327,8 @@ export function createCommandMenuRuntime(
 
   const run = async (id?: string): Promise<void> => {
     const snapshot = store.peek();
-    // One at a time. Enter repeats, and a pointerdown lands on a row that is
-    // still busy — without this, a slow async command runs twice concurrently
-    // and `aria-busy` is the only thing that ever said otherwise.
+    // One at a time: Enter repeats and pointerdown can land on a still-busy
+    // row, which would otherwise run a slow async command twice concurrently.
     if (snapshot.running !== null) return;
     const target = id ?? activeId(snapshot);
     if (target === undefined) return;
@@ -353,8 +344,7 @@ export function createCommandMenuRuntime(
     }
 
     if (!ok) {
-      // Stay open: the palette is where the failure can be read, and closing
-      // over it would leave the user with a command that silently did nothing.
+      // Stay open so the failure is visible, rather than silently doing nothing.
       store.update((current) => ({
         ...current,
         running: null,
@@ -391,19 +381,16 @@ export function createCommandMenuRuntime(
 
       const onKeyDown = (event: KeyboardEvent) => {
         if (!hotkey || event.repeat) return;
-        // The overlay slot only renders while the bar is visible, so opening
-        // while it is hidden would set a state nothing paints — and then paint
-        // it, uninvited, whenever the bar came back. Core reports visibility
-        // rather than pausing anybody; this is the extension deciding what that
-        // means for itself, which is the whole point of the api.
+        // The overlay only renders while the bar is visible; opening while
+        // hidden would set state nothing paints, then paint it uninvited once
+        // the bar returns.
         if (!runtimeApi.isVisible()) return;
         if (!matchesHotkey(event, hotkey, apple)) return;
         event.preventDefault();
         toggle();
       };
 
-      // Hiding the bar dismisses an open palette, rather than suspending it
-      // behind a bar that is not there.
+      // Hiding the bar dismisses an open palette rather than suspending it behind a bar that isn't there.
       const stopWatchingVisibility = runtimeApi.subscribeVisibility((visible) => {
         if (!visible) close();
       });

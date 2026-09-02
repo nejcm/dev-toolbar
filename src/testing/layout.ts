@@ -1,17 +1,13 @@
 /**
- * jsdom reports every element as 0×0 and ships no `ResizeObserver`, so the
- * overflow collapse can never trigger there on its own. This installs a fake
- * layout the bar can measure, plus a `ResizeObserver` whose callbacks fire when
- * you call `resize()`.
+ * jsdom reports every element as 0x0 and ships no `ResizeObserver`, so overflow
+ * collapse can never trigger there on its own. This installs a fake layout the
+ * bar can measure, plus a `ResizeObserver` whose callbacks fire on `resize()`.
  *
- * The patches live on `HTMLElement.prototype` and on `globalThis`, which are
- * shared by every install in the process. So they are *not* captured per
- * install: this module keeps a stack of live installs, patches the prototype
- * once when the stack becomes non-empty and unpatches it once when the stack
- * empties. The alternative — each install remembering "the previous value" —
- * is only correct when installs are restored in exactly reverse order, and
- * silently leaks a fake prototype getter for the rest of the process when they
- * are not.
+ * The patches live on `HTMLElement.prototype` and `globalThis`, shared process-
+ * wide, so installs are tracked as a stack rather than each capturing "the
+ * previous value": the prototype is patched once when the stack becomes
+ * non-empty and unpatched once it empties. Per-install capture would only be
+ * correct if installs always restored in exact reverse order.
  */
 
 export interface InstallToolbarLayoutOptions {
@@ -72,11 +68,7 @@ interface Baseline {
   hadResizeObserver: boolean;
 }
 
-/**
- * Live installs, most recent last. The topmost one answers every measurement,
- * which is what the previous per-install implementation did for the only order
- * it got right (nested installs, restored innermost first).
- */
+/** Live installs, most recent last. The topmost one answers every measurement. */
 const stack: Install[] = [];
 let baseline: Baseline | null = null;
 
@@ -85,9 +77,9 @@ const globals = globalThis as { ResizeObserver?: typeof ResizeObserver };
 const current = (): Install | undefined => stack[stack.length - 1];
 
 /**
- * Bound to whichever install was topmost when it was constructed, so
- * `handle.flush()` fires the observers created under that handle even after a
- * later install has been pushed on top of it.
+ * Bound to whichever install was topmost at construction, so `handle.flush()`
+ * fires observers created under that handle even after a later install is
+ * pushed on top of it.
  */
 class FakeResizeObserver implements ResizeObserver {
   private readonly entry: Observer;
@@ -209,19 +201,17 @@ const installs = new WeakMap<ToolbarLayoutHandle, Install>();
 /**
  * Installs the fake layout. Always pair with `restore()` — an `afterEach` is
  * the usual home, and `cleanupToolbar()` is the safety net when one is missed.
- * `renderWithToolbar({ layout: … })` does this for you, and ties the teardown
- * to the React tree so Testing Library's `cleanup()` covers it.
+ * `renderWithToolbar({ layout: … })` does this for you, tied to the React tree
+ * so Testing Library's `cleanup()` covers it.
  *
- * Nested installs stack: the most recent one answers measurements, and
- * restoring it hands measurement back to the one underneath. `restore()` is
- * idempotent and may be called in any order.
+ * Nested installs stack: the most recent answers measurements, and restoring
+ * it hands measurement back to the one underneath. `restore()` is idempotent
+ * and order-independent.
  *
- * The fake `ResizeObserver` ignores its observed targets: every callback is
- * invoked with an **empty entry array**, so code under test must re-read the
- * DOM (`offsetWidth`, `getBoundingClientRect()`, which this install answers)
- * instead of reading `entries[0].contentRect`. Core does exactly that. An
- * extension that trusts the entries sees nothing change here — measure from
- * the element, or drive that extension with a fake of your own.
+ * The fake `ResizeObserver` invokes callbacks with an **empty entry array**, so
+ * code under test must re-read the DOM (`offsetWidth`, `getBoundingClientRect()`)
+ * rather than `entries[0].contentRect` — core does exactly that. An extension
+ * that trusts the entries needs its own fake.
  */
 export function installToolbarLayout(
   options: InstallToolbarLayoutOptions = {},
@@ -272,12 +262,10 @@ export function installToolbarLayout(
 }
 
 /**
- * Internal. Re-pushes a handle whose `restore()` has already run.
- *
- * Only `renderWithToolbar`'s layout-owner effect uses this, so that a
- * StrictMode double-invoked effect (mount → cleanup → mount) ends up with the
- * layout installed rather than restored. The handle keeps its own widths, so a
- * re-install measures exactly as it did before.
+ * Internal. Re-pushes a handle whose `restore()` has already run. Used by
+ * `renderWithToolbar`'s layout-owner effect so a StrictMode double-invoked
+ * effect (mount → cleanup → mount) ends up installed, not restored. The handle
+ * keeps its own widths, so a re-install measures exactly as before.
  */
 export function reinstallToolbarLayout(handle: ToolbarLayoutHandle): void {
   const install = installs.get(handle);

@@ -1,9 +1,8 @@
 /**
  * Shared vocabulary for `/ext/metrics`. [dev-toolbar/ext/metrics]
  *
- * Severity lives here, not in core: core does not know what "healthy" means,
- * and every application's baseline differs. Every threshold below is a default
- * you are expected to override.
+ * Severity lives here, not in core, since "healthy" is app-specific. Every
+ * threshold below is a default you are expected to override.
  */
 import type { TimeSeries } from "../../runtime";
 

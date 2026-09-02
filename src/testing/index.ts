@@ -1,15 +1,12 @@
 /**
- * `@nejcm/dev-toolbar/testing`
+ * `@nejcm/dev-toolbar/testing` — test helpers for extension authors, in this
+ * repo and outside it. Reaches only core, never `src/runtime/` or `src/ext/*`;
+ * core values come through `@nejcm/dev-toolbar` (so a CommonJS consumer shares
+ * one instance), types come from `../core/*`.
  *
- * Test helpers for people writing extensions — in this repo and outside it.
- * Reaches nothing but core, and never `src/runtime/` or `src/ext/*`. Core
- * *values* come through `@nejcm/dev-toolbar` so that a CommonJS consumer shares
- * the host's one instance; only types come from `../core/*`.
- *
- * `renderWithToolbar` needs `@testing-library/react`, which is an optional peer
- * dependency. Nothing else here does — and nothing here imports it statically,
- * so this subpath imports cleanly on a project that never installed it. Calling
- * `renderWithToolbar()` without it throws a message naming both remedies.
+ * `renderWithToolbar` needs the optional peer `@testing-library/react`, which
+ * nothing else here imports statically — so this subpath still works without
+ * it, and `renderWithToolbar()` throws a message naming the remedy if it's missing.
  */
 export { renderWithToolbar } from "./renderWithToolbar";
 export type {

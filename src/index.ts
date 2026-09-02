@@ -26,13 +26,12 @@ export { useDevToolbar, useToolbarCommands } from "./core/context";
 export type { DevToolbarContextValue } from "./core/context";
 
 // `collectCommands`, `resolveExtensionCommands` and `collectDiagnostics` are
-// deliberately *not* exported. An extension reads the aggregation through
-// `api.getCommands()` / `api.getDiagnostics()` and the host through
-// `useToolbarCommands()` / `useDevToolbar().getCommands()`; both aggregate over
-// the merged list — props plus dynamic registrations, with `hidden` extensions
-// filtered out. A root-level aggregator would only ever see an array the caller
-// assembled by hand, which is a different — and always staler — thing wearing
-// the same name. `useDevToolbar().extensions` is the unfiltered list.
+// deliberately *not* exported. Extensions read the aggregation via
+// `api.getCommands()`/`api.getDiagnostics()`, hosts via `useToolbarCommands()`/
+// `useDevToolbar().getCommands()` — both merge props plus dynamic
+// registrations with `hidden` extensions filtered out, which a root-level
+// aggregator over a caller-assembled array could never do correctly.
+// `useDevToolbar().extensions` is the unfiltered list.
 export { runCommand } from "./core/commands";
 
 export {

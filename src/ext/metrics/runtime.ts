@@ -3,15 +3,14 @@
  * [dev-toolbar/ext/metrics]
  *
  * Collectors write raw samples into ring buffers as fast as the platform hands
- * them over. Nothing renders from that. A ticker aggregates on a slow interval
- * and writes a snapshot into a `createThrottledStore`, which is what the bar
- * subscribes to — so a 60 Hz rAF loop moves a chip at most `updateHz` times a
- * second, per the §5 budget.
+ * them over. A ticker aggregates on a slow interval and writes a snapshot into
+ * a `createThrottledStore`, which the bar subscribes to — so a 60 Hz rAF loop
+ * moves a chip at most `updateHz` times a second, per the §5 budget.
  *
- * It is constructed by `metrics()`, *not* by `start(api)`. Slot functions run
- * during the toolbar's first render, which is before any effect — and therefore
- * before `start(api)` — so anything a chip reads has to exist by the time the
- * factory returns.
+ * Constructed by `metrics()`, not by `start(api)`: slot functions run during
+ * the toolbar's first render, before any effect (and therefore before
+ * `start(api)`), so anything a chip reads must exist by the time the factory
+ * returns.
  */
 import { createThrottledStore, redact, redactUrl } from "../../runtime";
 import type { ThrottledStore } from "../../runtime";
@@ -28,7 +27,7 @@ export interface MetricsRuntime {
   readonly store: ThrottledStore<MetricsSnapshot>;
   readonly collectors: readonly Collector[];
   readonly order: readonly MetricId[];
-  /** `null` until `start(api)` runs. See the note above about render order. */
+  /** `null` until `start(api)` runs. */
   storage(): ToolbarStorage | null;
   start(api: ExtensionRuntimeApi): () => void;
   reset(): void;
@@ -104,10 +103,9 @@ export function createMetricsRuntime(options: MetricsRuntimeOptions): MetricsRun
   const publish = () => store.set(build());
 
   /**
-   * Collectors call this from a `fetch` wrapper or an observer callback, which
-   * can happen hundreds of times per tick. Building a snapshot per call would
-   * defeat the point, so it is folded into one microtask; the store then throttles
-   * the notification on top of that.
+   * Collectors call this from a `fetch` wrapper or observer callback, possibly
+   * hundreds of times per tick, so calls are folded into one microtask; the
+   * store then throttles the notification on top of that.
    */
   const invalidate = () => {
     if (dirty) return;
@@ -132,8 +130,7 @@ export function createMetricsRuntime(options: MetricsRuntimeOptions): MetricsRun
         try {
           collector.start(context);
         } catch (error) {
-          // A collector that cannot start must not take the others with it,
-          // and must not take down the toolbar's start(api).
+          // A failing collector must not take the others, or start(api), down.
           // eslint-disable-next-line no-console
           console.error(
             `[dev-toolbar/ext/metrics] the "${collector.id}" collector threw from start().`,
@@ -145,21 +142,17 @@ export function createMetricsRuntime(options: MetricsRuntimeOptions): MetricsRun
       const timer = setInterval(publish, tickMs);
       publish();
 
-      // Core reports visibility and never pauses us — the decision is ours.
-      // Aggregation is the only thing that stops: collectors keep filling their
-      // buffers, so nothing cumulative is corrupted by a closed bar, and the
-      // rolling windows stay honest because they are computed from timestamps
-      // rather than accumulated per tick.
+      // Core reports visibility but never pauses us. Only aggregation stops:
+      // collectors keep filling buffers, and rolling windows stay honest since
+      // they're computed from timestamps rather than accumulated per tick.
       const stopWatching = api.subscribeVisibility(() => {
         publish();
       });
 
-      // The store belongs to the runtime, not to one start/stop cycle, so it
-      // is deliberately NOT destroyed here. React StrictMode (and every dev
-      // double-invoke) runs mount → cleanup → mount: destroying the store on
-      // that first cleanup dropped React's subscription and made every later
-      // write a no-op, freezing the chips at their mount-time values while the
-      // collectors happily kept collecting. Found in a browser, not in jsdom.
+      // The store belongs to the runtime, not one start/stop cycle, so it is
+      // deliberately NOT destroyed here. React StrictMode's mount → cleanup →
+      // mount would otherwise drop React's subscription on the first cleanup,
+      // freezing the chips while collectors kept collecting.
       const dispose = () => {
         clearInterval(timer);
         stopWatching();
@@ -177,17 +170,15 @@ export function createMetricsRuntime(options: MetricsRuntimeOptions): MetricsRun
       const payload: Record<string, unknown> = {
         generatedAt: new Date().toISOString(),
         userAgent: typeof navigator === "undefined" ? null : navigator.userAgent,
-        // Explicitly, not by hoping `redact()` recognises it: the page URL is
-        // the single most likely credential carrier in the whole dump. An OAuth
-        // implicit-flow callback is `?access_token=…` in the address bar, and
-        // this is headed for a clipboard and from there usually a ticket.
+        // Explicit redactUrl, not left to `redact()`: the page URL is the most
+        // likely credential carrier here (e.g. an OAuth `?access_token=…`
+        // callback), and this is headed for a clipboard.
         url: typeof location === "undefined" ? null : redactUrl(location.href),
       };
       for (const collector of collectors) {
         payload[collector.id] = collector.diagnostics(at);
       }
-      // Every request URL was already masked on the way into the ring; this
-      // second pass catches credential-shaped values anywhere else in the dump.
+      // Second redact() pass catches credential-shaped values anywhere else.
       return redact(payload);
     },
     flush() {

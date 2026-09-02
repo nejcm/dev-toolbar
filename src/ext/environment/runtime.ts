@@ -2,16 +2,12 @@
  * Everything `/ext/environment` owns that is not React.
  * [dev-toolbar/ext/environment]
  *
- * Built by `environment()`, not by `start(api)`: slot functions run during the
- * toolbar's first render, which is before any effect fires, so the store a chip
- * reads has to exist by the time the factory returns.
+ * Built by `environment()`, not `start(api)`: slot functions run before any
+ * effect fires, so the store a chip reads must exist when the factory returns.
  *
- * The redaction pass is the reason this file is bigger than the panel it feeds.
- * Session context is the most sensitive thing this toolbar will ever put on a
- * screen, and it arrives as an opaque bag from the consumer, so **every value
- * goes through `redact()` once, on the way in**, and the panel and the clipboard
- * read the same redacted snapshot. There is no path from raw context to output
- * that skips it — the raw bag is never stored on the snapshot at all.
+ * Session context is the most sensitive thing this toolbar puts on a screen, so
+ * **every value goes through `redact()` once, on the way in** — the panel and
+ * clipboard read the same redacted snapshot, and the raw bag is never stored.
  */
 import { createThrottledStore, redact } from "../../runtime";
 import type { RedactOptions, ThrottledStore } from "../../runtime";
@@ -32,9 +28,9 @@ export interface EnvironmentRuntimeOptions {
   /** Re-read a function `context` this often, in ms. Default `4000`. */
   pollMs?: number;
   /**
-   * Restrict the panel to these fields. Everything else is dropped outright —
-   * never rendered, never copied. `extra` entries are named `extra:<key>`, and
-   * they are subject to the allowlist like everything else.
+   * Restrict the panel to these fields (allowlist) — everything else is
+   * dropped outright, never rendered or copied. `extra` entries are named
+   * `extra:<key>` and follow the same allowlist.
    */
   fields?: readonly (EnvironmentFieldId | `extra:${string}`)[];
   /** Read route/viewport/connection from the browser. Default `true`. */
@@ -63,9 +59,7 @@ const now = (): number =>
     ? performance.now()
     : Date.now();
 
-/* -------------------------------------------------------------------------- */
-/* Detection — the browser's own answers, never the deployment's.              */
-/* -------------------------------------------------------------------------- */
+// Detection — the browser's own answers, never the deployment's.
 
 interface ConnectionLike {
   effectiveType?: string;
@@ -74,10 +68,9 @@ interface ConnectionLike {
 }
 
 /**
- * The route, with its query redacted rather than dropped. An OAuth implicit
- * callback puts `access_token=…` in the address bar, and this row is headed for
- * a clipboard; `redact()` masks URL-shaped values, which is why the whole href
- * goes through it below rather than being sliced up here.
+ * The route, query included (not dropped) — an OAuth implicit callback puts
+ * `access_token=…` in the address bar, and this row is headed for a clipboard.
+ * The whole href goes through `redact()` downstream rather than being sliced here.
  */
 function detectRoute(): string | undefined {
   if (typeof location === "undefined") return undefined;
@@ -108,13 +101,10 @@ function detectConnection(): string | undefined {
   return parts.join(" · ");
 }
 
-/* -------------------------------------------------------------------------- */
-/* Redaction                                                                   */
-/* -------------------------------------------------------------------------- */
+// Redaction
 
-// Deliberately loose on the local part and strict on the domain: this runs on
-// values the consumer chose, and over-masking a row is recoverable while
-// leaking somebody's address into a pasted ticket is not.
+// Loose on the local part, strict on the domain: over-masking is recoverable,
+// leaking an address into a pasted ticket is not.
 const EMAIL = /([A-Za-z0-9._%+-])[A-Za-z0-9._%+-]*@([A-Za-z0-9.-]+\.[A-Za-z]{2,})/g;
 
 export function maskEmails(value: string): string {
@@ -123,20 +113,13 @@ export function maskEmails(value: string): string {
 
 /**
  * Renders one value as the single line a row shows. Structured values become
- * JSON — but only *after* `redact()` has walked them, never before: see below.
+ * JSON — but only *after* `redact()` has walked them, never before.
  */
 function stringify(value: unknown): string {
   if (value === null || value === undefined) return "";
-  // `redact()` renders a Date as a bare ISO string. Matching that here keeps
-  // the two sides of the `masked` comparison comparable; JSON-quoting one side
-  // and not the other made every Date look like it had been masked.
-  //
-  // `toISOString()` throws `RangeError` on an invalid Date (`new Date(NaN)`)
-  // rather than returning a string — this runs on the raw side of the
-  // comparison, which `redact()` has not touched yet, so an invalid Date
-  // reaches here exactly as the consumer supplied it. Mirror `redact()`'s own
-  // guard rather than letting that throw out of `redactValues` and degrade
-  // the whole snapshot.
+  // Match `redact()`'s bare-ISO-string rendering of Date so both sides of the
+  // `masked` comparison stay comparable. `toISOString()` throws on an invalid
+  // Date, and this runs on the raw (pre-redact) side, so guard it here too.
   if (value instanceof Date) {
     return Number.isNaN(value.getTime()) ? "[invalid date]" : value.toISOString();
   }
@@ -144,12 +127,8 @@ function stringify(value: unknown): string {
     try {
       return JSON.stringify(value) ?? String(value);
     } catch {
-      // A cycle. `redact()` already turns those into "[circular]", so this is
-      // the raw side of the comparison only. It is *not* a guard against a
-      // throwing getter: `redact()` tags that itself (`"[getter threw]"`)
-      // while it walks, and it has already run by the time we get here. A
-      // getter on the context object or on `ctx.extra` directly is a
-      // different case, read before `redact()` is even called — see `build`.
+      // A cycle, on the raw side only — `redact()` already renders cycles as
+      // "[circular]" and throwing getters as "[getter threw]" on its own side.
       return "[unserialisable]";
     }
   }
@@ -157,19 +136,17 @@ function stringify(value: unknown): string {
 }
 
 /**
- * One pass over the whole bag. `redact()` does the key matching (`token`,
- * `session`, `cookie`, …) and the value matching (`Bearer …`, bare JWTs, URLs
- * with credential-shaped query parameters); the PII pass then masks email
- * addresses, which `redact()` has no opinion about.
+ * One pass over the whole bag: `redact()` does key matching (`token`,
+ * `session`, `cookie`, …) and value matching (`Bearer …`, bare JWTs,
+ * credential-shaped URL query params); the PII pass then masks emails, which
+ * `redact()` has no opinion about.
  *
  * **Order matters, and getting it wrong is silent.** `redact()` matches key
- * names by walking an object graph, so a nested value must reach it as an
- * object. An earlier version of this function stringified `extra` entries first
- * and handed `redact()` a JSON string: the inner keys were then just characters
- * inside a value, `extra: { user: { authToken } }` leaked the token verbatim to
- * the panel and the clipboard, and — worse — the row still reported
- * `masked: true` because a sibling email had been masked by the PII pass. The
- * UI reassured the reader while leaking. Redact first, stringify second.
+ * names by walking an object graph, so nested values must reach it as objects,
+ * not as a pre-stringified blob — stringifying `extra` first would hide its
+ * inner keys inside a string, leaking values like `authToken` verbatim while a
+ * sibling email masked by the PII pass still made the row report `masked: true`.
+ * Redact first, stringify second.
  */
 function redactValues(
   raw: Record<string, unknown>,
@@ -181,8 +158,8 @@ function redactValues(
 
   for (const [key, original] of Object.entries(raw)) {
     if (original === undefined || original === null) continue;
-    // Both sides are rendered the same way, so `masked` reports whether
-    // redaction changed *what this row shows* — not an artefact of formatting.
+    // Both sides rendered the same way, so `masked` reflects an actual change,
+    // not a formatting artefact.
     const before = stringify(original);
     let after = stringify(redacted[key]);
     if (options.maskPii !== false) after = maskEmails(after);
@@ -192,9 +169,7 @@ function redactValues(
   return { values, masked };
 }
 
-/* -------------------------------------------------------------------------- */
-/* Snapshot                                                                    */
-/* -------------------------------------------------------------------------- */
+// Snapshot
 
 function formatBuiltAt(value: string | number | Date | undefined): string | undefined {
   if (value === undefined) return undefined;
@@ -274,18 +249,13 @@ export function createEnvironmentRuntime(
       connection: detect ? detectConnection() : undefined,
     };
 
-    // Extras are redacted in their own pass, keyed by the consumer's own key:
-    // `redact()` matches on key names, so `extra: { authToken }` only masks if
-    // the key reaches it unrenamed — and keeping them out of `raw` means an
-    // extra called `region` cannot shadow the real field. Values are passed
-    // through *as they are*, objects included, because `redact()` has to walk
-    // them; `redactValues` stringifies afterwards.
+    // Extras are redacted in their own pass, keyed unrenamed so `redact()`'s key
+    // matching still applies, and kept out of `raw` so an extra called `region`
+    // can't shadow the real field.
     const rawExtra: Record<string, unknown> = {};
     for (const [key, value] of Object.entries(ctx.extra ?? {})) {
       if (value === undefined) continue;
-      // The allowlist is an allowlist: an extra nobody asked for is dropped
-      // here, before it is redacted, rendered or copied — the same
-      // drop-don't-hide rule the declared fields get.
+      // Dropped, not hidden, before redact/render/copy — same rule as declared fields.
       if (allowed && !allowed.has(`extra:${key}`)) continue;
       rawExtra[key] = value;
     }
@@ -294,10 +264,9 @@ export function createEnvironmentRuntime(
     const extra = redactValues(rawExtra, options);
     const detected = new Set(["route", "viewport", "connection"]);
 
-    // The *redacted* environment string, not `ctx.environment`. The chip, its
-    // title, `data-dtb-env` and `diagnostics().environment` all read this, and
-    // a consumer who puts a value with an address in it here should not find it
-    // masked in one row and raw in four other places.
+    // The *redacted* environment string, not `ctx.environment` — the chip,
+    // its title, `data-dtb-env` and `diagnostics().environment` all read this
+    // one value, so it can't be masked in one place and raw in another.
     const kind = values["environment"] ?? "unknown";
     const isProduction = normaliseKind(String(kind)) === "production";
 
@@ -344,25 +313,16 @@ export function createEnvironmentRuntime(
   };
 
   /**
-   * The snapshot is built from data the consumer owns, and reading it can
-   * throw: a getter on the context object itself (`ctx.userId` and friends,
-   * read directly above), or a top-level getter on `ctx.extra` (the
-   * `Object.entries(ctx.extra ?? {})` above, which separates extras from the
-   * allowlist before any of them reach `redact()`). `redact()` no longer
-   * needs this guard on its own account: it now catches a throwing getter
-   * *inside* a value it walks and tags that property `"[getter threw]"`
-   * rather than propagating — a getter nested deeper than `ctx.extra`'s own
-   * keys is exactly that case. This wrapper stays for the two direct reads
-   * above, which are this file's own, not `redact()`'s.
+   * Guards the two direct reads above (`ctx.userId` etc., and the top-level
+   * `Object.entries(ctx.extra ?? {})`) against a throwing getter — `redact()`
+   * already tags getters it finds *inside* a walked value as `"[getter threw]"`,
+   * but these two reads happen before `redact()` runs.
    *
-   * Nothing here may propagate. The first `build()` runs inside `environment()`
-   * — at factory time, before core has mounted anything — so a throw there does
-   * not degrade to an error chip, it takes down the host application's render.
-   * That inverts the whole failure-isolation rule the shell is built on. The
-   * later ones run inside a `setInterval`, where a throw is uncatchable by
-   * anybody. So: log once per occurrence and degrade to a snapshot that says
-   * what happened, the same way `readContext` already handles a throwing getter
-   * context.
+   * Nothing here may propagate: the first `build()` runs at factory time inside
+   * `environment()`, before core has mounted anything, so an uncaught throw would
+   * take down the host app's render rather than degrade to an error chip. Later
+   * calls run inside a `setInterval`, where a throw is uncatchable by anybody.
+   * So: log once and degrade to a snapshot describing what happened.
    */
   const build = (): EnvironmentSnapshot => {
     try {
@@ -391,8 +351,7 @@ export function createEnvironmentRuntime(
       supplied: true,
       maskedCount: 0,
       fields: [
-        // Not consumer data, so the `fields` allowlist does not apply: a
-        // restricted view still needs to be told why it is empty.
+        // Not consumer data, so the `fields` allowlist doesn't apply here.
         {
           id: "contextError",
           label: "Context",
@@ -432,11 +391,10 @@ export function createEnvironmentRuntime(
     start(api: ExtensionRuntimeApi) {
       storage = api.storage;
 
-      // Two things go stale: a getter context, and the detected facts. The
-      // route is the reason the second one counts — every SPA router navigates
-      // with `history.pushState`, which fires no event anyone can listen for,
-      // so with a static context and no timer the Route row would be wrong
-      // until something else happened to repaint it, i.e. possibly forever.
+      // A getter context and the detected facts both go stale. The route matters
+      // most: SPA routers navigate via `history.pushState`, which fires no
+      // listenable event, so without this timer the Route row could be wrong
+      // indefinitely.
       const timer =
         typeof context === "function" || detect
           ? setInterval(publish, Math.max(250, pollMs))
@@ -447,17 +405,15 @@ export function createEnvironmentRuntime(
       target?.addEventListener("online", onChange);
       target?.addEventListener("offline", onChange);
       target?.addEventListener("resize", onChange);
-      // The route changes without a navigation in every SPA router, so listen
-      // for what the platform does emit and re-read on the poll otherwise.
+      // Listen for what the platform does emit; the poll above covers the rest.
       target?.addEventListener("popstate", onChange);
       target?.addEventListener("hashchange", onChange);
 
       const stopWatching = api.subscribeVisibility(() => publish());
       publish();
 
-      // The store belongs to the runtime, not to one start/stop cycle: React
-      // StrictMode runs mount → cleanup → mount, and destroying it on the first
-      // cleanup drops React's subscription and freezes the panel.
+      // Store belongs to the runtime, not one start/stop cycle: destroying it on
+      // React StrictMode's first cleanup would drop the subscription and freeze the panel.
       const dispose = () => {
         if (timer !== null) clearInterval(timer);
         target?.removeEventListener("online", onChange);
@@ -507,8 +463,7 @@ export function createEnvironmentRuntime(
             value: field.value,
           })),
       };
-      // Values are already redacted; this second pass costs nothing and means
-      // the dump is safe even if a field is added above and this is forgotten.
+      // Belt-and-braces: cheap second redact pass in case a field is added above and forgotten here.
       return redact(payload, options.redactOptions);
     },
   };

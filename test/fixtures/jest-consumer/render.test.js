@@ -2,15 +2,14 @@
  * Guards the CommonJS/Jest load path of `@nejcm/dev-toolbar/testing`.
  * See README.md in this directory for what has broken here before.
  *
- * The critical detail: this file NEVER calls `setTestingLibrary()`. If
- * `renderWithToolbar()` cannot find Testing Library on its own under Jest, these
- * tests fail — which is exactly the regression being guarded.
+ * Critical detail: this file NEVER calls `setTestingLibrary()`. If
+ * `renderWithToolbar()` can't find Testing Library on its own under Jest,
+ * these tests fail — that's the regression being guarded.
  */
 const React = require("react");
 
-// A real Jest consumer's RTL is in the module registry from module scope: its
-// auto-cleanup registers an `afterAll`, and Jest forbids defining hooks inside a
-// test. This require is the consumer's, not the toolbar's.
+// Required at module scope (not inside a test) so RTL's auto-cleanup can
+// register its `afterAll` hook, which Jest forbids doing inside a test.
 const rtl = require("@testing-library/react");
 
 const {
@@ -59,9 +58,8 @@ test("the fallback returns Jest's registry copy, not a second instance", () => {
   });
   expect(toolbar.root()).not.toBeNull();
 
-  // `cleanup()` comes from THIS file's require. Had renderWithToolbar loaded a
-  // second, unrelated copy of Testing Library, this would know nothing about
-  // what that copy mounted and the toolbar would still be in the document.
+  // `cleanup()` comes from this file's require; if renderWithToolbar had
+  // loaded a second RTL copy, this cleanup wouldn't know about it.
   rtl.cleanup();
   expect(document.querySelector('[data-dtb-part="root"]')).toBeNull();
 });

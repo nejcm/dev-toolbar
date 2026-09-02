@@ -1,19 +1,13 @@
 name: CI
 
 on:
-  # No `branches:` filter here on purpose. `pull_request.branches` filters on the
-  # PR's *base* branch, which silently matches nothing for stacked PRs and for
-  # slash-named branches. sugarwork and project-ai-interviewer were both bitten
-  # by this; run on every PR instead.
+  # No `branches:` filter: it filters on the PR's *base* branch and silently
+  # matches nothing for stacked/slash-named branches.
   #
-  # `types:` must be spelled out because `ready_for_review` is NOT one of the
-  # defaults (opened, synchronize, reopened). A job skipped by a job-level `if:`
-  # reports as PASSING to required status checks rather than staying pending, so
-  # with the draft skip below and the default types a PR could be opened as a
-  # draft (job skips, check goes green), then marked ready for review — firing no
-  # event at all — and merge with a green `verify` that never ran format,
-  # lint, typecheck, test or build. `ready_for_review` is what re-runs it for real.
-  # `converted_to_draft` is deliberately absent; see the note on the job's `if:`.
+  # `types:` adds `ready_for_review` to the defaults — without it, a draft PR
+  # (job skips, check goes green) could be marked ready without re-running
+  # `verify`, merging with a stale green check. `converted_to_draft` is
+  # deliberately absent; see the job's `if:`.
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
   # Exposed so the Phase 4 release workflow can call CI as its release gate.
@@ -34,13 +28,11 @@ on:
 permissions:
   contents: read
 
-# `github.workflow` and `github.ref` both resolve to the *caller's* values on a
-# `workflow_call` run, so a release-triggered CI run lands in the caller's group
-# (e.g. "Release-refs/heads/main") and cannot cancel, or be cancelled by, this
-# workflow's own runs (group "CI-..."). The residual risk belongs to the caller:
-# a second push to main while a release is in flight would cancel the release's
-# in-flight CI. The Phase 4 release workflow must therefore declare its own
-# `concurrency` with `cancel-in-progress: false`.
+# `github.workflow`/`github.ref` resolve to the *caller's* values on
+# `workflow_call`, so a release-triggered CI run lands in the caller's
+# concurrency group, not this one — the caller must declare its own
+# `concurrency` with `cancel-in-progress: false` so a release isn't cancelled
+# mid-flight.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -49,29 +41,19 @@ jobs:
   verify:
     name: verify
     runs-on: ubuntu-latest
-    # Two independent skips, each scoped to the trigger it makes sense for:
-    #
-    #  1. Release-bot commits. `github.event.commits` exists only on `push`, so
-    #     the check is scoped to `push` — unscoped it is a no-op on
-    #     `pull_request` (toJSON(null) == "null") but is actively dangerous on
-    #     `workflow_call`, where the payload is the caller's push of the
-    #     `chore(release):` commit: CI would skip itself and the release would be
-    #     gated on nothing. `inputs.called` is only ever set on `workflow_call`,
-    #     so a called run never skips.
-    #     Note this skip is all-or-nothing per push: a push mixing a
-    #     `chore(release):` commit with real changes skips CI for the whole
-    #     push. That is inherent to the pattern. Truncation of `event.commits`
-    #     (capped at 2048 commits per push payload) fails safe: the marker drops
-    #     out of the JSON, so CI runs. And until the Phase 4 release workflow
-    #     exists, nothing else covers a `chore(release):` push to main — it
-    #     simply gets no CI.
-    #  2. Draft PRs. Scoped to `pull_request`; on other events
-    #     `github.event.pull_request` is null and the term is vacuously true.
-    #     `converted_to_draft` is not a declared trigger type on purpose: a
-    #     ready->draft flip changes no code, and a run on that event would skip
-    #     and report green for a SHA whose real check may have failed, replacing
-    #     a red status with a green one. Not declaring it leaves the existing
-    #     verified result standing.
+    # Two independent skips:
+    #  1. Release-bot commits. Scoped to `push` (`github.event.commits` only
+    #     exists there) — unscoped it'd be a no-op on `pull_request` but
+    #     actively dangerous on `workflow_call`, where the payload is the
+    #     caller's `chore(release):` push and CI would skip itself, gating the
+    #     release on nothing. `inputs.called` is only set on `workflow_call`,
+    #     so a called run never skips. All-or-nothing per push (a mixed push
+    #     skips CI entirely) is inherent to the pattern; truncation of
+    #     `event.commits` fails safe (marker drops out, CI runs).
+    #  2. Draft PRs. Scoped to `pull_request`. `converted_to_draft` is
+    #     deliberately not a declared trigger: a ready->draft flip changes no
+    #     code, and running on it would replace a real (possibly red) status
+    #     with a skipped green one.
     if: >-
       (inputs.called || github.event_name != 'push'
       || !contains(toJSON(github.event.commits.*.message), 'chore(release):'))
@@ -80,68 +62,51 @@ jobs:
     timeout-minutes: 15
     steps:
       # Third-party actions are pinned to a full commit SHA with the resolved
-      # version in a trailing comment. Tags are mutable, so `@v7` is a promise
-      # from whoever controls the tag, not a promise about the code that will
-      # run. SHA pins rot silently without something to bump them;
-      # `.github/dependabot.yml` is that something, and it reads the `# vX.Y.Z`
-      # comment to know what it is bumping from. Do not replace these with tags
-      # without removing that.
-      #
-      # Local composite actions under `.github/actions/` are referenced by path,
-      # not by SHA — they are this repo's own code, already covered by the
-      # checkout. Dependabot reads the pins inside them the same way.
+      # version in a trailing comment (tags are mutable). `.github/dependabot.yml`
+      # bumps these by reading the `# vX.Y.Z` comment — don't replace with tags
+      # without removing that. Local composite actions under `.github/actions/`
+      # are referenced by path, not SHA — this repo's own code, covered by the
+      # checkout; Dependabot pins inside them the same way.
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      # bun + Node + install cache + `bun install --frozen-lockfile`. Every
-      # detail that used to be spelled out here — why bun is version-pinned from
-      # `packageManager`, why Node comes from `.nvmrc`, why the install cache is
-      # an explicit step — now lives in the action.
+      # bun + Node + install cache + `bun install --frozen-lockfile`; details
+      # live in the action.
       - name: Set up job
         uses: ./.github/actions/setup-job
 
-      # `verify` is format:check, typecheck, lint, knip, build, test,
-      # check:package in that order, and the build it runs is what the size
-      # report below measures. `format:check` leads because it costs
-      # milliseconds — it is also the only place formatting is enforced for
-      # commits that never meet the `pre-commit` hook: GitHub web edits,
-      # `--no-verify`, `SKIP_SIMPLE_GIT_HOOKS=1`, a clone where `bun install`
-      # has not run yet, and Dependabot's `github-actions` bumps, which edit
-      # the YAML in this directory that oxfmt also formats. Coverage is
-      # separate rather than folded into `verify`: instrumentation slows the
-      # suite, and a contributor running `bun run verify` locally should not
-      # pay for it.
+      # `verify` runs format:check, typecheck, lint, knip, build, test,
+      # check:package in order; the build here is what the size report below
+      # measures. `format:check` leads because it's cheap and is the only
+      # enforcement for commits that skip the `pre-commit` hook (web edits,
+      # `--no-verify`, Dependabot's YAML bumps, etc). Coverage is kept separate
+      # since instrumentation slows the suite and a local `bun run verify`
+      # shouldn't pay for it.
       - name: Verify (format, typecheck, lint, unused code, build, test, package shape)
         run: bun run verify
 
-      # The reporting steps below are `!cancelled()` rather than `always()`:
-      # both run on a failed `verify` (a size table and a knip report are most
-      # useful on the run that broke something), but neither holds up a
-      # cancellation the way `always()` would.
+      # `!cancelled()` rather than `always()`: both reporting steps below are
+      # useful on a failed `verify` but shouldn't block a cancellation.
       #
-      # The package's entire pitch is low overhead across 11 separately
-      # importable entry points, so this is the number a reviewer most wants on
-      # the PR. Reads the `dist/` that `verify` just built.
+      # The package's pitch is low overhead across 11 entry points, so this is
+      # the number a reviewer most wants. Reads the `dist/` `verify` just built.
       - name: Report bundle size
         if: ${{ !cancelled() }}
         uses: ./.github/actions/report-bundle-size
 
-      # Report-only: swallows its own exit code internally — see the action. Not
-      # advisory, though. `verify` above runs `bun run knip` and is the gate;
-      # this step re-runs it purely to render the report, and does so even when
-      # `verify` failed, which is the run you most want it on.
+      # Report-only: swallows its own exit code (see the action). `verify`
+      # above is the real gate; this re-runs knip purely for the report, even
+      # when `verify` failed.
       - name: Knip
         if: ${{ !cancelled() }}
         uses: ./.github/actions/knip-check
 
-      # A second, instrumented run of the suite. The floors live in
-      # `vitest.config.ts`, so this step is a real gate: a drop below them fails
-      # here even though `verify` above passed.
+      # Instrumented re-run; the floors in `vitest.config.ts` make this a real
+      # gate distinct from `verify` above.
       - name: Coverage
         run: bun run test:coverage
 
-      # Reported even on a failed coverage run — a run that broke a threshold is
-      # precisely the one where you want to see the numbers.
+      # Reported even on failure — that's the run you most want the numbers on.
       - name: Report coverage
         if: ${{ !cancelled() }}
         run: |
@@ -164,9 +129,8 @@ jobs:
             fi
           } >> "$GITHUB_STEP_SUMMARY"
 
-      # lcov rather than the html report: nothing in CI reads the html, and it
-      # is thousands of files. Kept short — this is for looking at a specific
-      # run, not for trend analysis.
+      # lcov, not the html report: nothing reads the html and it's thousands of
+      # files. Kept short — for one run, not trend analysis.
       - name: Upload coverage
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -176,10 +140,9 @@ jobs:
           retention-days: 14
           if-no-files-found: warn
 
-      # Deliberately uncached and after verify: audit results depend on the
-      # advisory database rather than on repo contents, so keying them to a
-      # lockfile hash would be wrong. `continue-on-error` while the baseline is
-      # noisy — advisories surface without blocking merges. Tighten once quiet.
+      # Uncached and after verify: results depend on the advisory database, not
+      # repo contents. `continue-on-error` while the baseline is noisy; tighten
+      # once quiet.
       - name: Audit dependencies
         run: bun audit
         continue-on-error: true

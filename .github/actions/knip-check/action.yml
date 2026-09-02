@@ -1,22 +1,12 @@
 name: Knip check
 description: Run knip and post a collapsible report to the job summary. Reports; does not gate.
 
-# Adapted from rumi.ai's `.github/actions/knip-check`. Two changes: knip's own
-# `markdown` reporter replaces the sed-based ANSI stripping and manual code
-# fence, and the exit code is swallowed here rather than relying on the caller
-# to set `continue-on-error`.
-#
-# This action reports, it does not gate — but knip *is* a gate: `bun run verify`
-# runs `bun run knip`, so unused code fails CI in the `verify` step of the
-# calling workflow, and fails identically on a contributor's machine. Keeping the gate
-# there rather than here is what makes "if verify passes locally it passes in
-# CI" true. This step exists for the readable report, and swallows the exit code
-# so it still renders on a run `verify` has already failed — which is precisely
-# the run where you want to see *which* export went unused. The cost of the
-# duplication is one extra knip run of a second or two.
-#
-# Worth reporting rather than just failing: an 11-entry export map is exactly
-# where a subpath quietly stops being referenced.
+# Reports; does not gate — but knip *is* a gate via `bun run verify` (`bun run
+# knip`), which fails identically in CI and on a contributor's machine.
+# Keeping the gate there is what makes "passes locally -> passes in CI" true.
+# This step exists for the readable report, and swallows knip's exit code so
+# it still renders on a run `verify` already failed — precisely the run where
+# you want to see which export went unused.
 #
 # Requires `actions/checkout` and an install before it.
 
@@ -32,8 +22,8 @@ runs:
         code=$?
         set -e
         cat knip-report.md
-        # knip exits 1 when it finds issues and >1 on a real failure (bad
-        # config, unreadable entry). Only the former is "found something".
+        # knip exits 1 when it finds issues, >1 on a real failure (bad config,
+        # unreadable entry) — only the former means "found something".
         if [ "$code" -eq 0 ]; then
           echo "status=clean" >> "$GITHUB_OUTPUT"
         elif [ "$code" -eq 1 ]; then
@@ -57,13 +47,13 @@ runs:
           echo
           echo "<details><summary>Full report</summary>"
           echo
-          # The report is already markdown; it must not be fenced, and it needs
-          # the blank lines above and below to render inside <details>.
+          # Already markdown; must not be fenced, and needs the blank lines
+          # around it to render inside <details>.
           cat knip-report.md 2>/dev/null || echo "_no report produced_"
           echo
           echo "</details>"
-          # Trailing blank line: without it a following step's `##` heading
-          # lands on the line after the closing tag and does not render.
+          # Trailing blank line, or a following step's `##` heading won't
+          # render right after the closing tag.
           echo
         } >> "$GITHUB_STEP_SUMMARY"
         rm -f knip-report.md
