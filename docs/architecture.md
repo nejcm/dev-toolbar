@@ -146,7 +146,9 @@ already have — see the recipe in the README.
 `start(api)` gets `isVisible()` and `subscribeVisibility()`. Core never pauses an
 extension on its behalf. A cumulative counter that silently stops counting when the
 bar is closed is worse than one that keeps going, and only the extension knows which
-of its work is cumulative.
+of its work is cumulative. `subscribeVisibility()`'s subscription is released
+automatically when `api.signal` aborts, so an extension that keeps only the signal for
+cleanup does not leak one per remount.
 
 `isVisible()` is about **the bar**, not the document. Whether the tab is backgrounded
 is `document.visibilityState`, it is not core's to report, and it is a different

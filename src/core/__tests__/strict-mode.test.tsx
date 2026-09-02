@@ -103,13 +103,14 @@ describe("DevToolbar under StrictMode", () => {
     expect(seen).toEqual([false]);
   });
 
-  it("doubles the callbacks of an extension that relies on api.signal alone", () => {
-    // Pinning current behaviour, not specifying it. `subscribeVisibility`
-    // returns an unsubscribe and nothing in `contract.ts` promises that
-    // aborting `api.signal` revokes the subscription — so an extension that
-    // keeps only the signal is subscribed once per StrictMode pass and hears
-    // every change twice. The idiomatic pattern above is the one that works;
-    // this test exists so that a change in either direction is noticed.
+  it("delivers once to an extension that relies on api.signal alone", () => {
+    // `contract.ts` promises `api.signal` is aborted when the extension is
+    // unregistered or the toolbar unmounts, and that `subscribeVisibility`'s
+    // subscription is released automatically when it does. An extension that
+    // keeps only the signal (never calling the returned unsubscribe) must
+    // still hear exactly one delivery per real change, including across the
+    // StrictMode double-invoked mount effect: the torn-down pass's
+    // subscription is released by its aborted signal.
     const seen: boolean[] = [];
     const start = (api: ExtensionRuntimeApi) => {
       api.subscribeVisibility((visible) => seen.push(visible));
@@ -119,7 +120,7 @@ describe("DevToolbar under StrictMode", () => {
     strict([{ id: "leaky", label: "Leaky", start }]);
     fireToggleShortcut();
 
-    expect(seen).toEqual([false, false]);
+    expect(seen).toEqual([false]);
   });
 
   it("still warns only once per id about a contract mismatch", () => {

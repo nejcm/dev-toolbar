@@ -43,6 +43,38 @@ describe("hidden extensions", () => {
   });
 });
 
+describe("subscribeVisibility is released when api.signal aborts", () => {
+  it("stops delivering after the extension is unregistered, without calling the returned unsubscribe", () => {
+    // `contract.ts` promises `api.signal` is aborted on teardown, and an
+    // extension that keeps only the signal (never calling the function
+    // `subscribeVisibility` returns) is a legal reading of that contract. Its
+    // subscription must still be released when the signal aborts.
+    const seen: boolean[] = [];
+    const start = (api: {
+      signal: AbortSignal;
+      subscribeVisibility: (cb: (v: boolean) => void) => () => void;
+    }) => {
+      api.subscribeVisibility((visible) => seen.push(visible));
+    };
+
+    const { toolbar, unmount } = renderWithToolbar(null, { extensions: [] });
+    const unregister = toolbar.register({ id: "leaky", label: "Leaky", start });
+
+    toolbar.setVisible(false);
+    expect(seen).toEqual([false]);
+
+    // Tear the extension down: its `api.signal` aborts.
+    unregister();
+    toolbar.setVisible(true);
+
+    // The callback must not fire again — the subscription was released along
+    // with the signal, not left listening on the store.
+    expect(seen).toEqual([false]);
+
+    unmount();
+  });
+});
+
 describe("hidden means absent everywhere, not just in the bar", () => {
   const panelExt = (hidden: boolean): DevToolbarExtension => ({
     id: "restricted",

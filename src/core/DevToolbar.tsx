@@ -301,8 +301,16 @@ function DevToolbarRoot({
         signal: controller.signal,
         isVisible: () => store.getSnapshot().visible,
         subscribeVisibility: (callback) => {
+          // `signal` is documented as aborted on teardown, and this is the
+          // subscription that abort must release — an extension that keeps
+          // only the signal (never calling the function returned here) is a
+          // legal reading of the contract. Already aborted at call time (the
+          // extension started, then unregistered before this ran): subscribe
+          // to nothing rather than leak a listener nothing will ever release.
+          if (controller.signal.aborted) return () => {};
+
           let last = store.getSnapshot().visible;
-          return store.subscribe(() => {
+          const unsubscribeStore = store.subscribe(() => {
             const next = store.getSnapshot().visible;
             if (next === last) return;
             last = next;
@@ -322,6 +330,19 @@ function DevToolbarRoot({
               );
             }
           });
+
+          // Idempotent, and removes the abort listener too, so nothing leaks
+          // regardless of which fires first: the extension's own unsubscribe,
+          // or the signal aborting on teardown.
+          let released = false;
+          const unsubscribe = () => {
+            if (released) return;
+            released = true;
+            unsubscribeStore();
+            controller.signal.removeEventListener("abort", unsubscribe);
+          };
+          controller.signal.addEventListener("abort", unsubscribe, { once: true });
+          return unsubscribe;
         },
         storage: createExtensionStorage(rawStorage, instanceId, extension.id),
         // The aggregation, reachable without importing a value from core.

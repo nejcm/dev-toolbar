@@ -152,6 +152,12 @@ export interface ExtensionRuntimeApi {
   signal: AbortSignal;
   /** Core reports visibility; it never pauses an extension on its behalf. */
   isVisible(): boolean;
+  /**
+   * The subscription is released automatically when `signal` aborts, so
+   * relying only on the signal for cleanup is safe. The returned function is
+   * still here for releasing it earlier, and calling it more than once — or
+   * after `signal` has already aborted — is a no-op.
+   */
   subscribeVisibility(cb: (visible: boolean) => void): () => void;
   /** Storage namespaced to this extension id. No-op when persistence is disabled. */
   storage: ToolbarStorage;
