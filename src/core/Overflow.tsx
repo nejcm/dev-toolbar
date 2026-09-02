@@ -297,7 +297,8 @@ export function OverflowBar({
           focusable thing inside the item instead of being it. What the popup
           promises instead: `aria-expanded`/`aria-controls` on the button,
           focus moved in on open, Escape out, and `Tab` walking the entries as
-          it walks the bar. */}
+          it walks the bar. Positioned with `inset-inline-end` in styles.css, not
+          `right`, so this mirrors correctly under `dir="rtl"`. */}
       {menuOpen && overflowed.length > 0 ? (
         <div
           ref={menuRef}

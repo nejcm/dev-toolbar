@@ -45,8 +45,7 @@ export const CORE_CSS = String.raw`/**
     --dtb-warn-bg: rgba(168, 115, 12, 0.14);
 
     position: fixed;
-    left: 0;
-    right: 0;
+    inset-inline: 0;
     display: flex;
     flex-direction: column;
     max-height: 90vh;
@@ -205,7 +204,7 @@ export const CORE_CSS = String.raw`/**
 
   [data-dev-toolbar] [data-dtb-part="overflow-menu"] {
     position: absolute;
-    right: var(--dtb-padding-x);
+    inset-inline-end: var(--dtb-padding-x);
     display: flex;
     flex-direction: column;
     gap: var(--dtb-gap);

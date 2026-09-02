@@ -291,6 +291,10 @@ Set them on `[data-dev-toolbar]`, or on any ancestor. Unlayered CSS wins.
 Dark values are applied for `[data-dtb-color-scheme="dark"]` and, under
 `prefers-color-scheme: dark`, for anything not explicitly `"light"`.
 
+Every rule uses logical properties (`inset-inline`, `inset-inline-end`, and flexbox's
+own direction-aware `flex-end`) instead of `left`/`right`, so the bar and the `···`
+popup mirror correctly under `dir="rtl"` even though RTL is not otherwise tested.
+
 ### 4.2 `data-dtb-part`
 
 Every part carries a stable attribute. These are the supported selector hooks; class
