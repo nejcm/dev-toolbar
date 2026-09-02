@@ -250,6 +250,15 @@ describe("redactUrl", () => {
       "http://bad host/?%zz=1&api_key=a",
       `http://bad host/?%zz=1&api_key=${encodeURIComponent(REDACTED)}`,
     ],
+    // The parser strips leading C0 controls and spaces and removes every tab,
+    // newline and carriage return before it looks at the slashes, so the form
+    // has to be counted on the same normalised string the parser saw. A raw
+    // count read "  //host.test/p" as document-relative and returned the query
+    // alone, origin and all.
+    ["  //host.test/p?token=1", `//host.test/p?token=${encodeURIComponent(REDACTED)}`],
+    ["  /rooted?token=1", `/rooted?token=${encodeURIComponent(REDACTED)}`],
+    ["\t/tab?token=1", `/tab?token=${encodeURIComponent(REDACTED)}`],
+    ["\n//h.test/x?token=1", `//h.test/x?token=${encodeURIComponent(REDACTED)}`],
   ];
 
   it.each(MASKED)("keeps the shape of %j while masking it", (input, expected) => {

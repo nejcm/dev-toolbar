@@ -264,6 +264,14 @@ const BASE = "http://dtb.invalid";
 // so `\\host\x` is a protocol-relative reference too.
 const SLASHES = /^[/\\]{1,2}/;
 
+// What the parser discards before it reaches the slashes: leading C0 controls
+// and spaces, then every tab, newline and carriage return anywhere in the input.
+// The control characters are the point here: this is the exact range the URL
+// parser strips, so the class has to name it.
+// oxlint-disable-next-line eslint/no-control-regex -- see above
+const LEADING_JUNK = /^[\u0000-\u0020]+/;
+const STRIPPED = /[\t\n\r]/g;
+
 /**
  * How many characters of a resolved serialisation `BASE` contributed in front
  * of a relative reference, so slicing them off restores the form it arrived in.
@@ -279,9 +287,20 @@ const SLASHES = /^[/\\]{1,2}/;
  *   gains the `/` that `BASE`'s empty path normalises to, so the base
  *   contributed one character more than its own length. Slicing only
  *   `BASE.length` rooted a document-relative reference, changing what it means.
+ *
+ * The count runs over the input normalised the way the parser normalises it:
+ * leading C0 controls and spaces are stripped and tabs and newlines removed
+ * before the slashes are read, so `"  //host.test/p"` is protocol-relative and
+ * a raw count mistook it for document-relative, returning the query alone.
+ *
+ * Dot segments are the one form not restored: `../x?token=1` resolves to
+ * `x?token=…`, because `new URL` collapses `..` and there is nothing left in
+ * the serialisation to recover it from. Only a masked value is rewritten at
+ * all, so an untouched reference keeps its `../` either way.
  */
 function baseContribution(url: string): number {
-  const slashes = SLASHES.exec(url)?.[0].length ?? 0;
+  const normalised = url.replace(LEADING_JUNK, "").replace(STRIPPED, "");
+  const slashes = SLASHES.exec(normalised)?.[0].length ?? 0;
   if (slashes === 2) return BASE.indexOf("//");
   return slashes === 1 ? BASE.length : BASE.length + 1;
 }
