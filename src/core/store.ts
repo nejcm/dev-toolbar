@@ -159,10 +159,12 @@ export function createToolbarStore(options: ToolbarStoreOptions): ToolbarStore {
   };
 
   const register = (extension: DevToolbarExtension) => {
-    state = {
-      ...state,
-      registered: [...state.registered.filter((item) => item.id !== extension.id), extension],
-    };
+    const existingIndex = state.registered.findIndex((item) => item.id === extension.id);
+    const registered =
+      existingIndex === -1
+        ? [...state.registered, extension]
+        : state.registered.map((item, index) => (index === existingIndex ? extension : item));
+    state = { ...state, registered };
     emit();
     return () => {
       const next = state.registered.filter((item) => item !== extension);
