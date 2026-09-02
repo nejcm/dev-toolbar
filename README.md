@@ -1162,6 +1162,19 @@ unmount();
 with the `···` menu closed. A collapsed item is not rendered at all until the menu
 opens, so `item(id)` returns `null` for one until you call `toolbar.openOverflow()`.
 
+`panel(id)` answers presence in the DOM, which is not the same question as *open*: a
+`keepMounted` panel stays mounted, rendered `hidden`, after `closePanel()`, so
+`expect(toolbar.panel(id)).not.toBeNull()` keeps passing for one even while it is
+closed. Ask `activePanelId()` when the question is really whether the panel is open.
+
+Every `toolbar` method that changes state is `act()`-wrapped for you — including
+`runCommand(id)`, which is `async` because the command it runs may be, so it is the
+one you await instead of wrapping again:
+
+```ts
+expect(await toolbar.runCommand("queue.drain")).toBe(true);
+```
+
 `@nejcm/dev-toolbar/testing` also ships `makeExtension()` for throwaway extensions
 (including deliberately broken ones), `createMockBus()` for a pub/sub bus with a
 hand-cranked clock, and `installToolbarLayout()` if you would rather drive the fake
@@ -1203,6 +1216,11 @@ the ESM and CJS builds (see *Conventions* in AGENTS.md for why `/testing` reache
 core through `@nejcm/dev-toolbar` rather than a relative import). Reach for them
 directly when seeding storage before render or asserting against the adapter
 afterward.
+
+**`rerender(ui)`.** On the object `renderWithToolbar()` returns, it re-renders `ui`
+inside the *same* mounted toolbar — its preferences and any installed layout survive.
+It overrides Testing Library's own `rerender`, which would otherwise replace the
+whole tree, toolbar included, since no `wrapper` sits between them.
 
 **`mountToolbar()` / `cleanupToolbar()`.** A suite that mounts more than once tends to
 grow an array of `unmount` functions and an `afterEach` that drains it. `mountToolbar()`
@@ -1260,6 +1278,11 @@ alone as a legitimate "never fires" interval rather than treating it as a runawa
 One caveat on the fake layout: it patches `HTMLElement.prototype.offsetWidth` and
 `clientWidth` globally for the duration of the test, so it will fight a test that
 stubs those for its own components.
+
+Another: its `ResizeObserver` fires every callback with an **empty entry array**, so
+code under test has to re-read `offsetWidth` / `getBoundingClientRect()` from the
+element rather than `entries[0].contentRect` — core does exactly that. Code that
+trusts the entries sees nothing change here.
 
 Its teardown is tied to the rendered tree, so `unmount()`, Testing Library's
 `cleanup()` and RTL's auto-cleanup all restore the real prototypes — a test that

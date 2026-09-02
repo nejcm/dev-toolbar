@@ -475,7 +475,10 @@ Escape must call `stopPropagation()` — `/ext/command-menu` does.
 
 Where there is no `ResizeObserver` (SSR, a bare jsdom), nothing collapses — the bar
 renders everything rather than guessing. `@nejcm/dev-toolbar/testing` ships
-`installToolbarLayout()` to make the collapse testable under jsdom.
+`installToolbarLayout()` to make the collapse testable under jsdom; its fake
+`ResizeObserver` hands every callback an empty entry array, so it only works for code
+that re-measures from the element (`offsetWidth`, `getBoundingClientRect()`) rather
+than reading `entries[0].contentRect` — which is what core itself does.
 
 The `overlay` slot is exempt from all of this. It renders once, uncollapsed, for as
 long as the extension is present, not hidden and the bar is visible — because a compact
@@ -658,6 +661,16 @@ toolbar.openOverflow();
 expect(toolbar.item("job-queue")).not.toBeNull();
 unmount();
 ```
+
+`panel(id)` answers presence in the DOM, not openness: a `keepMounted` panel stays
+mounted and `hidden` after `closePanel()`, so this idiom keeps passing for one even
+while it is closed — ask `activePanelId()` when the question is really whether it is
+open. Every state-changing method on `toolbar` is `act()`-wrapped, including
+`runCommand(id)`, which is `async` (the command it runs may be) and so is awaited
+rather than wrapped again: `await toolbar.runCommand("queue.drain")`. `rerender(ui)`,
+on the object `renderWithToolbar()` returns, re-renders inside the same mounted
+toolbar rather than replacing it — it overrides Testing Library's own `rerender`,
+which has no `wrapper` here to spare the toolbar from being torn out.
 
 `makeExtension()` builds throwaway extensions (including deliberately broken ones, via
 `throwInCompact` / `throwInPanel` / `throwInStart`), and `createMockBus()` gives a
