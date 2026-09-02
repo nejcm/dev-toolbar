@@ -300,7 +300,8 @@ There is no global registry — it would break SSR, break two toolbars on one pa
 and leak between tests.
 
 A slot that throws degrades to an error chip. The bar and every other extension keep
-working.
+working. In the `compact` and `panel` slots the chip is itself a retry button, so a slot
+that threw on transient state can be brought back without reloading.
 [docs/architecture.md](./docs/architecture.md#7-writing-an-extension).
 
 ## `@nejcm/dev-toolbar/runtime`
@@ -948,7 +949,8 @@ panel.
 
 **2. `data-dtb-part` attributes.** Every part carries one — `root`, `bar`, `region`,
 `item`, `trigger`, `overflow-button`, `overflow-menu`, `overflow-menu-item`,
-`overlay`, `panel`, `panel-resizer`, `panel-body`, `error-chip`, `inset`.
+`overlay`, `panel`, `panel-resizer`, `panel-body`, `error-chip`, `error-retry`,
+`inset`.
 
 Core owns the unprefixed names. An extension that ships its own CSS namespaces its
 parts *by kind* — `/ext/metrics` uses `metrics-chip`, `metrics-panel` and so on for

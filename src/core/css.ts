@@ -298,6 +298,24 @@ export const CORE_CSS = String.raw`/**
     white-space: nowrap;
   }
 
+  [data-dev-toolbar] [data-dtb-part="error-retry"] {
+    border: 0;
+    padding: 0;
+    background: none;
+    color: inherit;
+    font: inherit;
+    cursor: pointer;
+  }
+
+  [data-dev-toolbar] [data-dtb-part="error-retry"]:hover {
+    text-decoration: underline;
+  }
+
+  [data-dev-toolbar] [data-dtb-part="error-retry"]:focus-visible {
+    outline: 2px solid var(--dtb-accent);
+    outline-offset: 2px;
+  }
+
   [data-dev-toolbar] [data-dtb-part="error-chip"][data-dtb-slot="panel"] {
     margin: 8px;
   }

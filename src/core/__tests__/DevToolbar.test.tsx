@@ -240,6 +240,56 @@ describe("error containment", () => {
     ).not.toBeNull();
     expect(screen.getByRole("button", { name: "ok" })).toBeTruthy();
   });
+
+  it("re-renders the slot when the error chip's retry is clicked", () => {
+    let shouldThrow = true;
+    const flaky: DevToolbarExtension = {
+      id: "flaky",
+      label: "Flaky",
+      compact: () => {
+        if (shouldThrow) throw new Error("transient");
+        return <span data-testid="flaky-recovered">fine</span>;
+      },
+    };
+
+    render(
+      <DevToolbar instanceId="t" extensions={[flaky]}>
+        <div />
+      </DevToolbar>,
+    );
+
+    const chip = () =>
+      document.querySelector('[data-dtb-part="error-chip"][data-dtb-ext-id="flaky"]');
+    expect(chip()).not.toBeNull();
+    // The label is still what the chip reads out; the retry is the chip itself.
+    expect(chip()!.textContent).toBe("Flaky: error");
+
+    shouldThrow = false;
+    fireEvent.click(screen.getByRole("button", { name: "Flaky: error. Retry" }));
+
+    expect(chip()).toBeNull();
+    expect(screen.getByTestId("flaky-recovered")).toBeTruthy();
+  });
+
+  it("leaves an overlay chip inert — there is nothing sensible to click", () => {
+    const boom: DevToolbarExtension = {
+      id: "boom",
+      label: "Boom",
+      overlay: () => {
+        throw new Error("overlay exploded");
+      },
+    };
+
+    render(
+      <DevToolbar instanceId="t" extensions={[boom]}>
+        <div />
+      </DevToolbar>,
+    );
+
+    const chip = document.querySelector('[data-dtb-part="error-chip"][data-dtb-slot="overlay"]');
+    expect(chip).not.toBeNull();
+    expect(chip!.querySelector('[data-dtb-part="error-retry"]')).toBeNull();
+  });
 });
 
 describe("contract version", () => {

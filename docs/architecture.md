@@ -311,6 +311,7 @@ names inside core are not.
 | `panel-resizer` | drag/keyboard handle | `role="separator"`, arrow keys resize |
 | `panel-body` | scroll container | |
 | `error-chip` | a crashed slot | `data-dtb-ext-id`, `data-dtb-slot="compact" \| "panel"` |
+| `error-retry` | the chip's retry button | Absent in the `overlay` slot |
 | `inset` | `<DevToolbarInset>` | `data-dtb-position` |
 
 Core owns the unprefixed names; an extension that ships CSS **namespaces its parts by
@@ -389,7 +390,12 @@ whose surface is a modal would lose it exactly when the window got narrow.
 
 `compact`, `panel` and `overlay` each render inside their own `ExtensionBoundary`. A
 throw becomes an error chip carrying the extension's label, with the message as its
-`title`; the bar and every other extension keep working. A throw from `start()` or from
+`title`; the bar and every other extension keep working. In the `compact` and `panel`
+slots the chip's text is a retry button (`data-dtb-part="error-retry"`, accessible name
+`Retry <label>`) that clears the caught error and re-renders the slot — without it a
+slot that threw on transient state would stay a chip for the toolbar's lifetime, since
+a panel only recovers by unmounting on close. The `overlay` chip has no retry: an
+overlay has no dependable visible surface to click. A throw from `start()` or from
 its cleanup is caught and logged, and does not take the toolbar down. A throw from
 `commands()` or `diagnostics()` is contained the same way: core logs once and treats
 that extension as contributing nothing to that aggregation.
