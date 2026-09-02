@@ -57,12 +57,46 @@ export interface OverflowBarProps {
 const DEFAULT_GAP = 2;
 const DEFAULT_OVERFLOW_BUTTON_WIDTH = 28;
 
+function readPx(raw: string | undefined, fallback: number): number {
+  const parsed = Number.parseFloat(raw ?? "");
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
 function readGap(element: HTMLElement, fallback: number): number {
   if (typeof getComputedStyle !== "function") return fallback;
   const style = getComputedStyle(element);
-  const raw = style.columnGap || style.gap;
-  const parsed = Number.parseFloat(raw ?? "");
-  return Number.isFinite(parsed) ? parsed : fallback;
+  return readPx(style.columnGap || style.gap, fallback);
+}
+
+/**
+ * Width of the bar that items may not fill: its own horizontal padding, which
+ * `clientWidth` includes, plus any gap between the two regions that the item
+ * math does not already charge for.
+ *
+ * `computeOverflow` charges one gap between every adjacent pair of items in
+ * the flattened list, plus one before the `···` button. Counting the gaps the
+ * bar actually renders — both region elements are always present, so an empty
+ * one still takes a gap — leaves two cases short:
+ *
+ * - the start region renders no items (all collapsed, or none to begin with):
+ *   the empty element still takes the gap before the end region;
+ * - the end region has no items *by props*: with nothing overflowed it holds
+ *   no children either, and the gap charged before the button is not rendered
+ *   because there is no button. Reading this from the props rather than from
+ *   the rendered children keeps it constant as items collapse, so available
+ *   width only ever shrinks and the recompute cannot oscillate; the cost is
+ *   over-charging one gap once such a bar has collapsed.
+ */
+function readReserved(
+  bar: HTMLElement,
+  gap: number,
+  startRegionEmpty: boolean,
+  endItemsEmpty: boolean,
+): number {
+  const interRegionGaps = (startRegionEmpty ? gap : 0) + (endItemsEmpty ? gap : 0);
+  if (typeof getComputedStyle !== "function") return interRegionGaps;
+  const style = getComputedStyle(bar);
+  return readPx(style.paddingLeft, 0) + readPx(style.paddingRight, 0) + interRegionGaps;
 }
 
 /**
@@ -85,6 +119,10 @@ export function OverflowBar({
   // restyling the ··· button, keeps the collapse math honest.
   const gapRef = useRef(gap);
   const buttonWidthRef = useRef(DEFAULT_OVERFLOW_BUTTON_WIDTH);
+  const reservedRef = useRef(0);
+  // The last measured `clientWidth`, i.e. the padding box. What is reserved
+  // out of it is applied at use, so a collapse that changes it takes effect
+  // without waiting for the next resize.
   const [available, setAvailable] = useState(0);
   const [overflowIds, setOverflowIds] = useState<Set<string>>(() => new Set<string>());
   const [menuOpen, setMenuOpen] = useState(false);
@@ -95,6 +133,9 @@ export function OverflowBar({
   const listRef = useRef(all);
   // oxlint-disable-next-line react/refs -- written in render on purpose, above.
   listRef.current = all;
+
+  /** A measured padding-box width minus everything that is not item space. */
+  const contentWidth = (barWidth: number) => Math.max(0, barWidth - reservedRef.current);
 
   const recompute = useCallback((width: number) => {
     const items: MeasuredItem[] = listRef.current.map((extension) => ({
@@ -114,6 +155,15 @@ export function OverflowBar({
 
     const region = bar.querySelector<HTMLElement>('[data-dtb-part="region"]');
     if (region) gapRef.current = readGap(region, gap);
+    const startRegion = bar.querySelector<HTMLElement>(
+      '[data-dtb-part="region"][data-dtb-align="start"]',
+    );
+    reservedRef.current = readReserved(
+      bar,
+      gapRef.current,
+      !startRegion?.querySelector('[data-dtb-part="item"]'),
+      endItems.length === 0,
+    );
     const buttonWidth = buttonRef.current?.offsetWidth ?? 0;
     if (buttonWidth > 0) buttonWidthRef.current = buttonWidth;
 
@@ -126,7 +176,7 @@ export function OverflowBar({
       const width = node.offsetWidth;
       if (width > 0) widthsRef.current.set(id, width);
     }
-    recompute(available || bar.clientWidth);
+    recompute(contentWidth(available || bar.clientWidth));
   });
 
   useEffect(() => {
@@ -136,7 +186,7 @@ export function OverflowBar({
     const read = () => {
       const width = bar.clientWidth;
       setAvailable(width);
-      recompute(width);
+      recompute(contentWidth(width));
     };
 
     read();

@@ -57,6 +57,27 @@ const patchLayout = () => {
   };
 };
 
+/**
+ * jsdom applies no stylesheet, so the bar reports no padding and no gap. This
+ * stubs `getComputedStyle` with the values `src/styles.css` actually resolves
+ * to, which is what makes the bar's own padding and the inter-region gap
+ * observable in a test.
+ */
+const patchComputedStyle = ({ paddingX, gap }: { paddingX: number; gap: number }) => {
+  const real = globalThis.getComputedStyle.bind(globalThis);
+  vi.stubGlobal("getComputedStyle", (element: Element, pseudo?: string | null) => {
+    const style = real(element, pseudo ?? undefined);
+    return new Proxy(style, {
+      get(target, property, receiver) {
+        if (property === "paddingLeft" || property === "paddingRight") return `${paddingX}px`;
+        if (property === "columnGap" || property === "gap") return `${gap}px`;
+        const value = Reflect.get(target, property, receiver);
+        return typeof value === "function" ? value.bind(target) : value;
+      },
+    });
+  });
+};
+
 class MockResizeObserver implements ResizeObserver {
   static instances: MockResizeObserver[] = [];
   constructor(private readonly callback: ResizeObserverCallback) {
@@ -327,5 +348,74 @@ describe("OverflowBar with a non-empty end region", () => {
     expect(regionIds("start")).toEqual(["a", "b"]);
     expect(regionIds("end")).toEqual(["d", "e"]);
     expect(document.querySelector('[data-dtb-part="overflow-button"]')).toBeNull();
+  });
+});
+
+/**
+ * `clientWidth` is the bar's *padding box*, and both regions are always
+ * rendered with the bar's `gap` between them. Neither is free space, so
+ * neither may be filled with items.
+ */
+describe("OverflowBar available width", () => {
+  it("keeps the bar's own horizontal padding out of the collapse math", () => {
+    // a, b and c are 60 wide with a 2px gap: 3×60 + 2×2 = 184, which fits the
+    // 190px padding box but not the 176px it leaves for items:
+    //   190 − 6 − 6 (padding) − 2 (the empty end region's gap) = 176 < 184
+    //   drop b: 2×60 + 2 + 2 + 28 = 152 ≤ 176, so one item is enough
+    containerWidth = 190;
+    restore = patchLayout();
+    patchComputedStyle({ paddingX: 6, gap: 2 });
+    vi.stubGlobal("ResizeObserver", MockResizeObserver);
+
+    renderBar();
+
+    const bar = document.querySelector('[data-dtb-part="bar"]')!;
+    expect(
+      [...bar.querySelectorAll('[data-dtb-part="region"] > [data-dtb-part="item"]')].map(
+        (node) => (node as HTMLElement).dataset["dtbExtId"],
+      ),
+    ).toEqual(["a", "c"]);
+    expect(document.querySelector('[data-dtb-part="overflow-button"]')).not.toBeNull();
+  });
+
+  it("charges that gap once every start item has collapsed out of the bar", () => {
+    // Both regions hold items to begin with, so the flattened item math covers
+    // the gap between them. Once b collapses the start region renders empty and
+    // still takes that gap, which is enough to force d out too:
+    //   as rendered:  3×60 + 2×2 = 184 > 153
+    //   drop b:       2×60 + 2 + 2 + 28 = 152 ≤ 153, so the first pass stops
+    //   start is now empty: 153 − 2 = 151 < 152, so the next pass continues
+    //   drop b and d: 60 + 2 + 28 = 90 ≤ 151
+    containerWidth = 153;
+    restore = patchLayout();
+    patchComputedStyle({ paddingX: 0, gap: 2 });
+    vi.stubGlobal("ResizeObserver", MockResizeObserver);
+
+    renderRegions([ext("b", 1)], [ext("d", 5), ext("e", 9)]);
+
+    expect(regionIds("start")).toEqual([]);
+    expect(regionIds("end")).toEqual(["e"]);
+
+    fireEvent.click(screen.getByRole("button", { name: "More developer toolbar items" }));
+    expect(menuIds()).toEqual(["b", "d"]);
+  });
+
+  it("charges the gap the empty region still takes between the two regions", () => {
+    // End-only bar, no padding this time. `computeOverflow` charges one gap
+    // between adjacent items — which covers the gap *between* the regions only
+    // when both hold items. Here the empty start region takes one anyway:
+    //   as rendered: 2×60 + 2 = 122 ≤ 123, but 123 − 2 = 121 < 122
+    //   drop e:      60 + 2 + 28 = 90 ≤ 121
+    containerWidth = 123;
+    restore = patchLayout();
+    patchComputedStyle({ paddingX: 0, gap: 2 });
+    vi.stubGlobal("ResizeObserver", MockResizeObserver);
+
+    renderRegions([], [ext("d", 5), ext("e", 2)]);
+
+    expect(regionIds("end")).toEqual(["d"]);
+
+    fireEvent.click(screen.getByRole("button", { name: "More developer toolbar items" }));
+    expect(menuIds()).toEqual(["e"]);
   });
 });

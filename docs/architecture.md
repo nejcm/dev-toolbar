@@ -360,7 +360,11 @@ The bar measures itself with a `ResizeObserver`, caches each item's natural widt
 recomputes on every resize. Cached widths are sticky, which is what lets a collapsed
 item come back when the width returns even though it was not in the bar to be measured.
 The gap and the `···` button width are read back out of the DOM, so overriding
-`--dtb-gap` or restyling the button keeps the math honest.
+`--dtb-gap` or restyling the button keeps the math honest. The width items may fill is
+the bar's `clientWidth` less its own horizontal padding, and less a gap for each side
+whose gap the item math does not already charge: one when the start region renders no
+items, one when there are no end items at all. A region that renders empty still takes
+its gap.
 
 Where there is no `ResizeObserver` (SSR, a bare jsdom), nothing collapses — the bar
 renders everything rather than guessing. `@nejcm/dev-toolbar/testing` ships
