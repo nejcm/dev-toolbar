@@ -1132,6 +1132,12 @@ else on the subpath does, and nothing imports it statically, so
 `@nejcm/dev-toolbar/testing` imports cleanly without it. Calling
 `renderWithToolbar()` without it throws a message telling you what to install.
 
+That "imports cleanly" claim is about the runtime import only. `dist/testing.d.ts`
+and `dist/testing.d.cts` both statically import `@testing-library/react`'s own
+types, so a consumer without RTL installed still hits an unresolved-module error
+from the type-checker — under `skipLibCheck: false`, which is `tsc`'s own default,
+not an edge case — even though nothing breaks at runtime.
+
 ```bash
 npm install --save-dev @testing-library/react
 ```
@@ -1162,6 +1168,42 @@ hand-cranked clock, and `installToolbarLayout()` if you would rather drive the f
 layout yourself. Storage defaults to a fresh in-memory adapter, so tests never leak
 preferences into each other.
 
+**`makeCommand(options?)`.** The same idea as `makeExtension()`, but for a single
+`ToolbarCommand`: an id (auto-generated as `fake-command-N` if you don't pass one), a
+`label` that defaults to the id, and a `run` that defaults to a no-op you can
+overwrite with your own spy.
+
+```ts
+import { makeCommand } from "@nejcm/dev-toolbar/testing";
+
+const run = vi.fn();
+const command = makeCommand({ label: "Drain queue", run });
+```
+
+**`resetExtensionIds()`.** Resets the `fake-N` / `fake-command-N` counters that
+`makeExtension()` and `makeCommand()` draw generated ids from, back to zero. The two
+sequences are independent. Only needed when a test asserts on a generated id itself;
+passing an explicit `id` never advances either counter, so most tests don't need it.
+
+**`testingLibraryReady`.** A `Promise<void>` that resolves once the eagerly-started,
+optional `@testing-library/react` import has settled, one way or the other — it never
+rejects; a failed import just sets an internal flag that `renderWithToolbar()`'s error
+message reports. Under an ESM runner like Vitest this has already settled by the time
+a test body runs, since the runner evaluates the whole module graph first, so await
+it only if you need to render during module evaluation itself. Under Jest it is a
+weaker guarantee: the dynamic `import()` it is chained to never settles inside Jest's
+sandbox (see the header comment in `src/testing/reactTestingLibrary.ts`), so this
+promise may simply never settle there either — never await it as a gate under Jest.
+`renderWithToolbar()` doesn't need it regardless: under Jest it loads Testing Library
+through the runner's own `require` instead.
+
+**`createMemoryStorage()` / `createNullStorage()`.** Re-exported here for
+convenience; they are the same functions the package's root entry exports, in both
+the ESM and CJS builds (see *Conventions* in AGENTS.md for why `/testing` reaches
+core through `@nejcm/dev-toolbar` rather than a relative import). Reach for them
+directly when seeding storage before render or asserting against the adapter
+afterward.
+
 **`mountToolbar()` / `cleanupToolbar()`.** A suite that mounts more than once tends to
 grow an array of `unmount` functions and an `afterEach` that drains it. `mountToolbar()`
 is `renderWithToolbar()` that keeps that list for you, and `cleanupToolbar()` drains it
@@ -1188,7 +1230,32 @@ const { toolbar } = mountToolbar(<App />, { extensions: [myExtension], layout: t
 `createMockBus()` satisfies the `BusLike<ToolbarEventMap>` that `metrics`' `network.bus`
 asks for, so it stands in for a real bus rather than merely resembling one — and its
 `on` / `once` / `onAny` honour `{ signal }`, so a collector under test tears down on
-its `AbortSignal` exactly as it does in production.
+its `AbortSignal` exactly as it does in production. It is deliberately *wider* than
+that contract — `type` is `string` everywhere rather than a key of an event map, plus
+a recorded history — which is the direction assignability needs; but it is not
+generic the way `EventBus<Events>` is, so it is only structurally substitutable for a
+specific `BusLike<Events>`, never a drop-in typed replacement for it. See the file
+header of `src/testing/mockBus.ts` for the authoritative list of where it diverges
+from `createEventBus()`; a few worth knowing up front:
+
+- **`onError`** — mirrors `createEventBus()`'s option of the same name: called when a
+  handler throws during `emit()`, instead of the error propagating to the caller.
+  Defaults to `console.error`, same as the real bus.
+- **`reset()` is wider than the real bus's `clear()`.** `EventBus.clear()` drops only
+  subscribers; `MockBus.reset()` also wipes recorded history and pending timers. The
+  two are deliberately not aliased under one name, since a shared name with different
+  scope is a footgun for a test ported between the two buses.
+- **`events()` returns a snapshot copy.** A later `clearEvents()` or further `emit()`
+  call never mutates an array you already hold.
+
+**Mock clock caveats.** `clock.advance(ms)` fires every timer due in the interval, in
+order. `clock.setTime(ms)` does the same when moving the clock forward, but moving it
+backward only rewinds — nothing fires. Both throw rather than truncate if a single
+call would need more than 100,000 timer firings, which is almost always a timer
+rescheduling itself faster than time is advancing rather than a legitimate test.
+`clock.setInterval()` floors any delay below 1ms (including `NaN`) to 1ms, for both
+the first firing and every recurring one after it, and leaves an `Infinity` delay
+alone as a legitimate "never fires" interval rather than treating it as a runaway.
 
 One caveat on the fake layout: it patches `HTMLElement.prototype.offsetWidth` and
 `clientWidth` globally for the duration of the test, so it will fight a test that

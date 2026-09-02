@@ -661,7 +661,16 @@ unmount();
 
 `makeExtension()` builds throwaway extensions (including deliberately broken ones, via
 `throwInCompact` / `throwInPanel` / `throwInStart`), and `createMockBus()` gives a
-pub/sub bus with a hand-cranked clock for collectors that poll or sample.
+recording pub/sub bus whose `MockClock` stamps `event.at` and offers hand-cranked
+`setTimeout`/`setInterval`. `BusLike` itself carries no clock — a collector that wants
+one takes an injected *time reader* instead (`CollectorContext.now()` in
+`/ext/metrics/types.ts`, supplied by `runtime.ts` and faked in
+`network.test.ts` with a plain `() => clock.t`), which `clock.now` satisfies fine.
+What nothing first-party accepts is an injected *timer*: `/ext/metrics`'s own polling
+(`runtime.ts`'s `setInterval(publish, tickMs)`) and `createThrottledStore`
+(`throttledStore.ts`'s `setTimeout`) both call the globals directly, so `MockClock`'s
+`setTimeout`/`setInterval` cannot drive them — reach for `vi.useFakeTimers()` for
+those instead.
 
 `mountToolbar()` is `renderWithToolbar()` that remembers what it mounted, and
 `cleanupToolbar()` unmounts all of it — newest first — and restores any fake layout
