@@ -170,6 +170,53 @@ describe("createThrottledStore", () => {
     expect(store.getSnapshot()).toBe(2);
   });
 
+  it("subscribe() after destroy() returns a safe no-op unsubscribe", () => {
+    const clock = harness();
+    const store = createThrottledStore(0, {
+      intervalMs: 250,
+      now: clock.now,
+      schedule: clock.schedule,
+    });
+    store.destroy();
+
+    const listener = vi.fn();
+    const unsubscribe = store.subscribe(listener);
+
+    // set()/flush() are already no-ops post-destroy, so this alone would
+    // pass without the fix too — the retention fix itself (not adding the
+    // listener to the set) isn't observable through the public surface.
+    // This pins the documented contract: subscribing after destroy never
+    // notifies, and the returned unsubscribe is always safe to call.
+    store.set(1);
+    clock.advance(500);
+    store.flush();
+    expect(listener).not.toHaveBeenCalled();
+    expect(() => unsubscribe()).not.toThrow();
+  });
+
+  it("destroy() cancels a pending trailing timer before it fires", () => {
+    const clock = harness();
+    const store = createThrottledStore(0, {
+      intervalMs: 250,
+      now: clock.now,
+      schedule: clock.schedule,
+    });
+    const listener = vi.fn();
+    store.subscribe(listener);
+
+    store.set(1); // leading edge, published
+    store.set(2); // books a trailing publish
+    expect(clock.scheduled).toBe(true);
+    expect(listener).toHaveBeenCalledTimes(1);
+
+    store.destroy();
+    expect(clock.scheduled).toBe(false);
+
+    clock.advance(500);
+    expect(listener).toHaveBeenCalledTimes(1);
+    expect(store.getSnapshot()).toBe(1);
+  });
+
   it("survives a throwing listener", () => {
     const clock = harness();
     const error = vi.spyOn(console, "error").mockImplementation(() => {});

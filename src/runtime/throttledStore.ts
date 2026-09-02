@@ -16,6 +16,13 @@ export type Unsubscribe = () => void;
 export interface ThrottledStore<T> {
   /** Stable between notifications. Safe as a `useSyncExternalStore` snapshot. */
   getSnapshot(): T;
+  /**
+   * After `destroy()`, this is a no-op that returns a no-op unsubscribe: the
+   * listener is never added, so it is never retained or notified. Safe when a
+   * `useSyncExternalStore` consumer's `subscribe` races a concurrent
+   * `destroy()`, since React only ever invokes the returned unsubscribe — it
+   * never inspects it.
+   */
   subscribe(listener: () => void): Unsubscribe;
   /** The most recent write, published or not. For tests and diagnostics. */
   peek(): T;
@@ -23,7 +30,12 @@ export interface ThrottledStore<T> {
   update(next: (previous: T) => T): void;
   /** Publishes any pending write immediately and cancels the trailing timer. */
   flush(): void;
-  /** Cancels the timer and drops every listener. */
+  /**
+   * Cancels the timer and drops every listener. Idempotent, and permanent:
+   * `set`, `update` and `flush` stop changing the store afterward (`update`
+   * still evaluates its callback, then discards the result), and `subscribe`
+   * stops adding listeners rather than accepting ones that would never fire.
+   */
   destroy(): void;
   /** Notifications emitted so far. The coalescing assertion in the tests. */
   readonly published: number;
@@ -119,6 +131,7 @@ export function createThrottledStore<T>(
     getSnapshot: () => published,
     peek: () => pending,
     subscribe(listener) {
+      if (destroyed) return () => {};
       listeners.add(listener);
       return () => {
         listeners.delete(listener);
