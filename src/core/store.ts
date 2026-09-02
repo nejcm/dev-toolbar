@@ -5,7 +5,7 @@ export const MIN_PANEL_HEIGHT = 160;
 export const MAX_PANEL_HEIGHT = 800;
 export const DEFAULT_PANEL_HEIGHT = 320;
 
-export const STORAGE_KEYS = {
+const STORAGE_KEYS = {
   visible: "visible",
   position: "position",
   activePanel: "activePanel",

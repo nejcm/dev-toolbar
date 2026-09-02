@@ -200,7 +200,7 @@ export const ENVIRONMENT_CSS = String.raw`@layer dev-toolbar {
 }
 `;
 
-export const ENVIRONMENT_STYLE_ENTRY = "ext-environment";
+const ENVIRONMENT_STYLE_ENTRY = "ext-environment";
 
 /**
  * Injects the stylesheet once per document, through `/runtime`'s shared

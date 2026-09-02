@@ -160,7 +160,7 @@
     "knip": "knip --no-config-hints",
     "check:package": "publint && attw --pack . --profile node16 --exclude-entrypoints ./styles.css",
     "size": "bun run build && node scripts/bundle-size.mjs",
-    "verify": "bun run format:check && bun run typecheck && bun run lint && bun run build && bun run test && bun run check:package",
+    "verify": "bun run format:check && bun run typecheck && bun run lint && bun run knip && bun run build && bun run test && bun run check:package",
     "prepublishOnly": "bun run typecheck && bun run build",
     "prepare": "simple-git-hooks"
   },

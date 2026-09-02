@@ -325,7 +325,7 @@ export const FLAGS_CSS = String.raw`@layer dev-toolbar {
 }
 `;
 
-export const FLAGS_STYLE_ENTRY = "ext-flags";
+const FLAGS_STYLE_ENTRY = "ext-flags";
 
 /**
  * Injects the stylesheet once per document, through `/runtime`'s shared

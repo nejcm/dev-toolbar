@@ -1,7 +1,7 @@
 import { CORE_CSS } from "./css";
 
-export const STYLE_ATTRIBUTE = "data-dev-toolbar-styles";
-export const CORE_STYLE_ENTRY = "core";
+const STYLE_ATTRIBUTE = "data-dev-toolbar-styles";
+const CORE_STYLE_ENTRY = "core";
 
 /**
  * Injects a stylesheet once per document per entry.

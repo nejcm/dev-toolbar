@@ -23,11 +23,11 @@ bun install
 bun run verify
 ```
 
-That is `format:check && typecheck && lint && build && test && check:package`,
-in sequence — the exact gate CI runs. `format:check` goes first because it takes
-about ten milliseconds: if the tree is mis-formatted you find out immediately
-rather than after `tsc` has run. If it passes locally it passes in CI, and a PR that
-fails it will not merge.
+That is `format:check && typecheck && lint && knip && build && test &&
+check:package`, in sequence — the exact gate CI runs. `format:check` goes
+first because it takes about ten milliseconds: if the tree is mis-formatted
+you find out immediately rather than after `tsc` has run. If it passes locally
+it passes in CI, and a PR that fails it will not merge.
 
 The individual pieces, when you want a faster loop:
 
@@ -43,7 +43,7 @@ The individual pieces, when you want a faster loop:
 | `bun run test:coverage` | `vitest run --coverage` |
 | `bun run build` | `tsup` |
 | `bun run check:package` | `publint` + `attw` over a packed tarball |
-| `bun run knip` | unused files, exports and dependencies |
+| `bun run knip` | unused files, exports and dependencies — also part of `verify` |
 | `bun run size` | builds, then prints a per-entrypoint size table |
 
 `check:package` runs `attw` with `--profile node16` on purpose. Subpath exports
@@ -57,10 +57,10 @@ Two things about `lint` that catch people out:
   warnings, and adding one fails the build. If a rule is wrong about your code,
   suppress it on the line that earns it with an `oxlint-disable-next-line`
   comment and a sentence saying why — do not raise the budget.
-- **oxfmt handles JS, TS and YAML.** That includes the workflows under
-  `.github/`, so a mis-indented `.yml` fails `format:check`. CSS, JSON and
-  Markdown have no formatter here. `.editorconfig` is what keeps them consistent, so install the
-  EditorConfig extension (`.vscode/extensions.json` recommends it).
+- **oxfmt is configured for JS, TS and YAML here.** That includes the workflows
+  under `.github/`, so a mis-indented `.yml` fails `format:check`. CSS, JSON and
+  Markdown are left to `.editorconfig`, so install the EditorConfig extension
+  (`.vscode/extensions.json` recommends it).
 
 Formatting is checked in CI as well as fixed on commit. The `pre-commit` hook
 formats what you staged, but plenty of commits never see it — edits made in the
@@ -68,8 +68,9 @@ GitHub web UI, `git commit --no-verify`, `SKIP_SIMPLE_GIT_HOOKS=1`, and a fresh
 clone where `bun install` has not yet installed the hooks. Dependabot counts
 too, but only for its `github-actions` bumps: those edit workflow YAML, which
 oxfmt formats. Its `bun` updates and release-please's commits touch only JSON,
-the lockfile and Markdown, none of which oxfmt reads. `format:check` inside
-`verify` is what catches the rest. If it fails, `bun run format` fixes it.
+the lockfile and Markdown, all of which `.oxfmtrc.json` ignores. `format:check`
+inside `verify` is what catches the rest. If it fails, `bun run format` fixes
+it.
 
 `bun run test:coverage` is a second, instrumented run of the same suite, kept
 out of `verify` because the instrumentation is slow enough to notice in a local
@@ -83,10 +84,20 @@ the header there records an earlier attempt where three of four excludes rested
 on a wrong guess about what those files contained, and quietly put ~1,700 lines
 of shipped logic outside the gate.
 
-`bun run knip` reports unused files, exports and dependencies. It is advisory
-everywhere — CI writes it to the job summary and never fails on it. Its value
-here is specific: with 11 separately importable entry points, a subpath can stop
-being referenced without anything else noticing.
+`bun run knip` reports unused files, exports and dependencies, and it is a gate:
+it runs inside `verify`, right after `lint` — it needs no build and takes well
+under a second, so the cheapest failure comes first. Unused code fails your
+local run before it fails CI. CI also runs it a second time as a report-only
+step that writes the findings to the job summary — that copy swallows its exit
+code, so the report still renders on a run `verify` has already failed. Its
+value here is specific: with 11 separately importable entry points, a subpath
+can stop being referenced without anything else noticing.
+
+Keep it clean by fixing the code, not by widening `knip.json`. An export used
+only inside its own file should lose the `export` keyword; an export that
+nothing uses should go. Reach for `ignoreExportsUsedInFile` only for a case you
+can name here — the tree currently needs none, and testing through the public
+surface is the better answer to "but the test imports it".
 
 `bun run size` prints a per-entrypoint table of gzip, raw, CJS and `.d.ts`
 sizes. Read `scripts/bundle-size.mjs`'s header before changing it — the obvious
