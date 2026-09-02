@@ -123,6 +123,17 @@ It fires wherever focus is, text fields included, but not for an auto-repeat, no
 mid-IME-composition, and not when something else already called `preventDefault()`
 — the listener is on `window`, so your own `document` handler wins the chord.
 
+### The `···` menu
+
+Items that do not fit the bar collapse into a `···` popup, lowest `priority` first. It is a
+disclosure, not an ARIA menu: its entries are your own compact slots, buttons and all,
+and a `menuitem` may not contain interactive content. So the `···` button carries
+`aria-expanded` and, while open, `aria-controls`; the popup is a labelled
+`role="group"`; opening it moves focus to the first focusable thing inside it — the
+popup itself if there is none — and `Tab` walks the rest; `Escape` closes it and hands
+focus back to the button; a click outside closes it and leaves focus where the click
+put it.
+
 ### Other exports
 
 `DevToolbar`, `DevToolbarInset`, `useDevToolbar` and `useToolbarCommands` are the

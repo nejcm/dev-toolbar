@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import type { DevToolbarClassNames, DevToolbarExtension } from "./contract";
 import { cx } from "./context";
@@ -100,6 +100,14 @@ function readReserved(
 }
 
 /**
+ * What can take focus inside the `···` popup. Deliberately shallow: the popup
+ * holds extensions' compact slots, and the first thing in the first of them is
+ * where a keyboard user expects to land.
+ */
+const FOCUSABLE =
+  'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), summary, [contenteditable]:not([contenteditable="false"]), [tabindex]:not([tabindex="-1"])';
+
+/**
  * The bar row itself. Measures rendered items with a `ResizeObserver` and
  * collapses the lowest-priority ones into a `···` menu.
  */
@@ -126,6 +134,7 @@ export function OverflowBar({
   const [available, setAvailable] = useState(0);
   const [overflowIds, setOverflowIds] = useState<Set<string>>(() => new Set<string>());
   const [menuOpen, setMenuOpen] = useState(false);
+  const menuId = `dtb-overflow-menu-${useId()}`;
 
   const all = [...startItems, ...endItems];
   // Read through a ref so `recompute` — and therefore the ResizeObserver
@@ -210,7 +219,18 @@ export function OverflowBar({
     if (overflowIds.size === 0) setMenuOpen(false);
   }, [overflowIds]);
 
-  // Dismiss the ··· menu on Escape or a click outside it.
+  // Move focus into the ··· popup when it opens, so a keyboard user reaches
+  // the collapsed items at all. The popup itself is the fallback target when
+  // no entry can take focus — a bar of static badges, say.
+  useEffect(() => {
+    if (!menuOpen) return;
+    const menu = menuRef.current;
+    if (!menu) return;
+    (menu.querySelector<HTMLElement>(FOCUSABLE) ?? menu).focus();
+  }, [menuOpen]);
+
+  // Dismiss the ··· menu on Escape or a click outside it. Escape hands focus
+  // back to the button; an outside click leaves it wherever the click put it.
   useEffect(() => {
     if (!menuOpen || typeof document === "undefined") return;
 
@@ -262,8 +282,8 @@ export function OverflowBar({
             type="button"
             data-dtb-part="overflow-button"
             className={cx(classNames?.overflowButton)}
-            aria-haspopup="menu"
             aria-expanded={menuOpen}
+            aria-controls={menuOpen ? menuId : undefined}
             aria-label={overflowLabel}
             onClick={() => setMenuOpen((open) => !open)}
           >
@@ -271,13 +291,22 @@ export function OverflowBar({
           </button>
         ) : null}
       </div>
+      {/* A disclosure, not an ARIA menu. Each entry is an extension's compact
+          slot, which usually renders its own button — and a `menuitem` may not
+          contain interactive content, so the menu pattern would put the
+          focusable thing inside the item instead of being it. What the popup
+          promises instead: `aria-expanded`/`aria-controls` on the button,
+          focus moved in on open, Escape out, and `Tab` walking the entries as
+          it walks the bar. */}
       {menuOpen && overflowed.length > 0 ? (
         <div
           ref={menuRef}
+          id={menuId}
           data-dtb-part="overflow-menu"
           className={cx(classNames?.overflowMenu)}
-          role="menu"
+          role="group"
           aria-label={overflowLabel}
+          tabIndex={-1}
         >
           {overflowed.map((extension) => (
             <div
@@ -285,7 +314,6 @@ export function OverflowBar({
               data-dtb-part="overflow-menu-item"
               data-dtb-ext-id={extension.id}
               className={cx(classNames?.overflowMenuItem)}
-              role="menuitem"
             >
               {renderItem(extension, { isOverflowed: true })}
             </div>

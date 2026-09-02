@@ -303,9 +303,9 @@ names inside core are not.
 | `region` | one align region | `data-dtb-align="start" \| "end"` |
 | `item` | one extension's compact slot | `data-dtb-ext-id`, `data-dtb-align`, `data-dtb-overflowed`, `data-dtb-panel-open` |
 | `trigger` | core's default button/label | Only when the extension supplies no `compact` |
-| `overflow-button` | the `···` button | |
-| `overflow-menu` | the `···` popover | `role="menu"` |
-| `overflow-menu-item` | one collapsed item wrapper | `data-dtb-ext-id`, `role="menuitem"` |
+| `overflow-button` | the `···` button | `aria-expanded`, `aria-controls` while open |
+| `overflow-menu` | the `···` popover | `role="group"`, labelled, `tabindex="-1"` |
+| `overflow-menu-item` | one collapsed item wrapper | `data-dtb-ext-id` |
 | `overlay` | one extension's overlay slot | `data-dtb-ext-id` |
 | `panel` | one panel | `data-dtb-ext-id`, `data-dtb-active`, `hidden` when inactive |
 | `panel-resizer` | drag/keyboard handle | `role="separator"`, arrow keys resize |
@@ -376,6 +376,17 @@ the bar's `clientWidth` less its own horizontal padding, and less a gap for each
 whose gap the item math does not already charge: one when the start region renders no
 items, one when there are no end items at all. A region that renders empty still takes
 its gap.
+
+The `···` popup is a **disclosure, not an ARIA menu**. Its entries are extensions'
+compact slots, which usually render their own buttons, and a `menuitem` may not contain
+interactive content — the menu pattern would put the focusable thing *inside* the item
+rather than being it. So the button carries `aria-expanded` and, while open,
+`aria-controls`; the popup is a labelled `role="group"` with `tabindex="-1"`; opening it
+moves focus to the first focusable element inside it, or to the popup itself when there
+is none; `Tab` walks the entries as it walks the bar; `Escape` closes the popup and
+returns focus to the button; a click outside closes it and leaves focus where the click
+put it. Escape is handled on `document`, so an extension whose own surface closes on
+Escape must call `stopPropagation()` — `/ext/command-menu` does.
 
 Where there is no `ResizeObserver` (SSR, a bare jsdom), nothing collapses — the bar
 renders everything rather than guessing. `@nejcm/dev-toolbar/testing` ships

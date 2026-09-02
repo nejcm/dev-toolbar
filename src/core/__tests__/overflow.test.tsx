@@ -1,4 +1,5 @@
 import { act, fireEvent, render, screen } from "@testing-library/react";
+import type { ReactNode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { DevToolbarExtension } from "../contract";
 import { OverflowBar, computeOverflow } from "../Overflow";
@@ -238,7 +239,7 @@ describe("OverflowBar", () => {
 
     open();
     expect(menu()).not.toBeNull();
-    expect(menu()!.querySelectorAll('[role="menuitem"]').length).toBe(2);
+    expect(menu()!.querySelectorAll('[data-dtb-part="overflow-menu-item"]').length).toBe(2);
 
     fireEvent.keyDown(document, { key: "Escape" });
     expect(menu()).toBeNull();
@@ -417,5 +418,133 @@ describe("OverflowBar available width", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "More developer toolbar items" }));
     expect(menuIds()).toEqual(["e"]);
+  });
+});
+
+/**
+ * The `···` popup is a disclosure, not an ARIA menu. Each entry is an
+ * extension's own compact slot, which usually renders its own button, and a
+ * `menuitem` may not contain interactive content — so the promise is the
+ * disclosure one: `aria-expanded` and `aria-controls` on the button, focus
+ * moved into the popup on open, Escape closing it and handing focus back.
+ */
+describe("OverflowBar ··· popup", () => {
+  const setUp = () => {
+    restore = patchLayout();
+    vi.stubGlobal("ResizeObserver", MockResizeObserver);
+  };
+
+  const renderCompact = (compact: (id: string) => ReactNode) =>
+    render(
+      <OverflowBar
+        startItems={[
+          { id: "a", label: "a", priority: 3, compact: () => compact("a") },
+          { id: "b", label: "b", priority: 1, compact: () => compact("b") },
+          { id: "c", label: "c", priority: 2, compact: () => compact("c") },
+        ]}
+        endItems={[]}
+        renderItem={(extension, { isOverflowed }) => (
+          <div key={extension.id} data-dtb-part="item" data-dtb-ext-id={extension.id}>
+            {extension.compact?.({
+              isOverflowed,
+              isPanelOpen: false,
+              density: "compact",
+              openPanel: () => {},
+              closePanel: () => {},
+              togglePanel: () => {},
+            })}
+          </div>
+        )}
+      />,
+    );
+
+  const trigger = () => screen.getByRole("button", { name: "More developer toolbar items" });
+  const popup = () => document.querySelector<HTMLElement>('[data-dtb-part="overflow-menu"]');
+
+  it("points the ··· button at the popup it controls", () => {
+    setUp();
+    renderCompact((id) => <span>{id}</span>);
+
+    expect(trigger().getAttribute("aria-expanded")).toBe("false");
+    expect(trigger().getAttribute("aria-controls")).toBeNull();
+
+    fireEvent.click(trigger());
+
+    expect(trigger().getAttribute("aria-expanded")).toBe("true");
+    expect(trigger().getAttribute("aria-controls")).toBe(popup()!.id);
+    expect(popup()!.id).not.toBe("");
+  });
+
+  it("is a labelled group rather than an ARIA menu, since its entries hold buttons", () => {
+    setUp();
+    renderCompact((id) => (
+      <button type="button">
+        {"open "}
+        {id}
+      </button>
+    ));
+
+    fireEvent.click(trigger());
+
+    expect(popup()!.getAttribute("role")).toBe("group");
+    expect(popup()!.getAttribute("aria-label")).toBe("More developer toolbar items");
+    expect(document.querySelectorAll('[role="menu"],[role="menuitem"]').length).toBe(0);
+  });
+
+  it("moves focus to the first focusable entry when it opens", () => {
+    setUp();
+    renderCompact((id) => (
+      <button type="button">
+        {"open "}
+        {id}
+      </button>
+    ));
+
+    fireEvent.click(trigger());
+
+    expect(document.activeElement).toBe(screen.getByRole("button", { name: "open b" }));
+  });
+
+  it("focuses the popup itself when nothing inside it can take focus", () => {
+    setUp();
+    renderCompact((id) => <span>{id}</span>);
+
+    fireEvent.click(trigger());
+
+    expect(document.activeElement).toBe(popup());
+  });
+
+  it("closes on Escape and hands focus back to the ··· button", () => {
+    setUp();
+    renderCompact((id) => (
+      <button type="button">
+        {"open "}
+        {id}
+      </button>
+    ));
+
+    fireEvent.click(trigger());
+    expect(popup()).not.toBeNull();
+
+    fireEvent.keyDown(document.activeElement ?? document, { key: "Escape" });
+
+    expect(popup()).toBeNull();
+    expect(document.activeElement).toBe(trigger());
+  });
+
+  it("closes on an outside click without pulling focus back", () => {
+    setUp();
+    renderCompact((id) => (
+      <button type="button">
+        {"open "}
+        {id}
+      </button>
+    ));
+
+    fireEvent.click(trigger());
+    fireEvent.mouseDown(document.body);
+
+    expect(popup()).toBeNull();
+    expect(document.activeElement).not.toBe(trigger());
   });
 });
