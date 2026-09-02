@@ -1,17 +1,15 @@
 version: 2
 
-# `cooldown` is the Dependabot-side twin of `minimumReleaseAge` in bunfig.toml:
-# never propose a day-zero version that `bun install --frozen-lockfile` would
-# then install verbatim in CI. `default-days: 2` matches the 172800 seconds
-# there, so Dependabot cannot author a lockfile bump bun would refuse to resolve.
+# `cooldown` is Dependabot's twin of `minimumReleaseAge` in bunfig.toml: never
+# propose a day-zero version that `bun install --frozen-lockfile` would then
+# install verbatim in CI. `default-days: 2` matches the 172800s there.
 #
-# Only minor and patch updates are grouped. Majors are deliberately left
-# ungrouped so each arrives as its own PR and can be reviewed and reverted on
-# its own — for a published library a major bump of a build or lint tool is a
-# decision, not a chore.
+# Only minor/patch are grouped — majors arrive as their own PR, reviewable and
+# revertable on their own, since a major bump of a build/lint tool is a
+# decision for a published library.
 updates:
-  # `bun` is its own ecosystem identifier and is what covers `bun.lock`;
-  # npm/yarn/pnpm all collapse into `npm`, which would NOT pick this repo up.
+  # `bun` is its own ecosystem id and covers `bun.lock`; npm/yarn/pnpm all
+  # collapse into `npm`, which would NOT pick this repo up.
   - package-ecosystem: bun
     directory: "/"
     schedule:
@@ -24,15 +22,12 @@ updates:
         patterns: ["*"]
         update-types: [minor, patch]
 
-  # The workflow actions are SHA-pinned, which only stays current because this
-  # entry exists to bump them. Removing it re-freezes CI on whatever SHAs were
-  # last written by hand.
+  # This entry is what keeps the workflow SHA pins current — remove it and CI
+  # re-freezes on whatever SHAs were last written by hand.
   #
-  # `directories` rather than `directory`: with `directory: "/"` Dependabot
-  # scans `.github/workflows/` and an `action.yml` at the repo root, and nothing
-  # else. The composite actions under `.github/actions/*/action.yml` carry their
-  # own `uses:` pins — setup-job alone holds three — and would be invisible
-  # without the glob below.
+  # `directories`, not `directory`: with `directory: "/"` alone, Dependabot
+  # only scans `.github/workflows/` and a root `action.yml`, missing the pins
+  # inside `.github/actions/*/action.yml` (setup-job alone holds three).
   - package-ecosystem: github-actions
     directories:
       - "/"

@@ -19,8 +19,7 @@ function HeightReadout() {
       setHeight(value === "" ? "(unset)" : value);
     };
     read();
-    // The shell writes the variable as an inline style on <html>, so watching
-    // the style attribute is both cheap and exact.
+    // The shell writes the variable as an inline style on <html>.
     const observer = new MutationObserver(read);
     observer.observe(document.documentElement, {
       attributes: true,
@@ -40,11 +39,7 @@ function HeightReadout() {
   );
 }
 
-/**
- * Position and visibility are *store* state, not props: `defaultPosition` only
- * seeds an empty store. Anything that wants to move the bar after mount goes
- * through `useDevToolbar()`, which is what this does.
- */
+/** Position/visibility are *store* state, not props — moving the bar after mount goes through `useDevToolbar()`. */
 function ShellControls() {
   const toolbar = useDevToolbar();
   return (
@@ -76,18 +71,13 @@ function ShellControls() {
 /** Kept at module scope so "Allocate" actually retains, rather than being collected. */
 const ballast: number[][] = [];
 
-/**
- * Drives the real metrics extension. Without something making requests,
- * blocking the main thread and holding memory, every chip sits at its resting
- * value and the panel has nothing to draw.
- */
+/** Drives the real metrics extension — without requests/blocking/memory pressure, every chip sits at its resting value. */
 function LoadControls() {
   const [held, setHeld] = useState(0);
 
   const request = (count: number, path: string) => {
     for (let index = 0; index < count; index += 1) {
-      // A credential in the query string on purpose: the panel must show it
-      // masked, never as typed.
+      // Credential in the query string on purpose: the panel must mask it.
       void fetch(`${path}?access_token=super-secret&i=${index}`).catch(() => {});
     }
   };
@@ -159,12 +149,7 @@ function LoadControls() {
   );
 }
 
-/**
- * What the *application* currently resolves for each flag, read through the
- * same `override ?? base` the pretend provider uses. This is the honest half of
- * the demo: an override in the toolbar has to show up here, or the toolbar is
- * lying about mutating anything.
- */
+/** What the app resolves for each flag via `override ?? base` — an override in the toolbar must show up here. */
 function FlagReadout() {
   const [, force] = useState(0);
   useEffect(() => {
@@ -254,11 +239,7 @@ function FlagReadout() {
   );
 }
 
-/**
- * Drives the real environment extension. Its `context` is a getter, so flipping
- * these mutates the module-level object and the extension picks it up on its
- * next poll — no re-render of the toolbar involved.
- */
+/** Drives the real environment extension — its `context` getter picks up these mutations on its next poll. */
 function EnvironmentControls() {
   const [, force] = useState(0);
   const flip = (mutate: () => void) => {
@@ -323,13 +304,9 @@ function EnvironmentControls() {
 }
 
 /**
- * Content the overlays have something to say about.
- *
- * A 12-column grid at 1100px with a 24px gutter — the same numbers passed to
- * `overlays({ grid })`, so "Column grid" lines up with the cards rather than
- * with nothing. Nested wrappers for "Layout boxes", tabbable controls in a
- * deliberately surprising order for "Focus order", and two controls with no
- * accessible name at all, which the focus overlay should flag red.
+ * Content the overlays have something to say about: a 12-col/1100px/24px-gutter grid matching
+ * `overlays({ grid })`, nested wrappers for "Layout boxes", an odd tab order for "Focus order",
+ * and unnamed controls the focus overlay should flag red.
  */
 function OverlayPlayground() {
   const [clicks, setClicks] = useState(0);
@@ -354,8 +331,7 @@ function OverlayPlayground() {
         >
           Click-through test: {clicks}
         </button>
-        {/* Deliberately unnamed: an icon-only button whose only content is
-            aria-hidden has no accessible name, and the focus overlay says so. */}
+        {/* Deliberately unnamed: icon-only with aria-hidden content, no accessible name. */}
         <button type="button" className="pg-button" data-testid="overlay-unnamed">
           <span aria-hidden="true">★</span>
         </button>
@@ -401,12 +377,8 @@ function OverlayPlayground() {
 }
 
 /**
- * Content whose appearance is entirely token-driven, so the theme editor has
- * something true to change.
- *
- * Nothing here talks to the extension. That is the point: the tokens are the
- * application's, declared in `playground.css` and consumed by these rules, and
- * the toolbar edits them where they live.
+ * Content whose appearance is entirely token-driven. Nothing here talks to the extension — the
+ * tokens are the app's own, declared in `playground.css`, and the toolbar edits them where they live.
  */
 function ThemePlayground() {
   const [tokens, setTokens] = useState<[string, string][]>([]);

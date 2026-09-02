@@ -1,15 +1,10 @@
 /**
  * `/ext/metrics` styles. [dev-toolbar/ext/metrics]
  *
- * Same rules as core: everything inside the `dev-toolbar` cascade layer, every
- * selector scoped by `[data-dev-toolbar]`, every colour and metric from a
- * `--dtb-*` token. Overriding `--dtb-warn` in your own stylesheet restyles the
- * chips along with the rest of the bar, and unlayered CSS still wins without
- * `!important`.
- *
- * Part names are namespaced (`metrics-*`) because `data-dtb-part` is a shared
- * attribute: core owns the unprefixed names, an extension owns names prefixed
- * with its own id.
+ * Same rules as core: everything inside the `dev-toolbar` cascade layer,
+ * scoped by `[data-dev-toolbar]`, colours from `--dtb-*` tokens. Part names
+ * are namespaced (`metrics-*`) since `data-dtb-part` is shared with core and
+ * other extensions.
  */
 import { ensureStyleSheet } from "../../runtime";
 
@@ -267,11 +262,9 @@ export const METRICS_CSS = String.raw`@layer dev-toolbar {
 const METRICS_STYLE_ENTRY = "ext-metrics";
 
 /**
- * Injects the stylesheet once per document, through `/runtime`'s shared
- * injector. It is not core's: importing core's would drag the whole core
- * stylesheet string into this bundle, and `/ext/metrics` is meant to be
- * addable without paying for anything it does not use. The dedup key is a DOM
- * attribute, so two bundled copies still inject once.
+ * Injects the stylesheet once per document via `/runtime`'s shared injector
+ * (not core's, so this bundle doesn't pull in core's stylesheet). Dedup key
+ * is a DOM attribute, so two bundled copies still inject once.
  */
 export function ensureMetricsStyles(doc?: Document): HTMLStyleElement | null {
   return ensureStyleSheet(METRICS_STYLE_ENTRY, METRICS_CSS, doc);

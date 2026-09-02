@@ -1,16 +1,11 @@
 /**
  * Shared vocabulary for `/ext/environment`. [dev-toolbar/ext/environment]
  *
- * Everything in `plans/dev-bar.md` §3B is **consumer-supplied**: core has no
- * `ctx`, no session and no build metadata, and this extension does not invent
- * one. It reads nothing from `process.env` and looks for no global. What it
- * knows, the consumer told it — plus a short list of facts the browser itself
- * can answer (route, viewport, connection), which are labelled `"detected"` so
- * they are never mistaken for something the deploy asserted.
- *
- * When nothing is supplied the answer is `"unknown"`, spelled out. Guessing the
- * environment from the hostname is exactly the wrong answer to "which
- * environment am I actually in".
+ * Everything in `plans/dev-bar.md` §3B is **consumer-supplied**: no `process.env`,
+ * no globals. What the consumer told it, plus facts the browser itself can
+ * answer (route, viewport, connection), labelled `"detected"` so they're never
+ * mistaken for something the deploy asserted. Nothing supplied → `"unknown"`,
+ * spelled out rather than guessed from the hostname.
  */
 
 /** §3B's four, plus the two honest extras. Any other string is passed through. */
@@ -47,19 +42,13 @@ export type EnvironmentFieldId =
   | "viewport"
   | "connection";
 
-/**
- * Who an impersonation is by and of. Either half may be omitted; supplying the
- * flag alone (`impersonating: true`) is enough to make the bar shout.
- */
+/** Who an impersonation is by and of. Either half may be omitted. */
 export interface ImpersonationContext {
   actor?: string;
   subject?: string;
 }
 
-/**
- * What the consumer knows. Every field optional: an omitted field renders as
- * "not supplied", which is information, and a wrong guess is not.
- */
+/** What the consumer knows. Every field optional; an omitted field renders as "not supplied". */
 export interface EnvironmentContext {
   /** `"production"`, `"staging"`, … or any string of your own. */
   environment?: EnvironmentKind | (string & {});
@@ -155,11 +144,9 @@ export const GROUP_LABELS: Record<EnvironmentGroup, string> = {
 };
 
 /**
- * Folds the spellings a deploy pipeline actually produces onto the canonical
- * names. `"Production"`, `" prod "` and `"PROD"` are production, and grading
- * them `"unknown"` — a neutral grey chip — is a direct miss of §6's "mark
- * production conspicuously". Anything unrecognised is returned trimmed and
- * lowercased, and stays `"unknown"`.
+ * Folds real-world spellings (`"Production"`, `" prod "`, `"PROD"`) onto the
+ * canonical names, so §6's "mark production conspicuously" isn't missed by a
+ * casing mismatch. Anything unrecognised comes back trimmed/lowercased.
  */
 export function normaliseKind(kind: string): string {
   const value = kind.trim().toLowerCase();

@@ -1,13 +1,10 @@
 /**
  * `/ext/command-menu` styles. [dev-toolbar/ext/command-menu]
  *
- * Same rules as core and the other extensions: inside the `dev-toolbar` cascade
- * layer, every selector scoped by `[data-dev-toolbar]`, every colour from a
- * `--dtb-*` token, every part name namespaced by kind (`cmd-*`).
- *
- * The overlay is `position: fixed` and sits inside the toolbar root, which sets
- * no containing block — so it covers the viewport rather than the 30px bar, and
- * still inherits the root's tokens, density and colour scheme.
+ * Same rules as core: inside the `dev-toolbar` cascade layer, selectors scoped
+ * by `[data-dev-toolbar]`, colours from `--dtb-*` tokens, parts namespaced
+ * `cmd-*`. The overlay is `position: fixed` inside the toolbar root (which sets
+ * no containing block), so it covers the viewport, not the 30px bar.
  */
 import { ensureStyleSheet } from "../../runtime";
 
@@ -27,11 +24,9 @@ export const COMMAND_MENU_CSS = String.raw`@layer dev-toolbar {
     position: fixed;
     z-index: 2;
     top: 12vh;
-    /* Horizontal centring, not a pinned edge: left: 50% + translateX(-50%) is
-       symmetric and needs no RTL mirroring. inset-inline-start: 50% would NOT
-       be equivalent — under dir="rtl" that resolves to the right edge at the
-       midpoint while translateX(-50%) still shifts left by half the width,
-       landing the dialog a full width off-centre. Left deliberately physical. */
+    /* left: 50% + translateX(-50%) centres symmetrically regardless of dir;
+       inset-inline-start: 50% would NOT be equivalent under rtl. Left is
+       deliberately physical. */
     left: 50%;
     transform: translateX(-50%);
     width: min(560px, calc(100vw - 32px));

@@ -25,34 +25,30 @@ import { ensureStyles } from "./styles";
 
 /**
  * CSS custom property published on `document.documentElement` while the bar is
- * mounted and visible. It measures the whole toolbar root — the bar *plus* the
- * open panel — not the bar alone, so insetting by it never leaves content
- * underneath an expanded panel.
+ * mounted and visible. Measures the whole toolbar root — bar *plus* open panel
+ * — so insetting by it never leaves content underneath an expanded panel.
  */
 export const HEIGHT_VARIABLE = "--dev-toolbar-height";
 
 /**
  * The `instanceId` default, and the one instance that owns `HEIGHT_VARIABLE`.
  *
- * Internal: not exported from any entry point. The export exists for
- * `src/testing/__tests__/heightVariable.test.ts`, which asserts that the copy
- * `src/testing/heightVariable.ts` re-derives still agrees with this one —
- * `src/testing` may not value-import a relative path into `core/` (AGENTS.md,
- * *Conventions*). That test is also what keeps this export alive for knip.
+ * Internal: not exported from any entry point. Exported only so
+ * `src/testing/__tests__/heightVariable.test.ts` can assert the copy in
+ * `src/testing/heightVariable.ts` still agrees with this one (that package may
+ * not value-import a relative path into `core/`, per AGENTS.md).
  */
 export const DEFAULT_INSTANCE_ID = "default";
 
 /**
  * The per-instance form of {@link HEIGHT_VARIABLE}, e.g.
- * `--dev-toolbar-height-admin`. Every mounted toolbar publishes this one, so
- * two instances on a page (§2, *No global registry*) never overwrite or remove
- * each other's value; the unsuffixed name stays the default instance's, which
- * is what a consumer who never set `instanceId` already reads.
+ * `--dev-toolbar-height-admin`. Every mounted toolbar publishes this, so
+ * multiple instances on a page never overwrite each other's value; the
+ * unsuffixed name stays the default instance's.
  *
- * `instanceId` is an arbitrary string, so anything outside the CSS identifier
- * characters is folded to `_` rather than escaped. Two ids that differ only in
- * punctuation therefore collide — the same rule that already asks for distinct
- * ids so persisted preferences do not.
+ * `instanceId` is arbitrary, so non-CSS-identifier characters are folded to
+ * `_` rather than escaped — ids differing only in punctuation collide, hence
+ * `[A-Za-z0-9_-]` ids are safest.
  */
 export function instanceHeightVariable(instanceId: string): string {
   return `${HEIGHT_VARIABLE}-${instanceId.replace(/[^A-Za-z0-9_-]+/g, "_")}`;
@@ -68,13 +64,10 @@ export interface DevToolbarProps {
   /**
    * Namespaces persisted preferences. Default `"default"`.
    *
-   * Read once, on mount. Changing it later is ignored — remount the toolbar
-   * (e.g. with a `key`) to move an instance to a different namespace.
-   *
-   * Joined unescaped with `:` into the storage key (`docs/architecture.md`
-   * §3), so an id containing `:` can alias another instance's or extension's
-   * scope. Safest as `[A-Za-z0-9_-]` — the same set `instanceHeightVariable`
-   * already folds non-conforming ids down to.
+   * Read once, on mount; changing it later is ignored — remount (e.g. with a
+   * `key`) to move an instance to a different namespace. Joined unescaped
+   * with `:` into the storage key, so an id containing `:` can alias another
+   * instance's or extension's scope — safest as `[A-Za-z0-9_-]`.
    */
   instanceId?: string;
   density?: ToolbarDensity;
@@ -95,9 +88,9 @@ export interface DevToolbarProps {
   injectStyles?: boolean;
   classNames?: DevToolbarClassNames;
   /**
-   * e.g. `"Mod+Shift+."`. `null` disables the toggle shortcut. Ignored when the
-   * event is already `defaultPrevented`, mid-IME-composition, or an auto-repeat;
-   * the focused element does not matter.
+   * e.g. `"Mod+Shift+."`. `null` disables the toggle shortcut. Ignored when
+   * the event is already `defaultPrevented`, mid-IME-composition, or an
+   * auto-repeat; the focused element does not matter.
    */
   shortcut?: string | null;
   /** Portal target. Defaults to `document.body`. */
@@ -135,9 +128,8 @@ function DevToolbarRoot({
   className,
   style,
 }: DevToolbarProps): ReactNode {
-  // `storage` and `instanceId` are captured once, on mount, so that the store
-  // and everything derived from it can never disagree about where preferences
-  // live. See the prop docs above.
+  // Captured once, on mount, so the store and everything derived from it
+  // can never disagree about where preferences live. See prop docs above.
   const [{ raw: rawStorage, base: baseStorage, instance: instanceId }] = useState(() => {
     const raw = resolveStorage(storageProp);
     return { raw, base: createInstanceStorage(raw, instanceIdProp), instance: instanceIdProp };
@@ -154,11 +146,10 @@ function DevToolbarRoot({
 
   const state = useSyncExternalStore(store.subscribe, store.getSnapshot, store.getSnapshot);
 
-  // Client-only mount: the bar is never part of server HTML, so there is
-  // nothing to hydrate and nothing to mismatch.
+  // Client-only mount: the bar is never part of server HTML, so nothing to
+  // hydrate or mismatch. Whether we've mounted can't be derived during
+  // render — the effect running at all is the signal.
   const [mounted, setMounted] = useState(false);
-  // Whether we have mounted on the client cannot be derived during render —
-  // that the effect ran at all is the signal.
   // oxlint-disable-next-line react/set-state-in-effect
   useEffect(() => setMounted(true), []);
 
@@ -173,12 +164,11 @@ function DevToolbarRoot({
     return merged;
   }, [extensionsProp, state.registered]);
 
-  // The extension list, not the aggregated commands, is what is kept in a ref:
-  // with the function form of `commands` an aggregation is only ever a snapshot
-  // of the moment it was taken, so every *imperative* path re-enumerates
-  // instead of reading a stale array. See `getCommands` below.
+  // Keeps the extension list, not the aggregated commands, in a ref: every
+  // imperative path re-enumerates via `getCommands` below instead of reading
+  // a stale aggregation.
   const extensionsRef = useRef(extensions);
-  // Written in render, not in an effect: an effect would leave `getCommands()`
+  // Written in render, not an effect: an effect would leave `getCommands()`
   // a render behind the list it exists to enumerate.
   // oxlint-disable-next-line react/refs
   extensionsRef.current = extensions;
@@ -186,11 +176,9 @@ function DevToolbarRoot({
   const getCommands = useCallback(() => collectCommands(extensionsRef.current), []);
 
   /**
-   * The declarative snapshot behind `useToolbarCommands()`. Recomputed when the
-   * extension list changes — which is the only invalidation signal core has,
-   * since an extension whose command list grew does not tell anybody. Anything
-   * that must be current (a palette opening, `runCommand`) calls `getCommands()`
-   * rather than reading this.
+   * The declarative snapshot behind `useToolbarCommands()`. Recomputed only
+   * when the extension list changes. Anything that must be current (a
+   * palette opening, `runCommand`) calls `getCommands()` instead.
    */
   const commands = useMemo(() => collectCommands(extensions), [extensions]);
 
@@ -204,11 +192,9 @@ function DevToolbarRoot({
     [getCommands],
   );
 
-  // Contract version check. Deduped by id, not by object: the contract promises
-  // one warning per extension id, and an `extensions` array rebuilt inside
-  // render — the misuse ADR-001 calls likely — re-runs this effect on every
-  // render, which without the ref would flood the console in exactly the case
-  // the warning exists to report.
+  // Contract version check, deduped by id (not object): an `extensions` array
+  // rebuilt inside render re-runs this effect every render, which without the
+  // ref would flood the console in exactly the case the warning is for.
   const contractWarnedRef = useRef(new Set<string>());
   useEffect(() => {
     if (!enabled) return;
@@ -229,12 +215,11 @@ function DevToolbarRoot({
     }
   }, [extensions, enabled]);
 
-  // A panel open when its extension becomes hidden must close, not merely stop
+  // A panel open when its extension becomes hidden must close, not just stop
   // painting: `activePanelId` is persisted, so leaving it set would reopen the
-  // panel on the next reload the moment the extension came back. Only a
-  // *present and hidden* extension closes — an id that is simply absent is left
-  // alone, which is what lets a persisted panel survive until the extension
-  // that owns it registers.
+  // panel next reload. Only a *present and hidden* extension closes — an
+  // absent id is left alone, so a persisted panel survives until its
+  // extension registers.
   useEffect(() => {
     if (!enabled) return;
     const active = state.activePanelId;
@@ -252,18 +237,17 @@ function DevToolbarRoot({
   useEffect(() => {
     const running = runningRef.current;
 
-    // Disabling at runtime is a real teardown: abort every signal and run every
-    // dispose, rather than leaving timers alive until unmount.
+    // Disabling at runtime is a real teardown: abort every signal and run
+    // every dispose, rather than leaving timers alive until unmount.
     if (!enabled) {
       for (const [id, entry] of Array.from(running)) stopExtension(id, entry);
       running.clear();
       return;
     }
 
-    // `hidden` is the consumer saying this extension does not exist for this
-    // actor. Running its collectors anyway — patching fetch, retaining request
-    // URLs, holding a rAF loop open — would be exactly the leak `hidden`
-    // exists to prevent, so a hidden extension is stopped, not merely unpainted.
+    // `hidden` means this extension does not exist for this actor. Running
+    // its collectors anyway would be exactly the leak `hidden` exists to
+    // prevent, so a hidden extension is stopped, not merely unpainted.
     const present = new Set(
       extensions.filter((extension) => extension.hidden !== true).map((extension) => extension.id),
     );
@@ -282,20 +266,17 @@ function DevToolbarRoot({
       const existing = running.get(extension.id);
       if (existing) {
         // The running lifecycle belongs to the object that was started. If the
-        // consumer rebuilt the extension inside render, the slots now render
-        // from a *different* object than the one holding the collectors, and
-        // its state is silently lost. `{...ext, hidden}` keeps the same `start`
-        // reference, so this does not fire for the legitimate pattern.
+        // consumer rebuilt the extension inside render, its state is silently
+        // lost. `{...ext, hidden}` keeps the same `start` reference, so this
+        // does not fire for that legitimate pattern.
         if (existing.start !== extension.start && !identityWarnedRef.current.has(extension.id)) {
           identityWarnedRef.current.add(extension.id);
           // eslint-disable-next-line no-console
           console.warn(
             `[dev-toolbar] extension "${extension.id}" was rebuilt after it started. ` +
               "Its start() lifecycle still belongs to the first object, so whatever " +
-              "that object owns — collectors, buffers, subscriptions — is unreachable " +
-              "from what the bar now renders. Build extensions once, at module scope, " +
-              "not inside render. (A hot-module reload of the module that builds them " +
-              "does this too; reload the page.)",
+              "that object owns is unreachable from what the bar now renders. Build " +
+              "extensions once, at module scope, not inside render.",
           );
         }
         continue;
@@ -305,12 +286,10 @@ function DevToolbarRoot({
         signal: controller.signal,
         isVisible: () => store.getSnapshot().visible,
         subscribeVisibility: (callback) => {
-          // `signal` is documented as aborted on teardown, and this is the
-          // subscription that abort must release — an extension that keeps
-          // only the signal (never calling the function returned here) is a
-          // legal reading of the contract. Already aborted at call time (the
-          // extension started, then unregistered before this ran): subscribe
-          // to nothing rather than leak a listener nothing will ever release.
+          // The signal is documented as aborted on teardown, and this is the
+          // subscription abort must release, so an extension keeping only the
+          // signal is a legal reading of the contract. Already aborted at call
+          // time: subscribe to nothing rather than leak an unreleasable listener.
           if (controller.signal.aborted) return () => {};
 
           let last = store.getSnapshot().visible;
@@ -318,11 +297,10 @@ function DevToolbarRoot({
             const next = store.getSnapshot().visible;
             if (next === last) return;
             last = next;
-            // Contained here rather than in the store's `emit`: this callback
-            // is extension code running inside whatever flipped visibility —
-            // the toggle shortcut, a consumer's `setVisible`. Letting it throw
-            // would surface in that caller and abort the notification loop, so
-            // every extension after this one would never hear the change.
+            // Caught here, not in the store's `emit`: this callback is
+            // extension code running inside whatever flipped visibility, and
+            // letting it throw would abort the notification loop for every
+            // extension after this one.
             try {
               callback(next);
             } catch (error) {
@@ -335,9 +313,9 @@ function DevToolbarRoot({
             }
           });
 
-          // Idempotent, and removes the abort listener too, so nothing leaks
-          // regardless of which fires first: the extension's own unsubscribe,
-          // or the signal aborting on teardown.
+          // Idempotent and removes the abort listener too, so nothing leaks
+          // regardless of whether the extension unsubscribes or the signal
+          // aborts first.
           let released = false;
           const unsubscribe = () => {
             if (released) return;
@@ -349,11 +327,10 @@ function DevToolbarRoot({
           return unsubscribe;
         },
         storage: createExtensionStorage(rawStorage, instanceId, extension.id),
-        // The aggregation, reachable without importing a value from core.
         getCommands: () => collectCommands(extensionsRef.current),
         runCommand: (id: string) => runCommand(id, collectCommands(extensionsRef.current)),
-        // Same shape and the same reason as `getCommands`: read through the
-        // ref, so a snapshot taken now reflects the extension list now.
+        // Reads through the ref, like `getCommands`, so a snapshot taken now
+        // reflects the extension list now.
         getDiagnostics: () => collectDiagnostics(extensionsRef.current),
       };
       const entry: {
@@ -394,10 +371,9 @@ function DevToolbarRoot({
   useEffect(() => {
     if (!enabled || !parsedShortcut || typeof window === "undefined") return;
     const onKeyDown = (event: KeyboardEvent) => {
-      // The listener is on `window`, so app handlers on `document` have already
-      // run by the time this fires: `defaultPrevented` is how a host says the
-      // chord was theirs. `isComposing` keeps an IME session out of it, and
-      // `repeat` keeps a held chord from flickering the bar.
+      // Listener is on `window`, so `document` handlers ran first:
+      // `defaultPrevented` is how a host claims the chord. `isComposing` keeps
+      // IME out; `repeat` keeps a held chord from flickering the bar.
       if (event.defaultPrevented || event.isComposing || event.repeat) return;
       if (!matchesShortcut(event, parsedShortcut)) return;
       event.preventDefault();

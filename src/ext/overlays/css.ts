@@ -1,67 +1,40 @@
 /**
  * `/ext/overlays` styles. [dev-toolbar/ext/overlays]
  *
- * Same rules as core and the other extensions: inside the `dev-toolbar` cascade
- * layer, every selector scoped by `[data-dev-toolbar]`, every colour from a
- * `--dtb-*` token where a token exists, every part name namespaced by kind
- * (`ovl-*`).
+ * Same rules as core and the other extensions: everything inside the
+ * `dev-toolbar` cascade layer, scoped by `[data-dev-toolbar]`, colours from
+ * `--dtb-*` tokens, parts namespaced `ovl-*`.
  *
- * With one deliberate exception, and it is the most important thing in this
- * file. **Four declarations on the drawing surface carry `!important`**, which
- * nothing else in this package does.
+ * Exception: the drawing surface's four `!important` declarations
+ * (`pointer-events`, `z-index`, `position`, `inset`) — the only ones in this
+ * package. Layered CSS is designed to lose to unlayered author CSS (so
+ * consumers can restyle without `!important`), but that is wrong for safety:
+ * a stray unlayered `div { pointer-events: auto }` would re-enable pointer
+ * events on the surface and let it swallow every click in the page (review
+ * demonstrated exactly that). `!important` blocks this because the cascade
+ * reverses layer order for important declarations, so a layered-important
+ * rule beats an unlayered-important one. Only a rule deliberately targeting
+ * this part inside `@layer dev-toolbar` can still override them — someone
+ * switching the guard off on purpose.
  *
- * The reason is that §4.1's layering is designed to *lose*: unlayered author CSS
- * beats any layered rule, at any specificity, so that a consumer can restyle the
- * bar without `!important`. That is right for colour and wrong for safety. A
- * single unlayered `div { pointer-events: auto }` — a reset, a drag-and-drop
- * library, the weakest rule CSS can express — would otherwise re-enable pointer
- * events on the surface and let a full-viewport overlay swallow every click in
- * the page. Review demonstrated exactly that.
+ * What each one protects: `pointer-events: none` keeps every click landing on
+ * the app underneath; `z-index: -1` (inside the toolbar root's own stacking
+ * context) paints the surface over the page but under the bar, panel and
+ * command palette; `position: fixed` + `inset: 0` cover the viewport rather
+ * than the 30px bar, and guard against the `display: contents` wrapper
+ * turning a `position: static` surface into a height-adding flex child.
  *
- * `!important` fixes it in both directions, because the cascade reverses layer
- * order for important declarations: an author-important declaration beats every
- * unlayered *normal* one, and a **layered** important declaration beats an
- * unlayered important one. So a hostile-by-accident rule cannot reach these four
- * however it is written. What can still reach them is a rule deliberately
- * targeting this part *inside* `@layer dev-toolbar` with equal or greater
- * specificity — which is somebody switching the guard off on purpose, and is
- * the honest limit of what CSS can promise.
- *
- * The four, and what each one is protecting:
- *
- * - **`pointer-events: none`, on the surface and on every descendant.** Nothing
- *   this extension draws can be clicked, hovered, dragged or focused, so a click
- *   always lands on the application underneath. A debugging overlay that ate the
- *   button you were trying to press is the failure that would make the whole
- *   feature untrustworthy.
- * - **`z-index: -1`, inside the toolbar root.** The root establishes a stacking
- *   context at `--dtb-z-index`, so a negative child paints *below the bar and
- *   the panel* while the whole context still paints *above the application*.
- *   That is exactly the layer an overlay wants: over the page, under the tool.
- *   The command palette's scrim and dialog sit at `z-index: 1`/`2` in the same
- *   context, so they are above this too and the palette is never drawn over.
- *   Left overridable, `div { z-index: 0 }` would lift the surface to bar level.
- * - **`position: fixed` and `inset: 0`.** The root sets no containing block, so
- *   the surface covers the viewport rather than the 30px bar (§13.2) — and,
- *   because the wrapper is `display: contents`, a surface knocked back to
- *   `position: static` would become a flex child of the root and start adding
- *   height to the toolbar.
- *
- * Everything else here is ordinary layered CSS and stays overridable, which is
- * the point: the colours, sizes and fonts of what is drawn are yours to change.
+ * Everything else is ordinary layered CSS and stays overridable.
  */
 import { ensureStyleSheet } from "../../runtime";
 
 export const OVERLAYS_CSS = String.raw`@layer dev-toolbar {
   [data-dev-toolbar] [data-dtb-part="ovl-surface"] {
-    /* The four !important declarations. See the note at the top of this file:
-       layered CSS is designed to lose to unlayered author CSS, which is right
-       for colour and wrong for a guard. Do not remove them to be tidy. */
+    /* The four !important declarations — see file header. Do not remove. */
     position: fixed !important;
     inset: 0 !important;
     z-index: -1 !important;
-    /* Nothing drawn here is interactive. Repeated on every descendant below, so
-       a future addition cannot accidentally become a click target. */
+    /* Repeated on every descendant below so nothing can become a click target. */
     pointer-events: none !important;
     overflow: hidden;
     font-family: var(--dtb-font-mono);
@@ -89,12 +62,8 @@ export const OVERLAYS_CSS = String.raw`@layer dev-toolbar {
   }
 
   [data-dev-toolbar] [data-dtb-part="ovl-grid-columns"] {
-    /* Horizontal centring, not a pinned edge: left: 50% + translateX(-50%) is
-       symmetric and needs no RTL mirroring. inset-inline-start: 50% would NOT
-       be equivalent — under dir="rtl" that resolves to the right edge at the
-       midpoint while translateX(-50%) still shifts left by half the width,
-       landing this (explicitly-widthed) element a full width off-centre.
-       Left deliberately physical. */
+    /* left + translateX(-50%) centres symmetrically without RTL mirroring;
+       inset-inline-start: 50% would NOT be equivalent under dir="rtl". */
     left: 50%;
     right: auto;
     transform: translateX(-50%);
@@ -185,11 +154,7 @@ export const OVERLAYS_CSS = String.raw`@layer dev-toolbar {
   [data-dev-toolbar] [data-dtb-part="ovl-notice"] {
     position: absolute;
     top: 8px;
-    /* Horizontal centring, not a pinned edge: left: 50% + translateX(-50%) is
-       symmetric and needs no RTL mirroring. inset-inline-start: 50% would NOT
-       be equivalent — under dir="rtl" that resolves to the right edge at the
-       midpoint while translateX(-50%) still shifts left by half the width,
-       landing the notice a full width off-centre. Left deliberately physical. */
+    /* left + translateX(-50%) centres symmetrically without RTL mirroring. */
     left: 50%;
     transform: translateX(-50%);
     padding: 2px 8px;

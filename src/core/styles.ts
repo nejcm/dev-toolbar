@@ -4,12 +4,10 @@ const STYLE_ATTRIBUTE = "data-dev-toolbar-styles";
 const CORE_STYLE_ENTRY = "core";
 
 /**
- * Injects a stylesheet once per document per entry.
- *
- * The DOM is the deduplication source of truth (not a module-level flag) so
- * that ESM and CJS copies, or two bundled versions of the package, still inject
- * only once. Called from inside a component — never at module scope — which is
- * what keeps `sideEffects: false` honest.
+ * Injects a stylesheet once per document per entry. Dedupes via the DOM (not a
+ * module-level flag) so separate ESM/CJS or bundled copies still inject only
+ * once. Call from inside a component, never at module scope, to keep
+ * `sideEffects: false` honest.
  */
 export function ensureStyles(
   entry: string = CORE_STYLE_ENTRY,

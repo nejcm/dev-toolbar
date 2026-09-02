@@ -1,12 +1,10 @@
 /**
- * Deliberately minimal. `transform: {}` means the tests run as plain CommonJS
- * with no Babel in the way, so what Jest loads is exactly `dist/testing.cjs` as
- * a real consumer's Jest would load it.
+ * Deliberately minimal: `transform: {}` runs tests as plain CommonJS with no
+ * Babel, so Jest loads `dist/testing.cjs` exactly as a real consumer would.
  */
 module.exports = {
   testEnvironment: "jsdom",
   transform: {},
-  // Pick the "require" condition from the package's exports map, which is what
-  // a CommonJS consumer gets.
+  // Pick the "require" condition from the exports map, as a CJS consumer would.
   testEnvironmentOptions: { customExportConditions: ["require", "default"] },
 };

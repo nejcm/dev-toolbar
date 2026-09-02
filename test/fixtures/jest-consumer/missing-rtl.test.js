@@ -1,13 +1,10 @@
 /**
- * The other half of the contract: when Testing Library genuinely cannot be
- * resolved, the failure must be an actionable message rather than a raw
- * `ERR_MODULE_NOT_FOUND` — and it must name the remedy that works *here*.
+ * The other half of the contract: when Testing Library can't be resolved,
+ * the failure must be an actionable message naming a remedy that works under
+ * Jest — `setTestingLibrary(await import(...))` is useless advice here since
+ * dynamic import doesn't settle in Jest's sandbox.
  *
- * `setTestingLibrary(await import(...))` is useless advice under Jest, because
- * the dynamic import is precisely what does not settle in its sandbox.
- *
- * Its own file so the mock cannot affect render.test.js: each test file gets a
- * fresh module registry.
+ * Own file so the mock doesn't leak into render.test.js (separate module registries).
  */
 const React = require("react");
 

@@ -5,9 +5,8 @@ import type { TimeSeries } from "../../runtime";
 /**
  * A history sparkline. [dev-toolbar/ext/metrics]
  *
- * Reads the ring buffer straight through `copyInto` into a `Float64Array` this
- * component allocated once — the whole reason the buffers are typed arrays. It
- * re-renders on `revision`, not on every sample.
+ * Reads the ring buffer via `copyInto` into a `Float64Array` allocated once by
+ * this component. Re-renders on `revision`, not on every sample.
  */
 export interface SparklineProps {
   series: TimeSeries;
@@ -20,8 +19,7 @@ const WIDTH = 240;
 const HEIGHT = 40;
 
 export function Sparkline({ series, revision, label }: SparklineProps): ReactNode {
-  // One allocation per capacity, not per render. A dropped memo only costs
-  // another allocation: `copyInto` rewrites the whole buffer anyway.
+  // One allocation per capacity, not per render.
   const buffer = useMemo(() => new Float64Array(series.capacity), [series.capacity]);
 
   const path = useMemo(() => {

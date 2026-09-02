@@ -1,34 +1,29 @@
 /**
  * Bounded, allocation-stable ring buffers. [dev-toolbar/runtime]
  *
- * These back the sparkline histories, so the invariant that matters is not
- * "holds N items" but "allocates its storage once". A collector sampling at
- * 60 Hz for an hour must not create 216 000 objects for the garbage collector
- * to walk: `push()` writes into a slot that already exists, and every read that
- * could allocate accepts a caller-owned destination instead.
+ * Backs the sparkline histories, so the invariant is "allocates its storage
+ * once", not "holds N items": a collector sampling at 60Hz for an hour must
+ * not create 216,000 objects for the GC to walk. `push()` writes into an
+ * existing slot, and every read that could allocate accepts a caller-owned
+ * destination instead.
  */
 
 /**
- * Upper bound on ring capacity: 1 << 24 (16 777 216 slots). A `Float64Array`
- * that size is 128 MB, which is already far past anything a sparkline history
- * needs; it also sits comfortably under every engine's typed-array length
- * limit, so `new Float64Array(slots)` / `new Array(slots)` never throw here
- * even though both constructors would throw a `RangeError` for `Infinity` or
- * for a length past the platform's limit.
+ * Upper bound on ring capacity: 1 << 24 (16,777,216 slots) — a 128MB
+ * `Float64Array`, far past any sparkline need, but comfortably under every
+ * engine's typed-array length limit so allocation here never throws.
  */
 const MAX_CAPACITY = 1 << 24;
 
 /**
  * Clamps a requested capacity to a sane, allocatable slot count: at least 1
- * (a zero-length ring silently swallowing every sample is never what the
- * caller meant) and at most `MAX_CAPACITY`. Non-finite input (`Infinity`,
- * `-Infinity`, `NaN`) and fractions are folded in the same pass, since an
- * unclamped `Infinity` reaches `new Array()` / `new Float64Array()` and
- * throws a `RangeError` there instead of failing predictably here.
+ * (a zero-length ring silently swallowing every sample is never intended)
+ * and at most `MAX_CAPACITY`. Non-finite input and fractions are folded in
+ * the same pass, so a bad value fails predictably here rather than throwing
+ * a `RangeError` from `new Array()`/`new Float64Array()`.
  */
 function clampCapacity(capacity: number): number {
-  // `NaN > 0` and `-Infinity > 0` are both false, so both take the `: 1`
-  // branch here; only `+Infinity` needs the ceiling.
+  // `NaN > 0` and `-Infinity > 0` are both false, so both take `: 1`.
   if (!Number.isFinite(capacity)) return capacity > 0 ? MAX_CAPACITY : 1;
   return Math.max(1, Math.min(MAX_CAPACITY, Math.floor(capacity) || 1));
 }
@@ -55,12 +50,7 @@ export interface RingBuffer<T> {
   clear(): void;
 }
 
-/**
- * `capacity` is clamped by {@link clampCapacity}: at least 1 (a zero-length
- * ring silently swallowing every sample is never what the caller meant) and
- * at most `MAX_CAPACITY`, so a non-finite or absurd request never reaches
- * `new Array()` and throws a `RangeError`.
- */
+/** `capacity` is clamped by {@link clampCapacity} — see there for why. */
 export function createRingBuffer<T>(capacity: number): RingBuffer<T> {
   const slots = clampCapacity(capacity);
   // Allocated once, here. Nothing below this line grows it.
@@ -118,8 +108,7 @@ export function createRingBuffer<T>(capacity: number): RingBuffer<T> {
       }
     },
     clear() {
-      // Drop references so a ring of objects does not pin them, but keep the
-      // backing array itself.
+      // Drop references so a ring of objects doesn't pin them; keep the array.
       for (let index = 0; index < slots; index += 1) store[index] = undefined;
       head = 0;
       size = 0;
@@ -139,11 +128,9 @@ export interface NumericRingStats {
 /**
  * Read-only view of a {@link NumericRing}: every inspection method, minus
  * `push`/`clear`. `TimeSeries` exposes its two backing rings through this
- * type so a consumer can read `times`/`values` (`copyInto`, `at`, `written`,
- * …) without a route to push or clear one ring out of step with the other —
- * `times.push()` with no matching `values.push()` desyncs the pair, and
- * `last()`/`lastAt()` then describe two different samples. This is what the
- * sparklines read.
+ * type so a consumer can read `times`/`values` without a route to push or
+ * clear one out of step with the other (which would desync the pair). This
+ * is what the sparklines read.
  */
 export interface NumericRingView {
   readonly capacity: number;
@@ -169,12 +156,7 @@ export interface NumericRing extends NumericRingView {
   clear(): void;
 }
 
-/**
- * `capacity` is clamped by {@link clampCapacity}: at least 1 (a zero-length
- * ring silently swallowing every sample is never what the caller meant) and
- * at most `MAX_CAPACITY`, so a non-finite or absurd request never reaches
- * `new Float64Array()` and throws a `RangeError`.
- */
+/** `capacity` is clamped by {@link clampCapacity} — see there for why. */
 export function createNumericRing(capacity: number): NumericRing {
   const slots = clampCapacity(capacity);
   const store = new Float64Array(slots);
@@ -255,10 +237,9 @@ export function createNumericRing(capacity: number): NumericRing {
 }
 
 /**
- * Two parallel numeric rings — timestamps and values — which is the shape every
- * time series in a collector actually wants. Kept as two `Float64Array`s rather
- * than a ring of `{ at, value }` objects precisely to avoid the per-sample
- * allocation.
+ * Two parallel numeric rings — timestamps and values — the shape every time
+ * series in a collector wants. Kept as two `Float64Array`s rather than a
+ * ring of `{ at, value }` objects to avoid the per-sample allocation.
  */
 export interface TimeSeries {
   readonly capacity: number;

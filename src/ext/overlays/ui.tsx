@@ -8,13 +8,11 @@ import type { OverlaysRuntime } from "./runtime";
 /**
  * The rendered surfaces. [dev-toolbar/ext/overlays]
  *
- * Everything drawn over the application is **React**, inside the `overlay`
- * slot. That is the whole teardown story: there is no imperative DOM writing to
- * reverse, so switching an overlay off, hiding the bar, unmounting the toolbar
- * and a hot reload all leave the page exactly as they found it by construction
- * rather than by discipline. The one thing that is not React — the host-outline
- * stylesheet — lives in `runtime.ts`, where its removal is part of the same
- * teardown as the listeners.
+ * Everything drawn over the application is React, inside the `overlay` slot —
+ * no imperative DOM writing to reverse, so toggling off, hiding, unmounting
+ * and hot reload all restore the page by construction. The one exception, the
+ * host-outline stylesheet, lives in `runtime.ts` and tears down with the
+ * listeners.
  */
 
 function useSnapshot(runtime: OverlaysRuntime): OverlaysSnapshot {
@@ -201,8 +199,7 @@ export function OverlaysSurface({ runtime, injectStyles }: SurfaceProps): ReactN
     (snapshot.enabled.inspect && snapshot.hover !== null) ||
     (snapshot.enabled.focus && snapshot.focusItems.length > 0);
   // `boxes` draws through its stylesheet, not here, so a surface with only
-  // `boxes` on has nothing to render — and an empty fixed div, even a
-  // transparent one, is a thing that can go wrong for no benefit.
+  // `boxes` on has nothing to render.
   if (!drawsSomething) return null;
 
   return (
@@ -268,10 +265,8 @@ function Inspector({ hover }: { hover: HoverTarget }): ReactNode {
     height: rect.height - padding.top - padding.bottom,
   };
 
-  // Above the box when there is room, below it otherwise, and never off the
-  // left edge. The label is the only part of the overlay a stationary pointer
-  // sees move, so it must not jitter across the boundary: `>=` on a rounded
-  // rect, not a fractional comparison.
+  // Above the box when there's room, below it otherwise, never off the left
+  // edge. `>=` on a rounded rect avoids jitter across the boundary.
   const above = rect.y >= LABEL_HEIGHT + 4;
   const labelStyle: CSSProperties = {
     left: `${Math.max(2, rect.x)}px`,

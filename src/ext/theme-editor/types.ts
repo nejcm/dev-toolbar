@@ -1,40 +1,23 @@
 /**
  * Shared vocabulary for `/ext/theme-editor`. [dev-toolbar/ext/theme-editor]
  *
- * Design tokens are **consumer-owned state**, exactly like the flags
- * `/ext/flags` edits and the session context `/ext/environment` renders. This
- * extension owns no design system, generates no palette and reaches for no
- * global. You hand it the tokens your application publishes; it edits them,
- * shows you the difference, and gives you the edit back as something you can
- * paste into code or hand to a designer.
+ * Design tokens are **consumer-owned state**: this extension owns no design
+ * system and generates no palette. You hand it the tokens your application
+ * publishes; it edits them, shows the difference, and gives the edit back as
+ * something pasteable into code or handed to a designer. The one state it owns
+ * is the override map — a toolbar preference nothing else in the app knows.
  *
- * The one piece of state it owns is the override map, because that is a toolbar
- * preference and nothing else in the app knows about it.
- *
- * Two validation rules in this file carry the whole safety story, and they are
- * deliberately different from each other:
- *
+ * Two validation rules carry the safety story, deliberately different:
  * - **A token *name* is validated, never redacted.** It ends up as a CSS
- *   identifier in an inline style and in exported CSS text, so the hazard is
- *   *syntax* — a name carrying `;` or `}` closes the declaration and opens a
- *   rule of the attacker's choosing. Masking it would corrupt every export and
- *   guard nothing.
- * - **A token *value* is validated **and** redacted.** Validated because it is
- *   about to be written into the page; redacted because it is about to leave on
- *   a clipboard.
- *
- * That is §15.3's "both halves of a join are foreign" with the correction this
- * extension forced: both halves are foreign, and the right treatment of each
- * half depends on what it becomes downstream, not on the fact that it is
- * foreign.
+ *   identifier in inline style and exported CSS text, so the hazard is
+ *   *syntax* — `;` or `}` closes the declaration and opens an attacker's rule.
+ *   Masking it would corrupt every export and guard nothing.
+ * - **A token *value* is validated *and* redacted.** Validated because it's
+ *   about to be written into the page; redacted because it's about to leave
+ *   on a clipboard.
  */
 
-/**
- * What kind of value a token holds.
- *
- * It decides the editor, the parsing strictness — and, per `render()` in the
- * runtime, whether the value may be masked by key name at all.
- */
+/** What kind of value a token holds — decides the editor, parsing strictness, and (per `render()` in the runtime) whether the value may be masked by key name. */
 export type TokenType = "color" | "length" | "number" | "string";
 
 export interface DesignTokenDefinition {
@@ -48,11 +31,9 @@ export interface DesignTokenDefinition {
   /** Defaults to the shape of `value` / `defaultValue`, else `"string"`. */
   type?: TokenType;
   /**
-   * The application's own value, **before any toolbar edit**.
-   *
-   * Omit it and the extension reads the computed value off the surface element
-   * instead — which is the usual case, because a design system's tokens are
-   * already declared in CSS. See `TokenView.base` for what that costs.
+   * The application's own value, **before any toolbar edit**. Omit it and the
+   * extension reads the computed value off the surface element instead (the
+   * usual case). See `TokenView.base` for what that costs.
    */
   value?: string;
   /** What the design system calls this token's default. */
@@ -71,11 +52,9 @@ export type TokensInput =
   | (() => readonly DesignTokenDefinition[]);
 
 /**
- * One place edits are applied, per §3H's "surface/subtree selection".
- *
- * The selector is resolved with `document.querySelector` at apply time, so a
- * surface that is not on the page yet simply has nothing to write to and says
- * so.
+ * One place edits are applied. The selector is resolved with
+ * `document.querySelector` at apply time, so a surface not yet on the page
+ * simply has nothing to write to and says so.
  */
 export interface ThemeSurface {
   id: string;
@@ -95,23 +74,15 @@ export const DEFAULT_SURFACE: ThemeSurface = {
 /* -------------------------------------------------------------------------- */
 
 /**
- * Prefixes this extension will never write, whatever a consumer declares.
+ * Prefixes this extension will never write, whatever a consumer declares —
+ * the guard against an app edit restyling the toolbar. The toolbar is styled
+ * entirely from `--dtb-*` and publishes `--dev-toolbar-height`; since `:root`
+ * is an ancestor of the portalled toolbar root, writing either name there
+ * would repaint the tool you're using to make the edit.
  *
- * This is the guard that keeps an app edit from restyling the toolbar. The
- * toolbar's own surface is styled entirely from `--dtb-*` (§4.1) and it
- * publishes `--dev-toolbar-height`; a surface of `:root` is an ancestor of the
- * portalled toolbar root, so writing either name there would repaint the tool
- * you are using to make the edit.
- *
- * It is a **refusal to write the name at all**, not a CSS rule, and that is
- * deliberate. §14.7's lesson is that a guard does not belong in a layer designed
- * to lose; the generalisation is that a guard expressible as "never do the
- * thing" should not be expressed in the cascade at all, where specificity,
- * layering and `!important` all get a vote. Nothing here has to win an argument
- * with the consumer's stylesheet, because nothing here is ever written.
- *
- * Restyling the bar is a supported thing to want — it is done from your own
- * stylesheet, unlayered, per §4.1, which needs no help from this extension.
+ * This is a **refusal to write the name at all**, not a CSS rule, so it never
+ * has to win an argument with the consumer's stylesheet. Restyling the bar is
+ * still supported — just from your own stylesheet, unlayered, per §4.1.
  */
 export const RESERVED_PREFIXES: readonly string[] = ["--dtb-", "--dev-toolbar"];
 
@@ -152,19 +123,13 @@ export type ValueRefusal = "empty" | "syntax" | "too-long" | "type";
 export const MAX_VALUE_LENGTH = 512;
 
 /**
- * Characters and constructs that must never reach a declaration this extension
- * writes or exports.
- *
- * `;` `{` `}` end or open a declaration or a rule. `\` and `/*` hide the rest
- * of a comment-terminated payload. `<` matters because the same string is
- * exported as CSS text a consumer may paste into a `<style>` block. `url(` and
- * `image-set(` fetch — a shared theme link that made the page issue a request
- * to somebody else's host would be a genuine exfiltration channel, not a
- * cosmetic problem — and `@import` is the same thing by another route.
- *
- * `var()`, `calc()`, `color-mix()` and friends are all fine and are the whole
- * point of a modern token, so this is a deny list of the four constructs that
- * escape a declaration, not an allow list of the syntax somebody might want.
+ * Constructs that must never reach a declaration this extension writes or
+ * exports: `;{}` open/close a declaration or rule, `\` and `/*` hide a
+ * comment-terminated payload, `<` matters because this string may be pasted
+ * into a `<style>` block, and `url(`/`image-set(`/`@import` fetch — a shared
+ * theme link causing a request to another host would be exfiltration, not a
+ * cosmetic problem. This is a deny list of escaping constructs, not an allow
+ * list — `var()`, `calc()`, `color-mix()` etc. are all fine.
  */
 const VALUE_FORBIDDEN =
   /[;{}<>\\]|\/\*|\*\/|\burl\s*\(|\bimage-set\s*\(|\bexpression\s*\(|@import|\bsrc\s*:/i;
@@ -175,16 +140,12 @@ const LENGTH_SHAPE =
 const FUNCTIONAL = /^(?:calc|clamp|min|max|var|env|round)\s*\(/i;
 
 /**
- * Accepts or refuses one edited value.
- *
- * The safety pass is universal and strict. The *type* pass refuses only what is
- * definitely not a value of that type — numbers and lengths, which have a
- * shape — and lets colours and free strings through, because `oklch()`,
- * `color-mix()` and `var()` are all legitimate colours and a matcher that tried
- * to enumerate them would refuse tomorrow's syntax.
- *
- * `undefined` rather than a coerced fallback, for `/ext/flags`' reason
- * (§12.4): a refused edit is recoverable and a silently corrected one is not.
+ * Accepts or refuses one edited value. The safety pass is universal and
+ * strict; the *type* pass refuses only what's definitely not that type
+ * (numbers/lengths have a fixed shape) and lets colours and free strings
+ * through, since a matcher trying to enumerate valid color syntax would
+ * refuse tomorrow's. Returns `undefined` rather than a coerced fallback: a
+ * refused edit is recoverable, a silently corrected one is not.
  */
 export function checkTokenValue(type: TokenType, raw: string): ValueRefusal | null {
   const value = raw.trim();
@@ -213,27 +174,19 @@ export function describeValueRefusal(refusal: ValueRefusal, type: TokenType): st
 /**
  * True when a surface selector is safe to print into exported CSS text.
  *
- * A selector is *resolved* with `querySelector`, which already fails closed on
- * anything malformed — but `cssText` **prints** it, and that is a different
- * hazard. `:root { } body { background: url(…) } .z` is not a valid selector, so
- * nothing resolves and nothing is applied; the exported stylesheet would
- * nonetheless carry a working rule the consumer never wrote, into a file
- * somebody pastes into their app. Found by attacking the export path.
+ * `querySelector` already fails closed on a malformed selector at *resolve*
+ * time, but `cssText` **prints** it regardless — e.g.
+ * `:root { } body { background: url(…) } .z` resolves to nothing, yet would
+ * still export a working rule the consumer never wrote. So this refuses to
+ * emit rather than tries to escape: the deny list covers only characters that
+ * end a selector and start something else (`;{}`, a comment opener, `<`, a
+ * backslash escape, `url(`).
  *
- * The §16.2 shape again: refuse to emit rather than try to escape. The deny
- * list is therefore only the characters that **end a selector and start
- * something else** — `;` `{` `}`, a comment opener, `<` (which is not selector
- * syntax at all and is how you close a `<style>` block somebody pasted this
- * into), a backslash escape, and `url(`.
- *
- * Combinators are **not** on it. The first cut denied `>`, `+` and `~` under a
- * comment claiming "a real selector never contains any of these", which was
- * simply false: `#app > main` is an ordinary surface selector, and denying it
- * silently exported the block scoped to `:root` with a note saying it could not
- * be printed — a wrong scope in a stylesheet, which is worse than the refusal
- * it was imitating. `@` is likewise allowed *except* at the start, because
- * that is the only position where it can open an at-rule, and it is legal
- * inside an attribute selector's value.
+ * Combinators (`>`, `+`, `~`) are deliberately *not* denied — `#app > main` is
+ * an ordinary selector, and refusing it would silently export the block
+ * scoped to `:root` instead, a wrong scope that's worse than a refusal. `@` is
+ * allowed except at the start (the only position it can open an at-rule); it's
+ * legal inside an attribute selector's value.
  */
 export function isPrintableSelector(selector: string): boolean {
   return (
@@ -300,15 +253,12 @@ export interface TokenView {
   type: TokenType;
 
   /**
-   * The application's own value, ignoring this extension's edit.
-   *
-   * Supplied by the consumer when they set `value`; otherwise read off the
-   * surface with `getComputedStyle`. In the second case it is read only while
-   * the token is **not** overridden, and the last pre-override read is kept
-   * afterwards — because once the override is on the element, the computed
-   * value *is* the override, and re-reading it would make every row claim the
-   * app already agreed with the edit. That is `/ext/flags`' §12.1 rule arriving
-   * from the other direction: never derive "what it was" from "what it is".
+   * The application's own value, ignoring this extension's edit. Supplied by
+   * the consumer via `value`, or read off the surface with `getComputedStyle`
+   * — but only while the token is **not** overridden; the last pre-override
+   * read is kept afterwards, since once the override is on the element the
+   * computed value *is* the override, and re-reading it would falsely claim
+   * the app already agreed with the edit.
    */
   base: string | null;
   defaultValue: string | null;
@@ -326,19 +276,12 @@ export interface TokenView {
   masked: boolean;
   /**
    * True when redaction changed something this row shows that is **not** the
-   * value — its description or its group name.
-   *
-   * Separate from `masked` on purpose. `masked` is about the value and drives
-   * the editor — the input refuses to seed itself from a masked value — and a
-   * row whose *description* was scrubbed has a perfectly usable value. But both
-   * of these are exported (the Figma `$description`, and the group as a JSON
-   * key), so anything that *counts* what was withheld from an outbound document
-   * has to include them, or the count and the thing it counts are not the same
-   * thing (§15.3).
-   *
-   * The group joined this flag late, and only because §16.8's checklist names
-   * the case: it is consumer-supplied configuration that reaches an outbound
-   * document, and "configuration is a source like any other".
+   * value — its description or group name. Kept separate from `masked`
+   * because `masked` drives the editor (it refuses to seed itself from a
+   * masked value) while a row with only a scrubbed *description* still has a
+   * usable value — but both are exported (Figma `$description`, group as a
+   * JSON key), so anything counting what was withheld from an outbound
+   * document must include them too.
    */
   metadataMasked: boolean;
 
@@ -401,19 +344,14 @@ export function matchesQuery(view: TokenView, query: string): boolean {
 /* -------------------------------------------------------------------------- */
 
 /**
- * §3H's shareable recipe, with one deliberate divergence.
- *
- * §3H suggests `overrides: Record<string, { l?, c?, h?, alpha? }>` — a delta in
- * OKLCH — plus `inputs: { base, accent, contrast }`. Both presume the toolbar
- * owns a colour model and a scale generator: something has to turn "lightness
- * +4" into a value, and that something is a design system. This extension
- * deliberately owns neither (see the note at the top of `index.tsx`), so an
- * override here is the **literal value** the token takes, and the recipe is a
- * complete, self-describing document rather than a delta against a generator
- * the reader may not have.
- *
- * That also makes the Figma pipeline in §3H deterministic in the only way that
- * matters: what is exported is what is applied.
+ * §3H's shareable recipe, with one deliberate divergence: §3H suggests an
+ * OKLCH delta (`overrides: Record<string, { l?, c?, h?, alpha? }>` plus
+ * `inputs: { base, accent, contrast }`), which presumes the toolbar owns a
+ * colour model and scale generator. This extension owns neither, so an
+ * override here is the **literal value** the token takes — a complete,
+ * self-describing document rather than a delta against a generator the
+ * reader may not have. That also makes the Figma pipeline deterministic:
+ * what is exported is what is applied.
  */
 export interface ThemeRecipe {
   schemaVersion: 1;
@@ -436,12 +374,10 @@ export interface RecipeParse {
 }
 
 /**
- * Parses foreign JSON into a recipe, refusing everything it cannot vouch for.
- *
- * Names and values are *not* filtered here — the caller does that against its
- * live catalogue, because "is this a token this application has" is not a
- * question a parser can answer. What this does refuse is a wrong schema
- * version, a non-object, and a non-string entry.
+ * Parses foreign JSON into a recipe, refusing everything it cannot vouch for:
+ * a wrong schema version, a non-object, a non-string entry. Names and values
+ * are *not* filtered here — the caller checks those against its live
+ * catalogue.
  */
 export function parseRecipe(raw: string): RecipeParse {
   let parsed: unknown;
@@ -467,9 +403,8 @@ export function parseRecipe(raw: string): RecipeParse {
   const overrides: Record<string, string> = {};
   for (const [name, value] of Object.entries(rawOverrides as Record<string, unknown>)) {
     if (typeof value !== "string") continue;
-    // `Object.defineProperty`, not assignment: an override literally called
-    // `__proto__` must round-trip as data. `/runtime`'s `redact()` learned this
-    // the hard way (§12.5) and every rebuild path in this package now does it.
+    // Object.defineProperty, not assignment: an override literally named
+    // `__proto__` must round-trip as data, not mutate the prototype.
     Object.defineProperty(overrides, name, {
       value,
       writable: true,

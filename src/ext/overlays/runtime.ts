@@ -1,38 +1,25 @@
 /**
  * Everything `/ext/overlays` owns that is not React. [dev-toolbar/ext/overlays]
  *
- * Built by `overlays()`, not by `start(api)` — slot functions run during the
- * toolbar's first render, which is before any effect fires, so the store the
- * chip reads has to exist by the time the factory returns. Fourth extension,
- * fourth time this is the first thing to know.
+ * Built by `overlays()`, not by `start(api)`: slot functions run during the
+ * toolbar's first render (before any effect fires), so the store the chip
+ * reads must exist by the time the factory returns.
  *
- * This is the first extension that **draws over the host application**, and
- * every rule below exists because of that.
- *
- * **It never takes a pointer event it does not own.** The drawing surface is
- * `pointer-events: none` in its entirety, so a click always reaches the page
- * underneath. The inspector follows the pointer through a passive, capturing
- * `pointermove` listener and `document.elementFromPoint` — it observes the
- * pointer, it never intercepts it.
- *
- * **It leaves nothing behind.** Everything drawn is React inside the `overlay`
- * slot, so unmounting the toolbar removes it by construction. The one exception
- * is `boxes`, which needs a stylesheet in `document.head` (see
- * `setHostOutlines`), and that stylesheet is removed by the same teardown that
- * detaches the listeners — on `api.signal`, on the returned cleanup, and when
- * the overlay is switched off.
- *
- * **It observes nothing while the bar is hidden.** Core reports visibility and
- * never pauses anybody (§2), so this decides for itself what hidden means: the
- * overlay slot is not rendered then, so scanning would be measuring for a
- * surface that does not exist. Listeners detach, the host stylesheet comes off,
- * and everything comes back exactly as it was when the bar returns. This is the
- * §13.2 lesson applied to a non-modal overlay.
- *
- * **Nothing here may throw.** A measurement runs inside a `requestAnimationFrame`
- * and a `MutationObserver`, where nobody can catch it, and it runs again next
- * frame. So a throw turns every overlay *off* and says so, rather than logging
- * sixty times a second.
+ * This is the first extension that draws over the host application:
+ * - **Never takes a pointer event it doesn't own** — the surface is
+ *   `pointer-events: none` throughout; the inspector only observes the
+ *   pointer via a passive, capturing `pointermove` listener + `elementFromPoint`.
+ * - **Leaves nothing behind** — everything drawn is React inside `overlay`,
+ *   removed on unmount by construction. Sole exception: `boxes`' stylesheet
+ *   in `document.head` (`setHostOutlines`), torn down alongside the listeners.
+ * - **Observes nothing while the bar is hidden** — core reports visibility
+ *   but never pauses anybody (§2), so this decides "hidden" for itself: the
+ *   overlay slot isn't rendered then, listeners detach, the host stylesheet
+ *   comes off, and everything resumes when the bar returns (§13.2).
+ * - **Nothing here may throw** — measurement runs inside a
+ *   `requestAnimationFrame`/`MutationObserver` where nobody upstream could
+ *   catch it, so a throw switches every overlay off instead of recurring
+ *   every frame.
  */
 import { STYLE_ATTRIBUTE, createThrottledStore, ensureStyleSheet } from "../../runtime";
 import type { ThrottledStore } from "../../runtime";
@@ -75,20 +62,17 @@ export const DEFAULT_FOCUS_LIMIT = 200;
 /**
  * The one stylesheet this extension puts in front of the application.
  *
- * Deliberately **not** inside `@layer dev-toolbar`. Every other stylesheet in
- * this package is layered so that consumer CSS wins without `!important`
- * (§4.1); this one has the opposite job — it is a debugging instrument that has
- * to be visible over the app's own styles, and it is only ever present while a
- * developer has explicitly switched it on. It is still not `!important`, so an
- * app rule with higher specificity can beat it; that is a limitation, and the
- * panel says so rather than hiding it.
+ * Deliberately not inside `@layer dev-toolbar`: every other stylesheet here is
+ * layered so consumer CSS wins without `!important` (§4.1), but this one must
+ * be visible over the app's own styles while a developer has it switched on.
+ * Still not `!important`, so a higher-specificity app rule can beat it — the
+ * panel says so rather than hiding the limitation.
  *
- * `outline` rather than `border` or `box-shadow`, because an outline is painted
- * outside the box and **never reflows the page**. An overlay that changed the
- * layout it is describing would be worse than useless.
+ * `outline`, not `border`/`box-shadow`, because it paints outside the box and
+ * never reflows the page.
  *
  * The `:not()` pair keeps it off every dev toolbar on the page — ours and
- * anybody else's — so the bar, the panel and the palette never get outlined.
+ * anybody else's.
  */
 export const BOXES_CSS = String.raw`html body :not([data-dev-toolbar]):not([data-dev-toolbar] *) {
   outline: 1px solid rgba(88, 166, 255, 0.42);
@@ -126,22 +110,14 @@ export interface OverlaysRuntime {
 export const BOXES_REFS_ATTRIBUTE = "data-dtb-refs";
 
 /**
- * Acquires or releases the host-outline stylesheet. **Reference-counted.**
+ * Acquires or releases the host-outline stylesheet. Reference-counted via
+ * `data-dtb-refs` on the element (DOM-state, not module-state, since two
+ * toolbars — or two bundled copies of this extension — are separate closures
+ * sharing one `document.head`). Without the count, one instance unmounting
+ * would remove outlines belonging to another instance that still has the
+ * overlay on, leaving its chip/panel out of sync with the DOM.
  *
- * Insertion goes through `/runtime`'s `ensureStyleSheet`, so two copies of this
- * package still insert one element. Everything else about it is deliberately
- * DOM-state rather than module-state, for the same reason: two toolbars on one
- * page — or two bundled copies of this extension — are separate closures that
- * cannot see each other's bookkeeping, but they share one `document.head`.
- *
- * The count lives on the element as `data-dtb-refs`, and the sheet is removed
- * when the last holder releases it. Without the count, one instance unmounting
- * removed the outlines belonging to another instance that still had the overlay
- * switched on — its flag, its chip and its panel all still saying so. Failing in
- * the safe direction is not the same as being right, and a state that disagrees
- * with the DOM is the class of bug this codebase's rules exist to prevent.
- *
- * Release still queries the document for the attribute rather than holding the
+ * Release queries the document for the attribute rather than holding the
  * node, so a runtime that lost its reference cannot leave a sheet behind.
  */
 export function setHostOutlines(on: boolean, doc?: Document): void {
@@ -192,15 +168,11 @@ const DISABLEABLE = new Set([
 /**
  * True when the browser will skip this element in the tab sequence.
  *
- * `aria-disabled` is deliberately **not** here. It is a promise to assistive
- * technology, not a change to focus behaviour: an `aria-disabled` button is
- * still a real `Tab` stop, and leaving it out would describe a sequence with
- * missing stops — the inverse of the error §14.5 is about.
- *
- * A disabled **fieldset** is, though. It disables every control it contains,
- * which is how a whole form section is switched off in practice — and the one
- * exception is real: controls inside the fieldset's *first* `<legend>` stay
- * enabled, so a "turn this section on" checkbox in the legend is still a stop.
+ * `aria-disabled` is deliberately not here — it's a promise to assistive tech,
+ * not a change to focus behaviour, so an `aria-disabled` button is still a
+ * real `Tab` stop. A disabled `fieldset` does disable its contained controls,
+ * except those inside its first `<legend>` (e.g. a "turn this section on"
+ * checkbox), which stay enabled.
  */
 const isDisabled = (element: Element): boolean => {
   if (DISABLEABLE.has(element.tagName) && element.hasAttribute("disabled")) {
@@ -263,21 +235,17 @@ export function createOverlaysRuntime(options: OverlaysRuntimeOptions = {}): Ove
   let unnamedCount = 0;
 
   /**
-   * The elements the focus overlay is drawing over.
-   *
-   * These are strong references to host nodes, which is a retention risk worth
-   * naming: a node removed from the document stays reachable until the next
-   * measurement. Every measurement drops anything whose `isConnected` is false
-   * and teardown clears the list, so the window is one frame wide and the steady
-   * state holds nothing the document does not hold itself.
+   * The elements the focus overlay is drawing over. Strong references to host
+   * nodes — a retention risk worth naming: a removed node stays reachable
+   * until the next measurement drops anything with `isConnected === false`
+   * (teardown clears the list too), so the window is one frame wide.
    *
    * Each entry carries the accessible name and `tabindex` resolved at scan
    * time, so a scroll frame costs one rect per element and nothing else.
    *
-   * The inspector deliberately retains *nothing*: it re-hit-tests the pointer's
-   * coordinates every frame instead of holding the element it found. That is
-   * also the correct behaviour — scrolling changes what is under a stationary
-   * pointer — so the cheap thing and the right thing agree.
+   * The inspector, by contrast, retains nothing — it re-hit-tests the
+   * pointer's coordinates every frame, which is also correct since scrolling
+   * changes what's under a stationary pointer.
    */
   let focusElements: Scanned[] = [];
 
@@ -299,10 +267,8 @@ export function createOverlaysRuntime(options: OverlaysRuntimeOptions = {}): Ove
   });
 
   const store = createThrottledStore<OverlaysSnapshot>(snapshot(), {
-    // The pointer moves every frame; coalescing on a timer would make the
-    // inspector lag the cursor, which is the one thing it must not do. The
-    // saving comes from `equals` instead: a frame in which nothing drawn
-    // changed publishes nothing at all.
+    // intervalMs: 0 because coalescing on a timer would lag the cursor; the
+    // saving instead comes from `equals` — an unchanged frame publishes nothing.
     intervalMs: 0,
     equals: sameSnapshot,
   });
@@ -316,9 +282,9 @@ export function createOverlaysRuntime(options: OverlaysRuntimeOptions = {}): Ove
   /* ------------------------------------------------------------------ */
 
   /**
-   * Every measurement is wrapped in this. A throw inside a frame callback or a
-   * `MutationObserver` cannot be caught by anybody upstream, and it will happen
-   * again on the next frame, so the only honest response is to stop drawing.
+   * Every measurement is wrapped in this: a throw inside a frame callback or
+   * `MutationObserver` can't be caught upstream and would recur every frame,
+   * so the only honest response is to stop drawing.
    */
   const fail = (where: string, thrown: unknown): void => {
     const message = thrown instanceof Error ? thrown.message : String(thrown);
@@ -329,11 +295,9 @@ export function createOverlaysRuntime(options: OverlaysRuntimeOptions = {}): Ove
         "rather than retrying it every frame.",
       thrown,
     );
-    // Deliberately **not** persisted. Turning everything off is the right
-    // response to a throw that would otherwise recur every frame; erasing what
-    // the developer chose is not, and one transient failure should not cost
-    // them their toggles on every future load. So memory says off, storage
-    // still says what they picked, and a reload puts it back.
+    // Not persisted: a transient failure shouldn't cost the developer their
+    // saved toggles. Memory says off; storage still has their picks, restored
+    // on reload.
     flags = { ...NO_OVERLAYS };
     hover = null;
     focusItems = [];
@@ -388,18 +352,16 @@ export function createOverlaysRuntime(options: OverlaysRuntimeOptions = {}): Ove
     if (
       !pointerSeen ||
       typeof document === "undefined" ||
-      // Absent in jsdom, and in any other environment without layout. Reading
-      // no element is the correct answer there; throwing would switch every
-      // overlay off on a platform difference rather than on a fault.
+      // Absent in jsdom and other layout-less environments; no element is the
+      // correct answer there, not a thrown error.
       typeof document.elementFromPoint !== "function"
     ) {
       hover = null;
       return;
     }
     const found = document.elementFromPoint(pointerX, pointerY);
-    // `elementFromPoint` hit-tests the real page, so it returns the toolbar
-    // when the pointer is over the bar, the panel or the palette. Inspecting
-    // the tool rather than the application is never what was asked for.
+    // elementFromPoint hit-tests the real page, so it can return the toolbar
+    // itself when the pointer is over the bar/panel/palette — never wanted.
     if (!found || isInToolbar(found)) {
       hover = null;
       return;
@@ -423,10 +385,8 @@ export function createOverlaysRuntime(options: OverlaysRuntimeOptions = {}): Ove
       if (element.getAttribute("aria-hidden") === "true") continue;
       if (element.getAttribute("contenteditable") === "false") continue;
       if (element.hasAttribute("inert")) continue;
-      // `type="hidden"` passes every selector above and has no box at all, so
-      // without this it consumed a slot toward the badge limit and was then
-      // dropped at measure time — a scan that stopped early over elements it
-      // was never going to draw.
+      // type="hidden" passes every selector above and has no box, so without
+      // this it consumed a badge-limit slot only to be dropped at measure time.
       if (
         element.tagName === "INPUT" &&
         (element.getAttribute("type") ?? "").toLowerCase() === "hidden"
@@ -439,22 +399,16 @@ export function createOverlaysRuntime(options: OverlaysRuntimeOptions = {}): Ove
         break;
       }
     }
-    // The accessible name is resolved **here**, once per scan, not per frame.
-    // Resolving it is a subtree text walk plus, for `aria-labelledby`, a
-    // `getElementById` — cheap once, and up to 200 of them on every scroll
-    // frame is precisely the kind of cost the panel's cost line exists to stop
-    // anybody paying unknowingly.
+    // Accessible name is resolved here, once per scan, not per frame — a
+    // subtree walk plus a possible getElementById, too costly to repeat for
+    // up to 200 elements every scroll frame.
     //
-    // What makes the cache safe is not that a name cannot change without a DOM
-    // mutation — it is that **every mutation that can change one is observed**.
-    // Those are not the same claim, and the difference is a real defect this
-    // comment used to paper over: text written straight into an existing Text
-    // node is a `characterData` record, which the observer did not ask for, so
-    // an emptied button label left a badge saying "named" indefinitely. The
-    // observer now watches `characterData`, the attributes that carry or change
-    // a name, and `childList` for text nodes appearing and leaving. If you add
-    // a branch to `accessibleName` that reads something else, add its mutation
-    // type there in the same commit.
+    // Cache safety depends on every mutation that can change a name being
+    // observed by the MutationObserver below — not on names being otherwise
+    // stable. In particular, text written into an existing Text node is a
+    // `characterData` record, not `childList`; missing that once left an
+    // emptied button badge saying "named" indefinitely. If `accessibleName`
+    // grows a branch reading something new, add its mutation type below too.
     focusElements = inTabOrder(found).map((element) => ({
       element,
       name: accessibleName(element),
@@ -463,12 +417,9 @@ export function createOverlaysRuntime(options: OverlaysRuntimeOptions = {}): Ove
   };
 
   /**
-   * Re-measures the retained elements. Runs every frame the page scrolled or
-   * resized, which is why it re-queries nothing.
-   *
-   * Numbering counts every element that has a box, whether or not it is on
-   * screen, and only the on-screen ones are drawn — so scrolling moves badges
-   * without renumbering them.
+   * Re-measures the retained elements on every scroll/resize frame — no
+   * re-query. Numbering counts every element with a box regardless of
+   * on-screen visibility, so scrolling moves badges without renumbering them.
    */
   const measureFocus = (): void => {
     const bounds = viewport();
@@ -481,8 +432,7 @@ export function createOverlaysRuntime(options: OverlaysRuntimeOptions = {}): Ove
       if (!element.isConnected) continue;
       alive.push(scanned);
       const rect = toRect(element.getBoundingClientRect());
-      // 0 × 0 is `display: none` in every practical case, and it is the one
-      // "is this painted" test that costs no style resolution.
+      // 0×0 is display:none in every practical case, at no style-resolution cost.
       if (rect.width <= 0 && rect.height <= 0) continue;
       index += 1;
       if (scanned.name === null) unnamed += 1;
@@ -525,8 +475,8 @@ export function createOverlaysRuntime(options: OverlaysRuntimeOptions = {}): Ove
 
   const schedule = () => {
     if (frame !== null || typeof requestAnimationFrame !== "function") {
-      // No rAF (jsdom without one, SSR): measure synchronously rather than
-      // silently drawing nothing. `guard` still contains anything it throws.
+      // No rAF (jsdom without one, SSR): measure synchronously instead of
+      // silently drawing nothing; `guard` still contains anything it throws.
       if (frame === null) runFrame();
       return;
     }
@@ -564,17 +514,15 @@ export function createOverlaysRuntime(options: OverlaysRuntimeOptions = {}): Ove
   let mutationTimer: ReturnType<typeof setTimeout> | null = null;
 
   const onMutation = (records: MutationRecord[]) => {
-    // Records we caused. The surface is portaled into `body`, so the badges this
-    // overlay draws and removes as the page scrolls are themselves mutations of
-    // the observed subtree — and a rescan triggered by our own drawing is pure
-    // self-inflicted work. Filtered here rather than by narrowing the observer,
-    // because the thing worth watching is the application's whole body.
+    // Skip records we caused ourselves: the surface is portaled into `body`,
+    // so badges drawn/removed as the page scrolls are themselves mutations of
+    // the observed subtree, and rescanning for them would be self-inflicted work.
     if (records.length > 0 && records.every((record) => isInToolbar(record.target))) {
       return;
     }
-    // Debounced, not per-record: a React commit produces a burst of records and
-    // re-querying the document on each one is how an overlay becomes the
-    // performance problem it was installed to find.
+    // Debounced, not per-record: a React commit is a burst of records, and
+    // re-querying on each one would make this overlay the perf problem it
+    // was installed to find.
     if (mutationTimer !== null) return;
     mutationTimer = setTimeout(() => {
       mutationTimer = null;
@@ -591,9 +539,8 @@ export function createOverlaysRuntime(options: OverlaysRuntimeOptions = {}): Ove
     if (on === pointerAttached || typeof window === "undefined") return;
     pointerAttached = on;
     const method = on ? "addEventListener" : "removeEventListener";
-    // Capturing and passive: capture so a host that stops propagation cannot
-    // blind the inspector, passive so it can never delay a scroll or be
-    // mistaken for something that wants to cancel the event.
+    // Capture so a host stopping propagation can't blind the inspector;
+    // passive so it can never delay a scroll.
     window[method]("pointermove", onPointerMove as EventListener, {
       capture: true,
       passive: true,
@@ -618,9 +565,8 @@ export function createOverlaysRuntime(options: OverlaysRuntimeOptions = {}): Ove
     if (on === geometryAttached || typeof window === "undefined") return;
     geometryAttached = on;
     const method = on ? "addEventListener" : "removeEventListener";
-    // Capturing scroll: scroll does not bubble, so a listener on window only
-    // hears the document. Overlays sit over app content that scrolls in its own
-    // containers far more often than the page does.
+    // Capture: scroll doesn't bubble, so a window listener alone would only
+    // hear the document, missing app content scrolling in its own containers.
     window[method]("scroll", onGeometry, { capture: true, passive: true });
     window[method]("resize", onGeometry, { passive: true });
   };
@@ -636,20 +582,13 @@ export function createOverlaysRuntime(options: OverlaysRuntimeOptions = {}): Ove
         childList: true,
         subtree: true,
         attributes: true,
-        // A control's accessible name usually *is* its text, and React updates
-        // a sole text child by writing `nodeValue` rather than replacing the
-        // node — which is a characterData record and nothing else. Without
-        // this, `<button>{label}</button>` going from "Save" to "" fired no
-        // observed record at all, so the cached name was never re-resolved and
-        // the badge went on claiming the button was named. Records target the
-        // Text node; `isInToolbar` resolves those through `parentElement`, so
-        // the self-mutation filter still applies and the debounce still bounds
-        // the extra callbacks.
+        // React updates a sole text child by writing nodeValue rather than
+        // replacing the node — a characterData record. Without watching it,
+        // `<button>{label}</button>` going "Save" -> "" left the cached name
+        // stale and the badge claiming the button was named.
         characterData: true,
-        // Everything the scan filters on, plus everything `accessibleName`
-        // reads. Kept as one list on purpose: these two sets are the whole
-        // definition of "a record that could change what is drawn", and
-        // splitting them is how one of them silently falls behind the code.
+        // Everything the scan filters on, plus everything accessibleName
+        // reads — kept as one list so neither set can silently drift from the code.
         attributeFilter: [
           // tabbability
           "tabindex",
@@ -694,8 +633,7 @@ export function createOverlaysRuntime(options: OverlaysRuntimeOptions = {}): Ove
 
   /**
    * Brings the world into line with `flags` and `active`. Every mutator ends
-   * here, so there is exactly one place that owns what is attached — which is
-   * what makes "off leaves nothing behind" checkable rather than hopeful.
+   * here, so exactly one place owns what is attached.
    */
   function sync(): void {
     const on = active;
@@ -716,7 +654,7 @@ export function createOverlaysRuntime(options: OverlaysRuntimeOptions = {}): Ove
     try {
       storage.setItem(ENABLED_KEY, serializeFlags(flags));
     } catch {
-      // A custom adapter is consumer code. Losing persistence is survivable;
+      // A custom adapter is consumer code; losing persistence is survivable,
       // throwing out of a click handler is not.
     }
   }
@@ -764,9 +702,8 @@ export function createOverlaysRuntime(options: OverlaysRuntimeOptions = {}): Ove
         } catch {
           raw = null;
         }
-        // A stored map wins over `defaults` only where it is present, and
-        // `parseFlags` fails closed — an unreadable blob means every overlay
-        // off, never a page mysteriously covered in outlines.
+        // Stored map wins over `defaults` where present; parseFlags fails
+        // closed, so an unreadable blob means every overlay off.
         if (raw !== null) flags = parseFlags(raw);
       }
 
@@ -774,10 +711,8 @@ export function createOverlaysRuntime(options: OverlaysRuntimeOptions = {}): Ove
       active = api.isVisible();
 
       const stopWatchingVisibility = api.subscribeVisibility((visible) => {
-        // The overlay slot is not rendered while the bar is hidden, so anything
-        // measured then is measured for a surface that does not exist — and the
-        // host outlines would be left on a page with no toolbar to remove them
-        // from. Everything comes back on its own when the bar does.
+        // The overlay slot isn't rendered while the bar is hidden; everything
+        // resumes on its own when it comes back.
         active = visible;
         sync();
         publish();
@@ -790,8 +725,8 @@ export function createOverlaysRuntime(options: OverlaysRuntimeOptions = {}): Ove
 
       let disposed = false;
       const dispose = () => {
-        // Idempotent: this is both the abort handler and the returned cleanup,
-        // and core runs the second after the first.
+        // Idempotent: both the abort handler and the returned cleanup; core
+        // runs the second after the first.
         if (disposed) return;
         disposed = true;
         active = false;
@@ -801,12 +736,9 @@ export function createOverlaysRuntime(options: OverlaysRuntimeOptions = {}): Ove
         setPointerListeners(false);
         setGeometryListeners(false);
         setFocusObserver(false);
-        // Releases *our* reference, and only if we hold one. It used to remove
-        // the sheet unconditionally, on the theory that teardown is the moment
-        // to be sure — which, with a second toolbar on the page holding the same
-        // sheet, meant tearing this one down silently un-outlined that one while
-        // its chip and panel still said the overlay was on. The count is the
-        // reason it is safe not to be heavy-handed here.
+        // Releases only our reference (ref-counted, see setHostOutlines) — an
+        // unconditional removal would un-outline a second toolbar's sheet
+        // while its chip/panel still said the overlay was on.
         setOutlines(false);
         stopWatchingVisibility();
         storage = null;
@@ -814,8 +746,7 @@ export function createOverlaysRuntime(options: OverlaysRuntimeOptions = {}): Ove
         focusElements = [];
         focusItems = [];
         // The store outlives one start/stop cycle — StrictMode runs
-        // mount → cleanup → mount, and destroying it here would drop React's
-        // subscription and freeze the panel.
+        // mount -> cleanup -> mount; destroying it here would freeze the panel.
         publish();
         store.flush();
       };

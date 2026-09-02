@@ -1,10 +1,9 @@
 /**
  * JS heap usage. [dev-toolbar/ext/metrics]
  *
- * `performance.memory` is a non-standard Chromium extension. Everywhere else
- * this collector reports `unsupported` and the chip renders `NA` — the one
- * thing it must never do is imply the number is missing because the page is
- * healthy. It is also *not* process memory, and the panel says so.
+ * `performance.memory` is a non-standard Chromium extension; elsewhere this
+ * reports `unsupported` (never implying the number is missing because the
+ * page is healthy). It's also *not* process memory — the panel says so.
  */
 import { createTimeSeries } from "../../../runtime";
 import { formatBytes, formatBytesDelta, formatPercent, NOT_AVAILABLE } from "../format";

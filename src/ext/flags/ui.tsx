@@ -9,10 +9,10 @@ import type { FlagsRuntime } from "./runtime";
 /**
  * The rendered surface. [dev-toolbar/ext/flags]
  *
- * Slot functions must be cheap, so they return these components and the
- * components subscribe to the extension's own store. Everything they render
- * comes from the snapshot, which is redacted before it is built — no component
- * here has access to a raw flag value, and so none can print one.
+ * Slot functions must be cheap, so they return these components, which
+ * subscribe to the extension's own store. Everything rendered comes from the
+ * snapshot, already redacted before it's built — no component here has
+ * access to a raw flag value.
  */
 
 function useSnapshot(runtime: FlagsRuntime): FlagsSnapshot {
@@ -29,16 +29,14 @@ function useFlagsStyles(inject: boolean): void {
   }, [inject]);
 }
 
-/* -------------------------------------------------------------------------- */
-/* Bar                                                                         */
-/* -------------------------------------------------------------------------- */
+/* Bar */
 
 /**
- * The promoted flag itself: one control in the bar, per §7.
+ * The promoted flag itself: one control in the bar.
  *
- * A boolean is a `role="switch"` that flips the flag where it stands — that is
- * the whole point of promoting it during a migration. Anything else opens the
- * panel, because a bar is no place to edit a string.
+ * A boolean is a `role="switch"` that flips the flag in place — the point of
+ * promoting it during a migration. Anything else opens the panel; a bar is
+ * no place to edit a string.
  */
 function PromotedControl({
   view,
@@ -134,10 +132,9 @@ export function FlagsChip({
     </button>
   );
 
-  // One extension is one overflow unit — the shell collapses items, not the
-  // parts inside them — so a collapsed `/ext/flags` takes its promoted flag
-  // with it. Collapsing must therefore not cost the *capability*: the promoted
-  // control is rendered here too, as the same working switch.
+  // The shell collapses whole extensions, not parts of them, so a collapsed
+  // `/ext/flags` takes its promoted flag with it. Rendered here too, as the
+  // same working switch, so collapsing doesn't cost the capability.
   const promoted = snapshot.promoted.map((view) => (
     <PromotedControl
       key={view.key}
@@ -165,9 +162,7 @@ export function FlagsChip({
   );
 }
 
-/* -------------------------------------------------------------------------- */
-/* Panel                                                                       */
-/* -------------------------------------------------------------------------- */
+/* Panel */
 
 function Editor({
   view,
@@ -178,8 +173,8 @@ function Editor({
   writable: boolean;
   runtime: FlagsRuntime;
 }): ReactNode {
-  // Uncontrolled between commits on purpose: the store republishes while you
-  // type, and a controlled input fed from it would fight the caret.
+  // Uncontrolled between commits: the store republishes while you type, and
+  // a controlled input fed from it would fight the caret.
   const [draft, setDraft] = useState("");
   const [rejected, setRejected] = useState(false);
 
@@ -244,9 +239,8 @@ function Editor({
     );
   }
 
-  // A refused edit keeps the draft so it can be fixed. Coercing it instead —
-  // "abc" in a number editor becoming `0` — would persist and apply a value
-  // nobody typed, to the running application.
+  // A refused edit keeps the draft so it can be fixed, rather than coercing
+  // ("abc" -> `0`) and applying a value nobody typed.
   const tryCommit = () => {
     if (draft === "") return;
     const parsed = parseValue(view.type, draft);
@@ -267,15 +261,14 @@ function Editor({
         aria-label={`Override ${view.key}`}
         aria-invalid={rejected}
         data-dtb-invalid={rejected ? "true" : "false"}
-        // Deliberately `text` with a numeric keypad hint rather than
-        // `type="number"`: a number input silently discards anything it cannot
-        // parse, so "1e" arrives here as "" with no keystroke to show for it —
-        // and `Number("")` is `0`, which is how an empty field plus Enter used
-        // to pin a flag to zero. Parsing it ourselves lets the row say no.
+        // `text` with a numeric keypad hint, not `type="number"`: a number
+        // input silently discards unparseable text (e.g. "1e" becomes "",
+        // and `Number("")` is `0`), so we parse it ourselves and let the row
+        // say no instead of silently pinning the flag to zero.
         type="text"
         {...(view.type === "number" ? { inputMode: "decimal" as const } : {})}
-        // A masked value never round-trips through the editor: showing it in an
-        // input would be the one place the redacted snapshot leaked back out.
+        // A masked value never round-trips through the editor — that would be
+        // the one place the redacted snapshot leaked back out.
         placeholder={view.masked ? "masked — type a new value" : view.effectiveText}
         title={rejected ? `Not a ${view.type} — nothing was applied.` : `Override ${view.key}`}
         value={draft}
@@ -346,8 +339,7 @@ function Row({
         ) : null}
         {view.applyError ? (
           <span data-dtb-part="flag-tag" data-dtb-tag="not-applied" title={view.applyError}>
-            {/* The same slot records a failed *clear*, where "override not
-                applied" would read backwards. */}
+            {/* Same slot also records a failed clear, where "override not applied" would read backwards. */}
             {view.overridden ? "override not applied" : "clear not applied"}
           </span>
         ) : null}
@@ -405,9 +397,7 @@ function Row({
             {view.effectiveText}
           </span>
         </span>
-        {/* The honest bit: the application's own value stays visible next to
-            the override, so nobody debugs against a number the server never
-            sent. */}
+        {/* App's own value stays visible next to the override, so nobody debugs against a number the server never sent. */}
         <span>
           app{" "}
           <span data-dtb-part="flag-value" data-dtb-role="base">
@@ -460,9 +450,8 @@ export function FlagsPanel({ runtime, label, injectStyles }: PanelProps): ReactN
   const pending = new Set(snapshot.reloadPending);
   const failed = Object.keys(snapshot.adapterErrors);
 
-  // `/runtime`'s shared writer, not a hand-rolled one: a missing clipboard API
-  // and a rejected write are the same answer to this panel, and four copies of
-  // that judgement is three too many. See `runtime/clipboard.ts`.
+  // `/runtime`'s shared writer: a missing clipboard API and a rejected write
+  // are the same answer to this panel, so no need to hand-roll it here.
   const copy = (text: string) => {
     void writeClipboardText(text).then((ok) => setCopied(ok ? "ok" : "failed"));
   };

@@ -1,10 +1,6 @@
 /**
- * Mount bookkeeping, so a test file does not have to keep its own.
- *
- * Every suite that renders more than one toolbar had grown the same six lines:
- * an array of `unmount` functions, a `mount()` that pushes onto it, and an
- * `afterEach` that drains it. That array is the thing this module owns —
- * AGENTS.md, *Conventions*: setup boilerplate belongs in `src/testing/`.
+ * Mount bookkeeping, so a test file does not have to keep its own array of
+ * `unmount` functions and an `afterEach` that drains it.
  */
 import { renderWithToolbar } from "./renderWithToolbar";
 import type { RenderWithToolbarOptions, RenderWithToolbarResult } from "./renderWithToolbar";
@@ -19,12 +15,9 @@ interface Entry {
 const mounted: Entry[] = [];
 
 /**
- * `renderWithToolbar` that remembers what it mounted.
- *
- * Identical to `renderWithToolbar` in every other respect, except that the
- * returned `unmount` is idempotent and de-registers the mount. So a test may
- * call `unmount()` itself to assert teardown behaviour, and the later
- * `cleanupToolbar()` will not unmount it a second time.
+ * `renderWithToolbar` that remembers what it mounted. Identical otherwise,
+ * except the returned `unmount` is idempotent and de-registers the mount, so a
+ * test may call it itself without `cleanupToolbar()` unmounting it again.
  */
 export function mountToolbar(
   ui?: Parameters<typeof renderWithToolbar>[0],
@@ -48,17 +41,12 @@ export function mountToolbar(
 
 /**
  * Unmounts everything `mountToolbar()` mounted, newest first, and restores any
- * fake layout still installed.
+ * fake layout still installed. Idempotent, safe with nothing mounted. Anyone
+ * using `mountToolbar()` must call this — e.g. from an `afterEach` — since the
+ * tracked list never hears about RTL's auto-cleanup.
  *
- * Idempotent, and safe to call when nothing is mounted. Anyone using
- * `mountToolbar()` must call it — from an `afterEach`, as this repo does in
- * `vitest.setup.ts`. The tracked list is this module's own and never hears
- * about RTL's auto-cleanup, so nothing else drains it.
- *
- * For plain `renderWithToolbar()` it is only a net: that path already ties both
- * the unmount and the layout teardown to Testing Library's own `cleanup()`, so
- * the one thing left for this to catch is a bare `installToolbarLayout()` whose
- * `restore()` was missed.
+ * For plain `renderWithToolbar()` it's only a safety net: that path already
+ * ties unmount and layout teardown to Testing Library's `cleanup()`.
  */
 export function cleanupToolbar(): void {
   for (const entry of mounted.splice(0).reverse()) {

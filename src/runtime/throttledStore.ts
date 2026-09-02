@@ -1,14 +1,14 @@
 /**
  * A store that coalesces writes. [dev-toolbar/runtime]
  *
- * A jank sampler writes on every animation frame. Without this, the bar would
- * re-render 60 times a second to move a two-character number. The store accepts
- * every write but *publishes* at most once per interval, so `getSnapshot()`
- * stays stable between notifications — which is what `useSyncExternalStore`
- * requires, and why this is a store rather than a debounce helper.
+ * A jank sampler writes on every animation frame; without this the bar would
+ * re-render 60 times a second. The store accepts every write but
+ * *publishes* at most once per interval, so `getSnapshot()` stays stable
+ * between notifications, as `useSyncExternalStore` requires (a debounce
+ * helper alone wouldn't give that).
  *
- * Leading edge first (the first write after an idle period shows up
- * immediately), trailing edge after (the last write of a burst is never lost).
+ * Leading edge first (the first write after idle shows up immediately),
+ * trailing edge after (the last write of a burst is never lost).
  */
 
 export type Unsubscribe = () => void;
@@ -17,11 +17,10 @@ export interface ThrottledStore<T> {
   /** Stable between notifications. Safe as a `useSyncExternalStore` snapshot. */
   getSnapshot(): T;
   /**
-   * After `destroy()`, this is a no-op that returns a no-op unsubscribe: the
-   * listener is never added, so it is never retained or notified. Safe when a
+   * After `destroy()`, a no-op returning a no-op unsubscribe: the listener
+   * is never added, so it's never retained or notified. Safe if a
    * `useSyncExternalStore` consumer's `subscribe` races a concurrent
-   * `destroy()`, since React only ever invokes the returned unsubscribe — it
-   * never inspects it.
+   * `destroy()`.
    */
   subscribe(listener: () => void): Unsubscribe;
   /** The most recent write, published or not. For tests and diagnostics. */
@@ -31,23 +30,16 @@ export interface ThrottledStore<T> {
   /** Publishes any pending write immediately and cancels the trailing timer. */
   flush(): void;
   /**
-   * Cancels the timer and drops every listener. Idempotent, and permanent:
-   * `set`, `update` and `flush` stop changing the store afterward (`update`
-   * still evaluates its callback, then discards the result), and `subscribe`
-   * stops adding listeners rather than accepting ones that would never fire.
+   * Cancels the timer and drops every listener. Idempotent and permanent:
+   * `set`/`update`/`flush` stop changing the store afterward, and
+   * `subscribe` stops adding listeners.
    *
-   * A pending trailing write — the last value of a burst that hasn't been
-   * published yet — is discarded by default; `getSnapshot()` keeps whatever
-   * was last published. Pass `{ flush: true }` to publish it first,
-   * synchronously notifying listeners still subscribed, before tearing
-   * down. Off by default: publishing during teardown can re-enter a caller
-   * (e.g. a React tree) that is itself unwinding, and no first-party
-   * extension destroys its store today — see the "deliberately NOT
-   * destroyed" comments in src/ext/<name>/runtime.ts — so there is no
-   * observed call site that needs the trailing value badly enough to risk
-   * that by default. A store that is already destroyed stays inert: passing
-   * `{ flush: true }` again does not publish or notify — destroy is
-   * idempotent regardless of the option.
+   * A pending trailing write is discarded by default (`getSnapshot()` keeps
+   * the last published value); pass `{ flush: true }` to publish it first,
+   * synchronously notifying subscribers, before tearing down. Off by
+   * default since publishing during teardown can re-enter a caller that is
+   * itself unwinding. Calling on an already-destroyed store is a no-op
+   * regardless of the option.
    */
   destroy(destroyOptions?: { flush?: boolean }): void;
   /** Notifications emitted so far. The coalescing assertion in the tests. */
@@ -68,17 +60,14 @@ export interface CreateThrottledStoreOptions<T> {
   equals?: (a: T, b: T) => boolean;
   /**
    * Called when a listener throws. A throwing listener must never stop the
-   * remaining listeners, and must never propagate into the caller — which is
-   * usually a `set()` or `flush()` call in the middle of a render or an
-   * event handler.
+   * remaining listeners or propagate into the caller — usually a `set()` or
+   * `flush()` call mid-render or mid-event-handler.
    */
   onError?: (error: unknown, value: T) => void;
 }
 
-// Byte-identical to bus.ts's defaultNow. Deliberately not shared: runtime
-// talks to nothing in this package (AGENTS.md), and outside the barrel no
-// runtime module imports another; a three-line clock fallback is not the
-// reason to start.
+// Byte-identical to bus.ts's defaultNow, deliberately not shared/imported —
+// a three-line clock fallback isn't worth an inter-module dependency.
 const defaultNow = (): number =>
   typeof performance !== "undefined" && typeof performance.now === "function"
     ? performance.now()
@@ -114,23 +103,17 @@ export function createThrottledStore<T>(
   const listeners = new Set<() => void>();
 
   const emit = () => {
-    // Captured once: a listener can call set()/flush() re-entrantly, which
-    // publishes again and advances the module-level `published` before a
-    // later listener in this same pass throws. Reading `published` at throw
-    // time would then report the re-entrant publish's value for a pass that
-    // is still delivering an earlier one — so onError gets the value this
-    // pass is actually notifying about, not whatever is newest by the time
-    // the throw happens.
+    // Captured once: a re-entrant set()/flush() from a listener could advance
+    // `published` before a later listener throws, so onError should get the
+    // value this pass is notifying about, not whatever is newest by then.
     const value = published;
     // Copied: a listener may unsubscribe itself while being notified.
     for (const listener of Array.from(listeners)) {
       try {
         listener();
       } catch (error) {
-        // Same shape as bus.ts's dispatch: onError is called outside its own
-        // try/catch, so a throwing onError propagates to the caller (and, as
-        // there, stops the remaining listeners in this pass) instead of
-        // being silently swallowed.
+        // Outside its own try/catch, so a throwing onError propagates to the
+        // caller and stops remaining listeners this pass (same as bus.ts).
         onError(error, value);
       }
     }
@@ -185,10 +168,8 @@ export function createThrottledStore<T>(
       publish();
     },
     destroy(destroyOptions) {
-      // Guard on !destroyed: an already-destroyed store must stay inert, or a
-      // second destroy({ flush: true }) could publish and mutate getSnapshot()
-      // with no listener left to notify — silent tearing, and it would break
-      // the "idempotent, and permanent" contract documented above.
+      // Guard on !destroyed: a second destroy({ flush: true }) must not
+      // publish and mutate getSnapshot() with no listener left to notify.
       if (!destroyed && destroyOptions?.flush === true) publish();
       destroyed = true;
       if (cancelTimer) {

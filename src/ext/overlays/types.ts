@@ -2,10 +2,8 @@
  * The pure half of `/ext/overlays`: what an overlay is, what it costs, and every
  * DOM *reading* helper the surfaces share. [dev-toolbar/ext/overlays]
  *
- * Nothing here writes to the document. That split is the point: this extension
- * draws over somebody else's application, so the code that touches host nodes at
- * all is small, in one place, and read-only apart from a single stylesheet the
- * runtime owns end to end.
+ * Nothing here writes to the document — host-touching code stays small, in one
+ * place, and read-only (the runtime owns the one stylesheet exception).
  */
 
 /* -------------------------------------------------------------------------- */
@@ -13,40 +11,28 @@
 /* -------------------------------------------------------------------------- */
 
 /**
- * §3G lists thirteen candidate overlay modes. Four ship, chosen because each
- * answers a question you cannot answer by reading the code, and because each
- * one's cost is knowable — see `OVERLAY_META[…].cost`.
+ * §3G lists thirteen candidate overlay modes; these four ship because each
+ * answers a question the code alone can't, and each has a knowable cost (see
+ * `OVERLAY_META[…].cost`). The other nine were left out:
  *
- * The other nine, each with its reason:
+ * - **Re-render flash**, **slow React commits** — not observable from outside
+ *   React without hooking `__REACT_DEVTOOLS_GLOBAL_HOOK__` or a `Profiler`;
+ *   belongs to whoever owns the host's React tree.
+ * - **Component boundaries**, **design-token violations**, **feature
+ *   ownership**, **experiment variant** — need per-element metadata only the
+ *   app can attach (§3F's `data-source`); once attached, `boxes` is one CSS
+ *   rule away from showing it.
+ * - **Z-index stacking contexts**, **scroll containers** — both need
+ *   `getComputedStyle` on every element on every mutation, the cost profile
+ *   §3G warns against.
+ * - **Style engine (legacy vs new)** — specific to one app's own migration;
+ *   a consumer marks elements and uses `boxes` instead.
+ * - **Offline / sync state** — a status signal, not an overlay; belongs in
+ *   §3I's debugging controls or `/ext/environment`'s `syncStatus`.
  *
- * - **Re-render flash** and **slow React commits.** Not observable from outside
- *   React. They need `__REACT_DEVTOOLS_GLOBAL_HOOK__` or a `Profiler` the
- *   *application* renders, and an extension that installs itself into the host's
- *   React internals is exactly the kind of irreversible mutation this extension
- *   is built not to perform. They belong to whoever owns the React tree.
- * - **Component boundaries**, **design-token violations**, **feature ownership**
- *   and **experiment variant.** All four need per-element metadata only the
- *   application can attach (§3F's `data-source` attributes). When a consumer
- *   attaches it, `boxes` is one CSS rule away from showing it — which is the
- *   argument for shipping the mechanism first rather than guessing the metadata.
- * - **Z-index stacking contexts** and **scroll containers.** Both require
- *   `getComputedStyle` on every element in the document, on every mutation.
- *   That is the one cost profile §3G explicitly warns against, and neither is
- *   worth it before somebody asks.
- * - **Style engine: legacy versus new.** Specific to one application's own
- *   migration, and knowable only from that application's internals. There is
- *   nothing general to implement here; a consumer marks the elements and turns
- *   on `boxes`, as above.
- * - **Offline / sync state.** Not really an overlay at all — it is a status
- *   signal, and §3I's debugging controls and `/ext/environment`'s `syncStatus`
- *   are where it belongs. Painting it over the page would put a persistent
- *   status readout in the one place a developer cannot dismiss.
- *
- * One §3G recommendation is knowingly unimplemented: *disable overlays before
- * screenshots unless requested*. There is no screenshot facility in this package
- * to hook, and inventing one to satisfy the line would be worse than leaving it;
- * `disableAll()` and its command are the manual equivalent, and any future
- * capture feature should call it.
+ * Also unimplemented: §3G's *disable overlays before screenshots*. No
+ * screenshot facility exists to hook; `disableAll()` is the manual
+ * equivalent for any future capture feature to call.
  */
 export type OverlayId = "boxes" | "grid" | "inspect" | "focus";
 
@@ -187,12 +173,9 @@ export interface OverlaysSnapshot {
 /* -------------------------------------------------------------------------- */
 
 /**
- * Everything that is focusable by `Tab` in practice.
- *
- * `[tabindex]` is matched and then filtered on the parsed value, because
- * `[tabindex="-1"]` is programmatically focusable but not *tabbable*, and a
- * focus-order overlay that numbered it would be describing a sequence the user
- * cannot walk.
+ * Everything focusable by `Tab` in practice. `[tabindex]` is matched and then
+ * filtered on the parsed value, since `[tabindex="-1"]` is programmatically
+ * focusable but not tabbable.
  */
 export const TABBABLE_SELECTOR = [
   "a[href]",
@@ -211,11 +194,8 @@ export const TABBABLE_SELECTOR = [
 
 /**
  * True for anything belonging to a dev toolbar — ours or another instance's.
- *
- * Every scan and every pointer read goes through this. An overlay that
- * inspected the bar would be measuring the tool rather than the application,
- * and one that numbered the palette's search field into the page's focus order
- * would be lying about the page.
+ * Every scan and pointer read goes through this, so overlays measure the
+ * application and never the tool itself.
  */
 export function isInToolbar(node: Node | null): boolean {
   if (node === null) return false;
@@ -241,13 +221,10 @@ export function describeElement(element: Element): string {
 }
 
 /**
- * `textContent`, minus the parts a screen reader will not read.
- *
- * An icon-only button is usually `<button><span aria-hidden="true">×</span></button>`,
- * and `textContent` on that returns `×` — so a name check built on `textContent`
- * calls the most common unnamed control *named*, which is precisely the bug the
- * overlay exists to find. `accname` skips `aria-hidden` and `hidden` subtrees;
- * so does this.
+ * `textContent`, minus the parts a screen reader won't read (skips
+ * `aria-hidden`/`hidden` subtrees, like `accname` does). Plain `textContent`
+ * would read the `×` inside `<button><span aria-hidden="true">×</span></button>`
+ * and call the most common unnamed control "named".
  */
 function visibleText(element: Element): string | null {
   let text = "";
@@ -292,16 +269,11 @@ const trim = (value: string | null | undefined): string | null => {
 };
 
 /**
- * A deliberately partial accessible-name computation.
- *
- * The full algorithm is `accname`, it is long, and it needs the whole tree. This
- * covers the cases that actually produce an unnamed control in application code
- * — an icon-only button, an `<img>` with no `alt`, an input with a `<label>`
- * nowhere near it — in the order the spec prioritises them.
- *
- * It is documented as a heuristic in the panel, because a name-checking overlay
- * that quietly reports false positives is worse than none: the developer stops
- * trusting the badges and then ignores the true ones.
+ * A deliberately partial accessible-name computation (the full `accname` algorithm
+ * needs the whole tree). Covers the cases that actually produce an unnamed
+ * control — icon-only button, `<img>` with no `alt`, an unlinked `<label>` — in
+ * spec priority order. Documented as a heuristic in the panel: false positives
+ * here would make developers stop trusting the badges.
  */
 export function accessibleName(element: Element): string | null {
   const aria = trim(element.getAttribute("aria-label"));
@@ -401,12 +373,10 @@ export function edgesOf(style: CSSStyleDeclaration | null, which: "margin" | "pa
 }
 
 /**
- * True when this element is worth a badge: it has a box, it is not
- * `visibility: hidden`, and it is at least partly on screen.
- *
- * `width === 0 && height === 0` is the cheap test that removes `display: none`
- * without a `getComputedStyle` call per element, which is what keeps the focus
- * scan linear in *tabbables* rather than in style resolutions.
+ * True when this element is worth a badge: it has a box and is at least
+ * partly on screen. `width === 0 && height === 0` is a cheap `display: none`
+ * check that avoids a `getComputedStyle` call per element, keeping the focus
+ * scan linear in tabbables rather than style resolutions.
  */
 export function isPaintedRect(
   rect: RectLike,
@@ -423,13 +393,9 @@ export function isPaintedRect(
 /* -------------------------------------------------------------------------- */
 
 /**
- * Reads the persisted flag map. Fail-closed in every direction: unparseable
- * JSON, a non-object, an unknown id or a non-boolean value all mean *off*.
- *
- * Off is the safe default for this extension specifically. A stored `true` for
- * an overlay id that no longer exists must not resurrect anything, and a
- * corrupted blob must not leave the page covered in outlines with no obvious
- * way back.
+ * Reads the persisted flag map. Fail-closed: unparseable JSON, a non-object,
+ * an unknown id, or a non-boolean value all mean *off* — a corrupted blob
+ * must never leave the page covered in outlines with no way back.
  */
 export function parseFlags(raw: string | null): OverlayFlags {
   const flags: OverlayFlags = { ...NO_OVERLAYS };
@@ -464,14 +430,11 @@ const sameEdges = (a: Edges, b: Edges): boolean =>
   a.top === b.top && a.right === b.right && a.bottom === b.bottom && a.left === b.left;
 
 /**
- * Every field the inspector *draws* from, not just the ones that identify the
- * element.
- *
- * The margin and padding edges are the reason this is not shorter. Under
- * `box-sizing: border-box` — which is most applications — a hover state or an
- * inline style can change padding without moving the border rect at all, and
- * comparing only `rect` left the padding and margin boxes drawn from the values
- * they had before, until the pointer happened to move to another element.
+ * Every field the inspector draws from, not just the ones identifying the
+ * element. Margin/padding must be compared too: under `box-sizing: border-box`
+ * a hover state can change padding without moving the border rect, so
+ * comparing `rect` alone left stale padding/margin boxes drawn until the
+ * pointer moved to another element.
  */
 const sameHover = (a: HoverTarget | null, b: HoverTarget | null): boolean => {
   if (a === null || b === null) return a === b;
@@ -488,12 +451,9 @@ const sameHover = (a: HoverTarget | null, b: HoverTarget | null): boolean => {
 };
 
 /**
- * The `equals` the store uses.
- *
- * This is load-bearing for cost, not a micro-optimisation: the pointer moves
- * every frame, and without it every one of those frames would re-render the
- * overlay tree even though the pointer stayed inside the same element and
- * nothing drawn would change.
+ * The `equals` the store uses. Load-bearing for cost: without it, every
+ * pointer-move frame would re-render the overlay tree even when the pointer
+ * stayed inside the same element and nothing drawn changed.
  */
 export function sameSnapshot(a: OverlaysSnapshot, b: OverlaysSnapshot): boolean {
   if (a === b) return true;

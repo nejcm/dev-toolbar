@@ -16,13 +16,10 @@ interface ExtensionBoundaryState {
 }
 
 /**
- * One boundary per extension slot. A throwing `compact` or `panel` degrades to
- * an error chip; the rest of the bar keeps rendering.
- *
- * The chip is a retry button in the `compact` and `panel` slots: a slot that
- * threw on transient state would otherwise stay a chip for as long as the
- * toolbar lives, since nothing else clears the caught error. The `overlay`
- * chip is inert — an overlay has no reliable visible surface to click.
+ * One boundary per extension slot. A throwing `compact` or `panel` degrades to an
+ * error chip (with a retry button, since nothing else clears the caught error)
+ * while the rest of the bar keeps rendering. The `overlay` chip has no retry — an
+ * overlay has no reliable visible surface to click.
  */
 export class ExtensionBoundary extends Component<ExtensionBoundaryProps, ExtensionBoundaryState> {
   override state: ExtensionBoundaryState = { error: null };

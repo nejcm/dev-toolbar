@@ -1,17 +1,14 @@
 /**
  * Inject a stylesheet once per document. [dev-toolbar/runtime]
  *
- * Core's `injectStyles` prop is a *prop*, so an extension cannot see it, and an
- * extension that ships CSS therefore has to carry its own switch and its own
- * injector. `/ext/metrics` wrote one; `/ext/environment` was about to write the
- * same one again, which is the point at which it belongs somewhere shared.
- *
- * It lives here rather than in core for the reason the whole subpath exists:
- * importing core's injector would drag core's entire stylesheet string into an
- * extension's bundle. Extensions already import `/runtime`; core never does.
+ * Core's `injectStyles` prop isn't visible to extensions, so any extension
+ * shipping CSS needs its own injector; this is the shared one. It lives here
+ * rather than in core so importing it doesn't drag core's stylesheet string
+ * into an extension's bundle (extensions already import `/runtime`; core
+ * never does).
  *
  * The dedup key is a DOM attribute rather than a module flag, so two bundled
- * copies of a package — the dual-package hazard, or two toolbars on one page —
+ * copies of a package (the dual-package hazard, or two toolbars on one page)
  * still inject exactly once.
  */
 
@@ -36,13 +33,10 @@ export function ensureStyleSheet(
 ): HTMLStyleElement | null {
   const target = doc ?? (typeof document === "undefined" ? null : document);
   if (!target?.head) return null;
-  // `entry` is developer-supplied but not attacker-controlled, so this is about
-  // correctness, not an injection attack: a raw string interpolated into an
-  // attribute selector changes the selector's meaning on a `"` (impersonating
-  // another entry) and throws a SyntaxError on an unbalanced one. Comparing
-  // the attribute directly sidesteps escaping entirely — it's O(n) over a
-  // handful of style elements, which is simpler and just as fast as feature
-  // detecting `CSS.escape`.
+  // `entry` is developer-supplied, not attacker-controlled — this is about
+  // correctness, not injection: a raw string in an attribute selector could
+  // change the selector's meaning on a `"`. Comparing the attribute directly
+  // sidesteps escaping entirely, and is O(n) over a handful of elements.
   const existing = Array.from(
     target.head.querySelectorAll<HTMLStyleElement>(`style[${STYLE_ATTRIBUTE}]`),
   ).find((node) => node.getAttribute(STYLE_ATTRIBUTE) === entry);

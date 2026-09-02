@@ -1,13 +1,9 @@
 /**
  * `/ext/diagnostics` styles. [dev-toolbar/ext/diagnostics]
  *
- * Same rules as core and the other extensions: inside the `dev-toolbar` cascade
- * layer, every selector scoped by `[data-dev-toolbar]`, every colour from a
- * `--dtb-*` token, every part name namespaced by kind (`diag-*`).
- *
- * Nothing here is load-bearing for safety, so — §14.7 — nothing here is
- * `!important`. The one guarantee this extension makes is about *what is in the
- * text*, not about what paints over what, and CSS cannot weaken that.
+ * Same rules as core: scoped by `[data-dev-toolbar]`, colours from `--dtb-*`
+ * tokens, parts namespaced `diag-*`. Nothing here is safety-load-bearing, so
+ * (§14.7) nothing uses `!important`.
  */
 import { ensureStyleSheet } from "../../runtime";
 
@@ -109,8 +105,7 @@ export const DIAGNOSTICS_CSS = String.raw`@layer dev-toolbar {
     padding-inline-start: 18px;
   }
 
-  /* The review surface. The whole point of the extension is that this exists
-     and is read before anything is copied, so it gets the panel's free space. */
+  /* The review surface — gets the panel's free space; it must be read before copying. */
   [data-dev-toolbar] [data-dtb-part="diag-preview"] {
     flex: 1 1 auto;
     min-height: 0;

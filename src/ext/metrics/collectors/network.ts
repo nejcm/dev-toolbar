@@ -1,15 +1,14 @@
 /**
  * In-flight and recent HTTP requests. [dev-toolbar/ext/metrics]
  *
- * §3D asks for the application's own HTTP client to be instrumented rather than
- * `fetch` monkey-patched, so both routes exist: pass a `/runtime` bus and emit
- * `network-start` / `network-end` from your client, or let this patch `fetch`
- * and `XMLHttpRequest` for you. The patches restore the originals on teardown,
- * refuse to patch over another copy of themselves, and refuse to restore over
+ * Two instrumentation routes: pass a `/runtime` bus and emit `network-start` /
+ * `network-end` from your own HTTP client, or let this patch `fetch` and
+ * `XMLHttpRequest` for you. Patches restore the originals on teardown, refuse
+ * to patch over another copy of themselves, and refuse to restore over
  * somebody else's later patch.
  *
- * Every URL goes through `redactUrl()` before it is retained. Headers and
- * bodies are never read, let alone stored.
+ * Every URL goes through `redactUrl()` before retention. Headers and bodies
+ * are never read.
  */
 import { createRingBuffer, createTimeSeries, redactUrl } from "../../../runtime";
 import type { BusLike, RedactOptions, ToolbarEventMap } from "../../../runtime";
@@ -36,11 +35,9 @@ export interface NetworkCollectorOptions {
   patchXhr?: boolean;
   /**
    * Consume `network-start` / `network-end` from a `/runtime` bus, so an app
-   * can report its own client instead of being patched.
-   *
-   * Typed as `BusLike`, not `ToolbarBus`: only `emit` and `on` are needed, so
-   * `createMockBus()` from `./testing` — which cannot import `./runtime` — and
-   * an adapter over an app's own emitter both satisfy it.
+   * can report its own client instead of being patched. Typed as `BusLike`
+   * (only `emit`/`on`), not `ToolbarBus`, so a mock bus or an adapter over an
+   * app's own emitter both satisfy it.
    */
   bus?: BusLike<ToolbarEventMap>;
   /** Requests retained for the panel list. Default `100`. */
@@ -58,23 +55,17 @@ export interface NetworkCollectorOptions {
 /**
  * One patch, many recorders.
  *
- * The patch state below is module-level, which makes it subject to the usual
- * dual-package hazard: a page that loads both `dist/ext/metrics.js` and
- * `dist/ext/metrics.cjs` has two copies of `fetchPatch`, and each will install
- * its own wrapper. Requests are still recorded correctly by both — they stack
- * rather than conflict — but the app pays for two wrappers. Resolve the package
- * to one format, which is what every bundler does by default.
+ * Patch state is module-level, so the usual dual-package hazard applies: a
+ * page loading both `dist/ext/metrics.js` and `.cjs` gets two `fetchPatch`
+ * copies, each installing its own wrapper. Both still record correctly (they
+ * stack rather than conflict), but the app pays for two wrappers — resolve
+ * the package to one format to avoid it.
  *
- * The first version of this refused to patch when it found its own flag on
- * `globalThis.fetch`, which looked right and was wrong: with two collectors
- * alive — two toolbars, or a Vite HMR reload that rebuilt the extension — the
- * first one owns the wrapper and every later one records nothing at all, while
- * still reporting itself as instrumented. Caught in the playground, in a real
- * browser, exactly once.
- *
- * So the wrapper is installed once, globally, and feeds a set of sinks. It is
- * removed when the last sink leaves, and never removed if somebody has patched
- * on top of it since.
+ * The wrapper is installed once, globally, and feeds a set of sinks. It's
+ * removed when the last sink leaves, and never removed if something has
+ * patched on top of it since (refusing to patch when it saw its own flag on
+ * `fetch` would instead make the first of two live collectors own the
+ * wrapper while every later one silently records nothing).
  */
 export interface NetworkSink {
   /** Returns an opaque token that comes back to `end`. */
@@ -139,12 +130,9 @@ function attach(
 }
 
 /**
- * Both fan-outs swallow sink errors on purpose.
- *
- * These run inside the host application's `fetch` and `XMLHttpRequest`. A bug
- * in a collector — or, more likely, in the consumer's own `filter` callback,
- * which `begin` calls — must never surface as a failed request in the app being
- * measured. Observing something is not permission to break it.
+ * Both fan-outs swallow sink errors on purpose: these run inside the host
+ * app's `fetch`/`XMLHttpRequest`, and a bug here (or in the consumer's own
+ * `filter`) must never surface as a failed request in the app being measured.
  */
 function fanIn(sinks: Set<NetworkSink>, method: string, url: string): [NetworkSink, unknown][] {
   const tokens: [NetworkSink, unknown][] = [];
@@ -224,8 +212,7 @@ export function instrumentFetch(sink: NetworkSink): () => void {
 
       globalThis.fetch = wrapper;
       return () => {
-        // Somebody patched on top of us: leaving their wrapper in place is
-        // strictly better than clobbering it.
+        // If something patched on top of us, leave their wrapper in place.
         if (globalThis.fetch === wrapper) globalThis.fetch = original;
       };
     },
@@ -339,8 +326,7 @@ export function createNetworkCollector(options: NetworkCollectorOptions = {}): C
       error: undefined,
       aborted: false,
     };
-    // The ring may evict an old entry; drop its index entry too so the map
-    // cannot outgrow the ring.
+    // Ring may evict an old entry; drop its index entry too so the map can't outgrow the ring.
     if (entries.size === entries.capacity) {
       const evicted = entries.at(0);
       if (evicted) byId.delete(evicted.id);
@@ -471,8 +457,7 @@ export function createNetworkCollector(options: NetworkCollectorOptions = {}): C
         );
       }
 
-      // One sink, both transports. The shared installers make two live
-      // collectors both record, instead of the first one owning the wrapper.
+      // One sink, both transports.
       const sink: NetworkSink = {
         begin: (method, url) => {
           const entry = begin(context.now(), method, url);

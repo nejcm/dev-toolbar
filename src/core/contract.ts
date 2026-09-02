@@ -1,11 +1,6 @@
 import type { ReactNode } from "react";
 
-/**
- * Version of the extension contract implemented by this core.
- *
- * Extensions may declare `contractVersion`; the core warns (once per extension
- * id) when it does not match.
- */
+/** Contract version implemented by this core. Core warns (once per extension id) if an extension's `contractVersion` differs. */
 export const CONTRACT_VERSION = 1;
 
 export type ToolbarAlign = "start" | "end";
@@ -13,10 +8,7 @@ export type ToolbarPosition = "bottom" | "top";
 export type ToolbarDensity = "compact" | "comfortable";
 export type ToolbarColorScheme = "light" | "dark" | "system";
 
-/**
- * Minimal synchronous key/value store. `localStorage` satisfies this shape,
- * which is why it is the default.
- */
+/** Minimal synchronous key/value store; `localStorage` satisfies this shape and is the default. */
 export interface ToolbarStorage {
   getItem(key: string): string | null;
   setItem(key: string, value: string): void;
@@ -35,45 +27,28 @@ export interface ToolbarCommand {
 }
 
 /**
- * What `DevToolbarExtension.commands` may be — **P2**.
+ * What `DevToolbarExtension.commands` may be. A static array is the simple case;
+ * the function form lets a command list derived from later-arriving state (e.g.
+ * one toggle per flag) stay current without a reload.
  *
- * A static array is the simple case and stays valid. The function form exists
- * because an extension's command list is often derived from state that arrives
- * after the factory ran: `/ext/flags` contributes one toggle per boolean flag,
- * and with a static array a flag that appeared later got a panel row and no
- * command until the page reloaded.
- *
- * Core calls the function on each aggregation pass — when the extension list
- * changes, and on every `getCommands()` / `runCommand()`. Three rules follow:
- *
- * - **It must be pure and cheap.** It runs during render, and twice per render
- *   under StrictMode. Enumerate; do not fetch, subscribe or mutate.
- * - **Identity is the `id`, not the object.** Core and every palette key and
- *   diff by `id`, so returning freshly built objects each call is fine and is
- *   the expected shape.
- * - **Order must be stable** for a given state, or a palette's list will
- *   reshuffle under the cursor between passes.
- *
- * A throw is contained: core logs once per extension and treats that extension
- * as contributing nothing, exactly as if it were `hidden`.
+ * Core calls the function on each aggregation pass, so it must be pure and cheap
+ * (no fetch/subscribe/mutate), identify entries by `id` (not object identity),
+ * and return a stable order for a given state. A throw is contained: core logs
+ * once per extension and treats it as contributing nothing, as if `hidden`.
  */
 export type ToolbarCommandsInput = readonly ToolbarCommand[] | (() => readonly ToolbarCommand[]);
 
 /**
- * What one extension contributed to a diagnostic snapshot — **P3**.
- *
- * Core produces one of these per present, non-hidden extension, whether or not
- * it declares `diagnostics`. That is deliberate: a snapshot headed for a bug
- * report must be able to say *which* extensions had nothing to say, because an
- * absent contribution and a failed one look identical once they are both simply
- * missing from the output.
+ * What one extension contributed to a diagnostic snapshot. Core emits one of these
+ * per present, non-hidden extension whether or not it declares `diagnostics`, so a
+ * bug-report snapshot can distinguish "had nothing to say" from "failed".
  */
 export type DiagnosticStatus =
   /** `diagnostics()` ran and returned a value. */
   | "ok"
-  /** The extension declares no `diagnostics()`. Present, contributed nothing. */
+  /** No `diagnostics()` declared. */
   | "absent"
-  /** `diagnostics()` threw. `error` says what it threw. */
+  /** `diagnostics()` threw; `error` says what. */
   | "failed";
 
 export interface ExtensionDiagnostics {
@@ -83,24 +58,17 @@ export interface ExtensionDiagnostics {
   /** Only present when `status` is `"ok"`. Not redacted — core has no `redact()`. */
   data?: unknown;
   /**
-   * The thrown error's **message alone**, unjoined and unredacted. Only present
-   * when `status` is `"failed"`.
-   *
-   * Deliberately not `"TypeError: something"`. A reader has to redact this
-   * before it reaches a bug report, and the redactors in `/runtime` match value
-   * *shapes* anchored to the whole string — so a message that is a
-   * credential-carrying URL (what `fetch`, undici and axios all throw) is
-   * maskable on its own and unmaskable once core has prefixed it. Core cannot
-   * redact for you: it may not import `/runtime`. It can decline to make
-   * redaction impossible, and that is what this split is.
+   * The thrown error's message alone, unjoined and unredacted, when `status` is
+   * `"failed"`. Kept separate (not prefixed as `"TypeError: ..."`) so the `/runtime`
+   * redactors — which match value shapes anchored to the whole string — can still
+   * mask a credential-carrying URL message. Core cannot redact it itself (may not
+   * import `/runtime`).
    */
   error?: string;
   /**
    * The thrown error's `name`, e.g. `"TypeError"`. Absent for a non-`Error` throw.
-   *
-   * Foreign, like `error`, and for a reason that is easy to miss: `name` is a
-   * *writable own property*, not a class identifier the runtime guarantees. A
-   * reader must redact it before joining it to anything.
+   * Unverified — `name` is a writable own property, not a guaranteed class
+   * identifier — so a reader must redact it before joining it to anything.
    */
   errorName?: string;
 }
@@ -112,13 +80,7 @@ export interface CompactSlotProps {
   density: ToolbarDensity;
   openPanel(): void;
   closePanel(): void;
-  /**
-   * Open this extension's panel when it is closed, close it when it is open.
-   *
-   * Added in P1: every extension that renders a trigger was writing
-   * `isPanelOpen ? closePanel() : openPanel()` by hand, which is core's own
-   * invariant leaking into extension code.
-   */
+  /** Open this extension's panel when closed, close it when open. */
   togglePanel(): void;
 }
 
@@ -132,14 +94,9 @@ export interface PanelSlotProps {
 }
 
 /**
- * Handed to the `overlay` slot — **P2**.
- *
- * The overlay renders inside the toolbar root, once, for as long as the
- * extension is present, not hidden and the bar is visible. It is *not* subject
- * to overflow collapse, which is the whole reason it exists: a compact item
- * that has collapsed into the `···` menu is not in the DOM at all, so an
- * extension whose surface is a modal — a command palette, a picker — would lose
- * it exactly when the window got narrow.
+ * Handed to the `overlay` slot. Unlike `compact`, the overlay is never subject to
+ * overflow collapse — it stays in the DOM even when the bar narrows, which is why
+ * modal surfaces (a command palette, a picker) belong here rather than in `compact`.
  */
 export interface OverlaySlotProps {
   density: ToolbarDensity;
@@ -153,44 +110,29 @@ export interface ExtensionRuntimeApi {
   /** Core reports visibility; it never pauses an extension on its behalf. */
   isVisible(): boolean;
   /**
-   * The subscription is released automatically when `signal` aborts, so
-   * relying only on the signal for cleanup is safe. The returned function is
-   * still here for releasing it earlier, and calling it more than once — or
-   * after `signal` has already aborted — is a no-op.
+   * Also released automatically when `signal` aborts. The returned unsubscribe
+   * function is for releasing it earlier; calling it more than once, or after
+   * `signal` has aborted, is a no-op.
    */
   subscribeVisibility(cb: (visible: boolean) => void): () => void;
   /** Storage namespaced to this extension id. No-op when persistence is disabled. */
   storage: ToolbarStorage;
   /**
-   * Every command aggregated from every extension, right now — **P2**.
-   *
-   * Re-enumerated on each call, so a command an extension started contributing
-   * after mount is here. This is how `/ext/command-menu` reads the aggregation
-   * without importing a *value* from core (`useToolbarCommands()` is for the
-   * host application, whose copy of core is the same module instance; an
-   * extension on its own subpath has no such guarantee).
+   * Every command aggregated from every extension, re-enumerated on each call.
+   * Lets extensions on their own subpath (e.g. `/ext/command-menu`) read the
+   * aggregation without importing a value from core.
    */
   getCommands(): readonly ToolbarCommand[];
   /**
-   * Runs an aggregated command by id. Resolves `true` once the command's
-   * `run()` has completed, `false` when nothing declares it — including a
-   * command that existed when it was listed and does not any more, which a
-   * palette has to be able to tell its user. If `run()` throws or returns a
-   * rejected promise, `runCommand()` rejects with that same error — callers
-   * must catch it (`/ext/command-menu` does, and shows the message).
+   * Runs an aggregated command by id. Resolves `true` once `run()` completes,
+   * `false` if no command declares that id. If `run()` throws or rejects,
+   * `runCommand()` rejects with the same error — callers must catch it.
    */
   runCommand(id: string): Promise<boolean>;
   /**
-   * One entry per present, non-hidden extension — **P3**.
-   *
-   * The diagnostics counterpart of `getCommands()`, and here for the same
-   * reason (§13.3): `/ext/diagnostics` lives on its own subpath, so it may not
-   * import a *value* from core, and `api` is the object core already hands it.
-   *
-   * Entries for extensions that declare no `diagnostics()` are included with
-   * `status: "absent"`. A reader that only wants contributions can filter; a
-   * reader that has to be honest about completeness — which is the whole job of
-   * a bug-report snapshot — needs the full roster.
+   * Diagnostics counterpart of `getCommands()`, one entry per present, non-hidden
+   * extension (`status: "absent"` for those with no `diagnostics()`), so a reader
+   * needing full-roster completeness (a bug-report snapshot) gets it.
    */
   getDiagnostics(): readonly ExtensionDiagnostics[];
 }
@@ -198,9 +140,9 @@ export interface ExtensionRuntimeApi {
 export interface DevToolbarExtension {
   /**
    * Identity, and the namespace for this extension's persisted storage
-   * (`dtb:v1:<instanceId>:ext:<id>:*`, `docs/architecture.md` §3). The `:`
-   * separators are not escaped, so an id containing `:` can alias another
-   * extension's or instance's storage scope. Safest as `[A-Za-z0-9_-]`.
+   * (`dtb:v1:<instanceId>:ext:<id>:*`, `docs/architecture.md` §3). `:` is
+   * unescaped, so an id containing `:` can alias another scope — safest as
+   * `[A-Za-z0-9_-]`.
    */
   id: string;
   label: string;
@@ -213,16 +155,11 @@ export interface DevToolbarExtension {
   /** Overflow collapse order — lowest collapses first. Default `0`. */
   priority?: number;
   /**
-   * Consumer-computed. Replaces the dropped `availability(ctx)`.
-   *
-   * This is not "temporarily unpainted" — it means *this extension does not
-   * exist for this actor*, so core treats it as absent everywhere, not just in
-   * the bar. A hidden extension is never `start()`ed, is torn down (signal
-   * aborted, cleanup run) if it becomes hidden while running, has its panel
-   * unmounted and closed, and contributes no commands to `useToolbarCommands()`
-   * or `runCommand()`.
-   *
-   * If you only want to collapse an item out of sight, use `priority`.
+   * Consumer-computed; means this extension does not exist for this actor, not
+   * merely "unpainted" — core treats it as absent everywhere: never `start()`ed,
+   * torn down if it becomes hidden while running, panel unmounted/closed, no
+   * commands contributed. Use `priority` instead if you only want to collapse it
+   * out of sight.
    */
   hidden?: boolean;
   /** Keep the panel mounted after it closes. */
@@ -238,33 +175,19 @@ export interface DevToolbarExtension {
   /** A static array, or a function core calls on each pass. See `ToolbarCommandsInput`. */
   commands?: ToolbarCommandsInput;
   /**
-   * What this extension knows that belongs in a bug report — **P3**.
-   *
-   * Core aggregates these the way it aggregates `commands`, and renders none of
-   * them; `/ext/diagnostics` is the reader. Same three rules as
-   * `ToolbarCommandsInput`, for the same reasons:
-   *
-   * - **Pure and cheap.** It is called on demand, not on a timer, but it is
-   *   called from a click handler somebody is waiting on. Enumerate what you
-   *   already hold; do not measure, fetch or mutate.
-   * - **Return something JSON-serialisable.** A `BigInt`, a cycle or a class
-   *   instance is the reader's problem to survive, and it will — but it will
-   *   also say so in the output, next to your id.
-   * - **Return data that is already safe to leave the machine.** Whatever you
-   *   return is going into a ticket. The reader redacts it again on the way in,
-   *   which is defence in depth, not a substitute for redacting at the source.
-   *
-   * A throw is contained: core reports `status: "failed"` for this extension
-   * and the rest of the snapshot is built normally.
+   * What this extension knows that belongs in a bug report. Aggregated like
+   * `commands`; core renders none of it, `/ext/diagnostics` reads it. Must be
+   * pure and cheap (called from a click handler, not a timer), return
+   * JSON-serialisable data, and return data already safe to leave the machine —
+   * the reader redacts again as defence in depth, not a substitute for redacting
+   * at the source. A throw is contained: core reports `status: "failed"` for
+   * this extension and builds the rest of the snapshot normally.
    */
   diagnostics?: () => unknown;
   start?(api: ExtensionRuntimeApi): void | (() => void);
 }
 
-/**
- * Narrow class-name map. `--dtb-*` tokens are the primary styling surface and
- * every part also carries a stable `data-dtb-part` attribute.
- */
+/** Narrow class-name map. `--dtb-*` tokens are the primary styling surface; every part also carries a stable `data-dtb-part` attribute. */
 export interface DevToolbarClassNames {
   root?: string;
   bar?: string;

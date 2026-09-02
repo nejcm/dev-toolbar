@@ -48,50 +48,45 @@ export function PanelHost({
 }: PanelHostProps): ReactNode {
   const openedRef = useRef(new Set<string>());
   // Live height during a drag. Persisting on every pointermove would
-  // JSON-serialize to storage on each mouse event; the commit happens on
-  // pointerup instead.
+  // JSON-serialize to storage on each mouse event; commit happens on pointerup.
   const [dragHeight, setDragHeight] = useState<number | null>(null);
   const height = dragHeight ?? panelHeight;
 
   // Tears down the in-flight drag's window listeners, if any. Idempotent so
-  // it can safely run from both the normal pointerup path and the unmount
-  // cleanup below without double-removing.
+  // both the pointerup path and unmount cleanup can call it safely.
   const endDragRef = useRef<(() => void) | null>(null);
 
   // A drag started with `window.addEventListener` outlives the component if
-  // the toolbar is hidden or unmounted mid-drag; the listeners would then
-  // sit on `window` until the next pointerup fires `setDragHeight` on an
-  // unmounted component. Remove them on unmount too.
+  // the toolbar unmounts mid-drag, leaving listeners on `window` until the
+  // next pointerup fires `setDragHeight` on an unmounted component.
   useEffect(() => {
     return () => {
       endDragRef.current?.();
     };
   }, []);
 
-  // Which panels have ever been open is bookkeeping, not rendered state, and it
-  // has to be current in *this* commit: `keepMounted` is decided below, and an
-  // effect would decide it a frame late.
+  // Bookkeeping, not rendered state — must be current in *this* commit since
+  // `keepMounted` is decided below and an effect would decide it a frame late.
   const opened = openedRef.current;
 
   if (activePanelId && !opened.has(activePanelId)) {
     opened.add(activePanelId);
   }
 
-  // A hidden extension has been torn down (`start()`'s signal aborted), so a
-  // `keepMounted` panel of its must not come back holding pre-teardown state
-  // when the consumer un-hides it. Forget it was ever opened.
+  // A hidden extension has been torn down, so its `keepMounted` panel must
+  // not come back holding pre-teardown state when un-hidden. Forget it was
+  // ever opened.
   for (const extension of extensions) {
     if (extension.hidden === true) opened.delete(extension.id);
   }
 
   const mounted = extensions.filter((extension) => {
     if (typeof extension.panel !== "function") return false;
-    // `hidden` means absent, not unpainted. Without this a panel opened before
-    // the consumer hid the extension keeps rendering — for the metrics
-    // extension, that is a request table left on screen for a restricted user.
-    // Core also closes `activePanelId` on the transition; this filter is what
-    // makes the render correct in the same commit, and it covers `keepMounted`
-    // panels, which have no active id to close.
+    // `hidden` means absent, not unpainted — without this a panel opened
+    // before the extension was hidden keeps rendering. Core also closes
+    // `activePanelId` on the transition; this filter makes the render correct
+    // in the same commit, including for `keepMounted` panels with no active
+    // id to close.
     if (extension.hidden === true) return false;
     if (extension.id === activePanelId) return true;
     return extension.keepMounted === true && opened.has(extension.id);
@@ -116,8 +111,8 @@ export function PanelHost({
       latest = clampPanelHeight(position === "bottom" ? startHeight - delta : startHeight + delta);
       setDragHeight(latest);
     };
-    // Idempotent: the normal pointerup/pointercancel path and the unmount
-    // cleanup can both call this without double-removing listeners.
+    // Idempotent: pointerup/pointercancel and unmount cleanup can both call
+    // this without double-removing listeners.
     const removeDragListeners = () => {
       window.removeEventListener("pointermove", onMove);
       window.removeEventListener("pointerup", onUp);

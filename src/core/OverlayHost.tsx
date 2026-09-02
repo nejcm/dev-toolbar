@@ -20,24 +20,15 @@ export interface OverlayHostProps {
 
 /**
  * Renders every extension's `overlay` slot, once each, inside the toolbar root.
+ * Overlays are never collapsed (they occupy no horizontal space) and have no
+ * single-active invariant — each is the extension's own modal, and most render
+ * `null` most of the time. They live inside the root so `--dtb-*` tokens,
+ * color-scheme/density attributes and `@layer` scoping reach them, and so a
+ * `position: fixed` overlay covers the viewport rather than just the bar.
+ * `hidden` extensions render nothing, as elsewhere.
  *
- * Two things separate this from the bar: overlays are **never collapsed** —
- * overflow is about horizontal space and an overlay occupies none — and there
- * is no single-active invariant, because an overlay is the extension's own
- * modal and only it knows whether it is showing anything. Most render `null`
- * most of the time.
- *
- * They live inside the root so that the `--dtb-*` tokens, the color-scheme and
- * density attributes and the `@layer` scoping all reach them; the root sets no
- * containing block, so a `position: fixed` overlay still covers the viewport
- * rather than the 30px bar.
- *
- * `hidden` extensions render nothing here, like everywhere else.
- *
- * Memoized on exactly its four props, which is the whole of what it renders
- * from. Without it every overlay slot — and therefore every open palette —
- * re-invokes on each panel-height drag frame and each active-panel change, none
- * of which an overlay has any interest in.
+ * Memoized on its four props so an overlay slot doesn't re-invoke on every
+ * panel-height drag frame or active-panel change, which none of them care about.
  */
 function OverlayHostImpl({
   extensions,

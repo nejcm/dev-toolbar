@@ -1,9 +1,8 @@
 import type { RenderOptions, RenderResult } from "@testing-library/react";
 import { useEffect } from "react";
 import type { ReactNode } from "react";
-// Core's *values* through the package's own specifier, its *types* relatively:
-// a relative value import would inline a second core into `dist/testing.cjs`.
-// The rule, and why, is in AGENTS.md, *Conventions*.
+// Core values via the package's own specifier, types relatively: a relative
+// value import would inline a second core into `dist/testing.cjs` (AGENTS.md, *Conventions*).
 import {
   DevToolbar,
   HEIGHT_VARIABLE,
@@ -21,11 +20,9 @@ import { requireTestingLibrary } from "./reactTestingLibrary";
 export interface RenderWithToolbarOptions extends Omit<DevToolbarProps, "children"> {
   /**
    * Install the fake layout so overflow collapse and `--dev-toolbar-height`
-   * work under jsdom. `true` uses the defaults.
-   *
-   * Its lifetime is the rendered tree's, so `unmount()`, Testing Library's
-   * `cleanup()` and RTL auto-cleanup all tear it down. Nothing is left on
-   * `HTMLElement.prototype` for the next test in the file.
+   * work under jsdom. `true` uses the defaults. Its lifetime is the rendered
+   * tree's — `unmount()`, Testing Library's `cleanup()`, and RTL auto-cleanup
+   * all tear it down, leaving nothing on `HTMLElement.prototype`.
    */
   layout?: boolean | InstallToolbarLayoutOptions;
   /** Passed straight through to Testing Library's `render`. */
@@ -34,19 +31,17 @@ export interface RenderWithToolbarOptions extends Omit<DevToolbarProps, "childre
 
 /**
  * Programmatic handle onto the mounted toolbar. Every mutator is
- * `act()`-wrapped — including `runCommand()`, which is `async` because the
- * command it runs may be, and so must be awaited rather than wrapped again.
+ * `act()`-wrapped, including the `async` `runCommand()` (its command may
+ * itself await, so it must be awaited rather than wrapped again).
  */
 export interface ToolbarHandle {
   /**
-   * The live context value. Throws if the toolbar is not mounted.
-   *
-   * "Not mounted" means this handle's own `unmount()` ran, or `render()` threw.
-   * Testing Library's `cleanup()` — including the auto-cleanup a consumer gets
-   * for free — unmounts the tree without going through that wrapper, so after
-   * a teardown you did not trigger yourself this still returns the last
-   * captured context: a stale value whose setters reach nothing. Call
-   * `unmount()` when a test needs the throw.
+   * The live context value. Throws if the toolbar is not mounted — meaning
+   * this handle's own `unmount()` ran, or `render()` threw. Testing Library's
+   * `cleanup()` (including RTL auto-cleanup) unmounts without going through
+   * that wrapper, so after a teardown you didn't trigger yourself this still
+   * returns a stale context whose setters reach nothing. Call `unmount()`
+   * yourself when a test needs the throw.
    */
   context(): DevToolbarContextValue;
   /** `null` when the toolbar is hidden or disabled — it is not in the DOM then. */
@@ -56,22 +51,17 @@ export interface ToolbarHandle {
   part(part: string): HTMLElement | null;
   parts(part: string): HTMLElement[];
   /**
-   * The bar item for an extension.
-   *
-   * Collapsed items are not rendered at all while the `···` menu is closed, so
-   * this returns `null` for one until `openOverflow()` has been called. Use
-   * `isOverflowed()` / `overflowedIds()` to ask *whether* an item collapsed —
+   * The bar item for an extension. Collapsed items aren't rendered while the
+   * `···` menu is closed, so this returns `null` until `openOverflow()` runs.
+   * Use `isOverflowed()` / `overflowedIds()` to ask *whether* it collapsed —
    * neither needs the menu open.
    */
   item(extensionId: string): HTMLElement | null;
   /**
-   * The panel element for an extension.
-   *
-   * This is presence in the DOM, which for most extensions is the same thing
-   * as *open*: closing a panel unmounts it. A `keepMounted` panel is the
-   * exception — it stays in the DOM while closed, rendered with `hidden`, so
-   * this keeps returning an element. Assert on `activePanelId()`, or on the
-   * element's `hidden`, when the question is whether the panel is open.
+   * The panel element for an extension — presence in the DOM, which for most
+   * extensions equals *open* (closing unmounts it). A `keepMounted` panel is
+   * the exception: it stays in the DOM while closed, rendered with `hidden`.
+   * Assert on `activePanelId()` or the element's `hidden` to check openness.
    */
   panel(extensionId: string): HTMLElement | null;
   /** The overlay slot's wrapper for an extension. Never collapsed, so always here. */
@@ -124,38 +114,32 @@ export interface ToolbarHandle {
 export interface RenderWithToolbarResult extends RenderResult {
   toolbar: ToolbarHandle;
   /**
-   * Re-renders `ui` inside the *same* mounted toolbar.
-   *
-   * Testing Library's own `rerender` replaces the whole tree with what it is
-   * given, which here would tear the toolbar out of the DOM — no `wrapper` is
-   * used, the wrapping is part of the element that was rendered. This override
-   * rebuilds that wrapping, so the toolbar, its preferences and the layout
-   * install all survive.
+   * Re-renders `ui` inside the *same* mounted toolbar. Testing Library's own
+   * `rerender` replaces the whole tree, which here would tear the toolbar out
+   * of the DOM (no `wrapper` is used — the wrapping is part of the rendered
+   * element). This override rebuilds that wrapping so the toolbar, its
+   * preferences, and the layout install all survive.
    */
   rerender: (ui?: ReactNode) => void;
 }
 
 /**
- * Ties the fake layout's lifetime to the React tree.
+ * Ties the fake layout's lifetime to the React tree. Testing Library exposes
+ * no hook into `cleanup()`, but it does unmount every tree it rendered, so an
+ * effect cleanup here *is* that hook — it's what makes `cleanup()` (and RTL
+ * auto-cleanup) restore the prototype instead of leaving the fake installed
+ * for the rest of the file.
  *
- * Testing Library exposes no hook into `cleanup()`, but it does unmount every
- * tree it rendered — so an effect cleanup inside that tree *is* the hook. This
- * is what makes `cleanup()` (and RTL's auto-cleanup, which consumers get for
- * free) restore the prototype, rather than leaving the fake installed for the
- * rest of the file because the test never called `unmount()` itself.
- *
- * The effect re-installs on mount because StrictMode invokes effects
- * mount → cleanup → mount, and a cleanup-only owner would leave the layout
- * restored while the test was still running.
+ * Re-installs on mount because StrictMode invokes effects mount → cleanup →
+ * mount, and a cleanup-only owner would leave the layout restored mid-test.
  *
  * Rendered as the **first** sibling, which is load-bearing under StrictMode:
  * React runs every cleanup in tree order and only then every re-mount, so an
- * owner rendered last has already deleted `globalThis.ResizeObserver` before
- * the rest of the tree re-mounts against it — ordinary consumer code that
- * constructs one in a mount effect throws `ReferenceError` on the second pass.
- * First means the reinstall leads that pass instead. Unmount ordering costs
- * nothing in return: core's own teardown only calls `disconnect()` on fake
- * instances it already holds, and never constructs or measures.
+ * owner rendered last would have already deleted `globalThis.ResizeObserver`
+ * before the rest of the tree re-mounts — ordinary consumer code constructing
+ * one in a mount effect would throw `ReferenceError` on the second pass. Being
+ * first means the reinstall leads instead, at no cost: core's own teardown
+ * only calls `disconnect()` on fakes it already holds.
  */
 function LayoutOwner({ handle }: { handle: ToolbarLayoutHandle }): null {
   useEffect(() => {
@@ -168,25 +152,24 @@ function LayoutOwner({ handle }: { handle: ToolbarLayoutHandle }): null {
 }
 
 function Probe({ onRender }: { onRender: (value: DevToolbarContextValue) => void }): null {
-  // Captured during render rather than in an effect so the handle always sees
-  // the value from the most recent commit, including the very first one.
+  // Captured during render, not an effect, so the handle sees the most recent
+  // commit's value, including the very first one.
   onRender(useDevToolbar());
   return null;
 }
 
 /**
- * Renders `ui` inside a `<DevToolbar>` wired for tests.
- *
- * Defaults that differ from production: `storage` is a fresh in-memory adapter
- * (so tests never leak preferences into each other) and `instanceId` is
- * `"test"`. Pass either explicitly to override.
+ * Renders `ui` inside a `<DevToolbar>` wired for tests. Defaults that differ
+ * from production: `storage` is a fresh in-memory adapter (so tests never leak
+ * preferences into each other) and `instanceId` is `"test"`. Pass either
+ * explicitly to override.
  */
 export function renderWithToolbar(
   ui?: ReactNode,
   options: RenderWithToolbarOptions = {},
 ): RenderWithToolbarResult {
-  // Resolved before anything else so a missing optional peer fails with an
-  // actionable message rather than a ReferenceError three frames deep.
+  // Resolved first so a missing optional peer fails with an actionable
+  // message rather than a ReferenceError three frames deep.
   const { act, render } = requireTestingLibrary();
 
   const { layout, renderOptions, ...toolbarProps } = options;
@@ -207,9 +190,9 @@ export function renderWithToolbar(
     latest = value;
   };
 
-  // One place builds the tree, so `rerender()` below cannot drift from the
-  // initial render — including `LayoutOwner`'s first-sibling position, which is
-  // load-bearing under StrictMode (see its own comment).
+  // One place builds the tree, so `rerender()` below can't drift from the
+  // initial render, including `LayoutOwner`'s load-bearing first-sibling
+  // position (see its own comment).
   const tree = (children: ReactNode) => (
     <>
       {layoutHandle ? <LayoutOwner handle={layoutHandle} /> : null}
@@ -232,14 +215,11 @@ export function renderWithToolbar(
     return latest;
   };
 
-  // Extension ids are arbitrary strings, and a `"` or a `\` in one would end
-  // the attribute selector's quoted value early — a SyntaxError, or worse a
-  // selector that quietly matches something else. `CSS.escape` is the right
-  // tool and jsdom has it, called as a method because jsdom's implementation
-  // throws when `this` is not `CSS`. The fallback keeps the helper usable on a
-  // host without it, and covers everything a quoted CSS string cannot hold
-  // literally: the two characters that could end the string, plus the line
-  // breaks and form feed, which need a hex escape rather than a `\` prefix.
+  // Extension ids are arbitrary strings; a `"` or `\` in one would end the
+  // attribute selector's quoted value early (SyntaxError, or a selector that
+  // quietly matches the wrong thing). `CSS.escape` handles this — called as a
+  // method since jsdom's implementation throws otherwise — with a fallback for
+  // hosts without it, hex-escaping what a quoted CSS string can't hold literally.
   const escape = (value: string): string =>
     typeof globalThis.CSS?.escape === "function"
       ? globalThis.CSS.escape(value)
@@ -294,8 +274,8 @@ export function renderWithToolbar(
       document.querySelector<HTMLButtonElement>('[data-dtb-part="overflow-button"]'),
     overflowMenu: () => part("overflow-menu"),
     overflowedIds() {
-      // Not read from the menu: its items only exist in the DOM while it is
-      // open. Everything visible that is not in the bar has collapsed.
+      // Not read from the menu: its items only exist while open. Everything
+      // visible that isn't in the bar has collapsed.
       if (!root()) return [];
       const inBar = new Set(toolbar.barIds());
       return context()
@@ -354,8 +334,8 @@ export function renderWithToolbar(
       return () => run(() => unregister());
     },
     async runCommand(id) {
-      // Async `act`, unlike the `run()` helper: a command's `run` may await,
-      // and the state it sets on the way back has to be flushed too.
+      // Async `act`, unlike `run()`: a command's `run` may await, and state it
+      // sets on the way back must be flushed too.
       let ran = false;
       await act(async () => {
         ran = await context().runCommand(id);
@@ -371,16 +351,14 @@ export function renderWithToolbar(
 
   const unmount = () => {
     result.unmount();
-    // Dropped so `context()` throws its "not mounted" message afterwards
-    // rather than handing out a dead context whose setters no longer reach a
-    // mounted tree. `Probe` cannot do this itself: an effect cleanup would
-    // also run on StrictMode's remount pass, and on every re-render that
-    // remounts it.
+    // Dropped so `context()` throws "not mounted" instead of handing out a
+    // dead context. `Probe` can't do this itself: its effect cleanup would
+    // also fire on StrictMode's remount pass.
     latest = null;
-    // Redundant with `LayoutOwner`'s effect cleanup in every ordinary case, and
-    // kept because `restore()` is idempotent and free: it is the one teardown
-    // left if the owner never mounted, e.g. under a consumer `wrapper` whose
-    // error boundary swallowed the first render.
+    // Redundant with `LayoutOwner`'s cleanup in the ordinary case; kept since
+    // `restore()` is idempotent and free, covering the case where the owner
+    // never mounted (e.g. a consumer `wrapper` whose error boundary swallowed
+    // the first render).
     layoutHandle?.restore();
   };
 

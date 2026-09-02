@@ -1,50 +1,39 @@
 name: PR title
 
-# PRs here are squash-merged, and GitHub composes the squash commit's subject
-# from the *PR title*, not from any commit on the branch. `release.yml` runs
-# release-please over `main`, which reads those subjects to compute the version
-# bump and write `CHANGELOG.md`. So a PR titled "fixes" lands on `main` as a
-# commit release-please cannot classify: no bump, no changelog entry, and no
-# signal that anything went wrong. The `commit-msg` hook (commitlint, via
-# `simple-git-hooks`) only ever sees branch commits, which the squash discards.
-# This workflow is the only thing that checks the message that actually ships.
+# PRs are squash-merged, and GitHub composes the squash subject from the *PR
+# title*, not any branch commit. `release.yml`'s release-please reads that
+# subject to compute the version bump and write `CHANGELOG.md`, so an
+# unclassifiable title (e.g. "fixes") means no bump and no changelog entry.
+# The `commit-msg` hook only ever sees branch commits, which squash discards —
+# this workflow is the only check on the message that actually ships.
 #
-# Two things it deliberately does not do:
-#
-#  - It does not skip drafts. `ci.yml` skips them because `bun run verify` is
-#    minutes of compute on code that is still moving; this is one `bunx` call,
-#    and a draft is exactly where a placeholder title lives. Running on drafts
-#    means the author sees it red while retitling is still free.
-#  - It does not exempt release PRs. `release-please-config.json` titles them
-#    `chore(release): release X.Y.Z`, which is a valid conventional commit and
-#    passes as-is. The point is moot anyway: release-please opens that PR with
-#    the default `GITHUB_TOKEN`, and GitHub does not trigger workflows from it
-#    — the same reason `release.yml` has to call CI itself as its gate.
+# Deliberately does NOT skip drafts (unlike `ci.yml`, which skips because
+# `verify` is minutes of compute — this is one cheap `bunx` call, and a draft
+# is exactly where a placeholder title lives) and does NOT exempt release PRs
+# (their generated title is already a valid conventional commit, and they get
+# no CI trigger anyway since release-please opens them with the default
+# `GITHUB_TOKEN`).
 
 on:
-  # No `branches:` filter, for the reason spelled out in `ci.yml`: it filters on
-  # the *base* branch and silently matches nothing for stacked PRs.
+  # No `branches:` filter, same reason as `ci.yml` (filters on base branch,
+  # silently matching nothing for stacked PRs).
   #
-  # `types:` is spelled out to add `edited` to the defaults, and `edited` is the
-  # whole point: it is what fires when someone fixes the title, and without it a
-  # red check would stay red forever. It also fires on body and base-branch
-  # edits; do not gate the job on the title having changed, because a skipped
-  # job reports green to required checks and a body-only edit would clear a red
-  # title check.
-  #
-  # `ready_for_review` is deliberately absent. `ci.yml` needs it because it
-  # skips drafts and has to run for real once a PR is ready; this workflow never
-  # skips drafts, so the head SHA already carries a title check by then and
-  # marking a PR ready does not change that SHA.
+  # `types:` adds `edited` — the event that fires when someone fixes the
+  # title, without which a red check would stay red forever. It also fires on
+  # body/base edits, so the job must not gate on the title having changed (a
+  # skipped job reports green, which would clear a red title check on a
+  # body-only edit). `ready_for_review` is unneeded: unlike `ci.yml`, this
+  # workflow never skips drafts, so the head SHA already has a title check by
+  # the time a PR is marked ready.
   pull_request:
     types: [opened, edited, synchronize, reopened]
 
 permissions:
   contents: read # checkout only; the title arrives in the event payload
 
-# Keyed on the PR, not on `github.ref`, so renaming a title three times in a row
-# leaves only the last run standing. Safe to cancel: nothing here has an effect
-# outside its own run.
+# Keyed on the PR, not `github.ref`, so repeated retitling leaves only the
+# last run standing. Safe to cancel — nothing here has effects outside its own
+# run.
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
   cancel-in-progress: true
@@ -55,29 +44,24 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      # Third-party actions are SHA-pinned with the resolved version in a
-      # trailing comment, and `.github/dependabot.yml` bumps them by reading it.
-      # See the longer note in `ci.yml`.
+      # SHA-pinned with the resolved version in a trailing comment; see the
+      # longer note in `ci.yml`.
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      # Checking out and installing costs more than a dedicated title-lint
-      # action would, and buys the thing that matters: the rules applied here
-      # are `.commitlintrc.json`, the same file the `commit-msg` hook uses. A
-      # separate action would be a second copy of the rule set to keep in sync.
+      # Costs more than a dedicated title-lint action, but applies the exact
+      # `.commitlintrc.json` rules the `commit-msg` hook uses — no second rule
+      # set to keep in sync.
       - name: Set up job
         uses: ./.github/actions/setup-job
 
       - name: Lint the PR title as a conventional commit
-        # The title is passed through the environment, never interpolated into
-        # the script. A `${{ ... }}` expansion is substituted into the shell
-        # source before bash parses it, so a title containing backticks or
-        # `$(...)` would execute on the runner. The PR number comes through the
-        # environment too, because what commitlint has to judge is the subject
-        # that actually lands: GitHub appends ` (#<number>)` to the title when it
-        # composes the squash commit, and those characters count against
-        # `header-max-length`. Linting the bare title would pass a subject that
-        # is over the limit once merged.
+        # The title goes through the environment, never interpolated into the
+        # script: a `${{ }}` expansion is substituted before bash parses it, so
+        # backticks or `$(...)` in the title would execute on the runner. The
+        # PR number is included too, because GitHub appends ` (#<number>)` to
+        # the title when composing the squash commit, and that counts against
+        # `header-max-length` — linting the bare title would miss it.
         env:
           PR_TITLE: ${{ github.event.pull_request.title }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
@@ -88,9 +72,8 @@ jobs:
             {
               echo "## PR title is not a Conventional Commit"
               echo
-              # Tilde fence: a title containing backticks must not break out
-              # of the code block in the summary. `printf`, not `echo`, because
-              # `echo` swallows a title that is exactly `-n` or `-e`.
+              # Tilde fence + `printf` (not `echo`) so a title with backticks
+              # or exactly `-n`/`-e` doesn't break the block.
               echo '~~~'
               printf '%s\n' "$PR_TITLE"
               echo '~~~'

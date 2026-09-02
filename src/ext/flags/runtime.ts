@@ -3,23 +3,21 @@
  *
  * Built by `flags()`, not by `start(api)` — slot functions run during the
  * toolbar's first render, before any effect fires, so the store the chip reads
- * has to exist by the time the factory returns. Same rule as `/ext/metrics` and
- * `/ext/environment`; this is the third time it is the first thing to know.
+ * must exist by the time the factory returns. Same rule as `/ext/metrics` and
+ * `/ext/environment`.
  *
- * Two things make this extension different from the two before it.
+ * Two things set this extension apart from those two:
  *
- * **It mutates the application.** Metrics and environment observe. An override
- * here changes what the app does, it outlives the tab, and it is applied by
- * *consumer* code this extension calls. So: every call into consumer code is
- * wrapped, the failure is shown rather than swallowed, and there is a kill
- * switch (`?dtb-flags=reset`) that works before React mounts — because the
- * override that wedges the app is exactly the one you cannot reach the panel to
- * remove.
+ * **It mutates the application.** An override changes what the app does,
+ * outlives the tab, and is applied by *consumer* code this extension calls.
+ * So every call into consumer code is wrapped with the failure shown (not
+ * swallowed), and there's a kill switch (`?dtb-flags=reset`) that works
+ * before React mounts — the override that wedges the app is exactly the one
+ * you can't reach the panel to remove.
  *
- * **Flag keys and values can carry secrets.** Same rule `/ext/environment`
- * settled: `redact()` runs on the way *in*, once, and the panel and the
- * clipboard read the same redacted view. There is no path from a raw flag value
- * to an output that skips it.
+ * **Flag keys and values can carry secrets.** `redact()` runs once on the way
+ * in; the panel and the clipboard read the same redacted view. No path from a
+ * raw flag value skips it.
  */
 import { createThrottledStore, redact } from "../../runtime";
 import type { RedactOptions, ThrottledStore } from "../../runtime";
@@ -44,8 +42,8 @@ export interface FlagsRuntimeOptions {
   /**
    * What your application resolved, **before local overrides**.
    *
-   * Pass a function for values that change; it is re-read every `pollMs` and
-   * on demand. If you fold the toolbar's overrides back into the same store you
+   * Pass a function for values that change; it's re-read every `pollMs` and on
+   * demand. If you fold the toolbar's overrides back into the same store you
    * read this from, nothing breaks: the override badge comes from this
    * extension's own map, not from comparing values.
    */
@@ -54,19 +52,18 @@ export interface FlagsRuntimeOptions {
    * Apply an override to your own flag state. `value === undefined` means the
    * flag no longer has a local override — fall back to your own resolution.
    *
-   * Omit it and the panel is **read-only**: it lists, searches and copies, and
-   * offers no editors at all. That is the honest degradation for a consumer who
-   * has nowhere to put an override.
+   * Omit it and the panel is **read-only**: lists, searches and copies, no
+   * editors. The honest degradation for a consumer with nowhere to put one.
    */
   onOverride?(key: string, value: FlagValue | undefined): void;
   /** Re-read a function `flags` this often, in ms. Default `1000`. */
   pollMs?: number;
-  /** Flags pinned into the bar as their own controls. See §7. */
+  /** Flags pinned into the bar as their own controls. */
   promoted?: PromotedFlag | readonly PromotedFlag[];
   /**
-   * Audiences the current actor belongs to. A `PromotedFlag` with an `audience`
-   * is promoted only when it intersects this. Consumer-computed, like `hidden`
-   * — core has no identity to hand anybody and neither does this.
+   * Audiences the current actor belongs to. A `PromotedFlag` with an
+   * `audience` is promoted only when it intersects this. Consumer-computed,
+   * like `hidden` — core has no identity to hand anybody.
    */
   audience?: readonly string[];
   /** Merged into every `redact()` call. `extraKeys` is the usual reason. */
@@ -147,8 +144,7 @@ export function parseOverrides(raw: string | null): Record<string, FlagValue> {
   if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
     return {};
   }
-  // Null prototype so a persisted `__proto__` key round-trips as data rather
-  // than being dropped on the way in while surviving on the way out.
+  // Null prototype so a persisted `__proto__` key round-trips as data.
   const output: Record<string, FlagValue> = Object.create(null) as Record<string, FlagValue>;
   for (const [key, value] of Object.entries(parsed as Record<string, unknown>)) {
     if (isFlagValue(value)) output[key] = value;
@@ -167,10 +163,10 @@ const emptyOverrides = (): Record<string, FlagValue> =>
 /**
  * True when the URL asks for every override to be dropped.
  *
- * This is the part of the design that exists because overrides *persist* and
- * *mutate the app*. An override that breaks the page badly enough also breaks
- * the toolbar you would use to remove it, and "clear your localStorage" is not
- * an escape hatch a developer can talk a colleague through over chat.
+ * Exists because overrides persist and mutate the app: one that breaks the
+ * page badly enough also breaks the toolbar you'd use to remove it, and
+ * "clear your localStorage" isn't an escape hatch you can talk someone
+ * through over chat.
  */
 export function resetRequested(param: string | null): boolean {
   if (param === null) return false;
@@ -204,11 +200,8 @@ export function createFlagsRuntime(options: FlagsRuntimeOptions = {}): FlagsRunt
   let storage: ToolbarStorage | null = null;
   let overrides: Record<string, FlagValue> = emptyOverrides();
   let reloadPending = new Set<string>();
-  /**
-   * Per key, not one slot. A single `adapterError` was erased by the next
-   * successful call on any *other* key, which took the only warning off screen
-   * while the failed row carried on claiming to be overridden.
-   */
+  // Per key, not one slot — a single `adapterError` would be erased by the
+  // next successful call on any *other* key, hiding a still-failing row.
   const adapterErrors = new Map<string, string>();
   let readError: string | null = null;
 
@@ -224,8 +217,7 @@ export function createFlagsRuntime(options: FlagsRuntimeOptions = {}): FlagsRunt
       return value as readonly FlagReading[];
     } catch (error) {
       // A consumer's getter throwing must not take down the bar: the slot is
-      // inside an error boundary, but the factory and start()'s interval are
-      // not. Same rule /ext/environment settled.
+      // inside an error boundary, but the factory and start()'s interval are not.
       // eslint-disable-next-line no-console
       console.error(
         "[dev-toolbar/ext/flags] the supplied flags getter threw. " + "Showing an empty list.",
@@ -242,10 +234,10 @@ export function createFlagsRuntime(options: FlagsRuntimeOptions = {}): FlagsRunt
   /**
    * Renders one flag value as the single line every surface shows.
    *
-   * The value is handed to `redact()` **under its own key**, because `redact()`
-   * matches key names: a flag called `checkout.apiToken` must mask, and it only
-   * can if the key reaches the redactor. The rendered before/after pair is what
-   * sets `masked`, so the badge can never be set by a formatting difference.
+   * The value is handed to `redact()` **under its own key** because `redact()`
+   * matches key names (e.g. `checkout.apiToken` must mask). Comparing the
+   * before/after render is what sets `masked`, so a formatting difference
+   * alone can never trip the badge.
    */
   const render = (
     key: string,
@@ -255,8 +247,8 @@ export function createFlagsRuntime(options: FlagsRuntimeOptions = {}): FlagsRunt
     if (value === undefined) return { text: "—", masked: false };
     if (sensitive) return { text: "[redacted]", masked: true };
     if (typeof value !== "string") {
-      // Booleans and numbers cannot carry a credential, and masking them by key
-      // name would make a flag called `session.newLogin` unreadable for no gain.
+      // Booleans and numbers can't carry a credential; masking by key name
+      // would just make a flag called `session.newLogin` unreadable.
       return { text: formatValue(value), masked: false };
     }
     const before = formatValue(value);
@@ -265,9 +257,7 @@ export function createFlagsRuntime(options: FlagsRuntimeOptions = {}): FlagsRunt
     return { text: after, masked: after !== before };
   };
 
-  /* ------------------------------------------------------------------ */
-  /* Promotion window                                                     */
-  /* ------------------------------------------------------------------ */
+  /* Promotion window */
 
   const promotionFor = (key: string): PromotedFlag | null => {
     const at = now();
@@ -286,9 +276,7 @@ export function createFlagsRuntime(options: FlagsRuntimeOptions = {}): FlagsRunt
     return null;
   };
 
-  /* ------------------------------------------------------------------ */
-  /* Snapshot                                                             */
-  /* ------------------------------------------------------------------ */
+  /* Snapshot */
 
   const buildSnapshot = (): FlagsSnapshot => {
     const readings = readFlags();
@@ -355,11 +343,9 @@ export function createFlagsRuntime(options: FlagsRuntimeOptions = {}): FlagsRunt
       });
     }
 
-    // Overrides whose flag the catalogue no longer lists. They are still being
-    // applied to the running application on every mount, so leaving them out of
-    // the snapshot made them invisible *and* unclearable: the chip counted
-    // views, and "Clear all overrides (0)" disabled itself over a live
-    // override. A renamed flag is the ordinary way to get here.
+    // Overrides whose flag the catalogue no longer lists (usually a renamed
+    // flag). Still applied to the app on every mount, so they're kept in the
+    // snapshot rather than becoming invisible and unclearable.
     for (const key of Object.keys(overrides)) {
       if (seen.has(key)) continue;
       const value = overrides[key] as FlagValue;
@@ -390,17 +376,16 @@ export function createFlagsRuntime(options: FlagsRuntimeOptions = {}): FlagsRunt
       });
     }
 
-    // §3C: recently used first, then overridden, then alphabetical. The panel
-    // does not re-sort; this order is the one every surface reads.
+    // Recently used first, then overridden, then alphabetical. The panel
+    // doesn't re-sort; this is the order every surface reads.
     const sorted = [...views].sort((a, b) => {
       if (a.recentlyUsed !== b.recentlyUsed) return a.recentlyUsed ? -1 : 1;
       if (a.overridden !== b.overridden) return a.overridden ? -1 : 1;
       return a.key.localeCompare(b.key);
     });
 
-    // Bar order is the order the consumer declared the promotions in, not the
-    // panel's order: a promoted flag's position in the bar should not move
-    // because somebody overrode it.
+    // Bar order follows the consumer's declared promotion order, not the
+    // panel's — a promoted flag's bar position shouldn't move on override.
     const promotedViews: FlagView[] = [];
     for (const entry of promotions) {
       const view = sorted.find(
@@ -425,10 +410,10 @@ export function createFlagsRuntime(options: FlagsRuntimeOptions = {}): FlagsRunt
   };
 
   /**
-   * Nothing here may propagate. The first `build()` runs inside `flags()` — at
-   * factory time, before core has mounted anything — so a throw there does not
-   * degrade to an error chip, it takes down the host application's render. The
-   * later ones run inside a `setInterval`, where nobody can catch them at all.
+   * Nothing here may propagate. The first `build()` runs inside `flags()`, at
+   * factory time before core mounts anything, so a throw wouldn't degrade to
+   * an error chip — it would take down the host app's render. Later calls run
+   * inside a `setInterval`, where nothing could catch them at all.
    */
   const build = (): FlagsSnapshot => {
     try {
@@ -470,17 +455,15 @@ export function createFlagsRuntime(options: FlagsRuntimeOptions = {}): FlagsRunt
     equals: (a, b) => signature(a) === signature(b),
   });
 
-  // `revision` advances when a snapshot is *published*, not when one is built:
-  // `recipeText()` and `diagnostics()` build without publishing, and bumping
-  // there made the revision a count of reads.
+  // `revision` advances on publish, not on build: `recipeText()` and
+  // `diagnostics()` build without publishing, and bumping there would make
+  // revision a count of reads instead of writes.
   const publish = () => {
     revision += 1;
     store.set(build());
   };
 
-  /* ------------------------------------------------------------------ */
-  /* Mutation                                                             */
-  /* ------------------------------------------------------------------ */
+  /* Mutation */
 
   const persist = () => {
     if (storage === null) return;
@@ -491,16 +474,15 @@ export function createFlagsRuntime(options: FlagsRuntimeOptions = {}): FlagsRunt
         storage.setItem(OVERRIDES_KEY, JSON.stringify(overrides));
       }
     } catch {
-      // A custom adapter is consumer code. Losing persistence is survivable;
-      // throwing out of a click handler is not.
+      // Storage is consumer code. Losing persistence is survivable; throwing
+      // out of a click handler is not.
     }
   };
 
   /**
-   * Calls the consumer's adapter. It is consumer code running inside our click
-   * handler, so it is wrapped — but the failure is *recorded*, not swallowed:
-   * a panel that shows "overridden" while the app never heard about it is
-   * exactly the lie `/ext/environment` §11.3 warns about.
+   * Calls the consumer's adapter. Wrapped because it's consumer code running
+   * inside our click handler, but the failure is *recorded*, not swallowed —
+   * a panel that shows "overridden" while the app never heard about it is a lie.
    */
   const apply = (key: string, value: FlagValue | undefined): void => {
     if (!writable) return;
@@ -566,9 +548,8 @@ export function createFlagsRuntime(options: FlagsRuntimeOptions = {}): FlagsRunt
       persist();
       for (const key of keys) {
         // No explicit `adapterErrors.delete` here or in `drop`: a successful
-        // `apply` clears the key's own error, and a *failed* clear must keep
-        // one — the application is still running the override it was told to
-        // drop. The row says "clear not applied" and grades `bad`.
+        // `apply` clears its own error, but a *failed* clear must keep one —
+        // the app is still running the override it was told to drop.
         apply(key, undefined);
         markReload(key);
       }
@@ -580,8 +561,8 @@ export function createFlagsRuntime(options: FlagsRuntimeOptions = {}): FlagsRunt
       const view = store.peek().flags.find((candidate) => candidate.key === key);
       if (!view) return;
       const next = !(view.effective === true);
-      // Toggling back to the application's own value removes the override
-      // rather than pinning it, so "toggle twice" leaves no residue behind.
+      // Toggling back to the app's own value drops the override rather than
+      // pinning it, so "toggle twice" leaves no residue.
       if (view.overridden && next === view.base) drop(key);
       else write(key, next);
     },
@@ -596,8 +577,8 @@ export function createFlagsRuntime(options: FlagsRuntimeOptions = {}): FlagsRunt
     start(api: ExtensionRuntimeApi) {
       storage = api.storage;
 
-      // The kill switch runs before anything is applied, so a wedging override
-      // never reaches the app on the reset load.
+      // The kill switch runs before anything is applied, so a wedging
+      // override never reaches the app on the reset load.
       if (resetRequested(resetParam)) {
         overrides = emptyOverrides();
         persist();
@@ -609,10 +590,9 @@ export function createFlagsRuntime(options: FlagsRuntimeOptions = {}): FlagsRunt
           raw = null;
         }
         overrides = parseOverrides(raw);
-        // Re-apply on every mount: the page reloaded with the application's own
-        // values, and this is what makes an override outlive the tab. Applying
-        // the same value twice is the consumer's problem to make idempotent,
-        // which setting a flag inherently is.
+        // Re-apply on every mount — this is what makes an override outlive
+        // the tab. Applying the same value twice is fine; setting a flag is
+        // inherently idempotent.
         for (const [key, value] of Object.entries(overrides)) {
           apply(key, value);
         }
@@ -625,8 +605,8 @@ export function createFlagsRuntime(options: FlagsRuntimeOptions = {}): FlagsRunt
       store.flush();
 
       // The store belongs to the runtime, not to one start/stop cycle: React
-      // StrictMode runs mount → cleanup → mount, and destroying it on the first
-      // cleanup drops React's subscription and freezes the panel.
+      // StrictMode runs mount -> cleanup -> mount, and destroying it on the
+      // first cleanup would drop React's subscription and freeze the panel.
       const dispose = () => {
         if (timer !== null) clearInterval(timer);
         stopWatching();
@@ -662,17 +642,16 @@ export function createFlagsRuntime(options: FlagsRuntimeOptions = {}): FlagsRunt
           .filter((view) => view.overridden)
           .map((view) => ({
             key: view.key,
-            // The redacted display strings, never the raw values: a command is
-            // a second front door onto the same data, and it must not be able
-            // to fetch what the panel would not show.
+            // Redacted display strings, never raw values — a command must not
+            // be able to fetch what the panel wouldn't show.
             value: view.effectiveText,
             was: view.baseText,
             masked: view.masked,
             reloadBehavior: view.reloadBehavior,
           })),
       };
-      // Values are already redacted; this second pass costs nothing and means
-      // the dump stays safe if a field is added above and this is forgotten.
+      // Values are already redacted; this second pass costs nothing and keeps
+      // the dump safe if a field is added above and this call is forgotten.
       return redact(payload, redactOptions);
     },
   };

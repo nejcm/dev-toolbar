@@ -69,23 +69,14 @@ function readGap(element: HTMLElement, fallback: number): number {
 }
 
 /**
- * Width of the bar that items may not fill: its own horizontal padding, which
- * `clientWidth` includes, plus any gap between the two regions that the item
- * math does not already charge for.
- *
- * `computeOverflow` charges one gap between every adjacent pair of items in
- * the flattened list, plus one before the `···` button. Counting the gaps the
- * bar actually renders — both region elements are always present, so an empty
- * one still takes a gap — leaves two cases short:
- *
- * - the start region renders no items (all collapsed, or none to begin with):
- *   the empty element still takes the gap before the end region;
- * - the end region has no items *by props*: with nothing overflowed it holds
- *   no children either, and the gap charged before the button is not rendered
- *   because there is no button. Reading this from the props rather than from
- *   the rendered children keeps it constant as items collapse, so available
- *   width only ever shrinks and the recompute cannot oscillate; the cost is
- *   over-charging one gap once such a bar has collapsed.
+ * Width of the bar that items may not fill: its horizontal padding (included
+ * in `clientWidth`) plus any inter-region gap the item math doesn't already
+ * charge for. `computeOverflow` charges one gap per adjacent item pair plus
+ * one before the `···` button, which undercounts when the start region has no
+ * items or the end region has none by props — both still reserve a gap since
+ * the (empty) region elements are always present. Read from props rather than
+ * rendered children so available width only ever shrinks and recompute can't
+ * oscillate, at the cost of over-charging one gap once collapsed.
  */
 function readReserved(
   bar: HTMLElement,
@@ -123,22 +114,21 @@ export function OverflowBar({
   const menuRef = useRef<HTMLDivElement | null>(null);
   const buttonRef = useRef<HTMLButtonElement | null>(null);
   const widthsRef = useRef(new Map<string, number>());
-  // Both are read back out of the DOM so that overriding --dtb-gap, or
-  // restyling the ··· button, keeps the collapse math honest.
+  // Read back out of the DOM so overriding --dtb-gap or restyling the ···
+  // button keeps the collapse math honest.
   const gapRef = useRef(gap);
   const buttonWidthRef = useRef(DEFAULT_OVERFLOW_BUTTON_WIDTH);
   const reservedRef = useRef(0);
-  // The last measured `clientWidth`, i.e. the padding box. What is reserved
-  // out of it is applied at use, so a collapse that changes it takes effect
-  // without waiting for the next resize.
+  // Last measured `clientWidth` (padding box). Reserved width is applied at
+  // use, so a collapse that changes it takes effect without waiting for resize.
   const [available, setAvailable] = useState(0);
   const [overflowIds, setOverflowIds] = useState<Set<string>>(() => new Set<string>());
   const [menuOpen, setMenuOpen] = useState(false);
   const menuId = `dtb-overflow-menu-${useId()}`;
 
   const all = [...startItems, ...endItems];
-  // Read through a ref so `recompute` — and therefore the ResizeObserver
-  // effect — stays stable across renders that only rebuild the item arrays.
+  // Read through a ref so `recompute` (and the ResizeObserver effect) stays
+  // stable across renders that only rebuild the item arrays.
   const listRef = useRef(all);
   // oxlint-disable-next-line react/refs -- written in render on purpose, above.
   listRef.current = all;
@@ -156,8 +146,8 @@ export function OverflowBar({
     setOverflowIds((previous) => (sameSet(previous, next) ? previous : next));
   }, []);
 
-  // Cache natural widths of whatever is currently rendered in the bar, then
-  // recompute. Widths are sticky, so a collapsed item can expand again.
+  // Cache natural widths of whatever is currently rendered, then recompute.
+  // Widths are sticky, so a collapsed item can expand again.
   useLayoutEffect(() => {
     const bar = barRef.current;
     if (!bar) return;
@@ -211,17 +201,16 @@ export function OverflowBar({
     return () => observer.disconnect();
   }, [recompute]);
 
-  // Nothing overflows any more, so the ··· menu has no contents and no button
-  // to sit under. Deriving this during render instead would silently reopen the
-  // menu the next time the bar narrows.
+  // Nothing overflows any more, so close the menu. Deriving this during
+  // render instead would silently reopen it the next time the bar narrows.
   useEffect(() => {
     // oxlint-disable-next-line react/set-state-in-effect
     if (overflowIds.size === 0) setMenuOpen(false);
   }, [overflowIds]);
 
   // Move focus into the ··· popup when it opens, so a keyboard user reaches
-  // the collapsed items at all. The popup itself is the fallback target when
-  // no entry can take focus — a bar of static badges, say.
+  // the collapsed items. Falls back to the popup itself if nothing inside
+  // can take focus.
   useEffect(() => {
     if (!menuOpen) return;
     const menu = menuRef.current;
@@ -229,8 +218,8 @@ export function OverflowBar({
     (menu.querySelector<HTMLElement>(FOCUSABLE) ?? menu).focus();
   }, [menuOpen]);
 
-  // Dismiss the ··· menu on Escape or a click outside it. Escape hands focus
-  // back to the button; an outside click leaves it wherever the click put it.
+  // Dismiss on Escape or an outside click. Escape returns focus to the
+  // button; an outside click leaves focus wherever the click put it.
   useEffect(() => {
     if (!menuOpen || typeof document === "undefined") return;
 
@@ -291,14 +280,11 @@ export function OverflowBar({
           </button>
         ) : null}
       </div>
-      {/* A disclosure, not an ARIA menu. Each entry is an extension's compact
-          slot, which usually renders its own button — and a `menuitem` may not
-          contain interactive content, so the menu pattern would put the
-          focusable thing inside the item instead of being it. What the popup
-          promises instead: `aria-expanded`/`aria-controls` on the button,
-          focus moved in on open, Escape out, and `Tab` walking the entries as
-          it walks the bar. Positioned with `inset-inline-end` in styles.css, not
-          `right`, so this mirrors correctly under `dir="rtl"`. */}
+      {/* A disclosure, not an ARIA menu: entries render their own interactive
+          content, which a `menuitem` may not contain. Instead: `aria-expanded`/
+          `aria-controls` on the button, focus moved in on open, Escape out.
+          Positioned with `inset-inline-end` in styles.css so it mirrors under
+          `dir="rtl"`. */}
       {menuOpen && overflowed.length > 0 ? (
         <div
           ref={menuRef}

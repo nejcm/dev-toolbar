@@ -8,16 +8,11 @@ import type { DiagnosticsRuntime } from "./runtime";
 /**
  * The rendered surface. [dev-toolbar/ext/diagnostics]
  *
- * The panel's shape is the extension's argument: **the snapshot is shown, in
- * full, before anything can be sent anywhere**. The preview is the largest
- * element on the panel and it holds exactly the text the copy and download
- * buttons produce — not a summary of it, not a subset, the same string. A
- * "Copy debug report" button that puts something on the clipboard nobody has
- * read is how a session token ends up in a public issue tracker.
- *
- * Everything it renders comes from the redacted snapshot, which is redacted as
- * it is built. No component here has access to a raw value, so none can print
- * one — the same construction `/ext/environment` and `/ext/flags` use.
+ * The panel shows the snapshot in full before anything can be sent anywhere —
+ * the preview holds exactly the text the copy/download buttons produce, not a
+ * summary of it. Everything rendered comes from the already-redacted
+ * snapshot, so no component here has access to a raw value to print one
+ * (same construction as `/ext/environment` and `/ext/flags`).
  */
 
 function useSnapshotState(runtime: DiagnosticsRuntime): DiagnosticsSnapshotState {
@@ -53,11 +48,10 @@ export interface ChipProps {
 }
 
 /**
- * The chip deliberately does **not** capture. A snapshot walks every
- * extension's `diagnostics()`, and doing that on a timer to keep a number in
- * the bar fresh would charge every consumer for a feature only used when
- * something has gone wrong. It shows whether a snapshot exists and whether the
- * last one was complete; the panel does the work.
+ * The chip deliberately does **not** capture — walking every extension's
+ * `diagnostics()` on a timer would charge every consumer for a feature only
+ * used when something's wrong. It just shows whether a snapshot exists and
+ * was complete; the panel does the work.
  */
 export function DiagnosticsChip({
   runtime,
@@ -112,20 +106,15 @@ export function DiagnosticsPanel({ runtime, label, injectStyles }: PanelProps): 
   const [format, setFormat] = useState<SnapshotFormat>(() => runtime.readFormat());
   const [status, setStatus] = useState<string | null>(null);
 
-  // Capturing is a side effect, so it happens in one — not during render, where
-  // it would run twice under StrictMode and walk every extension twice for one
-  // panel open. The panel opens on an already-captured snapshot when there is
-  // one, which is what makes reopening it cheap.
+  // In an effect, not during render, or it'd run twice under StrictMode and
+  // walk every extension twice per panel open.
   useEffect(() => {
     if (runtime.latest() === null) runtime.capture();
   }, [runtime]);
 
   const snapshot = state.snapshot;
-  // One render per capture per format. The mask count is deliberately *not*
-  // derived from that string: it comes from the snapshot, because the Markdown
-  // footer contains the mask inside a sentence about the mask and would count
-  // itself. See `countMasked` — this comment used to claim the opposite, which
-  // is how a reader would have "fixed" the code back toward the bug.
+  // Mask count comes from the snapshot, not the rendered string — the Markdown
+  // footer mentions the mask and would count itself. See `countMasked`.
   const view = useMemo(
     () =>
       snapshot === null
@@ -245,8 +234,7 @@ export function DiagnosticsPanel({ runtime, label, injectStyles }: PanelProps): 
         <pre
           data-dtb-part="diag-preview"
           data-dtb-format={format}
-          // A scrollable region must be reachable by keyboard; the role and the
-          // label are what make the tab stop meaningful.
+          // Scrollable region must be keyboard-reachable; role+label make the tab stop meaningful.
           role="region"
           // oxlint-disable-next-line jsx-a11y/no-noninteractive-tabindex
           tabIndex={0}

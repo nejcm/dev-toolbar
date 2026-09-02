@@ -1,22 +1,17 @@
 name: Cleanup
 
-# Descended from rumi.ai's `cleanup.yml`. Actions caches are scoped to the ref
-# that wrote them, and a merged or closed PR's ref is never built again — its
-# entries just sit in the repo's 10 GB cache budget until they are evicted, and
-# eviction is least-recently-used across the whole repo, so a pile of dead PR
-# caches evicts live `main` entries. Deleting them on close is the fix.
+# Actions caches are scoped to the ref that wrote them, and a merged/closed
+# PR's ref is never built again — its entries just sit in the repo's cache
+# budget until evicted, and eviction is LRU across the whole repo, so dead PR
+# caches can evict live `main` entries. Deleting them on close is the fix.
 #
-# Two deliberate departures from the version this came from:
+# Uses native `gh cache` (since gh 2.32) rather than the archived
+# `actions/gh-actions-cache` extension, whose install pulls an unpinned
+# release binary at run time in a job holding `actions: write` — the exact
+# thing the SHA-pinning convention in `ci.yml` exists to prevent.
 #
-#  - It did `gh extension install actions/gh-actions-cache`, then listed keys and
-#    looped a delete over them. That extension's repo is archived (last push
-#    2024-10-21) and the install pulls an unpinned release binary at run time —
-#    in a job holding `actions: write`, which is the token that can delete
-#    Actions data. That is the exact thing the SHA-pinning note in `ci.yml`
-#    exists to prevent. `gh` has had native `gh cache` since 2.32, and
-#    `gh cache delete --all --ref` is the whole loop in one preinstalled command.
-#  - No `actions/checkout`. Nothing here reads the tree, and `gh -R` does not
-#    need one.
+# No `actions/checkout`: nothing here reads the tree, and `gh -R` doesn't need
+# one.
 
 on:
   pull_request:
@@ -32,9 +27,8 @@ on:
         type: string
         required: true
 
-# `actions: write` is what deleting a cache needs, and it is the only permission
-# this workflow uses — there is no checkout and nothing reads repository
-# contents, so `contents` is left at none rather than granted read.
+# `actions: write` is what deleting a cache needs, and it's the only
+# permission used — no checkout, so `contents` stays at none.
 permissions:
   actions: write
 
@@ -42,17 +36,15 @@ jobs:
   caches:
     name: Delete the PR's Actions caches
     runs-on: ubuntu-latest
-    # A `pull_request` event from a fork gets a read-only `GITHUB_TOKEN` no
-    # matter what the `permissions` block above asks for, so the delete would
-    # 403 and the job would fail noisily on every closed fork PR.
+    # A `pull_request` event from a fork gets a read-only `GITHUB_TOKEN`
+    # regardless of the `permissions` block above, so the delete would 403 on
+    # every closed fork PR without this guard.
     #
-    # The cost of the guard is real and worth stating: a fork PR's caches *are*
-    # written into this repo's storage under `refs/pull/N/merge`, so skipping
-    # leaves them to age out by LRU rather than being reclaimed on close. The
-    # recovery is a manual `workflow_dispatch` with the PR number. Accepted
-    # because the alternative — `pull_request_target`, which would have a
-    # writable token — runs base-repo workflow code with fork context, and that
-    # is a far worse trade for a cache-hygiene job.
+    # Cost: a fork PR's caches still land under `refs/pull/N/merge` and age out
+    # by LRU instead of being reclaimed on close; recover with a manual
+    # `workflow_dispatch` and the PR number. `pull_request_target` would avoid
+    # that but runs base-repo code with fork context — a worse trade for a
+    # cache-hygiene job.
     if: >-
       github.event_name == 'workflow_dispatch'
       || github.event.pull_request.head.repo.full_name == github.repository
@@ -62,13 +54,13 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REPO: ${{ github.repository }}
-          # `refs/pull/N/merge` is the ref CI runs on for a pull_request event,
-          # so it is the ref every cache this PR wrote is keyed to.
+          # The ref CI runs on for a pull_request event, so it's what every
+          # cache this PR wrote is keyed to.
           PR_NUMBER: ${{ github.event.pull_request.number || inputs.pr-number }}
         run: |
-          # `pr-number` is a free-form string on workflow_dispatch. Unvalidated,
-          # a typo builds a ref that matches nothing and the run goes green
-          # having done nothing — the failure mode this input was added to fix.
+          # `pr-number` is free-form on workflow_dispatch; unvalidated, a typo
+          # builds a ref matching nothing and the run goes green having done
+          # nothing.
           if ! [[ "$PR_NUMBER" =~ ^[0-9]+$ ]]; then
             echo "::error::pr-number must be a positive integer, got '$PR_NUMBER'"
             exit 1
@@ -77,7 +69,6 @@ jobs:
           ref="refs/pull/${PR_NUMBER}/merge"
           echo "Deleting all caches for $ref"
 
-          # --succeed-on-no-caches is what makes "this PR never wrote a cache"
-          # an ordinary outcome rather than a red workflow. Without it the
-          # command exits non-zero on an empty result.
+          # --succeed-on-no-caches: without it, a PR that never wrote a cache
+          # exits non-zero instead of succeeding.
           gh cache delete --all --ref "$ref" --succeed-on-no-caches -R "$REPO"

@@ -10,21 +10,14 @@ import type {
 const extensionCounter = { current: 0 };
 const commandCounter = { current: 0 };
 
-/**
- * Generates the next `<prefix>-N` id from its own counter, mutating it as a
- * side effect. Passing an explicit `id` bypasses this helper entirely, so it
- * never advances the sequence — only a generated id consumes a number.
- */
+/** Generates the next `<prefix>-N` id, mutating the counter as a side effect. */
 const nextId = (prefix: string, counter: { current: number }): string =>
   `${prefix}-${++counter.current}`;
 
 /**
  * Resets both auto-generated id counters — `makeExtension`'s `fake-N` and
- * `makeCommand`'s `fake-command-N` — back to zero. They are independent: a
- * call to one never shifts the other's numbering.
- *
- * Only needed when a test asserts on a generated id; prefer passing an
- * explicit `id`, which consumes no number from either sequence.
+ * `makeCommand`'s `fake-command-N` — back to zero; they are independent.
+ * Only needed when a test asserts on a generated id.
  */
 export function resetExtensionIds(): void {
   extensionCounter.current = 0;
@@ -61,10 +54,8 @@ const asError = (value: boolean | Error, message: string): Error =>
   value instanceof Error ? value : new Error(message);
 
 /**
- * Builds a throwaway extension for tests.
- *
- * `makeExtension()` on its own yields a valid extension with a generated id, a
- * clickable compact slot and no panel. Everything else is opt-in.
+ * Builds a throwaway extension for tests. Called with no options, it yields a
+ * valid extension with a generated id, a clickable compact slot, and no panel.
  */
 export function makeExtension(options: MakeExtensionOptions = {}): DevToolbarExtension {
   const {

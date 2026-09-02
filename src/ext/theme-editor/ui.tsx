@@ -16,10 +16,10 @@ import type { ThemeEditorRuntime } from "./runtime";
 /**
  * The rendered surface. [dev-toolbar/ext/theme-editor]
  *
- * Slot functions must be cheap, so they return these components and the
- * components subscribe to the extension's own store. Everything they render
- * comes from the snapshot, which is redacted before it is built — no component
- * here has access to a raw token value, and so none can print one.
+ * Slot functions must be cheap, so they return these components, which
+ * subscribe to the extension's own store. Everything rendered comes from the
+ * snapshot, already redacted — no component here has access to a raw token
+ * value.
  */
 
 function useSnapshot(runtime: ThemeEditorRuntime): ThemeSnapshot {
@@ -138,14 +138,9 @@ function Editor({
         <span data-dtb-part="thm-tag" data-dtb-tag="refused" title={describeRefusal(view.refusal)}>
           {view.refusal === "reserved" ? "reserved name" : "unusable name"}
         </span>
-        {/* No clear button, and that is now *provably* right rather than an
-            oversight. A refused row cannot be overridden: every door into the
-            override map drops a refused name — `setOverride` refuses it,
-            `sanitize` keeps only catalogue names, and `vetStored` drops it on
-            load, which is the fix that closed the residue this branch was first
-            written to paper over. A defensive branch no test can reach is the
-            §14.7 problem in miniature, so the invariant is asserted at the door
-            (`drops a reserved name out of storage…`) instead of hedged here. */}
+        {/* No clear button: a refused row can never be overridden — every door
+            into the override map (setOverride, sanitize, vetStored) already
+            drops a refused name. */}
       </>
     );
   }
@@ -184,9 +179,9 @@ function Editor({
         <span
           data-dtb-part="thm-swatch"
           aria-hidden="true"
-          // The one inline style in this file, and it is unavoidable: a swatch
-          // has to paint an arbitrary value that no stylesheet can enumerate.
-          // It is our own element, inside the toolbar root — never a host node.
+          // The one inline style in this file, unavoidably: a swatch paints an
+          // arbitrary value no stylesheet can enumerate. Our own element,
+          // inside the toolbar root — never a host node.
           style={{ background: view.effective }}
         />
       ) : null}
@@ -198,9 +193,9 @@ function Editor({
         aria-invalid={rejected !== null}
         data-dtb-invalid={rejected === null ? "false" : "true"}
         disabled={!writable}
-        // A masked value never round-trips through the editor: seeding the input
-        // with it is the one place the redacted snapshot would leak back onto
-        // the screen, and out again through the next copy. §12.6.
+        // A masked value never round-trips through the editor: seeding the
+        // input with it is the one place a redacted value could leak back
+        // onto the screen and out again through the next copy.
         placeholder={view.masked ? "masked — type a new value" : (view.effectiveText ?? "")}
         title={rejected ?? `Edit ${view.name}`}
         value={draft}
@@ -277,10 +272,8 @@ function Row({
         <Editor view={view} runtime={runtime} writable={writable} />
       </div>
 
-      {/* §3H's before/after, per row: what the page is showing now, what the
-          application resolves on its own, and what the design system calls the
-          default — side by side, so nobody debugs against a value the app
-          never produced. */}
+      {/* Before/after, per row: now, the app's own value, and the design
+          system's default, side by side. */}
       <div data-dtb-part="thm-values">
         <span>
           now{" "}
@@ -498,9 +491,8 @@ export function ThemePanel({ runtime, label, injectStyles }: PanelProps): ReactN
         </div>
       ) : null}
 
-      {/* §3H's export half. The panel's largest element is the payload itself:
-          the exact string the buttons copy, not a summary of it — the property
-          `/ext/diagnostics` §15.4 argues for, applied to a smaller document. */}
+      {/* The panel's largest element is the payload itself — the exact string
+          the buttons copy, not a summary of it. */}
       <div data-dtb-part="thm-actions" data-dtb-role="export">
         <label data-dtb-part="thm-note">
           export{" "}
@@ -571,8 +563,8 @@ export function ThemePanel({ runtime, label, injectStyles }: PanelProps): ReactN
         </button>
       </div>
 
-      {/* §14.4's standard: what was left out, and what leaving it out costs,
-          next to the thing itself rather than only in a design document. */}
+      {/* What was left out, and what leaving it out costs, stated next to the
+          thing itself. */}
       <p data-dtb-part="thm-note" data-dtb-role="limits">
         Edits are written as inline custom properties on <code>{snapshot.surface.selector}</code>,
         so an application rule marked <code>!important</code> still wins and this panel will show an

@@ -1,16 +1,14 @@
 /**
  * `@nejcm/dev-toolbar/ext/flags`
  *
- * Feature-flag controls, per `plans/dev-bar.md` §3C, including §7's promoted
- * flag. Written strictly as a consumer of the public extension contract:
- * nothing here imports a *value* from `src/core/*`, only types, which erase at
- * build time.
+ * Feature-flag controls, including a promoted flag pinned in the bar. Written
+ * strictly as a consumer of the public extension contract: nothing here
+ * imports a *value* from `src/core/*`, only types, which erase at build time.
  *
  * **Flags are yours.** This extension owns no flag store, integrates no
- * provider and reaches for no global — the same rule `/ext/environment`
- * follows for session context. You hand it what your application resolved and,
- * if you want it to do more than read, a typed adapter it calls when somebody
- * asks for a local override.
+ * provider and reaches for no global — same rule `/ext/environment` follows.
+ * You hand it what your application resolved and, optionally, a typed adapter
+ * it calls when somebody asks for a local override.
  *
  * ```tsx
  * import { flags } from "@nejcm/dev-toolbar/ext/flags";
@@ -35,26 +33,25 @@
  * ```
  *
  * Omit `onOverride` and the panel is read-only — it lists, searches and copies
- * and changes nothing. That is the honest degradation for a consumer with
- * nowhere to put an override, not a reason to invent a store.
+ * and changes nothing. That's the honest degradation, not a reason to invent
+ * a store.
  *
- * Three things follow from this being the first extension that **mutates the
- * application** rather than observing it:
+ * This is the first extension that **mutates the application** rather than
+ * observing it, which is why:
  *
- * - **Overrides outlive the tab.** They persist under
- *   `dtb:v1:<instanceId>:ext:<id>:overrides` and are re-applied through your
- *   adapter on the next mount. The application boots with its own values first;
- *   call `readStoredOverrides()` before you render if you need them earlier.
- * - **There is a kill switch.** Loading any page with `?dtb-flags=reset` drops
- *   every stored override before it is applied, because the override that
- *   breaks the app is the one you cannot reach the panel to remove.
+ * - **Overrides outlive the tab.** Persisted under
+ *   `dtb:v1:<instanceId>:ext:<id>:overrides` and re-applied through your
+ *   adapter on the next mount. The app boots with its own values first; call
+ *   `readStoredOverrides()` before you render if you need them earlier.
+ * - **There is a kill switch.** `?dtb-flags=reset` drops every stored override
+ *   before it's applied — the override that breaks the app is the one you
+ *   can't reach the panel to remove.
  * - **An override is never quiet.** The bar counts them, every overridden row
- *   is marked, and the application's own value stays on screen next to the
- *   override so nobody debugs against a value the server never sent.
+ *   is marked, and the app's own value stays on screen next to the override.
  *
- * Flag keys and values reach a clipboard, so — the `/ext/environment` lesson —
- * every value goes through `redact()` on the way *in*, once. The panel and the
- * copy commands read the same redacted snapshot; there is no unmasked path.
+ * Flag keys and values reach a clipboard, so every value goes through
+ * `redact()` once on the way in. The panel and the copy commands read the
+ * same redacted snapshot; there's no unmasked path.
  */
 import {
   createFlagsRuntime,
@@ -93,9 +90,8 @@ export interface FlagsOptions extends Pick<
   align?: ToolbarAlign;
   order?: number;
   /**
-   * Overflow collapse order. Default `60` — higher than the metrics chips, so a
-   * promoted flag survives a narrowing window longer than a memory readout
-   * does. See the note on `promoted` for why it cannot be higher still.
+   * Overflow collapse order. Default `60` — higher than the metrics chips, so
+   * a promoted flag survives a narrowing window longer than a memory readout.
    */
   priority?: number;
   hidden?: boolean;
@@ -110,8 +106,8 @@ export interface FlagsOptions extends Pick<
 }
 
 /**
- * Builds the extension. Call it once — the returned object owns the store, the
- * override map and, once started, the timer.
+ * Builds the extension. Call it once — the returned object owns the store,
+ * the override map and, once started, the timer.
  */
 export function flags(options: FlagsOptions = {}): DevToolbarExtension {
   const {
@@ -131,25 +127,17 @@ export function flags(options: FlagsOptions = {}): DevToolbarExtension {
   const runtime = createFlagsRuntime(runtimeOptions);
 
   /**
-   * Enumerated on every aggregation pass, not once in the factory — the
-   * function form of `commands`, added in P2 precisely because of this
-   * extension. A flag the consumer's catalogue grew after mount gets its toggle
-   * command the next time anything asks, rather than at the next page load.
+   * Rebuilt on every aggregation pass (the function form of `commands`) so a
+   * flag the catalogue grows after mount gets a toggle command immediately.
+   * Command identity is the `id`, so rebuilding costs nothing — `run` looks
+   * the flag up live either way.
    *
-   * Command identity is the `id`, so rebuilding these objects each pass costs
-   * nothing: `run` looks the flag up live through the runtime either way.
+   * Uses `peek()`, not `getSnapshot()`: the store coalesces publishes at 4 Hz
+   * for the chip, and a lagging command list would make "the flag is in the
+   * panel but not the palette" a timing question.
    *
-   * Pure and cheap, as the contract requires: it reads the snapshot the runtime
-   * has already built and never triggers a re-read of the consumer's flags. It
-   * also cannot throw — but core would contain it if it did.
-   *
-   * `peek()`, not `getSnapshot()`: the store coalesces publishes at 4 Hz for the
-   * benefit of the chip, and a command list that lagged a repaint would make
-   * "the flag is in the panel but not in the palette" a timing question.
-   *
-   * Orphans — an override whose flag the catalogue no longer lists — get a row
-   * so they can be cleared, but no toggle command: offering to turn on a flag
-   * the application does not have is not a thing to hide in a palette.
+   * Orphans get a row so they can be cleared, but no toggle command — offering
+   * to turn on a flag the application doesn't have has no place in a palette.
    */
   const perFlagCommands = (): ToolbarCommand[] =>
     runtime.store
@@ -189,11 +177,7 @@ export function flags(options: FlagsOptions = {}): DevToolbarExtension {
       />
     ),
 
-    /**
-     * The redacted override list, for `/ext/diagnostics` — **P3**. Display
-     * strings, never raw flag values, for the reason `runtime.diagnostics()`
-     * gives: every front door onto this data shows the same masked view.
-     */
+    /** The redacted override list, for `/ext/diagnostics`. Display strings only, never raw values. */
     diagnostics: () => runtime.diagnostics(),
 
     panel: () => <FlagsPanel runtime={runtime} label={label} injectStyles={injectStyles} />,
@@ -212,11 +196,9 @@ export function flags(options: FlagsOptions = {}): DevToolbarExtension {
         label: "Copy flag override recipe",
         group: "Flags",
         keywords: ["clipboard", "share", "override"],
-        // The same redacted snapshot the panel renders. A command is a second
-        // front door: if this read raw values, running it would be a way around
-        // every mask in the UI.
-        // `/runtime`'s writer, which throws when the write did not happen:
-        // the palette reports a throw and closes over a resolve (§13.4).
+        // Same redacted snapshot the panel renders — a command must not be a
+        // way around the UI's masks. `writeClipboardTextOrThrow` throws on
+        // failure so the palette can report it.
         run: async () => {
           await writeClipboardTextOrThrow(runtime.recipeText());
         },
@@ -255,13 +237,12 @@ export interface ReadStoredOverridesOptions {
 /**
  * Reads the persisted override map **without mounting anything**.
  *
- * The reason this exists: on a reload the application boots with its own flag
- * values, and the toolbar only re-applies overrides once `start()` runs, in an
- * effect. Everything rendered before that is unoverridden. Call this at the top
- * of your entry point and seed your own override store from it, and the first
- * paint agrees with the panel.
+ * On a reload the app boots with its own flag values, and the toolbar only
+ * re-applies overrides once `start()` runs in an effect — everything rendered
+ * before that is unoverridden. Call this at the top of your entry point and
+ * seed your own override store from it so first paint agrees with the panel.
  *
- * Honours `?dtb-flags=reset` for the same reason `start()` does.
+ * Honours `?dtb-flags=reset`, same as `start()`.
  */
 export function readStoredOverrides(
   options: ReadStoredOverridesOptions = {},
@@ -277,10 +258,8 @@ export function readStoredOverrides(
   try {
     const source = storage ?? (typeof localStorage === "undefined" ? null : localStorage);
     if (source === null) return {};
-    // A spread copy, not the internal map: `parseOverrides` returns a
-    // null-prototype object so a persisted `__proto__` key round-trips as data,
-    // and handing that across a public API means a consumer calling
-    // `.hasOwnProperty()` on the result gets a TypeError.
+    // A spread copy, not the internal null-prototype map: handing that across
+    // a public API means `.hasOwnProperty()` on the result would throw.
     return { ...parseOverrides(source.getItem(key)) };
   } catch {
     return {};

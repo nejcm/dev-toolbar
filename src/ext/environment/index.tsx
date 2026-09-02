@@ -2,17 +2,13 @@
  * `@nejcm/dev-toolbar/ext/environment`
  *
  * Environment, build and authenticated-actor context, per `plans/dev-bar.md`
- * §3B. Written strictly as a consumer of the public extension contract: nothing
- * here imports a *value* from `src/core/*`, only types, which erase at build
- * time.
+ * §3B. Consumes only the public extension contract — no value import from
+ * `src/core/*`, types only, which erase at build time.
  *
- * Everything it displays is **supplied by you**. Core has no `ctx`, this
- * extension does not invent one, it reads no `process.env` and looks for no
- * global — the only things it works out for itself are facts about this browser
- * tab (route, viewport, connection), and those are labelled `detected` so they
- * are never mistaken for something the deployment asserted. Supply nothing and
- * it says `unknown`, which is the honest answer to "which environment am I
- * actually in".
+ * Everything shown is **supplied by you**: no `process.env`, no globals — the
+ * only self-detected facts are route/viewport/connection, labelled `detected`
+ * so they're never mistaken for deployment-asserted values. Supply nothing and
+ * it says `unknown`.
  *
  * ```tsx
  * import { environment } from "@nejcm/dev-toolbar/ext/environment";
@@ -31,15 +27,11 @@
  * ];
  * ```
  *
- * §6 is guidance, not something core implements, and this extension takes two
- * of its rules seriously so that a leak is never the default:
- *
- * - every consumer-supplied value goes through `redact()` from `/runtime` on
- *   the way in, and email addresses are masked on top of that. The panel and
- *   the clipboard read the same redacted snapshot; there is no unredacted path;
- * - masking is **visible** — a masked row is tagged `masked` in the panel and
- *   counted next to the copy buttons — because a redaction nobody can see is
- *   indistinguishable from a value that was never supplied.
+ * Per §6, so a leak is never the default:
+ * - every value goes through `redact()` from `/runtime` on the way in, plus
+ *   email masking; the panel and clipboard read the same redacted snapshot;
+ * - masking is **visible** — a masked row is tagged `masked` and counted next
+ *   to the copy buttons — since unseen redaction looks identical to "never supplied".
  *
  * For a restricted view, pass `fields` (an allowlist — everything else is
  * dropped, not hidden, `extra:<key>` entries included), or compute `hidden`
@@ -69,9 +61,8 @@ export interface EnvironmentOptions extends Pick<
    */
   context?: EnvironmentContextInput;
   /**
-   * Inject this extension's stylesheet. Default `true`. Core's own
-   * `injectStyles` prop is not visible to extensions, so if you turned that off
-   * turn this off too and ship `ENVIRONMENT_CSS` yourself.
+   * Inject this extension's stylesheet. Default `true`. Not tied to core's own
+   * `injectStyles` prop — turn both off and ship `ENVIRONMENT_CSS` yourself.
    */
   injectStyles?: boolean;
 }
@@ -97,8 +88,7 @@ export function environment(options: EnvironmentOptions = {}): DevToolbarExtensi
     redactOptions,
   } = options;
 
-  // Built here, not in start(api): slot functions run during the toolbar's
-  // first render, which is before any effect fires.
+  // Built here, not in start(api): slot functions run before any effect fires.
   const runtime = createEnvironmentRuntime({
     context,
     pollMs,
@@ -133,10 +123,9 @@ export function environment(options: EnvironmentOptions = {}): DevToolbarExtensi
     ),
 
     /**
-     * The redacted snapshot, for `/ext/diagnostics` — **P3**. Exactly what the
-     * `environment.copyJson` command copies, from exactly the same builder: a
-     * bug-report aggregator is a third front door onto this data, and it must
-     * not be able to fetch what the panel would not show.
+     * The redacted snapshot, for `/ext/diagnostics` — **P3**. Same builder as
+     * `environment.copyJson`, so a bug-report aggregator can't fetch what the
+     * panel wouldn't show.
      */
     diagnostics: () => runtime.diagnostics(),
 
@@ -148,11 +137,9 @@ export function environment(options: EnvironmentOptions = {}): DevToolbarExtensi
         label: "Copy environment summary",
         group: "Environment",
         keywords: ["release", "commit", "clipboard", "context"],
-        // Same redacted snapshot the panel renders. A command is a front door:
-        // if this read the raw context, `runCommand("environment.copy")` would
-        // be a way around every mask in the UI.
-        // `/runtime`'s writer, which throws when the write did not happen:
-        // the palette reports a throw and closes over a resolve (§13.4).
+        // Same redacted snapshot the panel renders, so `runCommand("environment.copy")`
+        // can't bypass the UI's masking. `/runtime`'s writer throws on failed writes,
+        // which the palette reports (§13.4).
         run: async () => {
           await writeClipboardTextOrThrow(runtime.snapshotText());
         },

@@ -22,12 +22,10 @@ export interface DevToolbarContextValue {
   /** Props + dynamically registered, de-duplicated by id. Includes hidden ones. */
   extensions: readonly DevToolbarExtension[];
   /**
-   * The aggregation as of the last time the extension list changed. Stable
-   * between those changes, which is what makes it usable in a dependency array.
-   *
-   * With the function form of `DevToolbarExtension.commands` an extension can
-   * start contributing a command without the list changing, and core has no way
-   * to know — so anything that must be current calls `getCommands()`.
+   * The aggregation as of the last extension-list change; stable in between, so
+   * it's usable in a dependency array. With the function form of
+   * `DevToolbarExtension.commands`, an extension can start contributing without
+   * the list changing — anything that must be current calls `getCommands()`.
    */
   commands: readonly ToolbarCommand[];
   /** Re-enumerates every extension's commands now. */
@@ -70,12 +68,10 @@ export function useDevToolbar(): DevToolbarContextValue {
 /**
  * Commands aggregated from every extension. Core ships no palette UI.
  *
- * This is the *declarative* view: it is recomputed when the extension list
- * changes and is referentially stable in between. An extension using the
- * function form of `commands` can begin contributing one without that list
- * changing — a feature flag that appeared after mount, say — so a palette
- * should re-enumerate with `useDevToolbar().getCommands()` at the moment it
- * opens rather than render this.
+ * This is the declarative view: recomputed on extension-list change, stable in
+ * between. A palette should re-enumerate with `useDevToolbar().getCommands()`
+ * when it opens, since the function form of `commands` can start contributing
+ * without the list changing.
  */
 export function useToolbarCommands(): readonly ToolbarCommand[] {
   return useDevToolbar().commands;

@@ -8,10 +8,10 @@ import { sectionsOf } from "./types";
 /**
  * The rendered surface. [dev-toolbar/ext/command-menu]
  *
- * A combobox over a listbox, which is what a command palette *is* — so the
- * roles are the ARIA combobox pattern rather than a pile of divs: focus never
- * leaves the text field, the active row is named by `aria-activedescendant`,
- * and the dialog is `aria-modal` with the one focusable element it claims.
+ * Uses the ARIA combobox pattern (a combobox over a listbox), not a pile of
+ * divs: focus never leaves the text field, the active row is named by
+ * `aria-activedescendant`, and the dialog is `aria-modal` with the one
+ * focusable element it claims.
  */
 
 function useSnapshot(runtime: CommandMenuRuntime): CommandMenuSnapshot {
@@ -41,10 +41,9 @@ export interface TriggerProps {
 }
 
 /**
- * The `⌘` item from the screenshot. It is a convenience, not the way in: the
- * shortcut is bound in `start()`, so it keeps working when this chip collapses
- * into the `···` menu — and so does the palette, which renders from the
- * `overlay` slot core never collapses.
+ * The `⌘` bar item. A convenience, not the way in — the shortcut is bound in
+ * `start()`, so it (and the palette, rendered from the never-collapsed
+ * `overlay` slot) keeps working even after this chip collapses into `···`.
  */
 export function CommandMenuTrigger({
   runtime,
@@ -102,9 +101,9 @@ export function CommandMenuOverlay(props: OverlayProps): ReactNode {
 }
 
 /**
- * Mounted only while the palette is open, which is what makes focus handling a
- * mount effect: focus moves in on mount and back on unmount, so there is no
- * path that opens without focusing or closes without restoring.
+ * Mounted only while open, so focus handling is a mount effect: it moves in
+ * on mount and back on unmount, with no path that opens without focusing or
+ * closes without restoring.
  */
 function Dialog({
   runtime,
@@ -124,15 +123,14 @@ function Dialog({
       typeof document === "undefined" ? null : (document.activeElement as HTMLElement | null);
     inputRef.current?.focus();
     return () => {
-      // Restore, but only to something still in the document: an extension's
-      // command may well have unmounted whatever was focused.
+      // Restore only if still in the document — a command may have unmounted whatever was focused.
       if (previous && previous.isConnected && typeof previous.focus === "function") {
         previous.focus();
       }
     };
   }, []);
 
-  // Keep the active row on screen. jsdom has no scrollIntoView, hence the guard.
+  // Keep the active row on screen; jsdom has no scrollIntoView, hence the guard.
   useEffect(() => {
     const node = listRef.current?.querySelector<HTMLElement>(
       '[data-dtb-part="cmd-option"][aria-selected="true"]',
@@ -145,12 +143,10 @@ function Dialog({
   const onKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
     switch (event.key) {
       case "Escape":
-        // An IME uses Escape to cancel a composition. Closing the palette on it
-        // would discard the whole query over an abandoned candidate.
+        // An IME uses Escape to cancel a composition; don't discard the query over an abandoned candidate.
         if (event.nativeEvent.isComposing) return;
         event.preventDefault();
-        // Core's overflow menu also closes on Escape, from a document-level
-        // listener. Without this it would close underneath the palette.
+        // Core's overflow menu also closes on Escape via a document-level listener; stop it closing underneath the palette.
         event.stopPropagation();
         runtime.close();
         return;
@@ -177,8 +173,7 @@ function Dialog({
         void runtime.run();
         return;
       case "Tab":
-        // `aria-modal` claims focus is trapped, so trap it. The text field is
-        // the only focusable thing in here, so there is nowhere to cycle to.
+        // `aria-modal` claims focus is trapped; the input is the only focusable thing in here, so nowhere to cycle to.
         event.preventDefault();
         return;
       default:
@@ -190,23 +185,19 @@ function Dialog({
 
   return (
     <>
-      {/* The scrim is a decorative click-catcher; Escape and the dialog's own
-          controls are the keyboard path out of the menu. */}
+      {/* Decorative click-catcher; Escape and the dialog's own controls are the keyboard path out. */}
       <div
         data-dtb-part="cmd-scrim"
-        // A right-click reaching for a context menu, or a stylus barrel press,
-        // is not a dismissal. `> 0` rather than `!== 0` on purpose: jsdom's
-        // synthesized pointer events carry no `button` at all, and an
-        // environment that cannot tell us which button it was should still be
-        // able to dismiss a dialog.
+        // A right-click or stylus barrel press isn't a dismissal. `> 0` rather
+        // than `!== 0`: jsdom's synthesized pointer events carry no `button`
+        // at all, and should still be able to dismiss the dialog.
         onPointerDown={(event) => {
           if (event.button > 0) return;
           runtime.close();
         }}
         aria-hidden="true"
       />
-      {/* The dialog owns the menu's key handling — arrows, Enter and Escape —
-          because focus stays in the input, not on the option list. */}
+      {/* The dialog owns key handling (arrows, Enter, Escape) since focus stays in the input, not the option list. */}
       {/* oxlint-disable-next-line jsx-a11y/no-noninteractive-element-interactions */}
       <div
         data-dtb-part="cmd-dialog"
@@ -263,8 +254,7 @@ function Dialog({
                       role="option"
                       aria-selected={selected}
                       aria-busy={snapshot.running === match.command.id ? true : undefined}
-                      // pointerdown, not click: mousedown inside the dialog
-                      // would otherwise blur the input first.
+                      // pointerdown, not click: mousedown would otherwise blur the input first.
                       onPointerDown={(event) => {
                         event.preventDefault();
                         runtime.setActiveIndex(index);

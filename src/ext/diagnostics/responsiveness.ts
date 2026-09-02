@@ -1,28 +1,18 @@
 /**
  * §3E — long-task and responsiveness observation. [dev-toolbar/ext/diagnostics]
  *
- * §3E asks for a `PerformanceObserver` over `longtask`: how many, how much
- * total blocked time, the worst one, when. This adds `event` and `layout-shift`
- * to the same monitor, because a bug report that says "the page felt stuck"
- * is answered by whichever of the three happens to be the culprit.
+ * Monitors `longtask`, `event`, and `layout-shift` via `PerformanceObserver`
+ * so "the page felt stuck" can be traced to whichever is the culprit.
  *
- * The design constraint that shapes the whole file is that **none of the three
- * entry types is universally available**. As of writing, `longtask` ships in
- * Chromium only; `layout-shift` in Chromium only; `event` in Chromium and
- * Firefox. And it is worse than a feature check, because
- * `PerformanceObserver.supportedEntryTypes` is itself not everywhere, and
- * `observe({ type })` throws on some engines and silently no-ops on others.
+ * None of the three entry types is universally supported, and even feature
+ * detection is unreliable (`supportedEntryTypes` isn't everywhere; `observe()`
+ * throws on some engines, no-ops on others). So every count is `number | null`
+ * — **never report zero when the browser simply can't count them**; "unknown"
+ * keeps a bug report's line of investigation open where a false "0" closes it.
  *
- * So every count this module reports is `number | null`, and `null` is the only
- * thing it will say when it does not know. **Never report zero long tasks when
- * the truth is that this browser cannot count them.** A bug report is read by
- * somebody who was not there; "0 long tasks" closes a line of investigation
- * that "unknown — Firefox does not implement longtask" keeps open.
- *
- * Two smaller rules, both from §14.2: the observer callback runs where nothing
- * upstream can catch a throw, so it is wrapped; and `observe()` is attempted per
- * entry type in its own `try`, so one unsupported type does not cost the other
- * two.
+ * Per §14.2: the observer callback is wrapped (nothing upstream catches a
+ * throw there), and `observe()` is attempted per entry type in its own `try`
+ * so one unsupported type doesn't cost the others.
  */
 import { createRingBuffer, redact, redactUrl } from "../../runtime";
 import { describeSupport } from "./types";
@@ -49,11 +39,8 @@ export interface ResponsivenessOptions {
   slowInteractionMs?: number;
   /**
    * Clock. Default `performance.now()`, falling back to `Date.now()`.
-   *
-   * Injectable for the same reason `createThrottledStore` injects one: so a
-   * test can drive it without global fake timers. It is also the only seam
-   * through which `report()` can be made to fail, which is what makes the
-   * reader's guard around it a tested path rather than defensive decoration.
+   * Injectable so tests can drive it without fake timers, and so the
+   * reader's failure guard around `report()` is an actually-tested path.
    */
   now?: () => number;
 }
@@ -78,10 +65,9 @@ interface TimedSample {
 }
 
 /**
- * Guarded, so a hostile `performance.now` costs the responsiveness section
- * rather than the whole snapshot. Unguarded it threw from `report()`, which the
- * reader catches — correctly, and by degrading the *entire* capture to
- * `failedSnapshot`. Fail-closed either way; this keeps the other sections.
+ * Guarded so a hostile `performance.now` only costs the responsiveness
+ * section, not the whole snapshot (an uncaught throw here would degrade the
+ * entire capture to `failedSnapshot`).
  */
 const defaultNow = (): number => {
   try {
@@ -115,13 +101,7 @@ interface EntryLike {
 const numberOr = (value: unknown, fallback: number): number =>
   typeof value === "number" && Number.isFinite(value) ? value : fallback;
 
-/**
- * One foreign field, masked before it is joined to anything. See below.
- *
- * A string in, a string out — `redact()`'s own overload says so, so nothing
- * here re-coerces the result. Every caller either narrows with `typeof` first
- * or runs the value through `safeString()`, so the parameter type is a fact.
- */
+/** Masks one foreign field before it is joined to anything else (see `describeAttribution`). */
 const part = (value: string): string => {
   try {
     return redact(value);
@@ -142,18 +122,12 @@ const safeString = (value: unknown): string => {
 /**
  * `TaskAttributionTiming` reduced to one line, or `null`.
  *
- * `containerName`, `containerId` and `containerSrc` come from the host page's
- * own markup, so they are foreign data on their way into a ticket.
- * `containerSrc` is a URL and gets `redactUrl` by name rather than by hoping the
- * generic value pass recognises it — the same explicit call `/ext/metrics`
- * makes about `location.href`, for the same reason.
- *
- * The other three are masked **individually, before the join**, and that order
- * is §11.3's rule one level down. `redact()`'s value matching is *anchored*: it
- * masks a string that **is** `Bearer …` or **is** a JWT, not one that contains
- * one. So masking the assembled `iframe #x [name=Bearer …] https://…` finds
- * nothing, while masking `Bearer …` on its own finds it. Redact the parts, then
- * build the sentence — never the other way round.
+ * Fields come from the host page's own markup, so they're foreign data.
+ * `containerSrc` is a URL and gets `redactUrl` explicitly (like `location.href`
+ * in `/ext/metrics`). The other three are masked **individually, before the
+ * join** (§11.3): `redact()`'s matching is anchored, so it masks a string that
+ * *is* `Bearer …`, not one that merely contains it — masking the assembled
+ * sentence would find nothing. Redact the parts, then build the sentence.
  */
 function describeAttribution(raw: unknown): string | null {
   if (!Array.isArray(raw) || raw.length === 0) return null;
@@ -227,9 +201,8 @@ export function createResponsivenessMonitor(
       return;
     }
     if (entryType === LAYOUT_SHIFT) {
-      // A shift within 500 ms of a user input is the specification's own
-      // definition of "expected", and counting those would make every dialog
-      // open look like a layout bug.
+      // Per spec, a shift within 500ms of input is "expected" — counting it
+      // would make every dialog open look like a layout bug.
       if (entry.hadRecentInput === true) return;
       shifts.push({ at, value: numberOr(entry.value, 0) });
     }
@@ -252,9 +225,8 @@ export function createResponsivenessMonitor(
       support[entryType] = "unavailable";
       return;
     }
-    // `supportedEntryTypes` is the only non-throwing way to ask, and it is
-    // itself absent on older engines — in which case the honest thing is to try
-    // `observe()` and let the throw answer the question.
+    // `supportedEntryTypes` is the only non-throwing way to ask, but it's absent
+    // on older engines — there, just try `observe()` and let the throw answer.
     const supported = (Ctor as unknown as { supportedEntryTypes?: readonly string[] })
       .supportedEntryTypes;
     if (Array.isArray(supported) && !supported.includes(entryType)) {
@@ -263,8 +235,7 @@ export function createResponsivenessMonitor(
     }
     try {
       const observer = new Ctor((list) => {
-        // §14.2: this runs inside a browser callback where nothing upstream
-        // catches a throw, and where a throw would recur on every entry.
+        // §14.2: nothing upstream catches a throw here, and it would recur per entry.
         try {
           ingest(entryType, list.getEntries());
         } catch {
@@ -276,14 +247,9 @@ export function createResponsivenessMonitor(
       support[entryType] = "supported";
     } catch (error) {
       support[entryType] = "failed";
-      // This message reaches a `note` field and from there a ticket. It is
-      // browser-generated, so the risk is negligible — but it is the same
-      // pattern as the error paths in `runtime.ts`, and `part()` masks the
-      // message on its own rather than behind a prefix, which is the whole
-      // point of that fix. One line is cheaper than an exception.
-      // `safeString` over both halves: `error.message` is declared `string`
-      // and is nothing of the kind on a hostile subclass, and `part()` masks a
-      // string.
+      // Message reaches a `note`/ticket, so it's masked (same pattern as
+      // runtime.ts). `safeString` first since `error.message` isn't reliably
+      // a string on a hostile subclass.
       detail[entryType] = part(safeString(error instanceof Error ? error.message : error));
     }
   };
@@ -421,10 +387,8 @@ export function createResponsivenessMonitor(
       }
       observers = [];
       startedAt = null;
-      // Not merely tidiness. Leaving these at "supported" meant a `report()`
-      // taken after teardown said "Observed via PerformanceObserver" over
-      // counts that had stopped moving — the same class of lie as a zero that
-      // means "unknown". Nothing is being observed any more, so say so.
+      // Leaving these at "supported" would make a post-teardown `report()`
+      // claim live observation over counts that had stopped moving.
       for (const entryType of [LONG_TASK, EVENT, LAYOUT_SHIFT]) {
         if (support[entryType] === "supported") support[entryType] = "stopped";
       }
