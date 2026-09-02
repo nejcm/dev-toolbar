@@ -68,7 +68,7 @@ describe("redact", () => {
         note: "see https://api.test/v1?api_key=abc123",
       }),
     ).toEqual({
-      page: `https://app.test/cb?access_token=${encodeURIComponent(REDACTED)}&state=1`,
+      page: `https://app.test/cb?access_token=${REDACTED}&state=1`,
       // Not a bare URL, so it is left alone: this is defence in depth, not a
       // replacement for calling redactUrl() on something you know is a URL.
       note: "see https://api.test/v1?api_key=abc123",
@@ -99,7 +99,7 @@ describe("redact", () => {
 
     // …and the moment there *is* something to mask, rewriting is the point.
     expect(redact({ page: "https://App.Test?token=t" })).toEqual({
-      page: `https://app.test/?token=${encodeURIComponent(REDACTED)}`,
+      page: `https://app.test/?token=${REDACTED}`,
     });
   });
 
@@ -542,29 +542,27 @@ describe("isSensitiveKey", () => {
       "x-auth-token": REDACTED,
       "x-author": "nejcm",
     });
-    expect(redactUrl("/p?author=nejcm&auth=t")).toBe(
-      `/p?author=nejcm&auth=${encodeURIComponent(REDACTED)}`,
-    );
+    expect(redactUrl("/p?author=nejcm&auth=t")).toBe(`/p?author=nejcm&auth=${REDACTED}`);
   });
 });
 
 describe("redactUrl", () => {
   it("masks sensitive query parameters and keeps the rest", () => {
     expect(redactUrl("https://api.example.com/v1/users?page=2&access_token=abc123")).toBe(
-      `https://api.example.com/v1/users?page=2&access_token=${encodeURIComponent(REDACTED)}`,
+      `https://api.example.com/v1/users?page=2&access_token=${REDACTED}`,
     );
   });
 
   it("masks userinfo credentials", () => {
     const output = redactUrl("https://alice:hunter2@example.com/x");
-    expect(output).toContain(encodeURIComponent(REDACTED));
+    expect(output).toContain(REDACTED);
     expect(output).not.toContain("hunter2");
     expect(output).not.toContain("alice");
   });
 
   it("keeps a relative URL relative", () => {
     expect(redactUrl("/api/orders?token=t&limit=10")).toBe(
-      `/api/orders?token=${encodeURIComponent(REDACTED)}&limit=10`,
+      `/api/orders?token=${REDACTED}&limit=10`,
     );
   });
 
@@ -595,7 +593,7 @@ describe("redactUrl", () => {
   it("keeps the origin of a protocol-relative URL", () => {
     expect(redactUrl("//cdn.example.com/lib.js")).toBe("//cdn.example.com/lib.js");
     expect(redactUrl("//example.com/a?access_token=1")).toBe(
-      `//example.com/a?access_token=${encodeURIComponent(REDACTED)}`,
+      `//example.com/a?access_token=${REDACTED}`,
     );
   });
 
@@ -603,7 +601,7 @@ describe("redactUrl", () => {
     expect(redactUrl("just some text")).toBe("just some text");
     expect(redactUrl("#top")).toBe("#top");
     expect(redactUrl("cb?x=1")).toBe("cb?x=1");
-    expect(redactUrl("cb?token=1")).toBe(`cb?token=${encodeURIComponent(REDACTED)}`);
+    expect(redactUrl("cb?token=1")).toBe(`cb?token=${REDACTED}`);
   });
 
   // One table, every reference form the callers actually hand over: absolute,
@@ -630,35 +628,139 @@ describe("redactUrl", () => {
   const MASKED: readonly (readonly [string, string])[] = [
     [
       "https://api.test/v1?page=2&access_token=a",
-      `https://api.test/v1?page=2&access_token=${encodeURIComponent(REDACTED)}`,
+      `https://api.test/v1?page=2&access_token=${REDACTED}`,
     ],
-    ["/api/orders?token=t&limit=10", `/api/orders?token=${encodeURIComponent(REDACTED)}&limit=10`],
-    ["//example.com/a?api_key=k", `//example.com/a?api_key=${encodeURIComponent(REDACTED)}`],
-    ["cb?token=t", `cb?token=${encodeURIComponent(REDACTED)}`],
-    ["?token=t", `?token=${encodeURIComponent(REDACTED)}`],
-    ["#access_token=a&state=1", `#access_token=${encodeURIComponent(REDACTED)}&state=1`],
-    [
-      "https://alice:hunter2@example.com/x",
-      `https://${encodeURIComponent(REDACTED)}:${encodeURIComponent(REDACTED)}@example.com/x`,
-    ],
-    [
-      "http://bad host/?%zz=1&api_key=a",
-      `http://bad host/?%zz=1&api_key=${encodeURIComponent(REDACTED)}`,
-    ],
+    ["/api/orders?token=t&limit=10", `/api/orders?token=${REDACTED}&limit=10`],
+    ["//example.com/a?api_key=k", `//example.com/a?api_key=${REDACTED}`],
+    ["cb?token=t", `cb?token=${REDACTED}`],
+    ["?token=t", `?token=${REDACTED}`],
+    ["#access_token=a&state=1", `#access_token=${REDACTED}&state=1`],
+    ["https://alice:hunter2@example.com/x", `https://${REDACTED}:${REDACTED}@example.com/x`],
+    ["http://bad host/?%zz=1&api_key=a", `http://bad host/?%zz=1&api_key=${REDACTED}`],
     // The parser strips leading C0 controls and spaces and removes every tab,
     // newline and carriage return before it looks at the slashes, so the form
     // has to be counted on the same normalised string the parser saw. A raw
     // count read "  //host.test/p" as document-relative and returned the query
     // alone, origin and all.
-    ["  //host.test/p?token=1", `//host.test/p?token=${encodeURIComponent(REDACTED)}`],
-    ["  /rooted?token=1", `/rooted?token=${encodeURIComponent(REDACTED)}`],
-    ["\t/tab?token=1", `/tab?token=${encodeURIComponent(REDACTED)}`],
-    ["\n//h.test/x?token=1", `//h.test/x?token=${encodeURIComponent(REDACTED)}`],
+    ["  //host.test/p?token=1", `//host.test/p?token=${REDACTED}`],
+    ["  /rooted?token=1", `/rooted?token=${REDACTED}`],
+    ["\t/tab?token=1", `/tab?token=${REDACTED}`],
+    ["\n//h.test/x?token=1", `//h.test/x?token=${REDACTED}`],
   ];
 
   it.each(MASKED)("keeps the shape of %j while masking it", (input, expected) => {
     expect(redactUrl(input)).toBe(expected);
   });
+
+  // The mask goes into a URL *literally*, in all three positions, so a dump
+  // reads `[redacted]` rather than `%5Bredacted%5D` and a consumer can compare
+  // against the exported `REDACTED` without re-encoding it first.
+  it("writes the mask literally in userinfo, query and fragment", () => {
+    expect(redactUrl("https://user:pw@a.test/p")).toBe(`https://${REDACTED}:${REDACTED}@a.test/p`);
+    expect(redactUrl("https://a.test/p?token=abc&x=1")).toBe(
+      `https://a.test/p?token=${REDACTED}&x=1`,
+    );
+    expect(redactUrl("https://a.test/cb#access_token=abc&state=1")).toBe(
+      `https://a.test/cb#access_token=${REDACTED}&state=1`,
+    );
+    expect(redactUrl("https://a.test/cb#?access_token=abc")).toBe(
+      `https://a.test/cb#?access_token=${REDACTED}`,
+    );
+  });
+
+  it.each([
+    "https://user:pw@a.test/p",
+    "https://a.test/p?token=abc&x=1",
+    "https://a.test/cb#access_token=abc&state=1",
+    "https://u:p@a.test/p?token=abc#access_token=b",
+  ])("leaves %j parseable after masking", (input) => {
+    const output = redactUrl(input);
+    expect(() => new URL(output)).not.toThrow();
+  });
+
+  it("reparses the masked query and fragment back to the mask", () => {
+    const output = new URL(redactUrl("https://a.test/p?token=abc&x=1"));
+    expect(output.searchParams.get("token")).toBe(REDACTED);
+    expect(output.searchParams.get("x")).toBe("1");
+    const fragment = new URL(redactUrl("https://a.test/cb#access_token=abc&state=1"));
+    expect(new URLSearchParams(fragment.hash.slice(1)).get("access_token")).toBe(REDACTED);
+  });
+
+  it("writes a URL-safe custom mask literally too", () => {
+    const mask = "__hidden__";
+    expect(redactUrl("https://user:pw@a.test/p?token=abc", { mask })).toBe(
+      `https://${mask}:${mask}@a.test/p?token=${mask}`,
+    );
+    expect(redactUrl("#access_token=a", { mask })).toBe(`#access_token=${mask}`);
+    // The unparseable-URL fallback agrees with the parsed path.
+    expect(redactUrl("::::?api_key=abc&ok=1", { mask })).toBe(`::::?api_key=${mask}&ok=1`);
+  });
+
+  // A mask carrying a URL delimiter cannot go in literally without changing
+  // what the URL means, so it keeps the percent-encoded treatment.
+  it("percent-encodes a mask that would break the URL", () => {
+    expect(redactUrl("https://a.test/p?token=abc&x=1", { mask: "a&b=c" })).toBe(
+      `https://a.test/p?token=${encodeURIComponent("a&b=c")}&x=1`,
+    );
+    expect(redactUrl("https://a.test/p?token=abc", { mask: "100% gone" })).toBe(
+      "https://a.test/p?token=100%25+gone",
+    );
+  });
+
+  // The placeholder the mask is carried in must not collide with the input:
+  // the substitution is only allowed to rewrite the slots this pass wrote.
+  it("does not rewrite input that looks like the internal placeholder", () => {
+    const input = "https://a.test/p?note=dtb*mask*&more=dtb%2Amask%2A&token=abc";
+    const output = redactUrl(input);
+    expect(output).toContain("note=dtb*mask*");
+    expect(output).toContain("more=dtb*mask*");
+    expect(output).toContain(`token=${REDACTED}`);
+    expect(new URL(output).searchParams.getAll("note")).toEqual(["dtb*mask*"]);
+  });
+
+  it("still returns an unmasked URL byte-for-byte", () => {
+    expect(redactUrl("https://a.test/p?note=dtb*mask*")).toBe("https://a.test/p?note=dtb*mask*");
+  });
+
+  // The placeholder has to be cleared against the *normalised* serialisation,
+  // not the argument: the parser lowercases the host and strips tabs, newlines
+  // and carriage returns before the output is built from it. Cleared against
+  // the argument alone, the swap rewrote the host — leaving an unparseable
+  // URL — and rewrote ordinary path and query text as if it had matched.
+  it.each([
+    [
+      "a host the parser lowercases into the placeholder",
+      "http://DTB*MASK*.test/x?token=s3cr3t",
+      "http://dtb*mask*.test/x?token=[redacted]",
+    ],
+    [
+      "a path segment the parser strips a tab out of",
+      "https://a.test/dtb*ma\tsk*/x?token=s3cr3t",
+      "https://a.test/dtb*mask*/x?token=[redacted]",
+    ],
+    [
+      "an innocent query value the parser strips a newline out of",
+      "https://a.test/p?note=dtb*ma\nsk*&token=s3cr3t",
+      "https://a.test/p?note=dtb*mask*&token=[redacted]",
+    ],
+  ])("masks only the sensitive parameter given %s", (_label, input, expected) => {
+    const output = redactUrl(input);
+    expect(output).toBe(expected);
+    expect(output).not.toContain("s3cr3t");
+    // The host rewrite is what made this unparseable, so parsing is the assertion.
+    expect(() => new URL(output)).not.toThrow();
+    expect(new URL(output).host).toBe(new URL(input).host);
+  });
+
+  // Clearing the placeholder used to append one `*` and re-scan, which is
+  // quadratic in the input's own run of `*` — 300 000 of them took 11.5 s,
+  // synchronously inside a patched `fetch`. The timeout is the regression
+  // guard; the expectations are that the shortcut is still correct.
+  it("clears the placeholder in one pass over a long run of stars", () => {
+    const stars = "*".repeat(300_000);
+    const output = redactUrl(`https://a.test/p?n=dtb*mask${stars}&token=1`);
+    expect(output).toBe(`https://a.test/p?n=dtb*mask${stars}&token=${REDACTED}`);
+  }, 2000);
 });
 
 describe("redactHeaders", () => {

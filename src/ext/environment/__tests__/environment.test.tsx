@@ -268,9 +268,9 @@ describe("redaction of consumer-supplied data", () => {
     expect(html).not.toContain("super-secret");
     expect(html).not.toContain("abcdef123456");
     expect(html).not.toContain("deadbeef");
-    // The mask lands inside a query string, so it arrives percent-encoded —
-    // ugly, and much better than the token.
-    expect(text(row(panel, "apiEndpoint"))).toContain("access_token=%5Bredacted%5D");
+    // The mask lands inside a query string and still arrives literally, so the
+    // row reads as a masked URL rather than as escape noise.
+    expect(text(row(panel, "apiEndpoint"))).toContain("access_token=[redacted]");
     expect(text(row(panel, "extra:authToken"))).toContain("[redacted]");
   });
 

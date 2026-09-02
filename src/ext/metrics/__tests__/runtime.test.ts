@@ -217,7 +217,7 @@ describe("metrics runtime", () => {
       expect(dump).toContain("/callback");
       expect(dump).toContain("state=xyz");
       expect(dump).not.toContain("hunter2");
-      expect(dump).toContain(encodeURIComponent(REDACTED));
+      expect(dump).toContain(REDACTED);
     } finally {
       window.history.replaceState({}, "", original);
     }
@@ -238,8 +238,9 @@ describe("metrics runtime", () => {
 
       const dump = JSON.stringify(runtime.diagnostics());
       expect(dump).not.toContain("hunter2");
-      // URL-encoded, because it was masked inside a query parameter.
-      expect(dump).toContain(encodeURIComponent(REDACTED));
+      // Literal, even though it was masked inside a query parameter: a
+      // URL-safe mask goes into a URL unencoded.
+      expect(dump).toContain(REDACTED);
       harness.controller.abort();
     } finally {
       globalThis.fetch = originalFetch;

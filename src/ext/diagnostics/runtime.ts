@@ -1013,16 +1013,23 @@ export function renderMarkdown(snapshot: DiagnosticSnapshot, mask: string = REDA
  * and the panel's toolbar disagreed with the footer of the very text it was
  * displaying: 6 against 5. Counting from the snapshot's JSON fixed that.
  *
- * The second is that counting the *literal* mask undercounts. A mask written
- * into a URL query goes in through `URLSearchParams.set`, which percent-encodes
- * it: `?access_token=%5Bredacted%5D`. That shape is invisible to a literal
- * search — and it is not an edge case, it is the OAuth-callback shape that
- * §11.3 and this file both call the most likely credential carrier in the whole
- * snapshot. A page whose *only* sensitive datum was a token in the address bar
- * therefore masked it correctly and then printed "No values were masked… none
- * matched here", which is a false statement in a document whose entire argument
- * is that masking is visible. Both encodings are counted, and the encoded form
- * is only searched for when it actually differs.
+ * The second is that counting the *literal* mask could undercount. A mask
+ * written into a URL query used to go in through `URLSearchParams.set`, which
+ * percent-encoded it: `?access_token=%5Bredacted%5D`. That shape is invisible
+ * to a literal search — and it was not an edge case, it is the OAuth-callback
+ * shape that §11.3 and this file both call the most likely credential carrier
+ * in the whole snapshot. A page whose *only* sensitive datum was a token in the
+ * address bar therefore masked it correctly and then printed "No values were
+ * masked… none matched here", which is a false statement in a document whose
+ * entire argument is that masking is visible.
+ *
+ * `redactUrl` now writes a **URL-safe** mask into a URL literally — the default
+ * `[redacted]` included — so the OAuth-callback shape is caught by the literal
+ * search, which is where the count belongs. The encoded search stays for the
+ * masks that still cannot go into a URL literally: a custom `mask` carrying a
+ * URL delimiter or a non-ASCII character (`██`, below) is percent-encoded
+ * there exactly as before. Both encodings are counted, and the encoded form is
+ * only searched for when it actually differs.
  */
 export function countMasked(snapshot: DiagnosticSnapshot, mask: string = REDACTED): number {
   let serialised: string;

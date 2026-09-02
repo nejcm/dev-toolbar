@@ -188,7 +188,7 @@ describe("createResponsivenessMonitor — measurement", () => {
     expect(attribution).toContain("[name=billing]");
     // The credential in the container URL must not survive into a ticket.
     expect(attribution).not.toContain("super-secret");
-    expect(attribution).toContain("access_token=%5Bredacted%5D");
+    expect(attribution).toContain("access_token=[redacted]");
   });
 
   it("counts slow interactions and names the worst event type", () => {
@@ -245,7 +245,7 @@ describe("createResponsivenessMonitor — measurement", () => {
 
     expect(report.longTasks.support).toBe("failed");
     expect(report.longTasks.note).not.toContain("OBSERVE-LEAK");
-    expect(report.longTasks.note).toContain("api_key=%5Bredacted%5D");
+    expect(report.longTasks.note).toContain("api_key=[redacted]");
   });
 
   it("survives an entry list that throws when it is read", () => {

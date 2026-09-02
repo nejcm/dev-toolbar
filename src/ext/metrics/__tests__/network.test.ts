@@ -74,7 +74,7 @@ describe("network collector — fetch present", () => {
 
     const [entry] = collector.entries?.(0) ?? [];
     expect(entry?.url).not.toContain("super-secret");
-    expect(entry?.url).toContain(encodeURIComponent(REDACTED));
+    expect(entry?.url).toContain(REDACTED);
     expect(entry?.url).toContain("page=2");
     controller.abort();
   });

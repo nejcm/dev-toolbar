@@ -13,6 +13,15 @@
  * the strength of having called it.
  */
 
+/**
+ * The default replacement value, and the one every consumer compares against.
+ *
+ * It reads the same everywhere, including *inside* a URL: `redactUrl` writes the
+ * mask into userinfo, a query parameter and a fragment parameter literally, so a
+ * masked URL contains `[redacted]`, not the `%5Bredacted%5D` a percent-encoding
+ * serialiser would have produced. See `maskUrl` for how, and
+ * `RedactOptions.mask` for the custom masks that cannot be written that way.
+ */
 export const REDACTED = "[redacted]";
 
 /**
@@ -105,7 +114,18 @@ export interface RedactOptions {
   extraKeys?: readonly string[];
   /** Keys that survive even when they match. Wins over the lists above. */
   allowKeys?: readonly string[];
-  /** Replacement value. Default `"[redacted]"`. */
+  /**
+   * Replacement value. Default `"[redacted]"`.
+   *
+   * Inside a URL the mask is written literally as long as it is URL-safe —
+   * ASCII alphanumerics and the punctuation that cannot change how the result
+   * parses (see `URL_SAFE_MASK`), which the default `[redacted]` is. Anything
+   * else is percent-encoded in a URL instead: a mask carrying a delimiter
+   * (`&`, `=`, `#`, `%`, a space) because writing it literally would rewrite
+   * the URL's structure rather than one of its values, and a mask carrying a
+   * non-ASCII character (`██`) because `new URL` re-encodes it the moment the
+   * result is reparsed, so the literal form would not survive a round trip.
+   */
   mask?: string;
   /**
    * Objects deeper than this become `"[truncated]"`. Default `8`. A value
@@ -255,6 +275,8 @@ interface ResolvedOptions {
   longestKey: number;
   allow: string[];
   mask: string;
+  /** Whether `mask` can be written into a URL literally; see `URL_SAFE_MASK`. */
+  urlSafeMask: boolean;
   maxDepth: number;
   maxArrayLength: number;
   maxNodes: number;
@@ -279,6 +301,7 @@ function sanitizeCount(value: number | undefined, fallback: number): number {
 }
 
 function resolve(options: RedactOptions | undefined): ResolvedOptions {
+  const mask = options?.mask ?? REDACTED;
   const base = options?.keys ?? DEFAULT_SENSITIVE_KEYS;
   const keys = new Set(
     [...base, ...(options?.extraKeys ?? [])].map(canonical).filter((entry) => entry.length > 0),
@@ -291,7 +314,8 @@ function resolve(options: RedactOptions | undefined): ResolvedOptions {
     keys,
     longestKey,
     allow: (options?.allowKeys ?? []).map(canonical),
-    mask: options?.mask ?? REDACTED,
+    mask,
+    urlSafeMask: URL_SAFE_MASK.test(mask),
     maxDepth: sanitizeCount(options?.maxDepth, 8),
     maxArrayLength: sanitizeCount(options?.maxArrayLength, 200),
     maxNodes: sanitizeCount(options?.maxNodes, 50_000),
@@ -733,6 +757,117 @@ function baseContribution(url: string): number {
 }
 
 /**
+ * Which masks can be written into a URL literally.
+ *
+ * ASCII alphanumerics plus the punctuation that is legal unescaped in userinfo,
+ * a query and a fragment *at once* and cannot change how the result parses.
+ * Deliberately absent: `%` (it would read as the start of an escape), `#`, `?`,
+ * `&`, `=`, `/`, `\`, `:`, `@`, `+` (a delimiter, or a space once
+ * form-decoded), space and every control character, and everything non-ASCII
+ * (which `new URL` re-encodes the moment the result is reparsed, so the literal
+ * form would not survive a round trip anyway). Brackets and braces are the
+ * point of the exercise: the default `[redacted]` passes.
+ *
+ * A mask that fails keeps the percent-encoded treatment — for a mask carrying a
+ * delimiter that is not a cosmetic difference, it is the difference between
+ * masking a value and rewriting the URL's structure.
+ */
+const URL_SAFE_MASK = /^[A-Za-z0-9\-._~!()*[\]{}]+$/;
+
+/**
+ * The placeholder a URL-safe mask travels in, and why one is needed at all.
+ *
+ * Nothing in this module ever asked for percent-encoding; two different
+ * serialisers apply it on their own:
+ *
+ * - **The query and the fragment** go through `URLSearchParams`, whose
+ *   serialiser is `application/x-www-form-urlencoded` — it encodes everything
+ *   except ASCII alphanumerics and `*-._`, and writes a space as `+`. That is
+ *   *not* the URL query percent-encode set, which does not contain `[` or `]`
+ *   at all: `url.search = "?token=[redacted]"` keeps the brackets, and only
+ *   `searchParams.set` turns them into `%5B`/`%5D`.
+ * - **Userinfo** goes through the `username`/`password` setters, which use the
+ *   userinfo percent-encode set — and that one really does contain `[` and `]`,
+ *   so no amount of assigning around `URLSearchParams` avoids it there.
+ *
+ * So the mask is written as a placeholder both serialisers pass through
+ * untouched (ASCII letters and `*`), and the placeholder is swapped for the
+ * literal mask once, on the finished serialisation. `URLSearchParams` keeps
+ * doing the encoding for every *other* part of the query, which is the part
+ * that has to stay correct.
+ *
+ * The swap is only allowed to rewrite the slots this pass wrote, so the
+ * placeholder ends in a run of `*` longer than any run in the serialisation it
+ * is about to be written into — which is what makes an occurrence of it there
+ * impossible rather than merely unlikely. Two runs are measured, and both are
+ * needed: the one in the serialisation itself, and the one in its escapes
+ * decoded a single level, because `%2A` is a `*` that `URLSearchParams` decodes
+ * and re-encodes back to a literal one. Nothing else in the output can hold a
+ * character the placeholder is made of: re-serialising only ever *adds* `%XX`
+ * escapes and a `+` for a space, and neither is a letter or a `*`.
+ *
+ * The run is measured against `parsed.href`, **not** the argument. The output
+ * is built from `parsed.toString()`, and the parser normalises on the way in:
+ * it lowercases the host and strips every tab, newline and carriage return
+ * anywhere in the input. So a host of `DTB*MASK*.test`, or a path segment
+ * spelled `dtb*ma\tsk*`, is not in the argument in the form it reaches the
+ * output in — and a placeholder cleared against the argument alone then
+ * matched the *host*, whose rewrite left the output unparseable, and matched
+ * ordinary path and query text, which reported as masked something that never
+ * matched. `href` is read inside `slot`, which is memoised and first called
+ * before this function mutates anything, so what it measures is the fully
+ * normalised, still-untouched serialisation.
+ */
+const PLACEHOLDER_PREFIX = "dtb*mask";
+
+// A single percent-escape, for the one-level decode `looseDecode` performs.
+const PERCENT_ESCAPE = /%[0-9a-f]{2}/gi;
+
+/**
+ * The input with its percent-escapes decoded one level, character by character
+ * and without `decodeURIComponent` — this runs on arbitrary input inside a
+ * patched `fetch`, and `decodeURIComponent` throws on a malformed escape and
+ * on a valid escape that is not valid UTF-8. Byte-wise is also the right
+ * reading here: the question is only which substrings the output could contain.
+ */
+function looseDecode(url: string): string {
+  return url.replace(PERCENT_ESCAPE, (escape) =>
+    String.fromCharCode(Number.parseInt(escape.slice(1), 16)),
+  );
+}
+
+/** The longest run of `*` in `source`; one pass, no allocation. */
+function longestStarRun(source: string): number {
+  let longest = 0;
+  let run = 0;
+  for (let index = 0; index < source.length; index += 1) {
+    // 42 is `*`.
+    if (source.charCodeAt(index) === 42) {
+      run += 1;
+      if (run > longest) longest = run;
+    } else {
+      run = 0;
+    }
+  }
+  return longest;
+}
+
+/**
+ * A placeholder that cannot occur in `href`; see `PLACEHOLDER_PREFIX`.
+ *
+ * One pass for the longest `*` run, then one longer than it — rather than
+ * appending a `*` and re-scanning until the string no longer occurs, which was
+ * quadratic in that run and is reachable from a URL: `?n=dtb*mask` followed by
+ * 100 000 `*` took 1.2 s, 300 000 took 11.5 s, synchronously inside a patched
+ * `fetch`. The bound this reads is the only thing the loop was ever
+ * establishing.
+ */
+function placeholderFor(href: string): string {
+  const longest = Math.max(longestStarRun(href), longestStarRun(looseDecode(href)));
+  return PLACEHOLDER_PREFIX + "*".repeat(longest + 1);
+}
+
+/**
  * The actual work behind `redactUrl`, plus the one bit callers inside this
  * module need and callers outside do not: whether anything was masked.
  */
@@ -753,17 +888,26 @@ function maskUrl(url: string, resolved: ResolvedOptions): UrlPass {
   }
 
   let masked = false;
+  // What the mask is written as while the URL is being serialised, computed on
+  // the first match so an untouched URL — every URL, in a hot per-request
+  // loop — pays nothing for it.
+  let placeholder: string | undefined;
+  // `parsed.href`, not `url`: the placeholder has to be cleared against the
+  // serialisation the output is built from, which the parser has already
+  // normalised. See `PLACEHOLDER_PREFIX`.
+  const slot = (): string =>
+    (placeholder ??= resolved.urlSafeMask ? placeholderFor(parsed.href) : resolved.mask);
 
   if (parsed.username || parsed.password) {
-    if (parsed.username) parsed.username = resolved.mask;
-    if (parsed.password) parsed.password = resolved.mask;
+    if (parsed.username) parsed.username = slot();
+    if (parsed.password) parsed.password = slot();
     masked = true;
   }
 
   // Copied: `set` below mutates the params being iterated.
   for (const key of Array.from(parsed.searchParams.keys())) {
     if (matches(key, resolved)) {
-      parsed.searchParams.set(key, resolved.mask);
+      parsed.searchParams.set(key, slot());
       masked = true;
     }
   }
@@ -776,7 +920,7 @@ function maskUrl(url: string, resolved: ResolvedOptions): UrlPass {
     // Copied: `set` below mutates the params being iterated.
     for (const key of Array.from(params.keys())) {
       if (matches(key, resolved)) {
-        params.set(key, resolved.mask);
+        params.set(key, slot());
         touched = true;
       }
     }
@@ -786,12 +930,25 @@ function maskUrl(url: string, resolved: ResolvedOptions): UrlPass {
     }
   }
 
-  return { output: parsed.toString().slice(contributed), masked };
+  const serialised = parsed.toString().slice(contributed);
+  const output =
+    placeholder === undefined || placeholder === resolved.mask
+      ? serialised
+      : serialised.split(placeholder).join(resolved.mask);
+  return { output, masked };
 }
 
 /**
  * Masks credentials in a URL: `user:pass@` userinfo, sensitive query
  * parameters, and sensitive parameters in a `#`-fragment query.
+ *
+ * The mask goes in **literally** — `https://[redacted]:[redacted]@a.test/p`,
+ * `?token=[redacted]` — so a dump is readable and greppable and a masked URL
+ * contains the exported `REDACTED` rather than a percent-encoded spelling of
+ * it. The result still parses as a URL. See `PLACEHOLDER` for what forces the
+ * encoding and how it is undone, and `URL_SAFE_MASK` for the custom masks that
+ * keep the encoded form because they could not go in literally without
+ * changing what the URL means.
  *
  * Every reference form keeps its shape: an absolute URL stays absolute, a
  * protocol-relative one keeps its `//host`, a root-relative one keeps its
@@ -844,7 +1001,9 @@ function maskQueryString(url: string, resolved: ResolvedOptions): UrlPass {
       }
       if (!matches(decoded, resolved)) return pair;
       masked = true;
-      return `${key}=${encodeURIComponent(resolved.mask)}`;
+      // Literal when the mask is URL-safe, matching what the parsed path
+      // produces; encoded otherwise, for the same reason it is there.
+      return `${key}=${resolved.urlSafeMask ? resolved.mask : encodeURIComponent(resolved.mask)}`;
     })
     .join("&");
   return { output: `${head}?${rewritten}`, masked };

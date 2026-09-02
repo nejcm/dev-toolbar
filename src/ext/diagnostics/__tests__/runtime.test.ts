@@ -174,10 +174,10 @@ describe("redaction on the way in", () => {
 
     expect(json).not.toContain("leaky");
     expect(json).not.toContain("also-leaky");
-    expect(snapshot.page.url).toContain("access_token=%5Bredacted%5D");
+    expect(snapshot.page.url).toContain("access_token=[redacted]");
     // Not over-masked: the innocent half of the query survives.
     expect(snapshot.page.url).toContain("page=2");
-    expect(snapshot.page.referrer).toContain("client_secret=%5Bredacted%5D");
+    expect(snapshot.page.referrer).toContain("client_secret=[redacted]");
     stop();
   });
 
@@ -252,9 +252,9 @@ describe("redaction on the way in", () => {
     expect(renderMarkdown(snapshot)).not.toContain("super-secret");
     // The name still survives, in front of the masked message.
     expect(find(snapshot, "net")?.error).toBe(
-      "Error: https://api.test/refresh?refresh_token=%5Bredacted%5D",
+      "Error: https://api.test/refresh?refresh_token=[redacted]",
     );
-    expect(snapshot.omissions[0]?.reason).toContain("refresh_token=%5Bredacted%5D");
+    expect(snapshot.omissions[0]?.reason).toContain("refresh_token=[redacted]");
     stop();
   });
 
@@ -329,11 +329,11 @@ describe("redaction on the way in", () => {
     expect(json).not.toContain("APP-LEAK");
     expect(json).not.toContain("SRC-LEAK");
     expect(find(snapshot, "router")?.error).toBe(
-      "TypeError: https://api.test/x?access_token=%5Bredacted%5D",
+      "TypeError: https://api.test/x?access_token=[redacted]",
     );
     expect(snapshot.omissions.map((entry) => entry.id).sort()).toEqual(["app", "router"]);
     for (const omission of snapshot.omissions) {
-      expect(omission.reason).toContain("access_token=%5Bredacted%5D");
+      expect(omission.reason).toContain("access_token=[redacted]");
     }
     stop();
   });
@@ -379,7 +379,7 @@ describe("redaction on the way in", () => {
     expect(snapshot.omissions[0]?.label).toBe("The whole snapshot");
     expect(renderJson(snapshot)).not.toContain("BUILD-LEAK");
     expect(renderMarkdown(snapshot)).not.toContain("BUILD-LEAK");
-    expect(snapshot.omissions[0]?.reason).toContain("password=%5Bredacted%5D");
+    expect(snapshot.omissions[0]?.reason).toContain("password=[redacted]");
   });
 
   it("does not pretend to find a credential embedded in a sentence", () => {
@@ -430,15 +430,18 @@ describe("redaction on the way in", () => {
     stop();
   });
 
-  it("counts a mask that was percent-encoded into a URL query", () => {
+  it("counts a mask that went into a URL query", () => {
     // The OAuth-callback shape, which §11.3 and this extension both call the
-    // most likely credential carrier in the whole snapshot. `redact()` masks it
-    // through `URLSearchParams.set`, which percent-encodes the mask, so the
-    // literal string never appears — and a literal count therefore reported
-    // *zero maskings* over a snapshot whose only sensitive datum had just been
-    // masked. The footer then read "No values were masked… none matched here",
-    // which is a false statement in the one document that argues masking is
-    // visible.
+    // most likely credential carrier in the whole snapshot. This used to be a
+    // counting bug: `redact()` masked it through `URLSearchParams.set`, which
+    // percent-encoded the mask, so the literal string never appeared — and a
+    // literal count reported *zero maskings* over a snapshot whose only
+    // sensitive datum had just been masked. The footer then read "No values
+    // were masked… none matched here", which is a false statement in the one
+    // document that argues masking is visible. `redactUrl` now writes a
+    // URL-safe mask literally, so the literal count sees it; `countMasked`
+    // still searches the encoded form as well, for a mask that cannot go into
+    // a URL literally (`██`, below).
     const { runtime, stop } = started({}, [
       {
         id: "env",
@@ -451,14 +454,39 @@ describe("redaction on the way in", () => {
     const json = runtime.render("json");
 
     expect(json).not.toContain("super-secret");
-    expect(json).toContain("access_token=%5Bredacted%5D");
-    // The crux: the literal form is nowhere in the snapshot.
-    expect(json).not.toContain(REDACTED);
+    // The crux: the mask is in the snapshot literally, greppable and equal to
+    // the exported `REDACTED`, not as `%5Bredacted%5D`.
+    expect(json).toContain(`access_token=${REDACTED}`);
+    expect(json).not.toContain("%5Bredacted%5D");
 
     expect(runtime.maskedCount()).toBe(1);
     const markdown = runtime.render("markdown");
     expect(markdown).toContain("1 value masked");
     expect(markdown).not.toContain("No values were masked");
+    stop();
+  });
+
+  it("counts a mask that a URL still percent-encodes", () => {
+    // The other half of `countMasked`'s two searches, and the reason the
+    // encoded one stays: `██` is non-ASCII, so it is *not* URL-safe and
+    // `redactUrl` writes it into a query percent-encoded, exactly as it wrote
+    // the default mask before that mask became literal. A literal-only count
+    // would report zero over a snapshot whose only sensitive datum was masked.
+    const { runtime, stop } = started({ redactOptions: { mask: "██" } }, [
+      {
+        id: "env",
+        label: "Env",
+        status: "ok",
+        data: { apiEndpoint: "https://api.test/v2?access_token=super-secret" },
+      },
+    ]);
+    runtime.capture();
+    const json = runtime.render("json");
+
+    expect(json).not.toContain("super-secret");
+    expect(json).toContain("%E2%96%88");
+    expect(json).not.toContain("██");
+    expect(runtime.maskedCount()).toBe(1);
     stop();
   });
 

@@ -371,7 +371,12 @@ import {
   plus `Bearer …`, bare JWTs, and URL values carrying a
   sensitive parameter (the OAuth-callback shape, where the secret is in the value and
   no key matching will find it). A URL with nothing to mask is returned unchanged, so
-  two dumps that are identical still diff as identical. This is hygiene for anything
+  two dumps that are identical still diff as identical. Inside a URL the mask is
+  written literally — `?token=[redacted]`, not `%5Bredacted%5D` — so a masked URL
+  stays readable, still parses, and still contains the exported `REDACTED`; a custom
+  `mask` carrying a URL delimiter (`&`, `=`, `%`, a space) is percent-encoded there
+  instead, because writing it literally would rewrite the URL rather than a value, and
+  so is one carrying a non-ASCII character (`██`), which `new URL` re-encodes anyway. This is hygiene for anything
   headed to a screenshot or a clipboard, **not** a security boundary: it matches
   names, so a secret under `data` survives. A string in gives a string back and a
   number, boolean, bigint, `null` or `undefined` comes back as itself — masking a
