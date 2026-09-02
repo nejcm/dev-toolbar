@@ -70,6 +70,60 @@ describe("createEventBus", () => {
     expect(bus.listenerCount()).toBe(0);
   });
 
+  it("hands back a safe no-op unsubscribe when the signal was already aborted", () => {
+    // `bind()` short-circuits an already-aborted signal to a `() => {}` it
+    // returns without ever calling — the previous test never invokes what it
+    // gets back. It could just as well have returned `unsubscribe` itself and
+    // that test would still pass, since the `live` latch already makes a
+    // second run of `unsubscribe` unobservable. This pins the narrower thing
+    // that actually matters: whatever `bind()` hands back here is callable
+    // and does not throw.
+    const bus = createEventBus<Events>();
+    const controller = new AbortController();
+    controller.abort();
+    const off = bus.on("tick", () => {}, { signal: controller.signal });
+    expect(bus.listenerCount()).toBe(0);
+    expect(() => off()).not.toThrow();
+    expect(bus.listenerCount()).toBe(0);
+  });
+
+  it("logs a throwing handler's error to console.error when no onError is supplied", () => {
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const bus = createEventBus<Events>();
+      bus.on("tick", () => {
+        throw new Error("boom");
+      });
+
+      expect(() => bus.emit("tick", { n: 1 })).not.toThrow();
+      expect(consoleError).toHaveBeenCalledTimes(1);
+      expect(consoleError).toHaveBeenCalledWith(
+        '[dev-toolbar/runtime] a "tick" handler threw.',
+        expect.any(Error),
+      );
+    } finally {
+      consoleError.mockRestore();
+    }
+  });
+
+  it("routes a throwing onAny handler through onError too, not just typed handlers", () => {
+    const onError = vi.fn();
+    const bus = createEventBus<Events>({ onError });
+    const okTypeHandler = vi.fn();
+    bus.on("tick", okTypeHandler);
+    bus.onAny(() => {
+      throw new Error("any handler boom");
+    });
+
+    expect(() => bus.emit("tick", { n: 1 })).not.toThrow();
+    expect(okTypeHandler).toHaveBeenCalledTimes(1);
+    expect(onError).toHaveBeenCalledTimes(1);
+    expect(onError).toHaveBeenCalledWith(
+      expect.any(Error),
+      expect.objectContaining({ type: "tick" }),
+    );
+  });
+
   it("contains a throwing handler instead of breaking the emitter", () => {
     const onError = vi.fn();
     const bus = createEventBus<Events>({ onError });

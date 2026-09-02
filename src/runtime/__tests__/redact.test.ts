@@ -804,6 +804,126 @@ describe("redactHeaders", () => {
   });
 });
 
+describe("a Headers or URL instance nested inside a plain object", () => {
+  // A network collector's dump shape: `{ url, headers, body }`, where `url` is
+  // a real `URL` and `headers` a real `Headers` — not top-level arguments to
+  // `redactHeaders`/`redactUrl`, but values `walk()` meets while recursing an
+  // object. Both must be masked the same way the top-level helpers mask them,
+  // and honour the same options.
+  it("redacts a nested Headers instance", () => {
+    const headers = new Headers({ Authorization: "Bearer x", Accept: "application/json" });
+    expect(redact({ headers })).toEqual({
+      headers: { authorization: REDACTED, accept: "application/json" },
+    });
+  });
+
+  it("redacts a nested URL instance", () => {
+    const url = new URL("https://a.test/p?token=abc&x=1");
+    const result = redact({ url }) as { url: string };
+    expect(result.url).not.toContain("abc");
+    expect(new URL(result.url).searchParams.get("x")).toBe("1");
+  });
+
+  it("honours extraKeys on a nested Headers instance", () => {
+    const headers = new Headers({ "x-tenant": "acme", Accept: "application/json" });
+    expect(redact({ headers }, { extraKeys: ["tenant"] })).toEqual({
+      headers: { "x-tenant": REDACTED, accept: "application/json" },
+    });
+  });
+
+  it("honours allowKeys on a nested Headers instance", () => {
+    // A plain value, not a `Bearer …`/JWT-shaped one — `redactString` masks a
+    // credential-*shaped value* regardless of `allowKeys`, which names keys.
+    // The point here is the key check alone, so the value must not trip that
+    // separate rule.
+    const headers = new Headers({ "Session-Name": "checkout" });
+    expect(redact({ headers }, { allowKeys: ["sessionName"] })).toEqual({
+      headers: { "session-name": "checkout" },
+    });
+  });
+
+  it("honours a custom mask on a nested Headers instance", () => {
+    const headers = new Headers({ Authorization: "Bearer x" });
+    expect(redact({ headers }, { mask: "***" })).toEqual({
+      headers: { authorization: "***" },
+    });
+  });
+
+  it("honours extraKeys on a nested URL instance's query string", () => {
+    const url = new URL("https://a.test/p?tenant=acme&x=1");
+    const result = redact({ url }, { extraKeys: ["tenant"] }) as { url: string };
+    expect(new URL(result.url).searchParams.get("tenant")).toBe(REDACTED);
+    expect(new URL(result.url).searchParams.get("x")).toBe("1");
+  });
+
+  it("honours a custom mask on a nested URL instance's query string", () => {
+    const url = new URL("https://a.test/p?token=abc");
+    const result = redact({ url }, { mask: "hidden" }) as { url: string };
+    expect(new URL(result.url).searchParams.get("token")).toBe("hidden");
+  });
+});
+
+describe("hostile inputs walk() has not yet been asked to survive in this file", () => {
+  it("tags a Proxy array whose length getter throws", () => {
+    // `Array.isArray` sees through a Proxy to its target, so this still takes
+    // the array branch; reading `.length` is the part that can throw on
+    // hostile input (a Proxy `get` trap), same family as the index-getter and
+    // ownKeys cases above.
+    const hostile = new Proxy([1, 2, 3], {
+      get(target, prop, receiver) {
+        if (prop === "length") throw new Error("length blew up");
+        return Reflect.get(target, prop, receiver);
+      },
+    });
+    expect(redact(hostile)).toBe("[unwalkable]");
+  });
+
+  it("tags an object whose own getPrototypeOf call throws, distinct from the instanceof cascade", () => {
+    // `instanceof` invokes the same `getPrototypeOf` trap as the explicit
+    // `Object.getPrototypeOf(value)` call further down `walk()`, so a trap
+    // that always throws is caught by the earlier instanceof cascade's own
+    // try/catch, never reaching the later one. Returning `null` for the
+    // handful of calls the cascade makes (satisfying every `instanceof`
+    // check as false) before throwing on the next call isolates the later,
+    // standalone `Object.getPrototypeOf` site instead. The six calls are the
+    // six instanceof checks in that cascade, in order: Date, Error, URL,
+    // Headers, Map, Set — the `expect(calls).toBe(7)` below pins that count
+    // so a reorder or an added/removed check fails loudly here instead of
+    // silently exercising the wrong catch block.
+    let calls = 0;
+    const hostile = new Proxy(
+      {},
+      {
+        getPrototypeOf() {
+          calls += 1;
+          if (calls <= 6) return null;
+          throw new Error("getPrototypeOf blew up, eventually");
+        },
+      },
+    );
+    expect(redact({ nested: hostile })).toEqual({ nested: "[unwalkable]" });
+    expect(calls).toBe(7);
+  });
+
+  it("tags an object whose constructor getter throws instead of propagating it", () => {
+    // A real (non-getter) `constructor` property is what puts `value` past the
+    // `proto !== Object.prototype` guard in the first place — an object whose
+    // own prototype chain ends at `Object.prototype` never reaches the
+    // `ctorName` read at all. `class Weird {}` gives it exactly that kind of
+    // prototype; overriding the instance's own `constructor` with a throwing
+    // getter (class syntax itself rejects `get constructor()`) is what makes
+    // reading it throw.
+    class Weird {}
+    const hostile = new Weird();
+    Object.defineProperty(hostile, "constructor", {
+      get() {
+        throw new Error("constructor blew up");
+      },
+    });
+    expect(redact({ nested: hostile })).toEqual({ nested: "[object]" });
+  });
+});
+
 describe("a key called __proto__", () => {
   // Found through /ext/flags: a flag literally keyed `__proto__` rendered as
   // "[object Object]" for every value, with a spurious "masked" badge. The
