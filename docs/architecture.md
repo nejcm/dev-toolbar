@@ -362,8 +362,11 @@ package still inject once. `injectStyles={false}` opts out; import
 `@nejcm/dev-toolbar/styles.css` instead. `sideEffects: ["*.css"]` stays accurate
 because nothing is injected at module scope.
 
-`src/core/css.ts` is generated from `src/styles.css` and must stay in sync with it,
-which is why `src/styles.css` is excluded from the formatter.
+`src/core/css.ts` is a hand-maintained byte-identical copy of `src/styles.css`,
+enforced by `src/core/__tests__/css.test.ts` (which asserts the two are identical);
+there is no generator. To change the styles, edit `src/styles.css` and paste its
+contents into the template literal in `css.ts`. `src/styles.css` is excluded from the
+formatter so the bytes stay identical.
 
 ## 5. Layout and overflow
 

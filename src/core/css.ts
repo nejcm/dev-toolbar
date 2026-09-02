@@ -1,7 +1,7 @@
 /**
- * Single source of truth for the core stylesheet: this constant is generated
- * from src/styles.css (shipped as the ./styles.css subpath export) and a unit
- * test fails if the two drift.
+ * Single source of truth for the core stylesheet: this constant is a
+ * hand-maintained byte-identical copy of src/styles.css (shipped as the
+ * ./styles.css subpath export) and a unit test fails if the two drift.
  */
 export const CORE_CSS = String.raw`/**
  * @nejcm/dev-toolbar core styles.
@@ -11,8 +11,8 @@ export const CORE_CSS = String.raw`/**
  * !important. Shipped both as this file and as a runtime injection
  * (injectStyles={false} opts out).
  *
- * Single source of truth: CORE_CSS in src/core/css.ts is generated from this
- * file and a unit test fails if the two drift.
+ * Single source of truth: CORE_CSS in src/core/css.ts is a hand-maintained
+ * byte-identical copy of this file and a unit test fails if the two drift.
  */
 @layer dev-toolbar {
   [data-dev-toolbar] {

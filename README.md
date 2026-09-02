@@ -201,6 +201,8 @@ interface DevToolbarExtension {
   // Core aggregates; it renders no palette. A function is re-enumerated on
   // every pass, so a command that only exists later is still reachable.
   commands?: ToolbarCommand[] | (() => ToolbarCommand[]);
+  // Aggregated the same way as commands; /ext/diagnostics renders the roster.
+  diagnostics?: () => unknown;
   start?(api: ExtensionRuntimeApi): void | (() => void);
 }
 ```
@@ -259,14 +261,15 @@ interface ExtensionRuntimeApi {
   storage: ToolbarStorage;                              // scoped to this extension
   getCommands(): readonly ToolbarCommand[];             // the live aggregation
   runCommand(id: string): Promise<boolean>;             // false = nothing declares it
+  getDiagnostics(): readonly ExtensionDiagnostics[];    // one entry per present extension
 }
 ```
 
-`getCommands()` / `runCommand()` are how an extension reads the aggregation without
-importing a *value* from core — `useToolbarCommands()` is for the host application.
-Both re-enumerate on call, so they are never behind. `runCommand()` rejects with the
-command's own error if its `run()` throws or rejects, instead of swallowing it —
-catch it at the call site.
+`getCommands()` / `runCommand()` / `getDiagnostics()` are how an extension reads the
+aggregation without importing a *value* from core — `useToolbarCommands()` and
+`useDevToolbar().getCommands()` are for the host application. All three re-enumerate
+on call, so they are never behind. `runCommand()` rejects with the command's own error
+if its `run()` throws or rejects, instead of swallowing it — catch it at the call site.
 
 Core **reports** visibility and never pauses you on your own behalf — a cumulative
 counter that silently stops counting is worse than one that keeps going.

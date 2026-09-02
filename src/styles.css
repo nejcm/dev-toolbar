@@ -6,8 +6,8 @@
  * !important. Shipped both as this file and as a runtime injection
  * (injectStyles={false} opts out).
  *
- * Single source of truth: CORE_CSS in src/core/css.ts is generated from this
- * file and a unit test fails if the two drift.
+ * Single source of truth: CORE_CSS in src/core/css.ts is a hand-maintained
+ * byte-identical copy of this file and a unit test fails if the two drift.
  */
 @layer dev-toolbar {
   [data-dev-toolbar] {
