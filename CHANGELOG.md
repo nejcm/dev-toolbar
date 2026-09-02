@@ -14,6 +14,22 @@
   style break at the boundary is accepted, not an oversight.
 -->
 
+## [0.3.0](https://github.com/nejcm/dev-toolbar/compare/v0.2.0...v0.3.0) (2026-09-02)
+
+
+### ⚠ BREAKING CHANGES
+
+* **core:** `collectCommands`, `resolveExtensionCommands` and `collectDiagnostics` are removed from the `@nejcm/dev-toolbar` root export. Use `api.getCommands()` / `api.getDiagnostics()` from an extension, or `runCommand()` from the host.
+
+### Features
+
+* **core:** fix the core review findings and drop the aggregation helpers ([#10](https://github.com/nejcm/dev-toolbar/issues/10)) ([7ee237a](https://github.com/nejcm/dev-toolbar/commit/7ee237a384258407eecedf18feb24ac09fd7f11a))
+
+
+### Bug Fixes
+
+* **pkg:** resolve CJS types correctly and gate package shape, formatting, PR titles and knip ([#8](https://github.com/nejcm/dev-toolbar/issues/8)) ([9c3d449](https://github.com/nejcm/dev-toolbar/commit/9c3d449e47e3e72175ccfd678ede5eb256e49643))
+
 ## [0.2.0](https://github.com/nejcm/dev-toolbar/compare/v0.1.0...v0.2.0) (2026-09-01)
 
 
