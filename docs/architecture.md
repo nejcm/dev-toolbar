@@ -129,8 +129,16 @@ what chrome needs. Putting them in core would mean every consumer downloads the
 machinery for measurement even when their toolbar is three buttons. They ship as an
 opt-in `./runtime` subpath, which core never imports.
 
-The same applies in reverse to `./testing`: it imports from `core/` only, so it stays
-usable without `/runtime`.
+The same applies in reverse to `./testing`: it reaches nothing but core, so it stays
+usable without `/runtime`. It reaches core through the package's own specifier
+(`@nejcm/dev-toolbar`, marked `external` in `tsup.config.ts`) rather than a relative
+path, for the reason in §7 — CJS output has no code splitting, so a relative *value*
+import is inlined, and a CommonJS consumer mixing `.` with `./testing` would get two
+cores, two React contexts and a `useDevToolbar()` that throws inside
+`renderWithToolbar()`. Types erase and carry no instance identity, so those stay
+relative. `src/core/__tests__/boundary.test.ts` asserts the import shape and the built
+bytes; `test/fixtures/jest-consumer/shared-instance.test.js` asserts the consequence in
+a real CommonJS consumer.
 
 This rule is why core cannot redact anything it aggregates — see §10.
 
@@ -467,7 +475,10 @@ Escape must call `stopPropagation()` — `/ext/command-menu` does.
 
 Where there is no `ResizeObserver` (SSR, a bare jsdom), nothing collapses — the bar
 renders everything rather than guessing. `@nejcm/dev-toolbar/testing` ships
-`installToolbarLayout()` to make the collapse testable under jsdom.
+`installToolbarLayout()` to make the collapse testable under jsdom; its fake
+`ResizeObserver` hands every callback an empty entry array, so it only works for code
+that re-measures from the element (`offsetWidth`, `getBoundingClientRect()`) rather
+than reading `entries[0].contentRect` — which is what core itself does.
 
 The `overlay` slot is exempt from all of this. It renders once, uncollapsed, for as
 long as the extension is present, not hidden and the bar is visible — because a compact
@@ -651,9 +662,49 @@ expect(toolbar.item("job-queue")).not.toBeNull();
 unmount();
 ```
 
+`panel(id)` answers presence in the DOM, not openness: a `keepMounted` panel stays
+mounted and `hidden` after `closePanel()`, so this idiom keeps passing for one even
+while it is closed — ask `activePanelId()` when the question is really whether it is
+open. Every state-changing method on `toolbar` is `act()`-wrapped, including
+`runCommand(id)`, which is `async` (the command it runs may be) and so is awaited
+rather than wrapped again: `await toolbar.runCommand("queue.drain")`. `rerender(ui)`,
+on the object `renderWithToolbar()` returns, re-renders inside the same mounted
+toolbar rather than replacing it — it overrides Testing Library's own `rerender`,
+which has no `wrapper` here to spare the toolbar from being torn out.
+
 `makeExtension()` builds throwaway extensions (including deliberately broken ones, via
 `throwInCompact` / `throwInPanel` / `throwInStart`), and `createMockBus()` gives a
-pub/sub bus with a hand-cranked clock for collectors that poll or sample.
+recording pub/sub bus whose `MockClock` stamps `event.at` and offers hand-cranked
+`setTimeout`/`setInterval`. `BusLike` itself carries no clock — a collector that wants
+one takes an injected *time reader* instead (`CollectorContext.now()` in
+`/ext/metrics/types.ts`, supplied by `runtime.ts` and faked in
+`network.test.ts` with a plain `() => clock.t`), which `clock.now` satisfies fine.
+What nothing first-party accepts is an injected *timer*: `/ext/metrics`'s own polling
+(`runtime.ts`'s `setInterval(publish, tickMs)`) and `createThrottledStore`
+(`throttledStore.ts`'s `setTimeout`) both call the globals directly, so `MockClock`'s
+`setTimeout`/`setInterval` cannot drive them — reach for `vi.useFakeTimers()` for
+those instead.
+
+`mountToolbar()` is `renderWithToolbar()` that remembers what it mounted, and
+`cleanupToolbar()` unmounts all of it — newest first — and restores any fake layout
+still installed. Together they replace the array-of-`unmount`s-plus-`afterEach` that
+every multi-mount suite in this repo used to keep for itself; the repo's own
+`vitest.setup.ts` calls `cleanupToolbar()` ahead of Testing Library's `cleanup()`. That
+hook is not optional for a `mountToolbar()` user: the tracked list is ours and never
+hears about RTL's auto-cleanup, so nothing else drains it.
+
+The net is only a net. The fake layout patches `HTMLElement.prototype` and
+`globalThis.ResizeObserver`, which are shared by the whole file, so two things make it
+safe. First, `installToolbarLayout()` keeps a module-level *stack* of live installs
+rather than each install remembering "the previous value" — the newest install
+measures, the prototype is patched once when the stack fills and unpatched once when it
+empties, and `restore()` is therefore idempotent and order-independent. (Per-install
+capture was only correct in exact reverse order; drained in insertion order it put one
+fake back on the prototype permanently.) Second, `renderWithToolbar({ layout })` owns
+the teardown from *inside* the rendered tree, as an effect cleanup. Testing Library
+exposes no hook into `cleanup()`, but it does unmount every tree it rendered — so
+`cleanup()`, RTL auto-cleanup and `unmount()` all restore the prototype, whether or not
+the test remembered to.
 
 `@testing-library/react` is an optional peer that only `renderWithToolbar` needs, and
 nothing on the subpath imports it statically — so `@nejcm/dev-toolbar/testing` imports

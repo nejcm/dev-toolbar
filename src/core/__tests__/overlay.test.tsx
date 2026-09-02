@@ -10,26 +10,21 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { render } from "@testing-library/react";
-import { renderWithToolbar, makeExtension } from "@nejcm/dev-toolbar/testing";
+import { cleanupToolbar, makeExtension, mountToolbar } from "@nejcm/dev-toolbar/testing";
 import { CORE_CSS, DevToolbar } from "@nejcm/dev-toolbar";
 import type { OverlaySlotProps } from "../contract";
-
-let unmountAll: (() => void)[] = [];
 
 beforeEach(() => {
   vi.spyOn(console, "error").mockImplementation(() => {});
 });
 
 afterEach(() => {
-  for (const unmount of unmountAll.splice(0)) unmount();
+  cleanupToolbar();
   vi.restoreAllMocks();
 });
 
-const mount = (...args: Parameters<typeof renderWithToolbar>) => {
-  const result = renderWithToolbar(...args);
-  unmountAll.push(result.unmount);
-  return result;
-};
+/** Tracked by `mountToolbar`, so the `afterEach` above tears every mount down. */
+const mount = mountToolbar;
 
 describe("overlay slot", () => {
   it("renders once, inside the toolbar root, without being asked to open", () => {

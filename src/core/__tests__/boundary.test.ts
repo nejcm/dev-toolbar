@@ -18,6 +18,14 @@ const pkg = JSON.parse(readFileSync(`${root}package.json`, "utf8")) as {
   exports: Record<string, unknown>;
 };
 
+/**
+ * Core's own message prefix. Trailing space, no slash: it matches core's
+ * `[dev-toolbar] ...` messages and not `[dev-toolbar/testing]` or
+ * `[dev-toolbar/runtime]`, which makes it a marker for *core code* rather than
+ * for any one construct inside it.
+ */
+const CORE_PREFIX = "[dev-toolbar] ";
+
 /** Only ever present in a `src/runtime/*` or `src/ext/*` module. */
 const RUNTIME_MARKER = "[dev-toolbar/runtime]";
 const EXT_MARKERS = [
@@ -40,6 +48,59 @@ function sourceFiles(directory: string): string[] {
   return output;
 }
 
+/** One or more `../`, then `core/` — `src/testing/nested/x.ts` included. */
+const RELATIVE_CORE = String.raw`(?:\.\.\/)+core\/[^"']+`;
+
+/**
+ * Every *value* import of a relative `core/` path in one source file. `import
+ * type` and a wholly `{ type A, type B }` clause erase to nothing, so they are
+ * not value imports and are deliberately not reported.
+ *
+ * Exported shape rather than an inline regex because the forms it has to cover
+ * are the point — `__tests__` below asserts each of them, so a blind spot fails
+ * a test rather than passing review.
+ */
+function coreValueImports(source: string): string[] {
+  const found: string[] = [];
+
+  // 1. `import ... from "…"` / `export ... from "…"`, with a binding clause.
+  //    The clause may not contain a quote or a semicolon, or it would run past
+  //    the end of its own statement into a later one's specifier.
+  for (const match of source.matchAll(
+    new RegExp(
+      String.raw`(?:^|\n)\s*(?:import|export)\s+(?!type\s)([^"';]*?)from\s+["'](${RELATIVE_CORE})["']`,
+      "g",
+    ),
+  )) {
+    const names = (match[1] as string)
+      .replace(/[{}]/g, "")
+      .split(",")
+      .map((name) => name.trim());
+    // `import { type A, type B } from "../core/x"` is type-only in effect.
+    if (names.some((name) => name.length > 0 && !name.startsWith("type "))) {
+      found.push(match[2] as string);
+    }
+  }
+
+  // 2. Side-effect import: no binding at all, but the module still runs and is
+  //    still inlined, so it is still a second copy of core.
+  for (const match of source.matchAll(
+    new RegExp(String.raw`(?:^|\n)\s*import\s+["'](${RELATIVE_CORE})["']`, "g"),
+  )) {
+    found.push(match[1] as string);
+  }
+
+  // 3. `import("…")` and `require("…")`, which carry no clause to inspect and
+  //    are invisible to pattern 1.
+  for (const match of source.matchAll(
+    new RegExp(String.raw`\b(?:import|require)\s*\(\s*["'](${RELATIVE_CORE})["']`, "g"),
+  )) {
+    found.push(match[1] as string);
+  }
+
+  return found;
+}
+
 describe("core boundary (source)", () => {
   it("never imports a value from runtime/ or ext/", () => {
     const offenders: string[] = [];
@@ -60,7 +121,10 @@ describe("core boundary (source)", () => {
   it("keeps /testing off runtime/ and ext/ too, so it works before they exist", () => {
     const offenders: string[] = [];
     for (const file of sourceFiles(resolve(root, "src/testing"))) {
-      for (const match of readFileSync(file, "utf8").matchAll(/from\s+["'](\.\.?\/[^"']+)["']/g)) {
+      // Every specifier, not only the relative ones: /testing now reaches core
+      // through `@nejcm/dev-toolbar`, so `@nejcm/dev-toolbar/runtime` and
+      // `@nejcm/dev-toolbar/ext/*` are the shapes this has to catch as well.
+      for (const match of readFileSync(file, "utf8").matchAll(/from\s+["']([^"']+)["']/g)) {
         const specifier = match[1] as string;
         if (/(^|\/)(runtime|ext)(\/|$)/.test(specifier)) {
           offenders.push(`${file} -> ${specifier}`);
@@ -68,6 +132,76 @@ describe("core boundary (source)", () => {
       }
     }
     expect(offenders).toEqual([]);
+  });
+
+  it("never value-imports a relative path into core/ from /testing", () => {
+    // The rule that makes one core instance possible. CJS output has no code
+    // splitting, so a *value* import of `../core/x` is inlined into
+    // `dist/testing.cjs`: the consumer gets a second core, a second React
+    // context, and a `useDevToolbar()` that throws inside
+    // `renderWithToolbar()`. `import type` erases and carries no identity, so
+    // it stays allowed.
+    const offenders: string[] = [];
+    for (const file of sourceFiles(resolve(root, "src/testing"))) {
+      // `__tests__/` is exempt: nothing there is a tsup entry, so none of it
+      // reaches `dist/`. `__tests__/heightVariable.test.ts` in particular has to
+      // import core's originals — comparing them with the re-derived copies is
+      // its whole job.
+      if (/(^|\/)__tests__\//.test(file)) continue;
+      for (const specifier of coreValueImports(readFileSync(file, "utf8"))) {
+        offenders.push(`${file} -> ${specifier}`);
+      }
+    }
+    expect(offenders).toEqual([]);
+
+    // The scan must actually have looked at something, or the exemption above
+    // could silently grow to cover the whole directory.
+    expect(
+      sourceFiles(resolve(root, "src/testing")).filter((file) => !/(^|\/)__tests__\//.test(file))
+        .length,
+    ).toBeGreaterThan(1);
+  });
+
+  it("detects every form a value import can take", () => {
+    // The check above is a regex over source, so its blind spots are the whole
+    // risk: a form it cannot see is a form that can reintroduce the bug
+    // silently. Each of these is a value import of core and must be caught.
+    for (const source of [
+      'import { DevToolbar } from "../core/DevToolbar";',
+      'import DevToolbar from "../core/DevToolbar";',
+      'import * as core from "../core/DevToolbar";',
+      // Side-effect only: no binding, but the module still runs and is inlined.
+      'import "../core/styles";',
+      // Deeper than one level up — `src/testing/nested/x.ts`.
+      'import { createMemoryStorage } from "../../core/storage";',
+      // Dynamic, which the static-clause pattern cannot see at all.
+      'const core = await import("../core/storage");',
+      'void import("../../core/storage");',
+      // CommonJS: catches `require()` calls inside `.ts`/`.tsx` sources.
+      'const { createMemoryStorage } = require("../core/storage");',
+      // Re-exports: `export *` and a named re-export both bind values.
+      'export * from "../core/storage";',
+      'export { createMemoryStorage } from "../core/storage";',
+      // A type-only clause with one value smuggled in alongside it.
+      'import { type DevToolbarProps, DevToolbar } from "../core/DevToolbar";',
+    ]) {
+      expect(coreValueImports(source), source).not.toEqual([]);
+    }
+
+    // And each of these must not be caught: types erase, and a sibling module
+    // or the package's own specifier is not a relative path into core.
+    for (const source of [
+      'import type { DevToolbarProps } from "../core/DevToolbar";',
+      'import { type A, type B } from "../core/contract";',
+      'export type { ToolbarCommand } from "../core/contract";',
+      'export type * from "../core/contract";',
+      'import { DevToolbar } from "@nejcm/dev-toolbar";',
+      'import { installToolbarLayout } from "./layout";',
+      // A mention in prose must not trip it.
+      '// never import from "../core/storage" directly',
+    ]) {
+      expect(coreValueImports(source), source).toEqual([]);
+    }
   });
 });
 
@@ -102,9 +236,14 @@ if (!built && mustBeBuilt) {
 
     it("pulls no runtime/ or ext/ code into the root entry, chunks included", () => {
       const graph = reachable("dist/index.js");
-      // The split build must actually have produced a chunk to follow, or this
-      // assertion would pass vacuously on a single-file bundle.
-      expect(graph.length).toBeGreaterThan(1);
+      // `./testing` used to be the only other reader of core, which put core in
+      // a shared chunk this walk had to follow. It now reaches core through the
+      // package's own specifier — external, so `dist/index.js` is self-contained
+      // and this graph is a single file. The non-vacuity guard therefore moves
+      // to an entry that does still share a chunk, which is what proves the walk
+      // follows imports rather than passing for free on one file.
+      expect(graph.length).toBeGreaterThan(0);
+      expect(reachable("dist/ext/metrics.js").length).toBeGreaterThan(1);
       for (const file of graph) {
         const source = readFileSync(file, "utf8");
         expect(source, file).not.toContain(RUNTIME_MARKER);
@@ -112,6 +251,42 @@ if (!built && mustBeBuilt) {
           expect(source, `${file} / ${marker}`).not.toContain(marker);
         }
       }
+    });
+
+    it("makes the CommonJS /testing entry require the main entry, not inline core", () => {
+      // The regression this guards: `dist/testing.cjs` used to carry its own
+      // copy of core, so a CommonJS consumer mixing `.` and `./testing` got two
+      // of everything. Verified in a real CJS consumer by
+      // `test/fixtures/jest-consumer/shared-instance.test.js`; asserted on the
+      // bytes here so it fails on `bun run test` rather than only in the
+      // fixture.
+      //
+      // The primary invariant is the pair below: /testing must *reach* the main
+      // entry, and must not contain core's own message prefix. `CORE_PREFIX`
+      // has a trailing space and no slash, so it matches core's messages and not
+      // /testing's `[dev-toolbar/testing]` ones — it is a marker for core code
+      // in general rather than for a React context in particular, which is what
+      // makes it catch core inlined *without* a context too.
+      const cjs = readFileSync(`${root}dist/testing.cjs`, "utf8");
+      expect(cjs).toContain('require("@nejcm/dev-toolbar")');
+      expect(cjs).not.toContain(CORE_PREFIX);
+      // And the ESM entry, where code splitting could equally have inlined it.
+      const esm = readFileSync(`${root}dist/testing.js`, "utf8");
+      expect(esm).toContain('from "@nejcm/dev-toolbar"');
+      expect(esm).not.toContain(CORE_PREFIX);
+      // Second line of defence, not the invariant: drop it without ceremony if
+      // /testing ever legitimately creates a context of its own.
+      expect(cjs).not.toContain("createContext");
+      expect(esm).not.toContain("createContext");
+    });
+
+    it("finds core's marker where it belongs, so the check above can fail", () => {
+      // `not.toContain` over a string that appears nowhere would pass forever.
+      expect(readFileSync(`${root}dist/index.cjs`, "utf8")).toContain(CORE_PREFIX);
+      expect(readFileSync(`${root}dist/index.js`, "utf8")).toContain(CORE_PREFIX);
+      // And the prefix must not match /testing's own messages, or the assertion
+      // would fail for the wrong reason the moment one of them is reworded.
+      expect(readFileSync(`${root}dist/testing.cjs`, "utf8")).toContain("[dev-toolbar/testing]");
     });
 
     it("pulls none into the CommonJS root entry either", () => {

@@ -4,21 +4,19 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act } from "@testing-library/react";
-import { renderWithToolbar } from "@nejcm/dev-toolbar/testing";
+import { cleanupToolbar, mountToolbar } from "@nejcm/dev-toolbar/testing";
 import { collectCommands } from "../../../core/commands";
 import { environment } from "../index";
 import type { EnvironmentOptions } from "../index";
 
-let unmountAll: (() => void)[] = [];
 let written: string[] = [];
 
 const mount = (options: EnvironmentOptions = {}) => {
   const extension = environment(options);
-  const result = renderWithToolbar(null, {
+  const result = mountToolbar(null, {
     extensions: [extension],
     layout: { barWidth: 900, itemWidth: 200 },
   });
-  unmountAll.push(result.unmount);
   return { extension, ...result };
 };
 
@@ -42,7 +40,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-  for (const unmount of unmountAll.splice(0)) unmount();
+  cleanupToolbar();
   document.head
     .querySelectorAll('style[data-dev-toolbar-styles="ext-environment"]')
     .forEach((node) => node.remove());

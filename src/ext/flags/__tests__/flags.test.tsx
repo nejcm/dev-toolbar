@@ -4,7 +4,7 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, fireEvent } from "@testing-library/react";
-import { renderWithToolbar } from "@nejcm/dev-toolbar/testing";
+import { cleanupToolbar, mountToolbar } from "@nejcm/dev-toolbar/testing";
 import { collectCommands } from "../../../core/commands";
 import { createMemoryStorage } from "../../../core/storage";
 import { flags, readStoredOverrides } from "../index";
@@ -32,19 +32,17 @@ const CATALOGUE: FlagReading[] = [
   },
 ];
 
-let unmountAll: (() => void)[] = [];
 let written: string[] = [];
 let applied: [string, FlagValue | undefined][] = [];
 
 const mount = (options: FlagsOptions = {}, storage?: ToolbarStorage | null) => {
   const extension = flags({ flags: CATALOGUE, ...options });
-  const result = renderWithToolbar(null, {
+  const result = mountToolbar(null, {
     extensions: [extension],
     instanceId: "test",
     ...(storage === undefined ? {} : { storage }),
     layout: { barWidth: 1200, itemWidth: 120 },
   });
-  unmountAll.push(result.unmount);
   return { extension, ...result };
 };
 
@@ -69,7 +67,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-  for (const unmount of unmountAll.splice(0)) unmount();
+  cleanupToolbar();
   document.head
     .querySelectorAll('style[data-dev-toolbar-styles="ext-flags"]')
     .forEach((node) => node.remove());
@@ -301,7 +299,6 @@ describe("persistence across a reload", () => {
     expect(storage.getItem(`dtb:v1:test:ext:flags:${OVERRIDES_KEY}`)).toBe('{"ui-facelift":true}');
 
     first.unmount();
-    unmountAll.pop();
     applied = [];
 
     // A second mount is what a reload looks like from here: a fresh extension
@@ -553,14 +550,10 @@ describe("commands", () => {
       "flags.toggle.ui-facelift",
     );
 
-    await act(async () => {
-      await toolbar.runCommand("flags.toggle.ui-facelift");
-    });
+    await toolbar.runCommand("flags.toggle.ui-facelift");
     expect(applied).toEqual([["ui-facelift", true]]);
 
-    await act(async () => {
-      await toolbar.runCommand("flags.clearOverrides");
-    });
+    await toolbar.runCommand("flags.clearOverrides");
     expect(applied.at(-1)).toEqual(["ui-facelift", undefined]);
   });
 
@@ -587,16 +580,12 @@ describe("commands", () => {
     // Whatever makes the extension re-read — a poll tick here, its own refresh
     // command — is enough. Nothing re-renders the toolbar and no extension
     // object is rebuilt.
-    await act(async () => {
-      await toolbar.runCommand("flags.refresh");
-    });
+    await toolbar.runCommand("flags.refresh");
 
     expect(toolbar.getCommands().map((command) => command.id)).toContain(
       "flags.toggle.late-arrival",
     );
-    await act(async () => {
-      expect(await toolbar.runCommand("flags.toggle.late-arrival")).toBe(true);
-    });
+    expect(await toolbar.runCommand("flags.toggle.late-arrival")).toBe(true);
     expect(applied.at(-1)).toEqual(["late-arrival", true]);
 
     // And the row is in the panel, so the two views agree.
@@ -611,14 +600,10 @@ describe("commands", () => {
       onOverride: record,
       flags: [{ key: "checkout.apiToken", type: "string", value: "tok-secret-1" }],
     });
-    await act(async () => {
-      await toolbar.runCommand("flags.copyRecipe");
-    });
+    await toolbar.runCommand("flags.copyRecipe");
     expect(written.at(-1)).toContain("No local flag overrides");
 
-    await act(async () => {
-      await toolbar.runCommand("flags.refresh");
-    });
+    await toolbar.runCommand("flags.refresh");
     act(() => {
       toolbar.openPanel("flags");
     });
@@ -632,12 +617,8 @@ describe("commands", () => {
       fireEvent.keyDown(input as HTMLInputElement, { key: "Enter" });
     });
 
-    await act(async () => {
-      await toolbar.runCommand("flags.copyRecipe");
-    });
-    await act(async () => {
-      await toolbar.runCommand("flags.copyJson");
-    });
+    await toolbar.runCommand("flags.copyRecipe");
+    await toolbar.runCommand("flags.copyJson");
     for (const payload of written) {
       expect(payload).not.toContain("tok-secret-1");
       expect(payload).not.toContain("tok-secret-2");

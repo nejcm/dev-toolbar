@@ -34,7 +34,11 @@ export const HEIGHT_VARIABLE = "--dev-toolbar-height";
 /**
  * The `instanceId` default, and the one instance that owns `HEIGHT_VARIABLE`.
  *
- * Internal: exported for `src/testing` only, not from any entry point.
+ * Internal: not exported from any entry point. The export exists for
+ * `src/testing/__tests__/heightVariable.test.ts`, which asserts that the copy
+ * `src/testing/heightVariable.ts` re-derives still agrees with this one —
+ * `src/testing` may not value-import a relative path into `core/` (AGENTS.md,
+ * *Conventions*). That test is also what keeps this export alive for knip.
  */
 export const DEFAULT_INSTANCE_ID = "default";
 

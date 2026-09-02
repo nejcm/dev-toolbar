@@ -4,14 +4,13 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, fireEvent } from "@testing-library/react";
-import { renderWithToolbar, makeExtension } from "@nejcm/dev-toolbar/testing";
+import { cleanupToolbar, makeExtension, mountToolbar } from "@nejcm/dev-toolbar/testing";
 import { createMemoryStorage } from "../../../core/storage";
 import { commandMenu } from "../index";
 import { RECENT_KEY } from "../runtime";
 import type { CommandMenuOptions } from "../index";
 import type { DevToolbarExtension, ToolbarCommand, ToolbarStorage } from "../../../core/contract";
 
-let unmountAll: (() => void)[] = [];
 let ran: string[] = [];
 
 const command = (
@@ -46,7 +45,7 @@ const mount = (
   storage?: ToolbarStorage,
 ) => {
   const extension = commandMenu({ apple: false, ...options });
-  const result = renderWithToolbar(
+  const result = mountToolbar(
     <button data-testid="app-button" type="button">
       app
     </button>,
@@ -57,7 +56,6 @@ const mount = (
       layout: { barWidth: 1200, itemWidth: 120 },
     },
   );
-  unmountAll.push(result.unmount);
   return { extension, ...result };
 };
 
@@ -88,7 +86,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-  for (const unmount of unmountAll.splice(0)) unmount();
+  cleanupToolbar();
   vi.restoreAllMocks();
 });
 

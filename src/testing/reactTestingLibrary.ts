@@ -31,7 +31,11 @@ import type { ReactElement } from "react";
  * dead exactly where the original reasoning holds.
  */
 export interface ReactTestingLibrary {
-  act: (callback: () => void) => void;
+  /**
+   * Both shapes are used: the synchronous one wraps the state mutators, and the
+   * asynchronous one wraps `runCommand()`, whose extension code may await.
+   */
+  act: (callback: () => void | Promise<void>) => void | Promise<void>;
   render: (ui: ReactElement, options?: RenderOptions) => RenderResult;
 }
 
