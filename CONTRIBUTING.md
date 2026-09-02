@@ -149,6 +149,35 @@ Implementation Details / Screenshots / Additional Context, plus a checklist.
 Keep a PR to a single goal — a formatting sweep and a behaviour change in one
 diff cannot be reviewed, and cannot be reverted independently.
 
+### The PR title is the commit message
+
+The repository is configured **squash-only** — squash is the only merge method
+enabled, branches are deleted on merge, and the squash commit takes its
+**subject from the PR title** and its **body from the PR description**. That is
+a repository setting, invisible in the tree, and the check below rests on it.
+
+So the PR title is the message that lands on `main` — the one release-please
+reads to decide the version bump and write the changelog section. GitHub
+appends ` (#<number>)` to it. A PR titled `fixes` becomes a commit nothing can
+classify: no bump, no changelog entry, no error.
+
+The title must therefore be a Conventional Commit, in exactly the form above.
+This is checked in CI by `.github/workflows/pr-title.yml`, which pipes the
+title — with the ` (#<number>)` suffix, so the length limit is checked against
+the real subject — through the same `commitlint` and the same
+`.commitlintrc.json` as the `commit-msg` hook. The rules are the same as the
+hook's, but the budget is not: `header-max-length` is checked against the title
+*plus* that suffix, so a title in the high nineties passes the `commit-msg`
+hook locally and still fails here. It runs on drafts too, and re-runs when you
+edit the title.
+
+The other half follows from the same setting: **branch commit subjects are
+discarded at merge**, and the **PR description becomes the commit body**. So a
+`BREAKING CHANGE:` footer, or the `!` after the type that marks a breaking
+change, belongs in the PR title and description — release-please reads them
+there. Putting either in a branch commit has no effect at all; the squash throws
+that subject and body away.
+
 ## The extension contract
 
 Most contributions are extensions, so this is the part worth reading carefully.

@@ -6,6 +6,8 @@
 
 # Footers: breaking changes and issue references.
 # BREAKING CHANGE: <what broke and what to do instead>
+#   PRs are squash-merged, so repeat this footer in the PR description — that
+#   description becomes the commit body release-please reads.
 # Refs: #123
 # Closes: #123
 
@@ -23,7 +25,8 @@
 #   revert   reverts a previous commit
 #
 # A `!` after the type/scope, or a `BREAKING CHANGE:` footer, marks a breaking
-# change. If it changes the extension contract in a way that is not purely
+# change. The squash discards branch subjects, so the `!` has to be in the PR
+# title too. If it changes the extension contract in a way that is not purely
 # additive, raise the CONTRACT_VERSION question in the PR — when to bump is not
 # a settled rule. See CONTRIBUTING.md.
 #

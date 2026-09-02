@@ -71,7 +71,15 @@ gate and `knip` + `size` as advisory job-summary reports.
 - **`src/core/css.ts` is generated from `src/styles.css`** and must stay in sync;
   `src/styles.css` is excluded from the formatter for that reason.
 - **Conventional Commits, enforced.** The `commit-msg` hook runs commitlint. The
-  `pre-commit` hook runs `oxfmt` + `oxlint --fix` over staged JS/TS.
+  `pre-commit` hook runs `oxfmt` + `oxlint --fix` over staged JS/TS. The repo is
+  configured **squash-only**, with the squash commit's subject taken from the
+  **PR title** and its body from the **PR description** — a repository setting,
+  invisible in the tree. So the PR title is the message that lands on `main` and
+  the one release-please reads; `.github/workflows/pr-title.yml` runs the same
+  commitlint over it, including the ` (#<number>)` GitHub appends. Branch commit
+  subjects are discarded at merge, so a `BREAKING CHANGE:` footer or a
+  `!`-suffixed type belongs in the PR title and description, where
+  release-please reads it — not in a branch commit.
 - **`--max-warnings=0` is a ratchet.** A new warning fails the build. The tree is
   clean; keep it that way, or suppress a warning at the line that earns it with a
   comment saying why.

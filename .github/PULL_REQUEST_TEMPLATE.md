@@ -23,6 +23,8 @@
 
 ## Pre-review checklist
 
+- [ ] The PR title is a Conventional Commit — it becomes the squash commit on
+      `main`, and release-please reads it
 - [ ] Linked to an issue, or the description explains why there isn't one
 - [ ] Tests added or updated for the behaviour that changed
 - [ ] `bun run verify` passes locally (typecheck, lint, build, test)
