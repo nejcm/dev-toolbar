@@ -38,6 +38,28 @@ describe("@nejcm/dev-toolbar/testing", () => {
     unmount();
   });
 
+  it("keeps a keepMounted panel in the DOM while it is closed", () => {
+    // The documented caveat on `panel()`: it answers presence, which is the
+    // same thing as *open* for an ordinary panel — but a `keepMounted` one is
+    // still there, `hidden`, after `closePanel()`. `activePanelId()` is the
+    // question to ask when open is what you mean.
+    const sticky: DevToolbarExtension = {
+      ...makeExtension({ id: "sticky", label: "Sticky", panel: "sticky detail" }),
+      keepMounted: true,
+    };
+
+    const { toolbar, unmount } = renderWithToolbar(null, { extensions: [sticky] });
+
+    toolbar.openPanel("sticky");
+    expect(toolbar.panel("sticky")?.hidden).toBe(false);
+
+    toolbar.closePanel();
+    expect(toolbar.activePanelId()).toBeNull();
+    expect(toolbar.panel("sticky")).not.toBeNull();
+    expect(toolbar.panel("sticky")?.hidden).toBe(true);
+    unmount();
+  });
+
   it("contains a throwing extension in an error chip", () => {
     const error = vi.spyOn(console, "error").mockImplementation(() => {});
     const { toolbar, unmount } = renderWithToolbar(null, {

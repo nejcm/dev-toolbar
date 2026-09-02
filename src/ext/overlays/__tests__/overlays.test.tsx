@@ -162,20 +162,14 @@ describe("toggling, off and on, from every surface", () => {
       toolbar.getCommands().find((command) => command.id === id)?.label;
 
     expect(labelOf("overlays.toggle.grid")).toBe("Show overlay: Column grid");
-    await act(async () => {
-      await toolbar.runCommand("overlays.toggle.grid");
-    });
+    await toolbar.runCommand("overlays.toggle.grid");
     expect(labelOf("overlays.toggle.grid")).toBe("Hide overlay: Column grid");
     expect(document.querySelector('[data-dtb-part="ovl-grid"]')).not.toBeNull();
 
-    await act(async () => {
-      await toolbar.runCommand("overlays.toggle.boxes");
-    });
+    await toolbar.runCommand("overlays.toggle.boxes");
     expect(boxesSheets()).toHaveLength(1);
 
-    await act(async () => {
-      await toolbar.runCommand("overlays.disableAll");
-    });
+    await toolbar.runCommand("overlays.disableAll");
     expect(surface()).toBeNull();
     expect(boxesSheets()).toHaveLength(0);
   });

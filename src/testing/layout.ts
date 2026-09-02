@@ -34,7 +34,10 @@ export interface ToolbarLayoutHandle {
   setItemWidth(extensionId: string, width: number): void;
   /** Sets the reported root height (drives `--dev-toolbar-height`). */
   setRootHeight(height: number): void;
-  /** Fires every observer without changing anything. */
+  /**
+   * Fires every observer without changing anything. Callbacks receive an empty
+   * entry array, so they must re-read the DOM to see a size.
+   */
   flush(): void;
   /**
    * Retires this install.
@@ -212,6 +215,13 @@ const installs = new WeakMap<ToolbarLayoutHandle, Install>();
  * Nested installs stack: the most recent one answers measurements, and
  * restoring it hands measurement back to the one underneath. `restore()` is
  * idempotent and may be called in any order.
+ *
+ * The fake `ResizeObserver` ignores its observed targets: every callback is
+ * invoked with an **empty entry array**, so code under test must re-read the
+ * DOM (`offsetWidth`, `getBoundingClientRect()`, which this install answers)
+ * instead of reading `entries[0].contentRect`. Core does exactly that. An
+ * extension that trusts the entries sees nothing change here — measure from
+ * the element, or drive that extension with a fake of your own.
  */
 export function installToolbarLayout(
   options: InstallToolbarLayoutOptions = {},

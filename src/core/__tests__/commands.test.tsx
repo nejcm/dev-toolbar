@@ -195,9 +195,7 @@ describe("aggregation through a mounted toolbar", () => {
 
     // No re-render, no remount: the extension list has not changed at all.
     expect(toolbar.getCommands().map((c) => c.id)).toEqual(["grow.one", "grow.late"]);
-    await act(async () => {
-      expect(await toolbar.runCommand("grow.late")).toBe(true);
-    });
+    expect(await toolbar.runCommand("grow.late")).toBe(true);
     expect(ran).toEqual(["late"]);
 
     // The module-level entry point resolves through the same live host.

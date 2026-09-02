@@ -32,9 +32,22 @@ export interface RenderWithToolbarOptions extends Omit<DevToolbarProps, "childre
   renderOptions?: RenderOptions;
 }
 
-/** Programmatic handle onto the mounted toolbar. Every mutator is `act()`-wrapped. */
+/**
+ * Programmatic handle onto the mounted toolbar. Every mutator is
+ * `act()`-wrapped — including `runCommand()`, which is `async` because the
+ * command it runs may be, and so must be awaited rather than wrapped again.
+ */
 export interface ToolbarHandle {
-  /** The live context value. Throws if the toolbar is not mounted. */
+  /**
+   * The live context value. Throws if the toolbar is not mounted.
+   *
+   * "Not mounted" means this handle's own `unmount()` ran, or `render()` threw.
+   * Testing Library's `cleanup()` — including the auto-cleanup a consumer gets
+   * for free — unmounts the tree without going through that wrapper, so after
+   * a teardown you did not trigger yourself this still returns the last
+   * captured context: a stale value whose setters reach nothing. Call
+   * `unmount()` when a test needs the throw.
+   */
   context(): DevToolbarContextValue;
   /** `null` when the toolbar is hidden or disabled — it is not in the DOM then. */
   root(): HTMLElement | null;
@@ -51,6 +64,15 @@ export interface ToolbarHandle {
    * neither needs the menu open.
    */
   item(extensionId: string): HTMLElement | null;
+  /**
+   * The panel element for an extension.
+   *
+   * This is presence in the DOM, which for most extensions is the same thing
+   * as *open*: closing a panel unmounts it. A `keepMounted` panel is the
+   * exception — it stays in the DOM while closed, rendered with `hidden`, so
+   * this keeps returning an element. Assert on `activePanelId()`, or on the
+   * element's `hidden`, when the question is whether the panel is open.
+   */
   panel(extensionId: string): HTMLElement | null;
   /** The overlay slot's wrapper for an extension. Never collapsed, so always here. */
   overlay(extensionId: string): HTMLElement | null;
@@ -101,6 +123,16 @@ export interface ToolbarHandle {
 
 export interface RenderWithToolbarResult extends RenderResult {
   toolbar: ToolbarHandle;
+  /**
+   * Re-renders `ui` inside the *same* mounted toolbar.
+   *
+   * Testing Library's own `rerender` replaces the whole tree with what it is
+   * given, which here would tear the toolbar out of the DOM — no `wrapper` is
+   * used, the wrapping is part of the element that was rendered. This override
+   * rebuilds that wrapping, so the toolbar, its preferences and the layout
+   * install all survive.
+   */
+  rerender: (ui?: ReactNode) => void;
 }
 
 /**
@@ -175,28 +207,53 @@ export function renderWithToolbar(
     latest = value;
   };
 
-  const result = render(
+  // One place builds the tree, so `rerender()` below cannot drift from the
+  // initial render — including `LayoutOwner`'s first-sibling position, which is
+  // load-bearing under StrictMode (see its own comment).
+  const tree = (children: ReactNode) => (
     <>
       {layoutHandle ? <LayoutOwner handle={layoutHandle} /> : null}
       <DevToolbar {...props}>
         <Probe onRender={captured} />
-        {ui}
+        {children}
       </DevToolbar>
-    </>,
-    renderOptions,
+    </>
   );
+
+  const result = render(tree(ui), renderOptions);
 
   const context = (): DevToolbarContextValue => {
     if (!latest) {
-      throw new Error("[dev-toolbar/testing] the toolbar is not mounted — did render() throw?");
+      throw new Error(
+        "[dev-toolbar/testing] the toolbar is not mounted — did render() throw, " +
+          "or has unmount() already run?",
+      );
     }
     return latest;
   };
 
+  // Extension ids are arbitrary strings, and a `"` or a `\` in one would end
+  // the attribute selector's quoted value early — a SyntaxError, or worse a
+  // selector that quietly matches something else. `CSS.escape` is the right
+  // tool and jsdom has it, called as a method because jsdom's implementation
+  // throws when `this` is not `CSS`. The fallback keeps the helper usable on a
+  // host without it, and covers everything a quoted CSS string cannot hold
+  // literally: the two characters that could end the string, plus the line
+  // breaks and form feed, which need a hex escape rather than a `\` prefix.
+  const escape = (value: string): string =>
+    typeof globalThis.CSS?.escape === "function"
+      ? globalThis.CSS.escape(value)
+      : value.replaceAll(/["\\\n\r\f]/g, (char) =>
+          char === '"' || char === "\\"
+            ? `\\${char}`
+            : `\\${(char.codePointAt(0) ?? 0).toString(16)} `,
+        );
+
   const root = () => document.querySelector<HTMLElement>('[data-dtb-part="root"]');
-  const part = (name: string) => document.querySelector<HTMLElement>(`[data-dtb-part="${name}"]`);
+  const part = (name: string) =>
+    document.querySelector<HTMLElement>(`[data-dtb-part="${escape(name)}"]`);
   const parts = (name: string) => [
-    ...document.querySelectorAll<HTMLElement>(`[data-dtb-part="${name}"]`),
+    ...document.querySelectorAll<HTMLElement>(`[data-dtb-part="${escape(name)}"]`),
   ];
   const idsOf = (nodes: HTMLElement[]) =>
     nodes
@@ -216,16 +273,22 @@ export function renderWithToolbar(
     part,
     parts,
     item: (id) =>
-      document.querySelector<HTMLElement>(`[data-dtb-part="item"][data-dtb-ext-id="${id}"]`),
+      document.querySelector<HTMLElement>(
+        `[data-dtb-part="item"][data-dtb-ext-id="${escape(id)}"]`,
+      ),
     panel: (id) =>
-      document.querySelector<HTMLElement>(`[data-dtb-part="panel"][data-dtb-ext-id="${id}"]`),
+      document.querySelector<HTMLElement>(
+        `[data-dtb-part="panel"][data-dtb-ext-id="${escape(id)}"]`,
+      ),
     overlay: (id) =>
-      document.querySelector<HTMLElement>(`[data-dtb-part="overlay"][data-dtb-ext-id="${id}"]`),
+      document.querySelector<HTMLElement>(
+        `[data-dtb-part="overlay"][data-dtb-ext-id="${escape(id)}"]`,
+      ),
     errorChip: (id) =>
       document.querySelector<HTMLElement>(
         id === undefined
           ? '[data-dtb-part="error-chip"]'
-          : `[data-dtb-part="error-chip"][data-dtb-ext-id="${id}"]`,
+          : `[data-dtb-part="error-chip"][data-dtb-ext-id="${escape(id)}"]`,
       ),
     overflowButton: () =>
       document.querySelector<HTMLButtonElement>('[data-dtb-part="overflow-button"]'),
@@ -290,12 +353,30 @@ export function renderWithToolbar(
       });
       return () => run(() => unregister());
     },
-    runCommand: (id) => context().runCommand(id),
+    async runCommand(id) {
+      // Async `act`, unlike the `run()` helper: a command's `run` may await,
+      // and the state it sets on the way back has to be flushed too.
+      let ran = false;
+      await act(async () => {
+        ran = await context().runCommand(id);
+      });
+      return ran;
+    },
     getCommands: () => context().getCommands(),
+  };
+
+  const rerender = (next?: ReactNode) => {
+    result.rerender(tree(next));
   };
 
   const unmount = () => {
     result.unmount();
+    // Dropped so `context()` throws its "not mounted" message afterwards
+    // rather than handing out a dead context whose setters no longer reach a
+    // mounted tree. `Probe` cannot do this itself: an effect cleanup would
+    // also run on StrictMode's remount pass, and on every re-render that
+    // remounts it.
+    latest = null;
     // Redundant with `LayoutOwner`'s effect cleanup in every ordinary case, and
     // kept because `restore()` is idempotent and free: it is the one teardown
     // left if the owner never mounted, e.g. under a consumer `wrapper` whose
@@ -303,7 +384,7 @@ export function renderWithToolbar(
     layoutHandle?.restore();
   };
 
-  return { ...result, unmount, toolbar };
+  return { ...result, rerender, unmount, toolbar };
 }
 
 type RenderWithToolbarProps = Omit<DevToolbarProps, "children">;
