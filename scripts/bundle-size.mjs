@@ -104,19 +104,29 @@ const size = (file) => {
 };
 
 /**
- * `exports` values are either a conditions object (`{ types, import, require }`)
- * or a bare path (`./styles.css`). `./package.json` is not a shipped artifact.
+ * `exports` values are either a conditions object or a bare path
+ * (`./styles.css`). `./package.json` is not a shipped artifact.
+ *
+ * A condition is itself either a path or a nested `{ types, default }` object —
+ * the JS subpaths use the nested form so each format gets the declaration file
+ * that matches it (`.d.ts` for ESM, `.d.cts` for CJS). Both forms are read here
+ * so the table does not go blank the next time that shape changes.
  */
 const entries = Object.entries(pkg.exports)
   .filter(([subpath]) => subpath !== "./package.json")
   .map(([subpath, value]) => {
     const conditions = typeof value === "string" ? { import: value } : value;
     const abs = (p) => (p ? resolve(root, p) : undefined);
+    const target = (condition) =>
+      abs(typeof condition === "string" ? condition : condition?.default);
+    const types = (condition) => (typeof condition === "string" ? undefined : condition?.types);
     return {
       name: subpath === "." ? pkg.name : subpath.replace(/^\.\//, ""),
-      esm: abs(conditions.import),
-      cjs: abs(conditions.require),
-      types: abs(conditions.types),
+      esm: target(conditions.import),
+      cjs: target(conditions.require),
+      // The ESM declarations, falling back to a subpath that still declares
+      // `types` at the top level.
+      types: abs(types(conditions.import) ?? conditions.types),
     };
   });
 

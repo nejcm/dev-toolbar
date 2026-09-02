@@ -23,9 +23,9 @@ bun install
 bun run verify
 ```
 
-That is `typecheck && lint && build && test`, in sequence — the exact gate CI
-runs. If it passes locally it passes in CI, and a PR that fails it will not
-merge.
+That is `typecheck && lint && build && test && check:package`, in sequence —
+the exact gate CI runs. If it passes locally it passes in CI, and a PR that
+fails it will not merge.
 
 The individual pieces, when you want a faster loop:
 
@@ -40,8 +40,14 @@ The individual pieces, when you want a faster loop:
 | `bun run test:watch` | `vitest` |
 | `bun run test:coverage` | `vitest run --coverage` |
 | `bun run build` | `tsup` |
+| `bun run check:package` | `publint` + `attw` over a packed tarball |
 | `bun run knip` | unused files, exports and dependencies |
 | `bun run size` | builds, then prints a per-entrypoint size table |
+
+`check:package` runs `attw` with `--profile node16` on purpose. Subpath exports
+are invisible to the pre-`exports` `node10` algorithm, so a consumer needs
+`moduleResolution` `node16` or `bundler`; `node10` is deliberately unsupported
+and its failures in that report are expected.
 
 Two things about `lint` that catch people out:
 
@@ -378,7 +384,7 @@ provenance added.
    git status --porcelain                 # must print nothing
    bun install --frozen-lockfile
 
-   bun run verify                         # typecheck, lint, build, test
+   bun run verify                         # typecheck, lint, build, test, package shape
    npm ci --prefix test/fixtures/jest-consumer
    bun run test:jest-consumer             # the CommonJS packaging check
 

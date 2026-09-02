@@ -29,7 +29,7 @@ Each extension directory follows the same convention: `index.tsx` (the factory),
 
 ```sh
 bun install                  # also installs the git hooks (simple-git-hooks)
-bun run verify               # typecheck && lint && build && test — the CI gate
+bun run verify               # typecheck && lint && build && test && check:package — the CI gate
 bun run typecheck            # tsc --noEmit
 bun run lint                 # oxlint --max-warnings=0  (a ratchet, see below)
 bun run lint:fix             # oxlint --fix
@@ -39,11 +39,17 @@ bun run test                 # vitest run
 bun run test:watch           # vitest
 bun run test:coverage        # vitest run --coverage — enforces the floors in vitest.config.ts
 bun run build                # tsup
+bun run check:package        # publint + attw over a packed tarball (needs dist/)
 bun run knip                 # unused files, exports and deps — advisory, never a gate
 bun run size                 # builds, then a per-entrypoint size table
 bun run test:jest-consumer   # builds, then runs Jest against dist/ — not part of `test`
 bun run playground           # builds, then Vite on :5273
 ```
+
+`check:package` uses `--profile node16` on purpose: subpath exports are
+invisible to the pre-`exports` `node10` algorithm, so consumers need
+`moduleResolution` `node16` or `bundler` and `node10` is deliberately
+unsupported.
 
 `bun run verify` is the one command that matters. If it passes locally it passes in
 CI; `.github/workflows/ci.yml` runs exactly it, then `test:coverage` as a second

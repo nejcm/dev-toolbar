@@ -102,11 +102,12 @@ jobs:
       - name: Set up job
         uses: ./.github/actions/setup-job
 
-      # `verify` is typecheck, lint, build, test in that order, and the build it
-      # runs is what the size report below measures. Coverage is a separate run
-      # rather than folded into `verify`: instrumentation slows the suite, and a
-      # contributor running `bun run verify` locally should not pay for it.
-      - name: Verify (typecheck, lint, build, test)
+      # `verify` is typecheck, lint, build, test, check:package in that order,
+      # and the build it runs is what the size report below measures. Coverage
+      # is separate rather than folded into `verify`: instrumentation slows the
+      # suite, and a contributor running `bun run verify` locally should not
+      # pay for it.
+      - name: Verify (typecheck, lint, build, test, package shape)
         run: bun run verify
 
       # The reporting steps below are `!cancelled()` rather than `always()`:
