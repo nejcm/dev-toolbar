@@ -219,4 +219,88 @@ describe("createEventBus", () => {
     expect(later).toHaveBeenCalledTimes(1);
     expect(bus.listenerCount()).toBe(1);
   });
+
+  // These pin the semantics a zero-/one-listener fast path in `emit()` must
+  // preserve: no allocation when nobody is listening, and — for exactly one
+  // handler — the same unsubscribe-mid-dispatch and subscribe-mid-dispatch
+  // behavior the general Array.from snapshot gives you for N handlers.
+  describe("zero- and single-handler emit semantics", () => {
+    it("calls nothing and still returns the event when nobody is listening", () => {
+      const bus = createEventBus<Events>();
+      const event = bus.emit("tick", { n: 1 });
+      expect(event).toMatchObject({ type: "tick", payload: { n: 1 } });
+      expect(bus.listenerCount()).toBe(0);
+    });
+
+    it("lets the sole handler unsubscribe itself mid-dispatch", () => {
+      const bus = createEventBus<Events>();
+      const handler = vi.fn(() => off());
+      const off = bus.on("tick", handler);
+      expect(() => bus.emit("tick", { n: 1 })).not.toThrow();
+      expect(handler).toHaveBeenCalledTimes(1);
+      expect(bus.listenerCount("tick")).toBe(0);
+
+      bus.emit("tick", { n: 2 });
+      expect(handler).toHaveBeenCalledTimes(1);
+    });
+
+    it("does not call a handler subscribed by the sole handler until the next emit", () => {
+      const bus = createEventBus<Events>();
+      const second = vi.fn();
+      bus.on("tick", () => {
+        bus.on("tick", second);
+      });
+
+      bus.emit("tick", { n: 1 });
+      expect(second).not.toHaveBeenCalled();
+
+      bus.emit("tick", { n: 2 });
+      expect(second).toHaveBeenCalledTimes(1);
+    });
+
+    it("routes a sole handler's throw to onError and still runs onAny", () => {
+      const onError = vi.fn();
+      const bus = createEventBus<Events>({ onError });
+      const any = vi.fn();
+      bus.on("tick", () => {
+        throw new Error("boom");
+      });
+      bus.onAny(any);
+
+      expect(() => bus.emit("tick", { n: 1 })).not.toThrow();
+      expect(onError).toHaveBeenCalledTimes(1);
+      expect(any).toHaveBeenCalledTimes(1);
+    });
+
+    it("does not call a replacement the sole handler subscribes right after unsubscribing itself, until the next emit", () => {
+      const bus = createEventBus<Events>();
+      const replacement = vi.fn();
+      const off = bus.on("tick", () => {
+        off();
+        bus.on("tick", replacement);
+      });
+
+      bus.emit("tick", { n: 1 });
+      expect(replacement).not.toHaveBeenCalled();
+
+      bus.emit("tick", { n: 2 });
+      expect(replacement).toHaveBeenCalledTimes(1);
+    });
+
+    it("drops onAny handlers for the current emit when the sole type handler calls clear() mid-dispatch", () => {
+      // Matches the old two-snapshot semantics: the type loop ran to
+      // completion (as a single call here) before `Array.from(anyHandlers)`
+      // was ever taken, so a clear() during that call left nothing to snapshot.
+      const bus = createEventBus<Events>();
+      const any = vi.fn();
+      bus.on("tick", () => {
+        bus.clear();
+      });
+      bus.onAny(any);
+
+      bus.emit("tick", { n: 1 });
+      expect(any).not.toHaveBeenCalled();
+      expect(bus.listenerCount()).toBe(0);
+    });
+  });
 });

@@ -77,6 +77,38 @@ export function createEventBus<Events extends Record<string, unknown> = Record<s
   const handlers = new Map<string, Set<BusHandler<never>>>();
   const anyHandlers = new Set<BusHandler<never>>();
 
+  // Nobody listening: bail before allocating anything. One listener: the
+  // load-bearing bit is that `handler` is read out of `set` before it is
+  // called, not while a loop is still touching `set` — so whatever the call
+  // does to `set` (unsubscribe itself, subscribe another) happens after we
+  // already have our reference, and there is no snapshot to need. A live
+  // `for...of set` here instead — even one that calls the sole handler and
+  // then returns — would still be a bug: unlike our up-front read, a live
+  // iterator that hasn't finished visits elements added while it runs, so it
+  // would go on to yield a replacement the handler subscribed mid-call,
+  // which the `Array.from` snapshot below never would. Two or more: a
+  // handler may unsubscribe itself (or another) mid-dispatch, so we still
+  // iterate a copy — `Array.from` — rather than the live set.
+  const dispatch = <T>(set: Set<BusHandler<never>> | undefined, payload: T, event: BusEvent<T>) => {
+    if (!set || set.size === 0) return;
+    if (set.size === 1) {
+      const [handler] = set;
+      try {
+        (handler as unknown as BusHandler<T>)(payload, event);
+      } catch (error) {
+        onError(error, event as BusEvent);
+      }
+      return;
+    }
+    for (const handler of Array.from(set)) {
+      try {
+        (handler as unknown as BusHandler<T>)(payload, event);
+      } catch (error) {
+        onError(error, event as BusEvent);
+      }
+    }
+  };
+
   const bind = (unsubscribe: () => void, signal?: AbortSignal) => {
     if (!signal) return unsubscribe;
     if (signal.aborted) {
@@ -115,21 +147,8 @@ export function createEventBus<Events extends Record<string, unknown> = Record<s
   return {
     emit<K extends keyof Events & string>(type: K, payload: Events[K]) {
       const event: BusEvent<Events[K]> = { type, payload, at: now() };
-      // Snapshot both sets: a handler may unsubscribe itself mid-dispatch.
-      for (const handler of Array.from(handlers.get(type) ?? [])) {
-        try {
-          (handler as unknown as BusHandler<Events[K]>)(payload, event);
-        } catch (error) {
-          onError(error, event as BusEvent);
-        }
-      }
-      for (const handler of Array.from(anyHandlers)) {
-        try {
-          (handler as unknown as BusHandler<Events[K]>)(payload, event);
-        } catch (error) {
-          onError(error, event as BusEvent);
-        }
-      }
+      dispatch(handlers.get(type), payload, event);
+      dispatch(anyHandlers, payload, event);
       return event;
     },
     on,
