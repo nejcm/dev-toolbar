@@ -66,8 +66,19 @@ export interface CreateThrottledStoreOptions<T> {
   schedule?: (callback: () => void, delayMs: number) => () => void;
   /** Skip the notification when the published value did not change. `Object.is` by default. */
   equals?: (a: T, b: T) => boolean;
+  /**
+   * Called when a listener throws. A throwing listener must never stop the
+   * remaining listeners, and must never propagate into the caller — which is
+   * usually a `set()` or `flush()` call in the middle of a render or an
+   * event handler.
+   */
+  onError?: (error: unknown, value: T) => void;
 }
 
+// Byte-identical to bus.ts's defaultNow. Deliberately not shared: runtime
+// talks to nothing in this package (AGENTS.md), and outside the barrel no
+// runtime module imports another; a three-line clock fallback is not the
+// reason to start.
 const defaultNow = (): number =>
   typeof performance !== "undefined" && typeof performance.now === "function"
     ? performance.now()
@@ -87,6 +98,10 @@ export function createThrottledStore<T>(
     now = defaultNow,
     schedule = defaultSchedule,
     equals = Object.is,
+    onError = (error: unknown, _value: T) => {
+      // eslint-disable-next-line no-console
+      console.error("[dev-toolbar/runtime] a store listener threw.", error);
+    },
   } = options;
 
   let published = initial;
@@ -99,13 +114,24 @@ export function createThrottledStore<T>(
   const listeners = new Set<() => void>();
 
   const emit = () => {
+    // Captured once: a listener can call set()/flush() re-entrantly, which
+    // publishes again and advances the module-level `published` before a
+    // later listener in this same pass throws. Reading `published` at throw
+    // time would then report the re-entrant publish's value for a pass that
+    // is still delivering an earlier one — so onError gets the value this
+    // pass is actually notifying about, not whatever is newest by the time
+    // the throw happens.
+    const value = published;
     // Copied: a listener may unsubscribe itself while being notified.
     for (const listener of Array.from(listeners)) {
       try {
         listener();
       } catch (error) {
-        // eslint-disable-next-line no-console
-        console.error("[dev-toolbar/runtime] a store listener threw.", error);
+        // Same shape as bus.ts's dispatch: onError is called outside its own
+        // try/catch, so a throwing onError propagates to the caller (and, as
+        // there, stops the remaining listeners in this pass) instead of
+        // being silently swallowed.
+        onError(error, value);
       }
     }
   };

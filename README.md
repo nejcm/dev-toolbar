@@ -343,7 +343,7 @@ import {
 - **`createEventBus<Events>()`** — typed pub/sub, one per instance (never a
   singleton). `on(type, handler, { signal })` unsubscribes on the `AbortSignal`
   `start(api)` already gave you. A throwing handler is contained, not propagated into
-  whatever emitted.
+  whatever emitted; pass `onError` to replace the default `console.error`.
 - **`createRingBuffer<T>(n)` / `createNumericRing(n)` / `createTimeSeries(n)`** —
   bounded and *allocation-stable*: storage is allocated once, `push` writes into a
   slot that already exists, and every read that could allocate takes a caller-owned
@@ -356,7 +356,9 @@ import {
   `getSnapshot` stays stable between notifications, which is what
   `useSyncExternalStore` requires. A 60 Hz sampler becomes a 4 Hz re-render.
   `destroy()` drops a pending trailing write by default; pass
-  `destroy({ flush: true })` to publish it first.
+  `destroy({ flush: true })` to publish it first. A throwing listener is
+  contained, not propagated into whatever published; pass `onError` to
+  replace the default `console.error`, same as `createEventBus`.
 - **`redact(value)` / `redactUrl(url)` / `redactHeaders(headers)`** — masks
   credentials by key name — an entry of the word list matches one or more adjacent
   whole *segments* of the key, splitting on every non-alphanumeric character and on

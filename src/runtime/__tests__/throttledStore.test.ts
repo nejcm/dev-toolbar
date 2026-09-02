@@ -334,4 +334,64 @@ describe("createThrottledStore", () => {
     expect(error).toHaveBeenCalled();
     error.mockRestore();
   });
+
+  it("routes a throwing listener's error through onError instead of console.error", () => {
+    const clock = harness();
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    const onError = vi.fn();
+    const thrown = new Error("boom");
+    const store = createThrottledStore<number>(0, {
+      intervalMs: 10,
+      now: clock.now,
+      schedule: clock.schedule,
+      onError,
+    });
+    const good = vi.fn();
+    store.subscribe(() => {
+      throw thrown;
+    });
+    store.subscribe(good);
+
+    store.set(1);
+
+    expect(good).toHaveBeenCalledTimes(1);
+    expect(onError).toHaveBeenCalledTimes(1);
+    expect(onError).toHaveBeenCalledWith(thrown, 1);
+    expect(error).not.toHaveBeenCalled();
+    error.mockRestore();
+  });
+
+  it("reports the throwing pass's own value even when an earlier listener republishes re-entrantly", () => {
+    const clock = harness();
+    const onError = vi.fn();
+    const thrown = new Error("boom");
+    // intervalMs: 0 so a re-entrant set() inside a listener publishes
+    // synchronously instead of booking a trailing timer.
+    const store = createThrottledStore<number>(0, {
+      intervalMs: 0,
+      now: clock.now,
+      schedule: clock.schedule,
+      onError,
+    });
+    store.subscribe(() => {
+      // Republishes before the next listener in *this* pass has run,
+      // advancing the module-level `published` from 1 to 2.
+      store.set(2);
+    });
+    store.subscribe(() => {
+      throw thrown;
+    });
+
+    store.set(1); // leading edge: this pass publishes 1
+
+    expect(store.getSnapshot()).toBe(2);
+    // The nested pass (triggered by the re-entrant set(2)) reports its own
+    // value, 2. The outer pass's throw — from the same listener set, after
+    // the nested publish already advanced `published` — must still report
+    // 1: the value *this* pass delivered, not whatever is newest by the
+    // time the throw happens.
+    expect(onError).toHaveBeenNthCalledWith(1, thrown, 2);
+    expect(onError).toHaveBeenNthCalledWith(2, thrown, 1);
+    expect(onError).toHaveBeenCalledTimes(2);
+  });
 });
