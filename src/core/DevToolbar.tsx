@@ -267,7 +267,21 @@ function DevToolbarRoot({
             const next = store.getSnapshot().visible;
             if (next === last) return;
             last = next;
-            callback(next);
+            // Contained here rather than in the store's `emit`: this callback
+            // is extension code running inside whatever flipped visibility —
+            // the toggle shortcut, a consumer's `setVisible`. Letting it throw
+            // would surface in that caller and abort the notification loop, so
+            // every extension after this one would never hear the change.
+            try {
+              callback(next);
+            } catch (error) {
+              // eslint-disable-next-line no-console
+              console.error(
+                `[dev-toolbar] extension "${extension.id}" threw from its ` +
+                  "subscribeVisibility() callback.",
+                error,
+              );
+            }
           });
         },
         storage: createExtensionStorage(rawStorage, instanceId, extension.id),
