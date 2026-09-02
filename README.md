@@ -364,11 +364,14 @@ import {
   value before you join it into a sentence needs no cast. Anything else is
   `unknown`, because a cycle, a depth limit or an unwalkable object comes back as a
   short tag string rather than the shape you handed in.
-- **`ensureStyleSheet(entry, css)`** — injects a stylesheet once per document, keyed
-  on a `style[data-dev-toolbar-styles]` element rather than a module flag, so two
-  bundled copies of your package still inject once. Core's `injectStyles` is a prop
-  and extensions cannot see it, so an extension that ships CSS needs its own switch
-  and its own injector; this is the injector.
+- **`ensureStyleSheet(entry, css, doc?, nonce?)`** — injects a stylesheet once per
+  document, keyed on a `style[data-dev-toolbar-styles]` element rather than a module
+  flag, so two bundled copies of your package still inject once. Core's
+  `injectStyles` is a prop and extensions cannot see it, so an extension that ships
+  CSS needs its own switch and its own injector; this is the injector. The optional
+  `nonce` sets the `style` element's `nonce` property, for a host with a
+  `style-src 'self' 'nonce-…'` CSP that would otherwise block the injected sheet
+  with no diagnosable failure.
 
 ## `@nejcm/dev-toolbar/ext/metrics`
 
