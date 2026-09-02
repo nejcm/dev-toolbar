@@ -13,7 +13,7 @@ own subpath exports.
 - Light DOM, so Tailwind and CSS-in-JS work inside extensions
 - Restyleable from your own CSS without `!important`
 - SSR-safe: your app server-renders untouched, the bar is client-only
-- Positioned with logical CSS properties, so `dir="rtl"` mirrors the bar and the `···` popup correctly
+- Positioned with logical CSS properties, so `dir="rtl"` mirrors the bar, the `···` popup and every first-party extension's UI correctly
 
 Subpaths, each opt-in and each with its own bundle:
 

@@ -338,9 +338,28 @@ Set them on `[data-dev-toolbar]`, or on any ancestor. Unlayered CSS wins.
 Dark values are applied for `[data-dtb-color-scheme="dark"]` and, under
 `prefers-color-scheme: dark`, for anything not explicitly `"light"`.
 
-Every rule uses logical properties (`inset-inline`, `inset-inline-end`, and flexbox's
-own direction-aware `flex-end`) instead of `left`/`right`, so the bar and the `···`
-popup mirror correctly under `dir="rtl"` even though RTL is not otherwise tested.
+Every rule — core's and the first-party extensions' alike — uses logical properties
+(`inset-inline`, `inset-inline-end`, `margin-inline-start`, `padding-inline-start`,
+`text-align: start`, and flexbox's own direction-aware `flex-end`) instead of
+`left`/`right`, so the bar, the `···` popup and every extension's chips and panels
+mirror correctly under `dir="rtl"` even though RTL is not otherwise tested. A
+regression test per stylesheet (core's `src/core/__tests__/css.test.ts`, and one in
+each extension's `__tests__/`) asserts the exported CSS string contains no physical
+directional property, with two deliberate kinds of exception whitelisted precisely
+where they occur:
+
+- **Horizontal centring stays physical.** `/ext/command-menu`'s dialog and
+  `/ext/overlays`' grid overlay and notice centre themselves with `left: 50%` plus
+  `transform: translateX(-50%)`, which is already symmetric under `dir="rtl"` and
+  needs no mirroring. `inset-inline-start: 50%` is *not* an equivalent: under
+  `dir="rtl"` it resolves to the right edge landing at the midpoint, while
+  `translateX(-50%)` — evaluated against the element's own physical box, not the
+  logical one — still shifts left by half the width, so the element ends up a full
+  width off-centre. `left`/`right` are correct here on purpose.
+- **JS-measured geometry stays physical.** `/ext/overlays`' drawing surface also
+  positions boxes and labels from `getBoundingClientRect()` — a physical,
+  viewport-relative measurement — via inline `left`/`top` styles in `ui.tsx`, which
+  stay physical because the coordinates they mirror are.
 
 ### 4.2 `data-dtb-part`
 

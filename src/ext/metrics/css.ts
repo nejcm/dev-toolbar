@@ -202,7 +202,7 @@ export const METRICS_CSS = String.raw`@layer dev-toolbar {
   }
 
   [data-dev-toolbar] [data-dtb-part="metrics-requests"] th {
-    text-align: left;
+    text-align: start;
     font-weight: 500;
     color: var(--dtb-muted);
     font-family: var(--dtb-font-family);
@@ -210,7 +210,8 @@ export const METRICS_CSS = String.raw`@layer dev-toolbar {
 
   [data-dev-toolbar] [data-dtb-part="metrics-requests"] th,
   [data-dev-toolbar] [data-dtb-part="metrics-requests"] td {
-    padding: 2px 8px 2px 0;
+    padding-block: 2px;
+    padding-inline: 0 8px;
     border-bottom: 1px solid var(--dtb-border);
     white-space: nowrap;
   }

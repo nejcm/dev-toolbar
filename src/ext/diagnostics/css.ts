@@ -106,7 +106,7 @@ export const DIAGNOSTICS_CSS = String.raw`@layer dev-toolbar {
 
   [data-dev-toolbar] [data-dtb-part="diag-omission-list"] {
     margin: 4px 0 0;
-    padding-left: 18px;
+    padding-inline-start: 18px;
   }
 
   /* The review surface. The whole point of the extension is that this exists
