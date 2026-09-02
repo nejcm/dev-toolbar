@@ -29,12 +29,13 @@ Each extension directory follows the same convention: `index.tsx` (the factory),
 
 ```sh
 bun install                  # also installs the git hooks (simple-git-hooks)
-bun run verify               # typecheck && lint && build && test && check:package — the CI gate
+bun run verify               # format:check && typecheck && lint && build && test &&
+                             #   check:package — the CI gate
 bun run typecheck            # tsc --noEmit
 bun run lint                 # oxlint --max-warnings=0  (a ratchet, see below)
 bun run lint:fix             # oxlint --fix
-bun run format               # oxfmt — JS/TS only
-bun run format:check         # oxfmt --check
+bun run format               # oxfmt — JS, TS and YAML
+bun run format:check         # oxfmt --check — first in `verify`, cheapest failure first
 bun run test                 # vitest run
 bun run test:watch           # vitest
 bun run test:coverage        # vitest run --coverage — enforces the floors in vitest.config.ts

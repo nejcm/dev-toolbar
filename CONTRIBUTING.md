@@ -23,8 +23,10 @@ bun install
 bun run verify
 ```
 
-That is `typecheck && lint && build && test && check:package`, in sequence —
-the exact gate CI runs. If it passes locally it passes in CI, and a PR that
+That is `format:check && typecheck && lint && build && test && check:package`,
+in sequence — the exact gate CI runs. `format:check` goes first because it takes
+about ten milliseconds: if the tree is mis-formatted you find out immediately
+rather than after `tsc` has run. If it passes locally it passes in CI, and a PR that
 fails it will not merge.
 
 The individual pieces, when you want a faster loop:
@@ -34,8 +36,8 @@ The individual pieces, when you want a faster loop:
 | `bun run typecheck` | `tsc --noEmit` |
 | `bun run lint` | `oxlint --max-warnings=0` |
 | `bun run lint:fix` | `oxlint --fix` |
-| `bun run format` | `oxfmt` (JS/TS only) |
-| `bun run format:check` | `oxfmt --check` |
+| `bun run format` | `oxfmt` (JS, TS and YAML) |
+| `bun run format:check` | `oxfmt --check` (the first step of `verify`) |
 | `bun run test` | `vitest run` |
 | `bun run test:watch` | `vitest` |
 | `bun run test:coverage` | `vitest run --coverage` |
@@ -55,9 +57,19 @@ Two things about `lint` that catch people out:
   warnings, and adding one fails the build. If a rule is wrong about your code,
   suppress it on the line that earns it with an `oxlint-disable-next-line`
   comment and a sentence saying why — do not raise the budget.
-- **oxfmt handles JS and TS only.** CSS, JSON and Markdown have no formatter
-  here. `.editorconfig` is what keeps them consistent, so install the
+- **oxfmt handles JS, TS and YAML.** That includes the workflows under
+  `.github/`, so a mis-indented `.yml` fails `format:check`. CSS, JSON and
+  Markdown have no formatter here. `.editorconfig` is what keeps them consistent, so install the
   EditorConfig extension (`.vscode/extensions.json` recommends it).
+
+Formatting is checked in CI as well as fixed on commit. The `pre-commit` hook
+formats what you staged, but plenty of commits never see it — edits made in the
+GitHub web UI, `git commit --no-verify`, `SKIP_SIMPLE_GIT_HOOKS=1`, and a fresh
+clone where `bun install` has not yet installed the hooks. Dependabot counts
+too, but only for its `github-actions` bumps: those edit workflow YAML, which
+oxfmt formats. Its `bun` updates and release-please's commits touch only JSON,
+the lockfile and Markdown, none of which oxfmt reads. `format:check` inside
+`verify` is what catches the rest. If it fails, `bun run format` fixes it.
 
 `bun run test:coverage` is a second, instrumented run of the same suite, kept
 out of `verify` because the instrumentation is slow enough to notice in a local
@@ -413,7 +425,8 @@ provenance added.
    git status --porcelain                 # must print nothing
    bun install --frozen-lockfile
 
-   bun run verify                         # typecheck, lint, build, test, package shape
+   bun run verify                         # format, typecheck, lint, build, test,
+                                          #   package shape
    npm ci --prefix test/fixtures/jest-consumer
    bun run test:jest-consumer             # the CommonJS packaging check
 

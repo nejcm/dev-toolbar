@@ -1085,7 +1085,8 @@ bun run build
 bun run verify
 ```
 
-`verify` runs typecheck, lint, test, and build in sequence — the same gate CI will use.
+`verify` runs format:check, typecheck, lint, build, test and check:package in sequence —
+the exact gate CI runs.
 
 ### Playground
 

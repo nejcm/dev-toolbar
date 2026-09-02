@@ -27,7 +27,8 @@
       `main`, and release-please reads it
 - [ ] Linked to an issue, or the description explains why there isn't one
 - [ ] Tests added or updated for the behaviour that changed
-- [ ] `bun run verify` passes locally (typecheck, lint, build, test)
+- [ ] `bun run verify` passes locally (format, typecheck, lint, build, test,
+      package shape)
 - [ ] This PR has a single goal — unrelated changes are split out
 - [ ] Docs updated (`README.md`, `CONTRIBUTING.md`, or JSDoc) if behaviour changed
 - [ ] If the extension contract changed, it is called out above and the
