@@ -263,7 +263,7 @@ export const METRICS_CSS = String.raw`@layer dev-toolbar {
 }
 `;
 
-export const METRICS_STYLE_ENTRY = "ext-metrics";
+const METRICS_STYLE_ENTRY = "ext-metrics";
 
 /**
  * Injects the stylesheet once per document, through `/runtime`'s shared

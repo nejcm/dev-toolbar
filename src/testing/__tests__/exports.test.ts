@@ -37,10 +37,11 @@ const mustBeBuilt = Boolean(process.env["CI"]);
 
 describe("package.json exports", () => {
   it("declares ./testing explicitly, with no wildcard subpaths", () => {
+    // Per-condition `types`, for the reason spelled out in
+    // `src/core/__tests__/boundary.test.ts`, which asserts every other subpath.
     expect(pkg.exports["./testing"]).toEqual({
-      types: "./dist/testing.d.ts",
-      import: "./dist/testing.js",
-      require: "./dist/testing.cjs",
+      import: { types: "./dist/testing.d.ts", default: "./dist/testing.js" },
+      require: { types: "./dist/testing.d.cts", default: "./dist/testing.cjs" },
     });
     expect(Object.keys(pkg.exports).some((key) => key.includes("*"))).toBe(false);
   });

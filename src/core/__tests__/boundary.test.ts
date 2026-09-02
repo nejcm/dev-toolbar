@@ -204,47 +204,29 @@ if (built || !mustBeBuilt) {
       }
     });
 
-    it("declares ./runtime and the ./ext/* entries explicitly, with no wildcards", () => {
-      expect(pkg.exports["./runtime"]).toEqual({
-        types: "./dist/runtime.d.ts",
-        import: "./dist/runtime.js",
-        require: "./dist/runtime.cjs",
-      });
-      expect(pkg.exports["./ext/metrics"]).toEqual({
-        types: "./dist/ext/metrics.d.ts",
-        import: "./dist/ext/metrics.js",
-        require: "./dist/ext/metrics.cjs",
-      });
-      expect(pkg.exports["./ext/environment"]).toEqual({
-        types: "./dist/ext/environment.d.ts",
-        import: "./dist/ext/environment.js",
-        require: "./dist/ext/environment.cjs",
-      });
-      expect(pkg.exports["./ext/flags"]).toEqual({
-        types: "./dist/ext/flags.d.ts",
-        import: "./dist/ext/flags.js",
-        require: "./dist/ext/flags.cjs",
-      });
-      expect(pkg.exports["./ext/command-menu"]).toEqual({
-        types: "./dist/ext/command-menu.d.ts",
-        import: "./dist/ext/command-menu.js",
-        require: "./dist/ext/command-menu.cjs",
-      });
-      expect(pkg.exports["./ext/overlays"]).toEqual({
-        types: "./dist/ext/overlays.d.ts",
-        import: "./dist/ext/overlays.js",
-        require: "./dist/ext/overlays.cjs",
-      });
-      expect(pkg.exports["./ext/diagnostics"]).toEqual({
-        types: "./dist/ext/diagnostics.d.ts",
-        import: "./dist/ext/diagnostics.js",
-        require: "./dist/ext/diagnostics.cjs",
-      });
-      expect(pkg.exports["./ext/theme-editor"]).toEqual({
-        types: "./dist/ext/theme-editor.d.ts",
-        import: "./dist/ext/theme-editor.js",
-        require: "./dist/ext/theme-editor.cjs",
-      });
+    it("declares the root, ./runtime and the ./ext/* entries explicitly, with no wildcards", () => {
+      // Per-condition `types`, not one shared `types` key. A single
+      // `./dist/*.d.ts` resolves as ESM under `require` too, which tells a
+      // CommonJS consumer the package is ESM and breaks every type in it.
+      // `src/testing/__tests__/exports.test.ts` asserts `./testing` the same way.
+      const subpaths = [
+        ".",
+        "./runtime",
+        "./ext/metrics",
+        "./ext/environment",
+        "./ext/flags",
+        "./ext/command-menu",
+        "./ext/overlays",
+        "./ext/diagnostics",
+        "./ext/theme-editor",
+      ];
+      for (const subpath of subpaths) {
+        const base = subpath === "." ? "./dist/index" : `./dist/${subpath.replace(/^\.\//, "")}`;
+        expect(pkg.exports[subpath], subpath).toEqual({
+          import: { types: `${base}.d.ts`, default: `${base}.js` },
+          require: { types: `${base}.d.cts`, default: `${base}.cjs` },
+        });
+      }
       expect(Object.keys(pkg.exports).some((key) => key.includes("*"))).toBe(false);
     });
 

@@ -66,7 +66,7 @@ export function createLocalStorage(): ToolbarStorage {
 }
 
 /** Prefixes every key of `base`. Used for instance and per-extension scoping. */
-export function createScopedStorage(base: ToolbarStorage, prefix: string): ToolbarStorage {
+function createScopedStorage(base: ToolbarStorage, prefix: string): ToolbarStorage {
   const scope = (key: string) => `${prefix}${key}`;
   return {
     getItem: (key) => base.getItem(scope(key)),

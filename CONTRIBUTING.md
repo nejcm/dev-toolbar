@@ -23,9 +23,11 @@ bun install
 bun run verify
 ```
 
-That is `typecheck && lint && build && test`, in sequence — the exact gate CI
-runs. If it passes locally it passes in CI, and a PR that fails it will not
-merge.
+That is `format:check && typecheck && lint && knip && build && test &&
+check:package`, in sequence — the exact gate CI runs. `format:check` goes
+first because it takes about ten milliseconds: if the tree is mis-formatted
+you find out immediately rather than after `tsc` has run. If it passes locally
+it passes in CI, and a PR that fails it will not merge.
 
 The individual pieces, when you want a faster loop:
 
@@ -34,14 +36,20 @@ The individual pieces, when you want a faster loop:
 | `bun run typecheck` | `tsc --noEmit` |
 | `bun run lint` | `oxlint --max-warnings=0` |
 | `bun run lint:fix` | `oxlint --fix` |
-| `bun run format` | `oxfmt` (JS/TS only) |
-| `bun run format:check` | `oxfmt --check` |
+| `bun run format` | `oxfmt` (JS, TS and YAML) |
+| `bun run format:check` | `oxfmt --check` (the first step of `verify`) |
 | `bun run test` | `vitest run` |
 | `bun run test:watch` | `vitest` |
 | `bun run test:coverage` | `vitest run --coverage` |
 | `bun run build` | `tsup` |
-| `bun run knip` | unused files, exports and dependencies |
+| `bun run check:package` | `publint` + `attw` over a packed tarball |
+| `bun run knip` | unused files, exports and dependencies — also part of `verify` |
 | `bun run size` | builds, then prints a per-entrypoint size table |
+
+`check:package` runs `attw` with `--profile node16` on purpose. Subpath exports
+are invisible to the pre-`exports` `node10` algorithm, so a consumer needs
+`moduleResolution` `node16` or `bundler`; `node10` is deliberately unsupported
+and its failures in that report are expected.
 
 Two things about `lint` that catch people out:
 
@@ -49,9 +57,20 @@ Two things about `lint` that catch people out:
   warnings, and adding one fails the build. If a rule is wrong about your code,
   suppress it on the line that earns it with an `oxlint-disable-next-line`
   comment and a sentence saying why — do not raise the budget.
-- **oxfmt handles JS and TS only.** CSS, JSON and Markdown have no formatter
-  here. `.editorconfig` is what keeps them consistent, so install the
-  EditorConfig extension (`.vscode/extensions.json` recommends it).
+- **oxfmt is configured for JS, TS and YAML here.** That includes the workflows
+  under `.github/`, so a mis-indented `.yml` fails `format:check`. CSS, JSON and
+  Markdown are left to `.editorconfig`, so install the EditorConfig extension
+  (`.vscode/extensions.json` recommends it).
+
+Formatting is checked in CI as well as fixed on commit. The `pre-commit` hook
+formats what you staged, but plenty of commits never see it — edits made in the
+GitHub web UI, `git commit --no-verify`, `SKIP_SIMPLE_GIT_HOOKS=1`, and a fresh
+clone where `bun install` has not yet installed the hooks. Dependabot counts
+too, but only for its `github-actions` bumps: those edit workflow YAML, which
+oxfmt formats. Its `bun` updates and release-please's commits touch only JSON,
+the lockfile and Markdown, all of which `.oxfmtrc.json` ignores. `format:check`
+inside `verify` is what catches the rest. If it fails, `bun run format` fixes
+it.
 
 `bun run test:coverage` is a second, instrumented run of the same suite, kept
 out of `verify` because the instrumentation is slow enough to notice in a local
@@ -65,10 +84,20 @@ the header there records an earlier attempt where three of four excludes rested
 on a wrong guess about what those files contained, and quietly put ~1,700 lines
 of shipped logic outside the gate.
 
-`bun run knip` reports unused files, exports and dependencies. It is advisory
-everywhere — CI writes it to the job summary and never fails on it. Its value
-here is specific: with 11 separately importable entry points, a subpath can stop
-being referenced without anything else noticing.
+`bun run knip` reports unused files, exports and dependencies, and it is a gate:
+it runs inside `verify`, right after `lint` — it needs no build and takes well
+under a second, so the cheapest failure comes first. Unused code fails your
+local run before it fails CI. CI also runs it a second time as a report-only
+step that writes the findings to the job summary — that copy swallows its exit
+code, so the report still renders on a run `verify` has already failed. Its
+value here is specific: with 11 separately importable entry points, a subpath
+can stop being referenced without anything else noticing.
+
+Keep it clean by fixing the code, not by widening `knip.json`. An export used
+only inside its own file should lose the `export` keyword; an export that
+nothing uses should go. Reach for `ignoreExportsUsedInFile` only for a case you
+can name here — the tree currently needs none, and testing through the public
+surface is the better answer to "but the test imports it".
 
 `bun run size` prints a per-entrypoint table of gzip, raw, CJS and `.d.ts`
 sizes. Read `scripts/bundle-size.mjs`'s header before changing it — the obvious
@@ -142,6 +171,35 @@ still runs `bun run verify`, so bypassing buys you nothing except a red PR.
 Implementation Details / Screenshots / Additional Context, plus a checklist.
 Keep a PR to a single goal — a formatting sweep and a behaviour change in one
 diff cannot be reviewed, and cannot be reverted independently.
+
+### The PR title is the commit message
+
+The repository is configured **squash-only** — squash is the only merge method
+enabled, branches are deleted on merge, and the squash commit takes its
+**subject from the PR title** and its **body from the PR description**. That is
+a repository setting, invisible in the tree, and the check below rests on it.
+
+So the PR title is the message that lands on `main` — the one release-please
+reads to decide the version bump and write the changelog section. GitHub
+appends ` (#<number>)` to it. A PR titled `fixes` becomes a commit nothing can
+classify: no bump, no changelog entry, no error.
+
+The title must therefore be a Conventional Commit, in exactly the form above.
+This is checked in CI by `.github/workflows/pr-title.yml`, which pipes the
+title — with the ` (#<number>)` suffix, so the length limit is checked against
+the real subject — through the same `commitlint` and the same
+`.commitlintrc.json` as the `commit-msg` hook. The rules are the same as the
+hook's, but the budget is not: `header-max-length` is checked against the title
+*plus* that suffix, so a title in the high nineties passes the `commit-msg`
+hook locally and still fails here. It runs on drafts too, and re-runs when you
+edit the title.
+
+The other half follows from the same setting: **branch commit subjects are
+discarded at merge**, and the **PR description becomes the commit body**. So a
+`BREAKING CHANGE:` footer, or the `!` after the type that marks a breaking
+change, belongs in the PR title and description — release-please reads them
+there. Putting either in a branch commit has no effect at all; the squash throws
+that subject and body away.
 
 ## The extension contract
 
@@ -378,7 +436,8 @@ provenance added.
    git status --porcelain                 # must print nothing
    bun install --frozen-lockfile
 
-   bun run verify                         # typecheck, lint, build, test
+   bun run verify                         # format, typecheck, lint, build, test,
+                                          #   package shape
    npm ci --prefix test/fixtures/jest-consumer
    bun run test:jest-consumer             # the CommonJS packaging check
 

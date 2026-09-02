@@ -128,7 +128,7 @@ export interface Edges {
   left: number;
 }
 
-export const ZERO_EDGES: Edges = { top: 0, right: 0, bottom: 0, left: 0 };
+const ZERO_EDGES: Edges = { top: 0, right: 0, bottom: 0, left: 0 };
 
 /** What the inspector draws. Built from one element, once per frame. */
 export interface HoverTarget {
@@ -249,7 +249,7 @@ export function describeElement(element: Element): string {
  * overlay exists to find. `accname` skips `aria-hidden` and `hidden` subtrees;
  * so does this.
  */
-export function visibleText(element: Element): string | null {
+function visibleText(element: Element): string | null {
   let text = "";
   const walk = (node: Node) => {
     for (const child of node.childNodes) {

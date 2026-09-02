@@ -136,10 +136,7 @@ export function registerCommandHost(host: CommandHost): () => void {
   };
 }
 
-export function findCommand(
-  id: string,
-  scope?: readonly ToolbarCommand[],
-): ToolbarCommand | undefined {
+function findCommand(id: string, scope?: readonly ToolbarCommand[]): ToolbarCommand | undefined {
   if (scope) return scope.find((command) => command.id === id);
   for (const host of [...hosts].reverse()) {
     const found = host.getCommands().find((command) => command.id === id);
