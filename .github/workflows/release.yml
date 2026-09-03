@@ -83,14 +83,22 @@ jobs:
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
 
-      # `prs_created` is a string, same trap as above. Squash so the subject
-      # is `chore(release): release X.Y.Z (#N)` — what the config's title
-      # patterns parse next. The retry is a real race: GitHub computes
-      # mergeability asynchronously and rejects a merge made before it has a
-      # verdict. PR number via env, never `${{ }}` into the script.
+      # Gated on the repository's *state* (is there an open release PR?), not
+      # on what this run happened to do. `prs_created` is only true when the
+      # action opened a PR this run; when it finds an existing one it logs "PR
+      # #N remained the same" and creates nothing, so a gate on `prs_created`
+      # skips the merge and the run goes green having released nothing — and
+      # every later run repeats that, stranding the PR forever. Looking the PR
+      # up instead makes a stalled release self-heal on the next push.
+      #
+      # Matched on release-please's branch prefix rather than its `autorelease:
+      # pending` label, so labelling stays cosmetic; `ci.yml` keys its skip off
+      # the same prefix. Squash so the subject is
+      # `chore(release): release X.Y.Z (#N)` — what the config's title patterns
+      # parse next. The retry is a real race: GitHub computes mergeability
+      # asynchronously and rejects a merge made before it has a verdict.
       - name: Merge the release PR
         id: merge
-        if: steps.release.outputs.prs_created == 'true'
         env:
           # `github.token`, NOT the PAT, and unrelated to the secret that
           # happens to share this name — `GH_TOKEN` is just what the `gh` CLI
@@ -100,25 +108,37 @@ jobs:
           # restriction that forces the PAT on the steps around it does not
           # apply here.
           GH_TOKEN: ${{ github.token }}
-          # `gh` infers the repository from a git remote, and this job never
-          # checks out — without `--repo` every attempt dies on "fatal: not a
-          # git repository" and the retry loop just repeats it five times.
+          # `gh` otherwise infers the repository from a git remote, and this job
+          # never checks out — every call would die on "fatal: not a git
+          # repository".
           GH_REPO: ${{ github.repository }}
-          # `|| '{}'` is load-bearing: step `env` is evaluated even when the
-          # step's `if` is false, and `pr` is unset on every run that opens no
-          # release PR. Bare `fromJSON('')` then aborts the whole job with
-          # "Error reading JToken from JsonReader".
-          PR_NUMBER: ${{ fromJSON(steps.release.outputs.pr || '{}').number }}
         run: |
+          pr="$(gh pr list --base main --state open \
+            --json number,headRefName \
+            --jq '[.[] | select(.headRefName | startswith("release-please--")) | .number] | join(" ")')"
+
+          if [ -z "$pr" ]; then
+            echo "No open release PR; nothing to release."
+            echo "merged=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          case "$pr" in
+            *\ *)
+              echo "::error::Expected at most one open release PR, found: $pr"
+              exit 1
+              ;;
+          esac
+
           for attempt in 1 2 3 4 5; do
-            if gh pr merge "$PR_NUMBER" --repo "$GH_REPO" --squash --delete-branch; then
-              echo "Merged release PR #$PR_NUMBER."
+            if gh pr merge "$pr" --squash --delete-branch; then
+              echo "Merged release PR #$pr."
+              echo "merged=true" >> "$GITHUB_OUTPUT"
               exit 0
             fi
-            echo "Merge attempt $attempt for #$PR_NUMBER failed; retrying in 10s."
+            echo "Merge attempt $attempt for #$pr failed; retrying in 10s."
             sleep 10
           done
-          echo "::error::Could not merge release PR #$PR_NUMBER after 5 attempts."
+          echo "::error::Could not merge release PR #$pr after 5 attempts."
           exit 1
 
       # Tags the commit the merge just landed, and sets `release_created`. A
@@ -127,7 +147,7 @@ jobs:
       # no new PR — nothing releasable is left.
       - name: Run release-please (tag the merged release)
         id: tag
-        if: steps.merge.outcome == 'success'
+        if: steps.merge.outputs.merged == 'true'
         uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5.0.0
         with:
           # NOT `github.token`. GitHub refuses `POST /repos/{o}/{r}/releases`

@@ -299,7 +299,11 @@ not write changelog entries by hand.
    `release-please`. It opens a **release PR** titled
    `chore(release): release X.Y.Z`, carrying the version bump and the generated
    `CHANGELOG.md` section.
-3. The same job **squash-merges that PR immediately** and deletes its branch.
+3. The same job **squash-merges the open release PR** and deletes its branch.
+   It looks the PR up by release-please's `release-please--` branch prefix
+   rather than trusting the action to report one as created this run, so a
+   release left stranded by an earlier failure is picked up and finished by the
+   next push instead of sitting open forever.
    The PR is not a review step and is never left open — it exists because
    merging it is how release-please recognises a release, and because the squash
    subject (`chore(release): release X.Y.Z (#N)`) is what it parses afterwards.
