@@ -90,6 +90,7 @@ export interface ParsedHotkey {
 
 // Mirrors src/core/shortcut.ts
 const CODES: Record<string, string> = {
+  " ": "Space",
   ".": "Period",
   ",": "Comma",
   "/": "Slash",
@@ -101,6 +102,12 @@ const CODES: Record<string, string> = {
   "-": "Minus",
   "=": "Equal",
   "`": "Backquote",
+};
+
+// Mirrors src/core/shortcut.ts
+const KEY_ALIASES: Record<string, string> = {
+  space: " ",
+  spacebar: " ",
 };
 
 // Mirrors src/core/shortcut.ts
@@ -152,9 +159,11 @@ export function parseHotkey(input: string): ParsedHotkey | null {
       case "shift":
         parsed.shift = true;
         break;
-      default:
-        parsed.key = part.toLowerCase();
+      default: {
+        const lower = part.toLowerCase();
+        parsed.key = KEY_ALIASES[lower] ?? lower;
         break;
+      }
     }
   }
   if (parsed.key === "") return null;

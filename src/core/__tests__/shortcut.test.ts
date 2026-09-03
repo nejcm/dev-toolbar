@@ -1,5 +1,11 @@
-import { describe, expect, it } from "vitest";
-import { DEFAULT_SHORTCUT, matchesShortcut, parseShortcut } from "../shortcut";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { MockInstance } from "vitest";
+import {
+  DEFAULT_SHORTCUT,
+  matchesShortcut,
+  parseShortcut,
+  resetShortcutWarnings,
+} from "../shortcut";
 
 const parsed = parseShortcut(DEFAULT_SHORTCUT);
 
@@ -48,5 +54,88 @@ describe("shortcut parsing", () => {
 
   it("returns null for a modifier-only shortcut", () => {
     expect(parseShortcut("Shift+")).toBeNull();
+  });
+});
+
+/**
+ * Original bug: every token `parseShortcut` did not recognise as a modifier was
+ * assigned to `key`, last one winning, silently. So `"Ctrl+Shfit+K"` bound
+ * plain Ctrl+K, and a modifier-only input like `"Mod+Shift"` returned `null` —
+ * which `DevToolbar` cannot tell apart from the documented `shortcut={null}`
+ * opt-out, so the toggle simply never worked and nothing said why.
+ */
+describe("parseShortcut diagnostics", () => {
+  let warn: MockInstance<typeof console.warn>;
+
+  beforeEach(() => {
+    resetShortcutWarnings();
+    warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    warn.mockRestore();
+    resetShortcutWarnings();
+  });
+
+  const messages = () => warn.mock.calls.map((call) => String(call[0]));
+
+  it("warns when a misspelled modifier is swallowed as a second key token", () => {
+    const result = parseShortcut("Ctrl+Shfit+K");
+
+    // The binding itself is unchanged — the last token still wins — but it is
+    // no longer silent about having dropped one.
+    expect(result).toMatchObject({ key: "k", ctrl: true, shift: false });
+    expect(messages()).toHaveLength(1);
+    expect(messages()[0]).toContain('shortcut "Ctrl+Shfit+K"');
+    expect(messages()[0]).toContain("2 non-modifier tokens");
+  });
+
+  it("warns when the input names only modifiers, which is indistinguishable from the opt-out", () => {
+    expect(parseShortcut("Mod+Shift")).toBeNull();
+
+    expect(messages()).toHaveLength(1);
+    expect(messages()[0]).toContain("names only modifiers");
+    expect(messages()[0]).toContain("shortcut={null}");
+  });
+
+  it("warns for an empty input too, rather than reading it as a deliberate opt-out", () => {
+    expect(parseShortcut("   ")).toBeNull();
+    expect(messages()).toHaveLength(1);
+  });
+
+  it("warns once per distinct input, so a re-render cannot flood the console", () => {
+    parseShortcut("Ctrl+Shfit+K");
+    parseShortcut("Ctrl+Shfit+K");
+    parseShortcut("Ctrl+Shfit+K");
+    expect(messages()).toHaveLength(1);
+
+    parseShortcut("Ctrl+Slhift+J");
+    expect(messages()).toHaveLength(2);
+  });
+
+  it("says nothing about a well-formed chord", () => {
+    expect(parseShortcut("Mod+Shift+.")).not.toBeNull();
+    expect(parseShortcut("Ctrl+Alt+K")).not.toBeNull();
+    expect(messages()).toEqual([]);
+  });
+});
+
+describe("the space key", () => {
+  it('resolves "Space" to the key a space bar actually reports, and to its code', () => {
+    const shortcut = parseShortcut("Mod+Space");
+    expect(shortcut).toMatchObject({ key: " ", code: "Space", mod: true });
+  });
+
+  it("matches a space press by key and by code", () => {
+    const shortcut = parseShortcut("Mod+Space")!;
+    expect(matchesShortcut(event({ key: " ", ctrlKey: true }), shortcut, false)).toBe(true);
+    expect(
+      matchesShortcut(
+        event({ key: "Unidentified", code: "Space", ctrlKey: true }),
+        shortcut,
+        false,
+      ),
+    ).toBe(true);
+    expect(matchesShortcut(event({ key: "k", ctrlKey: true }), shortcut, false)).toBe(false);
   });
 });

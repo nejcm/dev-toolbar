@@ -411,3 +411,92 @@ describe("createEventBus", () => {
     });
   });
 });
+
+/**
+ * Original bug: `clear()` emptied `handlers` and `anyHandlers` but left every
+ * signal-bound subscription's `abort` listener attached, with its unsubscribe
+ * un-run and its `live` latch untripped.
+ *
+ * The typed path survived by luck — `clear()` drops the whole `Map` entry, so a
+ * later `on` builds a fresh `Set` that the stale closure's
+ * `handlers.get(type) === set` guard no longer matches. `anyHandlers` has no
+ * such luck: it is one `Set` for the life of the bus, so aborting a pre-`clear`
+ * signal deleted an `onAny` handler registered *after* the clear.
+ */
+describe("clear() and signal-bound subscriptions", () => {
+  it("keeps a post-clear onAny subscription alive when a pre-clear signal aborts", () => {
+    const bus = createEventBus<{ ping: number }>();
+    const controller = new AbortController();
+    const seen: number[] = [];
+    const handler = (payload: unknown) => {
+      seen.push(payload as number);
+    };
+
+    bus.onAny(handler, { signal: controller.signal });
+    bus.clear();
+
+    // A fresh registration of the very same function, which is what makes the
+    // stale `anyHandlers.delete(handler)` indistinguishable from a real one.
+    bus.onAny(handler);
+    expect(bus.listenerCount()).toBe(1);
+
+    controller.abort();
+
+    expect(bus.listenerCount()).toBe(1);
+    bus.emit("ping", 7);
+    expect(seen).toEqual([7]);
+  });
+
+  it("keeps a post-clear typed subscription alive when a pre-clear signal aborts", () => {
+    const bus = createEventBus<{ ping: number }>();
+    const controller = new AbortController();
+    const seen: number[] = [];
+    const handler = (payload: number) => {
+      seen.push(payload);
+    };
+
+    bus.on("ping", handler, { signal: controller.signal });
+    bus.clear();
+    bus.on("ping", handler);
+
+    controller.abort();
+
+    expect(bus.listenerCount("ping")).toBe(1);
+    bus.emit("ping", 3);
+    expect(seen).toEqual([3]);
+  });
+
+  it("unsubscribes what clear() drops, so a signal-bound handler stops receiving", () => {
+    const bus = createEventBus<{ ping: number }>();
+    const controller = new AbortController();
+    const seen: number[] = [];
+
+    bus.on("ping", (payload) => seen.push(payload), { signal: controller.signal });
+    bus.emit("ping", 1);
+    bus.clear();
+    bus.emit("ping", 2);
+
+    expect(seen).toEqual([1]);
+    expect(bus.listenerCount()).toBe(0);
+    expect(() => controller.abort()).not.toThrow();
+    expect(bus.listenerCount()).toBe(0);
+  });
+
+  it("survives an ordinary unsubscribe before clear(), and clear() before an abort", () => {
+    const bus = createEventBus<{ ping: number }>();
+    const controller = new AbortController();
+
+    const off = bus.on("ping", () => {}, { signal: controller.signal });
+    off();
+    expect(bus.listenerCount()).toBe(0);
+
+    // Nothing left for clear() to tear down, and the abort must still be inert.
+    expect(() => bus.clear()).not.toThrow();
+    expect(() => controller.abort()).not.toThrow();
+
+    const seen: number[] = [];
+    bus.on("ping", (payload) => seen.push(payload));
+    bus.emit("ping", 5);
+    expect(seen).toEqual([5]);
+  });
+});

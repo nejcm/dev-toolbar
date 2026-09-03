@@ -15,6 +15,7 @@ export interface ParsedShortcut {
 export const DEFAULT_SHORTCUT = "Mod+Shift+.";
 
 const CODES: Record<string, string> = {
+  " ": "Space",
   ".": "Period",
   ",": "Comma",
   "/": "Slash",
@@ -28,6 +29,16 @@ const CODES: Record<string, string> = {
   "`": "Backquote",
 };
 
+/**
+ * Spelled-out names for keys that cannot survive `"a+b"` splitting or a trim.
+ * `" "` is the `KeyboardEvent.key` a space bar reports, and `parseShortcut`
+ * filters empty parts, so `"Mod+Space"` is the only way to write it.
+ */
+const KEY_ALIASES: Record<string, string> = {
+  space: " ",
+  spacebar: " ",
+};
+
 function codeFor(key: string): string | null {
   if (key.length === 1) {
     if (key >= "a" && key <= "z") return `Key${key.toUpperCase()}`;
@@ -37,13 +48,40 @@ function codeFor(key: string): string | null {
   return null;
 }
 
-/** Parses `"Mod+Shift+."`, `"Ctrl+Alt+K"`, … Returns null when unusable. */
+const warnedShortcuts = new Set<string>();
+
+/** Test seam: the warning is per process and would leak between cases. */
+export function resetShortcutWarnings(): void {
+  warnedShortcuts.clear();
+}
+
+function warnOnce(input: string, reason: string): void {
+  if (warnedShortcuts.has(input)) return;
+  warnedShortcuts.add(input);
+  // eslint-disable-next-line no-console
+  console.warn(
+    `[dev-toolbar] shortcut "${input}" ${reason}. ` +
+      "Pass `shortcut={null}` to disable the toggle shortcut deliberately.",
+  );
+}
+
+/**
+ * Parses `"Mod+Shift+."`, `"Ctrl+Alt+K"`, … Returns null when unusable.
+ *
+ * Every token that is not a recognised modifier is treated as *the* key, so a
+ * misspelled modifier (`"Ctrl+Shfit+K"`) would otherwise be silently swallowed
+ * by the one that follows it and bind `Ctrl+K`. More than one non-modifier
+ * token is therefore a typo by definition: the last one still wins (changing
+ * that would be a behaviour break for anyone relying on it) but it warns, once
+ * per distinct input string. A modifier-only input returns `null`, which
+ * `DevToolbar` cannot distinguish from the documented `shortcut={null}`
+ * opt-out — so that warns too.
+ */
 export function parseShortcut(input: string): ParsedShortcut | null {
   const parts = input
     .split("+")
     .map((part) => part.trim())
     .filter((part) => part !== "");
-  if (parts.length === 0) return null;
 
   const shortcut: ParsedShortcut = {
     key: "",
@@ -55,6 +93,7 @@ export function parseShortcut(input: string): ParsedShortcut | null {
     mod: false,
   };
 
+  let keyTokens = 0;
   for (const part of parts) {
     switch (part.toLowerCase()) {
       case "mod":
@@ -77,13 +116,26 @@ export function parseShortcut(input: string): ParsedShortcut | null {
       case "shift":
         shortcut.shift = true;
         break;
-      default:
-        shortcut.key = part.toLowerCase();
+      default: {
+        keyTokens += 1;
+        const lower = part.toLowerCase();
+        shortcut.key = KEY_ALIASES[lower] ?? lower;
         break;
+      }
     }
   }
 
-  if (shortcut.key === "") return null;
+  if (keyTokens === 0) {
+    warnOnce(input, "names only modifiers and so binds nothing");
+    return null;
+  }
+  if (keyTokens > 1) {
+    warnOnce(
+      input,
+      `names ${keyTokens} non-modifier tokens; "${shortcut.key}" won and the rest ` +
+        "were dropped (a misspelled modifier is the usual cause)",
+    );
+  }
   shortcut.code = codeFor(shortcut.key);
   return shortcut;
 }

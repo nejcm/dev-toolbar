@@ -24,10 +24,19 @@ interface ExtensionBoundaryState {
 export class ExtensionBoundary extends Component<ExtensionBoundaryProps, ExtensionBoundaryState> {
   override state: ExtensionBoundaryState = { error: null };
 
+  /**
+   * `String(error)` is a call into the thrown value: a hostile or merely broken
+   * `toString` throws from here, and a throw inside `getDerivedStateFromError`
+   * takes the whole React tree down instead of degrading one slot. Same guard,
+   * and same fallback wording, as `describe()` in `diagnostics.ts`.
+   */
   static getDerivedStateFromError(error: unknown): ExtensionBoundaryState {
-    return {
-      error: error instanceof Error ? error : new Error(String(error)),
-    };
+    if (error instanceof Error) return { error };
+    try {
+      return { error: new Error(String(error)) };
+    } catch {
+      return { error: new Error("threw a value that could not be described") };
+    }
   }
 
   override componentDidCatch(error: unknown, info: ErrorInfo): void {

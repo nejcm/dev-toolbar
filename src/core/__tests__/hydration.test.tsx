@@ -11,10 +11,12 @@ import { act } from "@testing-library/react";
 import { hydrateRoot } from "react-dom/client";
 import { renderToString } from "react-dom/server";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import type { ReactNode } from "react";
 import type { Mock } from "vitest";
 import { DevToolbar } from "../DevToolbar";
 import { DevToolbarInset } from "../DevToolbarInset";
 import type { DevToolbarExtension } from "../contract";
+import { useDevToolbar } from "../context";
 import { createMemoryStorage } from "../storage";
 
 const app = (extensions: readonly DevToolbarExtension[]) => (
@@ -90,5 +92,64 @@ describe("hydration over server HTML", () => {
       "var(--dev-toolbar-height-hydrate, var(--dev-toolbar-height, 0px))",
     );
     expect(error!.mock.calls).toEqual([]);
+  });
+});
+
+/**
+ * Original bug: `createToolbarStore` reads storage eagerly at construction and
+ * `getSnapshot` was passed to `useSyncExternalStore` as `getServerSnapshot`
+ * too. A server has no storage, so it rendered the defaults; the first client
+ * render then read the *persisted* values and every consumer of
+ * `useDevToolbar()` rendered something the server HTML did not contain.
+ *
+ * `DevToolbarInset` cannot show this — it gates on `mounted` — so this drives
+ * an ordinary consumer instead, which is what the context is for.
+ */
+describe("hydration with persisted preferences", () => {
+  /** Values a returning user would already have in localStorage. */
+  const persisted = () =>
+    createMemoryStorage({
+      "dtb:v1:persisted:position": '"top"',
+      "dtb:v1:persisted:panelHeight": "500",
+    });
+
+  const seen: string[] = [];
+
+  function Consumer(): ReactNode {
+    const toolbar = useDevToolbar();
+    const text = `${toolbar.position}/${toolbar.panelHeight}`;
+    seen.push(text);
+    return <p data-testid="consumer">{text}</p>;
+  }
+
+  const tree = (storage: ReturnType<typeof persisted>) => (
+    <DevToolbar instanceId="persisted" storage={storage}>
+      <Consumer />
+    </DevToolbar>
+  );
+
+  it("shows a hydrating consumer the defaults, not the persisted values — the server saw defaults", () => {
+    // The server has no storage at all, so its HTML says bottom/320.
+    const html = renderToString(tree(createMemoryStorage()));
+    expect(html).toContain("bottom/320");
+
+    const container = document.createElement("div");
+    container.innerHTML = html;
+    document.body.append(container);
+
+    seen.length = 0;
+    error = vi.spyOn(console, "error").mockImplementation(() => {});
+    let root: ReturnType<typeof hydrateRoot>;
+    act(() => {
+      root = hydrateRoot(container, tree(persisted()));
+    });
+    unmount = () => root.unmount();
+
+    // The first client render matches the server HTML…
+    expect(seen[0]).toBe("bottom/320");
+    // …and the persisted values arrive right after, without a mismatch.
+    expect(seen.at(-1)).toBe("top/500");
+    expect(container.querySelector('[data-testid="consumer"]')!.textContent).toBe("top/500");
+    expect(error!.mock.calls.map((call) => String(call[0]))).toEqual([]);
   });
 });

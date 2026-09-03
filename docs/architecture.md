@@ -744,6 +744,35 @@ client render always agree.
 Built entries carry a `"use client"` banner, so a React Server Components app can
 import them from a server component without a directive of its own.
 
+### The store's server snapshot is the resolved defaults
+
+The `mounted` gate covers the bar and the inset, but not a consumer of its own: an app
+component calling `useDevToolbar()` renders on the server and again on the client, and
+what it reads has to agree across that boundary. The store is built by reading storage
+eagerly at construction, so if the same function served as both snapshots the server
+would see defaults and the first client render would see whatever the browser had
+persisted — a mismatch in the consumer's own output, not in anything core renders.
+
+So `useSyncExternalStore` is given a separate `getServerSnapshot`, which returns the
+**resolved defaults**: `defaultVisible ?? true`, `defaultPosition ?? "bottom"`,
+`activePanelId: null`, and `defaultPanelHeight` put through the same clamp as every
+other height. One object, built once at construction and never mutated, so its identity
+is stable across calls. Persisted values arrive on the render immediately after
+hydration, exactly as they do for the bar itself.
+
+The consequence is deliberate, and it is the reason not to reach for the obvious
+workaround: **an SSR-side storage adapter is unsupported.** Preferences handed to
+`storage` on the server are ignored for the server snapshot and then appear on the
+client, which is precisely the mismatch this prevents. To differ from the built-in
+defaults on both sides, pass `defaultVisible`, `defaultPosition` or
+`defaultPanelHeight` — those are honoured by the server snapshot and by the storage
+fallbacks alike, because both resolve in one place.
+
+Note this is a hydration concern, not a client-only one: `getServerSnapshot` is called
+only when hydrating. An app mounted with `createRoot` never reaches it, so a purely
+client-rendered toolbar reads persisted state on its very first render, with no frame
+of defaults in between.
+
 ### The banner's one sharp edge
 
 That claim is about *importing and rendering*. It is not about **calling**, and the
