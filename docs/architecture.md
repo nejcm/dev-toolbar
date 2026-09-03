@@ -814,6 +814,12 @@ is blocking; all were found by building an extension against the contract.
   be matched by an anchored redactor. A reader that renders only `error` shows messages
   with no name in front of them; joining them is one template literal, after masking
   both halves.
+- **`redact()`'s value pass only inspects bare absolute URLs** (`scheme://…`). A
+  relative reference (`/cb?access_token=…`) or a URL-shaped string sitting in a header
+  value is not rewritten unless the caller runs `redactUrl()` on it explicitly — the
+  environment extension does this for `location.href` and `document.referrer`, but a
+  custom diagnostics source that dumps a relative route or a header bag must do the
+  same for those fields.
 
 Three hardening gaps of the form *a hostile host global makes a guarded path fail* are
 known and deliberately unfixed, because each costs more than it buys:

@@ -48,6 +48,67 @@ describe("redact", () => {
     expect(redact({ blob: jwt }, { values: false })).toEqual({ blob: jwt });
   });
 
+  it("masks Digest auth headers with comma-separated parameters", () => {
+    expect(redact({ header: "Digest username=x, realm=y" })).toEqual({
+      header: `Digest ${REDACTED}`,
+    });
+    expect(redact({ header: "digest username=x" })).toEqual({
+      header: `digest ${REDACTED}`,
+    });
+  });
+
+  // The old unanchored SCHEME regex matched a credential-shaped prefix inside
+  // ordinary prose and replaced the whole string — `token expired…` became
+  // `token [redacted]`, and `Bearer abc def` lost its trailing word.
+  it("leaves prose that merely starts like a scheme header byte-for-byte", () => {
+    expect(redact({ h: "token expired, please log in" })).toEqual({
+      h: "token expired, please log in",
+    });
+    expect(redact({ h: "Bearer abc def" })).toEqual({ h: "Bearer abc def" });
+  });
+
+  it("masks non-http absolute URLs and leaves prose timestamps alone", () => {
+    expect(
+      redact({
+        db: "postgres://user:secret@db.test/app",
+        cache: "redis://:hunter2@cache.test/0",
+        socket: "wss://stream.test/live?token=abc&room=1",
+        build: "build:2024-01-01T00:00:00Z",
+      }),
+    ).toEqual({
+      db: `postgres://${REDACTED}:${REDACTED}@db.test/app`,
+      cache: `redis://:${REDACTED}@cache.test/0`,
+      socket: `wss://stream.test/live?token=${REDACTED}&room=1`,
+      build: "build:2024-01-01T00:00:00Z",
+    });
+  });
+
+  it("walks a non-string Error.message and tags reference cycles", () => {
+    const error = new Error("fine") as Error & { extra?: unknown };
+    error.message = error as unknown as string;
+    expect(redact({ error })).toEqual({
+      error: { name: "Error", message: "[circular]" },
+    });
+
+    const nested = new Error("fine") as Error & { detail: unknown };
+    nested.message = { code: "E_FAIL", token: "s3" } as unknown as string;
+    expect(redact({ nested })).toEqual({
+      nested: { name: "Error", message: { code: "E_FAIL", token: REDACTED } },
+    });
+
+    const named = new Error("fine") as Error & { extra?: unknown };
+    named.name = named as unknown as string;
+    expect(redact({ named })).toEqual({
+      named: { name: "[circular]", message: "fine" },
+    });
+
+    const titled = new Error("fine") as Error & { extra?: unknown };
+    titled.name = { token: "s3" } as unknown as string;
+    expect(redact({ titled })).toEqual({
+      titled: { name: { token: REDACTED }, message: "fine" },
+    });
+  });
+
   it("honours extraKeys, allowKeys and a custom mask", () => {
     expect(
       redact({ tenant: "acme", session: "s1" }, { extraKeys: ["tenant"], mask: "***" }),
@@ -405,6 +466,10 @@ describe("isSensitiveKey", () => {
     "credit_card",
     "cardNumber",
     "cvv",
+    "cvc",
+    "jwt",
+    "passphrase",
+    "passcode",
     "otp",
     "otpCode",
     // A PIN *is* the credential: `pin` matching the `pin` segment of `pinCode`
@@ -487,6 +552,8 @@ describe("isSensitiveKey", () => {
     expect(isSensitiveKey("пароль", { extraKeys: ["пароль"] })).toBe(true);
     expect(isSensitiveKey("密码", { extraKeys: ["密码"] })).toBe(true);
     expect(isSensitiveKey("mot_de_passe", { extraKeys: ["motdepasse"] })).toBe(true);
+    // NFC: a decomposed combining mark must still match the composed extraKey.
+    expect(isSensitiveKey("Passw\u006f\u0308rter", { extraKeys: ["passwörter"] })).toBe(true);
     // And the non-ASCII letter is a letter, not a boundary: an entry cannot
     // reach half a word.
     expect(isSensitiveKey("contraseña", { extraKeys: ["contrase"] })).toBe(false);
@@ -585,6 +652,14 @@ describe("redactUrl", () => {
     const output = redactUrl("https://app.test/cb#access_token=abc&state=1");
     expect(output).not.toContain("abc");
     expect(output).toContain("state=1");
+  });
+
+  // The old fragment pass parsed the whole hash as query params, so
+  // `/settings?token` was read as one param key and the path was mangled.
+  it("masks only the query in a hash-router fragment and keeps the path", () => {
+    expect(redactUrl("https://app.test/#/settings?token=abc&tab=general")).toBe(
+      `https://app.test/#/settings?token=${REDACTED}&tab=general`,
+    );
   });
 
   it("falls back to a query rewrite for an unparseable URL", () => {
@@ -778,6 +853,17 @@ describe("redactUrl", () => {
   }, 2000);
 });
 
+describe("ACRONYM segmentation cost", () => {
+  // The old `(\p{Lu}+)(\p{Lu}\p{Ll})` pattern is pathological on a long
+  // uppercase run with no lowercase terminator: greedy `\p{Lu}+` grabs the
+  // run, fails, backtracks from every start position (~5.6 s at 100k `A`s
+  // against the 2 s timeout; the lookahead form takes under 1 ms).
+  it("segments a long uppercase run with no lowercase terminator in one pass", () => {
+    const key = "A".repeat(100_000);
+    expect(isSensitiveKey(key)).toBe(false);
+  }, 2000);
+});
+
 describe("redactHeaders", () => {
   it("accepts all three fetch header shapes", () => {
     const expected = { authorization: REDACTED, accept: "application/json" };
@@ -792,6 +878,23 @@ describe("redactHeaders", () => {
         ["accept", "application/json"],
       ]),
     ).toEqual(expected);
+
+    expect(
+      redactHeaders([
+        ["set-cookie", "a=1"],
+        ["set-cookie", "b=2"],
+        ["accept", "application/json"],
+      ]),
+    ).toEqual({ "set-cookie": REDACTED, accept: "application/json" });
+
+    // The old array branch overwrote duplicate keys, so the last value won
+    // (`"b"`) instead of joining like the `Headers` branch (`"a, b"`).
+    expect(
+      redactHeaders([
+        ["x-trace", "a"],
+        ["x-trace", "b"],
+      ]),
+    ).toEqual({ "x-trace": "a, b" });
 
     expect(
       redactHeaders({
