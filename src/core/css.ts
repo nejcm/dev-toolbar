@@ -131,6 +131,23 @@ export const CORE_CSS = String.raw`/**
     padding: 0;
   }
 
+  /* And the same for a button. A part that renders one without styling it —
+     an extension's own overflow trigger, say — would otherwise arrive with the
+     UA's grey face, 2px outset border and 13.3px Arial, which is what the ⋮
+     popup was showing. Stating it here means that is true in every host rather
+     than only in one that happens to ship a reset. Zero specificity again, so
+     every part rule and every unlayered class a consumer puts on their own
+     chip still wins. */
+  [data-dev-toolbar] :where(button) {
+    margin: 0;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    cursor: pointer;
+  }
+
   [data-dev-toolbar][data-dtb-color-scheme="dark"],
   [data-dev-toolbar][data-dtb-color-scheme="system"] {
     color-scheme: light dark;
@@ -369,6 +386,13 @@ export const CORE_CSS = String.raw`/**
      because it is not the containing block. */
   [data-dev-toolbar] [data-dtb-part="overflow-menu"] {
     position: absolute;
+    /* Stated rather than left to auto: the popup is a positioned descendant of
+       the bar, and the panel is a later sibling of the bar, so paint order
+       between them comes down to which layer of the root's stacking context
+       each lands in — close enough that a panel's own controls have been seen
+       drawn over the popup. An explicit index removes the question. It stays
+       below the command palette, which is modal; see /ext/command-menu. */
+    z-index: 1;
     inset-inline-end: 0;
     display: flex;
     flex-direction: column;

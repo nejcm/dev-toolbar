@@ -13,16 +13,18 @@ export const COMMAND_MENU_CSS = String.raw`@layer dev-toolbar {
     font-family: var(--dtb-font-mono);
   }
 
+  /* The palette is modal, so it sits above everything else the toolbar root
+     paints — including the ⋮ popup, which claims 1. */
   [data-dev-toolbar] [data-dtb-part="cmd-scrim"] {
     position: fixed;
     inset: 0;
-    z-index: 1;
+    z-index: 2;
     background: rgba(0, 0, 0, 0.32);
   }
 
   [data-dev-toolbar] [data-dtb-part="cmd-dialog"] {
     position: fixed;
-    z-index: 2;
+    z-index: 3;
     top: 12vh;
     /* left: 50% + translateX(-50%) centres symmetrically regardless of dir;
        inset-inline-start: 50% would NOT be equivalent under rtl. Left is

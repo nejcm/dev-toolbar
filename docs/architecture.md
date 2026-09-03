@@ -107,15 +107,13 @@ side, where the reset came from. The whole remedy is `revert-layer`:
 
 ```css
 /* Unlayered, so it beats Preflight; resolves to whatever @layer dev-toolbar
-   would have produced for that element in that state. The selector list is
-   Preflight's own, because Preflight resets every control the toolbar draws —
-   panel buttons, search fields, value inputs, selects, the theme editor's
-   import textarea — not only the ones in the bar. */
-[data-dev-toolbar] button,
-[data-dev-toolbar] input,
-[data-dev-toolbar] optgroup,
-[data-dev-toolbar] select,
-[data-dev-toolbar] textarea {
+   would have produced for that element in that state. Reverting by part, not
+   by element, is the whole design: Preflight resets every control the toolbar
+   draws plus the margins and list markers on its headings, paragraphs and
+   lists, and [data-dtb-part] covers all of them at a specificity Preflight
+   cannot reach — while leaving alone any element the toolbar does not own, so
+   a consumer's own utility classes on their own chip still win. */
+[data-dev-toolbar] [data-dtb-part] {
   margin: revert-layer;
   padding: revert-layer;
   background-color: revert-layer;
@@ -123,17 +121,6 @@ side, where the reset came from. The whole remedy is `revert-layer`:
   line-height: revert-layer;
   letter-spacing: revert-layer;
   color: revert-layer;
-}
-
-/* Preflight also zeroes margins on blockquote/dl/dd/h1-h6/hr/figure/p/pre and
-   margin, padding and list-style on ol/ul/menu. Core states that same set with
-   :where(), so reverting lands on a deliberate zero, never a UA 1em — and it
-   lets through the places core wants a value: a section legend's space under
-   it, data-dtb-bleed's inline margins, a real bulleted list's indent. */
-[data-dev-toolbar]
-  :is(blockquote, dd, dl, figure, h1, h2, h3, h4, h5, h6, hr, menu, ol, p, pre, ul) {
-  margin: revert-layer;
-  padding: revert-layer;
   list-style: revert-layer;
 }
 
@@ -149,6 +136,11 @@ side, where the reset came from. The whole remedy is `revert-layer`:
   border-color: revert-layer;
 }
 ```
+
+Reverting is safe because core states the same reset itself — `:where(button)`
+and `:where(menu, ol, ul)` in `src/styles.css` give every unstyled button and
+list inside the toolbar a deliberate zero, so `revert-layer` never falls
+through to a UA 1em or a grey button face in a host that ships no reset either.
 
 Hover, `[aria-expanded="true"]` and `:active` all come back without being
 restated, because `revert-layer` re-runs the layered cascade per element and
