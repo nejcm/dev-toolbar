@@ -65,7 +65,10 @@ export const THEME_EDITOR_CSS = String.raw`@layer dev-toolbar {
   }
 
   /* The row of buttons that opens the panel is its masthead, so it closes with
-     a rule the way every section below it does. */
+     a rule the way every section below it does. It does not take
+     data-dtb-bleed: this panel caps itself at 860px, so the panel's inline
+     edges are not this content's edges and a bleed would run the rule past the
+     measure everything under it is set to. */
   [data-dev-toolbar] [data-dtb-part="thm-toolbar"] {
     padding-bottom: var(--dtb-space-3);
     border-bottom: 1px solid var(--dtb-border);

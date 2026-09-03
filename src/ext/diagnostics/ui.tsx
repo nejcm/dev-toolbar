@@ -144,7 +144,7 @@ export function DiagnosticsPanel({ runtime, label, injectStyles }: PanelProps): 
 
   return (
     <div data-dtb-part="diag-panel" aria-label={label}>
-      <div data-dtb-part="diag-toolbar">
+      <div data-dtb-part="diag-toolbar" data-dtb-bleed="">
         <div data-dtb-part="diag-formats" role="group" aria-label="Snapshot format">
           {SNAPSHOT_FORMATS.map((id) => (
             <button

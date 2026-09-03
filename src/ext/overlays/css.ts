@@ -265,6 +265,9 @@ export const OVERLAYS_CSS = String.raw`@layer dev-toolbar {
     color: var(--dtb-danger);
   }
 
+  /* No data-dtb-bleed here for the same reason as the theme editor's masthead:
+     this panel caps itself at 720px, so its rule belongs to that measure and
+     not to the panel's inline edges. */
   [data-dev-toolbar] [data-dtb-part="ovl-actions"] {
     display: flex;
     align-items: center;

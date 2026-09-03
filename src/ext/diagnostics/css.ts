@@ -125,7 +125,7 @@ export const DIAGNOSTICS_CSS = String.raw`@layer dev-toolbar {
     background: var(--dtb-item-bg);
     color: var(--dtb-fg);
     font-family: var(--dtb-font-mono);
-    font-size: 11px;
+    font-size: var(--dtb-font-size);
     line-height: 1.5;
     white-space: pre-wrap;
     word-break: break-word;

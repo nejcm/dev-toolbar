@@ -380,7 +380,7 @@ Set them on `[data-dev-toolbar]`, or on any ancestor. Unlayered CSS wins.
 | `--dtb-gap` | `5px` | Gap between the `⋮` popup's rows (`7px` when comfortable) |
 | `--dtb-item-gap` | `18px` | Gap between bar items (`24px` when comfortable); read back for collapse math. A divider is drawn centred in it |
 | `--dtb-chip-gap` | `6px` | Label-to-value gap inside one chip, and between two controls one extension renders |
-| `--dtb-padding-x` | `8px` | Bar's horizontal padding, and the panel body's |
+| `--dtb-padding-x` | `8px` | Bar's horizontal padding. The panel body takes `--dtb-panel-padding-x` |
 | `--dtb-item-padding-x` | `7px` | Trigger padding (`9px` when comfortable) |
 | `--dtb-space-1` … `--dtb-space-5` | `4/8/12/16/24px` | The spacing scale every panel and popup measures in |
 | `--dtb-panel-padding-x` | `14px` | Panel body's inline margins (`18px` when comfortable) |

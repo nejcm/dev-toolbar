@@ -66,8 +66,14 @@ export const COMMAND_MENU_CSS = String.raw`@layer dev-toolbar {
     outline: none;
   }
 
+  /* The base rule drops the outline so a pointer click does not ring the whole
+     query line; a keyboard focus still has to be visible, and it takes an
+     inset ring because the field is flush with the dialog's frame. Stated here
+     rather than left to core's field rule, which this part ties on
+     specificity and would beat by injection order. */
   [data-dev-toolbar] [data-dtb-part="cmd-input"]:focus-visible {
-    outline: none;
+    outline: 2px solid var(--dtb-accent);
+    outline-offset: -2px;
   }
 
   [data-dev-toolbar] [data-dtb-part="cmd-list"] {
