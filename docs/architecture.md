@@ -14,9 +14,10 @@ is the *why*, and is the thing to read before changing the contract.
 `src/core/contract.ts` is the source of truth for the types. Where this document and
 that file disagree, the file is right and this document is a bug.
 
-> **A note on `plans/`.** The product design (`dev-bar.md`), the accepted delivery
-> plan (`implementation.md`) and the per-phase working notes (`architecture.md`) are
-> local scratch, not tracked in git. Doc comments in `src/` still cite them by section
+> **A note on `plans/`.** The product design (`dev-bar.md`) and the remaining
+> forward-looking plans are local scratch, not tracked in git. The accepted delivery
+> plan and the per-phase working notes were deleted once delivered — this document is
+> what survived of them. Doc comments in `src/` still cite them by section
 > — `per plans/dev-bar.md §3D` — as provenance for *why a feature has the shape it
 > has*. Those citations are historical markers, not links; everything that survived as
 > a rule is here, in the README, or in `CONTRIBUTING.md`.
@@ -32,8 +33,7 @@ The root entry is chrome plus hosting, and nothing else. It:
   width, and lets them back out when the width returns;
 - hosts at most one panel at a time, resizable and persisted;
 - renders every extension's `overlay` slot, uncollapsed, for modal surfaces;
-- publishes `--dev-toolbar-height`, and `--dev-toolbar-height-<instanceId>` per
-  instance, and ships an opt-in `<DevToolbarInset>`;
+- publishes `--dev-toolbar-height` and ships an opt-in `<DevToolbarInset>`;
 - owns the token set, the `data-dtb-part` attributes and the `classNames` map;
 - persists visibility, position, active panel and panel height through an injectable
   storage adapter;
@@ -44,14 +44,6 @@ The root entry is chrome plus hosting, and nothing else. It:
 
 It does **not** know what a metric is, what a flag is, what "healthy" means, who the
 user is, or what may be shown to them. Every one of those is an extension's job.
-
-Everything the root entry exports is public and versioned, escape hatches included —
-`CORE_CSS`, `ensureStyles`, the storage adapter factories, `STORAGE_PREFIX`,
-`DEFAULT_SHORTCUT` and the panel-height bounds. The list, one line each, is
-[README § Other exports](../README.md#other-exports). The aggregation functions
-themselves are not exported: `collectCommands` and `collectDiagnostics` only ever
-see the array they are handed, while `api.getCommands()` / `api.getDiagnostics()` and
-`useToolbarCommands()` see the merged list the toolbar actually renders.
 
 ## 2. Boundary rationale
 
@@ -105,15 +97,6 @@ one would:
 - leak between tests — registration would outlive the test that did it;
 - make ordering depend on import order, which nobody controls.
 
-Two toolbars on one page therefore have to share the one thing core does write
-globally: the height custom property on `<html>`. Each instance owns
-`--dev-toolbar-height-<instanceId>` (the id folded to `A-Za-z0-9_-`) and removes only
-that on unmount; the unsuffixed `--dev-toolbar-height` is the `"default"` instance's,
-which is what a consumer who never set `instanceId` already reads. `<DevToolbarInset>`
-pads by its own instance's name and falls back to the unsuffixed one. Two instances
-sharing an `instanceId` still collide — the same reason they may not share one for
-persisted preferences (§3).
-
 The one module-level structure in core is the command *host* set in
 `src/core/commands.ts`. It is not a registry: entries are added on mount and removed
 on unmount, and it exists only so the context-free `runCommand(id)` can reach a
@@ -129,16 +112,8 @@ what chrome needs. Putting them in core would mean every consumer downloads the
 machinery for measurement even when their toolbar is three buttons. They ship as an
 opt-in `./runtime` subpath, which core never imports.
 
-The same applies in reverse to `./testing`: it reaches nothing but core, so it stays
-usable without `/runtime`. It reaches core through the package's own specifier
-(`@nejcm/dev-toolbar`, marked `external` in `tsup.config.ts`) rather than a relative
-path, for the reason in §7 — CJS output has no code splitting, so a relative *value*
-import is inlined, and a CommonJS consumer mixing `.` with `./testing` would get two
-cores, two React contexts and a `useDevToolbar()` that throws inside
-`renderWithToolbar()`. Types erase and carry no instance identity, so those stay
-relative. `src/core/__tests__/boundary.test.ts` asserts the import shape and the built
-bytes; `test/fixtures/jest-consumer/shared-instance.test.js` asserts the consequence in
-a real CommonJS consumer.
+The same applies in reverse to `./testing`: it imports from `core/` only, so it stays
+usable without `/runtime`.
 
 This rule is why core cannot redact anything it aggregates — see §10.
 
@@ -154,9 +129,7 @@ already have — see the recipe in the README.
 `start(api)` gets `isVisible()` and `subscribeVisibility()`. Core never pauses an
 extension on its behalf. A cumulative counter that silently stops counting when the
 bar is closed is worse than one that keeps going, and only the extension knows which
-of its work is cumulative. `subscribeVisibility()`'s subscription is released
-automatically when `api.signal` aborts, so an extension that keeps only the signal for
-cleanup does not leak one per remount.
+of its work is cumulative.
 
 `isVisible()` is about **the bar**, not the document. Whether the tab is backgrounded
 is `document.visibilityState`, it is not core's to report, and it is a different
@@ -209,14 +182,6 @@ State lives in a small store read through `useSyncExternalStore`. Four keys pers
 Each extension's `start(api)` gets `api.storage`, scoped to
 `dtb:v1:<instanceId>:ext:<extensionId>:`.
 
-`:` is the delimiter and is not escaped: `instanceId` and extension `id`s are
-joined into the key as-is, so one containing `:` can alias another instance's
-or extension's scope (`instanceId: "a:ext:b"` reads and writes the same keys
-as `instanceId: "a"` with extension id `"b"`). ADR-001 already treats `id`
-collisions as the consumer's responsibility; the same applies here. Keep both
-ids to `[A-Za-z0-9_-]` — the set `instanceHeightVariable` (`DevToolbar.tsx`)
-already folds non-conforming `instanceId`s down to.
-
 The adapter is a synchronous three-method interface (`getItem`/`setItem`/`removeItem`),
 which is exactly `localStorage`'s shape — that is why `localStorage` is the default.
 `storage={null}` disables persistence. A throwing adapter degrades to defaults rather
@@ -268,43 +233,6 @@ reload of the playground's `extensions.tsx`, which re-evaluated the module, buil
 second extension, and left the chips frozen while the first one carried on collecting.
 The warning says so, and says to reload the page.
 
-### Render-phase ref writes
-
-Three sites write to a ref during render instead of in an effect, each carrying an
-`oxlint-disable` (or `-next-line`) comment for `react/refs`. An effect always runs a
-render behind the render that scheduled it; each of these three needs the value
-current in the same commit that reads it, so an effect would be one render late. Two
-of the three are pinned under `<StrictMode>` in `src/core/__tests__/strict-mode.test.tsx`,
-which double-invokes render (not commit) and is exactly the thing that would expose a
-stale or duplicated write.
-
-The general hazard a render-phase write invites: React may render without
-committing (a discarded speculative render, or `<StrictMode>`'s double-invoke in
-development), so a write that only makes sense for a committed render can record
-state for a render that never happened. Each site below is safe for a different
-reason, stated as the invariant that has to keep holding for it to stay safe.
-
-| Site | Records | Invariant that makes it safe |
-| --- | --- | --- |
-| `DevToolbar.tsx`, `extensionsRef` (`extensionsRef.current = extensions`) | The merged extension list, for `getCommands()`/`getDiagnostics()` to re-enumerate imperatively. | The write is a pure, unconditional overwrite of the previous value with a value derived only from this render's props/state. A discarded render's write is simply replaced by the next render's write before anything imperative reads the ref — nothing observes the intermediate value. |
-| `Overflow.tsx`, `listRef` (`listRef.current = all`) | The current `[...startItems, ...endItems]`, so `recompute` (called from a `ResizeObserver` effect) reads the live list without depending on it and re-subscribing every render. | Same shape as `extensionsRef`: an unconditional overwrite of a value that is a pure function of this render's props. `recompute` only runs from the `ResizeObserver` callback and the layout effect below it, both of which fire after commit, so they only ever see the value from a render that committed. |
-| `PanelHost.tsx`, `openedRef` (`opened.add(id)` / `opened.delete(id)`) | Which panel ids have ever been opened, so a closed `keepMounted` panel stays mounted. | Different shape from the other two: this mutates a persistent `Set` in place rather than overwriting the ref, so a discarded render's mutation is not automatically superseded by the next render the way a plain overwrite is. What keeps it safe is that `activePanelId` reaches this component only through `useSyncExternalStore` (`DevToolbar.tsx`, read ~line 151, passed down ~line 493), which opts store-derived props out of concurrent/deferred rendering, and core uses neither `startTransition` nor `useDeferredValue` — see below for what a hypothetical abandoned render would cost anyway. |
-
-Pinning tests: `"keeps getCommands() current despite the doubled render-time ref
-write"` (`extensionsRef`), `"keeps the render-time openedRef bookkeeping in
-PanelHost correct"` (`openedRef`), both in `strict-mode.test.tsx`. `Overflow.tsx`'s
-`listRef` has no dedicated StrictMode test; the overflow suite
-(`src/core/__tests__/overflow.test.tsx`) exercises `recompute` reading through it but
-not under `<StrictMode>`.
-
-No render path in this codebase can actually produce an `openedRef` mutation ahead of
-the committed render: `useSyncExternalStore` forces `activePanelId` to stay
-synchronous with the store, and nothing under `src/core` calls `startTransition` or
-`useDeferredValue` to defer it. Even in the hypothetical where a consumer's own
-concurrent-mode usage produced an abandoned render anyway, the blast radius is small —
-one `keepMounted` panel mounting a render early with `hidden={!isActive}`, which
-self-corrects the next time that panel closes.
-
 ## 4. Style API
 
 Three surfaces, in the order you should reach for them.
@@ -346,29 +274,6 @@ Set them on `[data-dev-toolbar]`, or on any ancestor. Unlayered CSS wins.
 Dark values are applied for `[data-dtb-color-scheme="dark"]` and, under
 `prefers-color-scheme: dark`, for anything not explicitly `"light"`.
 
-Every rule — core's and the first-party extensions' alike — uses logical properties
-(`inset-inline`, `inset-inline-end`, `margin-inline-start`, `padding-inline-start`,
-`text-align: start`, and flexbox's own direction-aware `flex-end`) instead of
-`left`/`right`, so the bar, the `···` popup and every extension's chips and panels
-mirror correctly under `dir="rtl"` even though RTL is not otherwise tested. A
-regression test per stylesheet (core's `src/core/__tests__/css.test.ts`, and one in
-each extension's `__tests__/`) asserts the exported CSS string contains no physical
-directional property, with two deliberate kinds of exception whitelisted precisely
-where they occur:
-
-- **Horizontal centring stays physical.** `/ext/command-menu`'s dialog and
-  `/ext/overlays`' grid overlay and notice centre themselves with `left: 50%` plus
-  `transform: translateX(-50%)`, which is already symmetric under `dir="rtl"` and
-  needs no mirroring. `inset-inline-start: 50%` is *not* an equivalent: under
-  `dir="rtl"` it resolves to the right edge landing at the midpoint, while
-  `translateX(-50%)` — evaluated against the element's own physical box, not the
-  logical one — still shifts left by half the width, so the element ends up a full
-  width off-centre. `left`/`right` are correct here on purpose.
-- **JS-measured geometry stays physical.** `/ext/overlays`' drawing surface also
-  positions boxes and labels from `getBoundingClientRect()` — a physical,
-  viewport-relative measurement — via inline `left`/`top` styles in `ui.tsx`, which
-  stay physical because the coordinates they mirror are.
-
 ### 4.2 `data-dtb-part`
 
 Every part carries a stable attribute. These are the supported selector hooks; class
@@ -381,15 +286,14 @@ names inside core are not.
 | `region` | one align region | `data-dtb-align="start" \| "end"` |
 | `item` | one extension's compact slot | `data-dtb-ext-id`, `data-dtb-align`, `data-dtb-overflowed`, `data-dtb-panel-open` |
 | `trigger` | core's default button/label | Only when the extension supplies no `compact` |
-| `overflow-button` | the `···` button | `aria-expanded`, `aria-controls` while open |
-| `overflow-menu` | the `···` popover | `role="group"`, labelled, `tabindex="-1"` |
-| `overflow-menu-item` | one collapsed item wrapper | `data-dtb-ext-id` |
+| `overflow-button` | the `···` button | |
+| `overflow-menu` | the `···` popover | `role="menu"` |
+| `overflow-menu-item` | one collapsed item wrapper | `data-dtb-ext-id`, `role="menuitem"` |
 | `overlay` | one extension's overlay slot | `data-dtb-ext-id` |
 | `panel` | one panel | `data-dtb-ext-id`, `data-dtb-active`, `hidden` when inactive |
 | `panel-resizer` | drag/keyboard handle | `role="separator"`, arrow keys resize |
 | `panel-body` | scroll container | |
 | `error-chip` | a crashed slot | `data-dtb-ext-id`, `data-dtb-slot="compact" \| "panel"` |
-| `error-retry` | the chip's retry button | Absent in the `overlay` slot |
 | `inset` | `<DevToolbarInset>` | `data-dtb-position` |
 
 Core owns the unprefixed names; an extension that ships CSS **namespaces its parts by
@@ -411,15 +315,11 @@ for consumers who deliver CSS themselves. Threading core's flag down would mean
 extensions importing core's React context at runtime, which only works if both resolve
 to the same module instance; see §7.
 
-The *injection* itself is shared: `ensureStyleSheet(entry, css, doc?, nonce?)` in
-`/runtime`. It keys on the `data-dev-toolbar-styles` attribute by comparing the
-attribute directly rather than interpolating `entry` into a selector string, so an
-`entry` containing a quote can't be mistaken for another entry's element or throw a
-`SyntaxError`; the DOM rather than a module flag is the deduplication truth, so two
-bundled copies still inject once. The optional `nonce` sets the element's `nonce`
-property for hosts running a nonce-based CSP. It sits in `/runtime`
-rather than core because importing core's injector would drag core's whole
-stylesheet string into an extension's bundle — and extensions already import
+The *injection* itself is shared: `ensureStyleSheet(entry, css)` in `/runtime`. It keys
+on a `style[data-dev-toolbar-styles="<entry>"]` element, so the DOM rather than a
+module flag is the deduplication truth and two bundled copies still inject once. It
+sits in `/runtime` rather than core because importing core's injector would drag core's
+whole stylesheet string into an extension's bundle — and extensions already import
 `/runtime`, while core never does.
 
 ### 4.3 `classNames`
@@ -440,11 +340,8 @@ package still inject once. `injectStyles={false}` opts out; import
 `@nejcm/dev-toolbar/styles.css` instead. `sideEffects: ["*.css"]` stays accurate
 because nothing is injected at module scope.
 
-`src/core/css.ts` is a hand-maintained byte-identical copy of `src/styles.css`,
-enforced by `src/core/__tests__/css.test.ts` (which asserts the two are identical);
-there is no generator. To change the styles, edit `src/styles.css` and paste its
-contents into the template literal in `css.ts`. `src/styles.css` is excluded from the
-formatter so the bytes stay identical.
+`src/core/css.ts` is generated from `src/styles.css` and must stay in sync with it,
+which is why `src/styles.css` is excluded from the formatter.
 
 ## 5. Layout and overflow
 
@@ -456,29 +353,11 @@ The bar measures itself with a `ResizeObserver`, caches each item's natural widt
 recomputes on every resize. Cached widths are sticky, which is what lets a collapsed
 item come back when the width returns even though it was not in the bar to be measured.
 The gap and the `···` button width are read back out of the DOM, so overriding
-`--dtb-gap` or restyling the button keeps the math honest. The width items may fill is
-the bar's `clientWidth` less its own horizontal padding, and less a gap for each side
-whose gap the item math does not already charge: one when the start region renders no
-items, one when there are no end items at all. A region that renders empty still takes
-its gap.
-
-The `···` popup is a **disclosure, not an ARIA menu**. Its entries are extensions'
-compact slots, which usually render their own buttons, and a `menuitem` may not contain
-interactive content — the menu pattern would put the focusable thing *inside* the item
-rather than being it. So the button carries `aria-expanded` and, while open,
-`aria-controls`; the popup is a labelled `role="group"` with `tabindex="-1"`; opening it
-moves focus to the first focusable element inside it, or to the popup itself when there
-is none; `Tab` walks the entries as it walks the bar; `Escape` closes the popup and
-returns focus to the button; a click outside closes it and leaves focus where the click
-put it. Escape is handled on `document`, so an extension whose own surface closes on
-Escape must call `stopPropagation()` — `/ext/command-menu` does.
+`--dtb-gap` or restyling the button keeps the math honest.
 
 Where there is no `ResizeObserver` (SSR, a bare jsdom), nothing collapses — the bar
 renders everything rather than guessing. `@nejcm/dev-toolbar/testing` ships
-`installToolbarLayout()` to make the collapse testable under jsdom; its fake
-`ResizeObserver` hands every callback an empty entry array, so it only works for code
-that re-measures from the element (`offsetWidth`, `getBoundingClientRect()`) rather
-than reading `entries[0].contentRect` — which is what core itself does.
+`installToolbarLayout()` to make the collapse testable under jsdom.
 
 The `overlay` slot is exempt from all of this. It renders once, uncollapsed, for as
 long as the extension is present, not hidden and the bar is visible — because a compact
@@ -489,12 +368,7 @@ whose surface is a modal would lose it exactly when the window got narrow.
 
 `compact`, `panel` and `overlay` each render inside their own `ExtensionBoundary`. A
 throw becomes an error chip carrying the extension's label, with the message as its
-`title`; the bar and every other extension keep working. In the `compact` and `panel`
-slots the chip's text is a retry button (`data-dtb-part="error-retry"`, accessible name
-`Retry <label>`) that clears the caught error and re-renders the slot — without it a
-slot that threw on transient state would stay a chip for the toolbar's lifetime, since
-a panel only recovers by unmounting on close. The `overlay` chip has no retry: an
-overlay has no dependable visible surface to click. A throw from `start()` or from
+`title`; the bar and every other extension keep working. A throw from `start()` or from
 its cleanup is caught and logged, and does not take the toolbar down. A throw from
 `commands()` or `diagnostics()` is contained the same way: core logs once and treats
 that extension as contributing nothing to that aggregation.
@@ -662,49 +536,9 @@ expect(toolbar.item("job-queue")).not.toBeNull();
 unmount();
 ```
 
-`panel(id)` answers presence in the DOM, not openness: a `keepMounted` panel stays
-mounted and `hidden` after `closePanel()`, so this idiom keeps passing for one even
-while it is closed — ask `activePanelId()` when the question is really whether it is
-open. Every state-changing method on `toolbar` is `act()`-wrapped, including
-`runCommand(id)`, which is `async` (the command it runs may be) and so is awaited
-rather than wrapped again: `await toolbar.runCommand("queue.drain")`. `rerender(ui)`,
-on the object `renderWithToolbar()` returns, re-renders inside the same mounted
-toolbar rather than replacing it — it overrides Testing Library's own `rerender`,
-which has no `wrapper` here to spare the toolbar from being torn out.
-
 `makeExtension()` builds throwaway extensions (including deliberately broken ones, via
 `throwInCompact` / `throwInPanel` / `throwInStart`), and `createMockBus()` gives a
-recording pub/sub bus whose `MockClock` stamps `event.at` and offers hand-cranked
-`setTimeout`/`setInterval`. `BusLike` itself carries no clock — a collector that wants
-one takes an injected *time reader* instead (`CollectorContext.now()` in
-`/ext/metrics/types.ts`, supplied by `runtime.ts` and faked in
-`network.test.ts` with a plain `() => clock.t`), which `clock.now` satisfies fine.
-What nothing first-party accepts is an injected *timer*: `/ext/metrics`'s own polling
-(`runtime.ts`'s `setInterval(publish, tickMs)`) and `createThrottledStore`
-(`throttledStore.ts`'s `setTimeout`) both call the globals directly, so `MockClock`'s
-`setTimeout`/`setInterval` cannot drive them — reach for `vi.useFakeTimers()` for
-those instead.
-
-`mountToolbar()` is `renderWithToolbar()` that remembers what it mounted, and
-`cleanupToolbar()` unmounts all of it — newest first — and restores any fake layout
-still installed. Together they replace the array-of-`unmount`s-plus-`afterEach` that
-every multi-mount suite in this repo used to keep for itself; the repo's own
-`vitest.setup.ts` calls `cleanupToolbar()` ahead of Testing Library's `cleanup()`. That
-hook is not optional for a `mountToolbar()` user: the tracked list is ours and never
-hears about RTL's auto-cleanup, so nothing else drains it.
-
-The net is only a net. The fake layout patches `HTMLElement.prototype` and
-`globalThis.ResizeObserver`, which are shared by the whole file, so two things make it
-safe. First, `installToolbarLayout()` keeps a module-level *stack* of live installs
-rather than each install remembering "the previous value" — the newest install
-measures, the prototype is patched once when the stack fills and unpatched once when it
-empties, and `restore()` is therefore idempotent and order-independent. (Per-install
-capture was only correct in exact reverse order; drained in insertion order it put one
-fake back on the prototype permanently.) Second, `renderWithToolbar({ layout })` owns
-the teardown from *inside* the rendered tree, as an effect cleanup. Testing Library
-exposes no hook into `cleanup()`, but it does unmount every tree it rendered — so
-`cleanup()`, RTL auto-cleanup and `unmount()` all restore the prototype, whether or not
-the test remembered to.
+pub/sub bus with a hand-cranked clock for collectors that poll or sample.
 
 `@testing-library/react` is an optional peer that only `renderWithToolbar` needs, and
 nothing on the subpath imports it statically — so `@nejcm/dev-toolbar/testing` imports
