@@ -351,10 +351,13 @@ Every rule — core's and the first-party extensions' alike — uses logical pro
 `text-align: start`, and flexbox's own direction-aware `flex-end`) instead of
 `left`/`right`, so the bar, the `···` popup and every extension's chips and panels
 mirror correctly under `dir="rtl"` even though RTL is not otherwise tested. A
-regression test per stylesheet (core's `src/core/__tests__/css.test.ts`, and one in
-each extension's `__tests__/`) asserts the exported CSS string contains no physical
-directional property, with two deliberate kinds of exception whitelisted precisely
-where they occur:
+regression table test (`src/ext/__tests__/stylesheets.test.ts`) asserts every
+exported CSS string contains no physical directional property; every extension
+stylesheet except the overlays host-outline sheet, which is deliberately
+unlayered, is wrapped in `@layer dev-toolbar` and scopes every rule under
+`[data-dev-toolbar]`; core's
+byte-identity check lives separately in `src/core/__tests__/css.test.ts`. Two
+deliberate kinds of exception are whitelisted precisely where they occur:
 
 - **Horizontal centring stays physical.** `/ext/command-menu`'s dialog and
   `/ext/overlays`' grid overlay and notice centre themselves with `left: 50%` plus
