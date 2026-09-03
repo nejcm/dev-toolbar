@@ -140,18 +140,22 @@ function Dialog({
         runtime.close();
         return;
       case "ArrowDown":
+        if (event.nativeEvent.isComposing) return;
         event.preventDefault();
         runtime.move(1);
         return;
       case "ArrowUp":
+        if (event.nativeEvent.isComposing) return;
         event.preventDefault();
         runtime.move(-1);
         return;
       case "Home":
+        if (event.nativeEvent.isComposing) return;
         event.preventDefault();
         runtime.setActiveIndex(0);
         return;
       case "End":
+        if (event.nativeEvent.isComposing) return;
         event.preventDefault();
         runtime.setActiveIndex(snapshot.results.length - 1);
         return;
@@ -235,6 +239,8 @@ function Dialog({
                   const index = section.from + offset;
                   const selected = index === snapshot.activeIndex;
                   return (
+                    // Keyboard run is Enter on the dialog; pointer run is click, not pointerdown.
+                    // oxlint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/interactive-supports-focus
                     <div
                       key={match.command.id}
                       id={optionId(index)}
@@ -247,6 +253,8 @@ function Dialog({
                       onPointerDown={(event) => {
                         event.preventDefault();
                         runtime.setActiveIndex(index);
+                      }}
+                      onClick={() => {
                         void runtime.run(match.command.id);
                       }}
                       onPointerMove={() => runtime.setActiveIndex(index)}

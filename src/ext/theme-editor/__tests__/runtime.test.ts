@@ -1451,3 +1451,26 @@ describe("surface migration — the guards on the reconciler itself", () => {
     expect(checkTokenValue("string", '"a b"')).toBeNull();
   });
 });
+
+describe("the token list signature", () => {
+  it("republishes when label, group or metadata masking changes", () => {
+    let group = "Colour";
+    const runtime = createThemeEditorRuntime({
+      tokens: () => [
+        {
+          name: "--brand-500",
+          label: "Brand",
+          type: "color",
+          value: "#3355ff",
+          group,
+        },
+      ],
+    });
+    const before = runtime.store.getSnapshot().revision;
+    group = "Colors";
+    runtime.refresh();
+    runtime.store.flush();
+    expect(runtime.store.getSnapshot().revision).toBeGreaterThan(before);
+    expect(runtime.store.getSnapshot().tokens[0]?.group).toBe("Colors");
+  });
+});
