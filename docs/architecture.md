@@ -327,8 +327,8 @@ Set them on `[data-dev-toolbar]`, or on any ancestor. Unlayered CSS wins.
 
 | Token | Default (light) | Purpose |
 | --- | --- | --- |
-| `--dtb-font-family` | system sans stack | Bar and panel text |
-| `--dtb-font-mono` | system mono stack | Numeric values, error chips |
+| `--dtb-font-family` | system sans stack | Panel prose. Not the bar — see below |
+| `--dtb-font-mono` | system mono stack | The whole bar, plus values and error chips in panels |
 | `--dtb-font-size` | `11px` | Base size (`12px` when comfortable) |
 | `--dtb-bar-height` | `32px` | Bar row height (`38px` when comfortable) |
 | `--dtb-radius` | `5px` | Corner radius on triggers, menu, chips |
@@ -359,6 +359,21 @@ Set them on `[data-dev-toolbar]`, or on any ancestor. Unlayered CSS wins.
 
 Dark values are applied for `[data-dtb-color-scheme="dark"]` and, under
 `prefers-color-scheme: dark`, for anything not explicitly `"light"`.
+
+**The bar is monospace end to end, labels included**, and that is deliberate:
+one family is the only way to get one baseline. Two families at one size do not
+share one. In an identical 15.4px line box `ui-sans-serif` puts its baseline
+11px from the box top and `ui-monospace` puts it 10px down, so a sans label and
+the mono value beside it render a pixel apart. Both font bounding boxes are
+13px tall and land on the same top, so the mismatch survives any box-level
+check and only a baseline probe finds it — which is how it shipped in the first
+place. Label versus value is carried by colour instead: `--dtb-muted` label,
+`--dtb-fg` (or a severity colour) value. The `···` popup is a DOM child of the
+bar and inherits the same family.
+
+Panels keep `--dtb-font-family`, because a panel is prose rather than a row of
+readouts; inside one, identifiers and values still take `--dtb-font-mono` the
+way inline code does in running text.
 
 Every rule — core's and the first-party extensions' alike — uses logical properties
 (`inset-inline`, `inset-inline-end`, `margin-inline-start`, `padding-inline-start`,

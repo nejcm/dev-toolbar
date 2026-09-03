@@ -137,6 +137,16 @@
     height: var(--dtb-bar-height);
     padding: 0 var(--dtb-padding-x);
     background: var(--dtb-bg);
+    /* The bar is monospace end to end — labels included — because one family
+       is the only way to get one baseline. Two families at one size do not
+       share one: in a 15.4px line box ui-sans-serif puts its baseline 11px
+       down and ui-monospace puts it 10px down, so a sans label and a mono
+       value beside it render a pixel apart. Their font bounding boxes are
+       both 13px tall and land on the same top, which is why the mismatch
+       survives a box-level check and only the baseline shows it. The ···
+       popup is inside this element, so it inherits and matches.
+       Panels keep --dtb-font-family: they are prose, not readouts. */
+    font-family: var(--dtb-font-mono);
     /* Every number in the bar is a live readout, so digits must not change
        width as they tick. */
     font-variant-numeric: tabular-nums;
@@ -192,9 +202,10 @@
     background: var(--dtb-item-bg);
     color: inherit;
     font: inherit;
-    /* font: inherit brings the root's 1.4 line-height with it, which makes a
-       chip's own box shorter than the button and pushes mixed sans/mono text
-       off a shared baseline. Collapsing it here keeps one line, centred. */
+    /* font: inherit brings the root's 1.4 line-height with it, which leaves a
+       chip's own box shorter than the button it sits in. Collapsing it makes
+       the explicit heights above predictable. It does not align mixed
+       families — nothing at the box level can; see the bar's font-family. */
     line-height: 1;
     white-space: nowrap;
     cursor: pointer;
