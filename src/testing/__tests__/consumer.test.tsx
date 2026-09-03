@@ -78,7 +78,7 @@ describe("@nejcm/dev-toolbar/testing", () => {
   });
 
   it("reports collapsed ids without opening the ··· menu (the documented snippet)", () => {
-    // This is verbatim the snippet in README.md and plans/architecture.md. It
+    // This is verbatim the snippet in README.md and docs/architecture.md. It
     // must keep working exactly as written — no openOverflow() first.
     const myExtension = makeExtension({
       id: "my-extension",
