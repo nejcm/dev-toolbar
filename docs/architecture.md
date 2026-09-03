@@ -93,16 +93,34 @@ correctly (the regression test), and the playground's own stylesheet restyles th
 with no `!important` anywhere.
 
 Losing on purpose has a consequence worth stating, because it is the one most
-consumers meet: a CSS reset is unlayered too. Tailwind's Preflight ships
-`button, input, optgroup, select, textarea { padding: 0 }`, which beats core's
-layered `[data-dtb-part="trigger"] { padding: 0 var(--dtb-item-padding-x) }` — so
-in a Tailwind app every trigger and the `···` button render with no horizontal
-padding at all. The bar still lays out correctly (gaps and heights are properties
-no reset touches), it just reads tighter than the screenshots. This is the
-contract working, not a bug, and the fix belongs on the consumer's side: one
-unlayered rule of their own restoring
-`padding-inline: var(--dtb-item-padding-x)` on `[data-dtb-part="trigger"]`.
-The playground loads the Tailwind Play CDN, so its bar shows exactly this.
+consumers meet: **a CSS reset is unlayered too.** Tailwind's Preflight ships
+`button, input, optgroup, select, textarea { padding: 0 }` and
+`button { background-color: transparent }`, and both beat core's layered rules.
+In a Tailwind app that means every trigger and the `···` button render with no
+horizontal padding, no hover background and no selected background — core's
+look silently reset. Layout survives, because gaps, heights and dividers are
+properties no reset touches; only the button's own box is flattened.
+
+This is the contract working, not a bug, and the fix belongs on the consumer's
+side, where the reset came from. The whole remedy is `revert-layer`:
+
+```css
+/* Unlayered, so it beats Preflight; resolves to whatever @layer dev-toolbar
+   would have produced for that element in that state. */
+[data-dev-toolbar] [data-dtb-part="trigger"],
+[data-dev-toolbar] [data-dtb-part="overflow-button"],
+[data-dev-toolbar] [data-dtb-part="flag-promoted"] {
+  padding: revert-layer;
+  background-color: revert-layer;
+}
+```
+
+Hover, `[aria-expanded="true"]` and `:active` all come back without being
+restated, because `revert-layer` re-runs the layered cascade per element and
+per state — so the remedy keeps tracking core if core's values change. No
+`!important`. `examples/playground/src/playground.css` carries exactly this
+block, which is why the playground shows the bar as core styles it despite
+loading the Play CDN.
 
 Recorded as [ADR-002](./adr/ADR-002-light-dom.md).
 
@@ -333,7 +351,7 @@ Set them on `[data-dev-toolbar]`, or on any ancestor. Unlayered CSS wins.
 | `--dtb-bar-height` | `32px` | Bar row height (`38px` when comfortable) |
 | `--dtb-radius` | `5px` | Corner radius on triggers, menu, chips |
 | `--dtb-gap` | `2px` | Gap inside the `···` popup and other dense lists |
-| `--dtb-item-gap` | `10px` | Gap between bar items (`14px` when comfortable); read back for collapse math |
+| `--dtb-item-gap` | `18px` | Gap between bar items (`24px` when comfortable); read back for collapse math. A divider is drawn centred in it |
 | `--dtb-chip-gap` | `6px` | Label-to-value gap inside one chip, and between two controls one extension renders |
 | `--dtb-padding-x` | `8px` | Bar's horizontal padding, and the panel body's |
 | `--dtb-item-padding-x` | `7px` | Trigger padding (`9px` when comfortable) |
@@ -345,7 +363,8 @@ Set them on `[data-dev-toolbar]`, or on any ancestor. Unlayered CSS wins.
 | `--dtb-accent` | `#5e6ad2` | Focus ring, resizer highlight |
 | `--dtb-item-bg` | `transparent` | Trigger background |
 | `--dtb-item-hover-bg` | `rgba(0,0,0,.06)` | Trigger hover |
-| `--dtb-item-active-bg` | `rgba(94,106,210,.14)` | Trigger with its panel open |
+| `--dtb-item-active-bg` | `rgba(0,0,0,.13)` | Trigger with its panel open — a neutral darker ground, not a tint |
+| `--dtb-item-pressed-bg` | `rgba(0,0,0,.19)` | Trigger while the pointer is down |
 | `--dtb-panel-bg` | `#ffffff` | Panel background |
 | `--dtb-menu-bg` | `#ffffff` | `···` menu background |
 | `--dtb-shadow` | `0 6px 24px rgba(0,0,0,.14)` | `···` menu shadow |

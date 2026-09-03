@@ -26,7 +26,7 @@ export const CORE_CSS = String.raw`/**
        for its collapse math, so the two are deliberately separate: a tight
        popup list and a bar whose items are legibly apart. */
     --dtb-gap: 2px;
-    --dtb-item-gap: 10px;
+    --dtb-item-gap: 18px;
     /* Label-to-value inside one chip. Extensions read this so every chip in
        the bar breathes the same amount. */
     --dtb-chip-gap: 6px;
@@ -40,7 +40,10 @@ export const CORE_CSS = String.raw`/**
     --dtb-accent: #5e6ad2;
     --dtb-item-bg: transparent;
     --dtb-item-hover-bg: rgba(0, 0, 0, 0.06);
-    --dtb-item-active-bg: rgba(94, 106, 210, 0.14);
+    /* Selected reads as recessed, not tinted: a plain darker ground, and one
+       step darker again while the pointer is down. */
+    --dtb-item-active-bg: rgba(0, 0, 0, 0.13);
+    --dtb-item-pressed-bg: rgba(0, 0, 0, 0.19);
     --dtb-panel-bg: #ffffff;
     --dtb-menu-bg: #ffffff;
     --dtb-shadow: 0 6px 24px rgba(0, 0, 0, 0.14);
@@ -82,7 +85,8 @@ export const CORE_CSS = String.raw`/**
     --dtb-border: rgba(255, 255, 255, 0.14);
     --dtb-accent: #8b95f2;
     --dtb-item-hover-bg: rgba(255, 255, 255, 0.08);
-    --dtb-item-active-bg: rgba(139, 149, 242, 0.2);
+    --dtb-item-active-bg: rgba(0, 0, 0, 0.35);
+    --dtb-item-pressed-bg: rgba(0, 0, 0, 0.48);
     --dtb-panel-bg: #1d1e21;
     --dtb-menu-bg: #1d1e21;
     --dtb-shadow: 0 6px 24px rgba(0, 0, 0, 0.5);
@@ -102,7 +106,8 @@ export const CORE_CSS = String.raw`/**
       --dtb-border: rgba(255, 255, 255, 0.14);
       --dtb-accent: #8b95f2;
       --dtb-item-hover-bg: rgba(255, 255, 255, 0.08);
-      --dtb-item-active-bg: rgba(139, 149, 242, 0.2);
+      --dtb-item-active-bg: rgba(0, 0, 0, 0.35);
+      --dtb-item-pressed-bg: rgba(0, 0, 0, 0.48);
       --dtb-panel-bg: #1d1e21;
       --dtb-menu-bg: #1d1e21;
       --dtb-shadow: 0 6px 24px rgba(0, 0, 0, 0.5);
@@ -129,7 +134,7 @@ export const CORE_CSS = String.raw`/**
     --dtb-bar-height: 38px;
     --dtb-font-size: 12px;
     --dtb-item-padding-x: 9px;
-    --dtb-item-gap: 14px;
+    --dtb-item-gap: 24px;
   }
 
   [data-dev-toolbar] [data-dtb-part="bar"] {
@@ -195,6 +200,35 @@ export const CORE_CSS = String.raw`/**
     max-width: 100%;
   }
 
+  /* A hairline between neighbouring extensions, so the row reads as discrete
+     cells. It is drawn by an absolutely positioned pseudo-element sitting in
+     the middle of the gap rather than by a border, because the collapse math
+     measures these hosts: a border would widen every item by a pixel and a
+     margin would widen the gap it is meant to occupy. Out of flow, it costs
+     nothing. The direct-child combinator restricts it to hosts in a region,
+     which is what excludes the copies inside the ··· popup, and
+     :not(:first-child) is per region — so neither the bar's leading edge nor
+     the start of the end region opens with a stray rule. */
+  [data-dev-toolbar] [data-dtb-part="region"] > [data-dtb-part="item"],
+  [data-dev-toolbar] [data-dtb-part="region"] > [data-dtb-part="overflow-button"] {
+    position: relative;
+  }
+
+  [data-dev-toolbar]
+    [data-dtb-part="region"]
+    > [data-dtb-part="item"]:not(:first-child)::before,
+  [data-dev-toolbar]
+    [data-dtb-part="region"]
+    > [data-dtb-part="overflow-button"]:not(:first-child)::before {
+    content: "";
+    position: absolute;
+    inset-inline-start: calc(-0.5 * var(--dtb-item-gap));
+    inset-block: 4px;
+    width: 1px;
+    background: var(--dtb-border);
+    pointer-events: none;
+  }
+
   [data-dev-toolbar] [data-dtb-part="trigger"],
   [data-dev-toolbar] [data-dtb-part="overflow-button"] {
     display: inline-flex;
@@ -243,23 +277,33 @@ export const CORE_CSS = String.raw`/**
     background: var(--dtb-item-active-bg);
   }
 
+  [data-dev-toolbar] [data-dtb-part="trigger"]:active,
+  [data-dev-toolbar] [data-dtb-part="overflow-button"]:active {
+    background: var(--dtb-item-pressed-bg);
+  }
+
   [data-dev-toolbar] [data-dtb-part="trigger"]:focus-visible,
   [data-dev-toolbar] [data-dtb-part="overflow-button"]:focus-visible {
     outline: 2px solid var(--dtb-accent);
     outline-offset: -1px;
   }
 
+  /* Flush, not floating: the popup meets the bar on one edge and the viewport
+     on the other, with no inset, no radius and no padding of its own, so its
+     rows run the full width and touch each other. The two edges it meets drop
+     their border — the bar's own edge border already draws that line, and
+     doubling them reads as a seam. Positioned against the toolbar root, which
+     is the nearest positioned ancestor: the bar in between is overflow
+     hidden but does not clip this, because it is not the containing block. */
   [data-dev-toolbar] [data-dtb-part="overflow-menu"] {
     position: absolute;
-    inset-inline-end: var(--dtb-padding-x);
+    inset-inline-end: 0;
     display: flex;
     flex-direction: column;
-    gap: var(--dtb-gap);
     min-width: 180px;
     max-height: 50vh;
-    padding: 5px;
     border: 1px solid var(--dtb-border);
-    border-radius: calc(var(--dtb-radius) + 2px);
+    border-inline-end: 0;
     background: var(--dtb-menu-bg);
     box-shadow: var(--dtb-shadow);
     overflow: auto;
@@ -267,19 +311,24 @@ export const CORE_CSS = String.raw`/**
 
   [data-dev-toolbar][data-dtb-position="bottom"]
     [data-dtb-part="overflow-menu"] {
-    bottom: calc(var(--dtb-bar-height) + 4px);
+    bottom: var(--dtb-bar-height);
+    border-bottom: 0;
   }
 
   [data-dev-toolbar][data-dtb-position="top"] [data-dtb-part="overflow-menu"] {
-    top: calc(var(--dtb-bar-height) + 4px);
+    top: var(--dtb-bar-height);
+    border-top: 0;
   }
 
+  /* Rows touch: no gap between them and none against the popup's edges. The
+     inline padding is the text's own breathing room, not a gap — without it
+     the first glyph sits on the border. */
   [data-dev-toolbar] [data-dtb-part="overflow-menu-item"] {
     display: flex;
     align-items: center;
     gap: var(--dtb-chip-gap);
-    padding: 1px 3px;
-    border-radius: var(--dtb-radius);
+    min-height: calc(var(--dtb-bar-height) - 8px);
+    padding: 0 var(--dtb-padding-x);
   }
 
   [data-dev-toolbar] [data-dtb-part="panel"] {

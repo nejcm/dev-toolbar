@@ -192,6 +192,34 @@ body {
 }
 
 /* --------------------------------------------------------------------------
+ * Tailwind Preflight remedy.
+ *
+ * index.html loads the Tailwind Play CDN, and Preflight is unlayered:
+ * `button, input, optgroup, select, textarea { padding: 0 }` plus
+ * `button { background-color: transparent; background-image: none }`. Being
+ * unlayered, both beat core's layered rules — so without this block the bar
+ * renders with no trigger padding, no hover and no selected state, and core's
+ * own look is silently reset in the one app anybody sees it in.
+ *
+ * `revert-layer` is the whole fix: these selectors are unlayered too and more
+ * specific than Preflight's, so they win, and the value they resolve to is
+ * whatever `@layer dev-toolbar` would have produced for that element in that
+ * state. So hover, `[aria-expanded="true"]` and `:active` all come back
+ * without being restated here, and they keep tracking core if it changes.
+ *
+ * This is the consumer-side remedy docs/architecture.md points at, and it
+ * belongs here rather than in core because the reset came from here. No
+ * `!important` anywhere, which is the point of the layer contract.
+ * -------------------------------------------------------------------------- */
+
+[data-dev-toolbar] [data-dtb-part="trigger"],
+[data-dev-toolbar] [data-dtb-part="overflow-button"],
+[data-dev-toolbar] [data-dtb-part="flag-promoted"] {
+  padding: revert-layer;
+  background-color: revert-layer;
+}
+
+/* --------------------------------------------------------------------------
  * Restyle demo.
  *
  * Core's stylesheet lives inside `@layer dev-toolbar`. Everything below is
