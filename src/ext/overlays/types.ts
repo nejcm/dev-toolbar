@@ -71,14 +71,14 @@ export const OVERLAY_META: Record<OverlayId, OverlayMeta> = {
     id: "inspect",
     label: "Element inspector",
     summary: "Follows the pointer: box model, size and accessible name of whatever is under it.",
-    cost: "One rect and one getComputedStyle on one element — never the document — per animation frame in which the pointer moved, the page scrolled or the window resized.",
+    cost: "One rect and one getComputedStyle on the hovered element per frame, plus one accessible-name resolution per hover until a non-geometry DOM mutation (a document-wide MutationObserver watches for those). One ResizeObserver on the hovered element, diffed so it is not re-attached every frame. Fires when the pointer moves, the page scrolls, the window resizes, the hovered element resizes, or a class/style change happens anywhere in the document.",
   },
   focus: {
     id: "focus",
     label: "Focus order",
     summary:
       "Numbers every tabbable element in tab order and flags the ones with no accessible name.",
-    cost: "One narrow querySelectorAll per application DOM-mutation burst (debounced), which is also where accessible names are resolved. A scroll or resize frame then costs one rect per element and nothing else. Capped at 200.",
+    cost: "One narrow querySelectorAll per application DOM-mutation burst (debounced), which is also where accessible names are resolved. A scroll, resize or geometry-mutation frame then costs one getBoundingClientRect per retained element and nothing else. Up to focusLimit ResizeObserver targets (200 by default), or one more than that when the inspector is on too, diffed so elements are not re-observed every frame. Not covered: a sibling growing above a badge when that sibling is not tabbable; <details> opening; font-swap reflow. Capped at 200.",
   },
 };
 
@@ -144,6 +144,11 @@ export interface FocusItem {
   name: string | null;
   /** A positive `tabindex`, which reorders the sequence and is worth seeing. */
   tabIndex: number | null;
+  /**
+   * True when `aria-hidden="true"` though the element is still a Tab stop —
+   * surfaced because ARIA state does not change tab order.
+   */
+  ariaHidden: boolean;
 }
 
 export interface OverlaysSnapshot {
@@ -470,9 +475,14 @@ export function sameSnapshot(a: OverlaysSnapshot, b: OverlaysSnapshot): boolean 
   for (let index = 0; index < a.focusItems.length; index += 1) {
     const left = a.focusItems[index] as FocusItem;
     const right = b.focusItems[index] as FocusItem;
-    if (left.key !== right.key || left.name !== right.name || !sameRect(left.rect, right.rect)) {
+    if (
+      left.key !== right.key ||
+      left.name !== right.name ||
+      left.ariaHidden !== right.ariaHidden
+    ) {
       return false;
     }
+    if (!sameRect(left.rect, right.rect)) return false;
   }
   return true;
 }
@@ -503,10 +513,14 @@ export const DEFAULT_GRID: GridSettings = {
 /** Clamped so a hand-typed `columns: 0` cannot produce a division by zero. */
 export function normalizeGrid(input?: Partial<GridSettings>): GridSettings {
   const grid = { ...DEFAULT_GRID, ...input };
+  const columns = Number.isFinite(grid.columns) ? grid.columns : DEFAULT_GRID.columns;
+  const gutter = Number.isFinite(grid.gutter) ? grid.gutter : DEFAULT_GRID.gutter;
+  const maxWidth = Number.isFinite(grid.maxWidth) ? grid.maxWidth : DEFAULT_GRID.maxWidth;
+  const baseline = Number.isFinite(grid.baseline) ? grid.baseline : DEFAULT_GRID.baseline;
   return {
-    columns: Math.max(1, Math.min(48, Math.round(grid.columns))),
-    gutter: Math.max(0, Math.min(200, grid.gutter)),
-    maxWidth: Math.max(120, Math.min(6000, grid.maxWidth)),
-    baseline: Math.max(0, Math.min(200, grid.baseline)),
+    columns: Math.max(1, Math.min(48, Math.round(columns))),
+    gutter: Math.max(0, Math.min(200, gutter)),
+    maxWidth: Math.max(120, Math.min(6000, maxWidth)),
+    baseline: Math.max(0, Math.min(200, baseline)),
   };
 }

@@ -217,7 +217,8 @@ export function createOverlaysRuntime(options: OverlaysRuntimeOptions = {}): Ove
   } = options;
 
   const grid = normalizeGrid(gridInput);
-  const limit = Math.max(1, Math.min(1000, Math.round(focusLimit)));
+  const rawLimit = Number.isFinite(focusLimit) ? focusLimit : DEFAULT_FOCUS_LIMIT;
+  const limit = Math.max(1, Math.min(1000, Math.round(rawLimit)));
 
   let flags: OverlayFlags = { ...NO_OVERLAYS, ...defaults };
   let storage: ToolbarStorage | null = null;
@@ -230,6 +231,11 @@ export function createOverlaysRuntime(options: OverlaysRuntimeOptions = {}): Ove
   /* ------------------------------------------------------------------ */
 
   let hover: HoverTarget | null = null;
+  /** The element under the pointer when `inspect` is on — retained for geometry observation. */
+  let hoverElement: Element | null = null;
+  let hoverNameElement: Element | null = null;
+  let hoverName: string | null = null;
+  let hoverNameStale = true;
   let focusItems: readonly FocusItem[] = [];
   let focusTruncated = false;
   let unnamedCount = 0;
@@ -238,7 +244,8 @@ export function createOverlaysRuntime(options: OverlaysRuntimeOptions = {}): Ove
    * The elements the focus overlay is drawing over. Strong references to host
    * nodes — a retention risk worth naming: a removed node stays reachable
    * until the next measurement drops anything with `isConnected === false`
-   * (teardown clears the list too), so the window is one frame wide.
+   * (hiding the bar and teardown clear the list too), so the window is one
+   * frame wide.
    *
    * Each entry carries the accessible name and `tabindex` resolved at scan
    * time, so a scroll frame costs one rect per element and nothing else.
@@ -253,6 +260,15 @@ export function createOverlaysRuntime(options: OverlaysRuntimeOptions = {}): Ove
   let pointerY = 0;
   let pointerSeen = false;
   let rescanQueued = false;
+  /**
+   * Whether the focus overlay was drawing after the previous `sync()`. The
+   * scan is queued on the false -> true edge here rather than when the
+   * MutationObserver is created, because that observer is shared with
+   * `inspect`: enabling focus while inspect is already on creates no observer
+   * and would otherwise measure an empty retained set until an unrelated
+   * mutation burst happened to queue a rescan.
+   */
+  let focusDrawing = false;
 
   const snapshot = (): OverlaysSnapshot => ({
     enabled: { ...flags },
@@ -328,6 +344,18 @@ export function createOverlaysRuntime(options: OverlaysRuntimeOptions = {}): Ove
     height: typeof window === "undefined" ? 0 : window.innerHeight,
   });
 
+  const resolveHoverName = (element: Element): string | null => {
+    // The cache is only sound while a MutationObserver is attached — without
+    // one, every frame must re-walk the subtree.
+    if (observer === null) return accessibleName(element);
+    if (hoverNameElement !== element || hoverNameStale) {
+      hoverNameElement = element;
+      hoverName = accessibleName(element);
+      hoverNameStale = false;
+    }
+    return hoverName;
+  };
+
   const buildHover = (element: Element): HoverTarget => {
     const rect = toRect(element.getBoundingClientRect());
     const style =
@@ -341,7 +369,7 @@ export function createOverlaysRuntime(options: OverlaysRuntimeOptions = {}): Ove
       padding: edgesOf(style, "padding"),
       description: describeElement(element),
       size: `${Math.round(rect.width)} × ${Math.round(rect.height)}`,
-      name: accessibleName(element),
+      name: resolveHoverName(element),
       role: element.getAttribute("role"),
       pinned: position === "fixed" || position === "sticky",
     };
@@ -349,6 +377,7 @@ export function createOverlaysRuntime(options: OverlaysRuntimeOptions = {}): Ove
 
   /** Resolves what the pointer is over. Never returns anything in a toolbar. */
   const readPointer = (): void => {
+    const previous = hoverElement;
     if (
       !pointerSeen ||
       typeof document === "undefined" ||
@@ -357,6 +386,8 @@ export function createOverlaysRuntime(options: OverlaysRuntimeOptions = {}): Ove
       typeof document.elementFromPoint !== "function"
     ) {
       hover = null;
+      hoverElement = null;
+      if (previous !== null) syncObservedGeometry();
       return;
     }
     const found = document.elementFromPoint(pointerX, pointerY);
@@ -364,9 +395,13 @@ export function createOverlaysRuntime(options: OverlaysRuntimeOptions = {}): Ove
     // itself when the pointer is over the bar/panel/palette — never wanted.
     if (!found || isInToolbar(found)) {
       hover = null;
+      hoverElement = null;
+      if (previous !== null) syncObservedGeometry();
       return;
     }
+    hoverElement = found;
     hover = buildHover(found);
+    if (hoverElement !== previous) syncObservedGeometry();
   };
 
   /** Full re-query. Only ever runs on enable and on a debounced mutation burst. */
@@ -382,9 +417,8 @@ export function createOverlaysRuntime(options: OverlaysRuntimeOptions = {}): Ove
       const tabIndex = tabIndexOf(element);
       if (tabIndex !== null && tabIndex < 0) continue;
       if (isDisabled(element)) continue;
-      if (element.getAttribute("aria-hidden") === "true") continue;
+      if (element.closest("[inert]") !== null) continue;
       if (element.getAttribute("contenteditable") === "false") continue;
-      if (element.hasAttribute("inert")) continue;
       // type="hidden" passes every selector above and has no box, so without
       // this it consumed a badge-limit slot only to be dropped at measure time.
       if (
@@ -414,6 +448,7 @@ export function createOverlaysRuntime(options: OverlaysRuntimeOptions = {}): Ove
       name: accessibleName(element),
       tabIndex: tabIndexOf(element),
     }));
+    syncObservedGeometry();
   };
 
   /**
@@ -444,11 +479,13 @@ export function createOverlaysRuntime(options: OverlaysRuntimeOptions = {}): Ove
         tag: element.tagName.toLowerCase(),
         name: scanned.name,
         tabIndex: scanned.tabIndex,
+        ariaHidden: element.getAttribute("aria-hidden") === "true",
       });
     }
     focusElements = alive;
     focusItems = items;
     unnamedCount = unnamed;
+    syncObservedGeometry();
   };
 
   /* ------------------------------------------------------------------ */
@@ -512,6 +549,11 @@ export function createOverlaysRuntime(options: OverlaysRuntimeOptions = {}): Ove
 
   let observer: MutationObserver | null = null;
   let mutationTimer: ReturnType<typeof setTimeout> | null = null;
+  let resizeObserver: ResizeObserver | null = null;
+  let geometryObserverOn = false;
+  const observedTargets = new Set<Element>();
+
+  const GEOMETRY_ATTRS = new Set(["class", "style"]);
 
   const onMutation = (records: MutationRecord[]) => {
     // Skip records we caused ourselves: the surface is portaled into `body`,
@@ -520,6 +562,26 @@ export function createOverlaysRuntime(options: OverlaysRuntimeOptions = {}): Ove
     if (records.length > 0 && records.every((record) => isInToolbar(record.target))) {
       return;
     }
+    let scheduleGeometry = false;
+    let needsRescan = false;
+    for (const record of records) {
+      if (record.type === "attributes") {
+        const attr = record.attributeName;
+        if (attr !== null && GEOMETRY_ATTRS.has(attr)) {
+          scheduleGeometry = true;
+        } else {
+          needsRescan = true;
+          hoverNameStale = true;
+        }
+      } else {
+        needsRescan = true;
+        hoverNameStale = true;
+      }
+    }
+    // Position-only shifts a ResizeObserver cannot see — `class`/`style` route
+    // here, never to `rescanQueued`.
+    if (scheduleGeometry) schedule();
+    if (!needsRescan) return;
     // Debounced, not per-record: a React commit is a burst of records, and
     // re-querying on each one would make this overlay the perf problem it
     // was installed to find.
@@ -529,6 +591,35 @@ export function createOverlaysRuntime(options: OverlaysRuntimeOptions = {}): Ove
       rescanQueued = true;
       schedule();
     }, mutationDebounceMs);
+  };
+
+  const syncObservedGeometry = (): void => {
+    if (resizeObserver === null) return;
+    const wanted = new Set<Element>();
+    if (flags.focus) {
+      for (const { element } of focusElements) {
+        if (element.isConnected) wanted.add(element);
+      }
+    }
+    if (flags.inspect && hoverElement?.isConnected) {
+      wanted.add(hoverElement);
+    }
+    for (const element of observedTargets) {
+      if (!wanted.has(element)) {
+        resizeObserver.unobserve(element);
+        observedTargets.delete(element);
+      }
+    }
+    for (const element of wanted) {
+      if (!observedTargets.has(element)) {
+        resizeObserver.observe(element, { box: "border-box" });
+        observedTargets.add(element);
+      }
+    }
+  };
+
+  const onObservedResize = () => {
+    schedule();
   };
 
   let pointerAttached = false;
@@ -558,6 +649,7 @@ export function createOverlaysRuntime(options: OverlaysRuntimeOptions = {}): Ove
     if (!on) {
       pointerSeen = false;
       hover = null;
+      hoverElement = null;
     }
   };
 
@@ -571,7 +663,7 @@ export function createOverlaysRuntime(options: OverlaysRuntimeOptions = {}): Ove
     window[method]("resize", onGeometry, { passive: true });
   };
 
-  const setFocusObserver = (on: boolean) => {
+  const setDomObserver = (on: boolean) => {
     if (on === (observer !== null)) return;
     if (on) {
       if (typeof MutationObserver !== "function" || typeof document === "undefined") {
@@ -588,8 +680,12 @@ export function createOverlaysRuntime(options: OverlaysRuntimeOptions = {}): Ove
         // stale and the badge claiming the button was named.
         characterData: true,
         // Everything the scan filters on, plus everything accessibleName
-        // reads — kept as one list so neither set can silently drift from the code.
+        // reads, plus geometry attrs — kept as one list so neither set can
+        // silently drift from the code.
         attributeFilter: [
+          // geometry — routed to `schedule()`, never `rescanQueued`
+          "class",
+          "style",
           // tabbability
           "tabindex",
           "disabled",
@@ -610,7 +706,8 @@ export function createOverlaysRuntime(options: OverlaysRuntimeOptions = {}): Ove
           "for",
         ],
       });
-      rescanQueued = true;
+      hoverNameStale = true;
+      if (flags.focus) rescanQueued = true;
       return;
     }
     observer?.disconnect();
@@ -619,10 +716,22 @@ export function createOverlaysRuntime(options: OverlaysRuntimeOptions = {}): Ove
       clearTimeout(mutationTimer);
       mutationTimer = null;
     }
-    focusElements = [];
-    focusItems = [];
-    focusTruncated = false;
-    unnamedCount = 0;
+    hoverNameStale = true;
+    hoverNameElement = null;
+  };
+
+  const setGeometryObserver = (on: boolean) => {
+    if (on === geometryObserverOn) return;
+    geometryObserverOn = on;
+    if (on) {
+      if (typeof ResizeObserver !== "function") return;
+      resizeObserver = new ResizeObserver(onObservedResize);
+      syncObservedGeometry();
+      return;
+    }
+    resizeObserver?.disconnect();
+    resizeObserver = null;
+    observedTargets.clear();
   };
 
   const setOutlines = (on: boolean) => {
@@ -639,8 +748,21 @@ export function createOverlaysRuntime(options: OverlaysRuntimeOptions = {}): Ove
     const on = active;
     setOutlines(on && flags.boxes);
     setPointerListeners(on && flags.inspect);
-    setFocusObserver(on && flags.focus);
+    setDomObserver(on && (flags.inspect || flags.focus));
     setGeometryListeners(on && (flags.inspect || flags.focus));
+    setGeometryObserver(on && (flags.inspect || flags.focus));
+    const focusNow = on && flags.focus;
+    if (focusNow && !focusDrawing) rescanQueued = true;
+    focusDrawing = focusNow;
+    if (!focusNow) {
+      focusElements = [];
+      focusItems = [];
+      focusTruncated = false;
+      unnamedCount = 0;
+    }
+    // The retained sets just changed shape; without this the ResizeObserver
+    // keeps the old focus elements until the hover target next moves.
+    syncObservedGeometry();
     if (on && (flags.inspect || flags.focus)) schedule();
     else cancelFrame();
   }
@@ -735,7 +857,8 @@ export function createOverlaysRuntime(options: OverlaysRuntimeOptions = {}): Ove
         cancelFrame();
         setPointerListeners(false);
         setGeometryListeners(false);
-        setFocusObserver(false);
+        setGeometryObserver(false);
+        setDomObserver(false);
         // Releases only our reference (ref-counted, see setHostOutlines) — an
         // unconditional removal would un-outline a second toolbar's sheet
         // while its chip/panel still said the overlay was on.
@@ -743,8 +866,15 @@ export function createOverlaysRuntime(options: OverlaysRuntimeOptions = {}): Ove
         stopWatchingVisibility();
         storage = null;
         hover = null;
+        hoverElement = null;
+        hoverNameElement = null;
+        hoverNameStale = true;
         focusElements = [];
         focusItems = [];
+        focusTruncated = false;
+        unnamedCount = 0;
+        // So a StrictMode remount sees the enable edge again and rescans.
+        focusDrawing = false;
         // The store outlives one start/stop cycle — StrictMode runs
         // mount -> cleanup -> mount; destroying it here would freeze the panel.
         publish();

@@ -1520,7 +1520,8 @@ export function createThemeEditorRuntime(
       // the edits are written to. `:root` alone is never replaced.
       const needsPoll =
         typeof tokens === "function" || surfaces.some((entry) => entry.selector !== ":root");
-      const timer = needsPoll ? setInterval(publish, Math.max(250, pollMs)) : null;
+      const intervalMs = Number.isFinite(pollMs) ? pollMs : 1000;
+      const timer = needsPoll ? setInterval(publish, Math.max(250, intervalMs)) : null;
 
       // Visibility is *reported*, not acted on (§2). This extension deliberately
       // keeps its edits applied while the bar is hidden — see the note at the

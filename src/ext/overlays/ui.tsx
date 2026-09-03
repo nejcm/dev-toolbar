@@ -308,6 +308,7 @@ function FocusBadge({ item }: { item: FocusItem }): ReactNode {
       >
         <span>{item.index}</span>
         {item.tabIndex !== null && item.tabIndex > 0 ? <span>tabindex={item.tabIndex}</span> : null}
+        {item.ariaHidden ? <span data-dtb-part="ovl-tag">aria-hidden</span> : null}
         <span>
           {named
             ? (item.name as string).length > 24

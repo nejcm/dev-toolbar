@@ -1351,6 +1351,18 @@ describe("surface migration — one reconciler, one owner", () => {
     }
   });
 
+  it("treats pollMs: NaN as the default interval — NaN makes setInterval fire every tick", () => {
+    vi.useFakeTimers();
+    try {
+      const interval = vi.spyOn(globalThis, "setInterval");
+      started({ pollMs: Number.NaN });
+      expect(interval).toHaveBeenCalled();
+      expect(interval.mock.calls[0]?.[1]).toBe(1000);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("does not touch the page from an export helper", () => {
     // The rejected fix was to reconcile inside `buildSnapshot()`, which would
     // make `cssText()`, `diagnostics()` and every export mutate the document.
