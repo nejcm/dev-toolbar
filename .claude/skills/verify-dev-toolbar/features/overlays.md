@@ -28,22 +28,30 @@ underneath stays usable while one is on.
 Preconditions:
 
 - Baseline per [README](./README.md), viewport pinned to 1280×800.
-- The `overlays` chip reads `overlaysoff` and every probe `overlays[]` entry
-  reads `children: 0` (`childPointerEvents: null`, since there is no layer).
+- `ext("overlays").on` is `[]` and `activeCount` is `0`; every page-read
+  `overlayLayers[]` entry reads `children: 0` (`childPointerEvents: null`,
+  since there is no layer).
+
+Throughout, `ext("overlays")` is
+`read().diagnostics.find(d => d.id === "overlays").data` —
+`{enabled, on, activeCount, ready, active, focusCount, focusTruncated,
+unnamedCount, error}`. Which layers are **on** is state and comes from there;
+where they **draw** and what they **intercept** are pixels and come from the
+page read.
 
 - **Turn one on.** Open `⌘K`, type `Column grid`, send `Enter` (see
-  [command-menu.md](./command-menu.md)). Probe: the `overlays` chip reads
-  `overlays1 on` and the `overlays` entry of `overlays[]` reads `children: 1` —
-  the layer, inside the host. The `command-menu` entry is back to `children: 0`
-  once the palette has closed.
+  [command-menu.md](./command-menu.md)). Read: `ext("overlays").on` is
+  `["grid"]`, `activeCount` is `1`, `error` is `null`. Page read: the
+  `overlays` entry of `overlayLayers[]` is `children: 1` — the layer, inside
+  the host — and the `command-menu` entry is back to `children: 0` once the
+  palette has closed.
 - **It covers the page.** Read the overlay child's rect
   (`document.querySelector('[data-dtb-part="overlay"][data-dtb-ext-id="overlays"]').firstElementChild`):
   it spans the full viewport — `top: 0`, `bottom: 800` at the pinned 1280×800.
   A screenshot shows the column guides over the playground's tiles.
 - **It is not above the toolbar.** Compute
-  `document.elementFromPoint(shell.barRect.left + 20, shell.barRect.top + shell.barRect.height / 2)`
-  from the probe's own `shell.barRect` (which carries `left` and `width`
-  alongside `top`/`bottom`/`height`). The result is inside the bar — at
+  `document.elementFromPoint(barRect.left + 20, barRect.top + barRect.height / 2)`
+  from the page read's own `barRect`. The result is inside the bar — at
   baseline, the environment chip's `env-label` — never the overlay. Assert the
   stacking, not the geometry: the layer's rect *does* extend across the bar's
   coordinates, and it is `pointer-events: none` plus the root's
@@ -54,43 +62,54 @@ Preconditions:
   playground's `[data-testid="overlay-click-through"]` button, with the overlay
   still on. Its label goes from `Click-through test: 0` to
   `Click-through test: 1`, and `document.elementFromPoint` over the button
-  returns the button, not the overlay. In the probe, the `overlays` entry's
+  returns the button, not the overlay. In the page read, the `overlays` entry's
   `childPointerEvents` is `none` — that is the layer's computed style, read
   from the child rather than the host.
-- **Focus order flags the bad controls.** Turn on `Show overlay: Focus order`.
-  The playground deliberately ships `[data-testid="overlay-unnamed"]` (an
-  icon-only button with `aria-hidden` content), `[data-testid="overlay-unnamed-input"]`
-  and `[data-testid="overlay-tabindex"]` (`tabIndex={1}`); the overlay marks
-  them.
-- **Turn everything off.** Run `Turn every overlay off` from `⌘K`. Probe: the
-  chip reads `overlaysoff`, every `overlays[]` entry is back to `children: 0`,
-  and the page's own DOM carries nothing the extension added. The
+- **Focus order flags the bad controls.** Turn on `Show overlay: Focus order`
+  (`runCommand("overlays.toggle.focus")`, or the palette). Read:
+  `ext("overlays").on` contains `focus`, `focusCount` is the number of tab
+  stops the scan found, `focusTruncated` is `false` (nothing hit the 200-item
+  cap) and `unnamedCount` is non-zero — the playground deliberately ships
+  `[data-testid="overlay-unnamed"]` (an icon-only button with `aria-hidden`
+  content) and `[data-testid="overlay-unnamed-input"]`. `unnamedCount` is the
+  state assertion; *where the badges land* is the screenshot.
+- **Turn everything off.** `runCommand("overlays.disableAll")`, or run
+  `Turn every overlay off` from `⌘K`. Read: `on` is `[]`, `activeCount` is
+  `0`. Page read: every `overlayLayers[]` entry is back to `children: 0` and
+  the page's own DOM carries nothing the extension added. The
   `dtb:v1:playground:ext:overlays:enabled` key stays behind with every flag
-  `false` — that is the persisted preference, not a leftover layer.
-- **Proof.** Capture the probe snapshot with the overlay on, the click-through
-  counter before and after, and a screenshot with the guides drawn and the bar
-  unobscured.
+  `false` — that is the persisted preference, not a leftover layer, and
+  `ext("overlays").enabled` is the same map.
+- **Proof.** Capture the bridge read with the overlay on, the page read with
+  `childPointerEvents`, the click-through counter before and after, and a
+  screenshot with the guides drawn and the bar unobscured.
 
 ## Gotchas
 
 - Every extension has an overlay host in the DOM at all times — `command-menu`
-  and `overlays` both appear in the probe's `overlays[]` at baseline.
-  `children` is the on/off signal, not the host's presence. (`command-menu`
-  reads `children: 2` whenever the palette is open: the scrim and the dialog.)
+  and `overlays` both appear in the page read's `overlayLayers[]` at baseline.
+  `children` is the DOM's on/off signal, not the host's presence.
+  (`command-menu` reads `children: 2` whenever the palette is open: the scrim
+  and the dialog.) The *state* answer is `ext("overlays").on`; use
+  `overlayLayers` to prove the layer really rendered, not to ask what is on.
 - The host is `display: contents`, so *its* computed `pointer-events` and
   `z-index` are always `auto` no matter what the extension does — reading them
-  proves nothing, which is why the probe reports the child's instead. The
+  proves nothing, which is why the page read takes the child's instead. The
   layer inside is the `pointer-events: none` one (`childPointerEvents`), and
   the stacking comes from the toolbar root's own `z-index`, so use
   `elementFromPoint` for that rather than any `z-index` comparison.
-- The four overlays are independent. `overlays1 on` after two commands means
-  one of them did not take.
+- The four overlays are independent. `activeCount: 1` after two toggle
+  commands means one of them did not take, and `on` names which did.
+- A measurement that throws switches **everything** off and sets
+  `ext("overlays").error`. An empty `on` with a non-null `error` is a failure,
+  not a clean baseline — check `error` before reporting an overlay as off.
 - An overlay is drawn from measurements taken when it turned on; scrolling or
   resizing with it on can leave guides where the content no longer is. Toggle
   it off and on after moving the page.
 - These are the assertions least suited to jsdom and most likely to be
   hand-waved. A screenshot alone is not proof of click-through — pair it with
-  the counter.
+  the counter. Equally, `on: ["grid"]` proves the extension believes the
+  overlay is on; only the page read proves a layer was drawn.
 - The focus-order scan changes with the pending PR stack #21–#28
   (`fix(ext/overlays): keep geometry current …`): an `aria-hidden="true"`
   element that is still a Tab stop is no longer skipped but badged, with a

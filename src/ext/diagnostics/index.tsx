@@ -129,11 +129,21 @@ export function diagnostics(options: DiagnosticsOptions = {}): DevToolbarExtensi
     panel: () => <DiagnosticsPanel runtime={runtime} label={label} injectStyles={injectStyles} />,
 
     /**
-     * Deliberately declares **no** `diagnostics()` — it's the reader of the
-     * aggregation, not a contributor. Declaring one would make the snapshot
-     * contain itself via core's `getDiagnostics()`. The gather step skips its
-     * own id for the same reason.
+     * A **summary** of the last capture — `capturedAt`, `revision`, how many
+     * contributions and how many omissions — never the snapshot itself
+     * (`plans/agent-readable-toolbar.md` § Phase 1).
+     *
+     * The snapshot is built *from* `api.getDiagnostics()`, so returning it
+     * here would make every roster read quadratic and embed one snapshot
+     * inside the next. The full object stays reachable through the commands
+     * below.
+     *
+     * The gather step skips its own id, so this summary never appears in the
+     * bug report; it is published for the readers that enumerate the roster
+     * directly — `/ext/agent`, and anything else built on
+     * `api.getDiagnostics()`.
      */
+    diagnostics: () => runtime.summary(),
 
     /**
      * Four commands. `capture` freezes state now (mid-repro) for reading

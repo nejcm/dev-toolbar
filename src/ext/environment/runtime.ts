@@ -529,16 +529,31 @@ export function createEnvironmentRuntime(
       const payload: Record<string, unknown> = {
         generatedAt: new Date().toISOString(),
         environment: snapshot.kind,
+        severity: snapshot.severity,
         supplied: snapshot.supplied,
         impersonating: snapshot.impersonating,
         maskedCount: snapshot.maskedCount,
+        /**
+         * The panel's rows, as key/value/markers with the masking already
+         * applied (`plans/agent-readable-toolbar.md` § Phase 1). `markers`
+         * carries the panel's own `data-dtb-tag` vocabulary, plus `alarming`,
+         * which the panel spells as a colour rather than a tag — so a reader
+         * of this and a reader of the rendered row describe the same row the
+         * same way.
+         */
         fields: snapshot.fields
           .filter((field) => field.source !== "missing")
           .map((field) => ({
             id: field.id,
             label: field.label,
+            group: field.group,
             source: field.source,
             masked: field.masked,
+            markers: [
+              ...(field.masked ? ["masked"] : []),
+              ...(field.source === "detected" ? ["detected"] : []),
+              ...(field.alarming === true ? ["alarming"] : []),
+            ],
             value: field.value,
           })),
       };

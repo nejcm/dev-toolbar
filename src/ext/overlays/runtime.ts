@@ -104,6 +104,12 @@ export interface OverlaysRuntime {
   /** Turns everything off. The escape hatch the panel and a command both use. */
   disableAll(): void;
   start(api: ExtensionRuntimeApi): () => void;
+  /**
+   * Which layers are on, plus the scan's own health. Pure and cheap — it reads
+   * the flag map and the last published snapshot and measures nothing
+   * (`plans/agent-readable-toolbar.md` § Phase 1).
+   */
+  diagnostics(): unknown;
 }
 
 /** Attribute holding the number of live holders of the host-outline sheet. */
@@ -813,6 +819,27 @@ export function createOverlaysRuntime(options: OverlaysRuntimeOptions = {}): Ove
     disableAll() {
       if (countEnabled(flags) === 0) return;
       write({ ...NO_OVERLAYS });
+    },
+
+    /**
+     * No geometry: `focusItems` and `hover` are per-frame measurements of the
+     * host page, they change on every pointer move, and a bug report does not
+     * want a rectangle per tabbable element. What a reader needs is which
+     * layers are drawing and whether the scan is telling the truth.
+     */
+    diagnostics() {
+      const latest = store.peek();
+      return {
+        enabled: { ...flags },
+        on: OVERLAY_IDS.filter((id) => flags[id] === true),
+        activeCount: countEnabled(flags),
+        ready: latest.ready,
+        active: latest.active,
+        focusCount: latest.focusItems.length,
+        focusTruncated: latest.focusTruncated,
+        unnamedCount: latest.unnamedCount,
+        error: latest.error,
+      };
     },
 
     start(api: ExtensionRuntimeApi) {

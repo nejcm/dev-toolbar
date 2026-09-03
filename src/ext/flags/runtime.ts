@@ -235,6 +235,26 @@ export function resetRequested(param: string | null): boolean {
   }
 }
 
+/**
+ * The row's markers, in the panel's own vocabulary — the same strings the
+ * `data-dtb-tag` attributes carry in `ui.tsx`, so a reader of `diagnostics()`
+ * and a reader of the rendered row describe a flag the same way.
+ *
+ * Deliberately a plain derived list rather than a second source of truth:
+ * every entry is read straight off the `FlagView` the panel renders.
+ */
+function tagsFor(view: FlagView, reloadPending: ReadonlySet<string>): string[] {
+  const tags: string[] = [];
+  if (view.overridden) tags.push("override");
+  if (view.applyError !== undefined) tags.push("not-applied");
+  if (view.orphaned) tags.push("orphaned");
+  if (view.promoted) tags.push("promoted");
+  if (view.masked) tags.push("masked");
+  if (view.expired) tags.push("expired");
+  if (reloadPending.has(view.key)) tags.push("reload");
+  return tags;
+}
+
 export function createFlagsRuntime(options: FlagsRuntimeOptions = {}): FlagsRuntime {
   const {
     flags,
@@ -695,12 +715,39 @@ export function createFlagsRuntime(options: FlagsRuntimeOptions = {}): FlagsRunt
 
     diagnostics() {
       const snapshot = build();
+      const pending = new Set(snapshot.reloadPending);
       const payload = {
         generatedAt: new Date(now()).toISOString(),
         writable: snapshot.writable,
+        supplied: snapshot.supplied,
         overriddenCount: snapshot.overriddenCount,
         maskedCount: snapshot.maskedCount,
         reloadPending: snapshot.reloadPending,
+        readError: snapshot.readError,
+        /**
+         * Every catalogued row, not only the overridden ones
+         * (`plans/agent-readable-toolbar.md` § Phase 1). An override is a
+         * difference between two values, and a reader handed only the changed
+         * ones cannot see the difference — which is the whole point of asking
+         * whether an override is applied.
+         */
+        flags: snapshot.flags.map((view) => ({
+          key: view.key,
+          type: view.type,
+          source: view.source,
+          overridden: view.overridden,
+          masked: view.masked,
+          reloadBehavior: view.reloadBehavior,
+          // Typed values, so a reader compares `false` to `false` rather than
+          // parsing `"false"` — but only while the row is unmasked. A masked
+          // row publishes the same redacted display string the panel shows:
+          // there is no unmasked path to the screen and there is none here
+          // either.
+          effective: view.masked ? view.effectiveText : view.effective,
+          base: view.masked ? view.baseText : view.base,
+          default: view.masked ? view.defaultText : view.defaultValue,
+          tags: tagsFor(view, pending),
+        })),
         overrides: snapshot.flags
           .filter((view) => view.overridden)
           .map((view) => ({

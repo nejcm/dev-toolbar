@@ -26,6 +26,68 @@ export interface AgentCommandView {
   shortcut?: string;
 }
 
+/** One item currently rendered in the bar's regions. */
+export interface AgentBarItemView {
+  /** `data-dtb-ext-id`. */
+  id: string;
+  /** `"start"` or `"end"`. */
+  align: string | null;
+  /** True when this extension's panel is the open one. */
+  panelOpen: boolean;
+}
+
+/**
+ * Shell-level facts: what the *chrome* is doing, as opposed to what an
+ * extension is doing.
+ *
+ * Nothing publishes these through `diagnostics()`, because the shell is core
+ * and core has no extension to speak for it. So the bridge reads them off the
+ * root node — the one DOM read in the whole design
+ * (`plans/agent-readable-toolbar.md` § Phase 1, open question 3: core owning
+ * this instead would be a core change and a `CONTRACT_VERSION` conversation).
+ */
+export interface AgentShellView {
+  /**
+   * False when no root carrying this `instanceId` is in the document — which
+   * is also what a *hidden* bar looks like, because core removes it rather
+   * than hiding it visually. `AgentSnapshot.visible` tells the two apart.
+   */
+  mounted: boolean;
+  position: string | null;
+  density: string | null;
+  colorScheme: string | null;
+  /**
+   * The per-instance CSS custom property core publishes on
+   * `document.documentElement`, and its current value. The **unsuffixed**
+   * `--dev-toolbar-height` belongs to `instanceId: "default"` only, so it is
+   * deliberately not reported here for any other instance.
+   */
+  heightVariable: { name: string; value: string | null };
+  /**
+   * Only what is still *in* the bar. A collapsed extension is removed from
+   * its region and re-rendered inside the `···` menu, so an id missing from
+   * here is either collapsed or has no bar item at all.
+   */
+  bar: readonly AgentBarItemView[];
+  overflow: AgentOverflowView;
+  /** `data-dtb-ext-id` of the open panel, or `null`. */
+  activePanel: string | null;
+}
+
+export interface AgentOverflowView {
+  /** True when the `···` button is rendered, i.e. at least one item collapsed. */
+  present: boolean;
+  /** True while the `···` menu is open. */
+  open: boolean;
+  /**
+   * The collapsed extensions — **only while the menu is open**. Core renders
+   * the menu's contents on open, so a closed menu is an empty list here, not
+   * a claim that nothing collapsed. `present` is the fact to read when it is
+   * closed.
+   */
+  items: readonly string[];
+}
+
 /** What `read()` returns: the whole agent-visible state of one mounted toolbar. */
 export interface AgentSnapshot {
   /** The `instanceId` of the `<DevToolbar>` this handle belongs to. */
@@ -37,6 +99,8 @@ export interface AgentSnapshot {
   /** Mirrors `AgentBridgeOptions.allowRun`, so a caller can tell why `runCommand` is missing. */
   allowRun: boolean;
   commands: readonly AgentCommandView[];
+  /** Position, density, colour scheme, the height variable, and bar membership. */
+  shell: AgentShellView;
   /**
    * One entry per present, non-hidden extension, redacted again on the way
    * out (decision 3). `status: "absent"` distinguishes "had nothing to say"

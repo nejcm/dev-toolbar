@@ -797,8 +797,12 @@ if (built || !mustBeBuilt) {
           "diagnostics.copyJson",
           "diagnostics.download",
         ],
-        // It reads the aggregation; it deliberately does not contribute to it.
-        contributes: "undefined",
+        // It reads the aggregation, and contributes only a *summary* of its
+        // own last capture — never the snapshot, which is built from the
+        // aggregation and would embed one snapshot inside the next
+        // (`plans/agent-readable-toolbar.md` § Phase 1). Its gather step skips
+        // its own id, so the summary never reaches the bug report either.
+        contributes: "function",
         gathered: false,
         omissions: 1,
       });

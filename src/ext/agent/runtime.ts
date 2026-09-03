@@ -17,7 +17,14 @@
 import { redact } from "../../runtime";
 import type { RedactOptions } from "../../runtime";
 import { AGENT_MARKER, AGENT_PROTOCOL_VERSION } from "./types";
-import type { AgentCommandView, AgentHandle, AgentRegistry, AgentRunResult } from "./types";
+import type {
+  AgentBarItemView,
+  AgentCommandView,
+  AgentHandle,
+  AgentRegistry,
+  AgentRunResult,
+  AgentShellView,
+} from "./types";
 import type {
   ExtensionDiagnostics,
   ExtensionRuntimeApi,
@@ -57,6 +64,103 @@ function define(target: Record<string, unknown>, key: string, value: unknown): v
     enumerable: true,
     configurable: true,
   });
+}
+
+/* -------------------------------------------------------------------------- */
+/* The one DOM read                                                           */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Mirrors core's `instanceHeightVariable` (`src/core/DevToolbar.tsx`).
+ *
+ * A copy rather than an import because an extension may import only *types*
+ * from core — a value import is not guaranteed by the bundler to resolve to
+ * the host's copy (AGENTS.md). Six characters of regex; if core's folding
+ * rule changes, this changes with it.
+ */
+function heightVariableName(instanceId: string): string {
+  return `--dev-toolbar-height-${instanceId.replace(/[^A-Za-z0-9_-]+/g, "_")}`;
+}
+
+const PART = (name: string): string => `[data-dtb-part="${name}"]`;
+
+/** `data-dtb-ext-id`, or `null` on a node that somehow has none. */
+const extIdOf = (element: Element): string | null => element.getAttribute("data-dtb-ext-id");
+
+function toBarItem(element: Element): AgentBarItemView {
+  return {
+    id: extIdOf(element) ?? "",
+    align: element.getAttribute("data-dtb-align"),
+    panelOpen: element.getAttribute("data-dtb-panel-open") === "true",
+  };
+}
+
+/**
+ * **The only place this extension reads the DOM**, and it is deliberate.
+ *
+ * Position, density, colour scheme, the height variable and bar membership
+ * are facts about the *shell*, and the shell is core: there is no extension
+ * to publish them through `diagnostics()`, and giving core one would be a
+ * core change and a `CONTRACT_VERSION` conversation
+ * (`plans/agent-readable-toolbar.md` § Phase 1, open question 3 — the answer
+ * for this phase is the bridge). Everything else the bridge reports comes
+ * from `api`, and nothing here reads an extension's own markup: an extension
+ * that wants to be readable publishes state, it does not get scraped.
+ *
+ * Read-only and fail-soft. There is no document during SSR and none in a
+ * plain Node test, and an unmounted (or hidden — core removes the root
+ * rather than hiding it) toolbar has no root, so both answer `mounted:
+ * false` rather than throwing.
+ */
+export function readShell(instanceId: string): AgentShellView {
+  const name = heightVariableName(instanceId);
+  const empty: AgentShellView = {
+    mounted: false,
+    position: null,
+    density: null,
+    colorScheme: null,
+    heightVariable: { name, value: null },
+    bar: [],
+    overflow: { present: false, open: false, items: [] },
+    activePanel: null,
+  };
+  if (typeof document === "undefined" || document.documentElement === null) return empty;
+
+  // Matched by attribute value in JS rather than in the selector: `instanceId`
+  // is an arbitrary string and a CSS attribute selector would need escaping
+  // that `CSS.escape` does not cover for every host.
+  const root = [...document.querySelectorAll(PART("root"))].find(
+    (candidate) => candidate.getAttribute("data-dtb-instance") === instanceId,
+  );
+
+  const value = document.documentElement.style.getPropertyValue(name).trim();
+  const heightVariable = { name, value: value === "" ? null : value };
+  if (root === undefined) return { ...empty, heightVariable };
+
+  const button = root.querySelector(PART("overflow-button"));
+  const menu = root.querySelector(PART("overflow-menu"));
+
+  return {
+    mounted: true,
+    position: root.getAttribute("data-dtb-position"),
+    density: root.getAttribute("data-dtb-density"),
+    colorScheme: root.getAttribute("data-dtb-color-scheme"),
+    heightVariable,
+    bar: [...root.querySelectorAll(`${PART("region")} > ${PART("item")}[data-dtb-ext-id]`)].map(
+      toBarItem,
+    ),
+    overflow: {
+      present: button !== null,
+      open: menu !== null,
+      items: [...root.querySelectorAll(`${PART("overflow-menu-item")}[data-dtb-ext-id]`)]
+        .map(extIdOf)
+        .filter((id): id is string => id !== null),
+    },
+    activePanel:
+      root
+        .querySelector(`${PART("panel")}[data-dtb-active="true"]`)
+        ?.getAttribute("data-dtb-ext-id") ?? null,
+  };
 }
 
 /** One command, flattened to data. Optional fields are omitted rather than set to `undefined`. */
@@ -188,6 +292,7 @@ export function createAgentHandle(
         visible: api.isVisible(),
         allowRun,
         commands: api.getCommands().map(toCommandView),
+        shell: readShell(instanceId),
         diagnostics: readDiagnostics(),
       };
     },

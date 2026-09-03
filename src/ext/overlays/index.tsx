@@ -128,6 +128,9 @@ export function overlays(options: OverlaysOptions = {}): DevToolbarExtension {
       return runtime.start(api);
     },
 
+    /** Which layers are on. `plans/agent-readable-toolbar.md` § Phase 1. */
+    diagnostics: () => runtime.diagnostics(),
+
     compact: ({ isOverflowed, isPanelOpen, togglePanel }) => (
       <OverlaysChip
         runtime={runtime}

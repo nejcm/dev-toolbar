@@ -46,11 +46,12 @@ Start it through the Browser pane, never through Bash:
   nothing in the DOM says which build a given node came from, which is how
   one review ended up reasoning about a module twenty minutes stale.
 - To **know** which build a tab serves, `navigate` to `http://localhost:5273/`
-  and compare the probe's `loadedAt` with the `dist/ built` stamp
-  `doctor.sh` prints (both UTC ISO): `loadedAt` later than the stamp means
-  the document was loaded over the current `dist/`; earlier means it was
-  not, whatever HMR did in between. If `navigate` is refused, stop your own
-  preview and start it again — `predev` rebuilds and the new tab loads fresh.
+  and compare `new Date(performance.timeOrigin).toISOString()` (the page read
+  below reports it as `loadedAt`) with the `dist/ built` stamp `doctor.sh`
+  prints (both UTC ISO): `loadedAt` later than the stamp means the document
+  was loaded over the current `dist/`; earlier means it was not, whatever HMR
+  did in between. If `navigate` is refused, stop your own preview and start it
+  again — `predev` rebuilds and the new tab loads fresh.
 
 Isolation: the port (`5273`) and the `localStorage` namespace
 (`dtb:v1:playground:*`) are both fixed, so **two runs cannot share this
@@ -70,10 +71,11 @@ identity, that `dist/` exists and is not older than `src/`, that the
 playground's dependencies are installed, and who owns `:5273`. Run it first
 whenever anything looks off, and before blaming the library for a blank page.
 
-The browser half of the doctor is the probe below: `mounted: true`,
-`shell.instance: "playground"`, and a `bar` list of twelve extensions is a
-healthy instance — and a `loadedAt` later than the `dist/ built` stamp above
-is one that has actually loaded the current build (see [Launch](#launch)).
+The browser half of the doctor is the bridge read below: `shell.mounted: true`,
+`instanceId: "playground"`, and a `shell.bar` list of thirteen items (twelve
+extensions plus the bridge's own `agent` chip) is a healthy instance — and a
+`loadedAt` later than the `dist/ built` stamp above is one that has actually
+loaded the current build (see [Launch](#launch)).
 
 ## Drive
 
@@ -81,31 +83,101 @@ Two tools do all the work: `mcp__Claude_Browser__computer` for user input, and
 `mcp__Claude_Browser__javascript_tool` for reading state. Batch them with
 `mcp__Claude_Browser__browser_batch` when the next step is predictable.
 
-**Read state with the probe.** [`probe.js`](./probe.js) returns one
-JSON-serialisable snapshot of every stable handle the shell and the extensions
-publish. Load it into the page from Vite's `/@fs` route — the playground's
-`server.fs.allow` already covers the repo root:
-
-```bash
-echo "eval(await (await fetch(\"/@fs$(git rev-parse --show-toplevel)/.claude/skills/verify-dev-toolbar/probe.js\")).text())"
-```
-
-Paste that line as the `text` of a `javascript_tool` call. It is read-only.
-The full snapshot is large, so narrow it in the same call rather than dumping
-it — assign and project:
+**Read state from the toolbar itself.** The playground mounts
+`@nejcm/dev-toolbar/ext/agent`, so the toolbar publishes its own state — no
+scraper, no selectors, nothing to keep in sync with markup. One
+`javascript_tool` call:
 
 ```js
-const s = eval(await (await fetch("/@fs/…/probe.js")).text());
-({ chip: s.flags.chip, storage: s.storage })
+window.__DEV_TOOLBAR__.instances["playground"].read()
 ```
 
-**Prefer stable handles over coordinates.** In rough order of preference:
+It returns `{ instanceId, contractVersion, visible, allowRun, commands, shell,
+diagnostics }`, already redacted. `shell` is the chrome — `mounted`,
+`position`, `density`, `colorScheme`, `heightVariable`, `bar`, `overflow`,
+`activePanel`. `diagnostics` is one entry per present, non-hidden extension,
+each `{ id, label, status, data }`; `status: "absent"` means *had nothing to
+say*, `"failed"` means *blew up*, and the difference matters — a roster you
+only half read looks like a clean run.
+
+The whole snapshot is large, so project in the same call:
+
+```js
+const s = window.__DEV_TOOLBAR__.instances["playground"].read();
+const ext = (id) => s.diagnostics.find((d) => d.id === id)?.data ?? null;
+({ shell: s.shell, flags: ext("flags").flags, env: ext("environment").fields })
+```
+
+The playground passes `allowRun: true`, so `runCommand(id)` is available and
+resolves a value rather than throwing:
+`await window.__DEV_TOOLBAR__.instances["playground"].runCommand("overlays.disableAll")`
+→ `{ok: true}` or `{ok: false, reason: "unknown-command"}`. Use it to *reach* a
+state and to prove the command registry itself; a claim about a chip, a switch
+or a panel still needs the click (see [Evidence](#evidence)).
+`listCommands()` is the command roster with ids, labels and groups — read it
+instead of scraping option labels out of the palette.
+
+**Read the page only for what the toolbar cannot say about itself.** Geometry,
+computed style, stacking, `localStorage` and the playground app's own readouts
+are not toolbar state, and there is no bridge field for them by design. One
+read-only call covers all of them:
+
+```js
+const part = (n) => document.querySelector(`[data-dtb-part="${n}"]`);
+const txt = (el) => el?.textContent?.replace(/\s+/g, " ").trim() ?? null;
+({
+  loadedAt: new Date(performance.timeOrigin).toISOString(),
+  barRect: part("bar")?.getBoundingClientRect().toJSON() ?? null,
+  inset: (() => {
+    const el = part("inset");
+    if (!el) return null;
+    const cs = getComputedStyle(el);
+    return { position: el.dataset.dtbPosition, top: cs.paddingTop, bottom: cs.paddingBottom };
+  })(),
+  // The overlay host is `display: contents`, so its own computed
+  // `pointer-events` is always `auto` and proves nothing. The layer is the
+  // child: its presence is the on/off signal, its computed `pointer-events`
+  // the click-through one.
+  overlayLayers: [...document.querySelectorAll('[data-dtb-part="overlay"]')].map((el) => ({
+    extension: el.dataset.dtbExtId,
+    children: el.children.length,
+    childPointerEvents: el.firstElementChild
+      ? getComputedStyle(el.firstElementChild).pointerEvents
+      : null,
+  })),
+  // Core's own isolation chip. A slot that threw renders no state to publish.
+  errorChips: [...document.querySelectorAll('[data-dtb-part="error-chip"]')].map((el) => ({
+    extension: el.dataset.dtbExtId,
+    slot: el.dataset.dtbSlot,
+    text: txt(el),
+  })),
+  storage: Object.fromEntries(
+    Object.keys(localStorage)
+      .filter((k) => k.startsWith("dtb:v1:"))
+      .sort()
+      .map((k) => [k, localStorage.getItem(k)]),
+  ),
+  // The *app's* readouts, not the library's — the half that proves an override
+  // reached the application rather than only the panel.
+  appFlags: [...document.querySelectorAll('[data-testid="flag-readout"] li')].map(txt),
+  appTheme: [...document.querySelectorAll('[data-testid="theme-swatches"] .pg-theme-swatch')].map(txt),
+})
+```
+
+If you find yourself adding an extension's own state to that call — a flag
+value, an overlay's on/off, what is typed in the palette — stop: the extension
+is under-publishing, and the fix is in `src/ext/<name>`'s `diagnostics()`, not
+here.
+
+**Prefer stable handles over coordinates** for *input*. In rough order of
+preference:
 
 | Handle | Where it comes from | Example |
 | --- | --- | --- |
-| `data-dtb-part` | core and every first-party extension | `[data-dtb-part="bar"]`, `panel`, `overflow-button`, `cmd-input`, `flag-row`, `env-row-value` |
-| `data-dtb-ext-id` | one per extension, on its bar item, panel and overlay | `[data-dtb-ext-id="flags"]` |
+| a command id | `listCommands()` / `runCommand()` | `flags.toggle.new-header`, `overlays.disableAll` |
 | ARIA role + name | the accessible surface | `toolbar` "Developer toolbar", `switch` "Toggle new-header", `dialog` "Commands" |
+| `data-dtb-part` | core and every first-party extension | `[data-dtb-part="bar"]`, `panel`, `overflow-button`, `cmd-input` |
+| `data-dtb-ext-id` | one per extension, on its bar item, panel and overlay | `[data-dtb-ext-id="flags"]` |
 | `data-testid` | the playground's own controls only | `toggle-position`, `load-block`, `flag-readout`, `overlay-click-through` |
 | pixel coordinates | last resort | — |
 
@@ -162,7 +234,8 @@ prints the path:
 ```bash
 .claude/skills/verify-dev-toolbar/capture.sh --new-run   # once, at the start
 .claude/skills/verify-dev-toolbar/capture.sh flags 02-override-applied.json <<'EOF'
-{ "chip": "flags1 overridden", "storage": { "…": "…" } }
+{ "flags": [ { "key": "new-header", "effective": false, "base": true, "tags": ["override"] } ],
+  "storage": { "…": "…" } }
 EOF
 ```
 
@@ -183,12 +256,15 @@ its label.
 
 Proof standards for this repo:
 
-- **Drive the real user path.** Click the chip, the switch, the palette option.
-  `useDevToolbar()` setters and `runCommand()` exist, and the playground even
-  exposes some as buttons — they are fixtures for reaching a state, never the
-  thing under proof.
+- **Drive the real user path for a user-path claim.** A claim about the
+  switch, the chip or the panel needs the click. `useDevToolbar()` setters and
+  the playground's own buttons are fixtures for reaching a state, never the
+  thing under proof — and neither is `runCommand()`, *except* when the command
+  registry is itself what is being proven: every command has a real user path
+  through `⌘K`, so `runCommand("overlays.toggle.grid")` proves the command and
+  the palette's `Enter` proves the palette. Say which one the artifact used.
 - **Capture the action and the resulting state**, not just the end screen: the
-  probe snapshot before, the input you sent, the snapshot after.
+  bridge read before, the input you sent, the read after.
 - **Verify the side effect too.** Nearly everything here has one, and it is the
   half that regresses: the `dtb:v1:playground:*` `localStorage` keys, the
   `--dev-toolbar-height-playground` custom property on `<html>`, the
@@ -203,7 +279,7 @@ Proof standards for this repo:
   `ResizeObserver loop completed with undelivered notifications` — is exactly
   that kind (confirmed: three fired on `window`, the tool listed none). Push
   `window.addEventListener("error", …)` messages into an array on `window`
-  first, drive, then read the array with the probe;
+  first, drive, then read the array back in a `javascript_tool` call;
   [overflow.md](./features/overflow.md) has the recipe. And a pane that never
   delivered a frame never ran the observer, so an empty array from a hidden
   pane without screenshots between the steps is not evidence.
@@ -212,9 +288,14 @@ Proof standards for this repo:
   environment context — the production boundaries the contract already puts on
   the consumer's side.
 - **A screenshot is a supplement.** `computer {"action":"screenshot"}` lands in
-  the transcript, not on disk; the probe JSON is the artifact that survives.
+  the transcript, not on disk; the bridge JSON is the artifact that survives.
   Take a screenshot when the claim is visual (stacking, overlays, restyling)
-  and pair it with the snapshot that states the same fact in text.
+  and pair it with the read that states the same fact in text.
+- **A state claim that needs a selector is a bug in an extension.** Everything
+  an extension knows about itself reaches you through `read().diagnostics`. If
+  a recipe here cannot make its assertion without querying the extension's
+  markup, the extension is under-publishing — fix its `diagnostics()` and
+  update the recipe, rather than growing a scraper back.
 
 ## Cleanup
 
@@ -239,16 +320,25 @@ In this order:
 | File | Run it as | Does |
 | --- | --- | --- |
 | [`doctor.sh`](./doctor.sh) | `sh .claude/skills/verify-dev-toolbar/doctor.sh` | Read-only preflight; exit 0 = drive it |
-| [`probe.js`](./probe.js) | `eval(await (await fetch("/@fs<repo>/.claude/skills/verify-dev-toolbar/probe.js")).text())` in `javascript_tool` | One read-only snapshot of shell + extension state |
 | [`capture.sh`](./capture.sh) | `capture.sh <feature> <filename> <<'EOF' … EOF` | Writes an artifact under the current run in `.verify-artifacts/` and prints its path; `--new-run` starts a run; warns when `<feature>` is not a `features/*.md` name |
 
 ## Maintenance
 
-The feature map goes stale the moment an extension gains a panel row or a
-`data-dtb-part` is renamed, and a recipe that asserts a handle the source no
-longer publishes fails silently — the step "passes" by never running. So when
-you change `src/` in a way this map describes, re-check the matching file in
-[`features/`](./features/README.md) in the same change: the selectors, the
-ARIA names, the storage keys, the counts, and the probe fields each step reads.
-Anything you cannot confirm against the source or a live check belongs in the
-file marked unverified, the way the existing entries do — never as a claim.
+The feature map goes stale the moment an extension renames a field it
+publishes or a command id changes, and a recipe that asserts something the
+source no longer produces fails silently — the step "passes" by never running.
+So when you change `src/` in a way this map describes, re-check the matching
+file in [`features/`](./features/README.md) in the same change: the
+`diagnostics()` field names, the command ids, the ARIA names, the storage keys
+and the counts. Anything you cannot confirm against the source or a live check
+belongs in the file marked unverified, the way the existing entries do — never
+as a claim.
+
+The map used to depend on ~40 `data-dtb-*` attributes through a 183-line
+private scraper, with nothing in CI protecting any of them. That is gone: the
+state assertions now read the extensions' own `diagnostics()` through
+`@nejcm/dev-toolbar/ext/agent`, which is covered by
+`src/ext/agent/__tests__/phase1.test.tsx`. Markup handles survive here only
+for *input* and for the few facts that are genuinely pixels — geometry,
+computed style, stacking, `localStorage`, and the playground app's own
+readouts.

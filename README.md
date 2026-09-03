@@ -1031,9 +1031,22 @@ window.__DEV_TOOLBAR__.instances["playground"].read();
 window.__DEV_TOOLBAR__.default.listCommands();
 ```
 
-`read()` returns `{ instanceId, contractVersion, visible, allowRun, commands,
+`read()` returns `{ instanceId, contractVersion, visible, allowRun, commands, shell,
 diagnostics }` — plain JSON-serialisable data, because the reader on the other side is
 usually `page.evaluate`, which structured-clones what it returns.
+
+`diagnostics` is one entry per present, non-hidden extension. The first-party
+extensions publish typed state there — every flag with its effective, base and default
+values; every metric as a number with a unit and a severity; environment rows as
+key/value/markers with the masking already applied; which overlays are on; whether the
+palette is open and what is typed in it; the theme tokens that have been edited; and a
+*summary* of the last diagnostics capture — so a reader answers "is the override
+applied" without opening a panel or parsing a chip.
+
+`shell` is the chrome — `mounted`, `position`, `density`, `colorScheme`,
+`heightVariable`, `bar`, `overflow`, `activePanel`. It is the one thing the bridge
+reads off the DOM, because the shell is core's and core has no extension to publish it
+through `diagnostics()`.
 
 ### It is a registry, not a singleton
 
@@ -1073,8 +1086,11 @@ await handle.runCommand("jobs.explode");         // { ok: false, reason: "threw"
 - **It adds no enumeration path.** Commands and diagnostics come from `api`, so a
   `hidden` extension contributes nothing through the bridge for exactly the reason it
   contributes nothing to the bar.
-- **It reads no DOM**, and it touches no global at module evaluation — importing it on
-  a server is inert.
+- **It reads no extension's DOM.** The single exception is `read().shell`, which is
+  read off the toolbar's own root element because nothing else can publish it; every
+  other field comes from `api`. It touches no global at module evaluation — importing
+  it on a server is inert, and `shell` reports `mounted: false` where there is no
+  document.
 - **It redacts on the way out.** `read()` runs `api.getDiagnostics()` through
   `redact()` (with your `extraKeys`) as defence in depth on top of the contract's
   requirement that an extension redacts at the source. That is the reason this is an

@@ -54,6 +54,14 @@
  * `hidden` is inherited, never reimplemented: everything comes from `api`, so a
  * hidden extension contributes no commands and no diagnostics through the
  * bridge, exactly as in the bar.
+ *
+ * One exception to "everything comes from `api`": `read().shell` — position,
+ * density, colour scheme, the height variable, bar and overflow membership —
+ * is read off the root element, because the shell is core and core has no
+ * extension to publish it through `diagnostics()`
+ * (`plans/agent-readable-toolbar.md` § Phase 1). That is the only DOM read in
+ * this extension, and it never touches another extension's markup: an
+ * extension that wants to be readable publishes state.
  */
 import { installAgentBridge } from "./runtime";
 import { DEFAULT_GLOBAL_NAME } from "./types";
@@ -158,14 +166,18 @@ export {
   createAgentHandle,
   createAgentRegistry,
   installAgentBridge,
+  readShell,
   toCommandView,
 } from "./runtime";
 export type { AgentRuntimeOptions } from "./runtime";
 export { AGENT_MARKER, AGENT_PROTOCOL_VERSION, DEFAULT_GLOBAL_NAME } from "./types";
 export type {
+  AgentBarItemView,
   AgentCommandView,
   AgentHandle,
+  AgentOverflowView,
   AgentRegistry,
   AgentRunResult,
+  AgentShellView,
   AgentSnapshot,
 } from "./types";

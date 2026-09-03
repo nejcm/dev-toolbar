@@ -167,6 +167,7 @@ export function createMetricsRuntime(options: MetricsRuntimeOptions): MetricsRun
     },
     diagnostics() {
       const at = now();
+      const latest = store.peek();
       const payload: Record<string, unknown> = {
         generatedAt: new Date().toISOString(),
         userAgent: typeof navigator === "undefined" ? null : navigator.userAgent,
@@ -174,6 +175,28 @@ export function createMetricsRuntime(options: MetricsRuntimeOptions): MetricsRun
         // likely credential carrier here (e.g. an OAuth `?access_token=…`
         // callback), and this is headed for a clipboard.
         url: typeof location === "undefined" ? null : redactUrl(location.href),
+        /**
+         * The numbers, not the chips' formatted text
+         * (`plans/agent-readable-toolbar.md` § Phase 1). `display` is a
+         * rendering decision — `"58 fps"`, `"1.2 MB"` — and a reader that has
+         * to parse it back cannot tell a unit change from a regression.
+         *
+         * Read off the last published snapshot rather than re-aggregating:
+         * `diagnostics()` is called on every roster read and must stay cheap.
+         */
+        metrics: latest.order.map((id) => {
+          const view = latest.views[id];
+          return {
+            id,
+            status: view.status,
+            severity: view.severity,
+            // `null`, not `NaN`: `JSON.stringify(NaN)` is `null` anyway, and
+            // saying so here keeps the in-memory object and the serialised one
+            // the same shape.
+            value: Number.isFinite(view.value) ? view.value : null,
+            unit: view.unit,
+          };
+        }),
       };
       for (const collector of collectors) {
         payload[collector.id] = collector.diagnostics(at);

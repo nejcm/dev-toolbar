@@ -100,6 +100,12 @@ export function commandMenu(options: CommandMenuOptions = {}): DevToolbarExtensi
       return runtime.start(api);
     },
 
+    /**
+     * Whether the palette is open, and the current query.
+     * `plans/agent-readable-toolbar.md` § Phase 1.
+     */
+    diagnostics: () => runtime.diagnostics(),
+
     compact: ({ isOverflowed }) => (
       <CommandMenuTrigger
         runtime={runtime}

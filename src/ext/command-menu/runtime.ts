@@ -72,6 +72,12 @@ export interface CommandMenuRuntime {
   refresh(): void;
   /** Runs the active row, or a specific id. Resolves when it has settled. */
   run(id?: string): Promise<void>;
+  /**
+   * Whether the palette is open and what is typed in it. Pure and cheap — it
+   * reads the last published snapshot and re-enumerates nothing
+   * (`plans/agent-readable-toolbar.md` § Phase 1).
+   */
+  diagnostics(): unknown;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -483,5 +489,28 @@ export function createCommandMenuRuntime(
     },
 
     run,
+
+    /**
+     * Counts, not the lists. The command roster is already reachable through
+     * `getCommands()` (and through the agent bridge's `listCommands()`), so
+     * repeating it here would duplicate the largest thing in a bug-report
+     * snapshot inside one of its own contributions.
+     */
+    diagnostics() {
+      const latest = store.peek();
+      return {
+        open: latest.open,
+        query: latest.query,
+        ready: latest.ready,
+        activeIndex: latest.activeIndex,
+        activeId: latest.results[latest.activeIndex]?.command.id ?? null,
+        commandCount: latest.commands.length,
+        resultCount: latest.results.length,
+        running: latest.running,
+        error: latest.error,
+        recent: latest.recent,
+        shortcut: hotkey === null ? null : describeHotkey(hotkey, apple),
+      };
+    },
   };
 }
