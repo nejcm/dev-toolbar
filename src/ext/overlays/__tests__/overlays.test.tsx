@@ -682,6 +682,37 @@ describe("the focus scan describes the real tab sequence", () => {
     form.remove();
   });
 
+  it("skips a focusable inside an inert ancestor", async () => {
+    const wrapper = document.createElement("div");
+    wrapper.setAttribute("inert", "");
+    wrapper.innerHTML = `<button data-testid="in-inert" aria-label="Inside inert"></button>`;
+    document.body.appendChild(wrapper);
+
+    mount({ defaults: { focus: true } });
+    const inside = wrapper.querySelector('[data-testid="in-inert"]') as Element;
+    withRect(inside, { x: 0, y: 10, width: 80, height: 24 });
+    await frame();
+
+    expect(badges().some((badge) => badge.textContent?.includes("Inside inert"))).toBe(false);
+    wrapper.remove();
+  });
+
+  it("flags aria-hidden focusables that remain Tab stops", async () => {
+    const hidden = document.createElement("button");
+    hidden.setAttribute("aria-hidden", "true");
+    hidden.setAttribute("aria-label", "Hidden but focusable");
+    document.body.appendChild(hidden);
+
+    mount({ defaults: { focus: true } });
+    withRect(hidden, { x: 0, y: 10, width: 80, height: 24 });
+    await frame();
+
+    const flagged = badges().find((badge) => badge.textContent?.includes("Hidden but focusable"));
+    expect(flagged).toBeDefined();
+    expect(flagged?.querySelector('[data-dtb-part="ovl-tag"]')?.textContent).toBe("aria-hidden");
+    hidden.remove();
+  });
+
   it("does not let hidden inputs consume the badge limit", async () => {
     const hidden = document.createElement("div");
     hidden.innerHTML = `<input type="hidden" name="a"><input type="hidden" name="b">`;

@@ -2,10 +2,12 @@
  * The parts of `/ext/overlays` that need no toolbar: the DOM *reading* helpers
  * and the one thing this extension writes to a document it does not own.
  */
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { fireEvent } from "@testing-library/react";
 import {
   BOXES_REFS_ATTRIBUTE,
   BOXES_STYLE_ENTRY,
+  DEFAULT_FOCUS_LIMIT,
   createOverlaysRuntime,
   setHostOutlines,
 } from "../runtime";
@@ -23,8 +25,11 @@ import {
   sameSnapshot,
   serializeFlags,
   tabIndexOf,
+  DEFAULT_GRID,
 } from "../types";
 import type { OverlaysSnapshot } from "../types";
+import { createMemoryStorage } from "../../../core/storage";
+import type { ExtensionRuntimeApi } from "../../../core/contract";
 
 const html = (markup: string): HTMLElement => {
   const host = document.createElement("div");
@@ -33,8 +38,115 @@ const html = (markup: string): HTMLElement => {
   return host;
 };
 
+/** Drives jsdom's timer-backed `requestAnimationFrame`. */
+const frame = async () => {
+  await new Promise((resolve) => setTimeout(resolve, 32));
+};
+
+// Longer than the 250ms `mutationDebounceMs` default, then one frame to let the
+// rescan it queues run. Tests that depend on a mutation being *noticed* must
+// wait this out rather than counting frames, and tests that must not be
+// disturbed by one should call it first so the pending timer is already spent.
+const settleMutations = async () => {
+  await new Promise((resolve) => setTimeout(resolve, 450));
+  await frame();
+};
+
+const withRect = (
+  element: Element,
+  rect: { x: number; y: number; width: number; height: number },
+) => {
+  element.getBoundingClientRect = () =>
+    ({
+      x: rect.x,
+      y: rect.y,
+      left: rect.x,
+      top: rect.y,
+      width: rect.width,
+      height: rect.height,
+      right: rect.x + rect.width,
+      bottom: rect.y + rect.height,
+      toJSON: () => rect,
+    }) as DOMRect;
+};
+
+function fakeApi(): ExtensionRuntimeApi {
+  const controller = new AbortController();
+  const listeners = new Set<(visible: boolean) => void>();
+  return {
+    signal: controller.signal,
+    isVisible: () => true,
+    subscribeVisibility(callback) {
+      listeners.add(callback);
+      return () => listeners.delete(callback);
+    },
+    getCommands: () => [],
+    getDiagnostics: () => [],
+    runCommand: async () => false,
+    storage: createMemoryStorage(),
+  };
+}
+
+/** `fakeApi`, plus the handle needed to drive the bar's visibility. */
+function visibleApi(): { api: ExtensionRuntimeApi; set: (visible: boolean) => void } {
+  const listeners = new Set<(visible: boolean) => void>();
+  let visible = true;
+  const api: ExtensionRuntimeApi = {
+    ...fakeApi(),
+    isVisible: () => visible,
+    subscribeVisibility(callback) {
+      listeners.add(callback);
+      return () => listeners.delete(callback);
+    },
+  };
+  return {
+    api,
+    set(next) {
+      visible = next;
+      for (const listener of listeners) listener(next);
+    },
+  };
+}
+
+/**
+ * Fires on first `observe()` when the target has a box — like a real
+ * ResizeObserver's initial delivery — but only for newly observed targets.
+ */
+class GeometryResizeObserver implements ResizeObserver {
+  static instances: GeometryResizeObserver[] = [];
+  readonly targets = new Map<Element, ResizeObserverOptions | undefined>();
+  callbackCount = 0;
+  constructor(private readonly callback: ResizeObserverCallback) {
+    GeometryResizeObserver.instances.push(this);
+  }
+  observe(target: Element, options?: ResizeObserverOptions): void {
+    if (this.targets.has(target)) return;
+    this.targets.set(target, options);
+    const rect = target.getBoundingClientRect();
+    if (rect.width > 0 || rect.height > 0) {
+      queueMicrotask(() => {
+        if (!this.targets.has(target)) return;
+        this.callbackCount += 1;
+        this.callback([], this);
+      });
+    }
+  }
+  unobserve(target: Element): void {
+    this.targets.delete(target);
+  }
+  disconnect(): void {
+    this.targets.clear();
+  }
+  trigger(target: Element): void {
+    if (!this.targets.has(target)) return;
+    this.callbackCount += 1;
+    this.callback([], this);
+  }
+}
+
 afterEach(() => {
   document.body.innerHTML = "";
+  GeometryResizeObserver.instances = [];
   vi.restoreAllMocks();
 });
 
@@ -178,6 +290,10 @@ describe("the grid", () => {
       maxWidth: 1200,
       baseline: 8,
     });
+  });
+
+  it("treats columns: NaN as the default — NaN poisons Math.max/min", () => {
+    expect(normalizeGrid({ columns: Number.NaN }).columns).toBe(DEFAULT_GRID.columns);
   });
 });
 
@@ -330,6 +446,7 @@ describe("snapshot equality", () => {
       tag: "button",
       name: "Save",
       tabIndex: null,
+      ariaHidden: false,
     };
     expect(
       sameSnapshot({ ...base, focusItems: [item] }, { ...base, focusItems: [{ ...item }] }),
@@ -340,5 +457,324 @@ describe("snapshot equality", () => {
         { ...base, focusItems: [{ ...item, name: null }] },
       ),
     ).toBe(false);
+  });
+});
+
+describe("geometry observation", () => {
+  beforeEach(() => {
+    vi.stubGlobal("ResizeObserver", GeometryResizeObserver);
+  });
+
+  it("does not re-observe retained elements every frame — that loops forever", async () => {
+    const runtime = createOverlaysRuntime({ defaults: { focus: true } });
+    const stop = runtime.start(fakeApi());
+    const button = document.createElement("button");
+    button.setAttribute("aria-label", "Stable");
+    document.body.appendChild(button);
+    withRect(button, { x: 10, y: 10, width: 80, height: 24 });
+    await frame();
+    await frame();
+
+    const observer = GeometryResizeObserver.instances[0]!;
+    const afterSettle = observer.callbackCount;
+    for (let index = 0; index < 10; index += 1) {
+      await frame();
+    }
+    expect(observer.callbackCount).toBe(afterSettle);
+
+    stop();
+  });
+
+  it("re-measures a focus badge when its element resizes under a still pointer", async () => {
+    const runtime = createOverlaysRuntime({ defaults: { focus: true } });
+    const stop = runtime.start(fakeApi());
+    const button = document.createElement("button");
+    button.setAttribute("aria-label", "Grow");
+    document.body.appendChild(button);
+    withRect(button, { x: 10, y: 10, width: 80, height: 24 });
+    await frame();
+
+    const observed = GeometryResizeObserver.instances.flatMap((observer) => [
+      ...observer.targets.keys(),
+    ]);
+    expect(observed).toContain(button);
+    expect([...GeometryResizeObserver.instances[0]!.targets.values()][0]).toEqual({
+      box: "border-box",
+    });
+
+    const before = runtime.store.peek().focusItems[0]?.rect.width;
+    expect(before).toBe(80);
+
+    const observer = GeometryResizeObserver.instances[0];
+    expect(observer).toBeDefined();
+    observer!.trigger(document.createElement("div"));
+    await frame();
+    expect(runtime.store.peek().focusItems[0]?.rect.width).toBe(80);
+
+    withRect(button, { x: 10, y: 10, width: 120, height: 24 });
+    observer!.trigger(button);
+    await frame();
+    expect(runtime.store.peek().focusItems[0]?.rect.width).toBe(120);
+
+    stop();
+  });
+
+  it("schedules on class changes without queueing a focus rescan", async () => {
+    const runtime = createOverlaysRuntime({
+      defaults: { focus: true },
+      mutationDebounceMs: 400,
+    });
+    const stop = runtime.start(fakeApi());
+    const button = document.createElement("button");
+    button.setAttribute("aria-label", "Move");
+    document.body.appendChild(button);
+    withRect(button, { x: 10, y: 10, width: 80, height: 24 });
+    await frame();
+    await new Promise((resolve) => setTimeout(resolve, 450));
+
+    const scans = vi.spyOn(document, "querySelectorAll");
+    button.className = "shifted";
+    withRect(button, { x: 50, y: 10, width: 80, height: 24 });
+    await frame();
+    await new Promise((resolve) => setTimeout(resolve, 450));
+
+    const tabbableScans = scans.mock.calls.filter(
+      ([selector]) => typeof selector === "string" && selector.includes("audio[controls]"),
+    ).length;
+    expect(tabbableScans).toBe(0);
+    expect(runtime.store.peek().focusItems[0]?.rect.x).toBe(50);
+
+    stop();
+  });
+
+  it("observes the hover target in inspect-only mode and re-measures on resize", async () => {
+    const runtime = createOverlaysRuntime({ defaults: { inspect: true } });
+    const stop = runtime.start(fakeApi());
+    const button = document.createElement("button");
+    button.textContent = "Hover me";
+    document.body.appendChild(button);
+    withRect(button, { x: 0, y: 0, width: 100, height: 40 });
+    (document as Document & { elementFromPoint: () => Element | null }).elementFromPoint = () =>
+      button;
+    fireEvent.pointerMove(window, { clientX: 10, clientY: 10 });
+    await frame();
+
+    const observed = GeometryResizeObserver.instances.flatMap((observer) => [
+      ...observer.targets.keys(),
+    ]);
+    expect(observed).toContain(button);
+    expect(runtime.store.peek().hover?.size).toBe("100 × 40");
+
+    withRect(button, { x: 0, y: 0, width: 150, height: 40 });
+    GeometryResizeObserver.instances[0]!.trigger(button);
+    await frame();
+    expect(runtime.store.peek().hover?.size).toBe("150 × 40");
+
+    stop();
+  });
+
+  it("unobserves a disconnected badge element after the next frame", async () => {
+    const runtime = createOverlaysRuntime({ defaults: { focus: true } });
+    const stop = runtime.start(fakeApi());
+    const button = document.createElement("button");
+    button.setAttribute("aria-label", "Gone");
+    document.body.appendChild(button);
+    withRect(button, { x: 10, y: 10, width: 80, height: 24 });
+    await frame();
+
+    const observer = GeometryResizeObserver.instances[0]!;
+    expect([...observer.targets.keys()]).toContain(button);
+
+    button.remove();
+    // Past the mutation debounce, not a single frame: removal is noticed by a
+    // rescan, which `onMutation` debounces, so a 32ms frame races the 250ms
+    // timer and only wins on a fast machine. This failed in CI and passed
+    // locally until the wait was made longer than the debounce.
+    await settleMutations();
+    expect([...observer.targets.keys()]).not.toContain(button);
+
+    stop();
+  });
+});
+
+describe("hover name caching", () => {
+  it("resolves the accessible name once per hover until a non-geometry mutation", async () => {
+    const runtime = createOverlaysRuntime({ defaults: { inspect: true } });
+    const stop = runtime.start(fakeApi());
+    const host = html(`<span id="lbl">Save</span><button id="big" aria-labelledby="lbl"></button>`);
+    const button = host.querySelector("#big") as Element;
+    withRect(button, { x: 0, y: 0, width: 100, height: 40 });
+    (document as Document & { elementFromPoint: () => Element | null }).elementFromPoint = () =>
+      button;
+    fireEvent.pointerMove(window, { clientX: 10, clientY: 10 });
+
+    const lookups = vi.spyOn(document, "getElementById");
+    await frame();
+    expect(runtime.store.peek().hover?.name).toBe("Save");
+
+    // Spend the debounce the `html()` insertion started before counting. The
+    // loop below is ~160ms of frames, so on a slow runner that timer fired
+    // mid-loop, invalidated the cache and bought one extra lookup — the test
+    // was measuring which of the two won the race, not whether the cache holds.
+    await settleMutations();
+    fireEvent.pointerMove(window, { clientX: 10, clientY: 10 });
+    await frame();
+
+    const afterFirst = lookups.mock.calls.length;
+    expect(afterFirst).toBeGreaterThan(0);
+    const beforeLoop = lookups.mock.calls.length;
+    for (let index = 0; index < 5; index += 1) {
+      fireEvent.pointerMove(window, { clientX: 10, clientY: 10 });
+      await frame();
+    }
+    expect(lookups.mock.calls.length).toBe(beforeLoop);
+
+    host.querySelector("#lbl")!.textContent = "Renamed";
+    await new Promise((resolve) => setTimeout(resolve, 450));
+    await frame();
+    expect(runtime.store.peek().hover?.name).toBe("Renamed");
+    expect(lookups.mock.calls.length).toBeGreaterThan(afterFirst);
+
+    stop();
+  });
+});
+
+describe("finite option clamps", () => {
+  it("treats focusLimit: NaN as the default cap — NaN disables Math.max/min", async () => {
+    const host = document.createElement("div");
+    for (let index = 0; index < DEFAULT_FOCUS_LIMIT + 1; index += 1) {
+      const button = document.createElement("button");
+      button.setAttribute("aria-label", `btn-${index}`);
+      host.appendChild(button);
+      withRect(button, { x: 0, y: index * 30, width: 40, height: 20 });
+    }
+    document.body.appendChild(host);
+
+    const runtime = createOverlaysRuntime({
+      focusLimit: Number.NaN,
+      defaults: { focus: true },
+    });
+    const stop = runtime.start(fakeApi());
+    await frame();
+    expect(runtime.store.peek().focusTruncated).toBe(true);
+    expect(runtime.store.peek().focusItems.length).toBeGreaterThan(0);
+
+    stop();
+  });
+
+  it("clears focus truncation counts when the runtime stops", async () => {
+    const host = document.createElement("div");
+    for (let index = 0; index < DEFAULT_FOCUS_LIMIT + 1; index += 1) {
+      const button = document.createElement("button");
+      button.setAttribute("aria-label", `btn-${index}`);
+      host.appendChild(button);
+      withRect(button, { x: 0, y: index * 30, width: 40, height: 20 });
+    }
+    document.body.appendChild(host);
+
+    const runtime = createOverlaysRuntime({ defaults: { focus: true } });
+    const stop = runtime.start(fakeApi());
+    await frame();
+    expect(runtime.store.peek().focusTruncated).toBe(true);
+    expect(runtime.store.peek().unnamedCount).toBe(0);
+
+    stop();
+    expect(runtime.store.peek().focusTruncated).toBe(false);
+    expect(runtime.store.peek().unnamedCount).toBe(0);
+  });
+});
+
+describe("toggling focus while the shared DOM observer already exists", () => {
+  it("scans when focus is enabled after inspect", async () => {
+    const button = document.createElement("button");
+    button.setAttribute("aria-label", "Late");
+    document.body.appendChild(button);
+    withRect(button, { x: 10, y: 10, width: 80, height: 24 });
+
+    const runtime = createOverlaysRuntime({ defaults: { inspect: true } });
+    const stop = runtime.start(fakeApi());
+    await frame();
+    expect(runtime.store.peek().focusItems.length).toBe(0);
+
+    runtime.set("focus", true);
+    await frame();
+    await frame();
+    expect(runtime.store.peek().focusItems.length).toBe(1);
+
+    stop();
+  });
+
+  it("drops focus state while the bar is hidden", async () => {
+    const button = document.createElement("button");
+    button.setAttribute("aria-label", "Hidden soon");
+    document.body.appendChild(button);
+    withRect(button, { x: 10, y: 10, width: 80, height: 24 });
+
+    const visibility = visibleApi();
+    const runtime = createOverlaysRuntime({ defaults: { focus: true } });
+    const stop = runtime.start(visibility.api);
+    await frame();
+    expect(runtime.store.peek().focusItems.length).toBe(1);
+
+    visibility.set(false);
+    expect(runtime.store.peek().focusItems.length).toBe(0);
+
+    stop();
+  });
+
+  it("stops observing former focus elements when focus goes off under inspect", async () => {
+    vi.stubGlobal("ResizeObserver", GeometryResizeObserver);
+    const badge = document.createElement("button");
+    badge.setAttribute("aria-label", "Badge");
+    document.body.appendChild(badge);
+    withRect(badge, { x: 10, y: 10, width: 80, height: 24 });
+    const hovered = document.createElement("div");
+    document.body.appendChild(hovered);
+    withRect(hovered, { x: 0, y: 200, width: 100, height: 40 });
+    (document as Document & { elementFromPoint: () => Element | null }).elementFromPoint = () =>
+      hovered;
+
+    const runtime = createOverlaysRuntime({ defaults: { focus: true, inspect: true } });
+    const stop = runtime.start(fakeApi());
+    fireEvent.pointerMove(window, { clientX: 10, clientY: 210 });
+    await frame();
+
+    const observer = GeometryResizeObserver.instances[0]!;
+    expect([...observer.targets.keys()]).toContain(badge);
+
+    runtime.set("focus", false);
+    expect([...observer.targets.keys()]).not.toContain(badge);
+    expect([...observer.targets.keys()]).toContain(hovered);
+    // Resetting only when the shared DOM observer goes off would leave these
+    // populated, since inspect keeps that observer attached.
+    expect(runtime.store.peek().focusItems.length).toBe(0);
+    expect(runtime.store.peek().unnamedCount).toBe(0);
+
+    stop();
+  });
+});
+
+describe("hover names without a MutationObserver", () => {
+  it("re-resolves every frame, because the cache has no invalidator", async () => {
+    vi.stubGlobal("MutationObserver", undefined);
+    const runtime = createOverlaysRuntime({ defaults: { inspect: true } });
+    const stop = runtime.start(fakeApi());
+    const host = html(`<span id="lbl">Save</span><button id="big" aria-labelledby="lbl"></button>`);
+    const button = host.querySelector("#big") as Element;
+    withRect(button, { x: 0, y: 0, width: 100, height: 40 });
+    (document as Document & { elementFromPoint: () => Element | null }).elementFromPoint = () =>
+      button;
+    fireEvent.pointerMove(window, { clientX: 10, clientY: 10 });
+    await frame();
+    expect(runtime.store.peek().hover?.name).toBe("Save");
+
+    // Nothing can mark the cache stale here, so a bypass is the only thing
+    // that keeps the published name honest.
+    host.querySelector("#lbl")!.textContent = "Renamed";
+    fireEvent.pointerMove(window, { clientX: 10, clientY: 10 });
+    await frame();
+    expect(runtime.store.peek().hover?.name).toBe("Renamed");
+
+    stop();
   });
 });
