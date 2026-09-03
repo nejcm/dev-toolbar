@@ -7,8 +7,9 @@
  * to patch over another copy of themselves, and refuse to restore over
  * somebody else's later patch.
  *
- * Every URL goes through `redactUrl()` before retention. Headers and bodies
- * are never read.
+ * Every URL goes through `redactUrl()` before retention, as do the URL-shaped
+ * substrings of an error message — that text is foreign, and a rejection
+ * routinely names the request it failed on. Headers and bodies are never read.
  */
 import { createRingBuffer, createTimeSeries, redactUrl } from "../../../runtime";
 import type { BusLike, RedactOptions, ToolbarEventMap } from "../../../runtime";
@@ -164,6 +165,40 @@ function reportSinkError(error: unknown): void {
   );
 }
 
+/**
+ * An absolute-URL substring inside free text. Same scheme shape `redact()`'s
+ * `ABSOLUTE_URL` uses, but unanchored. Only whitespace, a quote and `<>` end it
+ * mid-URL; the closing delimiters `)` and `]` and the sentence punctuation
+ * `.,;:!?` are excluded from the **last character only**.
+ *
+ * That split is load-bearing in both directions. Excluding them from the last
+ * character is what keeps `…?token=x. Then` from burying its full stop in the
+ * mask, and what lets `(https://a.test/?token=x)` and `[https://a.test/]` stop
+ * at their closing delimiter. Excluding them mid-URL instead would truncate the
+ * match at the *first* `)` or `]` — so a bracketed array or filter parameter,
+ * ordinary Rails / PHP / JSON:API query syntax, ended the match before the
+ * credential that followed it and `?ids[]=1&access_token=abc` went to
+ * `diagnostics()` verbatim. A legitimate trailing dot inside a path is still
+ * consumed mid-URL for the same reason.
+ *
+ * The leading lookbehind is what keeps this linear. Without it, every position
+ * inside a long alphanumeric run is a candidate start: `[A-Za-z][A-Za-z0-9+.-]*`
+ * scans to the end of the run before failing on the missing `:`, which is
+ * quadratic — the same shape Phase 1's R1 removed from `ACRONYM`, and reachable
+ * here because the text is app-supplied (a stringified body or a base64 blob in
+ * an error message, and `[A-Za-z0-9+.-]` covers most of base64). 200k letters
+ * took 5.4s synchronously inside the host's rejection handler; the lookbehind
+ * makes every interior position fail in O(1).
+ *
+ * The lookbehind has a deliberate cost: a URL glued directly to a preceding
+ * digit, `.`, `-` or `+` with no separator (`code=1https://a.test/?token=x`) is
+ * not seen at all. That is accepted, not overlooked — dropping the lookbehind
+ * to catch it puts the quadratic blow-up straight back. Widen the *separator*
+ * class if a real case turns up; do not remove the lookbehind.
+ */
+const URL_IN_TEXT =
+  /(?<![A-Za-z0-9+.-])[A-Za-z][A-Za-z0-9+.-]*:\/\/[^\s"'`<>]*[^\s"'`<>)\].,;:!?]/g;
+
 const parseBytes = (raw: string | null | undefined): number | undefined => {
   if (raw === null || raw === undefined) return undefined;
   const value = Number.parseInt(raw, 10);
@@ -311,6 +346,22 @@ export function createNetworkCollector(options: NetworkCollectorOptions = {}): C
 
   const clean = (url: string) => redactUrl(url, options.redact);
 
+  /**
+   * Error text is *foreign*: it comes from the host's `fetch` rejection, an
+   * `XMLHttpRequest` event, or whatever an app put on a `network-end` payload.
+   * A rejection routinely names the request it failed on
+   * (`TypeError: Failed to fetch https://api.test/v1?token=abc`), so the string
+   * kept for `diagnostics()` and the panel had a credential in it while the
+   * sibling `url` field next to it was already redacted.
+   *
+   * Only the URL-shaped substrings are rewritten, not the whole message:
+   * `redactUrl()` on a whole sentence resolves it against a base and comes back
+   * percent-encoded, which would mangle the one piece of a failed request a
+   * developer actually reads. Non-URL secrets in foreign prose are still not
+   * covered — this pass only knows URLs.
+   */
+  const cleanErrorText = (text: string) => text.replace(URL_IN_TEXT, (url) => clean(url));
+
   const begin = (now: number, method: string, rawUrl: string, id?: string): NetworkEntry | null => {
     const url = clean(rawUrl);
     if (filter && !filter({ method, url })) return null;
@@ -351,7 +402,7 @@ export function createNetworkCollector(options: NetworkCollectorOptions = {}): C
     entry.completedAt = now;
     entry.status = result.status;
     entry.bytes = result.bytes;
-    entry.error = result.error;
+    entry.error = result.error === undefined ? undefined : cleanErrorText(result.error);
     entry.aborted = result.aborted ?? false;
     const duration = now - entry.startedAt;
     const failed =

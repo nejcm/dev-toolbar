@@ -12,6 +12,14 @@ describe("maskEmails", () => {
     expect(maskEmails("a@x.io and bob@y.co.uk")).toBe("a***@x.io and b***@y.co.uk");
   });
 
+  it("matches a form-encoded separator too, and preserves the one it found", () => {
+    // `redactUrl()` re-serialises the query when it masks anything, so an
+    // address arrives here as `a%40b.io`. Output keeps `%40` rather than
+    // normalising it, so the row still shows what the URL pass produced.
+    expect(maskEmails("login_hint=nejc%40example.com")).toBe("login_hint=n***%40example.com");
+    expect(maskEmails("a@x.io and bob%40y.co.uk")).toBe("a***@x.io and b***%40y.co.uk");
+  });
+
   it("leaves anything that is not an address alone", () => {
     expect(maskEmails("usr_123")).toBe("usr_123");
   });
@@ -520,5 +528,153 @@ describe("`masked` on a Date-valued extra", () => {
     } finally {
       spy.mockRestore();
     }
+  });
+});
+
+describe("URL-shaped fields", () => {
+  /**
+   * The highest-severity finding of the review. `detectRoute()` returns a
+   * *relative* reference, which `redact()`'s value pass never inspects — it
+   * only fires on `scheme://…` — so on an OAuth implicit callback a live
+   * `access_token` reached the panel, `snapshotText()`, `diagnostics()` and
+   * both copy commands, tagged `masked: false`.
+   *
+   * The naive fix (redacting `detectRoute()`'s own return) was rejected: it
+   * makes both sides of `redactValues`' comparison equal, so the row stops
+   * leaking but still reports `masked: false` — the reader is told nothing was
+   * hidden. So the raw value stays raw and only the rendered side is redacted.
+   */
+  const routeField = (search: string, hash: string) => {
+    history.pushState({}, "", `/callback${search}${hash}`);
+    try {
+      const runtime = createEnvironmentRuntime({ context: { environment: "staging" } });
+      const snapshot = runtime.store.getSnapshot();
+      return {
+        field: snapshot.fields.find((entry) => entry.id === "route"),
+        text: runtime.snapshotText(),
+        dump: JSON.stringify(runtime.diagnostics()),
+        maskedCount: snapshot.maskedCount,
+      };
+    } finally {
+      history.pushState({}, "", "/");
+    }
+  };
+
+  it("masks a token in both the query and the hash of a detected route", () => {
+    const { field, text, dump } = routeField("?access_token=abc123", "#id_token=xyz789&state=s");
+    expect(field?.value).toBe("/callback?access_token=[redacted]#id_token=[redacted]&state=s");
+    expect(field?.value).not.toContain("abc123");
+    expect(field?.value).not.toContain("xyz789");
+    // The row must also say it was rewritten — a closed leak labelled unmasked
+    // is worse than the leak, because nobody double-checks a clean-looking row.
+    expect(field?.masked).toBe(true);
+    // Still the browser's answer about this tab, not something the deploy said.
+    expect(field?.source).toBe("detected");
+    expect(text).not.toContain("abc123");
+    expect(text).not.toContain("xyz789");
+    expect(dump).not.toContain("abc123");
+    expect(dump).not.toContain("xyz789");
+  });
+
+  it("leaves a route with nothing to mask byte-for-byte, and says so", () => {
+    // The other direction of the same lie: `redactUrl()` normalises when it
+    // rewrites, so an innocent route must come back untouched and unflagged.
+    const { field } = routeField("?page=2&sort=name", "#section-3");
+    expect(field?.value).toBe("/callback?page=2&sort=name#section-3");
+    expect(field?.masked).toBe(false);
+  });
+
+  it("counts the masked route in the footer snapshotText() prints", () => {
+    // The footer is a claim about the text above it; before the fix it could
+    // read "(0 values masked)" over a line containing a live token.
+    const { text, maskedCount } = routeField("?access_token=abc123", "");
+    expect(maskedCount).toBe(1);
+    expect(text).toContain("(1 value masked before copying)");
+    const lines = text.split("\n").filter((line) => line.startsWith("Route: "));
+    expect(lines).toEqual(["Route: /callback?access_token=[redacted]"]);
+  });
+
+  it("masks userinfo in an absolute wss:// endpoint", () => {
+    // Phase 1 widened `ABSOLUTE_URL` to require `://` rather than reject a
+    // non-http scheme, which is what makes a websocket endpoint maskable at all.
+    const runtime = createEnvironmentRuntime({
+      detect: false,
+      context: { apiEndpoint: "wss://user:pass@a.test/socket" },
+    });
+    const field = runtime.store.getSnapshot().fields.find((entry) => entry.id === "apiEndpoint");
+    expect(field?.value).toBe("wss://[redacted]:[redacted]@a.test/socket");
+    expect(field?.masked).toBe(true);
+  });
+
+  it("masks a protocol-relative endpoint's password rather than mangling it", () => {
+    /**
+     * A protocol-relative endpoint has no `scheme://`, so `redact()`'s value
+     * pass skips it and only the explicit `redactUrl()` pass sees it. With no
+     * URL pass, the email pass got there first and the row read
+     * `//user:p***@a.test/socket` — the password mangled rather than masked,
+     * and its first character still on screen and on the clipboard.
+     *
+     * For this input the two orders converge; the order itself is pinned by the
+     * `token@x.co` test below.
+     */
+    const runtime = createEnvironmentRuntime({
+      detect: false,
+      context: { apiEndpoint: "//user:pass@a.test/socket" },
+    });
+    const field = runtime.store.getSnapshot().fields.find((entry) => entry.id === "apiEndpoint");
+    expect(field?.value).toBe("//[redacted]:[redacted]@a.test/socket");
+    expect(field?.value).not.toContain("p***@");
+    expect(field?.masked).toBe(true);
+  });
+
+  it("still masks an address beside a masked token — redactUrl() re-serialises @ as %40", () => {
+    /**
+     * `maskUrl()` does not rewrite only the parameter it matched: masking any
+     * one of them re-serialises the whole query through
+     * `URLSearchParams.toString()`, which form-encodes the `@` of every *other*
+     * parameter as `%40`. An `@`-only `EMAIL` then walked straight past the
+     * address, so adding the URL pass *introduced* an email leak on any URL
+     * carrying both a credential and an address. Swapping the two passes is not
+     * the fix — `EMAIL` can also match a sensitive *key* (`?token@x.co=secret`)
+     * and mangle it out of `matches()`' reach, leaking the secret instead.
+     */
+    const runtime = createEnvironmentRuntime({
+      detect: false,
+      context: { apiEndpoint: "/callback?access_token=abc&login_hint=nejc@example.com" },
+    });
+    const field = runtime.store.getSnapshot().fields.find((entry) => entry.id === "apiEndpoint");
+    expect(field?.value).toBe("/callback?access_token=[redacted]&login_hint=n***%40example.com");
+    expect(field?.value).not.toContain("nejc");
+    expect(field?.masked).toBe(true);
+  });
+
+  it("keeps a sensitive key matchable when the key itself contains an address", () => {
+    // The reverse leak, and the reason `redactUrl()` goes first: key matching
+    // has to see `token@x.co` before the email pass rewrites it to `t***@x.co`.
+    // The email pass then over-masks the key on its way out, which is cosmetic
+    // — the value it guards is already `[redacted]` by then.
+    const runtime = createEnvironmentRuntime({
+      detect: false,
+      context: { apiEndpoint: "/cb?token@x.co=secret" },
+    });
+    const field = runtime.store.getSnapshot().fields.find((entry) => entry.id === "apiEndpoint");
+    expect(field?.value).not.toContain("secret");
+    expect(field?.value).toBe("/cb?t***%40x.co=[redacted]");
+  });
+
+  it("covers a string-valued extra the module cannot enumerate", () => {
+    // `redactUrl()` returns a non-URL string byte-for-byte, so applying it to
+    // every string extra is free coverage for consumer keys like `callbackUrl`.
+    const runtime = createEnvironmentRuntime({
+      detect: false,
+      context: { extra: { callbackUrl: "/oauth/done?access_token=xyz789", note: "all fine" } },
+    });
+    const fields = runtime.store.getSnapshot().fields;
+    const callback = fields.find((entry) => entry.id === "extra:callbackUrl");
+    expect(callback?.value).toBe("/oauth/done?access_token=[redacted]");
+    expect(callback?.masked).toBe(true);
+    const note = fields.find((entry) => entry.id === "extra:note");
+    expect(note?.value).toBe("all fine");
+    expect(note?.masked).toBe(false);
   });
 });
