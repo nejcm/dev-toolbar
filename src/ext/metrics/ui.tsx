@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useId, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { Sparkline } from "./Sparkline";
 import { writeClipboardText } from "../../runtime";
@@ -100,6 +100,8 @@ const STORAGE_TAB_KEY = "tab";
 export function MetricsPanel({ runtime, injectStyles }: PanelProps): ReactNode {
   const snapshot = useExtensionSurface(runtime.store, injectStyles, ensureMetricsStyles);
   const first = snapshot.order[0] ?? "memory";
+  const idPrefix = `dtb-metrics-${useId().replace(/:/g, "")}`;
+  const tabRefs = useRef<Partial<Record<MetricId, HTMLButtonElement | null>>>({});
   // start(api) has already run by the time a panel can open, so the
   // persisted tab is readable here.
   const [active, setActive] = useState<MetricId>(() => {
@@ -115,6 +117,19 @@ export function MetricsPanel({ runtime, injectStyles }: PanelProps): ReactNode {
 
   const view = snapshot.views[snapshot.order.includes(active) ? active : first];
   const collector = runtime.collectors.find((entry) => entry.id === view.id);
+  const tabId = (id: MetricId) => `${idPrefix}-tab-${id}`;
+  const metricsPanelId = `${idPrefix}-panel`;
+  const focusTab = (id: MetricId | undefined) => {
+    if (id === undefined) return;
+    select(id);
+    tabRefs.current[id]?.focus();
+  };
+
+  const moveTab = (id: MetricId, offset: number) => {
+    const index = snapshot.order.indexOf(id);
+    const nextIndex = (index + offset + snapshot.order.length) % snapshot.order.length;
+    focusTab(snapshot.order[nextIndex]);
+  };
 
   const copy = () => {
     const text = JSON.stringify(runtime.diagnostics(), null, 2);
@@ -131,10 +146,31 @@ export function MetricsPanel({ runtime, injectStyles }: PanelProps): ReactNode {
               key={id}
               type="button"
               role="tab"
+              id={tabId(id)}
               data-dtb-part="metrics-tab"
               data-dtb-metric={id}
               data-dtb-severity={tab.severity}
               aria-selected={tab.id === view.id}
+              aria-controls={metricsPanelId}
+              tabIndex={tab.id === view.id ? 0 : -1}
+              ref={(node) => {
+                tabRefs.current[id] = node;
+              }}
+              onKeyDown={(event) => {
+                if (event.key === "ArrowRight" || event.key === "ArrowDown") {
+                  event.preventDefault();
+                  moveTab(id, 1);
+                } else if (event.key === "ArrowLeft" || event.key === "ArrowUp") {
+                  event.preventDefault();
+                  moveTab(id, -1);
+                } else if (event.key === "Home") {
+                  event.preventDefault();
+                  focusTab(snapshot.order[0]);
+                } else if (event.key === "End") {
+                  event.preventDefault();
+                  focusTab(snapshot.order[snapshot.order.length - 1]);
+                }
+              }}
               onClick={() => select(id)}
             >
               <span data-dtb-part="metrics-dot" aria-hidden="true" />
@@ -144,7 +180,13 @@ export function MetricsPanel({ runtime, injectStyles }: PanelProps): ReactNode {
         })}
       </div>
 
-      <div data-dtb-part="metrics-section" data-dtb-metric={view.id} role="tabpanel">
+      <div
+        id={metricsPanelId}
+        data-dtb-part="metrics-section"
+        data-dtb-metric={view.id}
+        role="tabpanel"
+        aria-labelledby={tabId(view.id)}
+      >
         <div data-dtb-part="metrics-headline">
           <span data-dtb-part="metrics-headline-value">{view.display}</span>
           <span data-dtb-part="metrics-note">{view.unit}</span>

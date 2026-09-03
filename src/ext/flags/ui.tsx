@@ -57,7 +57,7 @@ function PromotedControl({
       data-dtb-part="flag-promoted"
       data-dtb-flag={view.key}
       data-dtb-overridden={view.overridden ? "true" : "false"}
-      {...(view.type === "boolean" ? { role: "switch", "aria-checked": on } : {})}
+      {...(toggleable ? { role: "switch", "aria-checked": on } : {})}
       onClick={toggleable ? onToggle : onOpen}
       title={title}
     >
@@ -133,7 +133,7 @@ export function FlagsChip({
 
   if (isOverflowed) {
     return (
-      <div data-dtb-part="flag-overflow" aria-label={label}>
+      <div data-dtb-part="flag-overflow">
         {promoted}
         {trigger}
       </div>

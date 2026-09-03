@@ -41,3 +41,15 @@ updates:
       minor-and-patch:
         patterns: ["*"]
         update-types: [minor, patch]
+
+  - package-ecosystem: npm
+    directory: "/test/fixtures/jest-consumer"
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 2
+    open-pull-requests-limit: 5
+    groups:
+      minor-and-patch:
+        patterns: ["*"]
+        update-types: [minor, patch]

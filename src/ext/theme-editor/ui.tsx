@@ -63,13 +63,14 @@ export function ThemeChip({
         .filter(Boolean)
         .join(" · ")
     : "Design tokens: none supplied to themeEditor()";
+  const accessibleLabel = edited ? `${label}, ${snapshot.overriddenCount} edited` : label;
 
   return (
     <button
       type="button"
       data-dtb-part={isOverflowed ? "thm-overflow-trigger" : "trigger"}
       aria-expanded={isPanelOpen}
-      aria-label={label}
+      aria-label={accessibleLabel}
       onClick={onToggle}
       title={title}
     >

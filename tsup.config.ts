@@ -4,34 +4,29 @@ import { defineConfig } from "tsup";
  * Entry list mirrors package.json `exports`. Subpaths land here as their
  * phases add them (`./runtime`, `./testing`, `./ext/*`) — never as wildcards.
  */
+const entry = {
+  index: "src/index.ts",
+  runtime: "src/runtime/index.ts",
+  "ext/metrics": "src/ext/metrics/index.tsx",
+  "ext/environment": "src/ext/environment/index.tsx",
+  "ext/flags": "src/ext/flags/index.tsx",
+  "ext/command-menu": "src/ext/command-menu/index.tsx",
+  "ext/overlays": "src/ext/overlays/index.tsx",
+  "ext/diagnostics": "src/ext/diagnostics/index.tsx",
+  "ext/theme-editor": "src/ext/theme-editor/index.tsx",
+  testing: "src/testing/index.ts",
+  styles: "src/styles.css",
+} as const;
+
+// The CSS entry has no declarations. Deriving this list keeps JS and DTS
+// entrypoints in parity as subpaths change.
+const dtsEntry = Object.fromEntries(Object.entries(entry).filter(([name]) => name !== "styles"));
+
 export default defineConfig({
-  entry: {
-    index: "src/index.ts",
-    runtime: "src/runtime/index.ts",
-    "ext/metrics": "src/ext/metrics/index.tsx",
-    "ext/environment": "src/ext/environment/index.tsx",
-    "ext/flags": "src/ext/flags/index.tsx",
-    "ext/command-menu": "src/ext/command-menu/index.tsx",
-    "ext/overlays": "src/ext/overlays/index.tsx",
-    "ext/diagnostics": "src/ext/diagnostics/index.tsx",
-    "ext/theme-editor": "src/ext/theme-editor/index.tsx",
-    testing: "src/testing/index.ts",
-    styles: "src/styles.css",
-  },
+  entry,
   format: ["esm", "cjs"],
   dts: {
-    entry: {
-      index: "src/index.ts",
-      runtime: "src/runtime/index.ts",
-      "ext/metrics": "src/ext/metrics/index.tsx",
-      "ext/environment": "src/ext/environment/index.tsx",
-      "ext/flags": "src/ext/flags/index.tsx",
-      "ext/command-menu": "src/ext/command-menu/index.tsx",
-      "ext/overlays": "src/ext/overlays/index.tsx",
-      "ext/diagnostics": "src/ext/diagnostics/index.tsx",
-      "ext/theme-editor": "src/ext/theme-editor/index.tsx",
-      testing: "src/testing/index.ts",
-    },
+    entry: dtsEntry,
   },
   sourcemap: true,
   clean: true,

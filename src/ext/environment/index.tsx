@@ -49,7 +49,7 @@ export interface EnvironmentOptions extends Pick<
 > {
   /** Extension id. Default `"environment"`. */
   id?: string;
-  /** Bar label, used by the error chip and the panel's accessible name. Default `"Environment"`. */
+  /** Bar label, used by the chip. Default `"Environment"`. */
   label?: string;
   align?: ToolbarAlign;
   order?: number;
@@ -129,7 +129,7 @@ export function environment(options: EnvironmentOptions = {}): DevToolbarExtensi
      */
     diagnostics: () => runtime.diagnostics(),
 
-    panel: () => <EnvironmentPanel runtime={runtime} label={label} injectStyles={injectStyles} />,
+    panel: () => <EnvironmentPanel runtime={runtime} injectStyles={injectStyles} />,
 
     commands: [
       {

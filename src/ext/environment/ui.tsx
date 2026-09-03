@@ -76,11 +76,10 @@ export function EnvironmentChip({
 
 export interface PanelProps {
   runtime: EnvironmentRuntime;
-  label: string;
   injectStyles: boolean;
 }
 
-export function EnvironmentPanel({ runtime, label, injectStyles }: PanelProps): ReactNode {
+export function EnvironmentPanel({ runtime, injectStyles }: PanelProps): ReactNode {
   const snapshot = useExtensionSurface(runtime.store, injectStyles, ensureEnvironmentStyles);
   const [copied, setCopied] = useState<"idle" | "ok" | "failed">("idle");
 
@@ -99,7 +98,6 @@ export function EnvironmentPanel({ runtime, label, injectStyles }: PanelProps): 
       data-dtb-part="env-panel"
       data-dtb-severity={snapshot.severity}
       data-dtb-impersonating={snapshot.impersonating ? "true" : "false"}
-      aria-label={label}
     >
       {snapshot.impersonating ? (
         <p data-dtb-part="env-banner" role="alert">

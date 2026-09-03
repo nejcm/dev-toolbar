@@ -47,8 +47,10 @@ Subpaths, each opt-in and each with its own bundle:
 npm install @nejcm/dev-toolbar
 ```
 
-React 18 or 19 as a peer. `@testing-library/react` is an optional peer, needed only
-by `@nejcm/dev-toolbar/testing`.
+React 18 or 19 and `react-dom` 18 or 19 are required peers. The root entry imports
+`react-dom` statically for portals. `@testing-library/react` is an optional peer for
+`@nejcm/dev-toolbar/testing`; the helpers also import the root package, so the
+optional flag does not make `react-dom` optional.
 
 ## Use
 
@@ -1145,12 +1147,12 @@ no-op — or pass `storage={null}`.
 
 ## Testing extensions
 
-`renderWithToolbar` needs `@testing-library/react`, an **optional** peer — nothing
-else on the subpath does, and nothing imports it statically, so
-`@nejcm/dev-toolbar/testing` imports cleanly without it. Calling
+`renderWithToolbar` needs `@testing-library/react`, an **optional** peer. The other
+testing helpers do not need it, and the runtime import stays clean without it.
+The helpers import the root package, which requires `react-dom`. Calling
 `renderWithToolbar()` without it throws a message telling you what to install.
 
-That "imports cleanly" claim is about the runtime import only. `dist/testing.d.ts`
+The runtime import is clean without RTL; the types are not. `dist/testing.d.ts`
 and `dist/testing.d.cts` both statically import `@testing-library/react`'s own
 types, so a consumer without RTL installed still hits an unresolved-module error
 from the type-checker — under `skipLibCheck: false`, which is `tsc`'s own default,

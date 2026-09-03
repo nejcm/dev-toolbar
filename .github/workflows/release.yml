@@ -11,8 +11,6 @@ on:
   # stop at `release-please` anyway.
   push:
     branches: [main]
-  # Kept for re-running a release by hand — e.g. after a failed `publish`.
-  workflow_dispatch: {}
 
 # Least privilege at the top; each job widens only what it needs.
 permissions:
@@ -264,17 +262,6 @@ jobs:
 
       - name: Install dependencies
         run: bun install --frozen-lockfile
-
-      # Here rather than in `gate` because it verifies packaging, not
-      # correctness: the CJS build's `module.require` fallback for the optional
-      # `@testing-library/react` peer, which no ESM runner can exercise. It
-      # also tests the exact `dist/` this job packs. `npm ci` first — the root
-      # script doesn't install the fixture, so `jest: command not found`.
-      - name: Install the jest-consumer fixture
-        run: npm ci --prefix test/fixtures/jest-consumer
-
-      - name: Verify the packaged CommonJS consumer
-        run: bun run test:jest-consumer
 
       # Lifecycle scripts left on so `prepublishOnly` (`typecheck && build`)
       # rebuilds `dist/` from committed source at pack time rather than

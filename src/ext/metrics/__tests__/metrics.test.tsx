@@ -5,7 +5,7 @@
  * stranger writing an extension would use.
  */
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { act } from "@testing-library/react";
+import { act, fireEvent } from "@testing-library/react";
 import { cleanupToolbar, mountToolbar } from "@nejcm/dev-toolbar/testing";
 import { metrics } from "../index";
 
@@ -186,5 +186,49 @@ describe("metrics lifecycle against the shell", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+});
+
+/*
+ * A1 regression: metrics tabs were plain buttons with no ids, aria-controls,
+ * roving tabindex, arrow-key focus, or a labelled tabpanel.
+ */
+describe("accessibility", () => {
+  it("wires tabs to the panel, roves tabindex, and moves focus on arrow keys", () => {
+    const { toolbar } = mount({
+      only: ["memory", "jank"],
+      memory: { read: memoryRead, sampleMs: 50 },
+    });
+    act(() => toolbar.openPanel("metrics"));
+    const panel = toolbar.panel("metrics");
+    const tabs = () => [
+      ...(panel?.querySelectorAll<HTMLButtonElement>('[data-dtb-part="metrics-tab"]') ?? []),
+    ];
+    const tabpanel = panel?.querySelector<HTMLElement>('[role="tabpanel"]');
+
+    expect(tabs()).toHaveLength(2);
+
+    for (const tab of tabs()) {
+      expect(tab.id).not.toBe("");
+      expect(tab.getAttribute("aria-controls")).toBe(tabpanel?.id);
+    }
+    expect(tabpanel?.getAttribute("aria-labelledby")).toBe(tabs()[0]?.id);
+
+    const [memory, jank] = tabs();
+    expect(memory?.getAttribute("aria-selected")).toBe("true");
+    expect(memory?.tabIndex).toBe(0);
+    expect(jank?.getAttribute("aria-selected")).toBe("false");
+    expect(jank?.tabIndex).toBe(-1);
+
+    act(() => memory?.focus());
+    act(() => fireEvent.keyDown(memory as HTMLButtonElement, { key: "ArrowRight" }));
+
+    expect(document.activeElement).toBe(jank);
+    expect(jank?.getAttribute("aria-selected")).toBe("true");
+    expect(jank?.tabIndex).toBe(0);
+    expect(memory?.getAttribute("aria-selected")).toBe("false");
+    expect(memory?.tabIndex).toBe(-1);
+    expect(tabpanel?.getAttribute("aria-labelledby")).toBe(jank?.id);
+    expect(tabpanel?.getAttribute("data-dtb-metric")).toBe("jank");
   });
 });

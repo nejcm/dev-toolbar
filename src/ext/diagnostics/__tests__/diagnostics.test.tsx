@@ -313,6 +313,29 @@ describe("the contract it uses", () => {
   });
 });
 
+/*
+ * A1/D10 regression: the chip aria-label omitted the omission count. The
+ * omissions banner keeps role="alert" on purpose — only the chip label changed.
+ * Pre-fix chip markup: aria-label={label}.
+ */
+describe("accessibility", () => {
+  it("includes the missing count in the chip aria-label and keeps omissions as role=alert", () => {
+    const { toolbar } = mount({}, [
+      { id: "quiet", label: "Quiet" },
+      { id: "loud", label: "Loud", diagnostics: () => ({ ok: true }) },
+    ]);
+    const trigger = () =>
+      toolbar.item("diagnostics")?.querySelector<HTMLButtonElement>('[data-dtb-part="trigger"]');
+    expect(trigger()?.getAttribute("aria-label")).toBe("Diagnostics");
+
+    act(() => toolbar.openPanel("diagnostics"));
+    expect(trigger()?.getAttribute("aria-label")).toBe("Diagnostics, 1 missing");
+
+    const banner = document.querySelector('[data-dtb-part="diag-omissions"]');
+    expect(banner?.getAttribute("role")).toBe("alert");
+  });
+});
+
 /** A stand-in for a neighbouring extension that owns real state. */
 function mountWithNeighbour() {
   const { toolbar } = mount({}, [

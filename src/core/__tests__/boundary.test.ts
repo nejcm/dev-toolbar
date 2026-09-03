@@ -282,6 +282,23 @@ describe("shared extension glue (source)", () => {
   });
 });
 
+describe("extension boundary (source)", () => {
+  it("never value-imports a relative path into core", () => {
+    const files = sourceFiles(resolve(root, "src/ext")).filter(
+      (file) => !/(^|\/)__tests__\//.test(file),
+    );
+    const offenders: string[] = [];
+    for (const file of files) {
+      for (const specifier of coreValueImports(readFileSync(file, "utf8"))) {
+        offenders.push(`${file} -> ${specifier}`);
+      }
+    }
+
+    expect(files.length).toBeGreaterThan(10);
+    expect(offenders).toEqual([]);
+  });
+});
+
 const built = existsSync(`${root}dist/index.js`);
 const mustBeBuilt = Boolean(process.env["CI"]);
 
@@ -453,6 +470,18 @@ if (built || !mustBeBuilt) {
       }
       for (const bundle of [flagsBundle, menuBundle, overlaysBundle, diagnosticsBundle]) {
         expect(bundle).not.toContain(EXT_MARKERS[6] as string);
+      }
+
+      for (const [name, bundle] of [
+        ["metrics", readFileSync(`${root}dist/ext/metrics.cjs`, "utf8")],
+        ["environment", readFileSync(`${root}dist/ext/environment.cjs`, "utf8")],
+        ["flags", flagsBundle],
+        ["command-menu", menuBundle],
+        ["overlays", overlaysBundle],
+        ["diagnostics", diagnosticsBundle],
+        ["theme-editor", themeBundle],
+      ] as const) {
+        expect(bundle, name).not.toContain(CORE_PREFIX);
       }
     });
 

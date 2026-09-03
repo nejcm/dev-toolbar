@@ -316,9 +316,10 @@ not write changelog entries by hand.
    release **tag**, not `github.sha` — that is the push that started the run,
    which predates the release commit, and checking it out would gate the wrong
    tree and pack the previous version. The gate is `ci.yml` called as a
-   reusable workflow, and it is the only CI the release commit gets: `ci.yml` skips the release PR itself (by release-please's
+   reusable workflow, and it is the only CI the release commit gets.
+   `ci.yml` skips the release PR itself (by release-please's
    `release-please--*` branch prefix, or the `chore(release):` title marker)
-   and skips `chore(release):` pushes.
+   and skips draft PRs.
 6. Publishing uses npm **trusted publishing** (OIDC). There is no npm token in
    this repository, and there should never be one again.
 
@@ -338,11 +339,12 @@ hand. The gate can stop a _broken_ release, not an unwanted one. If a change
 should not ship on its own, it must not land on `main` on its own — hold it on
 its branch, or land it behind `chore:`/`refactor:`, which move no version.
 
-`workflow_dispatch` is still declared, for re-running a release by hand after a
-failed `publish`. Two merges in quick succession do not race: `concurrency`
-uses a fixed `release` group with `cancel-in-progress: false`, so the second
-run queues and releases whatever is still unreleased when its turn comes —
-often nothing, which is a clean no-op.
+The workflow runs on pushes to `main`; it has no `workflow_dispatch` recovery
+path. After a failed `publish`, use "Re-run failed jobs" on the original run.
+Two merges in quick succession do not race: `concurrency` uses a fixed
+`release` group with `cancel-in-progress: false`, so the second run queues and
+releases whatever is still unreleased when its turn comes — often nothing,
+which is a clean no-op.
 
 That title is not release-please's default, and the exact string is
 load-bearing. The default pattern is `chore${scope}: release${component}

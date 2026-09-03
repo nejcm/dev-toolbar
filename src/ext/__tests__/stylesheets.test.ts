@@ -15,7 +15,7 @@ import { THEME_EDITOR_CSS } from "../theme-editor/css";
 // behind logical-looking property names. inset-inline(-start|-end), text-align:
 // start|end and padding-block/padding-inline flip automatically.
 const PHYSICAL_CSS_PATTERN =
-  /\bleft:|\bright:|margin-left|margin-right|padding-left|padding-right|text-align:\s*(left|right)|\b(?:padding|margin):\s*[^\s;]+\s+[^\s;]+\s+[^\s;]+\s+[^\s;]+\s*;/;
+  /\bleft\s*:|\bright\s*:|\bborder-(?:left|right)(?:-(?:width|color|style))?\s*:|\bborder-(?:top|bottom)-(?:left|right)-radius\s*:|margin-left|margin-right|padding-left|padding-right|text-align:\s*(left|right)|\b(?:float|clear)\s*:\s*(left|right)\b|\bbackground-position\s*:\s*(left|right)\b|\b(?:inset|padding|margin)\s*:\s*[^\s;]+\s+[^\s;]+\s+[^\s;]+\s+[^\s;]+\s*;/;
 
 function stripComments(css: string): string {
   return css.replace(/\/\*[\s\S]*?\*\//g, "");
@@ -84,7 +84,7 @@ function scopeViolations(css: string): string[] {
     if (ch === "{") {
       const prelude = stripped.slice(preludeStart, i).trim();
       if (depth === 0) {
-        if (!prelude.startsWith("@layer")) {
+        if (prelude !== "@layer dev-toolbar") {
           violations.push(prelude);
         }
       } else if (depth === 1) {
@@ -271,5 +271,34 @@ describe("the checker itself", () => {
   it("flags four-value padding shorthand", () => {
     const css = "padding: 1px 2px 3px 4px;";
     expect(css).toMatch(PHYSICAL_CSS_PATTERN);
+  });
+
+  it.each([
+    ["four-value inset", "inset: 1px 2px 3px 4px;"],
+    ["border-left", "border-left : 1px solid red;"],
+    ["border-right", "border-right: 1px solid red;"],
+    ["border-top-left-radius", "border-top-left-radius: 4px;"],
+    ["border-top-right-radius", "border-top-right-radius: 4px;"],
+    ["border-bottom-left-radius", "border-bottom-left-radius: 4px;"],
+    ["border-bottom-right-radius", "border-bottom-right-radius: 4px;"],
+    ["border-left-width", "border-left-width: 1px;"],
+    ["four-value inset with whitespace", "inset : 1px 2px 3px 4px;"],
+    ["float left", "float: left;"],
+    ["clear right", "clear: right;"],
+    ["background-position left", "background-position: left top;"],
+    ["background-position right", "background-position: right top;"],
+    ["left with whitespace", "left : 0;"],
+  ])("flags %s", (_name, css) => {
+    expect(css).toMatch(PHYSICAL_CSS_PATTERN);
+  });
+
+  it("requires every depth-zero block to be the dev-toolbar layer", () => {
+    const css = stripComments(`@layer dev-toolbar {
+  [data-dev-toolbar] { color: red; }
+}
+@layer app {
+  [data-dev-toolbar] { color: blue; }
+}`);
+    expect(scopeViolations(css)).toContain("@layer app");
   });
 });
