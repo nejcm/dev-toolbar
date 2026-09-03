@@ -9,8 +9,11 @@
     "noEmit": true,
     "skipLibCheck": true,
     "isolatedModules": true,
+    // The Vite config imports the plugin with its `.ts` extension, which is what
+    // Vite's native config loader wants and what this flag makes legal.
+    "allowImportingTsExtensions": true,
     "verbatimModuleSyntax": true,
     "types": ["vite/client"]
   },
-  "include": ["src", "vite.config.ts"]
+  "include": ["src", "plugins", "vite.config.ts"]
 }

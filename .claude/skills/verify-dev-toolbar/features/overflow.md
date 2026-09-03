@@ -41,7 +41,10 @@ Everything here is `read().shell` — `bar` (what is still in the regions) and
 `overflow` (`{present, open, items}`).
 
 - **Nothing collapsed at full width.** Read. `shell.overflow.present` is
-  `false` and `shell.bar` lists all thirteen baseline ids.
+  `false` and `shell.bar` lists all thirteen roster ids. **1280×800 is not
+  wide enough for this** — measured there, `overflow.present` is already `true`
+  with 8 items in the bar. Widen until `present` flips to `false` and say in
+  the report what width that took, or treat this step as unrun.
 - **Narrow the window.** `resize_window` with `{"width": 520, "height": 800}`,
   then re-read until it settles. Read: `shell.overflow.present` is `true` and
   `shell.bar` is down to `environment`, `cmds`, `flags`, `command-menu`,
@@ -67,8 +70,9 @@ Everything here is `read().shell` — `bar` (what is still in the regions) and
   Reopen, then click the page body: the menu closes and focus stays where the
   click put it.
 - **Restore.** `resize_window` with `{"preset": "desktop"}`, then re-read.
-  Read: `shell.overflow.present` is `false` and `shell.bar` is back to
-  thirteen.
+  Read: `shell.bar` is back to whatever the un-emulated pane fits — which is
+  `overflow.present: false` and thirteen ids only if the pane is wide enough,
+  the same caveat as the first step.
 - **The collapse never loops.** *(Listener mechanics confirmed live; the
   stepping sequence itself not yet driven end to end.)* This is a claim about
   what does *not* happen while the bar is stressed, and the before/after

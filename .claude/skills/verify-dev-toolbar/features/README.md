@@ -24,12 +24,18 @@ driving the app, then use the matching feature file as the recipe.
   `dtb:v1:playground:ext:overlays:enabled`. Later recipes in a sequence must
   therefore assert on the *keys they are about*, never on `storage` equalling
   a whole object — or re-clear and reload first.
-- Require the thirteen-item bar in this order — `environment`, `cmds`, `flags`,
-  `theme-editor`, `overlays`, `metrics`, `hydr`, `tw`, `boom` (start) and
-  `command-menu`, `user`, `diagnostics`, `agent` (end). That is `shell.bar`
-  from the bridge read. `agent` is the bridge's own chip and has the lowest
-  `priority` (`-1`), so it is the first to leave the bar as the window
-  narrows.
+- Require the **roster of thirteen** — twelve extensions plus the bridge's own
+  `agent` — as `diagnostics` (`curl -s localhost:5273/__dev-toolbar/state | jq
+  '.diagnostics|length'` → `13`, 7 `ok` and 6 `absent` at baseline). The roster
+  is the fixed number; `shell.bar` is **not**. `shell.bar` is only what still
+  fits, so it depends on the viewport: measured at the mandated 1280×800 it is
+  **8** — `environment`, `cmds`, `flags`, `theme-editor`, `overlays`, `tw`,
+  `command-menu`, `user` — with `shell.overflow.present: true` and `agent`,
+  `metrics`, `diagnostics`, `hydr`, `boom` collapsed. (Cross-checked the same
+  moment against the DOM: `[data-dtb-part="region"] > [data-dtb-part="item"]`
+  lists those same eight at `innerWidth: 1280`.) `agent` has the lowest
+  `priority` (`-1`), so it is the first to leave the bar as the window narrows.
+  Never assert a bar count you did not measure at a viewport you pinned.
 - Require the bridge itself: `window.__DEV_TOOLBAR__.instances["playground"]`
   exists, `read().allowRun` is `true` (the playground opts in), and
   `read().diagnostics` carries a `status: "ok"` entry for each of `flags`,
@@ -58,10 +64,14 @@ driving the app, then use the matching feature file as the recipe.
 ## Driving conventions
 
 - Start every recipe from the baseline unless its preconditions say otherwise.
-- Read state with `window.__DEV_TOOLBAR__.instances["playground"].read()`;
-  project the fields you need in the same call. Use the page read (SKILL.md,
-  Drive) only for geometry, computed style, `localStorage`, `loadedAt`, the
-  error chips and the app's own readouts.
+- Read state with `curl -s localhost:5273/__dev-toolbar/state` and a `jq`
+  projection — no browser call needed for any value (SKILL.md,
+  [Read](../SKILL.md#read--with-curl-not-a-browser)). The in-page
+  `window.__DEV_TOOLBAR__.instances["playground"].read()` returns the same
+  snapshot and is the right tool when the pane is already open, or when the
+  route says `connected: false`. Use the page read (SKILL.md, Drive) only for
+  geometry, computed style, `localStorage`, `loadedAt`, the error chips and the
+  app's own readouts.
 - Never assert an extension's state through a selector. If you cannot make the
   assertion from `read().diagnostics`, the extension is under-publishing and
   the fix is in `src/ext/<name>`.

@@ -1322,8 +1322,133 @@ it, which is the wrong answer to hand an agent.
 to hide the surface. Discoverability is the point for an agent; obscurity is not a
 control, and `allowRun` is.
 
-Options: `globalName`, `allowRun`, `extraKeys`, `instanceId`, plus the usual `id` /
-`label` / `align` / `order` / `priority` / `hidden`.
+### Off the page: `report`, and a dev-server route
+
+Everything above needs a script *inside the page*. An agent editing `src/ext/flags`
+never loads the app, so the global is invisible to it and a screenshot is a token bill.
+`report` closes that: the page POSTs its (coalesced, already-redacted) snapshot to a
+local endpoint, and reads pick up whatever that endpoint queued for it.
+
+```tsx
+agentBridge({
+  instanceId: "playground",
+  allowRun: true,
+  report: { url: "/__dev-toolbar/state" }, // dev-server route, same origin
+});
+```
+
+`intervalMs` (default `1000`) caps how often a *snapshot* goes out — writes go through
+`createThrottledStore` from `/runtime`, so an unchanged snapshot posts nothing. `pollMs`
+(default `500`) is how often the page checks in at all, and therefore the pickup latency
+for a queued command. Measured on the playground, where live metrics keep the snapshot
+changing: a check-in every 500 ms, and 9 distinct snapshots in 12 s, the gaps alternating
+1.0 s and 2.0 s. A command's result always travels with a fresh snapshot, so a read
+straight after a write is never behind.
+
+With `allowRun: false` the handle carries no `runCommand`, so a queued command comes
+back `{ ok: false, reason: "run-not-allowed" }`: a consumer who wanted reads gets a
+reporter, read routes, and no way to run anything.
+
+**The receiving half is not in this package.** It is the playground's own Vite plugin,
+[`examples/playground/plugins/devToolbarAgent.ts`](./examples/playground/plugins/devToolbarAgent.ts),
+copy it and adapt it. There is no `./vite` subpath: a bundler plugin inside a
+zero-dependency React library is a coupling this does not need until somebody asks for
+it. It serves
+
+```
+GET  /__dev-toolbar/state         the latest snapshot, plus how old it is
+GET  /__dev-toolbar/commands      the command registry, with descriptions and input schemas
+POST /__dev-toolbar/commands/:id  queued for the page, result returned
+POST /__dev-toolbar/state         where the page checks in
+```
+
+so the question the bridge was built for is now a shell command:
+
+```console
+$ curl -s localhost:5273/__dev-toolbar/state | jq '.extensions.flags.flags[] | select(.key == "search.rank")'
+{
+  "key": "search.rank",
+  "type": "number",
+  "source": "local-override",
+  "overridden": true,
+  "masked": false,
+  "reloadBehavior": "full-reload",
+  "effective": 9,
+  "base": 2,
+  "default": 1,
+  "tags": ["override", "reload"]
+}
+
+$ curl -s -X POST localhost:5273/__dev-toolbar/commands/flags.set \
+    -H 'content-type: application/json' -d '{"key":"search.rank","value":9}'
+{ "ok": true, "command": "flags.set", "waitedMs": 785 }
+```
+
+`extensions` is the middleware's own projection — one key per extension id, holding
+exactly what that extension published — alongside the snapshot's own `commands`,
+`shell` and unabridged `diagnostics` roster.
+
+**The `POST` needs a page connected, and says so instead of hanging.** The server has no
+channel to the page; the page checks in. So every way that can fail is a status code and
+a body, never a wait:
+
+| Situation | Status | `reason` |
+| --- | --- | --- |
+| Nothing has ever reported | `503` | `no-page-connected` |
+| Last check-in older than `staleMs` (3 s) | `503` | `no-page-connected`, with `ageMs` |
+| The page's bridge has `allowRun: false` | `403` | `run-not-allowed` |
+| No command declares that id | `404` | `unknown-command` |
+| The command ran and threw (e.g. refused its input) | `422` | `threw`, with `error` |
+| Queued, nobody picked it up within `timeoutMs` (10 s) | `504` | `timeout`, with `pickedUp: false` |
+| Cross-origin `Origin` header | `403` | `cross-origin` |
+
+The `GET` routes answer `200` with a stale snapshot and `connection.stale: true` rather
+than refusing — the latest snapshot is still the latest snapshot, and saying how old it
+is beats saying nothing.
+
+**A backgrounded tab is the one thing that looks like a bug and is not.** The check-in
+runs on `setInterval`, and browsers clamp timers in a hidden tab — measured here: the
+500 ms poll became 1 000 ms, and one hidden stretch went 10 s with no check-in at all,
+so `connection.connected` went `false` and the `POST` route answered
+`no-page-connected`. Bring the tab to the front (or take a screenshot of it) and the
+check-ins resume within a second. Read `connection` before believing an old
+`reportedAt`; that field exists for exactly this.
+
+Round-trip cost, end to end: `POST /commands/:id` returned in `waitedMs` between 266 ms
+and 980 ms across the runs in this repo, the spread being where in the poll cycle the
+request landed.
+
+**One page at a time.** The middleware holds one slot, so two tabs of the same app
+overwrite each other's snapshot and a queued command runs in whichever polls first. That
+is a documented limit, not a hidden one: every check-in carries a per-page `reporterId`,
+and `connection` reports `reporters` (distinct pages seen within `staleMs`),
+`reporterId` (whose snapshot you are reading) and `ambiguous` (`true` above one), while a
+command result names the page that ran it in `ranIn`. Read `ambiguous` before trusting a
+snapshot. Keying the slot per page is the fix if this ever stops being a one-tab tool.
+
+**Threat model, because this runs arbitrary commands on your open page.** Four controls,
+all in the plugin: it is `apply: "serve"` with only a `configureServer` hook, so it
+cannot reach a production build; it refuses to install at all when the dev server is
+bound to anything but loopback (`--host` prints
+`[dev-toolbar-agent] not installed: the dev server is bound to true, not loopback`);
+`allowRun` still decides whether the run route does anything; a request carrying a
+foreign `Origin` is refused, so a page you happen to be browsing cannot drive your
+toolbar through `fetch("http://localhost:5273/…")`; and the `Host` header is itself
+checked against the loopback spellings, so the `Origin` comparison cannot be satisfied by
+an attacker-controlled name that resolves to `127.0.0.1` (Vite's own host validation
+would also catch that today, but it is skipped when `server.https` is set, and a control
+this middleware leans on belongs in this middleware). There is no authentication, no TLS
+and no rate limiting, deliberately — anything with a shell on that machine can already
+do worse. `report` is off by default, and so is `allowRun`.
+
+A malformed check-in body is answered with `400 bad-body`, and both async handlers are
+wrapped so any throw becomes `500 middleware-error` rather than an unhandled rejection —
+which, under Node's default policy, ends the dev server. That is not hypothetical: three
+two-word `curl`s did exactly that before the guard existed, and
+`examples/playground/plugins/__tests__/devToolbarAgent.test.ts` now pins all three.
+
+Options: `globalName`, `allowRun`, `extraKeys`, `report`, `instanceId`, plus the usual
+`id` / `label` / `align` / `order` / `priority` / `hidden`.
 
 Commands: none. It contributes a transport, not behaviour.
 

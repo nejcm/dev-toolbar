@@ -585,7 +585,16 @@ const runtimeMetrics = metrics({
  * page. `instanceId` repeats what `<App>` passes `<DevToolbar>` — the contract hands
  * `start(api)` no instance identity.
  */
-const runtimeAgent = agentBridge({ instanceId: "playground", allowRun: true });
+const runtimeAgent = agentBridge({
+  instanceId: "playground",
+  allowRun: true,
+  // Phase 3: the same snapshot, pushed to the dev server so an agent that
+  // never loads this page can `curl localhost:5273/__dev-toolbar/state`. The
+  // receiving half is `plugins/devToolbarAgent.ts`. Gated on `import.meta.env.DEV`
+  // because a production `vite build` has no middleware to answer it — the
+  // reporter would post into the void and warn once.
+  ...(import.meta.env.DEV ? { report: { url: "/__dev-toolbar/state" } } : {}),
+});
 
 export const playgroundExtensions: DevToolbarExtension[] = [
   runtimeAgent,

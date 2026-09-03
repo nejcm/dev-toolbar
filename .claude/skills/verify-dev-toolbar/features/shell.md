@@ -43,9 +43,11 @@ Preconditions:
   `computer {"action":"screenshot"}` → read*, and the report says so (see
   Gotchas).
 
-- **Mount.** Bridge read. `instanceId` is `"playground"`, `shell.mounted` is
-  `true`, and `shell.bar` lists the thirteen baseline ids in the README's
-  order (twelve extensions plus the bridge's own `agent` chip).
+- **Mount.** State read (`curl … /state`, or the bridge in-page). `instanceId`
+  is `"playground"`, `shell.mounted` is `true`, and `diagnostics` carries the
+  thirteen-extension roster. `shell.bar` is the *width-dependent* subset — 8
+  ids at the mandated 1280×800, see the README — so assert on the ids you care
+  about, not on a count.
   The bar's accessible name is not published state — check it with `find` for
   role `toolbar` name `Developer toolbar`.
 - **Open a panel.** Click the flags chip: `find` for role `button` name
@@ -85,9 +87,10 @@ Preconditions:
   (`position: top`, `visible: false`), and re-showing the bar reopens the
   stored panel (`shell.activePanel`).
 - **Error isolation.** Page read at baseline. `errorChips` contains exactly
-  `{extension: "boom", slot: "compact"}`, and `shell.bar` still lists all
-  thirteen ids — one extension throwing from both slots costs one chip and
-  nothing else. This is the one extension fact still read from markup, and
+  `{extension: "boom", slot: "compact"}`, while `diagnostics` still carries all
+  thirteen roster entries and every other extension is still reachable in
+  `shell.bar` or `shell.overflow` — one extension throwing from both slots
+  costs one chip and nothing else. This is the one extension fact still read from markup, and
   deliberately: a slot that threw rendered nothing and has no state to
   publish. `read().diagnostics` will list `boom` as `absent`, which is a
   different claim.

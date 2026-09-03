@@ -64,6 +64,7 @@
  * extension that wants to be readable publishes state.
  */
 import { installAgentBridge } from "./runtime";
+import type { AgentReportOptions } from "./report";
 import { DEFAULT_GLOBAL_NAME } from "./types";
 import type { DevToolbarExtension, ExtensionRuntimeApi, ToolbarAlign } from "../../core/contract";
 
@@ -80,6 +81,20 @@ export interface AgentBridgeOptions {
   allowRun?: boolean;
   /** Extra `redact()` keys for consumer-supplied diagnostics. */
   extraKeys?: readonly string[];
+  /**
+   * Off-page transport (`plans/agent-readable-toolbar.md` § Phase 3). Absent —
+   * the default — means the bridge opens no connection to anything: the global
+   * is the whole surface, and only a script already in the page can reach it.
+   *
+   * Present means the page POSTs its (coalesced, already-redacted) snapshot to
+   * `report.url` and picks up commands the receiver has queued, which is what
+   * lets an agent that never loads the app `curl` the state. Point it at a
+   * **dev-server route on the same origin**; see the Vite recipe in the README.
+   *
+   * `allowRun` still gates running: with it off the handle has no
+   * `runCommand`, so a queued command comes back refused rather than run.
+   */
+  report?: AgentReportOptions;
   /**
    * The `instanceId` you pass to `<DevToolbar>`, and the key this bridge's
    * handle is published under. Default `"default"`, matching core's own
@@ -113,6 +128,7 @@ export function agentBridge(options: AgentBridgeOptions = {}): DevToolbarExtensi
     globalName = DEFAULT_GLOBAL_NAME,
     allowRun = false,
     extraKeys,
+    report,
     instanceId = "default",
     id = "agent",
     label = "Agent",
@@ -157,11 +173,22 @@ export function agentBridge(options: AgentBridgeOptions = {}): DevToolbarExtensi
         allowRun,
         contractVersion: 2,
         ...(extraKeys === undefined ? {} : { extraKeys }),
+        ...(report === undefined ? {} : { report }),
       });
     },
   };
 }
 
+export { createAgentReporter, startAgentReporter } from "./report";
+export type {
+  AgentCommandResult,
+  AgentPendingCommand,
+  AgentReportBody,
+  AgentReportOptions,
+  AgentReportResponse,
+  AgentReportRunOutcome,
+  AgentReporter,
+} from "./report";
 export {
   createAgentHandle,
   createAgentRegistry,

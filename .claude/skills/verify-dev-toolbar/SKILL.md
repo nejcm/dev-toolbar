@@ -1,6 +1,6 @@
 ---
 name: verify-dev-toolbar
-description: Drive the @nejcm/dev-toolbar playground in a real browser and capture proof that the shell and its first-party extensions behave for a user. Use when a change to src/core, src/runtime or src/ext needs evidence beyond vitest — panels, overflow, overlays, flag overrides, redaction, ⌘K — or when asked to verify, demo or screenshot the toolbar.
+description: Prove that @nejcm/dev-toolbar's shell and first-party extensions behave for a user — reading state over HTTP from the playground's /__dev-toolbar routes with curl, and driving a real browser only for what genuinely needs pixels. Use when a change to src/core, src/runtime or src/ext needs evidence beyond vitest — panels, overflow, overlays, flag overrides, redaction, ⌘K — or when asked to verify, demo or screenshot the toolbar.
 ---
 
 # Verify @nejcm/dev-toolbar
@@ -12,6 +12,14 @@ mounts the real shell with the real first-party extensions and gives every one
 of them something to measure. Driving the playground is the only way to prove
 user-visible behavior here; `vitest` runs in jsdom and cannot see layout,
 stacking, pointer events, or a reload.
+
+**Two channels, and they are not interchangeable.** State — every value any
+extension publishes, the command registry, the shell's own facts — comes over
+HTTP from the running dev server with `curl`, no browser call involved
+([Read](#read--with-curl-not-a-browser)). Pixels — layout, stacking, pointer
+events, a real click or keypress, a reload — need the browser
+([Drive](#drive)). Reaching for a screenshot to learn a number is the mistake
+this skill exists to stop.
 
 The feature map in [`features/`](./features/README.md) is the maintained
 source for what to drive. Read its README before driving anything, then use the
@@ -71,19 +79,113 @@ identity, that `dist/` exists and is not older than `src/`, that the
 playground's dependencies are installed, and who owns `:5273`. Run it first
 whenever anything looks off, and before blaming the library for a blank page.
 
-The browser half of the doctor is the bridge read below: `shell.mounted: true`,
-`instanceId: "playground"`, and a `shell.bar` list of thirteen items (twelve
-extensions plus the bridge's own `agent` chip) is a healthy instance — and a
-`loadedAt` later than the `dist/ built` stamp above is one that has actually
-loaded the current build (see [Launch](#launch)).
+The other half of the doctor needs no browser call at all — the playground's
+Vite plugin holds whatever the page last reported:
+
+```bash
+curl -s localhost:5273/__dev-toolbar/state \
+  | jq '{connection, mounted: .shell.mounted, roster: (.diagnostics|length), bar: (.shell.bar|length), overflow: .shell.overflow.present}'
+```
+
+A healthy instance is `connection.connected: true`, `shell.mounted: true`,
+`instanceId: "playground"`, and a `diagnostics` roster of **13** — every
+extension the playground mounts, including the bridge's own `agent`, whatever
+the bar looks like (7 `ok` and 6 `absent` in the baseline run).
+
+`shell.bar` is **not** the roster and is not a fixed number: it is only what is
+still *in* the bar at the current width. Measured at a `resize_window` of
+1280×800 with the pane hidden: 8 items — `environment`, `cmds`, `flags`,
+`theme-editor`, `overlays`, `tw`, `command-menu`, `user` — with
+`shell.overflow.present: true` and the other five collapsed into `···`. Assert
+on the roster, or on a specific id, never on a bar count you did not just
+measure at a viewport you pinned.
+
+A `loadedAt` later than the `dist/ built` stamp above is one that has actually
+loaded the current build — that one is a page read (see [Launch](#launch)).
+
+## Read — with `curl`, not a browser
+
+The playground's Vite config installs
+[`plugins/devToolbarAgent.ts`](../../../examples/playground/plugins/devToolbarAgent.ts),
+which holds the snapshot the agent bridge reports and serves it over HTTP.
+**Every state question is answered from a shell**, with no browser call, no
+screenshot and no tokens spent on a page dump:
+
+```
+GET  /__dev-toolbar/state         the latest snapshot, plus how old it is
+GET  /__dev-toolbar/commands      the command registry with descriptions and input schemas
+POST /__dev-toolbar/commands/:id  runs it on the open page, returns the result
+```
+
+```bash
+# Is the override applied?
+curl -s localhost:5273/__dev-toolbar/state | jq '.extensions.flags.flags[] | select(.key == "search.rank")'
+# {"key":"search.rank","source":"local-override","overridden":true,"effective":9,"base":2,"default":1,"tags":["override","reload"], …}
+
+# The whole roster of what each extension publishes
+curl -s localhost:5273/__dev-toolbar/state | jq '.extensions | keys'
+# ["agent","boom","cmds","command-menu","diagnostics","environment","flags","hydr","metrics","overlays","theme-editor","tw","user"]
+
+# The command registry, as ids
+curl -s localhost:5273/__dev-toolbar/commands | jq -r '.commands[] | "\(.id)  —  \(.label)"'
+
+# Reach a state in one call — same command ids, same input schemas as the bridge
+curl -s -X POST localhost:5273/__dev-toolbar/commands/flags.set \
+  -H 'content-type: application/json' -d '{"key":"search.rank","value":9}'
+# {"ok": true, "command": "flags.set", "waitedMs": 785}
+```
+
+`.extensions.<id>` is each extension's own `diagnostics()` output — `flags`
+publishes `flags`, `overriddenCount`, `maskedCount`, `writable`, `reloadPending`;
+`environment` publishes `fields`, `maskedCount`, `severity`, `impersonating`;
+`metrics` publishes `metrics`, `jank`, `network`, `memory`, `delay`; `overlays` publishes
+`on`, `active`, `activeCount`; `command-menu` publishes `open`, `query`,
+`resultCount`, `commandCount`; `theme-editor` publishes `overrides`, `mode`,
+`surface`, `refusedCount`; `diagnostics` publishes its capture *summary*. `null`
+means that extension published nothing — the unabridged roster, including
+`status: "failed"` and the error, is still in `.diagnostics`.
+
+**Three things this route will not do, and says so rather than hanging:**
+
+- Nothing has ever reported, or the last check-in is older than 3 s: `503
+  no-page-connected`, immediately (`0.0007 s` measured), with `connection.ageMs`.
+- No page picks a queued command up: `504 timeout` after 10 s with
+  `pickedUp: false`, rather than an open socket.
+- A command that refuses its input: `422` with the extension's own message,
+  e.g. `{"ok": false, "reason": "threw", "error": "\"new-header\" is a boolean
+  flag; \"yes\" is not a valid boolean value."}`. Unknown id is `404
+  unknown-command`; a bridge built without `allowRun` is `403 run-not-allowed`.
+
+**Check `connection` before believing a snapshot.** The page checks in on a
+timer, and browsers clamp timers in a hidden tab: with the Browser pane hidden
+the 500 ms poll was measured at 1 000 ms, and one hidden stretch went 10 s with
+no check-in at all, so `connected` went `false`. Front the tab or take one
+screenshot and the check-ins resume within a second. A `reportedAt` that is not
+moving is this, far more often than it is a regression.
+
+**One tab at a time, and `connection` says when that is broken.** The
+middleware holds a single slot, so two playground tabs overwrite each other
+every ~500 ms and a `POST` may run in the tab whose snapshot you are *not*
+reading. Each page reports its own `reporterId`, so
+`connection.reporters` counts the distinct pages seen inside `staleMs` and
+`connection.ambiguous` goes `true` above one — and a command result names the
+tab that ran it in `ranIn`. **`ambiguous: true` invalidates the read**: close
+the extra tab and take it again. This skill opens tabs, so check it.
+
+**What still needs the browser:** layout and geometry, stacking and pointer
+events, a real click or keypress, a reload, `localStorage`, the playground app's
+own readouts, and anything visual. Those are [Drive](#drive). If you are opening
+a browser to learn a *value*, stop — `curl` has it.
 
 ## Drive
 
-Two tools do all the work: `mcp__Claude_Browser__computer` for user input, and
-`mcp__Claude_Browser__javascript_tool` for reading state. Batch them with
-`mcp__Claude_Browser__browser_batch` when the next step is predictable.
+Two tools do the input: `mcp__Claude_Browser__computer` for user input, and
+`mcp__Claude_Browser__javascript_tool` for the page facts no route can publish.
+Batch them with `mcp__Claude_Browser__browser_batch` when the next step is
+predictable. For anything that is a *value*, use [`curl`](#read--with-curl-not-a-browser) first.
 
-**Read state from the toolbar itself.** The playground mounts
+**The same state, from inside the page,** when the pane is already open and a
+round trip is cheaper than a shell call. The playground mounts
 `@nejcm/dev-toolbar/ext/agent`, so the toolbar publishes its own state — no
 scraper, no selectors, nothing to keep in sync with markup. One
 `javascript_tool` call:
@@ -290,7 +392,18 @@ Proof standards for this repo:
   through `⌘K`, so `runCommand("overlays.toggle.grid")` proves the command and
   the palette's `Enter` proves the palette. Say which one the artifact used.
 - **Capture the action and the resulting state**, not just the end screen: the
-  bridge read before, the input you sent, the read after.
+  read before, the input you sent, the read after. A `curl` of
+  `/__dev-toolbar/state` pipes straight into `capture.sh`, which is the cheapest
+  artifact in this skill:
+
+  ```bash
+  curl -s localhost:5273/__dev-toolbar/state \
+    | jq '{connection, flags: .extensions.flags}' \
+    | .claude/skills/verify-dev-toolbar/capture.sh flags 02-override-applied.json
+  ```
+
+  Keep `connection` in the artifact. A snapshot with no `reportedAt` next to it
+  is a claim about an unknown moment.
 - **Verify the side effect too.** Nearly everything here has one, and it is the
   half that regresses: the `dtb:v1:playground:*` `localStorage` keys, the
   `--dev-toolbar-height-playground` custom property on `<html>`, the
@@ -318,10 +431,15 @@ Proof standards for this repo:
   Take a screenshot when the claim is visual (stacking, overlays, restyling)
   and pair it with the read that states the same fact in text.
 - **A state claim that needs a selector is a bug in an extension.** Everything
-  an extension knows about itself reaches you through `read().diagnostics`. If
-  a recipe here cannot make its assertion without querying the extension's
-  markup, the extension is under-publishing — fix its `diagnostics()` and
-  update the recipe, rather than growing a scraper back.
+  an extension knows about itself reaches you through `.extensions.<id>` over
+  HTTP, or `read().diagnostics` in the page. If a recipe here cannot make its
+  assertion without querying the extension's markup, the extension is
+  under-publishing — fix its `diagnostics()` and update the recipe, rather than
+  growing a scraper back.
+- **A state claim that needed a browser is worth a second look.** The routes
+  answer everything the bridge answers. If you opened a tab to read a value,
+  say why in the report — it is usually a habit, occasionally a gap worth
+  filing.
 
 ## Cleanup
 
@@ -368,3 +486,10 @@ state assertions now read the extensions' own `diagnostics()` through
 for *input* and for the few facts that are genuinely pixels — geometry,
 computed style, stacking, `localStorage`, and the playground app's own
 readouts.
+
+The HTTP routes are two files: the page half is the bridge's `report` option
+(`src/ext/agent/report.ts`, tested in `__tests__/phase3.test.tsx`) and the
+server half is `examples/playground/plugins/devToolbarAgent.ts`. Neither is
+part of the published package — there is no `./vite` subpath — so a consumer
+copies the plugin. If a route's shape changes, this file and the README's
+`/ext/agent` section change with it.

@@ -16,6 +16,8 @@
  */
 import { redact } from "../../runtime";
 import type { RedactOptions } from "../../runtime";
+import { startAgentReporter } from "./report";
+import type { AgentReportOptions } from "./report";
 import { AGENT_MARKER, AGENT_PROTOCOL_VERSION } from "./types";
 import type {
   AgentBarItemView,
@@ -42,6 +44,12 @@ export interface AgentRuntimeOptions {
   extraKeys?: readonly string[];
   /** Reported in the snapshot so a reader can branch on it. */
   contractVersion: number;
+  /**
+   * Optional off-page transport (Phase 3). Absent means the bridge opens no
+   * connection to anything and stays exactly what Phases 0–2 made it: a
+   * global for a script that is already in the page.
+   */
+  report?: AgentReportOptions;
 }
 
 /** `globalThis`, or `null` where there isn't one (no `window` read, on purpose). */
@@ -411,10 +419,16 @@ export function installAgentBridge(
   define(registry.instances as unknown as Record<string, unknown>, instanceId, handle);
   if (existing === undefined) define(scope, globalName, registry);
 
+  // Started only once the handle is actually registered, so neither refusal
+  // above leaves a timer posting the state of a bridge that was not installed.
+  const stopReporter =
+    options.report === undefined ? null : startAgentReporter(handle, options.report);
+
   let torn = false;
   const teardown = (): void => {
     if (torn) return;
     torn = true;
+    stopReporter?.();
     if (registry.instances[instanceId] === handle) {
       delete registry.instances[instanceId];
     }

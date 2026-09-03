@@ -921,6 +921,32 @@ should move, and is still open. The first-party extensions all declare `2` and
 `/ext/diagnostics` keeps its hand-maintained `TARGET_CONTRACT_VERSION` in step with an
 equality assertion, per §10.
 
+### The bridge's reporter, and the half that is deliberately not here
+
+`/ext/agent` can also push its snapshot off the page: `report: { url }` starts a check-in
+loop that POSTs the (already-redacted) snapshot to a same-origin dev-server route and
+picks up commands that route has queued. Writes go through `createThrottledStore` from
+`/runtime`, so a burst is one POST and an unchanged snapshot is none. It is off by
+default, and `allowRun` still decides whether a queued command can run at all — a bridge
+without it answers `{ ok: false, reason: "run-not-allowed" }`.
+
+**The receiving half is not in this package and there is no `./vite` subpath.** It lives
+in `examples/playground/plugins/devToolbarAgent.ts` as a recipe to copy. A bundler plugin
+here would be a new coupling and a dependency-shaped one, against §2, for a surface that
+is a development convenience; it gets promoted when a consumer asks. The middleware runs
+arbitrary registered commands on the developer's open page, so it is `apply: "serve"`
+only, refuses to install on a non-loopback bind, refuses a non-loopback `Host` (the
+rebinding guard the `Origin` check leans on) and a foreign `Origin`, validates every
+check-in field before dereferencing it, wraps both async handlers so a throw is a `500`
+body rather than an unhandled rejection that would end the dev server, and answers every
+failure with a status and a body — `503 no-page-connected`, `504 timeout` — rather than
+holding the socket open. It holds **one** slot, so two tabs share it; each page reports a
+`reporterId` and `connection.ambiguous` says when more than one is live, because a
+documented limit beats a silently blended answer. Its own gate is
+`plugins/__tests__/devToolbarAgent.test.ts` (`node --test`, no dependencies) plus a
+playground typecheck, both wired into CI — `examples/` is outside `verify`.
+`plans/agent-readable-toolbar.md` § Phase 3.
+
 ## 8. SSR
 
 `children` render in a fragment, untouched, on the server. The bar is client-only: a
