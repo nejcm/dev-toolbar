@@ -9,7 +9,7 @@
  * **every value goes through `redact()` once, on the way in** — the panel and
  * clipboard read the same redacted snapshot, and the raw bag is never stored.
  */
-import { createThrottledStore, redact } from "../../runtime";
+import { createThrottledStore, redact, redactUrl } from "../../runtime";
 import type { RedactOptions, ThrottledStore } from "../../runtime";
 import type { ExtensionRuntimeApi, ToolbarStorage } from "../../core/contract";
 import { FIELD_SPECS, normaliseKind, severityForKind } from "./types";
@@ -70,7 +70,14 @@ interface ConnectionLike {
 /**
  * The route, query included (not dropped) — an OAuth implicit callback puts
  * `access_token=…` in the address bar, and this row is headed for a clipboard.
- * The whole href goes through `redact()` downstream rather than being sliced here.
+ *
+ * This is a *relative* reference, so it does **not** go through `redact()`'s
+ * URL pass: that pass only fires on absolute URLs (`scheme://…`). What covers
+ * it is the explicit `redactUrl()` pass `redactValues` runs for the fields
+ * `FIELD_SPECS` marks `url: true`. The raw, unredacted value is deliberately
+ * kept in `raw` — `redactValues` derives `masked` by comparing the raw render
+ * against the redacted one, so pre-redacting here would close the leak while
+ * reporting `masked: false`, i.e. telling the reader nothing was hidden.
  */
 function detectRoute(): string | undefined {
   if (typeof location === "undefined") return undefined;
@@ -103,12 +110,31 @@ function detectConnection(): string | undefined {
 
 // Redaction
 
-// Loose on the local part, strict on the domain: over-masking is recoverable,
-// leaking an address into a pasted ticket is not.
-const EMAIL = /([A-Za-z0-9._%+-])[A-Za-z0-9._%+-]*@([A-Za-z0-9.-]+\.[A-Za-z]{2,})/g;
+/**
+ * Loose on the local part, strict on the domain: over-masking is recoverable,
+ * leaking an address into a pasted ticket is not.
+ *
+ * `%40` is accepted alongside a literal `@` because this pass runs *after*
+ * `redactUrl()`, and `maskUrl()` does not rewrite only the component it
+ * matched: masking anything re-serialises the whole query (and fragment)
+ * through `URLSearchParams.toString()`, which form-encodes every `@` in every
+ * *other* parameter as `%40`. So `?access_token=abc&login_hint=a@b.io` reaches
+ * here as `?access_token=[redacted]&login_hint=a%40b.io`, and an `@`-only
+ * pattern walks straight past the address. Whichever separator matched is
+ * preserved in the output rather than normalised, so the rendered value still
+ * reflects what the URL pass actually produced.
+ *
+ * A side effect: an address-shaped *parameter key* (`?token@x.co=`) gets masked
+ * too, once the URL pass has re-encoded it. Cosmetic — the value it guards is
+ * `[redacted]` by then — and over-masking is the recoverable direction.
+ */
+const EMAIL = /([A-Za-z0-9._%+-])[A-Za-z0-9._%+-]*(@|%40)([A-Za-z0-9.-]+\.[A-Za-z]{2,})/g;
 
 export function maskEmails(value: string): string {
-  return value.replace(EMAIL, (_match, first: string, domain: string) => `${first}***@${domain}`);
+  return value.replace(
+    EMAIL,
+    (_match, first: string, at: string, domain: string) => `${first}***${at}${domain}`,
+  );
 }
 
 /**
@@ -135,22 +161,72 @@ function stringify(value: unknown): string {
   return String(value);
 }
 
+/** The declared fields `FIELD_SPECS` marks as holding a URL reference. */
+const URL_FIELDS: ReadonlySet<string> = new Set(
+  FIELD_SPECS.filter((spec) => spec.url).map((spec) => spec.id),
+);
+
 /**
  * One pass over the whole bag: `redact()` does key matching (`token`,
  * `session`, `cookie`, …) and value matching (`Bearer …`, bare JWTs,
- * credential-shaped URL query params); the PII pass then masks emails, which
- * `redact()` has no opinion about.
+ * credential-shaped URL query params); an explicit `redactUrl()` pass then
+ * covers URL *references* `redact()`'s value pass cannot see; the PII pass
+ * finally masks emails, which `redact()` has no opinion about.
  *
- * **Order matters, and getting it wrong is silent.** `redact()` matches key
- * names by walking an object graph, so nested values must reach it as objects,
- * not as a pre-stringified blob — stringifying `extra` first would hide its
- * inner keys inside a string, leaking values like `authToken` verbatim while a
- * sibling email masked by the PII pass still made the row report `masked: true`.
- * Redact first, stringify second.
+ * **Order matters, and getting it wrong is silent.** Three orderings are
+ * load-bearing here:
+ *
+ * 1. `redact()` matches key names by walking an object graph, so nested values
+ *    must reach it as objects, not as a pre-stringified blob — stringifying
+ *    `extra` first would hide its inner keys inside a string, leaking values
+ *    like `authToken` verbatim while a sibling email masked by the PII pass
+ *    still made the row report `masked: true`. Redact first, stringify second.
+ * 2. `redactUrl()` runs **before** `maskEmails()`, because its key matching
+ *    must see the keys as supplied. `EMAIL` can match a *key* that contains an
+ *    address (`?token@x.co=secret`), and rewriting it to `t***@x.co` first
+ *    leaves nothing for `matches("token")` to recognise — the secret then
+ *    leaks. Running the URL pass first also means userinfo is replaced
+ *    wholesale (`//[redacted]:[redacted]@host`) rather than mangled to
+ *    `//user:p***@host`, which is what no URL pass at all produced.
+ *
+ *    The consequence is that `maskEmails()` must tolerate `%40`: masking any
+ *    one parameter re-serialises the entire query, form-encoding the `@` of
+ *    every other one. `EMAIL` accepts both separators for exactly this reason —
+ *    see its own comment. The two orders do **not** converge; each leaks
+ *    something the other catches, and this is the pairing that leaks neither.
+ * 3. Only the **after** side is URL-redacted; `raw` is left exactly as supplied.
+ *    `masked` is derived by comparing the two renders, so redacting the raw side
+ *    too would make them equal and report `masked: false` on a row that was in
+ *    fact rewritten — worse than the leak, because the reader is told nothing
+ *    was hidden.
+ *
+ * Known gaps, deliberately not closed here:
+ *
+ * - A hash-router route whose fragment carries credentials with no `?` to
+ *   separate them (`/app#/settings/token=x`) over-masks the route itself to
+ *   `/app#%2Fsettings%2Ftoken=[redacted]`, because `URLSearchParams` reads the
+ *   whole fragment as one key. Safe, ugly. A fragment that does have a `?`
+ *   keeps its path prefix verbatim.
+ * - Credentials in a *path segment* (`/reset/eyJhbGciOi…`) have no key for
+ *   either pass to match, so they survive. Only query/fragment params and
+ *   userinfo are covered.
+ * - A URL nested one level inside an `extra` object is only covered by
+ *   `redact()`'s own value pass (absolute URLs), not by the pass below: the
+ *   `redactUrl()` call applies to string-valued extras, not to strings found
+ *   inside object-valued ones.
  */
 function redactValues(
   raw: Record<string, unknown>,
   options: EnvironmentRuntimeOptions,
+  /**
+   * `"fields"` — URL-redact the `FIELD_SPECS` entries marked `url: true`.
+   * `"extras"` — URL-redact every string-valued entry. `redactUrl()` returns a
+   * non-URL string byte-for-byte, so this is free coverage for consumer keys
+   * like `callbackUrl` or `wsEndpoint` that this module cannot enumerate.
+   * Object-valued extras are skipped: `redact()`'s walk already key-matched
+   * inside them, and their render is JSON, not a URL.
+   */
+  scope: "fields" | "extras",
 ): { values: Record<string, string>; masked: Set<string> } {
   const redacted = redact(raw, options.redactOptions) as Record<string, unknown>;
   const values: Record<string, string> = {};
@@ -159,9 +235,11 @@ function redactValues(
   for (const [key, original] of Object.entries(raw)) {
     if (original === undefined || original === null) continue;
     // Both sides rendered the same way, so `masked` reflects an actual change,
-    // not a formatting artefact.
+    // not a formatting artefact. `before` stays raw on purpose — see (3) above.
     const before = stringify(original);
     let after = stringify(redacted[key]);
+    const urlShaped = scope === "extras" ? typeof original === "string" : URL_FIELDS.has(key);
+    if (urlShaped) after = redactUrl(after, options.redactOptions);
     if (options.maskPii !== false) after = maskEmails(after);
     values[key] = after;
     if (after !== before) masked.add(key);
@@ -260,8 +338,8 @@ export function createEnvironmentRuntime(
       rawExtra[key] = value;
     }
 
-    const { values, masked } = redactValues(raw, options);
-    const extra = redactValues(rawExtra, options);
+    const { values, masked } = redactValues(raw, options, "fields");
+    const extra = redactValues(rawExtra, options, "extras");
     const detected = new Set(["route", "viewport", "connection"]);
 
     // The *redacted* environment string, not `ctx.environment` — the chip,

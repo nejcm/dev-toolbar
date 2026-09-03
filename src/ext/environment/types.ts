@@ -114,6 +114,13 @@ export interface FieldSpec {
   id: EnvironmentFieldId;
   label: string;
   group: EnvironmentGroup;
+  /**
+   * This field holds a URL or a URL reference, so its rendered value gets an
+   * explicit `redactUrl()` pass in `redactValues` on top of `redact()`'s own
+   * walk. Needed because `redact()`'s value pass only recognises *absolute*
+   * URLs (`scheme://…`), and `route` is a relative reference.
+   */
+  url?: true;
 }
 
 /** Order is §3B's order, which is also bar-to-panel reading order. */
@@ -124,7 +131,7 @@ export const FIELD_SPECS: readonly FieldSpec[] = [
   { id: "branch", label: "Branch", group: "build" },
   { id: "deployment", label: "Deployment", group: "build" },
   { id: "region", label: "Region", group: "build" },
-  { id: "apiEndpoint", label: "API endpoint", group: "build" },
+  { id: "apiEndpoint", label: "API endpoint", group: "build", url: true },
   { id: "builtAt", label: "Built", group: "build" },
   { id: "userId", label: "User", group: "session" },
   { id: "workspaceId", label: "Workspace", group: "session" },
@@ -132,7 +139,7 @@ export const FIELD_SPECS: readonly FieldSpec[] = [
   { id: "impersonation", label: "Impersonation", group: "session" },
   { id: "roles", label: "Roles", group: "session" },
   { id: "sync", label: "Sync", group: "session" },
-  { id: "route", label: "Route", group: "client" },
+  { id: "route", label: "Route", group: "client", url: true },
   { id: "viewport", label: "Viewport", group: "client" },
   { id: "connection", label: "Connection", group: "client" },
 ];

@@ -79,6 +79,121 @@ describe("network collector — fetch present", () => {
     controller.abort();
   });
 
+  it("redacts a URL the rejection names in its message — foreign text, kept text", async () => {
+    /**
+     * The error string is whatever the host's HTTP stack wrote, and a rejection
+     * routinely names the request it failed on. It was retained verbatim, so
+     * `diagnostics()` and the panel carried a live token in the error column
+     * while the `url` column beside it was already redacted.
+     */
+    globalThis.fetch = vi.fn(async () => {
+      throw new Error("Failed to fetch https://api.test/v1?access_token=super-secret retrying");
+    }) as unknown as typeof fetch;
+    const collector = createNetworkCollector({ patchXhr: false });
+    const controller = new AbortController();
+    collector.start(context(controller, { t: 0 }));
+
+    await expect(globalThis.fetch("/api/x")).rejects.toThrow();
+
+    const [entry] = collector.entries?.(0) ?? [];
+    expect(entry?.error).not.toContain("super-secret");
+    expect(entry?.error).toBe(
+      `Failed to fetch https://api.test/v1?access_token=${REDACTED} retrying`,
+    );
+    controller.abort();
+  });
+
+  it("leaves an error message with no URL in it byte-for-byte", async () => {
+    // Only the URL-shaped substrings are rewritten; running the whole sentence
+    // through `redactUrl()` would percent-encode its spaces.
+    globalThis.fetch = vi.fn(async () => {
+      throw new Error("Load failed");
+    }) as unknown as typeof fetch;
+    const collector = createNetworkCollector({ patchXhr: false });
+    const controller = new AbortController();
+    collector.start(context(controller, { t: 0 }));
+    await expect(globalThis.fetch("/api/x")).rejects.toThrow();
+    expect(collector.entries?.(0)[0]?.error).toBe("Load failed");
+    controller.abort();
+  });
+
+  // The first `URL_IN_TEXT` was quadratic on a long alphanumeric run: without a
+  // leading lookbehind, every interior position started a candidate scan that
+  // ran to the end of the run before failing on the missing `:` (200k letters
+  // took 5.4 s against the 2 s timeout; the lookbehind form is ~0.1 ms). The
+  // text is app-supplied — a stringified body or a base64 blob in an error
+  // message — and this runs synchronously inside the host's rejection handler.
+  // The timeout is the regression guard; the expectation is that it still works.
+  it("scans a long alphanumeric error message in one pass", async () => {
+    const blob = "a".repeat(200_000);
+    globalThis.fetch = vi.fn(async () => {
+      throw new Error(`${blob} https://api.test/v1?access_token=super-secret`);
+    }) as unknown as typeof fetch;
+    const collector = createNetworkCollector({ patchXhr: false });
+    const controller = new AbortController();
+    collector.start(context(controller, { t: 0 }));
+
+    await expect(globalThis.fetch("/api/x")).rejects.toThrow();
+
+    const [entry] = collector.entries?.(0) ?? [];
+    expect(entry?.error).toBe(`${blob} https://api.test/v1?access_token=${REDACTED}`);
+    controller.abort();
+  }, 2000);
+
+  it("redacts past a bracketed array parameter — `]` must not end the match", async () => {
+    /**
+     * `)` and `]` were in the mid-URL stop class as well as the final-character
+     * one, so a URL containing either *before* its credential was truncated
+     * there and the credential survived into `diagnostics()`. Bracketed array
+     * and filter parameters are ordinary Rails / PHP / JSON:API query syntax,
+     * and the existing suite passed against the leaking pattern purely because
+     * no case had a `]` or `)` ahead of the token.
+     */
+    globalThis.fetch = vi.fn(async () => {
+      throw new Error("Failed to fetch https://api.test/v1?ids[]=1&access_token=super-secret");
+    }) as unknown as typeof fetch;
+    const collector = createNetworkCollector({ patchXhr: false });
+    const controller = new AbortController();
+    collector.start(context(controller, { t: 0 }));
+    await expect(globalThis.fetch("/api/x")).rejects.toThrow();
+    expect(collector.entries?.(0)[0]?.error).toBe(
+      `Failed to fetch https://api.test/v1?ids%5B%5D=1&access_token=${REDACTED}`,
+    );
+    controller.abort();
+  });
+
+  it("still stops at a closing delimiter that wraps the whole URL", async () => {
+    // The other half of the same split: `)` and `]` stay excluded from the
+    // final character, so a parenthesised URL does not swallow its own bracket.
+    globalThis.fetch = vi.fn(async () => {
+      throw new Error("gave up (https://api.test/p/(x)?token=super-secret) after 3 tries");
+    }) as unknown as typeof fetch;
+    const collector = createNetworkCollector({ patchXhr: false });
+    const controller = new AbortController();
+    collector.start(context(controller, { t: 0 }));
+    await expect(globalThis.fetch("/api/x")).rejects.toThrow();
+    expect(collector.entries?.(0)[0]?.error).toBe(
+      `gave up (https://api.test/p/(x)?token=${REDACTED}) after 3 tries`,
+    );
+    controller.abort();
+  });
+
+  it("leaves sentence punctuation after a URL outside the mask", async () => {
+    // `…?token=x. Then` used to match through the full stop, burying it inside
+    // `[redacted]` and reading as though the URL itself ended in a dot.
+    globalThis.fetch = vi.fn(async () => {
+      throw new Error("Failed to fetch https://a.test/?access_token=x. Then gave up.");
+    }) as unknown as typeof fetch;
+    const collector = createNetworkCollector({ patchXhr: false });
+    const controller = new AbortController();
+    collector.start(context(controller, { t: 0 }));
+    await expect(globalThis.fetch("/api/x")).rejects.toThrow();
+    expect(collector.entries?.(0)[0]?.error).toBe(
+      `Failed to fetch https://a.test/?access_token=${REDACTED}. Then gave up.`,
+    );
+    controller.abort();
+  });
+
   it("marks failures and aborts, and rethrows to the caller either way", async () => {
     const failure = Object.assign(new Error("nope"), { name: "TypeError" });
     globalThis.fetch = vi.fn(async () => {
