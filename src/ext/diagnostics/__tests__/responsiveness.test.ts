@@ -343,6 +343,26 @@ describe("createResponsivenessMonitor — lifecycle", () => {
     expect(monitor.report().observedForMs).toBe(0);
   });
 
+  it("starts a new observation cycle without retained buffered samples", () => {
+    /**
+     * A genuine stop and restart constructs new buffered observers. Retaining
+     * the old rings made replayed entries accumulate over samples from the prior
+     * cycle.
+     */
+    const control = installObserver(["longtask", "event", "layout-shift"]);
+    const monitor = createResponsivenessMonitor({ windowMs: 1_000_000, now: () => 100 });
+    monitor.start();
+    control.emit("longtask", [longTask(1, 100)]);
+    expect(monitor.report().longTasks.count).toBe(1);
+
+    monitor.stop();
+    monitor.start();
+
+    expect(monitor.report().longTasks.count).toBe(0);
+    expect(monitor.report().interactions.count).toBe(0);
+    expect(monitor.report().layoutShifts.count).toBe(0);
+  });
+
   it("reset() clears the samples but not the support states", () => {
     const control = installObserver(["longtask"]);
     const monitor = createResponsivenessMonitor({ windowMs: 1_000_000 });

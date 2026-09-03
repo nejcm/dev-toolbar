@@ -7,6 +7,33 @@ const context = (controller: AbortController, clock: { t: number }) => ({
   invalidate: vi.fn(),
 });
 
+function growthFor(samples: readonly number[]): { detail: string; diagnostic: boolean } {
+  vi.useFakeTimers();
+  const clock = { t: 0 };
+  let used = samples[0] as number;
+  const collector = createMemoryCollector({
+    sampleMs: 1000,
+    read: () => ({
+      usedJSHeapSize: used,
+      totalJSHeapSize: 200_000_000,
+      jsHeapSizeLimit: 1_000_000_000,
+    }),
+  });
+  const controller = new AbortController();
+  collector.start(context(controller, clock));
+  for (const next of samples.slice(1)) {
+    used = next;
+    clock.t += 1000;
+    vi.advanceTimersByTime(1000);
+  }
+  const result = {
+    detail: Object.fromEntries(collector.read(clock.t).detail)["Sustained growth"] as string,
+    diagnostic: (collector.diagnostics(clock.t) as { sustainedGrowth: boolean }).sustainedGrowth,
+  };
+  controller.abort();
+  return result;
+}
+
 afterEach(() => {
   vi.useRealTimers();
 });
@@ -70,6 +97,44 @@ describe("memory collector — API present", () => {
     expect(Object.fromEntries(view.detail)["Sustained growth"]).toBe("yes");
     expect(view.severity).toBe("warn");
     controller.abort();
+  });
+
+  it("allows plateaus when most samples rise by a material amount", () => {
+    /**
+     * Strictly increasing samples missed sustained growth whenever the reported
+     * heap repeated a value between meaningful increases.
+     */
+    const result = growthFor([
+      100_000_000, 101_000_000, 101_000_000, 102_000_000, 103_000_000, 103_000_000,
+    ]);
+    expect(result.detail).toBe("yes");
+    expect(result.diagnostic).toBe(true);
+  });
+
+  it("requires a material net increase", () => {
+    /**
+     * D5 guard: the rejected non-decreasing-plus-positive-delta rule classified
+     * tiny increases as growth even when every sample rose.
+     */
+    const result = growthFor([100_000_000, 100_000_100, 100_000_200, 100_000_300, 100_000_400]);
+    expect(result.detail).toBe("no");
+    expect(result.diagnostic).toBe(false);
+  });
+
+  it("requires a majority of rising samples", () => {
+    /** D5 guard: a material delta with one rise and three plateaus is not sustained growth. */
+    const result = growthFor([100_000_000, 102_000_000, 102_000_000, 102_000_000, 102_000_000]);
+    expect(result.detail).toBe("no");
+    expect(result.diagnostic).toBe(false);
+  });
+
+  it("rejects a decrease despite material growth on most samples", () => {
+    /** D5 guard: material growth and a rising majority cannot excuse a decrease. */
+    const result = growthFor([
+      100_000_000, 101_000_000, 102_000_000, 101_500_000, 103_000_000, 104_000_000,
+    ]);
+    expect(result.detail).toBe("no");
+    expect(result.diagnostic).toBe(false);
   });
 
   it("stops sampling once the signal aborts", () => {

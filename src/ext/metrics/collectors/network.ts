@@ -30,15 +30,17 @@ export interface NetworkEntry {
 }
 
 export interface NetworkCollectorOptions {
-  /** Wrap `globalThis.fetch`. Default `true`. */
+  /** Wrap `globalThis.fetch`. Default `true` without `bus`, otherwise `false`. */
   patchFetch?: boolean;
-  /** Wrap `XMLHttpRequest`. Default `true`. */
+  /** Wrap `XMLHttpRequest`. Default `true` without `bus`, otherwise `false`. */
   patchXhr?: boolean;
   /**
    * Consume `network-start` / `network-end` from a `/runtime` bus, so an app
-   * can report its own client instead of being patched. Typed as `BusLike`
-   * (only `emit`/`on`), not `ToolbarBus`, so a mock bus or an adapter over an
-   * app's own emitter both satisfy it.
+   * can report its own client instead of being patched. Supplying a bus turns
+   * both patchers off by default; set either patch option explicitly to combine
+   * instrumentation routes. Typed as `BusLike` (only `emit`/`on`), not
+   * `ToolbarBus`, so a mock bus or an adapter over an app's own emitter both
+   * satisfy it.
    */
   bus?: BusLike<ToolbarEventMap>;
   /** Requests retained for the panel list. Default `100`. */
@@ -323,10 +325,10 @@ export function instrumentXhr(sink: NetworkSink): () => void {
 }
 
 export function createNetworkCollector(options: NetworkCollectorOptions = {}): Collector {
+  const { bus } = options;
   const {
-    patchFetch = true,
-    patchXhr = true,
-    bus,
+    patchFetch = bus === undefined,
+    patchXhr = bus === undefined,
     historySize = 100,
     slowMs = 1000,
     windowMs = 30_000,
@@ -335,9 +337,14 @@ export function createNetworkCollector(options: NetworkCollectorOptions = {}): C
 
   const entries = createRingBuffer<NetworkEntry>(historySize);
   const byId = new Map<string, NetworkEntry>();
+  const pending = new Map<string, { entry: NetworkEntry | null; startedAt: number }>();
   const series = createTimeSeries(120);
+  const pendingMaxAge = Math.max(windowMs, 60_000);
+  const pendingLimit = Math.max(64, entries.capacity);
   let sequence = 0;
   let totals = { started: 0, completed: 0, failed: 0, aborted: 0, slow: 0 };
+  let pendingDropped = 0;
+  let duplicateStarts = 0;
 
   const supported =
     (patchFetch && typeof globalThis.fetch === "function") ||
@@ -380,12 +387,36 @@ export function createNetworkCollector(options: NetworkCollectorOptions = {}): C
     // Ring may evict an old entry; drop its index entry too so the map can't outgrow the ring.
     if (entries.size === entries.capacity) {
       const evicted = entries.at(0);
-      if (evicted) byId.delete(evicted.id);
+      if (evicted && byId.get(evicted.id) === evicted) byId.delete(evicted.id);
     }
     entries.push(entry);
     byId.set(entry.id, entry);
     totals = { ...totals, started: totals.started + 1 };
     return entry;
+  };
+
+  const sweepPending = (now: number): void => {
+    const oldestAllowed = now - pendingMaxAge;
+    for (const [requestId, record] of pending) {
+      if (record.startedAt >= oldestAllowed) break;
+      pending.delete(requestId);
+      pendingDropped += 1;
+    }
+  };
+
+  const rememberPending = (requestId: string, entry: NetworkEntry | null, now: number): void => {
+    sweepPending(now);
+    if (pending.has(requestId)) {
+      duplicateStarts += 1;
+      pending.delete(requestId);
+    }
+    pending.set(requestId, { entry, startedAt: now });
+    while (pending.size > pendingLimit) {
+      const oldest = pending.keys().next().value as string | undefined;
+      if (oldest === undefined) break;
+      pending.delete(oldest);
+      pendingDropped += 1;
+    }
   };
 
   const finish = (
@@ -479,13 +510,14 @@ export function createNetworkCollector(options: NetworkCollectorOptions = {}): C
 
     start(context: CollectorContext) {
       if (bus) {
-        const pending = new Map<string, NetworkEntry | null>();
         bus.on(
           "network-start",
           (payload) => {
-            pending.set(
+            const now = context.now();
+            rememberPending(
               payload.requestId,
-              begin(context.now(), payload.method, payload.url, payload.requestId),
+              begin(now, payload.method, payload.url, payload.requestId),
+              now,
             );
             context.invalidate();
           },
@@ -494,9 +526,13 @@ export function createNetworkCollector(options: NetworkCollectorOptions = {}): C
         bus.on(
           "network-end",
           (payload) => {
-            const entry = pending.get(payload.requestId) ?? byId.get(payload.requestId) ?? null;
+            const now = context.now();
+            sweepPending(now);
+            const record = pending.get(payload.requestId);
+            const entry =
+              record === undefined ? (byId.get(payload.requestId) ?? null) : record.entry;
             pending.delete(payload.requestId);
-            finish(entry, context.now(), {
+            finish(entry, now, {
               status: payload.status,
               bytes: payload.bytes,
               error: payload.error,
@@ -506,6 +542,7 @@ export function createNetworkCollector(options: NetworkCollectorOptions = {}): C
           },
           { signal: context.signal },
         );
+        context.signal.addEventListener("abort", () => pending.clear(), { once: true });
       }
 
       // One sink, both transports.
@@ -556,7 +593,12 @@ export function createNetworkCollector(options: NetworkCollectorOptions = {}): C
         ["Aborted (session)", formatCount(totals.aborted)],
         [`Failed (last ${Math.round(windowMs / 1000)} s)`, String(window.failed)],
         [`Slow >${formatMs(slowMs)} (last ${Math.round(windowMs / 1000)} s)`, String(window.slow)],
-        ["Instrumentation", bus ? "bus + patched" : "patched fetch/XHR"],
+        [
+          "Instrumentation",
+          [bus ? "bus" : "", patchFetch ? "patched fetch" : "", patchXhr ? "patched XHR" : ""]
+            .filter(Boolean)
+            .join(" + "),
+        ],
       );
 
       return {
@@ -568,7 +610,7 @@ export function createNetworkCollector(options: NetworkCollectorOptions = {}): C
         display: String(window.active),
         value: window.active,
         unit: "requests",
-        hint: "Requests in flight now. The panel lists recent ones, with query credentials masked.",
+        hint: "Requests in flight now. Time is the span between bus events when a bus reports; patched fetch stops at response headers, patched XMLHttpRequest after the body. The panel masks query credentials.",
         detail,
       };
     },
@@ -576,8 +618,11 @@ export function createNetworkCollector(options: NetworkCollectorOptions = {}): C
     reset() {
       entries.clear();
       byId.clear();
+      pending.clear();
       series.clear();
       totals = { started: 0, completed: 0, failed: 0, aborted: 0, slow: 0 };
+      pendingDropped = 0;
+      duplicateStarts = 0;
     },
 
     entries(now: number) {
@@ -588,6 +633,8 @@ export function createNetworkCollector(options: NetworkCollectorOptions = {}): C
       return {
         supported,
         totals,
+        pendingDropped,
+        duplicateStarts,
         ...summarise(now),
         recent: list(now).slice(0, 20),
       };

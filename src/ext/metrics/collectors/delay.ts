@@ -138,7 +138,7 @@ export function createDelayCollector(options: DelayCollectorOptions = {}): Colle
           const inputDelay = Math.max(0, event.processingStart - event.startTime);
           const processing = Math.max(0, event.processingEnd - event.processingStart);
           const record: InteractionRecord = {
-            at: context.now(),
+            at: Number.isFinite(event.startTime) ? event.startTime : context.now(),
             name: event.name,
             duration: event.duration,
             inputDelay,
@@ -175,9 +175,24 @@ export function createDelayCollector(options: DelayCollectorOptions = {}): Colle
         return;
       }
 
-      context.signal.addEventListener("abort", () => observer.disconnect(), {
-        once: true,
-      });
+      context.signal.addEventListener(
+        "abort",
+        () => {
+          try {
+            observer.disconnect();
+          } finally {
+            // A real restart constructs a new buffered observer, so retained
+            // entries can replay into a new cycle. Clearing does not address
+            // StrictMode's double-invoke, and need not: buffered delivery is
+            // queued as a task, and StrictMode disconnects the first observer
+            // before that task runs.
+            series.clear();
+            interactions.clear();
+            seen = 0;
+          }
+        },
+        { once: true },
+      );
     },
     read(now: number): MetricView {
       const detail: [string, string][] = [];

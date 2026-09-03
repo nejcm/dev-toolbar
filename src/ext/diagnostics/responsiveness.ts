@@ -387,6 +387,13 @@ export function createResponsivenessMonitor(
       }
       observers = [];
       startedAt = null;
+      // A real restart constructs new buffered observers, so retained entries
+      // can replay into a new cycle. Clearing does not address StrictMode's
+      // double-invoke, and need not: buffered delivery is queued as a task, and
+      // StrictMode disconnects the first observers before that task runs.
+      longTasks.clear();
+      interactions.clear();
+      shifts.clear();
       // Leaving these at "supported" would make a post-teardown `report()`
       // claim live observation over counts that had stopped moving.
       for (const entryType of [LONG_TASK, EVENT, LAYOUT_SHIFT]) {
