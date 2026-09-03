@@ -639,7 +639,16 @@ following the same file convention: `index.tsx` (the factory), `runtime.ts` (non
 logic), `ui.tsx`, `types.ts`, `css.ts`, `__tests__/`. A new extension is a new
 published subpath and must be added **explicitly** to both the `exports` map in
 `package.json` and the `entry` / `dts.entry` maps in `tsup.config.ts` — never as a
-wildcard. An entry missing from either is silently unpublishable or untyped.
+wildcard. An entry missing from either is silently unpublishable or untyped. The one
+thing under `src/ext/` that is not a subpath is shared React glue (`useExtensionSurface`
+in `src/ext/shared/hooks.ts`), which lives outside the per-extension file layout. The
+CJS build does not code-split, so it is inlined into every `dist/ext/*.cjs`; the ESM
+build emits it as one shared chunk. Seven copies is why it is held to the extensions'
+rules and one more: types only from core, values only from `src/runtime`, nothing from
+a sibling `ext/<name>/`, no `[dev-toolbar/ext/…]` marker (the dist scan reads markers
+as proof one bundle carries no other's code), and no module-level state, or each bundle
+would own a different copy of it. The "shared extension glue" block in
+`src/core/__tests__/boundary.test.ts` fails on the first four.
 
 Testing it:
 

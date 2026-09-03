@@ -205,6 +205,83 @@ describe("core boundary (source)", () => {
   });
 });
 
+describe("shared extension glue (source)", () => {
+  /**
+   * `src/ext/shared` is internal and unpublished, and the CJS build does not
+   * code-split, so every byte of it is inlined into all seven
+   * `dist/ext/*.cjs`. That makes it the one directory where a mistake is
+   * multiplied sevenfold, so it is held to the rules the seven extensions are:
+   * no extension marker (the dist scan below reads markers as proof one
+   * bundle does not carry another's code), no core message prefix, no value
+   * import of core, and nothing reaching sideways into a sibling extension.
+   *
+   * Everything here is expressed with path strings and `readFileSync`, never
+   * an import: this file lives under `src/core`, whose own scan above rejects
+   * any specifier naming `runtime` or `ext`.
+   */
+  const sharedDirectory = resolve(root, "src/ext/shared");
+  const extDirectory = resolve(root, "src/ext");
+  const files = sourceFiles(sharedDirectory).filter((file) => !/(^|\/)__tests__\//.test(file));
+
+  it("has files to check", () => {
+    // A rename that empties the directory must fail here rather than pass
+    // every assertion below vacuously.
+    expect(files.length).toBeGreaterThan(0);
+  });
+
+  it("carries no extension or core marker", () => {
+    const offenders: string[] = [];
+    for (const file of files) {
+      const source = readFileSync(file, "utf8");
+      for (const marker of EXT_MARKERS) {
+        if (source.includes(marker)) offenders.push(`${file} -> ${marker}`);
+      }
+      if (source.includes(CORE_PREFIX)) offenders.push(`${file} -> ${CORE_PREFIX}`);
+    }
+    expect(offenders).toEqual([]);
+  });
+
+  it("never value-imports core", () => {
+    const offenders: string[] = [];
+    for (const file of files) {
+      for (const specifier of coreValueImports(readFileSync(file, "utf8"))) {
+        offenders.push(`${file} -> ${specifier}`);
+      }
+    }
+    expect(offenders).toEqual([]);
+  });
+
+  it("never reaches into a sibling extension", () => {
+    /**
+     * A specifier reaches sideways if it resolves inside `src/ext` but outside
+     * `src/ext/shared` — or, when it is bare, if it names an `ext/` subpath.
+     */
+    const reachesSibling = (file: string, specifier: string): boolean => {
+      if (!specifier.startsWith(".")) return /(^|\/)ext\//.test(specifier);
+      const target = resolve(dirname(file), specifier);
+      return target.startsWith(`${extDirectory}/`) && !target.startsWith(`${sharedDirectory}/`);
+    };
+
+    const offenders: string[] = [];
+    for (const file of files) {
+      const source = readFileSync(file, "utf8");
+      // Both halves of `coreValueImports` above, for the same reason it has
+      // them: a static clause is the ordinary form, and `import(` / `require(`
+      // carry no clause, so a pattern that only reads `from "…"` would let
+      // `() => import("../metrics/css")` through — inlined into all seven
+      // bundles, and only maybe caught later by the dist marker scan.
+      const specifiers = [
+        ...source.matchAll(/from\s+["']([^"']+)["']/g),
+        ...source.matchAll(/\b(?:import|require)\s*\(\s*["']([^"']+)["']/g),
+      ].map((match) => match[1] as string);
+      for (const specifier of specifiers) {
+        if (reachesSibling(file, specifier)) offenders.push(`${file} -> ${specifier}`);
+      }
+    }
+    expect(offenders).toEqual([]);
+  });
+});
+
 const built = existsSync(`${root}dist/index.js`);
 const mustBeBuilt = Boolean(process.env["CI"]);
 

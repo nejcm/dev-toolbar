@@ -15,6 +15,7 @@ The contract an extension is written against is the real public API.
 | `src/core/` | The shell: portal, bar, overflow, panel host, overlay host, storage, styles, aggregations | React 18/19, `useSyncExternalStore`, no deps | Nothing. **Never imports `runtime/` or `ext/`.** |
 | `src/runtime/` | Opt-in primitives for extensions that measure: event bus, ring buffers, throttled store, `redact()`, style injection | Framework-free TS | Nothing in this package |
 | `src/ext/<name>/` | First-party extensions, one directory each | React + `src/runtime`, **types only** from core | `src/runtime`, core's *types* |
+| `src/ext/shared/` | React glue the first-party extensions share (`useExtensionSurface`); internal, not a published subpath | React + `src/runtime`, **types only** from core | `src/runtime`, core's *types*. **Never another `ext/<name>/`.** |
 | `src/testing/` | `renderWithToolbar`, `makeExtension`, `mockBus`, fake layout | React + optional `@testing-library/react` peer | core's *types* relatively, core's *values* through `@nejcm/dev-toolbar` |
 | `examples/playground/` | Vite app consuming the built package via `file:../..` | Vite, React | `dist/`, as a real consumer does |
 | `test/fixtures/jest-consumer/` | A real Jest 30 + CommonJS consumer of `dist/` | Jest, npm | `dist/`, as a CommonJS consumer does |
@@ -24,6 +25,10 @@ The contract an extension is written against is the real public API.
 
 Each extension directory follows the same convention: `index.tsx` (the factory),
 `runtime.ts` (non-React logic), `ui.tsx`, `types.ts`, `css.ts`, `__tests__/`.
+Shared React glue (`useExtensionSurface` in `src/ext/shared/hooks.ts`) lives outside
+that layout and is not a subpath: CJS inlines it into every `dist/ext/*.cjs`, ESM
+emits one shared chunk. Keep it stateless and marker-free;
+`src/core/__tests__/boundary.test.ts` guards the import rules.
 
 ## Checks
 

@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
+import { useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import { writeClipboardText } from "../../runtime";
+import { useExtensionSurface } from "../shared/hooks";
 import { ensureThemeEditorStyles } from "./css";
 import {
   describeRefusal,
@@ -10,7 +11,7 @@ import {
   severityFor,
   toColorInputValue,
 } from "./types";
-import type { ThemeSnapshot, TokenView } from "./types";
+import type { TokenView } from "./types";
 import type { ThemeEditorRuntime } from "./runtime";
 
 /**
@@ -21,20 +22,6 @@ import type { ThemeEditorRuntime } from "./runtime";
  * snapshot, already redacted — no component here has access to a raw token
  * value.
  */
-
-function useSnapshot(runtime: ThemeEditorRuntime): ThemeSnapshot {
-  return useSyncExternalStore(
-    runtime.store.subscribe,
-    runtime.store.getSnapshot,
-    runtime.store.getSnapshot,
-  );
-}
-
-function useThemeStyles(inject: boolean): void {
-  useEffect(() => {
-    if (inject) ensureThemeEditorStyles();
-  }, [inject]);
-}
 
 /* -------------------------------------------------------------------------- */
 /* Bar                                                                         */
@@ -57,8 +44,7 @@ export function ThemeChip({
   injectStyles,
   onToggle,
 }: ChipProps): ReactNode {
-  useThemeStyles(injectStyles);
-  const snapshot = useSnapshot(runtime);
+  const snapshot = useExtensionSurface(runtime.store, injectStyles, ensureThemeEditorStyles);
 
   const edited = snapshot.overriddenCount > 0;
   const summary = !snapshot.preview
@@ -319,8 +305,7 @@ export interface PanelProps {
 }
 
 export function ThemePanel({ runtime, label, injectStyles }: PanelProps): ReactNode {
-  useThemeStyles(injectStyles);
-  const snapshot = useSnapshot(runtime);
+  const snapshot = useExtensionSurface(runtime.store, injectStyles, ensureThemeEditorStyles);
   const [query, setQuery] = useState("");
   const [format, setFormat] = useState<ExportFormat>("css");
   const [copied, setCopied] = useState<"idle" | "ok" | "failed">("idle");
