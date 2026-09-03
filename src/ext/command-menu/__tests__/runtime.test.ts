@@ -3,6 +3,7 @@
  * value, and this extension imports only types), and the fail-closed edges.
  */
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { fireEvent } from "@testing-library/react";
 import {
   ariaKeyshortcuts,
   createCommandMenuRuntime,
@@ -61,6 +62,15 @@ describe("parseHotkey", () => {
     expect(parseHotkey("Mod+Shift")).toBeNull();
     expect(parseHotkey("")).toBeNull();
   });
+
+  it("keeps the physical code for shifted punctuation", () => {
+    expect(parseHotkey("Mod+Shift+.")).toMatchObject({
+      key: ".",
+      code: "Period",
+      mod: true,
+      shift: true,
+    });
+  });
 });
 
 describe("matchesHotkey", () => {
@@ -81,6 +91,17 @@ describe("matchesHotkey", () => {
 
   it("falls back to the physical code when a layout reports another character", () => {
     expect(matchesHotkey(key({ key: "œ", code: "KeyK", ctrlKey: true }), modK!, false)).toBe(true);
+  });
+
+  it("matches shifted punctuation by physical code on non-Apple", () => {
+    const modShiftPeriod = parseHotkey("Mod+Shift+.");
+    expect(
+      matchesHotkey(
+        key({ key: ">", code: "Period", ctrlKey: true, shiftKey: true }),
+        modShiftPeriod!,
+        false,
+      ),
+    ).toBe(true);
   });
 });
 
@@ -170,6 +191,53 @@ describe("createCommandMenuRuntime", () => {
     expect(runtime.store.peek().open).toBe(false);
     window.dispatchEvent(new KeyboardEvent("keydown", { key: "k", ctrlKey: true }));
     expect(runtime.store.peek().open).toBe(false);
+  });
+
+  it("ignores a chord the host already handled", () => {
+    const runtime = createCommandMenuRuntime({ apple: false });
+    const stop = runtime.start(api());
+    const onKeyDown = (event: KeyboardEvent) => {
+      event.preventDefault();
+    };
+    document.addEventListener("keydown", onKeyDown);
+    try {
+      // Dispatched on the body so it bubbles document -> window, the order a
+      // real app handler sees. fireEvent sets `cancelable: true`; a raw
+      // `KeyboardEvent` defaults to non-cancelable, so `preventDefault()` would
+      // be a no-op.
+      fireEvent.keyDown(document.body, { key: "k", ctrlKey: true });
+      expect(runtime.store.peek().open).toBe(false);
+    } finally {
+      document.removeEventListener("keydown", onKeyDown);
+      stop();
+    }
+  });
+
+  it("ignores a chord fired mid-composition", () => {
+    const runtime = createCommandMenuRuntime({ apple: false });
+    const stop = runtime.start(api());
+    try {
+      document.body.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "k", ctrlKey: true, bubbles: true, isComposing: true }),
+      );
+      expect(runtime.store.peek().open).toBe(false);
+    } finally {
+      stop();
+    }
+  });
+
+  it("ignores auto-repeat while the chord is held", () => {
+    const runtime = createCommandMenuRuntime({ apple: false });
+    const stop = runtime.start(api());
+    try {
+      window.dispatchEvent(new KeyboardEvent("keydown", { key: "k", ctrlKey: true }));
+      expect(runtime.store.peek().open).toBe(true);
+
+      window.dispatchEvent(new KeyboardEvent("keydown", { key: "k", ctrlKey: true, repeat: true }));
+      expect(runtime.store.peek().open).toBe(true);
+    } finally {
+      stop();
+    }
   });
 
   it("persists nothing before start(), and reads what start() found", () => {

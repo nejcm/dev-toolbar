@@ -88,11 +88,35 @@ export interface ParsedHotkey {
   mod: boolean;
 }
 
+// Mirrors src/core/shortcut.ts
+const CODES: Record<string, string> = {
+  ".": "Period",
+  ",": "Comma",
+  "/": "Slash",
+  ";": "Semicolon",
+  "'": "Quote",
+  "[": "BracketLeft",
+  "]": "BracketRight",
+  "\\": "Backslash",
+  "-": "Minus",
+  "=": "Equal",
+  "`": "Backquote",
+};
+
+// Mirrors src/core/shortcut.ts
+function codeFor(key: string): string | null {
+  if (key.length === 1) {
+    if (key >= "a" && key <= "z") return `Key${key.toUpperCase()}`;
+    if (key >= "0" && key <= "9") return `Digit${key}`;
+    return CODES[key] ?? null;
+  }
+  return null;
+}
+
 /**
  * A local parser, not core's `parseShortcut` — that's a *value*, and this
- * extension imports only types from core (§7). If a second extension needs
- * one, move it to `/runtime` (as `ensureStyleSheet` was, §11.2) rather than
- * making a third copy.
+ * extension imports only types from core (§7). Mirrors `src/core/shortcut.ts`;
+ * `__tests__/parity.test.ts` keeps them in step.
  */
 export function parseHotkey(input: string): ParsedHotkey | null {
   const parsed: ParsedHotkey = {
@@ -134,13 +158,7 @@ export function parseHotkey(input: string): ParsedHotkey | null {
     }
   }
   if (parsed.key === "") return null;
-  if (parsed.key.length === 1) {
-    if (parsed.key >= "a" && parsed.key <= "z") {
-      parsed.code = `Key${parsed.key.toUpperCase()}`;
-    } else if (parsed.key >= "0" && parsed.key <= "9") {
-      parsed.code = `Digit${parsed.key}`;
-    }
-  }
+  parsed.code = codeFor(parsed.key);
   return parsed;
 }
 
@@ -380,7 +398,11 @@ export function createCommandMenuRuntime(
       store.set({ ...store.peek(), ready: true, recent });
 
       const onKeyDown = (event: KeyboardEvent) => {
-        if (!hotkey || event.repeat) return;
+        // Listener is on `window`, so `document` handlers ran first:
+        // `defaultPrevented` is how a host claims the chord. `isComposing` keeps
+        // IME out; `repeat` keeps a held chord from flickering the palette.
+        if (event.defaultPrevented || event.isComposing || event.repeat) return;
+        if (!hotkey) return;
         // The overlay only renders while the bar is visible; opening while
         // hidden would set state nothing paints, then paint it uninvited once
         // the bar returns.
