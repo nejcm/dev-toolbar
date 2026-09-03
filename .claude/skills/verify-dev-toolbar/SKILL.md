@@ -27,14 +27,30 @@ The playground is the `playground` entry in [`.claude/launch.json`](../../launch
 Start it through the Browser pane, never through Bash:
 
 - `mcp__Claude_Browser__preview_start` with `{"name": "playground"}`.
-- Its `predev` script runs `bun run build` at the repo root first, so the tab
-  always serves the current `src/`. The build takes a few seconds; the server
-  is ready when `preview_logs` prints `VITE v8 ready in <n> ms` and
-  `Local: http://localhost:5273/`.
+- Its `predev` script runs `bun run build` at the repo root first, so a
+  **fresh** `preview_start` serves the current `src/` — and that is the only
+  moment the guarantee holds (see the next two bullets). The build takes a few
+  seconds; the server is ready when `preview_logs` prints
+  `VITE v8 ready in <n> ms` and `Local: http://localhost:5273/`.
 - Keep the `tabId` from the result and pass it to every later browser call.
-- Editing `src/` does **not** hot-reload the tab — the playground imports
-  `dist/`. Rebuild with `bun run build` and reload the tab, or run
-  `bun run dev` (tsup watch) in the background alongside the preview.
+- Editing `src/` does **not** reach the tab — the playground imports `dist/`,
+  so rebuild with `bun run build` (or run `bun run dev`, tsup watch, in the
+  background alongside the preview). A rebuild while the preview is running
+  reaches the tab through Vite **HMR, not a reload**: `preview_logs` shows
+  `hmr update` / `hmr invalidate … Could not Fast Refresh` lines bubbling up
+  to `/src/App.tsx`, the toolbar remounts from the re-imported module (a
+  stashed reference to the old `[data-dtb-part="root"]` reads
+  `isConnected: false`), `performance.timeOrigin` does not move, and every
+  in-memory extension state is reset by the remount rather than by a page
+  load. The mounted toolbar is therefore *usually* the new build — but
+  nothing in the DOM says which build a given node came from, which is how
+  one review ended up reasoning about a module twenty minutes stale.
+- To **know** which build a tab serves, `navigate` to `http://localhost:5273/`
+  and compare the probe's `loadedAt` with the `dist/ built` stamp
+  `doctor.sh` prints (both UTC ISO): `loadedAt` later than the stamp means
+  the document was loaded over the current `dist/`; earlier means it was
+  not, whatever HMR did in between. If `navigate` is refused, stop your own
+  preview and start it again — `predev` rebuilds and the new tab loads fresh.
 
 Isolation: the port (`5273`) and the `localStorage` namespace
 (`dtb:v1:playground:*`) are both fixed, so **two runs cannot share this
@@ -56,7 +72,8 @@ whenever anything looks off, and before blaming the library for a blank page.
 
 The browser half of the doctor is the probe below: `mounted: true`,
 `shell.instance: "playground"`, and a `bar` list of twelve extensions is a
-healthy instance.
+healthy instance — and a `loadedAt` later than the `dist/ built` stamp above
+is one that has actually loaded the current build (see [Launch](#launch)).
 
 ## Drive
 
@@ -105,6 +122,24 @@ before a keyboard step, and after every input **assert the effect landed**
 before moving on. A step that changed nothing is far more likely to be a
 dropped event than a regression — retry it once, and only then report it.
 
+**A hidden pane renders no frames.** While `tabs_context` says the pane is
+hidden, the document reports `visibilityState: "hidden"` and the browser
+suspends the rendering pipeline outright: `requestAnimationFrame` never ticks
+and `ResizeObserver` callbacks are never delivered — not throttled, not late,
+not even the initial notification `observe()` owes (3.5 s, zero of either,
+in the run that established this). Timers, `getBoundingClientRect()`,
+`resize_window` (`innerWidth` updates synchronously) and React commits all
+keep working, which is what makes it dangerous: the DOM reads as live and
+consistent while still showing the layout from before the last frame-driven
+step. `computer {"action":"screenshot"}` forces a compositor frame and
+flushes the queue — a burst of about four rAF ticks and one *coalesced*
+`ResizeObserver` delivery per screenshot; `computer {"action":"wait"}` does
+not. So for anything frame-driven — the bar's overflow collapse above all —
+the pattern in a hidden pane is **act → screenshot → read**, and the report
+says the check ran screenshot-flushed: the observer then sees one coalesced
+size change instead of the stream a visible resize produces, which makes it
+a weaker test of anything that guards against oscillation.
+
 **Keys.** Send `Enter`, not `Return` — `Return` reaches the page as a key the
 palette's `switch (event.key)` does not match, so it silently does nothing.
 `cmd+k` opens the palette on this platform (`Mod` is exclusive: on macOS
@@ -113,7 +148,10 @@ palette's `switch (event.key)` does not match, so it silently does nothing.
 **Waiting.** The bar's overflow runs off a `ResizeObserver` and the environment
 extension polls every 500 ms, so a read immediately after a resize or a
 context mutation can catch the previous frame. Re-read until the value settles
-rather than asserting on the first snapshot.
+rather than asserting on the first snapshot — and in a hidden pane, take a
+screenshot between the two reads, or the `ResizeObserver` half never settles
+because no frame is ever delivered: two identical snapshots there prove the
+pane was hidden, not that the layout held.
 
 ## Evidence
 
@@ -136,7 +174,12 @@ would mint its own second-resolution directory. `--new-run` starts a fresh run
 deliberately; `VERIFY_RUN_ID` in the environment of a single call still wins
 when you want to write into a named run. Re-using a filename is refused
 (exit 3) rather than silently overwriting proof — pass `--force` if the
-overwrite is what you meant, and it says so on stderr.
+overwrite is what you meant, and it says so on stderr. `<feature>` is the
+feature file's name — `flags`, `overflow`, `shell`, … — because
+`.verify-artifacts/<run>/<feature>/` is only greppable against the map when
+the two agree; a name with no `features/<feature>.md` gets a warning on
+stderr, and the write still goes ahead, since the evidence matters more than
+its label.
 
 Proof standards for this repo:
 
@@ -153,6 +196,17 @@ Proof standards for this repo:
   `theme-swatches` readouts. A chip that changed while storage did not is a
   failure, not a pass.
 - **Prove persistence by reloading**, not by reading the store you just wrote.
+- **A "never happens" claim needs a listener installed before the stress, not
+  a log read after it.** `read_console_messages` sees `console.*` calls and
+  uncaught exceptions; it does not see an `ErrorEvent` with no `Error` object
+  behind it, and the one this repo cares about —
+  `ResizeObserver loop completed with undelivered notifications` — is exactly
+  that kind (confirmed: three fired on `window`, the tool listed none). Push
+  `window.addEventListener("error", …)` messages into an array on `window`
+  first, drive, then read the array with the probe;
+  [overflow.md](./features/overflow.md) has the recipe. And a pane that never
+  delivered a frame never ran the observer, so an empty array from a hidden
+  pane without screenshots between the steps is not evidence.
 - **No mocks.** Every extension in the playground is the real published module
   measuring the real page. The only fakes are the app's own flag backend and
   environment context — the production boundaries the contract already puts on
@@ -186,7 +240,7 @@ In this order:
 | --- | --- | --- |
 | [`doctor.sh`](./doctor.sh) | `sh .claude/skills/verify-dev-toolbar/doctor.sh` | Read-only preflight; exit 0 = drive it |
 | [`probe.js`](./probe.js) | `eval(await (await fetch("/@fs<repo>/.claude/skills/verify-dev-toolbar/probe.js")).text())` in `javascript_tool` | One read-only snapshot of shell + extension state |
-| [`capture.sh`](./capture.sh) | `capture.sh <feature> <filename> <<'EOF' … EOF` | Writes an artifact under the current run in `.verify-artifacts/` and prints its path; `--new-run` starts a run |
+| [`capture.sh`](./capture.sh) | `capture.sh <feature> <filename> <<'EOF' … EOF` | Writes an artifact under the current run in `.verify-artifacts/` and prints its path; `--new-run` starts a run; warns when `<feature>` is not a `features/*.md` name |
 
 ## Maintenance
 

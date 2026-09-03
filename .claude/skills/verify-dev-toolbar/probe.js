@@ -50,6 +50,13 @@
 
   return {
     url: location.href,
+    // When this document was navigated to (ISO 8601, UTC). Vite picks a
+    // rebuilt dist/ up through HMR, not a reload, so this is the only fact
+    // that says which build a tab can be serving: a `loadedAt` earlier than
+    // the `dist/ built` stamp doctor.sh prints means the tab was never
+    // reloaded over the current build. Compare after a `navigate`, not
+    // before — HMR leaves it untouched.
+    loadedAt: new Date(performance.timeOrigin).toISOString(),
     mounted: root !== null,
     shell: root && {
       instance,

@@ -38,6 +38,10 @@ Preconditions:
   Gotchas).
 - The Browser pane is **displayed** for the keyboard steps. `computer`
   `{"action":"key"}` delivers nothing at all while it is hidden.
+- If it is hidden anyway, every frame-driven step below — the height variable
+  and inset after a panel opens, anything the bar re-lays out — is *act →
+  `computer {"action":"screenshot"}` → read*, and the report says so (see
+  Gotchas).
 
 - **Mount.** Probe. `mounted` is `true`, `shell.instance` is `"playground"`,
   `shell.barLabel` is `Developer toolbar`, and `bar` lists the twelve baseline
@@ -80,7 +84,7 @@ Preconditions:
 
 ## Gotchas
 
-- **A hidden Browser pane breaks two things, differently.** Geometry:
+- **A hidden Browser pane breaks three things, differently.** Geometry:
   `innerWidth`, `getBoundingClientRect()` and the published height variable all
   read `0`, so every measurement here silently "fails" — fix it by pinning a
   viewport with `resize_window` (`{"width": 1280, "height": 800}`), which works
@@ -89,7 +93,22 @@ Preconditions:
   letter raises a `keydown` — while `left_click` and `type` keep working. There
   is no workaround for that one; `tabs_context` reports whether the pane is
   displayed, so check it and ask the user to show the pane before the keyboard
-  steps rather than reporting a shortcut as broken.
+  steps rather than reporting a shortcut as broken. Frames: while the pane is
+  hidden the document is `visibilityState: "hidden"` and the browser suspends
+  the rendering pipeline outright — `requestAnimationFrame` never ticks and
+  `ResizeObserver` callbacks are never delivered, not even the initial
+  notification `observe()` owes (measured: 3.5 s, zero of either). This is
+  suspension, not throttling, and the pinned viewport does not lift it:
+  timers, `getBoundingClientRect()` and `resize_window` keep working, so the
+  DOM reads as live and consistent while still showing the layout from before
+  the last frame-driven step. The one call that forces a compositor frame, and
+  flushes the pending observer deliveries with it, is
+  `computer {"action":"screenshot"}` — about four rAF ticks and one coalesced
+  `ResizeObserver` delivery per screenshot; `computer {"action":"wait"}`
+  forces nothing. Act, screenshot, then read, and say in the report that the
+  check ran screenshot-flushed: the observer then sees one coalesced size
+  change instead of the stream a visible resize produces, so it is a weaker
+  test of anything that guards against oscillation.
 - The height variable is instance-scoped: `--dev-toolbar-height-playground`.
   The playground's own `height-readout` control reads the *unsuffixed* name and
   therefore always shows `(unset)`; that readout is stale, not a regression.
@@ -97,7 +116,8 @@ Preconditions:
   Re-rendering `<DevToolbar>` with a different `defaultPosition` will not move
   a bar that already has a stored position.
 - `padding` on the inset lags the height variable by a frame after a position
-  change. Re-read rather than asserting on the first snapshot.
+  change. Re-read rather than asserting on the first snapshot — and in a
+  hidden pane, screenshot first, because that frame otherwise never arrives.
 - `enabled: false` unmounts everything, storage included — use it to prove the
   kill switch, never as a way to reach a clean baseline.
 - The playground's `data-testid` header buttons drive the *app's* props. They
