@@ -18,9 +18,10 @@
     --dtb-bar-height: 32px;
     --dtb-radius: 5px;
     /* Menu and internal gaps. --dtb-item-gap is the one the bar reads back
-       for its collapse math, so the two are deliberately separate: a tight
-       popup list and a bar whose items are legibly apart. */
-    --dtb-gap: 2px;
+       for its collapse math, so the two are deliberately separate: a popup
+       list dense enough to scan at a glance and a bar whose items are legibly
+       apart. --dtb-gap is what separates the rows of the popup menu. */
+    --dtb-gap: 5px;
     --dtb-item-gap: 18px;
     /* Label-to-value inside one chip. Extensions read this so every chip in
        the bar breathes the same amount. */
@@ -216,6 +217,7 @@
     --dtb-control-height: 26px;
     --dtb-control-padding-x: 12px;
     --dtb-field-padding-y: 4px;
+    --dtb-gap: 7px;
   }
 
   [data-dev-toolbar] [data-dtb-part="bar"] {

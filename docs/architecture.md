@@ -377,7 +377,7 @@ Set them on `[data-dev-toolbar]`, or on any ancestor. Unlayered CSS wins.
 | `--dtb-font-size` | `11px` | Base size (`12px` when comfortable) |
 | `--dtb-bar-height` | `32px` | Bar row height (`38px` when comfortable) |
 | `--dtb-radius` | `5px` | Corner radius on triggers, menu, chips |
-| `--dtb-gap` | `2px` | Gap inside the `⋮` popup and other dense lists |
+| `--dtb-gap` | `5px` | Gap between the `⋮` popup's rows (`7px` when comfortable) |
 | `--dtb-item-gap` | `18px` | Gap between bar items (`24px` when comfortable); read back for collapse math. A divider is drawn centred in it |
 | `--dtb-chip-gap` | `6px` | Label-to-value gap inside one chip, and between two controls one extension renders |
 | `--dtb-padding-x` | `8px` | Bar's horizontal padding, and the panel body's |
