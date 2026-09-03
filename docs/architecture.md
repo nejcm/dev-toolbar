@@ -96,22 +96,32 @@ Losing on purpose has a consequence worth stating, because it is the one most
 consumers meet: **a CSS reset is unlayered too.** Tailwind's Preflight ships
 `button, input, optgroup, select, textarea { padding: 0 }` and
 `button { background-color: transparent }`, and both beat core's layered rules.
-In a Tailwind app that means every trigger and the `⋮` button render with no
-horizontal padding, no hover background and no selected background — core's
-look silently reset. Layout survives, because gaps, heights and dividers are
-properties no reset touches; only the button's own box is flattened.
+In a Tailwind app that means every trigger, the `⋮` button and every control
+inside a panel render with no padding, no hover background and no selected
+background — core's look silently reset. Layout survives, because gaps, heights
+and dividers are properties no reset touches; only each control's own box is
+flattened.
 
 This is the contract working, not a bug, and the fix belongs on the consumer's
 side, where the reset came from. The whole remedy is `revert-layer`:
 
 ```css
 /* Unlayered, so it beats Preflight; resolves to whatever @layer dev-toolbar
-   would have produced for that element in that state. */
-[data-dev-toolbar] [data-dtb-part="trigger"],
-[data-dev-toolbar] [data-dtb-part="overflow-button"],
-[data-dev-toolbar] [data-dtb-part="flag-promoted"] {
+   would have produced for that element in that state. Reverting by part, not
+   by element, is the whole design: Preflight resets every control the toolbar
+   draws plus the margins and list markers on its headings, paragraphs and
+   lists, and [data-dtb-part] covers all of them at a specificity Preflight
+   cannot reach — while leaving alone any element the toolbar does not own, so
+   a consumer's own utility classes on their own chip still win. */
+[data-dev-toolbar] [data-dtb-part] {
+  margin: revert-layer;
   padding: revert-layer;
   background-color: revert-layer;
+  font-size: revert-layer;
+  line-height: revert-layer;
+  letter-spacing: revert-layer;
+  color: revert-layer;
+  list-style: revert-layer;
 }
 
 /* Preflight's border reset is `*, ::before, ::after { border-width: 0 }`, so
@@ -126,6 +136,11 @@ side, where the reset came from. The whole remedy is `revert-layer`:
   border-color: revert-layer;
 }
 ```
+
+Reverting is safe because core states the same reset itself — `:where(button)`
+and `:where(menu, ol, ul)` in `src/styles.css` give every unstyled button and
+list inside the toolbar a deliberate zero, so `revert-layer` never falls
+through to a UA 1em or a grey button face in a host that ships no reset either.
 
 Hover, `[aria-expanded="true"]` and `:active` all come back without being
 restated, because `revert-layer` re-runs the layered cascade per element and
@@ -362,11 +377,18 @@ Set them on `[data-dev-toolbar]`, or on any ancestor. Unlayered CSS wins.
 | `--dtb-font-size` | `11px` | Base size (`12px` when comfortable) |
 | `--dtb-bar-height` | `32px` | Bar row height (`38px` when comfortable) |
 | `--dtb-radius` | `5px` | Corner radius on triggers, menu, chips |
-| `--dtb-gap` | `2px` | Gap inside the `⋮` popup and other dense lists |
+| `--dtb-gap` | `5px` | Gap between the `⋮` popup's rows (`7px` when comfortable) |
 | `--dtb-item-gap` | `18px` | Gap between bar items (`24px` when comfortable); read back for collapse math. A divider is drawn centred in it |
 | `--dtb-chip-gap` | `6px` | Label-to-value gap inside one chip, and between two controls one extension renders |
-| `--dtb-padding-x` | `8px` | Bar's horizontal padding, and the panel body's |
+| `--dtb-padding-x` | `8px` | Bar's horizontal padding. The panel body takes `--dtb-panel-padding-x` |
 | `--dtb-item-padding-x` | `7px` | Trigger padding (`9px` when comfortable) |
+| `--dtb-space-1` … `--dtb-space-5` | `4/8/12/16/24px` | The spacing scale every panel and popup measures in |
+| `--dtb-panel-padding-x` | `14px` | Panel body's inline margins (`18px` when comfortable) |
+| `--dtb-panel-padding-y` | `12px` | Panel body's block margins (`14px` when comfortable) |
+| `--dtb-control-height` | `22px` | Min height of a button, tab or switch in a panel (`26px` when comfortable) |
+| `--dtb-control-padding-x` | `10px` | Their inline padding (`12px` when comfortable), and a `⋮` row's |
+| `--dtb-field-padding-x` / `-y` | `8px` / `3px` | Inputs and selects (`4px` block when comfortable) |
+| `--dtb-menu-padding` | `4px` | The `⋮` popup's inner frame |
 | `--dtb-z-index` | `2147483000` | Toolbar root stacking |
 | `--dtb-bg` | `#f6f6f7` | Bar background |
 | `--dtb-fg` | `#202124` | Foreground |
@@ -380,6 +402,7 @@ Set them on `[data-dev-toolbar]`, or on any ancestor. Unlayered CSS wins.
 | `--dtb-item-pressed-bg` | `rgba(0,0,0,.19)` | Trigger while the pointer is down |
 | `--dtb-panel-bg` | `#ffffff` | Panel background |
 | `--dtb-menu-bg` | `#ffffff` | `⋮` menu background |
+| `--dtb-field-bg` | `rgba(0,0,0,.035)` | Inputs, selects and textareas — a recessed well, not an outlined box |
 | `--dtb-shadow` | `0 6px 24px rgba(0,0,0,.14)` | Floating surfaces: the command palette dialog, overlay labels |
 | `--dtb-menu-shadow` | `0 2px 10px rgba(0,0,0,.08)` | The `⋮` popup, which is flush and bordered so it needs only a hint of lift |
 | `--dtb-danger` | `#c0392b` | Error chip text; "bad" severity |
@@ -456,6 +479,18 @@ names inside core are not.
 | `error-chip` | a crashed slot | `data-dtb-ext-id`, `data-dtb-slot="compact" \| "panel"` |
 | `error-retry` | the chip's retry button | Absent in the `overlay` slot |
 | `inset` | `<DevToolbarInset>` | `data-dtb-position` |
+
+Two attributes are not parts but treatments an extension opts into, both owned by
+core so every panel divides the same way. The extension keeps its own `data-dtb-part`
+on the same element for targeting.
+
+| Attribute | On | Effect |
+| --- | --- | --- |
+| `data-dtb-legend` | a section heading | Small mono caps with a hairline running from the word to the end of the measure |
+| `data-dtb-bleed` | a panel's scroll container, or a fixed region with a rule | Reaches the panel's inline edges and re-applies the body's padding inside, so a scrollbar sits on the panel edge and a toolbar's or footer's rule runs the panel's width |
+
+`data-dtb-bleed` must not be nested inside another bled element — a second bleed
+overflows rather than aligning, which is why a legend's rule stops at the measure.
 
 Core owns the unprefixed names; an extension that ships CSS **namespaces its parts by
 kind** — a prefix fixed by the extension package, not by the `id` an individual

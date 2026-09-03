@@ -92,12 +92,14 @@ export const FLAGS_CSS = String.raw`@layer dev-toolbar {
     font-family: var(--dtb-font-mono);
   }
 
+  /* Inside a ⋮ row, which supplies the padding — see core's
+     overflow-menu-item. */
   [data-dev-toolbar] [data-dtb-part="flag-overflow"] {
     display: flex;
     flex-direction: column;
     align-items: flex-start;
-    gap: 6px;
-    padding: 2px 4px;
+    gap: var(--dtb-space-1);
+    padding: 0;
   }
 
   @media (prefers-reduced-motion: reduce) {
@@ -111,32 +113,36 @@ export const FLAGS_CSS = String.raw`@layer dev-toolbar {
   [data-dev-toolbar] [data-dtb-part="flag-panel"] {
     display: flex;
     flex-direction: column;
-    gap: 8px;
+    gap: var(--dtb-space-3);
     height: 100%;
     min-height: 0;
   }
 
+  /* The search field leads, the actions follow it, and the note wraps to its
+     own line rather than squeezing the field — hence the field's basis. */
   [data-dev-toolbar] [data-dtb-part="flag-toolbar"] {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: var(--dtb-space-2);
     flex: 0 0 auto;
     flex-wrap: wrap;
+    padding-bottom: var(--dtb-space-3);
+    border-bottom: 1px solid var(--dtb-border);
   }
 
+  /* Padding, border, ground and height all come from core's field rule; only
+     the width is this panel's business. */
   [data-dev-toolbar] [data-dtb-part="flag-search"] {
-    flex: 1 1 180px;
-    min-width: 120px;
-    padding: 2px 6px;
-    border: 1px solid var(--dtb-border);
-    border-radius: var(--dtb-radius);
-    background: transparent;
-    color: inherit;
-    font: inherit;
+    flex: 1 1 220px;
+    min-width: 140px;
+    max-width: 320px;
   }
 
   [data-dev-toolbar] [data-dtb-part="flag-action"] {
-    padding: 2px 8px;
+    display: inline-flex;
+    align-items: center;
+    min-height: var(--dtb-control-height);
+    padding: 0 var(--dtb-control-padding-x);
     border: 1px solid var(--dtb-border);
     border-radius: var(--dtb-radius);
     background: transparent;
@@ -162,7 +168,7 @@ export const FLAGS_CSS = String.raw`@layer dev-toolbar {
   [data-dev-toolbar] [data-dtb-part="flag-banner"] {
     flex: 0 0 auto;
     margin: 0;
-    padding: 4px 8px;
+    padding: var(--dtb-space-2) var(--dtb-space-3);
     border-radius: var(--dtb-radius);
     border: 1px solid var(--dtb-border);
   }
@@ -185,17 +191,22 @@ export const FLAGS_CSS = String.raw`@layer dev-toolbar {
     overflow: auto;
     display: flex;
     flex-direction: column;
-    gap: 6px;
+    gap: var(--dtb-space-2);
     margin: 0;
     padding: 0;
     list-style: none;
   }
 
+  /* One flag is one card: its name and tags on the first line, its values on
+     the second, its editor spanning both on the end side. The row gap has to
+     be small — the two lines are one statement — and the column gap large, so
+     the editor never crowds the values it is about to change. */
   [data-dev-toolbar] [data-dtb-part="flag-row"] {
     display: grid;
     grid-template-columns: 1fr max-content;
-    gap: 2px 12px;
-    padding: 6px 8px;
+    gap: var(--dtb-space-1) var(--dtb-space-4);
+    align-items: center;
+    padding: var(--dtb-space-2) var(--dtb-space-3);
     border: 1px solid var(--dtb-border);
     border-radius: var(--dtb-radius);
   }
@@ -216,7 +227,7 @@ export const FLAGS_CSS = String.raw`@layer dev-toolbar {
   [data-dev-toolbar] [data-dtb-part="flag-name"] {
     display: flex;
     align-items: center;
-    gap: 6px;
+    gap: var(--dtb-chip-gap);
     flex-wrap: wrap;
     font-weight: 600;
   }
@@ -228,7 +239,7 @@ export const FLAGS_CSS = String.raw`@layer dev-toolbar {
   }
 
   [data-dev-toolbar] [data-dtb-part="flag-tag"] {
-    padding: 0 4px;
+    padding: 0 var(--dtb-space-1);
     border-radius: var(--dtb-radius);
     font-weight: 400;
     font-size: calc(var(--dtb-font-size) - 1px);
@@ -258,26 +269,25 @@ export const FLAGS_CSS = String.raw`@layer dev-toolbar {
     grid-row: span 2;
     display: flex;
     align-items: center;
-    gap: 6px;
+    gap: var(--dtb-space-2);
   }
 
   [data-dev-toolbar] [data-dtb-part="flag-input"][data-dtb-invalid="true"] {
     border-color: var(--dtb-danger);
   }
 
+  /* Geometry and ground come from core's field rule. A value is a value, so
+     it is set in the same mono face the row prints it in. */
   [data-dev-toolbar] [data-dtb-part="flag-input"] {
-    width: 12ch;
-    padding: 1px 4px;
-    border: 1px solid var(--dtb-border);
-    border-radius: var(--dtb-radius);
-    background: transparent;
-    color: inherit;
-    font: inherit;
+    width: 16ch;
     font-family: var(--dtb-font-mono);
   }
 
   [data-dev-toolbar] [data-dtb-part="flag-switch"] {
-    padding: 1px 8px;
+    display: inline-flex;
+    align-items: center;
+    min-height: var(--dtb-control-height);
+    padding: 0 var(--dtb-control-padding-x);
     border: 1px solid var(--dtb-border);
     border-radius: 999px;
     background: transparent;
@@ -287,6 +297,10 @@ export const FLAGS_CSS = String.raw`@layer dev-toolbar {
     cursor: pointer;
   }
 
+  [data-dev-toolbar] [data-dtb-part="flag-switch"]:hover {
+    background: var(--dtb-item-hover-bg);
+  }
+
   [data-dev-toolbar] [data-dtb-part="flag-switch"][aria-checked="true"] {
     border-color: var(--dtb-accent);
     color: var(--dtb-accent);
@@ -294,7 +308,7 @@ export const FLAGS_CSS = String.raw`@layer dev-toolbar {
 
   [data-dev-toolbar] [data-dtb-part="flag-values"] {
     display: flex;
-    gap: 12px;
+    gap: var(--dtb-space-3);
     flex-wrap: wrap;
     color: var(--dtb-muted);
   }
@@ -311,7 +325,7 @@ export const FLAGS_CSS = String.raw`@layer dev-toolbar {
 
   [data-dev-toolbar] [data-dtb-part="flag-meta"] {
     grid-column: 1 / -1;
-    margin: 2px 0 0;
+    margin: var(--dtb-space-1) 0 0;
     color: var(--dtb-muted);
   }
 
@@ -323,6 +337,14 @@ export const FLAGS_CSS = String.raw`@layer dev-toolbar {
   [data-dev-toolbar] [data-dtb-part="flag-note"] {
     margin: 0;
     color: var(--dtb-muted);
+  }
+
+  /* The panel's floor: the last thing to read, under a rule that matches the
+     one closing the toolbar at the top. */
+  [data-dev-toolbar] [data-dtb-part="flag-note"][data-dtb-role="escape-hatch"] {
+    flex: 0 0 auto;
+    padding-top: var(--dtb-space-3);
+    border-top: 1px solid var(--dtb-border);
   }
 
   [data-dev-toolbar] [data-dtb-part="flag-note"] code,

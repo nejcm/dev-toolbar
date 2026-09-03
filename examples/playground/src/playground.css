@@ -201,22 +201,42 @@ body {
  * renders with no trigger padding, no hover and no selected state, and core's
  * own look is silently reset in the one app anybody sees it in.
  *
- * `revert-layer` is the whole fix: these selectors are unlayered too and more
- * specific than Preflight's, so they win, and the value they resolve to is
+ * `revert-layer` is the whole fix: this selector is unlayered too and more
+ * specific than Preflight's, so it wins, and the value it resolves to is
  * whatever `@layer dev-toolbar` would have produced for that element in that
  * state. So hover, `[aria-expanded="true"]` and `:active` all come back
  * without being restated here, and they keep tracking core if it changes.
+ *
+ * It reverts by part rather than by element, and that boundary is the whole
+ * design. Preflight resets far more than the three bar parts this block used
+ * to name — panel buttons, search fields, value inputs, selects, the theme
+ * editor's import textarea, and the margins and list markers on every heading,
+ * paragraph and list — and `[data-dtb-part]` covers all of them at once, at a
+ * specificity Preflight cannot reach. Reverting by *element* instead would
+ * also outrank a consumer's own utility classes on their own chip, which broke
+ * the `tw` extension below: `text-[11px]` lost to `font-size: revert-layer`
+ * and the chip came back at the UA's 13.3px. Anything without a
+ * `data-dtb-part` is somebody else's element, and this block leaves it alone.
+ *
+ * Reverting is safe because core states the same reset itself — see the
+ * `:where(button)` and `:where(menu, ol, ul)` blocks in src/styles.css — so
+ * `revert-layer` lands on a deliberate value wherever core has nothing more
+ * specific to say, never on a UA 1em or a grey button face.
  *
  * This is the consumer-side remedy docs/architecture.md points at, and it
  * belongs here rather than in core because the reset came from here. No
  * `!important` anywhere, which is the point of the layer contract.
  * -------------------------------------------------------------------------- */
 
-[data-dev-toolbar] [data-dtb-part="trigger"],
-[data-dev-toolbar] [data-dtb-part="overflow-button"],
-[data-dev-toolbar] [data-dtb-part="flag-promoted"] {
+[data-dev-toolbar] [data-dtb-part] {
+  margin: revert-layer;
   padding: revert-layer;
   background-color: revert-layer;
+  font-size: revert-layer;
+  line-height: revert-layer;
+  letter-spacing: revert-layer;
+  color: revert-layer;
+  list-style: revert-layer;
 }
 
 /*
@@ -232,6 +252,7 @@ body {
  * core and the extensions, covering all 12 form controls), so reverting lands
  * on a real value everywhere rather than falling through to a UA border.
  */
+
 [data-dev-toolbar],
 [data-dev-toolbar] *,
 [data-dev-toolbar] *::before,

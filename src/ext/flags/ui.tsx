@@ -447,7 +447,7 @@ export function FlagsPanel({ runtime, label, injectStyles }: PanelProps): ReactN
       data-dtb-writable={snapshot.writable ? "true" : "false"}
       aria-label={label}
     >
-      <div data-dtb-part="flag-toolbar">
+      <div data-dtb-part="flag-toolbar" data-dtb-bleed="">
         <input
           data-dtb-part="flag-search"
           type="search"
@@ -536,7 +536,7 @@ export function FlagsPanel({ runtime, label, injectStyles }: PanelProps): ReactN
         </div>
       )}
 
-      <ul data-dtb-part="flag-list">
+      <ul data-dtb-part="flag-list" data-dtb-bleed="">
         {visible.map((view) => (
           <Row
             key={view.key}
@@ -549,7 +549,7 @@ export function FlagsPanel({ runtime, label, injectStyles }: PanelProps): ReactN
       </ul>
 
       {snapshot.writable ? (
-        <p data-dtb-part="flag-note" data-dtb-role="escape-hatch">
+        <p data-dtb-part="flag-note" data-dtb-role="escape-hatch" data-dtb-bleed="">
           Overrides persist across reloads in this browser. Clear them all above, or load any page
           with <code>?dtb-flags=reset</code> if an override has broken the app badly enough that you
           cannot reach this panel.

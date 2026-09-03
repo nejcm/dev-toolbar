@@ -514,7 +514,9 @@ export function ThemePanel({ runtime, label, injectStyles }: PanelProps): ReactN
 
       {visible.map((group) => (
         <section key={group.name}>
-          <h3 data-dtb-part="thm-group-name">{group.name}</h3>
+          <h3 data-dtb-part="thm-group-name" data-dtb-legend="">
+            {group.name}
+          </h3>
           <ul data-dtb-part="thm-list">
             {group.tokens.map((view) => (
               <Row key={view.name} view={view} runtime={runtime} writable={snapshot.writable} />

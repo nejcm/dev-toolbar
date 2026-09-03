@@ -36,7 +36,7 @@ export const DIAGNOSTICS_CSS = String.raw`@layer dev-toolbar {
   [data-dev-toolbar] [data-dtb-part="diag-panel"] {
     display: flex;
     flex-direction: column;
-    gap: 8px;
+    gap: var(--dtb-space-3);
     height: 100%;
     min-height: 0;
   }
@@ -44,12 +44,17 @@ export const DIAGNOSTICS_CSS = String.raw`@layer dev-toolbar {
   [data-dev-toolbar] [data-dtb-part="diag-toolbar"] {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: var(--dtb-space-2);
     flex-wrap: wrap;
+    padding-bottom: var(--dtb-space-3);
+    border-bottom: 1px solid var(--dtb-border);
   }
 
   [data-dev-toolbar] [data-dtb-part="diag-action"] {
-    padding: 2px 8px;
+    display: inline-flex;
+    align-items: center;
+    min-height: var(--dtb-control-height);
+    padding: 0 var(--dtb-control-padding-x);
     border: 1px solid var(--dtb-border);
     border-radius: var(--dtb-radius);
     background: transparent;
@@ -75,7 +80,10 @@ export const DIAGNOSTICS_CSS = String.raw`@layer dev-toolbar {
   }
 
   [data-dev-toolbar] [data-dtb-part="diag-format"] {
-    padding: 2px 8px;
+    display: inline-flex;
+    align-items: center;
+    min-height: var(--dtb-control-height);
+    padding: 0 var(--dtb-control-padding-x);
     border: 0;
     background: transparent;
     color: var(--dtb-muted);
@@ -94,15 +102,15 @@ export const DIAGNOSTICS_CSS = String.raw`@layer dev-toolbar {
 
   [data-dev-toolbar] [data-dtb-part="diag-omissions"] {
     margin: 0;
-    padding: 6px 8px;
+    padding: var(--dtb-space-2) var(--dtb-space-3);
     border-radius: var(--dtb-radius);
     background: var(--dtb-warn-bg);
     color: var(--dtb-warn);
   }
 
   [data-dev-toolbar] [data-dtb-part="diag-omission-list"] {
-    margin: 4px 0 0;
-    padding-inline-start: 18px;
+    margin: var(--dtb-space-1) 0 0;
+    padding-inline-start: var(--dtb-space-4);
   }
 
   /* The review surface — gets the panel's free space; it must be read before copying. */
@@ -110,14 +118,14 @@ export const DIAGNOSTICS_CSS = String.raw`@layer dev-toolbar {
     flex: 1 1 auto;
     min-height: 0;
     margin: 0;
-    padding: 8px;
+    padding: var(--dtb-space-3);
     overflow: auto;
     border: 1px solid var(--dtb-border);
     border-radius: var(--dtb-radius);
     background: var(--dtb-item-bg);
     color: var(--dtb-fg);
     font-family: var(--dtb-font-mono);
-    font-size: 11px;
+    font-size: var(--dtb-font-size);
     line-height: 1.5;
     white-space: pre-wrap;
     word-break: break-word;

@@ -105,7 +105,7 @@ export function EnvironmentPanel({ runtime, injectStyles }: PanelProps): ReactNo
         </p>
       ) : null}
 
-      <div data-dtb-part="env-body">
+      <div data-dtb-part="env-body" data-dtb-bleed="">
         {anythingSupplied ? null : (
           <div data-dtb-part="env-empty">
             <p data-dtb-part="env-note">
@@ -128,7 +128,9 @@ export function EnvironmentPanel({ runtime, injectStyles }: PanelProps): ReactNo
           if (fields.length === 0) return null;
           return (
             <section key={group} data-dtb-part="env-group" data-dtb-group={group}>
-              <h3 data-dtb-part="env-group-title">{GROUP_LABELS[group]}</h3>
+              <h3 data-dtb-part="env-group-title" data-dtb-legend="">
+                {GROUP_LABELS[group]}
+              </h3>
               <dl data-dtb-part="env-rows">
                 {fields.map((field) => (
                   <Row key={field.id} field={field} />
@@ -139,7 +141,7 @@ export function EnvironmentPanel({ runtime, injectStyles }: PanelProps): ReactNo
         })}
       </div>
 
-      <div data-dtb-part="env-actions">
+      <div data-dtb-part="env-actions" data-dtb-bleed="">
         <button
           type="button"
           data-dtb-part="env-action"

@@ -94,9 +94,9 @@ export const OVERLAYS_CSS = String.raw`@layer dev-toolbar {
     position: absolute;
     display: flex;
     align-items: center;
-    gap: 6px;
+    gap: var(--dtb-chip-gap);
     max-width: 90vw;
-    padding: 2px 6px;
+    padding: 2px var(--dtb-chip-gap);
     border-radius: var(--dtb-radius);
     background: var(--dtb-panel-bg);
     color: var(--dtb-fg);
@@ -193,24 +193,27 @@ export const OVERLAYS_CSS = String.raw`@layer dev-toolbar {
   [data-dev-toolbar] [data-dtb-part="ovl-panel"] {
     display: flex;
     flex-direction: column;
-    gap: 8px;
+    gap: var(--dtb-space-3);
     max-width: 720px;
   }
 
   [data-dev-toolbar] [data-dtb-part="ovl-rows"] {
     display: flex;
     flex-direction: column;
-    gap: 4px;
+    gap: var(--dtb-space-2);
     margin: 0;
     padding: 0;
     list-style: none;
   }
 
+  /* One overlay is one card: the switch on the first line, and its summary,
+     cost and any note indented under it in the second column, so a row of
+     four reads as four decisions rather than as a paragraph. */
   [data-dev-toolbar] [data-dtb-part="ovl-row"] {
     display: grid;
     grid-template-columns: auto 1fr;
-    gap: 2px 8px;
-    padding: 6px 8px;
+    gap: var(--dtb-space-1) var(--dtb-space-2);
+    padding: var(--dtb-space-3);
     border: 1px solid var(--dtb-border);
     border-radius: var(--dtb-radius);
   }
@@ -222,7 +225,7 @@ export const OVERLAYS_CSS = String.raw`@layer dev-toolbar {
   [data-dev-toolbar] [data-dtb-part="ovl-toggle"] {
     display: flex;
     align-items: center;
-    gap: 6px;
+    gap: var(--dtb-chip-gap);
     grid-column: 1 / -1;
     background: none;
     border: 0;
@@ -247,7 +250,7 @@ export const OVERLAYS_CSS = String.raw`@layer dev-toolbar {
   }
 
   [data-dev-toolbar] [data-dtb-part="ovl-tag"] {
-    padding: 0 4px;
+    padding: 0 var(--dtb-space-1);
     border-radius: var(--dtb-radius);
     background: var(--dtb-warn-bg);
     color: var(--dtb-warn);
@@ -256,16 +259,22 @@ export const OVERLAYS_CSS = String.raw`@layer dev-toolbar {
   }
 
   [data-dev-toolbar] [data-dtb-part="ovl-error"] {
-    padding: 6px 8px;
+    padding: var(--dtb-space-2) var(--dtb-space-3);
     border-radius: var(--dtb-radius);
     background: var(--dtb-danger-bg);
     color: var(--dtb-danger);
   }
 
+  /* No data-dtb-bleed here for the same reason as the theme editor's masthead:
+     this panel caps itself at 720px, so its rule belongs to that measure and
+     not to the panel's inline edges. */
   [data-dev-toolbar] [data-dtb-part="ovl-actions"] {
     display: flex;
     align-items: center;
-    gap: 8px;
+    flex-wrap: wrap;
+    gap: var(--dtb-space-2);
+    padding-top: var(--dtb-space-3);
+    border-top: 1px solid var(--dtb-border);
   }
 }
 `;

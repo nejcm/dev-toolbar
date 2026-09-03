@@ -13,16 +13,18 @@ export const COMMAND_MENU_CSS = String.raw`@layer dev-toolbar {
     font-family: var(--dtb-font-mono);
   }
 
+  /* The palette is modal, so it sits above everything else the toolbar root
+     paints — including the ⋮ popup, which claims 1. */
   [data-dev-toolbar] [data-dtb-part="cmd-scrim"] {
     position: fixed;
     inset: 0;
-    z-index: 1;
+    z-index: 2;
     background: rgba(0, 0, 0, 0.32);
   }
 
   [data-dev-toolbar] [data-dtb-part="cmd-dialog"] {
     position: fixed;
-    z-index: 2;
+    z-index: 3;
     top: 12vh;
     /* left: 50% + translateX(-50%) centres symmetrically regardless of dir;
        inset-inline-start: 50% would NOT be equivalent under rtl. Left is
@@ -43,38 +45,63 @@ export const COMMAND_MENU_CSS = String.raw`@layer dev-toolbar {
     overflow: hidden;
   }
 
+  /* The query line, not a field in a form: it fills the dialog's head, and
+     takes its own generous padding and a larger size rather than core's field
+     geometry, which is sized for controls sitting in a row. Its border, ground
+     and outline are all off — the rule under it and the dialog's own frame do
+     that work. */
   [data-dev-toolbar] [data-dtb-part="cmd-input"] {
     flex: 0 0 auto;
     width: 100%;
     box-sizing: border-box;
-    padding: 10px 12px;
+    min-height: 0;
+    padding: var(--dtb-space-3) var(--dtb-space-4);
     border: 0;
     border-bottom: 1px solid var(--dtb-border);
+    border-radius: 0;
     background: transparent;
     color: inherit;
     font: inherit;
+    font-size: calc(var(--dtb-font-size) + 3px);
     outline: none;
+  }
+
+  /* The base rule drops the outline so a pointer click does not ring the whole
+     query line; a keyboard focus still has to be visible, and it takes an
+     inset ring because the field is flush with the dialog's frame. Stated here
+     rather than left to core's field rule, which this part ties on
+     specificity and would beat by injection order. */
+  [data-dev-toolbar] [data-dtb-part="cmd-input"]:focus-visible {
+    outline: 2px solid var(--dtb-accent);
+    outline-offset: -2px;
   }
 
   [data-dev-toolbar] [data-dtb-part="cmd-list"] {
     flex: 1 1 auto;
     overflow: auto;
-    padding: 4px;
+    padding: var(--dtb-space-2);
   }
 
+  /* A group's name sits above its first option with enough air that it binds
+     to the options below it rather than to the group above. */
   [data-dev-toolbar] [data-dtb-part="cmd-section"] {
-    padding: 6px 8px 2px;
+    padding: var(--dtb-space-3) var(--dtb-space-3) var(--dtb-space-1);
     color: var(--dtb-muted);
     font-size: calc(var(--dtb-font-size) - 1px);
     text-transform: uppercase;
-    letter-spacing: 0.04em;
+    letter-spacing: 0.08em;
+  }
+
+  [data-dev-toolbar] [data-dtb-part="cmd-section"]:first-child {
+    padding-top: var(--dtb-space-1);
   }
 
   [data-dev-toolbar] [data-dtb-part="cmd-option"] {
     display: flex;
     align-items: center;
-    gap: 8px;
-    padding: 6px 8px;
+    gap: var(--dtb-space-3);
+    min-height: 32px;
+    padding: var(--dtb-space-1) var(--dtb-space-3);
     border-radius: var(--dtb-radius);
     cursor: pointer;
   }
@@ -104,13 +131,13 @@ export const COMMAND_MENU_CSS = String.raw`@layer dev-toolbar {
   }
 
   [data-dev-toolbar] [data-dtb-part="cmd-empty"] {
-    padding: 16px 12px;
+    padding: var(--dtb-space-5) var(--dtb-space-4);
     color: var(--dtb-muted);
     text-align: center;
   }
 
   [data-dev-toolbar] [data-dtb-part="cmd-error"] {
-    padding: 8px 12px;
+    padding: var(--dtb-space-2) var(--dtb-space-4);
     border-top: 1px solid var(--dtb-border);
     background: var(--dtb-danger-bg);
     color: var(--dtb-danger);
@@ -118,8 +145,8 @@ export const COMMAND_MENU_CSS = String.raw`@layer dev-toolbar {
 
   [data-dev-toolbar] [data-dtb-part="cmd-footer"] {
     display: flex;
-    gap: 12px;
-    padding: 6px 12px;
+    gap: var(--dtb-space-4);
+    padding: var(--dtb-space-2) var(--dtb-space-4);
     border-top: 1px solid var(--dtb-border);
     color: var(--dtb-muted);
     font-size: calc(var(--dtb-font-size) - 1px);

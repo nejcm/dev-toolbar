@@ -23,15 +23,41 @@ export const CORE_CSS = String.raw`/**
     --dtb-bar-height: 32px;
     --dtb-radius: 5px;
     /* Menu and internal gaps. --dtb-item-gap is the one the bar reads back
-       for its collapse math, so the two are deliberately separate: a tight
-       popup list and a bar whose items are legibly apart. */
-    --dtb-gap: 2px;
+       for its collapse math, so the two are deliberately separate: a popup
+       list dense enough to scan at a glance and a bar whose items are legibly
+       apart. --dtb-gap is what separates the rows of the popup menu. */
+    --dtb-gap: 5px;
     --dtb-item-gap: 18px;
     /* Label-to-value inside one chip. Extensions read this so every chip in
        the bar breathes the same amount. */
     --dtb-chip-gap: 6px;
     --dtb-padding-x: 8px;
     --dtb-item-padding-x: 7px;
+    /* Panel and popup spacing scale. Everything inside a panel measures in
+       these, so seven extension stylesheets stop each inventing their own
+       1/2/6/10px and a row of controls drawn by two different extensions
+       still sits on one rhythm. */
+    --dtb-space-1: 4px;
+    --dtb-space-2: 8px;
+    --dtb-space-3: 12px;
+    --dtb-space-4: 16px;
+    --dtb-space-5: 24px;
+    /* A panel's own margins, wider than the bar's --dtb-padding-x: the bar is
+       one row of chips, a panel is a page. */
+    --dtb-panel-padding-x: 14px;
+    --dtb-panel-padding-y: 12px;
+    /* One geometry for every button, tab and switch inside a panel, so a row
+       of controls lines up whichever extension drew each one. */
+    --dtb-control-height: 22px;
+    --dtb-control-padding-x: 10px;
+    /* Fields read as recessed wells rather than as more outlined boxes beside
+       the outlined buttons, and carry enough padding that a caret never sits
+       on the border. */
+    --dtb-field-padding-x: 8px;
+    --dtb-field-padding-y: 3px;
+    /* The inner frame of the popup menu, which is what keeps its rows off the
+       frame they sit in. */
+    --dtb-menu-padding: 4px;
     --dtb-z-index: 2147483000;
     --dtb-bg: #f6f6f7;
     --dtb-fg: #202124;
@@ -53,6 +79,10 @@ export const CORE_CSS = String.raw`/**
     --dtb-item-pressed-bg: rgba(0, 0, 0, 0.19);
     --dtb-panel-bg: #ffffff;
     --dtb-menu-bg: #ffffff;
+    /* Inputs, selects and textareas. A well, not an outline: it separates the
+       things you type into from the buttons beside them without adding a
+       second border weight to the panel. */
+    --dtb-field-bg: rgba(0, 0, 0, 0.035);
     --dtb-shadow: 0 6px 24px rgba(0, 0, 0, 0.14);
     /* The overflow popup is flush against the bar and the viewport edge with a
        border on both free sides, so it needs a hint of lift, not the shadow a
@@ -85,6 +115,51 @@ export const CORE_CSS = String.raw`/**
     box-sizing: border-box;
   }
 
+  /* The toolbar renders headings, paragraphs and lists, and it wants none of
+     the UA's margins on them. Stating that here rather than assuming the host
+     ships a reset is what keeps a panel looking the same in an app with one
+     and an app without. :where() so it carries no specificity: every part rule
+     and every data-dtb-* opt-in still outranks it, and a consumer reverting a
+     reset of their own (see the Tailwind note in docs/architecture.md) lands
+     on these values rather than on a UA 1em. */
+  [data-dev-toolbar]
+    :where(blockquote, dd, dl, figure, h1, h2, h3, h4, h5, h6, p, pre) {
+    margin: 0;
+  }
+
+  [data-dev-toolbar] :where(menu, ol, ul) {
+    margin: 0;
+    padding: 0;
+  }
+
+  /* One focus ring for everything the toolbar makes focusable, stated at the
+     same zero specificity, so a control an extension adds is keyboard-visible
+     the day it is written rather than the day somebody notices. A part rule is
+     an attribute deeper and still wins where a control wants its own ring or
+     offset. */
+  [data-dev-toolbar]
+    :where(a, button, summary, [role="button"], [tabindex]):focus-visible {
+    outline: 2px solid var(--dtb-accent);
+    outline-offset: -1px;
+  }
+
+  /* And the same for a button. A part that renders one without styling it —
+     an extension's own overflow trigger, say — would otherwise arrive with the
+     UA's grey face, 2px outset border and 13.3px Arial, which is what the ⋮
+     popup was showing. Stating it here means that is true in every host rather
+     than only in one that happens to ship a reset. Zero specificity again, so
+     every part rule and every unlayered class a consumer puts on their own
+     chip still wins. */
+  [data-dev-toolbar] :where(button) {
+    margin: 0;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    cursor: pointer;
+  }
+
   [data-dev-toolbar][data-dtb-color-scheme="dark"],
   [data-dev-toolbar][data-dtb-color-scheme="system"] {
     color-scheme: light dark;
@@ -102,6 +177,7 @@ export const CORE_CSS = String.raw`/**
     --dtb-item-pressed-bg: rgba(0, 0, 0, 0.48);
     --dtb-panel-bg: #1d1e21;
     --dtb-menu-bg: #1d1e21;
+    --dtb-field-bg: rgba(0, 0, 0, 0.24);
     --dtb-shadow: 0 6px 24px rgba(0, 0, 0, 0.5);
     --dtb-menu-shadow: 0 2px 10px rgba(0, 0, 0, 0.22);
     --dtb-danger: #ff7b6b;
@@ -125,6 +201,7 @@ export const CORE_CSS = String.raw`/**
       --dtb-item-pressed-bg: rgba(0, 0, 0, 0.48);
       --dtb-panel-bg: #1d1e21;
       --dtb-menu-bg: #1d1e21;
+      --dtb-field-bg: rgba(0, 0, 0, 0.24);
       --dtb-shadow: 0 6px 24px rgba(0, 0, 0, 0.5);
       --dtb-menu-shadow: 0 2px 10px rgba(0, 0, 0, 0.22);
       --dtb-danger: #ff7b6b;
@@ -151,6 +228,12 @@ export const CORE_CSS = String.raw`/**
     --dtb-font-size: 12px;
     --dtb-item-padding-x: 9px;
     --dtb-item-gap: 24px;
+    --dtb-panel-padding-x: 18px;
+    --dtb-panel-padding-y: 14px;
+    --dtb-control-height: 26px;
+    --dtb-control-padding-x: 12px;
+    --dtb-field-padding-y: 4px;
+    --dtb-gap: 7px;
   }
 
   [data-dev-toolbar] [data-dtb-part="bar"] {
@@ -304,25 +387,48 @@ export const CORE_CSS = String.raw`/**
     outline-offset: -1px;
   }
 
-  /* Flush, not floating: the popup meets the bar on one edge and the viewport
-     on the other, with no inset, no radius and no padding of its own, so its
-     rows run the full width and touch each other. The two edges it meets drop
-     their border — the bar's own edge border already draws that line, and
-     doubling them reads as a seam. Positioned against the toolbar root, which
-     is the nearest positioned ancestor: the bar in between is overflow
-     hidden but does not clip this, because it is not the containing block. */
+  /* Flush where it meets the chrome, framed where it holds content: the popup
+     still butts against the bar on one edge and the viewport on the other,
+     with no inset and no radius on those corners, and the two edges it meets
+     drop their border because the bar's own edge already draws that line and
+     doubling them reads as a seam. Inside, it is a menu: --dtb-menu-padding
+     keeps every row off the frame and --dtb-gap keeps the rows apart, so a
+     hovered row reads as one target rather than as a band across the popup.
+     Positioned against the toolbar root, which is the nearest positioned
+     ancestor: the bar in between is overflow hidden but does not clip this,
+     because it is not the containing block. */
   [data-dev-toolbar] [data-dtb-part="overflow-menu"] {
     position: absolute;
+    /* Stated rather than left to auto: the popup is a positioned descendant of
+       the bar, and the panel is a later sibling of the bar, so paint order
+       between them comes down to which layer of the root's stacking context
+       each lands in — close enough that a panel's own controls have been seen
+       drawn over the popup. An explicit index removes the question. It stays
+       below the command palette, which is modal; see /ext/command-menu. */
+    z-index: 1;
     inset-inline-end: 0;
     display: flex;
     flex-direction: column;
-    min-width: 180px;
+    gap: var(--dtb-gap);
+    min-width: 210px;
     max-height: 50vh;
+    padding: var(--dtb-menu-padding);
     border: 1px solid var(--dtb-border);
     border-inline-end: 0;
     background: var(--dtb-menu-bg);
     box-shadow: var(--dtb-menu-shadow);
     overflow: auto;
+  }
+
+  /* Only the corner that touches neither the bar nor the viewport is rounded;
+     the other three stay square so the popup reads as part of the bar. */
+  [data-dev-toolbar][data-dtb-position="bottom"]
+    [data-dtb-part="overflow-menu"] {
+    border-start-start-radius: var(--dtb-radius);
+  }
+
+  [data-dev-toolbar][data-dtb-position="top"] [data-dtb-part="overflow-menu"] {
+    border-end-start-radius: var(--dtb-radius);
   }
 
   [data-dev-toolbar][data-dtb-position="bottom"]
@@ -336,15 +442,17 @@ export const CORE_CSS = String.raw`/**
     border-top: 0;
   }
 
-  /* Rows touch: no gap between them and none against the popup's edges. The
-     inline padding is the text's own breathing room, not a gap — without it
-     the first glyph sits on the border. */
+  /* One row is one item: it carries the inline padding and the radius, so an
+     extension rendering into a row does not have to pad itself, and any
+     background the extension paints (a hover, an error chip) lands on a
+     rounded box inside the frame instead of on a full-bleed band. */
   [data-dev-toolbar] [data-dtb-part="overflow-menu-item"] {
     display: flex;
     align-items: center;
     gap: var(--dtb-chip-gap);
     min-height: calc(var(--dtb-bar-height) - 8px);
-    padding: 0 var(--dtb-padding-x);
+    padding: 0 var(--dtb-control-padding-x);
+    border-radius: var(--dtb-radius);
   }
 
   [data-dev-toolbar] [data-dtb-part="panel"] {
@@ -372,9 +480,11 @@ export const CORE_CSS = String.raw`/**
   [data-dev-toolbar] [data-dtb-part="panel-body"] {
     flex: 1 1 auto;
     min-height: 0;
-    /* Matches the bar's own horizontal padding, so a panel's first column
-       lines up with the bar item that opened it. */
-    padding: 10px var(--dtb-padding-x) 12px;
+    /* A panel is a page, not a bar row, so it takes the wider panel margins
+       rather than the bar's --dtb-padding-x. Content that must reach the
+       panel's full width — a sticky action row, a section legend's rule —
+       cancels the inline padding on itself. */
+    padding: var(--dtb-panel-padding-y) var(--dtb-panel-padding-x);
     overflow: auto;
   }
 
@@ -397,6 +507,106 @@ export const CORE_CSS = String.raw`/**
   [data-dev-toolbar][data-dtb-position="bottom"]
     [data-dtb-part="panel-resizer"] {
     order: -1;
+  }
+
+  /* Every field an extension renders, whatever part name it carries. Fields
+     are recessed wells on --dtb-field-bg rather than outlined boxes, which is
+     what keeps them distinct from the outlined buttons standing beside them
+     in the same row, and they take the control height so a toolbar row of
+     mixed inputs and buttons sits on one line. Extensions still set their own
+     width, font-family and invalid state; none of them needs to restate the
+     padding.
+
+     The element part is wrapped in :where() so these rules carry a single
+     attribute's specificity. Any [data-dtb-part="…"] rule outranks them
+     whatever order the sheets happen to be injected in — which is what lets
+     the command palette's query line, which is a surface rather than a
+     control in a row, keep its own much larger padding. */
+  [data-dev-toolbar] :where(input:not([type="color"]):not([type="checkbox"])),
+  [data-dev-toolbar] :where(select),
+  [data-dev-toolbar] :where(textarea) {
+    padding: var(--dtb-field-padding-y) var(--dtb-field-padding-x);
+    border: 1px solid var(--dtb-border);
+    border-radius: var(--dtb-radius);
+    background: var(--dtb-field-bg);
+    color: var(--dtb-fg);
+    font: inherit;
+  }
+
+  [data-dev-toolbar] :where(input:not([type="color"]):not([type="checkbox"])),
+  [data-dev-toolbar] :where(select) {
+    min-height: var(--dtb-control-height);
+  }
+
+  [data-dev-toolbar] :where(textarea) {
+    padding: var(--dtb-space-2) var(--dtb-field-padding-x);
+    line-height: 1.5;
+  }
+
+  [data-dev-toolbar] :where(input, textarea)::placeholder {
+    color: var(--dtb-muted);
+  }
+
+  [data-dev-toolbar] :where(input, select, textarea):focus-visible {
+    outline: 2px solid var(--dtb-accent);
+    outline-offset: -1px;
+  }
+
+  /* A region that reaches the panel's own inline edges while its content stays
+     in the body's column: it bleeds back through the body's inline padding and
+     re-applies that padding on the inside. Two things want this. A panel that
+     scrolls inside itself rather than at the body level puts it on the scroll
+     container, so the scrollbar sits against the panel edge where a scrollbar
+     belongs. A fixed region with a rule — a toolbar above the scroller, an
+     action row below it — puts it on that region, so the rule runs the width
+     of the panel and reads as its ceiling or floor rather than as an underline
+     under a column of text.
+
+     Bleeding by exactly the body's padding lands the region on the body's
+     padding box, so it adds no scrollable overflow of its own in either
+     writing direction — which holds only while the bled element reads the same
+     --dtb-panel-padding-x the body was padded with, so redefine that token at
+     or above the toolbar root, never on a panel inside it. Content inside a bled scroller must not bleed again —
+     there it would overflow, which is why a section legend's rule stops at the
+     measure.
+
+     The attribute is repeated in the selector on purpose. A part rule is one
+     attribute deep too, and every extension's list and note parts reset their
+     box with a plain margin: 0 — at equal specificity the extension's sheet is
+     injected second and wins, so the bleed would silently do nothing. This is
+     an opt-in written on the element itself, so it outranks the part's own
+     box rules rather than racing them. */
+  [data-dev-toolbar] [data-dtb-bleed][data-dtb-bleed] {
+    margin-inline: calc(-1 * var(--dtb-panel-padding-x));
+    padding-inline: var(--dtb-panel-padding-x);
+  }
+
+  /* A section legend, not an eyebrow: the word names the section and the rule
+     beside it shows how far the section reaches, which is the one thing a
+     stack of unboxed label/value groups otherwise leaves unsaid. Extensions
+     opt in by putting data-dtb-legend on their heading. */
+  [data-dev-toolbar] [data-dtb-legend] {
+    display: flex;
+    align-items: center;
+    gap: var(--dtb-space-2);
+    margin: 0 0 var(--dtb-space-2);
+    color: var(--dtb-fg);
+    font-family: var(--dtb-font-mono);
+    font-size: calc(var(--dtb-font-size) - 1px);
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+
+  /* The rule runs from the word to the end of the measure. It stops at the
+     content edge rather than bleeding through the body's padding: a bleed
+     would be scrollable overflow inside a panel body that scrolls, and the
+     rules line up with the content column and with each other this way. */
+  [data-dev-toolbar] [data-dtb-legend]::after {
+    content: "";
+    flex: 1 1 auto;
+    height: 1px;
+    background: var(--dtb-border);
   }
 
   [data-dev-toolbar] [data-dtb-part="error-chip"] {
@@ -432,7 +642,7 @@ export const CORE_CSS = String.raw`/**
   }
 
   [data-dev-toolbar] [data-dtb-part="error-chip"][data-dtb-slot="panel"] {
-    margin: 8px;
+    margin: var(--dtb-space-2);
   }
 }
 `;
