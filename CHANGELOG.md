@@ -14,6 +14,13 @@
   style break at the boundary is accepted, not an oversight.
 -->
 
+## [0.4.1](https://github.com/nejcm/dev-toolbar/compare/v0.4.0...v0.4.1) (2026-09-03)
+
+
+### Bug Fixes
+
+* **command-menu:** match shifted punctuation and honour defaultPrevented/isComposing ([#17](https://github.com/nejcm/dev-toolbar/issues/17)) ([db121cc](https://github.com/nejcm/dev-toolbar/commit/db121cc197b81755133e96de6ce4da45786d3d70))
+
 ## [0.4.0](https://github.com/nejcm/dev-toolbar/compare/v0.3.0...v0.4.0) (2026-09-03)
 
 
