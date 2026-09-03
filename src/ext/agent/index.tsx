@@ -125,7 +125,7 @@ export function agentBridge(options: AgentBridgeOptions = {}): DevToolbarExtensi
   return {
     id,
     label,
-    contractVersion: 1,
+    contractVersion: 2,
     align,
     order,
     priority,
@@ -155,7 +155,7 @@ export function agentBridge(options: AgentBridgeOptions = {}): DevToolbarExtensi
         instanceId,
         globalName,
         allowRun,
-        contractVersion: 1,
+        contractVersion: 2,
         ...(extraKeys === undefined ? {} : { extraKeys }),
       });
     },

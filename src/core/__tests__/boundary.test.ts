@@ -734,6 +734,7 @@ if (built || !mustBeBuilt) {
       expect(JSON.parse(flags)).toEqual({
         id: "flags",
         commands: [
+          "flags.set",
           "flags.toggle.a",
           "flags.clearOverrides",
           "flags.copyRecipe",
@@ -818,6 +819,7 @@ if (built || !mustBeBuilt) {
       expect(JSON.parse(theme)).toEqual({
         id: "theme-editor",
         commands: [
+          "theme-editor.setToken",
           "theme-editor.reset",
           "theme-editor.togglePreview",
           "theme-editor.copyCss",

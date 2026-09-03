@@ -39,8 +39,10 @@ Subpaths, each opt-in and each with its own bundle:
 > all listed in the [changelog](./CHANGELOG.md); the second did not move it at all;
 > the third found one gap, in `commands`; the fourth closed that gap and added the
 > `overlay` slot; the fifth drew over the host page and needed nothing new; the sixth
-> either. Every change is additive, so `CONTRACT_VERSION` is still `1`. `0.1.0` is the
-> first publish.
+> either. Every change so far has been additive, and `CONTRACT_VERSION` is **2**:
+> commands may now declare an `input` schema and resolve a result, which is
+> additive in source terms — see [contract v2](#contract-v2-commands-with-input-and-a-result)
+> for what a v1 extension has to do (nothing). `0.1.0` is the first publish.
 
 ## Install
 
@@ -159,8 +161,9 @@ hatches; everything here is public and covered by the package's versioning.
 
 | Export | What it is for |
 | --- | --- |
-| `runCommand(id, scope?)` | Runs an aggregated command from code with no React context — a hotkey, a console, a test. Resolves `false` when no mounted toolbar declares the id, `true` once the command's `run()` completes. Rejects with `run()`'s own error if it throws or rejects — callers must catch it. `scope`, a `readonly ToolbarCommand[]`, is searched instead of the mounted toolbars. Inside components prefer `useDevToolbar().runCommand`. |
-| `CONTRACT_VERSION` | The extension contract's version, currently `1`. See [ADR-003](./docs/adr/ADR-003-contract-version-policy.md). |
+| `runCommand(id, scope?)` | Runs an aggregated command from code with no React context — a hotkey, a console, a test. Resolves `false` when no mounted toolbar declares the id, `true` once the command's `run()` completes. Rejects with `run()`'s own error if it throws or rejects — callers must catch it. `scope`, a `readonly AnyToolbarCommand[]`, is searched instead of the mounted toolbars. It still resolves a boolean under contract v2 — reach for `invokeCommand` when you need the result, or to pass input. Inside components prefer `useDevToolbar().runCommand`, which does take input. |
+| `invokeCommand(id, options?)` | `runCommand` that resolves **what the command returned**: `{ ok: true, result }`, or `{ ok: false, reason: "unknown-command" }`. `options` is `{ input?, scope? }` — an object rather than a third positional argument, so no existing `runCommand(id, scope)` call changes meaning. Rejects with `run()`'s own error, like `runCommand`. |
+| `CONTRACT_VERSION` | The extension contract's version, currently `2`. See [contract v2](#contract-v2-commands-with-input-and-a-result) and [ADR-003](./docs/adr/ADR-003-contract-version-policy.md). |
 | `HEIGHT_VARIABLE` | The name of the CSS variable the shell publishes — `"--dev-toolbar-height"` — so a CSS-in-JS host need not retype the string. It is the `"default"` instance's; every instance also publishes `<HEIGHT_VARIABLE>-<instanceId>`. |
 | `createLocalStorage()` | The default adapter: `localStorage`, but it never throws. Useful as the base of your own wrapper. |
 | `createMemoryStorage(seed?)` | In-memory adapter for tests and non-browser hosts. `seed` is a plain key/value map of already-persisted JSON. |
@@ -187,7 +190,10 @@ Every type the root entry exports. The slot props, `DevToolbarExtension`,
 | --- | --- |
 | `DevToolbarProps` / `DevToolbarInsetProps` | The two components' props. |
 | `DevToolbarExtension` | One extension object. |
-| `ToolbarCommand` / `ToolbarCommandsInput` | A command, and the array-or-function form `commands` accepts. |
+| `ToolbarCommand` / `ToolbarCommandsInput` | A command, and the array-or-function form `commands` accepts. `ToolbarCommand<In, Out>` — both default to `void`. |
+| `AnyToolbarCommand` | The element type of a command *roster* — what `getCommands()`, `useToolbarCommands()` and `commands` hold. A roster mixes commands with different `In`/`Out`, so it needs one element type they all satisfy; `readonly ToolbarCommand[]` still works everywhere it did, because the two are mutually assignable. |
+| `CommandInputSchema` / `CommandInputField` / `CommandInputPrimitiveField` / `CommandInputEnumField` / `CommandInputType` / `CommandInputValue` | What a command declares it accepts. A flat bag of primitives and enums — [see below](#contract-v2-commands-with-input-and-a-result). |
+| `CommandInvocation` / `InvokeCommandOptions` | What `invokeCommand` resolves, and what it takes. |
 | `ExtensionRuntimeApi` | What `start(api)` receives. |
 | `CompactSlotProps` / `PanelSlotProps` / `OverlaySlotProps` | What each slot renders with. |
 | `ExtensionDiagnostics` / `DiagnosticStatus` | One entry in the diagnostics roster, and its `"ok" \| "absent" \| "failed"` status. |
@@ -216,7 +222,7 @@ interface DevToolbarExtension {
   overlay?: (props: OverlaySlotProps) => React.ReactNode;   // modal; never collapsed
   // Core aggregates; it renders no palette. A function is re-enumerated on
   // every pass, so a command that only exists later is still reachable.
-  commands?: ToolbarCommand[] | (() => ToolbarCommand[]);
+  commands?: AnyToolbarCommand[] | (() => AnyToolbarCommand[]);
   // Aggregated the same way as commands; /ext/diagnostics renders the roster.
   diagnostics?: () => unknown;
   start?(api: ExtensionRuntimeApi): void | (() => void);
@@ -275,13 +281,14 @@ interface ExtensionRuntimeApi {
   isVisible(): boolean;
   subscribeVisibility(cb: (visible: boolean) => void): () => void;
   storage: ToolbarStorage;                              // scoped to this extension
-  getCommands(): readonly ToolbarCommand[];             // the live aggregation
-  runCommand(id: string): Promise<boolean>;             // false = nothing declares it
+  getCommands(): readonly AnyToolbarCommand[];          // the live aggregation
+  runCommand(id: string, input?: unknown): Promise<boolean>;   // false = nothing declares it
+  invokeCommand<Out>(id, input?): Promise<CommandInvocation<Out>>;  // ... and what it returned
   getDiagnostics(): readonly ExtensionDiagnostics[];    // one entry per present extension
 }
 ```
 
-`getCommands()` / `runCommand()` / `getDiagnostics()` are how an extension reads the
+`getCommands()` / `runCommand()` / `invokeCommand()` / `getDiagnostics()` are how an extension reads the
 aggregation without importing a *value* from core — `useToolbarCommands()` and
 `useDevToolbar().getCommands()` are for the host application. All three re-enumerate
 on call, so they are never behind. `runCommand()` rejects with the command's own error
@@ -336,6 +343,118 @@ A slot that throws degrades to an error chip. The bar and every other extension 
 working. In the `compact` and `panel` slots the chip is itself a retry button, so a slot
 that threw on transient state can be brought back without reloading.
 [docs/architecture.md](./docs/architecture.md#7-writing-an-extension).
+
+### Contract v2 — commands with input and a result
+
+`CONTRACT_VERSION` is `2`. A command may now say what it takes and hand back what it
+produced:
+
+```ts
+interface ToolbarCommand<In = void, Out = void> {
+  id: string;
+  label: string;
+  description?: string;          // prose for a reader deciding whether to call it
+  group?: string;
+  keywords?: string[];
+  shortcut?: string;             // display-only
+  input?: CommandInputSchema;    // absent = takes nothing
+  run(input: In): Out | Promise<Out>;
+}
+```
+
+**If you wrote an extension against v1, you have nothing to do.** `In` and `Out` both
+default to `void`, so a `run(): void` you already wrote still satisfies
+`run(input: void): void`, and a roster typed `readonly ToolbarCommand[]` still type-checks.
+Declaring `contractVersion: 1` remains legal — core warns once in the console and
+changes nothing else, exactly as [ADR-003](./docs/adr/ADR-003-contract-version-policy.md)
+describes. Bump the number when you start using `input`, `description` or a return
+value; leave it alone otherwise, or drop the field.
+
+**One exception, and it is a compile error rather than a surprise at runtime.**
+`ExtensionRuntimeApi` gained a required `invokeCommand`. Core is what *provides* that
+object, so writing an extension is unaffected — but if you **construct** one, which in
+practice means a hand-rolled fake `api` in your tests, it will not type-check until you
+add the method. It is required rather than optional on purpose: an optional method
+every caller has to guard is a weaker contract than one core guarantees. The one-line
+stub is:
+
+```ts
+invokeCommand: async () => ({ ok: false, reason: "unknown-command" }) as const,
+```
+
+This is the only part of v2 that is not purely additive in source terms.
+
+The one thing worth knowing: to give a command a typed `In`, declare the generic
+explicitly. Inside a `ToolbarCommand[]` literal, contextual typing infers `In` as
+`void`:
+
+```ts
+const setFlag: ToolbarCommand<{ key: string; value?: FlagValue }> = {
+  id: "flags.set",
+  label: "Set a feature flag override",
+  input: {
+    fields: {
+      key: { type: "string", required: true },
+      value: { type: ["boolean", "string", "number"] },
+    },
+  },
+  run: ({ key, value }) => runtime.applyOverride(key, value),
+};
+```
+
+#### `CommandInputSchema` is deliberately small
+
+It is **not** JSON Schema and **not** Zod. Zero runtime dependencies is a rule here,
+and every shape a toolbar command has actually needed is a flat bag of
+`boolean | string | number | enum`:
+
+```ts
+interface CommandInputSchema {
+  fields: Readonly<Record<string, CommandInputField>>;
+}
+
+type CommandInputField =
+  | { type: CommandInputType | readonly CommandInputType[]; ...common }  // boolean|string|number
+  | { type: "enum"; values: readonly CommandInputValue[]; ...common };
+
+// ...common: description?, required?, default?
+```
+
+No nesting, no arrays, no `anyOf`/`$ref`, no `minimum`/`pattern`, and **no validator**.
+The schema is a *description for a reader* — a palette deciding whether it can render
+a form, an agent deciding what to pass. `run()` is the only thing that knows what its
+own input means, so `run()` is what refuses bad input, by throwing a message that says
+why. `/ext/flags`' `flags.set` refuses a value of the wrong type rather than coercing
+it, which is the same rule its panel editor already followed.
+
+The array form of `type` is there because polymorphic values are real: `flags.set`'s
+`value` is whatever type the *named* flag has, and a schema that could not say so
+would be a lie the first time it was used.
+
+#### Running one, and reading the result
+
+`run()` may return a value. `runCommand` still resolves a boolean — it is published,
+and widening it would make every `if (await runCommand(id))` pass silently — so the
+result comes back through `invokeCommand`:
+
+```ts
+const outcome = await api.invokeCommand("diagnostics.capture");
+// { ok: true, result: DiagnosticSnapshot }   — the snapshot it just captured
+```
+
+Available as `useDevToolbar().invokeCommand(id, input?)` in the host, `api.invokeCommand`
+in an extension, `invokeCommand(id, { input, scope })` as a bare export, and
+`toolbar.invokeCommand()` in `@nejcm/dev-toolbar/testing`. All of them reject with the
+command's own error if `run()` throws — only `/ext/agent` turns that into a value,
+because a rejection crossing `page.evaluate` arrives as a bare string.
+
+#### What a palette does with `input`
+
+`/ext/command-menu` **skips every command that declares `input`**. It has no form to
+render one with, and a row that cannot be run — or one that runs with `undefined` and
+throws — would both be worse than not listing it. Those commands stay fully reachable
+through `getCommands()`, `invokeCommand()` and `/ext/agent`. A form in the palette is
+a later change, not a missing piece of this one.
 
 ## `@nejcm/dev-toolbar/runtime`
 
@@ -661,7 +780,28 @@ Commands aggregated into `useToolbarCommands()`: one `flags.toggle.<key>` per
 boolean flag — re-enumerated on every aggregation pass, so a flag that appears after
 mount gets its command as soon as the extension's next poll sees it, with no reload —
 plus `flags.clearOverrides`, `flags.copyRecipe`,
-`flags.copyJson` and `flags.refresh`. Like the other extensions it ships its own
+`flags.copyJson` and `flags.refresh`.
+
+`flags.set` is the contract v2 addition and takes `{ key, value? }`:
+
+```ts
+await api.invokeCommand("flags.set", { key: "new-header", value: false });
+await api.invokeCommand("flags.set", { key: "new-header" });   // clears the override
+```
+
+It refuses rather than coerces: an unknown key, or a value the flag's declared type
+rejects, throws a message saying which. **Omitting `value` is what clears an
+override** — `null` does not clear, because `null` is a real flag value. It is also
+*refused* for every boolean, string and number flag, since a `null` override of one
+would be discarded on the next reload anyway; only a variant flag whose `variants`
+list includes `null` accepts it. The schema says the same, which is why `value`
+advertises `["boolean", "string", "number"]` and nothing about null. It carries an
+`input` schema, so `⌘K` does not list it; the per-flag `flags.toggle.<key>` commands
+are what a human finds there, and they stay. The two are not redundant: the
+enumeration is the palette's affordance, `flags.set` is the tool call, and only
+`flags.set` can reach a string, number or variant flag at all.
+
+Like the other extensions it ships its own
 stylesheet — pair `injectStyles={false}` on `<DevToolbar>` with
 `flags({ injectStyles: false })` and deliver `FLAGS_CSS` yourself.
 
@@ -684,7 +824,7 @@ extension; with a query it is one flat list ordered by match quality. Options:
 plus the usual `id` / `label` / `align` / `order` / `priority` / `hidden` /
 `injectStyles`.
 
-Four things worth knowing:
+Five things worth knowing:
 
 - **It re-enumerates every time it opens.** `commands` may be a function, so an
   extension can begin contributing one after mount. The palette asks again rather
@@ -694,6 +834,10 @@ Four things worth knowing:
   extension is as unreachable here as everywhere else.
 - **A failing command keeps the palette open** and shows the message where you can
   read it. It is running your code; the throw never reaches your app.
+- **It does not list a command that declares `input`.** Contract v2 lets a command
+  ask for `{ key, value }`; this palette has no form to collect that with, so it
+  skips those rows rather than offering one it cannot run. They stay reachable from
+  `getCommands()`, `invokeCommand()` and `/ext/agent`. A form here is a later change.
 - **It lives in the `overlay` slot, not a panel.** A panel would evict whatever you
   opened the palette to act on, and a collapsed compact item would take the shortcut
   with it. The bar chip is a convenience — the key binding is bound in `start()`.
@@ -1005,7 +1149,17 @@ Options: `tokens`, `onApply`, `surfaces`, `presets`, `mode`, `pollMs`, `redactOp
 Commands: `theme-editor.preset.<name>` (one per preset, enumerated live),
 `theme-editor.reset`, `theme-editor.togglePreview`, `theme-editor.copyCss`,
 `theme-editor.copyRecipe`, `theme-editor.copyFigma`, `theme-editor.copyLink`,
-`theme-editor.refresh`.
+`theme-editor.refresh` — plus `theme-editor.setToken`, contract v2's addition:
+
+```ts
+await api.invokeCommand("theme-editor.setToken", { name: "--dtb-accent", value: "#3b82f6" });
+await api.invokeCommand("theme-editor.setToken", { name: "--dtb-accent" });  // clears it
+```
+
+This is the command that could not exist before v2. A token's value space is open —
+`#3b82f6`, `12px`, `1.4` — so no enumeration of per-value commands was ever possible
+and the panel's text input was the only way in. It refuses the same values the editor
+refuses, and says which; it declares `input`, so `⌘K` does not list it.
 
 panel.
 
@@ -1081,6 +1235,30 @@ await handle.runCommand("nope");                 // { ok: false, reason: "unknow
 await handle.runCommand("jobs.explode");         // { ok: false, reason: "threw", error, errorName }
 ```
 
+### Input and results (contract v2)
+
+`runCommand` takes a second argument and hands back what the command returned, so the
+bridge is where an `input`-carrying command is actually usable — `⌘K` skips those.
+
+```js
+// One call, no panel, no pixels:
+await handle.runCommand("flags.set", { key: "new-header", value: false });
+// { ok: true }
+
+// The snapshot it just captured, rather than "yes, something happened":
+const { result } = await handle.runCommand("diagnostics.capture");
+result.generatedAt;
+
+// A command that refuses its input is still a value, not a rejection:
+await handle.runCommand("flags.set", { key: "new-header", value: "yes" });
+// { ok: false, reason: "threw", error: '"new-header" is a boolean flag; "yes" is not …' }
+```
+
+`result` is redacted on the way out, like every other read, and is omitted entirely for
+the many commands that return nothing. `listCommands()` now carries each command's
+`description` and `input` schema, which is what makes it a tool listing rather than a
+menu — read `input` to know what to pass.
+
 ### What it does not do
 
 - **It adds no enumeration path.** Commands and diagnostics come from `api`, so a
@@ -1093,9 +1271,32 @@ await handle.runCommand("jobs.explode");         // { ok: false, reason: "threw"
   document.
 - **It redacts on the way out.** `read()` runs `api.getDiagnostics()` through
   `redact()` (with your `extraKeys`) as defence in depth on top of the contract's
-  requirement that an extension redacts at the source. That is the reason this is an
-  extension and not a core feature: core may not import `/runtime`, so a bridge in core
-  would publish unredacted output on a global.
+  requirement that an extension redacts at the source. `runCommand`'s `result` goes
+  through the same pass. That is the reason this is an extension and not a core
+  feature: core may not import `/runtime`, so a bridge in core would publish
+  unredacted output on a global.
+
+  **That pass costs depth, and how much depends on which surface you read.**
+  `redact()` walks from depth 0 and substitutes `"[truncated]"` for any object at
+  `maxDepth` (8 by default) or deeper — so how much of your `diagnostics()` value
+  survives depends on how far inside the redacted root it sits. Measured, for levels
+  of nesting below a contribution's own root:
+
+  | Surface | What redacts it | Levels kept |
+  | --- | --- | --- |
+  | `read().diagnostics[n].data` | the bridge, over the whole roster — `data` is 2 deep | **5** |
+  | `runCommand("diagnostics.capture").result` | the bridge, over the whole snapshot — `data` is 3 deep | **4** |
+  | The bug-report JSON (`diagnostics.copyJson` / `.download`) | `/ext/diagnostics`, per contribution at its own root | **7** |
+
+  The bug report is the **most** permissive of the three, not the least:
+  `/ext/diagnostics` redacts each contribution at depth 0 as it collects it and never
+  re-redacts the assembled snapshot, and `renderJson` is a plain `JSON.stringify`.
+  The bridge's capture result is the strictest, because it is that
+  already-redacted snapshot put through a *second* pass three levels down. So a
+  deeply nested `sources` entry can arrive intact in a bug report and truncated
+  through the bridge. If your data nests that far, flatten it, or raise `maxDepth`
+  through `redactOptions` at the source. Everything the first-party extensions
+  publish is well inside every one of these limits.
 - **It renders almost nothing.** No panel and no stylesheet; the `compact` slot is one
   `<span>` carrying the label, a `title`, and
   `data-dtb-agent-mode="read-only" | "run-enabled"` — in an `allowRun: true` build that
@@ -1311,6 +1512,14 @@ one you await instead of wrapping again:
 
 ```ts
 expect(await toolbar.runCommand("queue.drain")).toBe(true);
+```
+
+`toolbar.invokeCommand(id, input?)` is the contract v2 counterpart, `act()`-wrapped the
+same way, for a command that takes input or returns something:
+
+```ts
+const outcome = await toolbar.invokeCommand("flags.set", { key: "beta", value: true });
+expect(outcome).toEqual({ ok: true, result: undefined });
 ```
 
 `@nejcm/dev-toolbar/testing` also ships `makeExtension()` for throwaway extensions

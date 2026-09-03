@@ -122,10 +122,13 @@ actually returns as a finding about the recipe, and fix it here.
   leak anywhere in the snapshot), and overlays (on via `⌘K`, stacking below the
   bar, click-through).
 - **Not driven — verify before reporting:** the flags text/number editors and
-  their `rejected` state, clipboard assertions anywhere, the environment
-  impersonation and empty-context fixtures, the focus-order overlay's markings,
-  the overflow loop check's stepping sequence, and every feature listed as
-  unmapped below.
+  their `rejected` state, every `flags.set` and `theme-editor.setToken` step
+  (contract v2's input-carrying commands — written from the source and the
+  unit tests, never driven in a browser), the `⌘K`-skips-input assertion in
+  [command-menu.md](./command-menu.md), clipboard assertions anywhere, the
+  environment impersonation and empty-context fixtures, the focus-order
+  overlay's markings, the overflow loop check's stepping sequence, and every
+  feature listed as unmapped below.
 - **Not verifiable from the playground as it stands:** core's `styleNonce`
   prop (arriving with the pending PR stack #21–#28 — it sets the `nonce`
   *property* on core's injected `<style>` so a `style-src 'nonce-…'` policy

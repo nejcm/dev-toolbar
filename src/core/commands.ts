@@ -1,4 +1,9 @@
-import type { DevToolbarExtension, ToolbarCommand, ToolbarCommandsInput } from "./contract";
+import type {
+  AnyToolbarCommand,
+  CommandInvocation,
+  DevToolbarExtension,
+  ToolbarCommandsInput,
+} from "./contract";
 
 /**
  * Failures already reported, so a broken `commands()` logs once, not per render.
@@ -15,9 +20,9 @@ const warned = new Set<string>();
 let aggregating = false;
 
 /** Only ids and runnable commands survive. A function form can return anything. */
-function isCommand(value: unknown): value is ToolbarCommand {
+function isCommand(value: unknown): value is AnyToolbarCommand {
   if (typeof value !== "object" || value === null) return false;
-  const candidate = value as Partial<ToolbarCommand>;
+  const candidate = value as Partial<AnyToolbarCommand>;
   return (
     typeof candidate.id === "string" && candidate.id !== "" && typeof candidate.run === "function"
   );
@@ -42,7 +47,7 @@ export function resetCommandWarnings(): void {
  */
 export function resolveExtensionCommands(
   extension: DevToolbarExtension,
-): readonly ToolbarCommand[] {
+): readonly AnyToolbarCommand[] {
   const input: ToolbarCommandsInput | undefined = extension.commands;
   if (input === undefined) return [];
   if (typeof input !== "function") {
@@ -79,7 +84,7 @@ export function resolveExtensionCommands(
  * extensions contribute nothing, since a hidden extension's commands must not
  * stay runnable via `runCommand(id)` or the palette.
  */
-export function collectCommands(extensions: readonly DevToolbarExtension[]): ToolbarCommand[] {
+export function collectCommands(extensions: readonly DevToolbarExtension[]): AnyToolbarCommand[] {
   if (aggregating) {
     // warnOnce, not console directly: under StrictMode a recursive commands()
     // would otherwise log twice per render for as long as the page is open.
@@ -93,7 +98,7 @@ export function collectCommands(extensions: readonly DevToolbarExtension[]): Too
   aggregating = true;
   try {
     const seen = new Set<string>();
-    const commands: ToolbarCommand[] = [];
+    const commands: AnyToolbarCommand[] = [];
     for (const extension of extensions) {
       if (extension.hidden === true) continue;
       for (const command of resolveExtensionCommands(extension)) {
@@ -109,7 +114,7 @@ export function collectCommands(extensions: readonly DevToolbarExtension[]): Too
 }
 
 export interface CommandHost {
-  getCommands(): readonly ToolbarCommand[];
+  getCommands(): readonly AnyToolbarCommand[];
 }
 
 /**
@@ -126,7 +131,10 @@ export function registerCommandHost(host: CommandHost): () => void {
   };
 }
 
-function findCommand(id: string, scope?: readonly ToolbarCommand[]): ToolbarCommand | undefined {
+function findCommand(
+  id: string,
+  scope?: readonly AnyToolbarCommand[],
+): AnyToolbarCommand | undefined {
   if (scope) return scope.find((command) => command.id === id);
   for (const host of [...hosts].reverse()) {
     const found = host.getCommands().find((command) => command.id === id);
@@ -135,24 +143,64 @@ function findCommand(id: string, scope?: readonly ToolbarCommand[]): ToolbarComm
   return undefined;
 }
 
+export interface InvokeCommandOptions {
+  /** Handed to `run()` unchanged. A command with no `input` schema ignores it. */
+  input?: unknown;
+  /**
+   * Resolved at call time, not from a snapshot, since a list captured a render
+   * ago may already be stale with the function form of `commands`.
+   */
+  scope?: readonly AnyToolbarCommand[];
+}
+
+/**
+ * Runs an aggregated command by id and resolves **what it returned**
+ * (contract v2). `{ ok: false, reason: "unknown-command" }` when no mounted
+ * toolbar declares the id.
+ *
+ * An options bag rather than a third positional argument: `runCommand(id, scope)`
+ * already spent position two, and `runCommand(id, input, scope)` would silently
+ * reinterpret every existing two-argument call.
+ *
+ * If `run()` throws or returns a rejected promise, this rejects with that same
+ * error — callers must catch it. Turning that into a value is `/ext/agent`'s
+ * job, at the boundary where a rejection would arrive as a bare string.
+ */
+export async function invokeCommand<Out = unknown>(
+  id: string,
+  options: InvokeCommandOptions = {},
+): Promise<CommandInvocation<Out>> {
+  const command = findCommand(id, options.scope);
+  if (!command) {
+    // eslint-disable-next-line no-console
+    console.warn(`[dev-toolbar] no command registered with id "${id}".`);
+    return { ok: false, reason: "unknown-command" };
+  }
+  // The one cast in the aggregation. A roster is erased to `AnyToolbarCommand`
+  // so commands with different `In`/`Out` share an element type; this restores
+  // the call signature the erasure gave up. `Out` is unchecked by construction
+  // — only the command itself knows what it returns.
+  const run = command.run as (input: unknown) => Out | Promise<Out>;
+  return { ok: true, result: await run(options.input) };
+}
+
 /**
  * Runs an aggregated command by id. Resolves `false` when no mounted toolbar
  * declares it. Prefer `useDevToolbar().runCommand` inside React code — this is
  * for call sites with no context (hotkeys, consoles, tests).
  *
- * `scope` is resolved at call time, not from a snapshot, since a list captured
- * a render ago may already be stale with the function form of `commands`.
+ * Kept resolving a `boolean` through the contract v2 change on purpose: it is a
+ * published export, and widening it to `invokeCommand`'s object would make
+ * every `if (await runCommand(id))` pass silently. Reach for `invokeCommand`
+ * when the result matters.
  *
  * If `run()` throws or returns a rejected promise, this rejects with that same
  * error — callers must catch it.
  */
-export async function runCommand(id: string, scope?: readonly ToolbarCommand[]): Promise<boolean> {
-  const command = findCommand(id, scope);
-  if (!command) {
-    // eslint-disable-next-line no-console
-    console.warn(`[dev-toolbar] no command registered with id "${id}".`);
-    return false;
-  }
-  await command.run();
-  return true;
+export async function runCommand(
+  id: string,
+  scope?: readonly AnyToolbarCommand[],
+): Promise<boolean> {
+  const outcome = await invokeCommand(id, scope === undefined ? {} : { scope });
+  return outcome.ok;
 }

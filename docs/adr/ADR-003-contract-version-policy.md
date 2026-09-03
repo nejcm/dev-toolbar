@@ -6,7 +6,7 @@ precedent described under Context.
 
 ## Context
 
-`CONTRACT_VERSION` is exported from `src/core/contract.ts` and is `1`. An extension
+`CONTRACT_VERSION` is exported from `src/core/contract.ts` and is `2`. An extension
 may declare `contractVersion`; core compares the two.
 
 **What a mismatch does today: it logs a `console.warn`, once per extension id, and
@@ -35,6 +35,27 @@ and every change any of them forced was additive or a semantic correction:
 None bumped, on the reasoning that bumping for an additive change spends the one
 signal a version number carries. That reasoning leaned partly on "nothing has been
 published yet", which stopped being true at `0.1.0`.
+
+**One has since bumped.** Contract **2** — `ToolbarCommand` gaining `description`,
+`input` and a typed `run(input)` that may resolve a value, plus
+`ExtensionRuntimeApi.invokeCommand` — is additive for an extension author (every v1
+command is a valid v2 command, unedited; but see the paragraph below for the one
+constructor case where it is not) and would have fallen under the precedent above. It was
+bumped deliberately, and stated in the PR rather than decided in a commit, per the
+interim rule below. That makes it a data point for option **B**, not a settlement of
+the question: the number now reads as a feature level, which means every first-party
+extension's hand-maintained copy had to move with it — exactly the cost B is charged
+with. The question stays open.
+
+Contract 2 also exposed a gap none of the options above can express. It is
+additive for anyone **writing** an extension — every v1 command object compiles
+unchanged — and *non*-additive for anyone **constructing** an
+`ExtensionRuntimeApi`: the new required `invokeCommand` member is a compile
+error for a hand-rolled fake `api`, which is what a test suite has. Core
+provides the real object, so no shipped extension breaks; ten fake ones inside
+this repo did. "Additive" was doing duty for two different claims and only one
+of them held. Whichever option is picked has to say which side of the contract
+it means.
 
 Two further facts constrain any answer:
 

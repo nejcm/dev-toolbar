@@ -44,6 +44,7 @@ const api = (roster: Roster = []): ExtensionRuntimeApi => ({
   storage: storage(),
   getCommands: () => [],
   runCommand: async () => false,
+  invokeCommand: async () => ({ ok: false, reason: "unknown-command" }) as const,
   getDiagnostics: typeof roster === "function" ? roster : () => roster,
 });
 

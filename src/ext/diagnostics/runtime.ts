@@ -53,7 +53,7 @@ import type {
 } from "./types";
 
 /** Kept in sync with core by hand: this file imports no *value* from core. */
-export const TARGET_CONTRACT_VERSION = 1;
+export const TARGET_CONTRACT_VERSION = 2;
 
 export const FORMAT_KEY = "format";
 

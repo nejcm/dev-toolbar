@@ -10,7 +10,7 @@
  * side is usually `page.evaluate`, which structured-clones what it returns: a
  * function, a `Map` or a class instance would arrive as `undefined` or throw.
  */
-import type { ExtensionDiagnostics } from "../../core/contract";
+import type { CommandInputSchema, ExtensionDiagnostics } from "../../core/contract";
 
 /**
  * One aggregated command, flattened to data. `run` is deliberately not here —
@@ -20,10 +20,21 @@ import type { ExtensionDiagnostics } from "../../core/contract";
 export interface AgentCommandView {
   id: string;
   label: string;
+  /**
+   * Prose for a reader deciding whether to call this (contract v2). Absent
+   * when the command declares none — `label` is then all there is.
+   */
+  description?: string;
   group?: string;
   keywords?: readonly string[];
   /** Display-only hint, e.g. `"Mod+Shift+F"`. Core does not bind it. */
   shortcut?: string;
+  /**
+   * What to pass as `runCommand`'s second argument. Absent means the command
+   * takes nothing. These are exactly the commands `/ext/command-menu` skips,
+   * so the bridge is the only way to reach them.
+   */
+  input?: CommandInputSchema;
 }
 
 /** One item currently rendered in the bar's regions. */
@@ -116,7 +127,13 @@ export interface AgentSnapshot {
  * rejecting — including when the command itself throws.
  */
 export type AgentRunResult =
-  | { ok: true }
+  /**
+   * `result` is whatever `run()` returned, redacted on the way out like every
+   * other read (decision 3), and `undefined` for the many commands that return
+   * nothing. It is `structuredClone`-able or it does not survive
+   * `page.evaluate`, which is the contract's requirement on `Out` too.
+   */
+  | { ok: true; result?: unknown }
   | { ok: false; reason: "unknown-command" }
   /** The toolbar this handle belonged to has unmounted; nothing was run. */
   | { ok: false; reason: "torn-down" }
@@ -143,8 +160,15 @@ export interface AgentHandle {
   readonly allowRun: boolean;
   listCommands(): readonly AgentCommandView[];
   read(): AgentSnapshot;
-  /** Present only when `allowRun` is `true`. */
-  runCommand?(id: string): Promise<AgentRunResult>;
+  /**
+   * Present only when `allowRun` is `true`.
+   *
+   * `input` is handed to the command's `run()` unchanged; read the schema from
+   * `listCommands()[n].input` to know what it wants. A command that refuses
+   * its input throws, which arrives here as
+   * `{ ok: false, reason: "threw", error }` rather than a rejection.
+   */
+  runCommand?(id: string, input?: unknown): Promise<AgentRunResult>;
 }
 
 /**
@@ -164,8 +188,14 @@ export interface AgentRegistry {
   readonly default: AgentHandle;
 }
 
-/** Bumped when the shape of `AgentRegistry` or `AgentHandle` changes. */
-export const AGENT_PROTOCOL_VERSION = 1;
+/**
+ * Bumped when the shape of `AgentRegistry` or `AgentHandle` changes.
+ *
+ * **2**: `runCommand` takes an `input` argument and resolves `result`, and
+ * `AgentCommandView` carries `description` and `input` (contract v2). Both
+ * additions; a reader written against 1 keeps working.
+ */
+export const AGENT_PROTOCOL_VERSION = 2;
 
 /** Default global name. Discoverable on purpose — obscurity is not a control. */
 export const DEFAULT_GLOBAL_NAME = "__DEV_TOOLBAR__";

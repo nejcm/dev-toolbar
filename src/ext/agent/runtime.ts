@@ -26,9 +26,9 @@ import type {
   AgentShellView,
 } from "./types";
 import type {
+  AnyToolbarCommand,
   ExtensionDiagnostics,
   ExtensionRuntimeApi,
-  ToolbarCommand,
 } from "../../core/contract";
 
 export interface AgentRuntimeOptions {
@@ -163,12 +163,23 @@ export function readShell(instanceId: string): AgentShellView {
   };
 }
 
-/** One command, flattened to data. Optional fields are omitted rather than set to `undefined`. */
-export function toCommandView(command: ToolbarCommand): AgentCommandView {
+/**
+ * One command, flattened to data. Optional fields are omitted rather than set
+ * to `undefined`.
+ *
+ * `description` and `input` are contract v2 and are what make this list a tool
+ * listing rather than a menu: `description` says whether to call it, `input`
+ * says what to pass. `input` is copied by reference — it is the extension's own
+ * frozen-by-convention description, and cloning a schema per read would cost
+ * more than it protects.
+ */
+export function toCommandView(command: AnyToolbarCommand): AgentCommandView {
   const view: AgentCommandView = { id: command.id, label: command.label };
+  if (command.description !== undefined) view.description = command.description;
   if (command.group !== undefined) view.group = command.group;
   if (command.keywords !== undefined) view.keywords = [...command.keywords];
   if (command.shortcut !== undefined) view.shortcut = command.shortcut;
+  if (command.input !== undefined) view.input = command.input;
   return view;
 }
 
@@ -271,6 +282,27 @@ export function createAgentHandle(
    * data safe to leave the machine — the same two-layer argument
    * `/ext/diagnostics` makes, and the reason this bridge is an extension
    * rather than a core feature: core may not import `/runtime`.
+   *
+   * The second pass costs depth, and the cost is a consumer's to know about.
+   * `redact()` walks from depth 0 and substitutes `"[truncated]"` at
+   * `maxDepth` (8), so how much of a contribution survives depends on how far
+   * inside the redacted root it sits. Three surfaces, three answers, in levels
+   * kept below a contribution's own root:
+   *
+   * - **5** here: `data` sits at depth 2 (array -> entry -> `data`).
+   * - **4** in `runCommand("diagnostics.capture").result`: depth 3
+   *   (snapshot -> `contributions` -> entry -> `data`), and it is a *second*
+   *   pass over a snapshot whose contributions were already redacted.
+   * - **7** in the bug-report JSON: `/ext/diagnostics` redacts each
+   *   contribution at its own root inside `finish()` and never re-redacts the
+   *   assembly, and `renderJson` is a plain `JSON.stringify`.
+   *
+   * So the bug report is the most permissive surface and the bridge's capture
+   * result the strictest — a deeply nested consumer `sources` entry can arrive
+   * intact in a ticket and truncated through this handle. Nothing first-party
+   * comes close to any of the three; a consumer that nests that far should
+   * flatten, or raise `maxDepth` at the source. All three are pinned by
+   * `__tests__/phase2.test.tsx`.
    */
   const readDiagnostics = (): readonly ExtensionDiagnostics[] => {
     const redacted = redact(api.getDiagnostics(), redactOptions);
@@ -301,18 +333,35 @@ export function createAgentHandle(
   // Absent, not refusing: with `allowRun` off there is to be no way to run
   // anything at all (decision 2).
   if (allowRun) {
-    handle.runCommand = async (id: string): Promise<AgentRunResult> => {
+    handle.runCommand = async (id: string, input?: unknown): Promise<AgentRunResult> => {
       // The one method that keeps the errors-are-values rule instead of
       // throwing: a caller awaiting a result branches on it, and a dead
       // toolbar is just another reason nothing ran.
       if (api.signal.aborted) return { ok: false, reason: "torn-down" };
       if (typeof id !== "string") return { ok: false, reason: "unknown-command" };
       try {
-        const found = await api.runCommand(id);
-        return found ? { ok: true } : { ok: false, reason: "unknown-command" };
+        // `invokeCommand`, not `runCommand`: the boolean says only that
+        // something ran, and a caller who is not looking at the screen needs
+        // what it produced (`plans/agent-readable-toolbar.md` § Phase 2).
+        const outcome = await api.invokeCommand(id, input);
+        if (!outcome.ok) return { ok: false, reason: "unknown-command" };
+        // Redacted on the way out, exactly like `read()` (decision 3). A
+        // command's result crosses the same boundary a diagnostics read does,
+        // and `undefined` is left off rather than published as a key.
+        //
+        // `redact()`'s depth and node budgets apply, so a deep enough result
+        // comes back with `"[truncated]"` in the deep branch — and this is the
+        // strictest of the three surfaces, since `diagnostics.capture`'s
+        // snapshot arrives already redacted and is re-walked from three levels
+        // up (see `readDiagnostics` for all three measured depths). Nothing
+        // first-party reaches the limit; a deeply nested consumer contribution
+        // can, and would still be intact in the bug-report JSON.
+        const result = redact(outcome.result, redactOptions);
+        return result === undefined ? { ok: true } : { ok: true, result };
       } catch (error) {
-        // `runCommand` rejects with whatever `run()` threw. An agent reads the
-        // return value, so the throw becomes a value here.
+        // `invokeCommand` rejects with whatever `run()` threw — including the
+        // refusals `flags.set` and `theme-editor.setToken` raise for bad input.
+        // An agent reads the return value, so the throw becomes a value here.
         return describeError(error, redactOptions);
       }
     };

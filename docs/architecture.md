@@ -714,8 +714,8 @@ Rules worth stating explicitly:
   imports a *value* — core's React context, say — it has to resolve to the same module
   instance as the host's copy of core, which the bundler will not guarantee for a
   first-party subpath bundled alongside it. This is why `api` carries `getCommands()`,
-  `runCommand()` and `getDiagnostics()`: they are how an extension reads core's
-  aggregations without importing one.
+  `runCommand()`, `invokeCommand()` and `getDiagnostics()`: they are how an extension
+  reads core's aggregations without importing one.
 - **`commands` may be a function.** Return a fresh array from it whenever what you
   contribute depends on state that arrives after the factory ran. Keep it pure and
   cheap — core calls it during render, twice per render under StrictMode — and keep the
@@ -831,6 +831,95 @@ returns the registry copy. That branch is dead in the ESM build, where `module` 
 not exist. Failing both, `setTestingLibrary(module)` supplies it by hand —
 `require("@testing-library/react")` under Jest, `await import(...)` in ESM. The
 `test/fixtures/jest-consumer` fixture exists to exercise the CommonJS half.
+
+### 7.1 Contract v2 — commands with input and a result
+
+`CONTRACT_VERSION` is **2**. Two things a command could not do before:
+
+```ts
+interface ToolbarCommand<In = void, Out = void> {
+  id: string;
+  label: string;
+  description?: string;
+  group?: string;
+  keywords?: string[];
+  shortcut?: string;
+  input?: CommandInputSchema;
+  run(input: In): Out | Promise<Out>;
+}
+```
+
+The motivation is recorded in `plans/agent-readable-toolbar.md` § "The two contract
+gaps": `/ext/flags` worked around the missing parameter by enumerating one command per
+flag per value, `/ext/theme-editor` could not work around it at all (a design token's
+value space is open), and `runCommand` resolving `true` meant `diagnostics.capture`
+wrote to its own store with no way for the caller to read back what it produced.
+
+**Compatibility was the deliverable, not the type.** Four decisions, each load-bearing:
+
+- **`In` and `Out` default to `void`.** A v1 `run(): void | Promise<void>` satisfies
+  `run(input: void): void | Promise<void>` with no edit, so every existing extension
+  compiles unchanged and a v1 extension object is a valid v2 extension object. Nothing
+  in this phase is required of a v1 author — including keeping `contractVersion: 1`,
+  which still only produces core's one-time console warning.
+- **A roster is `AnyToolbarCommand`, not `ToolbarCommand`.** `getCommands()`,
+  `useToolbarCommands()` and `ToolbarCommandsInput` hold commands with *different*
+  `In`/`Out`, which needs one element type they all satisfy.
+
+  `ToolbarCommand<void, void>` cannot be it. The mechanism is worth stating
+  precisely, because the obvious explanation is the wrong one: `run` is declared
+  with **method syntax**, so its parameter is compared *bivariantly* even under
+  `strictFunctionTypes` — TypeScript tries both directions and accepts either.
+  It is not that contravariance rejects the assignment; it is that **neither**
+  direction holds for `void`. `void` is not assignable to `{ key: string }`, and
+  `{ key: string }` is not assignable to `void`, so both attempts fail and
+  `ToolbarCommand<{ key: string }>` is rejected (`TS2375`). Bivariance is what
+  makes the *rest* of this work — it is why `ToolbarCommand<never, unknown>` and
+  `ToolbarCommand<any, any>` accept commands in both directions at all.
+
+  `ToolbarCommand<never, unknown>` cannot be it either, and for a different
+  reason: it accepts every command (`never` is assignable to any parameter), but
+  `readonly ToolbarCommand[]` — what every v1 consumer wrote — would stop being
+  assignable *from* it, failing on the return type (`TS2322`), since `unknown` is
+  not assignable to `void`.
+  `ToolbarCommand<any, any>` is mutually assignable with both, which is exactly the
+  compatibility required; its `run(input?: any)` keeps `command.run()` compiling on an
+  aggregated command. It is the only `any` in the package and it is commented as such.
+  One cast, in `invokeCommand`, restores the call signature the erasure gave up.
+- **`runCommand` keeps resolving a boolean.** It is a published export and a
+  `useDevToolbar()` member. Widening it to an object would make every
+  `if (await runCommand(id))` pass silently — the worst kind of break, because it
+  type-checks. The result comes back through a *new* method, `invokeCommand`, which
+  resolves `{ ok: true, result }` or `{ ok: false, reason: "unknown-command" }`.
+  `invokeCommand` takes an options bag (`{ input?, scope? }`) at module level rather
+  than a third positional argument, so no existing `runCommand(id, scope)` call
+  changes meaning.
+- **Errors keep one convention per layer.** `invokeCommand` rejects with whatever
+  `run()` threw, exactly as `runCommand` always has. `/ext/agent` is the only place
+  that turns a throw into a value, because that is the boundary where a rejection
+  crossing `page.evaluate` would arrive as a bare string.
+
+`CommandInputSchema` is a flat bag of named fields, each a primitive
+(`boolean | string | number`, or an array of those for a genuinely polymorphic value),
+or an `enum` with its `values`. No nesting, no composition, no validation vocabulary,
+**no validator**. It is not JSON Schema and not Zod because zero runtime dependencies
+is a rule (§2) and because the schema's job is to describe, not to gate: `run()` is the
+only thing that knows what its own input means, so `run()` is what refuses bad input by
+throwing a message saying why. The palette and an agent both read the same description;
+neither enforces it.
+
+**`/ext/command-menu` skips every command that declares `input`,** in one place — its
+`enumerate()`. It has no form to collect input with, and both alternatives (a row that
+cannot run, or a row that runs with `undefined` and throws) are worse than not listing
+it. Those commands stay fully reachable through `getCommands()`, `invokeCommand()` and
+`/ext/agent`. `snapshot.commands` in that extension therefore means "what the palette
+could run", not "what exists" — the bridge's `listCommands()` is the unfiltered list.
+
+Contract v2 is the first bump. It is additive in source terms, so it does not settle
+[ADR-003](./adr/ADR-003-contract-version-policy.md) — which asks *when* the number
+should move, and is still open. The first-party extensions all declare `2` and
+`/ext/diagnostics` keeps its hand-maintained `TARGET_CONTRACT_VERSION` in step with an
+equality assertion, per §10.
 
 ## 8. SSR
 

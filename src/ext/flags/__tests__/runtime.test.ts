@@ -47,6 +47,7 @@ function fakeApi(storage: ToolbarStorage): {
       getCommands: () => [],
       getDiagnostics: () => [],
       runCommand: async () => false,
+      invokeCommand: async () => ({ ok: false, reason: "unknown-command" }) as const,
       storage,
     },
     abort: () => controller.abort(),

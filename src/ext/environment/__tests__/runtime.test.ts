@@ -324,6 +324,7 @@ describe("staleness", () => {
         getCommands: () => [],
         getDiagnostics: () => [],
         runCommand: async () => false,
+        invokeCommand: async () => ({ ok: false, reason: "unknown-command" }) as const,
         storage: {
           getItem: () => null,
           setItem: () => {},
@@ -438,6 +439,7 @@ describe("a context that throws while being read", () => {
         getCommands: () => [],
         getDiagnostics: () => [],
         runCommand: async () => false,
+        invokeCommand: async () => ({ ok: false, reason: "unknown-command" }) as const,
         storage: {
           getItem: () => null,
           setItem: () => {},

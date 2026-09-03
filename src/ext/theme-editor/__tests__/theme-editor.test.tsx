@@ -400,6 +400,7 @@ describe("the shell contract", () => {
     });
     const ids = collectCommands([extension]).map((command) => command.id);
     expect(ids).toEqual([
+      "theme-editor.setToken",
       "theme-editor.preset.Punchy",
       "theme-editor.reset",
       "theme-editor.togglePreview",

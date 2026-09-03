@@ -25,6 +25,7 @@ const api = (storage: ToolbarStorage = createMemoryStorage()): ExtensionRuntimeA
   storage,
   getCommands: () => [],
   runCommand: () => Promise.resolve(false),
+  invokeCommand: async () => ({ ok: false, reason: "unknown-command" }) as const,
   getDiagnostics: () => [],
 });
 

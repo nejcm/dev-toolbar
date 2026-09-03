@@ -95,6 +95,15 @@ export interface FlagsRuntime {
   clearAll(): void;
   /** Flips a boolean flag's effective value. Used by the per-flag commands. */
   toggle(key: string): void;
+  /**
+   * The validated door `flags.set` uses. Refuses rather than coerces, and
+   * **throws** the reason — the caller is a command, and a command's only
+   * feedback channel is a rejection the palette or `/ext/agent` reports.
+   *
+   * `value === undefined` clears the override, the same meaning it has in
+   * `onOverride`. `null` is a value, not an absence, so it cannot mean "clear".
+   */
+  applyOverride(key: string, value?: FlagValue): void;
   /** Forgets the "reload required" markers without reloading. */
   acknowledgeReload(): void;
   /** §3C's shareable override recipe. Redacted. */
@@ -638,6 +647,56 @@ export function createFlagsRuntime(options: FlagsRuntimeOptions = {}): FlagsRunt
       }
       publish();
       store.flush();
+    },
+
+    applyOverride(key: string, value?: FlagValue) {
+      if (typeof key !== "string" || key === "") {
+        throw new Error("`key` is required and must be a non-empty string.");
+      }
+      if (!writable) {
+        throw new Error(
+          `This toolbar's flags are read-only — no \`onOverride\` adapter was supplied, ` +
+            `so "${key}" cannot be overridden.`,
+        );
+      }
+      if (value === undefined) {
+        if (!Object.prototype.hasOwnProperty.call(overrides, key)) return;
+        drop(key);
+        return;
+      }
+      if (!isFlagValue(value)) {
+        throw new Error(
+          `"${key}" was given a ${typeof value}. A flag value is a boolean, string, number or null.`,
+        );
+      }
+      const reading = readFlags().find(
+        (candidate) => typeof candidate?.key === "string" && candidate.key === key,
+      );
+      // An unknown key is a typo far more often than a deliberate orphan, and
+      // an orphan created by a command is invisible until someone opens the
+      // panel. The panel's own editors can only reach catalogued rows, so this
+      // refuses what the UI could not have done either.
+      if (reading === undefined && !Object.prototype.hasOwnProperty.call(overrides, key)) {
+        throw new Error(
+          `No flag named "${key}". The catalogue lists: ` +
+            `${readFlags()
+              .map((candidate) => candidate?.key)
+              .filter((candidate): candidate is string => typeof candidate === "string")
+              .join(", ")}.`,
+        );
+      }
+      // The same rule `vetOverrides` applies to a persisted override, so a
+      // command cannot write a value a reload would then discard.
+      if (reading !== undefined) {
+        const type = inferType(reading);
+        if (!valueMatchesFlagType(value, type, reading.variants)) {
+          throw new Error(
+            `"${key}" is a ${type} flag; ${JSON.stringify(value)} is not a valid ${type} value` +
+              `${reading.variants === undefined ? "" : ` (variants: ${JSON.stringify(reading.variants)})`}.`,
+          );
+        }
+      }
+      write(key, value);
     },
 
     toggle(key: string) {

@@ -50,7 +50,7 @@ describe("installation", () => {
     expect(registry().protocolVersion).toBe(AGENT_PROTOCOL_VERSION);
     const handle = handleFor("playground");
     expect(handle.instanceId).toBe("playground");
-    expect(handle.contractVersion).toBe(1);
+    expect(handle.contractVersion).toBe(2);
     expect(handle.read().instanceId).toBe("playground");
   });
 

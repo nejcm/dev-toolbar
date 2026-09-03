@@ -40,18 +40,43 @@ running, error, recent, shortcut}`.
 
 - **Open with the keyboard.** Click the page body, then `computer`
   `{"action":"key","text":"cmd+k"}`. Read: `menu.open` is `true`, `menu.query`
-  is `""`, `menu.resultCount` is 29 at baseline, `menu.activeIndex` is `0` and
+  is `""`, `menu.resultCount` equals `menu.commandCount` at baseline (an empty query filters nothing), `menu.activeIndex` is `0` and
   `menu.activeId` names the first command.
 - **Enumeration.** While the palette is open, `menu.commandCount` equals
-  `read().commands.length` — it enumerates through core, so those two
-  disagreeing *while open* is the finding. Assert it **while open**: `close()`
-  resets `query`, `results`, `activeIndex` and `error` but deliberately leaves
-  `commands` alone, so a closed palette still reports the last enumeration
-  (`commandCount: 29`, `resultCount: 0`, `activeIndex: -1`). A non-zero
+  `read().commands.length` **minus the commands that declare an `input`
+  schema** — the palette skips those, because it has no form to collect input
+  with (contract v2). So the identity to assert, while open, is:
+
+  ```js
+  const s = window.__DEV_TOOLBAR__.instances["playground"].read();
+  const menu = s.diagnostics.find((d) => d.id === "command-menu").data;
+  const withInput = s.commands.filter((c) => c.input !== undefined);
+  menu.commandCount === s.commands.length - withInput.length   // must hold
+  ```
+
+  `withInput` is `flags.set` and `theme-editor.setToken` in the playground
+  today — derive it, never hard-code the two. That identity failing *while
+  open* is the finding. Assert it **while open**: `close()` resets `query`,
+  `results`, `activeIndex` and `error` but deliberately leaves `commands`
+  alone, so a closed palette still reports the last enumeration
+  (`resultCount: 0`, `activeIndex: -1`, `commandCount` unchanged). A non-zero
   `commandCount` after `Escape` is the resting state, not a captured list
   being served — re-enumeration is what `cmd-late` proves, and it proves it by
   a command *appearing* on the next open, never by a count falling to zero in
   between.
+- **A command with input is never offered here.** Open the palette and type
+  `set`. Two assertions, neither of them on a filtered list — the palette
+  publishes counts and the active id, never the rows (see Gotchas):
+  - the DOM: `[data-dtb-part="cmd-option-label"]` texts contain no
+    `Set a feature flag override` and no `Set a design token`;
+  - the state: `menu.query` is `"set"` and `menu.resultCount` equals the
+    number of rows the DOM just showed — so a row is not merely unrendered.
+
+  Both commands are live and reachable: `read().commands` lists them with
+  their `input` schema, and `runCommand("flags.set", {key, value})` runs one.
+  That is the point — the palette skips what it cannot supply input for rather
+  than offering a row that fails when pressed. See [flags.md](./flags.md) for
+  driving them.
   `read().commands` carries every command's `id`, `label` and `group`, e.g.
   `diagnostics.capture` / `Capture a diagnostic snapshot`,
   `flags.clearOverrides` / `Clear all local flag overrides`,
@@ -109,12 +134,16 @@ running, error, recent, shortcut}`.
   A missing `⌘K` chip at a narrow viewport is not a broken palette.
 - It contributes no commands of its own; if the list is empty, the fault is in
   the extensions, not here. `menu.commandCount` and `read().commands.length`
-  are the two sides of that — they come from the same `getCommands()`.
+  come from the same `getCommands()` and differ only by the `input`-carrying
+  commands the palette drops — an unexplained gap between them is the finding.
 - The palette publishes counts and the active id, not the filtered list.
   That is deliberate: the roster is already in `read().commands`, and
   repeating it inside a diagnostics contribution would put the biggest thing
   in a bug-report snapshot inside one of its own sections.
 - With focus inside a text field, `Cmd+K` may be consumed by the field.
-- `29` is the baseline count for the playground's extension set. It moves the
-  moment an extension gains or loses a command — treat it as a checksum to
-  re-derive from `read().commands.length`, not a constant.
+- Any absolute count in this file is a checksum for one playground extension
+  set at one moment, not a constant. It moved when contract v2 added
+  `flags.set` and `theme-editor.setToken`, and it moves again the moment an
+  extension gains or loses a command. Re-derive `read().commands.length` and
+  `menu.commandCount` in the run, and assert the *relationship* between them
+  above rather than either number.

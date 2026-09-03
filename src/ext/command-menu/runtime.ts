@@ -15,7 +15,7 @@
  */
 import { createThrottledStore } from "../../runtime";
 import type { ThrottledStore } from "../../runtime";
-import type { ExtensionRuntimeApi, ToolbarCommand } from "../../core/contract";
+import type { AnyToolbarCommand, ExtensionRuntimeApi } from "../../core/contract";
 import { filterCommands } from "./types";
 import type { CommandMatch } from "./types";
 
@@ -32,7 +32,7 @@ export interface CommandMenuSnapshot {
   /** Index into `results`. `-1` when there is nothing to run. */
   activeIndex: number;
   /** What `getCommands()` returned when the palette last enumerated. */
-  commands: readonly ToolbarCommand[];
+  commands: readonly AnyToolbarCommand[];
   /** `commands` filtered and ordered for display. */
   results: readonly CommandMatch[];
   /** Id of a command whose `run()` has not settled yet. */
@@ -242,7 +242,7 @@ export function ariaKeyshortcuts(
 /* Runtime                                                                     */
 /* -------------------------------------------------------------------------- */
 
-const EMPTY: readonly ToolbarCommand[] = [];
+const EMPTY: readonly AnyToolbarCommand[] = [];
 
 function readRecent(raw: string | null): string[] {
   if (raw === null) return [];
@@ -284,10 +284,21 @@ export function createCommandMenuRuntime(
 
   let api: ExtensionRuntimeApi | null = null;
 
-  const enumerate = (): readonly ToolbarCommand[] => {
+  /**
+   * The palette's own view of the aggregation, and the **one** place
+   * `input`-carrying commands are dropped (contract v2).
+   *
+   * A command that declares `input` needs a form this palette does not have,
+   * and offering a row that cannot be run — or running it with `undefined` and
+   * letting it throw — would both be worse than not listing it. So it is
+   * skipped here, once, and left to `/ext/agent`, which can supply input.
+   * Filtering here rather than in `filterCommands` keeps `snapshot.commands`
+   * honest: it is what the palette could run, not what exists.
+   */
+  const enumerate = (): readonly AnyToolbarCommand[] => {
     if (!api) return EMPTY;
     try {
-      return api.getCommands();
+      return api.getCommands().filter((command) => command.input === undefined);
     } catch (error) {
       // Should be unreachable (core already guards a throwing `commands()`),
       // but a reader that lets an aggregation failure escape takes the
@@ -504,6 +515,8 @@ export function createCommandMenuRuntime(
         ready: latest.ready,
         activeIndex: latest.activeIndex,
         activeId: latest.results[latest.activeIndex]?.command.id ?? null,
+        // What the palette can run, i.e. after `input`-carrying commands are
+        // dropped. `listCommands()` on the agent bridge is the unfiltered count.
         commandCount: latest.commands.length,
         resultCount: latest.results.length,
         running: latest.running,

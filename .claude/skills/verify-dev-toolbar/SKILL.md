@@ -108,14 +108,40 @@ const ext = (id) => s.diagnostics.find((d) => d.id === id)?.data ?? null;
 ({ shell: s.shell, flags: ext("flags").flags, env: ext("environment").fields })
 ```
 
-The playground passes `allowRun: true`, so `runCommand(id)` is available and
-resolves a value rather than throwing:
+The playground passes `allowRun: true`, so `runCommand(id, input?)` is available
+and resolves a value rather than throwing:
 `await window.__DEV_TOOLBAR__.instances["playground"].runCommand("overlays.disableAll")`
 → `{ok: true}` or `{ok: false, reason: "unknown-command"}`. Use it to *reach* a
 state and to prove the command registry itself; a claim about a chip, a switch
 or a panel still needs the click (see [Evidence](#evidence)).
-`listCommands()` is the command roster with ids, labels and groups — read it
-instead of scraping option labels out of the palette.
+`listCommands()` is the command roster with ids, labels, groups and — since
+contract v2 — each command's `description` and `input` schema. Read it instead
+of scraping option labels out of the palette.
+
+**Commands with input, and commands that answer back** (contract v2). A command
+may declare an `input` schema and return a value:
+
+```js
+const h = window.__DEV_TOOLBAR__.instances["playground"];
+await h.runCommand("flags.set", { key: "search.rank", value: 9 });   // {ok: true}
+await h.runCommand("flags.set", { key: "search.rank" });             // clears it
+(await h.runCommand("diagnostics.capture")).result;                  // the snapshot itself
+```
+
+Three consequences worth holding on to:
+
+- `runCommand` resolves `{ok: true, result}` when the command returned
+  something, and plain `{ok: true}` when it did not. `result` is redacted on
+  the way out like every other read.
+- A command that **refuses its input throws**, and the bridge turns that into
+  `{ok: false, reason: "threw", error}` — a value to assert on, not a
+  rejection. `flags.set` refuses an unknown key or a value of the wrong type
+  rather than coercing it.
+- **`⌘K` does not list a command that declares `input`**, because it has no
+  form to collect one with. So `flags.set` and `theme-editor.setToken` are
+  reachable through the bridge and never through the palette; `read().commands`
+  and `listCommands()` are the unfiltered roster, and the palette's own
+  `commandCount` is the shorter, runnable one.
 
 **Read the page only for what the toolbar cannot say about itself.** Geometry,
 computed style, stacking, `localStorage` and the playground app's own readouts
@@ -174,7 +200,7 @@ preference:
 
 | Handle | Where it comes from | Example |
 | --- | --- | --- |
-| a command id | `listCommands()` / `runCommand()` | `flags.toggle.new-header`, `overlays.disableAll` |
+| a command id | `listCommands()` / `runCommand()` | `flags.toggle.new-header`, `overlays.disableAll`, `flags.set` (takes `{key, value?}`) |
 | ARIA role + name | the accessible surface | `toolbar` "Developer toolbar", `switch` "Toggle new-header", `dialog` "Commands" |
 | `data-dtb-part` | core and every first-party extension | `[data-dtb-part="bar"]`, `panel`, `overflow-button`, `cmd-input` |
 | `data-dtb-ext-id` | one per extension, on its bar item, panel and overlay | `[data-dtb-ext-id="flags"]` |

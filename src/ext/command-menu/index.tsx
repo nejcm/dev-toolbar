@@ -90,7 +90,7 @@ export function commandMenu(options: CommandMenuOptions = {}): DevToolbarExtensi
   return {
     id,
     label,
-    contractVersion: 1,
+    contractVersion: 2,
     align,
     order,
     priority,

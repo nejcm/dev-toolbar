@@ -27,9 +27,11 @@ broken the app badly enough that the panel is out of reach.
 - Click the `flags` chip in the bar to open the panel.
 - Use the **UI Facelift 2026** switch directly in the bar.
 - Reach either from inside the `⋮` menu when the bar is narrow.
-- Run a flags command from `⌘K` (`Clear all local flag overrides`,
-  `Copy flag override recipe`, `Copy flag overrides as JSON`,
-  `Re-read feature flags`).
+- Run a flags command from `⌘K` (`Toggle flag: …` per boolean flag,
+  `Clear all local flag overrides`, `Copy flag override recipe`,
+  `Copy flag overrides as JSON`, `Re-read feature flags`). `flags.set` is
+  **not** in `⌘K` — it declares an `input` schema and the palette has no form
+  for one; it is a bridge-only command.
 - Load any page with `?dtb-flags=reset`.
 
 ## Driving it with the Browser pane
@@ -64,6 +66,37 @@ masked row, which publishes the same redacted string the panel shows.
   `shell.activePanel` is still `null` throughout. Capture that field with the
   artifact: it is what makes this a proof that the state is readable without
   the UI, rather than a proof that the panel renders.
+- **Set a specific value in one call.** `flags.toggle.<key>` only exists for
+  *boolean, non-orphaned* flags and only flips whatever is there. `flags.set`
+  takes `{key, value?}` and covers every flag:
+  `runCommand("flags.set", {key: "search.rank", value: 9})` → `{ok: true}`,
+  then `flag("search.rank")` is `{effective: 9, base: 2, overridden: true,
+  source: "local-override"}` and the page read's `appFlags` entry for
+  `search.rank` moved with it — a number flag, which had no one-call path at
+  all before contract v2. **Omitting `value` is what clears** the override
+  (`runCommand("flags.set", {key: "search.rank"})` → `overridden: false`,
+  `effective` back to the app's `2`).
+- **A refusal is a value, not a rejection.**
+  `runCommand("flags.set", {key: "new-header", value: "yes"})` →
+  `{ok: false, reason: "threw", error: '"new-header" is a boolean flag; …'}`,
+  and the row is unchanged: `overridden: false`, `appFlags` untouched, nothing
+  in `storage`. Same for an unknown key (`No flag named "nope"`) and for a
+  variant outside the declared set. The command refuses rather than coercing,
+  which is the rule the panel's editor already followed.
+- **`value: null` is refused, not a way to clear.** `null` is a real
+  `FlagValue`, but the flag's declared type is checked with `typeof`, so
+  `runCommand("flags.set", {key: "new-header", value: null})` →
+  `{ok: false, reason: "threw", error: '"new-header" is a boolean flag; null is
+  not a valid boolean value'}`, and the row is unchanged. The same holds for
+  `theme.name` (string) and `search.rank` (number). That refusal is correct:
+  a stored `null` override of a typed flag is dropped by `vetOverrides` on the
+  next load, so accepting it would create an override that silently vanishes.
+  Only a **variant** flag whose `variants` list includes `null` accepts one,
+  and the playground has no such flag — do not expect the accepting branch
+  here. The `input` schema advertises `["boolean", "string", "number"]` and
+  carries the rule in `value.description`; if you ever read a `nullable` field
+  back off `listCommands()`, that is a finding.
+
 - **Then drive the user path.** Clear the override
   (`runCommand("flags.clearOverrides")`), `find` role `button` name `Flags` and
   click the ref (`shell.activePanel` becomes `"flags"`), then `find` role
@@ -130,9 +163,10 @@ masked row, which publishes the same redacted string the panel shows.
   immediately but the app is documented as needing a reload to pick it up, and
   the row gains the `reload` tag until the reload happens or
   `acknowledgeReload()` runs. Only *boolean, non-orphaned* flags get a
-  `flags.toggle.<key>` command, so a non-boolean override needs the panel's
-  editor — there is no one-call way to set it until the contract's commands
-  take input.
+  `flags.toggle.<key>` command; for anything else use `flags.set`, which takes
+  `{key, value?}` and reaches string, number and variant flags too. Both ship:
+  the enumeration is what a human finds in `⌘K` (which skips `flags.set`,
+  because it declares `input`), and `flags.set` is the one-call tool path.
 - **The `rejected` path is unverified.** Driving the text editors needs
   reliable keyboard input, which the harness did not have when this map was
   written (see [shell.md](./shell.md) on a hidden Browser pane). `form_input`

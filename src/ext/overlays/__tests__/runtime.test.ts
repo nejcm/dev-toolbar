@@ -83,6 +83,7 @@ function fakeApi(): ExtensionRuntimeApi {
     getCommands: () => [],
     getDiagnostics: () => [],
     runCommand: async () => false,
+    invokeCommand: async () => ({ ok: false, reason: "unknown-command" }) as const,
     storage: createMemoryStorage(),
   };
 }

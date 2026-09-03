@@ -36,6 +36,7 @@ const api = (overrides: Partial<ExtensionRuntimeApi> = {}): ExtensionRuntimeApi 
     getCommands: () => [],
     getDiagnostics: () => [],
     runCommand: async () => false,
+    invokeCommand: async () => ({ ok: false, reason: "unknown-command" }) as const,
     ...overrides,
   };
 };
@@ -188,6 +189,7 @@ describe("createCommandMenuRuntime", () => {
       api({
         getCommands: () => commands,
         runCommand: async () => true,
+        invokeCommand: async () => ({ ok: false, reason: "unknown-command" }) as const,
         storage: {
           getItem: () => null,
           setItem: (_k, value) => void written.push(value),

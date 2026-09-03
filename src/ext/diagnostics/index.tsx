@@ -50,7 +50,13 @@
 import { createDiagnosticsRuntime } from "./runtime";
 import { DiagnosticsChip, DiagnosticsPanel } from "./ui";
 import type { DiagnosticsRuntimeOptions } from "./runtime";
-import type { DevToolbarExtension, ExtensionRuntimeApi, ToolbarAlign } from "../../core/contract";
+import type {
+  DevToolbarExtension,
+  ExtensionRuntimeApi,
+  ToolbarAlign,
+  ToolbarCommand,
+} from "../../core/contract";
+import type { DiagnosticSnapshot } from "./types";
 
 export interface DiagnosticsOptions extends Omit<DiagnosticsRuntimeOptions, "id"> {
   /** Extension id. Default `"diagnostics"`. */
@@ -104,7 +110,7 @@ export function diagnostics(options: DiagnosticsOptions = {}): DevToolbarExtensi
   return {
     id,
     label,
-    contractVersion: 1,
+    contractVersion: 2,
     align,
     order,
     priority,
@@ -157,15 +163,24 @@ export function diagnostics(options: DiagnosticsOptions = {}): DevToolbarExtensi
      * panel control, since core owns single-active-panel state.)
      */
     commands: [
+      /**
+       * The one command that returns something (contract v2). It writes to
+       * this extension's own store, so before v2 a caller who was not looking
+       * at the panel had no way to read back what it produced — the plan's
+       * "dead end for a tool call". It now resolves the captured snapshot,
+       * which is already redacted on the way in, so this is not a second path
+       * around the panel's masks.
+       */
       {
         id: `${id}.capture`,
         label: "Capture a diagnostic snapshot",
+        description:
+          "Freezes the current state — page facts, long tasks, and every extension's " +
+          "contribution — and resolves the captured snapshot. Already redacted.",
         group: "Diagnostics",
         keywords: ["debug", "report", "bug", "snapshot", "longtask"],
-        run: () => {
-          runtime.capture();
-        },
-      },
+        run: () => runtime.capture(),
+      } satisfies ToolbarCommand<void, DiagnosticSnapshot>,
       {
         id: `${id}.copy`,
         label: "Copy diagnostic snapshot (Markdown)",

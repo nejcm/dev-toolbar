@@ -32,6 +32,7 @@ function api(): {
       getCommands: () => [],
       getDiagnostics: () => [],
       runCommand: async () => false,
+      invokeCommand: async () => ({ ok: false, reason: "unknown-command" }) as const,
       storage: {
         getItem: (key) => store.get(key) ?? null,
         setItem: (key, value) => void store.set(key, value),

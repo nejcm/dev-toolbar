@@ -46,6 +46,7 @@ function fakeApi(storage: ToolbarStorage | null): ExtensionRuntimeApi {
     storage: storage ?? createMemoryStorage(),
     getCommands: () => [],
     runCommand: () => Promise.resolve(false),
+    invokeCommand: async () => ({ ok: false, reason: "unknown-command" }) as const,
     getDiagnostics: () => [],
   };
 }

@@ -102,12 +102,16 @@ Everything here is `read().shell` — `bar` (what is still in the regions) and
 - `shell.overflow.items` is empty until the menu is actually opened — core
   renders its contents on open. An empty list with `present: true` means "not
   opened yet", not "nothing collapsed". Diffing `shell.bar` against
-  `read().diagnostics` happens to give the collapsed set today, because both
-  lists are "present and not hidden" — every extension gets a bar item, even
-  one with no `compact` and no `panel` (core falls back to a `<span>` of its
-  label). But those are two independent filters in two files, so treat the
-  diff as a cross-check, not the assertion: `present` says *something*
-  collapsed, and opening the menu says *what*.
+  `read().diagnostics` happens to give the collapsed set today **while
+  `shell.mounted` is `true`**, because both lists are "present and not hidden"
+  — every extension gets a bar item, even one with no `compact` and no `panel`
+  (core falls back to a `<span>` of its label). Check `shell.mounted` first:
+  core removes the root rather than hiding it, so a hidden bar (`visible:
+  false`) reports `shell.bar: []` while the roster is still full, and the diff
+  then reads "everything collapsed" when nothing is. Even mounted, those are
+  two independent filters in two files, so treat the diff as a cross-check,
+  not the assertion: `present` says *something* collapsed, and opening the menu
+  says *what*.
 - The `agent` extension collapses first (`priority: -1`), so at any narrow
   width it is in the menu rather than the bar. Its handle is unaffected — the
   bridge is not its chip.

@@ -65,6 +65,7 @@ import { FlagsChip, FlagsPanel } from "./ui";
 import type { FlagsRuntimeOptions } from "./runtime";
 import type { FlagValue } from "./types";
 import type {
+  CommandInputSchema,
   DevToolbarExtension,
   ExtensionRuntimeApi,
   ToolbarAlign,
@@ -139,6 +140,70 @@ export function flags(options: FlagsOptions = {}): DevToolbarExtension {
    * Orphans get a row so they can be cleared, but no toggle command — offering
    * to turn on a flag the application doesn't have has no place in a palette.
    */
+  /**
+   * What `flags.set` takes. `value` absent means "clear the override and fall
+   * back to the application's own value" — the same meaning `undefined` has in
+   * `onOverride`. `null` cannot mean that: it is a real `FlagValue`, and for a
+   * variant flag that lists it, a settable one.
+   */
+  const setInput: CommandInputSchema = {
+    fields: {
+      key: {
+        type: "string",
+        required: true,
+        description: "The flag's key, exactly as the catalogue spells it.",
+      },
+      value: {
+        // Genuinely polymorphic: the accepted type is whatever the named flag
+        // declares, and refusing a mismatch is `run()`'s job, not the schema's.
+        //
+        // `null` is deliberately absent from this list. It is a real
+        // `FlagValue`, but `applyOverride` refuses it for every boolean,
+        // string and number flag — `valueMatchesFlagType` checks `typeof`, so
+        // only a variant flag whose `variants` include `null` accepts one.
+        // That refusal is correct (`vetOverrides` would discard such an
+        // override on the next reload), so the schema says the same thing the
+        // command does rather than advertising a value that always throws.
+        type: ["boolean", "string", "number"],
+        description:
+          "The value to force. Must match the flag's own type. `null` is refused " +
+          "unless the flag is a variant whose `variants` include it. Omit this " +
+          "field to clear the override — omission, not `null`, is what clears.",
+      },
+    },
+  };
+
+  /**
+   * The one call an agent needs: `runCommand("flags.set", { key, value })`.
+   *
+   * It does **not** replace the per-flag enumeration below. The two serve
+   * different readers: `flags.toggle.<key>` is what a human finds by typing a
+   * flag's name into `⌘K`, and `/ext/command-menu` skips every command that
+   * carries `input` (contract v2), so shipping only this one would leave the
+   * palette with no flag actions at all. The plan's objection was that the
+   * enumeration is "wasteful as a tool schema" — which this fixes by adding
+   * the schema, not by deleting the palette's rows
+   * (`plans/agent-readable-toolbar.md` § Phase 2).
+   */
+  const setCommand: ToolbarCommand<{ key: string; value?: FlagValue }> = {
+    id: `${id}.set`,
+    label: "Set a feature flag override",
+    description:
+      "Overrides one flag by key, in one call, without opening the panel. Refuses a " +
+      "value of the wrong type rather than coercing it, and refuses a key the " +
+      "catalogue does not list. Omit `value` to clear the override; `null` is a " +
+      "value, accepted only by a variant flag that lists it.",
+    group: "Flags",
+    keywords: ["flag", "override", "set", "value"],
+    input: setInput,
+    run: (input) => {
+      if (input === null || typeof input !== "object") {
+        throw new Error("`flags.set` takes `{ key, value? }`.");
+      }
+      runtime.applyOverride(input.key, input.value);
+    },
+  };
+
   const perFlagCommands = (): ToolbarCommand[] =>
     runtime.store
       .peek()
@@ -154,7 +219,7 @@ export function flags(options: FlagsOptions = {}): DevToolbarExtension {
   return {
     id,
     label,
-    contractVersion: 1,
+    contractVersion: 2,
     align,
     order,
     priority,
@@ -183,6 +248,7 @@ export function flags(options: FlagsOptions = {}): DevToolbarExtension {
     panel: () => <FlagsPanel runtime={runtime} label={label} injectStyles={injectStyles} />,
 
     commands: () => [
+      setCommand,
       ...perFlagCommands(),
       {
         id: `${id}.clearOverrides`,
