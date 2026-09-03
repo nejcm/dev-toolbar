@@ -125,6 +125,18 @@ side, where the reset came from. The whole remedy is `revert-layer`:
   color: revert-layer;
 }
 
+/* Preflight also zeroes margins on blockquote/dl/dd/h1-h6/hr/figure/p/pre and
+   margin, padding and list-style on ol/ul/menu. Core states that same set with
+   :where(), so reverting lands on a deliberate zero, never a UA 1em — and it
+   lets through the places core wants a value: a section legend's space under
+   it, data-dtb-bleed's inline margins, a real bulleted list's indent. */
+[data-dev-toolbar]
+  :is(blockquote, dd, dl, figure, h1, h2, h3, h4, h5, h6, hr, menu, ol, p, pre, ul) {
+  margin: revert-layer;
+  padding: revert-layer;
+  list-style: revert-layer;
+}
+
 /* Preflight's border reset is `*, ::before, ::after { border-width: 0 }`, so
    this one has to be as wide to win. It erases the bar's own edge, the popup,
    panel rules and the promoted pill, and repaints what survives Tailwind grey. */
@@ -476,11 +488,17 @@ names inside core are not.
 | `error-retry` | the chip's retry button | Absent in the `overlay` slot |
 | `inset` | `<DevToolbarInset>` | `data-dtb-position` |
 
-One attribute is not a part but a treatment an extension opts into:
-`data-dtb-legend` on a heading sets it as a section legend — small mono caps with a
-hairline running from the word to the end of the measure. Core owns it so that every
-extension's sections divide a panel the same way, and the extension keeps its own
-`data-dtb-part` on the same element for targeting.
+Two attributes are not parts but treatments an extension opts into, both owned by
+core so every panel divides the same way. The extension keeps its own `data-dtb-part`
+on the same element for targeting.
+
+| Attribute | On | Effect |
+| --- | --- | --- |
+| `data-dtb-legend` | a section heading | Small mono caps with a hairline running from the word to the end of the measure |
+| `data-dtb-bleed` | a panel's scroll container, or a fixed region with a rule | Reaches the panel's inline edges and re-applies the body's padding inside, so a scrollbar sits on the panel edge and a toolbar's or footer's rule runs the panel's width |
+
+`data-dtb-bleed` must not be nested inside another bled element — a second bleed
+overflows rather than aligning, which is why a legend's rule stops at the measure.
 
 Core owns the unprefixed names; an extension that ships CSS **namespaces its parts by
 kind** — a prefix fixed by the extension package, not by the `id` an individual

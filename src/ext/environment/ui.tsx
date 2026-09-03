@@ -105,7 +105,7 @@ export function EnvironmentPanel({ runtime, injectStyles }: PanelProps): ReactNo
         </p>
       ) : null}
 
-      <div data-dtb-part="env-body">
+      <div data-dtb-part="env-body" data-dtb-bleed="">
         {anythingSupplied ? null : (
           <div data-dtb-part="env-empty">
             <p data-dtb-part="env-note">
@@ -141,7 +141,7 @@ export function EnvironmentPanel({ runtime, injectStyles }: PanelProps): ReactNo
         })}
       </div>
 
-      <div data-dtb-part="env-actions">
+      <div data-dtb-part="env-actions" data-dtb-bleed="">
         <button
           type="button"
           data-dtb-part="env-action"

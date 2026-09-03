@@ -114,6 +114,23 @@ export const CORE_CSS = String.raw`/**
     box-sizing: border-box;
   }
 
+  /* The toolbar renders headings, paragraphs and lists, and it wants none of
+     the UA's margins on them. Stating that here rather than assuming the host
+     ships a reset is what keeps a panel looking the same in an app with one
+     and an app without. :where() so it carries no specificity: every part rule
+     and every data-dtb-* opt-in still outranks it, and a consumer reverting a
+     reset of their own (see the Tailwind note in docs/architecture.md) lands
+     on these values rather than on a UA 1em. */
+  [data-dev-toolbar]
+    :where(blockquote, dd, dl, figure, h1, h2, h3, h4, h5, h6, p, pre) {
+    margin: 0;
+  }
+
+  [data-dev-toolbar] :where(menu, ol, ul) {
+    margin: 0;
+    padding: 0;
+  }
+
   [data-dev-toolbar][data-dtb-color-scheme="dark"],
   [data-dev-toolbar][data-dtb-color-scheme="system"] {
     color-scheme: light dark;
@@ -496,6 +513,33 @@ export const CORE_CSS = String.raw`/**
   [data-dev-toolbar] :where(input, select, textarea):focus-visible {
     outline: 2px solid var(--dtb-accent);
     outline-offset: -1px;
+  }
+
+  /* A region that reaches the panel's own inline edges while its content stays
+     in the body's column: it bleeds back through the body's inline padding and
+     re-applies that padding on the inside. Two things want this. A panel that
+     scrolls inside itself rather than at the body level puts it on the scroll
+     container, so the scrollbar sits against the panel edge where a scrollbar
+     belongs. A fixed region with a rule — a toolbar above the scroller, an
+     action row below it — puts it on that region, so the rule runs the width
+     of the panel and reads as its ceiling or floor rather than as an underline
+     under a column of text.
+
+     Bleeding by exactly the body's padding lands the region on the body's
+     padding box, so it adds no scrollable overflow of its own in either
+     writing direction. Content inside a bled scroller must not bleed again —
+     there it would overflow, which is why a section legend's rule stops at the
+     measure.
+
+     The attribute is repeated in the selector on purpose. A part rule is one
+     attribute deep too, and every extension's list and note parts reset their
+     box with a plain margin: 0 — at equal specificity the extension's sheet is
+     injected second and wins, so the bleed would silently do nothing. This is
+     an opt-in written on the element itself, so it outranks the part's own
+     box rules rather than racing them. */
+  [data-dev-toolbar] [data-dtb-bleed][data-dtb-bleed] {
+    margin-inline: calc(-1 * var(--dtb-panel-padding-x));
+    padding-inline: var(--dtb-panel-padding-x);
   }
 
   /* A section legend, not an eyebrow: the word names the section and the rule

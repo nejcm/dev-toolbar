@@ -138,7 +138,7 @@ export function MetricsPanel({ runtime, injectStyles }: PanelProps): ReactNode {
 
   return (
     <div data-dtb-part="metrics-panel" data-dtb-severity={view.severity}>
-      <div data-dtb-part="metrics-tabs" role="tablist" aria-label="Metrics">
+      <div data-dtb-part="metrics-tabs" data-dtb-bleed="" role="tablist" aria-label="Metrics">
         {snapshot.order.map((id) => {
           const tab = snapshot.views[id];
           return (
@@ -183,6 +183,7 @@ export function MetricsPanel({ runtime, injectStyles }: PanelProps): ReactNode {
       <div
         id={metricsPanelId}
         data-dtb-part="metrics-section"
+        data-dtb-bleed=""
         data-dtb-metric={view.id}
         role="tabpanel"
         aria-labelledby={tabId(view.id)}
@@ -216,7 +217,7 @@ export function MetricsPanel({ runtime, injectStyles }: PanelProps): ReactNode {
         ) : null}
       </div>
 
-      <div data-dtb-part="metrics-actions">
+      <div data-dtb-part="metrics-actions" data-dtb-bleed="">
         <button
           type="button"
           data-dtb-part="metrics-action"

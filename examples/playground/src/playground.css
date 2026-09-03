@@ -245,6 +245,27 @@ body {
  * core and the extensions, covering all 12 form controls), so reverting lands
  * on a real value everywhere rather than falling through to a UA border.
  */
+/*
+ * The same reset, one selector wider again: Preflight zeroes the margins on
+ * `blockquote, dl, dd, h1..h6, hr, figure, p, pre` and the margin, padding and
+ * list-style on `ol, ul, menu`. Core zeroes those too, so most of it is
+ * harmless — but it also flattens the places core wants a value: a section
+ * legend's space under it, the `data-dtb-bleed` inline margins that put a
+ * scroll container's scrollbar on the panel edge, the diagnostics omission
+ * list's indent and its markers.
+ *
+ * Reverting is safe because core states this same set explicitly (see the
+ * `:where(menu, ol, ul)` block in src/styles.css), so `revert-layer` lands on
+ * a deliberate zero wherever core has nothing more specific to say, never on a
+ * UA 1em.
+ */
+[data-dev-toolbar]
+  :is(blockquote, dd, dl, figure, h1, h2, h3, h4, h5, h6, hr, menu, ol, p, pre, ul) {
+  margin: revert-layer;
+  padding: revert-layer;
+  list-style: revert-layer;
+}
+
 [data-dev-toolbar],
 [data-dev-toolbar] *,
 [data-dev-toolbar] *::before,
