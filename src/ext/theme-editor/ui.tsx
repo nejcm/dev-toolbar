@@ -90,6 +90,43 @@ export function ThemeChip({
 /* Panel                                                                       */
 /* -------------------------------------------------------------------------- */
 
+/**
+ * The native colour input, holding its own draft.
+ *
+ * A colour input fires `change` for every step of a drag, and committing each
+ * one wrote, persisted and published a hundred overrides for one colour
+ * choice. The draft commits on blur, the way the text field's commits on
+ * Enter. Its own component so that a `key` can throw the draft away — see the
+ * call site.
+ */
+function ColourPicker({
+  view,
+  writable,
+  commit,
+}: {
+  view: TokenView;
+  writable: boolean;
+  commit: (raw: string) => void;
+}): ReactNode {
+  const [draft, setDraft] = useState<string | null>(null);
+  return (
+    <input
+      type="color"
+      data-dtb-part="thm-color"
+      data-dtb-token={view.name}
+      aria-label={`Pick a colour for ${view.name}`}
+      value={draft ?? toColorInputValue(view.effective as string)}
+      disabled={!writable}
+      onChange={(event) => setDraft(event.target.value)}
+      onBlur={() => {
+        if (draft === null) return;
+        commit(draft);
+        setDraft(null);
+      }}
+    />
+  );
+}
+
 function Editor({
   view,
   runtime,
@@ -151,14 +188,16 @@ function Editor({
   return (
     <>
       {view.type === "color" && !view.masked && isHexColor(view.effective) ? (
-        <input
-          type="color"
-          data-dtb-part="thm-color"
-          data-dtb-token={view.name}
-          aria-label={`Pick a colour for ${view.name}`}
-          value={toColorInputValue(view.effective as string)}
-          disabled={!writable}
-          onChange={(event) => commit(event.target.value)}
+        // Keyed on `writable`, which is how the held draft is discarded when
+        // the surface goes away: Chrome fires no blur on a focused element
+        // that *becomes* disabled, so the draft would otherwise sit there
+        // showing a colour nothing on the page is wearing. Remounting is the
+        // reset — no effect, and nothing to keep in sync.
+        <ColourPicker
+          key={writable ? "writable" : "locked"}
+          view={view}
+          writable={writable}
+          commit={commit}
         />
       ) : null}
       {view.type === "color" && !view.masked && view.effective !== null ? (
@@ -322,12 +361,24 @@ export function ThemePanel({ runtime, label, injectStyles }: PanelProps): ReactN
     [snapshot.groups, query],
   );
 
-  const output =
-    format === "css"
-      ? runtime.cssText()
-      : format === "json"
-        ? runtime.recipeText()
-        : runtime.figmaText();
+  // Every export re-serialises the whole catalogue, and this component
+  // re-renders on each keystroke in the search and import boxes. `revision`
+  // advances on publish and only on publish, so it is a complete key for
+  // anything an export can read.
+  const output = useMemo(
+    () =>
+      format === "css"
+        ? runtime.cssText()
+        : format === "json"
+          ? runtime.recipeText()
+          : runtime.figmaText(),
+    // `revision` is not read in the body — that is the point. It is the
+    // publish counter, and a publish is the only thing that can change what
+    // these three helpers return, so it stands in for state the linter cannot
+    // see inside the runtime closure.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [runtime, snapshot.revision, format],
+  );
 
   const failed = Object.keys(snapshot.applyErrors);
   const presets = runtime.presets();
@@ -426,12 +477,25 @@ export function ThemePanel({ runtime, label, injectStyles }: PanelProps): ReactN
         </p>
       ) : null}
 
-      {snapshot.writable ? null : (
+      {snapshot.writable || snapshot.overriddenCount > 0 ? null : (
         <p data-dtb-part="thm-banner" data-dtb-tone="warn" role="status">
           Nothing on this page matches the <code>{snapshot.surface.selector}</code> surface, so
           edits are stored but not shown.
         </p>
       )}
+
+      {/* The surface went away while edits were held on it. They are kept and
+          will be re-applied when it comes back, but nothing on the page is
+          wearing them right now — and the rows carry no per-token error,
+          deliberately, because a surface missing for one render would
+          otherwise mark every row failed. */}
+      {!snapshot.writable && snapshot.overriddenCount > 0 ? (
+        <p data-dtb-part="thm-banner" data-dtb-tone="warn" data-dtb-detached="true" role="status">
+          Nothing matches the <code>{snapshot.surface.selector}</code> surface any more, so{" "}
+          {snapshot.overriddenCount} edit{snapshot.overriddenCount === 1 ? " is" : "s are"} no
+          longer on the page. They are kept, and go back on when it returns.
+        </p>
+      ) : null}
 
       {snapshot.notice ? (
         <p data-dtb-part="thm-banner" data-dtb-tone="info" role="status">

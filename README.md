@@ -885,7 +885,12 @@ So it behaves like `/ext/flags`, which changes what your app *does*:
 
 - **Edits persist** under `dtb:v1:<instanceId>:ext:<id>:overrides` and are re-applied
   on the next mount. `readStoredThemeOverrides()` reads them before you render, if your
-  own theme object needs to agree with the panel on the first paint.
+  own theme object needs to agree with the panel on the first paint. It applies the same
+  vetting the panel does — `localStorage` is writable by anything on the origin — so pass
+  it the same `tokens` (and `mask`, if you changed it) to get exactly the map the panel
+  will keep. Without `tokens` every value is checked as a `string`, the loosest type: the
+  whole security pass still runs, but a value your catalogue declares as a `number` or
+  `length` and would refuse as one survives.
 - **There is a kill switch.** Any page loaded with `?dtb-theme=reset` drops every edit
   *before* any of them is applied, because the edit that makes the page unreadable is
   the one you cannot see the panel to remove.
