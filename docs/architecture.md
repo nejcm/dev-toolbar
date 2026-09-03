@@ -371,7 +371,8 @@ Set them on `[data-dev-toolbar]`, or on any ancestor. Unlayered CSS wins.
 | `--dtb-bg` | `#f6f6f7` | Bar background |
 | `--dtb-fg` | `#202124` | Foreground |
 | `--dtb-muted` | `#6b6f76` | Secondary text |
-| `--dtb-border` | `rgba(0,0,0,.12)` | Bar, panel and menu borders |
+| `--dtb-border` | `rgba(0,0,0,.12)` | Panel and menu borders, inputs, item dividers |
+| `--dtb-bar-border` | `rgba(0,0,0,.07)` | The bar's own edge — half `--dtb-border`'s strength (`rgba(255,255,255,.07)` on dark) |
 | `--dtb-accent` | `#5e6ad2` | Focus ring, resizer highlight |
 | `--dtb-item-bg` | `transparent` | Trigger background |
 | `--dtb-item-hover-bg` | `rgba(0,0,0,.06)` | Trigger hover |

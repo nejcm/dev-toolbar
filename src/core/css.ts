@@ -37,6 +37,13 @@ export const CORE_CSS = String.raw`/**
     --dtb-fg: #202124;
     --dtb-muted: #6b6f76;
     --dtb-border: rgba(0, 0, 0, 0.12);
+    /* The bar's own edge, softer than the borders inside it: half the strength
+       of --dtb-border, which stays as it is for panel rules, inputs and the
+       item dividers. The bar's background paints under its own border
+       (background-clip is border-box by default), so these composite over the
+       bar rather than the page — a slightly darker grey on light, and on dark
+       a line a little lighter than the bar rather than a bright one. */
+    --dtb-bar-border: rgba(0, 0, 0, 0.07);
     --dtb-accent: #5e6ad2;
     --dtb-item-bg: transparent;
     --dtb-item-hover-bg: rgba(0, 0, 0, 0.06);
@@ -88,6 +95,7 @@ export const CORE_CSS = String.raw`/**
     --dtb-fg: #e6e6e8;
     --dtb-muted: #9a9ea6;
     --dtb-border: rgba(255, 255, 255, 0.14);
+    --dtb-bar-border: rgba(255, 255, 255, 0.07);
     --dtb-accent: #8b95f2;
     --dtb-item-hover-bg: rgba(255, 255, 255, 0.08);
     --dtb-item-active-bg: rgba(0, 0, 0, 0.35);
@@ -110,6 +118,7 @@ export const CORE_CSS = String.raw`/**
       --dtb-fg: #e6e6e8;
       --dtb-muted: #9a9ea6;
       --dtb-border: rgba(255, 255, 255, 0.14);
+      --dtb-bar-border: rgba(255, 255, 255, 0.07);
       --dtb-accent: #8b95f2;
       --dtb-item-hover-bg: rgba(255, 255, 255, 0.08);
       --dtb-item-active-bg: rgba(0, 0, 0, 0.35);
@@ -171,11 +180,11 @@ export const CORE_CSS = String.raw`/**
   }
 
   [data-dev-toolbar][data-dtb-position="bottom"] [data-dtb-part="bar"] {
-    border-top: 1px solid var(--dtb-border);
+    border-top: 1px solid var(--dtb-bar-border);
   }
 
   [data-dev-toolbar][data-dtb-position="top"] [data-dtb-part="bar"] {
-    border-bottom: 1px solid var(--dtb-border);
+    border-bottom: 1px solid var(--dtb-bar-border);
   }
 
   /* Overlay slots occupy no space of their own; the extension positions its

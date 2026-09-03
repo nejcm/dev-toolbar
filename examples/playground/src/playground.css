@@ -241,6 +241,17 @@ body {
   border-color: revert-layer;
 }
 
+/*
+ * One exception, and it is the reason a blanket revert needs watching: the
+ * Tailwind badge is a `<button>` this app styles entirely with utility
+ * classes, so no layered rule declares its border and `revert-layer` walks
+ * all the way past the author origin to the UA's own `2px outset`. It wants
+ * Preflight's reset, so it opts back out.
+ */
+[data-dev-toolbar] [data-testid="tw-chip"] {
+  border-width: 0;
+}
+
 /* --------------------------------------------------------------------------
  * Restyle demo.
  *
