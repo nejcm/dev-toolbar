@@ -1,27 +1,18 @@
 name: Release
 
-# npm's trusted publisher matches on the *entry-point* workflow's filename
-# (docs.npmjs.com/trusted-publishers), so `npm publish` has to live in this
-# file. Renaming it breaks publishing until npmjs.com is reconfigured.
+# npm's trusted publisher matches this file by name (docs.npmjs.com/trusted-publishers); renaming it breaks publishing until reconfigured on npmjs.com.
 
 on:
-  # Every merge to `main` releases: bump, changelog, tag, npm. There is no
-  # loop, on two counts — the release commit lands under `GITHUB_TOKEN`, which
-  # triggers no workflows, and a run over it would find nothing releasable and
-  # stop at `release-please` anyway.
-  push:
-    branches: [main]
+  # Disabled: push trigger commented out, so merges to `main` no longer release/publish. Restore the `push` block to re-enable.
+  # push:
+  #   branches: [main]
+  workflow_dispatch: {}
 
 # Least privilege at the top; each job widens only what it needs.
 permissions:
   contents: read
 
-# Load-bearing: on `workflow_call` `github.workflow`/`github.ref` are the
-# *caller's*, so the gate's CI run lands in this group rather than CI's own.
-# Without it, CI's `cancel-in-progress` could cancel a release between tagging
-# and publishing. One release line, so a fixed name — and `cancel-in-progress:
-# false` queues rapid merges to `main` instead of cancelling a release
-# in flight; each queued run releases whatever is unreleased by its turn.
+# `workflow_call` inherits the caller's `github.workflow`/`github.ref`, so the gate's CI run joins this group instead of CI's own — otherwise CI's cancel-in-progress could kill a release mid-publish. Fixed name, `cancel-in-progress: false`: rapid merges queue instead of cancelling.
 concurrency:
   group: release
   cancel-in-progress: false
@@ -31,32 +22,19 @@ jobs:
   release-please:
     name: release-please
     runs-on: ubuntu-latest
-    # These cover the `gh pr merge` step, which deliberately stays on
-    # `GITHUB_TOKEN`. Both `release-please` steps authenticate with
-    # `secrets.GH_TOKEN` instead and are bounded by that PAT's own scopes, not
-    # by this block.
+    # Covers only the `gh pr merge` step below; both release-please steps auth with secrets.GH_TOKEN instead.
     permissions:
       contents: write # push the release branch; merge the release PR
       pull-requests: write # the `gh pr merge` call below
     timeout-minutes: 10
     outputs:
-      # `release_created`, not `releases_created`: the latter is always set —
-      # to the *string* "false", which GitHub does not treat as falsy.
-      #
-      # `tag` releases in the steady state; `release` does so only if an
-      # earlier release PR was merged by hand. Unset outputs are '', so all
-      # three fall back together. If both release, `tag` wins and the older
-      # tag is left tagged-but-unpublished (see CONTRIBUTING.md).
+      # Not `releases_created` — that's always set, to the *string* "false" (truthy). `tag` fires in steady state, `release` only if a release PR was merged by hand; unset outputs are '' so all fall back together.
       release_created: ${{ steps.tag.outputs.release_created || steps.release.outputs.release_created }}
-      # `vX.Y.Z` only because of `include-component-in-tag: false`; otherwise
-      # the `node` release type tags `dev-toolbar-vX.Y.Z` and never finds the
-      # hand-pushed `v0.1.0`.
+      # `vX.Y.Z` via `include-component-in-tag: false`, or the `node` release type would tag `dev-toolbar-vX.Y.Z` and miss the hand-pushed `v0.1.0`.
       tag_name: ${{ steps.tag.outputs.tag_name || steps.release.outputs.tag_name }}
       version: ${{ steps.tag.outputs.version || steps.release.outputs.version }}
     steps:
-      # Fail here rather than 40 lines later with an opaque 401/403. An unset
-      # secret is '', and passing '' to the action's `token` input overrides
-      # its `github.token` default with an empty credential.
+      # Fail fast with a clear message: an unset secret is '', which silently overrides the action's github.token default with an empty credential.
       - name: Assert the release PAT is configured
         env:
           RELEASE_TOKEN: ${{ secrets.GH_TOKEN }}
@@ -66,49 +44,22 @@ jobs:
             exit 1
           fi
 
-      # SHA-pinned as in `ci.yml`. The PR this opens lives for one API round
-      # trip (next step); it exists to carry the squash subject.
+      # SHA-pinned like ci.yml. Opens a short-lived PR just to carry the squash subject for the next step.
       - name: Run release-please
         id: release
         uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5.0.0
         with:
-          # NOT `github.token`. GitHub refuses `POST /repos/{o}/{r}/releases`
-          # from `GITHUB_TOKEN` when the tag's commit range touches
-          # `.github/workflows/`, with a bare "Resource not accessible by
-          # integration" — which is what stalled v0.3.0. The PAT needs
-          # contents, pull-requests and workflows write.
+          # Must be the PAT: GitHub refuses releases whose tag spans .github/workflows/ under GITHUB_TOKEN (stalled v0.3.0).
           token: ${{ secrets.GH_TOKEN }}
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
 
-      # Gated on the repository's *state* (is there an open release PR?), not
-      # on what this run happened to do. `prs_created` is only true when the
-      # action opened a PR this run; when it finds an existing one it logs "PR
-      # #N remained the same" and creates nothing, so a gate on `prs_created`
-      # skips the merge and the run goes green having released nothing — and
-      # every later run repeats that, stranding the PR forever. Looking the PR
-      # up instead makes a stalled release self-heal on the next push.
-      #
-      # Matched on release-please's branch prefix rather than its `autorelease:
-      # pending` label, so labelling stays cosmetic; `ci.yml` keys its skip off
-      # the same prefix. Squash so the subject is
-      # `chore(release): release X.Y.Z (#N)` — what the config's title patterns
-      # parse next. The retry is a real race: GitHub computes mergeability
-      # asynchronously and rejects a merge made before it has a verdict.
+      # Gated on repo state (an open release PR exists), not on `prs_created` — that's only true when a PR was opened *this run*, so it'd skip an existing PR and strand it forever. Matches release-please's branch prefix (ci.yml keys off the same). Squash merge so the subject is `chore(release): release X.Y.Z (#N)`, parsed by the config's title patterns. Retries because GitHub computes mergeability async and can reject a too-early merge.
       - name: Merge the release PR
         id: merge
         env:
-          # `github.token`, NOT the PAT, and unrelated to the secret that
-          # happens to share this name — `GH_TOKEN` is just what the `gh` CLI
-          # reads. Merging under `GITHUB_TOKEN` is what keeps the resulting
-          # release commit from re-triggering this workflow (see the `push`
-          # trigger above). The release PR touches no workflow files, so the
-          # restriction that forces the PAT on the steps around it does not
-          # apply here.
+          # github.token, not the PAT — keeps the resulting release commit from re-triggering this workflow's push trigger. `GH_TOKEN` is just gh's env var name.
           GH_TOKEN: ${{ github.token }}
-          # `gh` otherwise infers the repository from a git remote, and this job
-          # never checks out — every call would die on "fatal: not a git
-          # repository".
           GH_REPO: ${{ github.repository }}
         run: |
           pr="$(gh pr list --base main --state open \
@@ -139,37 +90,18 @@ jobs:
           echo "::error::Could not merge release PR #$pr after 5 attempts."
           exit 1
 
-      # Tags the commit the merge just landed, and sets `release_created`. A
-      # step rather than a second run of this workflow because the merge lands
-      # under `GITHUB_TOKEN`, so the `push` trigger above never sees it. Opens
-      # no new PR — nothing releasable is left.
+      # Tags the commit just merged and sets `release_created`. A separate step (not a re-trigger) because the merge above lands under GITHUB_TOKEN, which triggers no workflows.
       - name: Run release-please (tag the merged release)
         id: tag
         if: steps.merge.outputs.merged == 'true'
         uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5.0.0
         with:
-          # NOT `github.token`. GitHub refuses `POST /repos/{o}/{r}/releases`
-          # from `GITHUB_TOKEN` when the tag's commit range touches
-          # `.github/workflows/`, with a bare "Resource not accessible by
-          # integration" — which is what stalled v0.3.0. The PAT needs
-          # contents, pull-requests and workflows write.
+          # Must be the PAT: GitHub refuses releases whose tag spans .github/workflows/ under GITHUB_TOKEN (stalled v0.3.0).
           token: ${{ secrets.GH_TOKEN }}
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
 
-  # 2. The only CI the release commit gets: `ci.yml` skips it both as a PR and
-  #    as a push, so without this the version bump and generated changelog
-  #    reach npm unverified.
-  #
-  # `ci.yml`'s `workflow_call` and its `called` input exist for this; do not
-  # remove them. `called` defaults to `true` and is what stops CI's
-  # `chore(release):` skip from skipping the gate itself.
-  #
-  # The skips rest on the `chore(release):` marker, which
-  # `release-please-config.json`'s two title patterns restore over
-  # release-please's default `chore(main):` (CONTRIBUTING.md's "Releasing"
-  # explains why both keys). Break them and only `ci.yml`'s branch-prefix
-  # check still holds.
+  # 2. The only CI the release commit gets — ci.yml skips it as both PR and push, so this is what verifies the version bump before it reaches npm. Relies on ci.yml's `workflow_call`/`called` input and the `chore(release):` marker (see CONTRIBUTING.md, "Releasing"); don't remove either.
   gate:
     name: gate (CI on the release commit)
     needs: [release-please]
@@ -178,25 +110,14 @@ jobs:
       contents: read
     uses: ./.github/workflows/ci.yml
     with:
-      # Load-bearing. Without it CI checks out the caller's `github.sha` — the
-      # push that started this run, one commit *before* the release commit the
-      # job above just created — so the gate would verify the pre-release tree
-      # and pass while saying it had tested the release.
+      # Load-bearing: without it CI checks out the pre-release commit (github.sha) and passes while claiming to have tested the release.
       ref: ${{ needs.release-please.outputs.tag_name }}
 
   # 3. Publish to npm via trusted publishing (OIDC). No token, anywhere.
   #
-  # No GitHub Environment gate, deliberately: solo-maintainer repo, where
-  # `prevent_self_review` locks out the only maintainer and without it the
-  # approval is just a pause. npmjs.com's trusted publisher already pins repo
-  # + filename, the one real protection an Environment adds — don't
-  # re-litigate without a second maintainer. `npm stage publish` (npm >=
-  # 11.15.0) is the upgrade worth revisiting.
+  # No GitHub Environment gate: solo-maintainer repo where `prevent_self_review` would lock out the only maintainer, and npmjs.com's trusted publisher already pins repo + filename. Revisit if a second maintainer joins, or via `npm stage publish` (npm >= 11.15.0).
   #
-  # A failure here or in `gate` leaves the tag and GitHub release in place,
-  # one version ahead of npm. Recover with "Re-run failed jobs", never
-  # "Re-run all jobs" — CONTRIBUTING.md, "When a release is tagged but not
-  # published".
+  # A failure here or in `gate` leaves the tag/release published but npm behind. Recover with "Re-run failed jobs", not "Re-run all jobs" — CONTRIBUTING.md, "When a release is tagged but not published".
   publish:
     name: publish to npm
     needs: [release-please, gate]
@@ -204,20 +125,14 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      # Mints the OIDC token npm exchanges for a publish credential and
-      # Sigstore signs provenance with. Not the authentication — that's the
-      # trusted publisher on npmjs.com; without it, E401/E404 regardless.
+      # Mints the OIDC token for npm's publish credential and Sigstore provenance; auth itself is npmjs.com's trusted publisher config.
       id-token: write
     timeout-minutes: 20
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          # The release tag, not the default `github.sha`. `github.sha` is the
-          # push that triggered this run, which predates the release commit —
-          # checking it out packs the *previous* version's `package.json` and
-          # publishes that, leaving the tag that was just created unpublished
-          # forever. Observed: v0.4.0 tagged, tarball built as 0.3.0.
+          # The release tag, not github.sha (predates the release commit) — else this packs and publishes the previous version. Observed: v0.4.0 tagged, tarball built as 0.3.0.
           ref: ${{ needs.release-please.outputs.tag_name }}
 
       - name: Set up bun
@@ -226,9 +141,7 @@ jobs:
           bun-version-file: package.json
           no-cache: true
 
-      # Nothing here runs on Node directly; this step exists because trusted
-      # publishing needs npm >= 11.5.1 and Node >= 22.14.0, above the runner's
-      # preinstalled npm. The bun cache step below owns caching.
+      # Trusted publishing needs npm >= 11.5.1 / Node >= 22.14.0, above the runner's preinstalled npm; nothing here runs on Node directly.
       - name: Set up Node
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
@@ -236,11 +149,7 @@ jobs:
           registry-url: https://registry.npmjs.org
           package-manager-cache: false
 
-      # `.nvmrc` is owned by the test environment, not publishing, so a Node
-      # downgrade would drop npm below the floor and fail with an opaque
-      # E401/E404. The fallback is pinned, not `npm@latest` — an unpinned
-      # install in the step that holds the publish credential. Dependabot does
-      # not watch it.
+      # Fallback is pinned (not npm@latest) since this step holds the publish credential; Dependabot doesn't watch it.
       - name: Assert npm supports trusted publishing
         run: |
           required=11.5.1
@@ -263,13 +172,6 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
-      # Lifecycle scripts left on so `prepublishOnly` (`typecheck && build`)
-      # rebuilds `dist/` from committed source at pack time rather than
-      # packing leftovers — ~15s duplicated from the gate, and the safety net
-      # under a manual emergency publish.
-      #
-      # No `--provenance`: trusted publishing attaches it. `npm`, never `bun
-      # publish` — bun supports neither OIDC nor provenance and silently
-      # ignores `publishConfig.provenance` (oven-sh/bun#18611).
+      # Lifecycle scripts stay on so prepublishOnly (typecheck && build) rebuilds dist/ at pack time, not from leftovers. No --provenance (trusted publishing attaches it); npm not `bun publish` — bun supports neither OIDC nor provenance (oven-sh/bun#18611).
       - name: Publish to npm
         run: npm publish --access public
