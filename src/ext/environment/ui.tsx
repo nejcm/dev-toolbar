@@ -128,7 +128,9 @@ export function EnvironmentPanel({ runtime, injectStyles }: PanelProps): ReactNo
           if (fields.length === 0) return null;
           return (
             <section key={group} data-dtb-part="env-group" data-dtb-group={group}>
-              <h3 data-dtb-part="env-group-title">{GROUP_LABELS[group]}</h3>
+              <h3 data-dtb-part="env-group-title" data-dtb-legend="">
+                {GROUP_LABELS[group]}
+              </h3>
               <dl data-dtb-part="env-rows">
                 {fields.map((field) => (
                   <Row key={field.id} field={field} />

@@ -52,7 +52,7 @@ export const THEME_EDITOR_CSS = String.raw`@layer dev-toolbar {
   [data-dev-toolbar] [data-dtb-part="thm-panel"] {
     display: flex;
     flex-direction: column;
-    gap: 10px;
+    gap: var(--dtb-space-3);
     max-width: 860px;
   }
 
@@ -61,25 +61,33 @@ export const THEME_EDITOR_CSS = String.raw`@layer dev-toolbar {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
-    gap: 6px;
+    gap: var(--dtb-space-2);
   }
 
+  /* The row of buttons that opens the panel is its masthead, so it closes with
+     a rule the way every section below it does. */
+  [data-dev-toolbar] [data-dtb-part="thm-toolbar"] {
+    padding-bottom: var(--dtb-space-3);
+    border-bottom: 1px solid var(--dtb-border);
+  }
+
+  /* Geometry, ground and border come from core's field rule; these are the
+     token names and values a developer types, so they stay mono. */
   [data-dev-toolbar] [data-dtb-part="thm-search"],
   [data-dev-toolbar] [data-dtb-part="thm-input"],
   [data-dev-toolbar] [data-dtb-part="thm-select"],
   [data-dev-toolbar] [data-dtb-part="thm-import"] {
-    padding: 2px 6px;
-    border: 1px solid var(--dtb-border);
-    border-radius: var(--dtb-radius);
-    background: var(--dtb-panel-bg);
-    color: var(--dtb-fg);
-    font: inherit;
     font-family: var(--dtb-font-mono);
+  }
+
+  [data-dev-toolbar] [data-dtb-part="thm-search"] {
+    flex: 1 1 220px;
+    max-width: 320px;
   }
 
   [data-dev-toolbar] [data-dtb-part="thm-import"] {
     width: 100%;
-    min-height: 64px;
+    min-height: 88px;
     resize: vertical;
   }
 
@@ -88,7 +96,10 @@ export const THEME_EDITOR_CSS = String.raw`@layer dev-toolbar {
   }
 
   [data-dev-toolbar] [data-dtb-part="thm-action"] {
-    padding: 2px 8px;
+    display: inline-flex;
+    align-items: center;
+    min-height: var(--dtb-control-height);
+    padding: 0 var(--dtb-control-padding-x);
     border: 1px solid var(--dtb-border);
     border-radius: var(--dtb-radius);
     background: var(--dtb-item-bg);
@@ -117,7 +128,7 @@ export const THEME_EDITOR_CSS = String.raw`@layer dev-toolbar {
 
   [data-dev-toolbar] [data-dtb-part="thm-banner"] {
     margin: 0;
-    padding: 6px 8px;
+    padding: var(--dtb-space-2) var(--dtb-space-3);
     border-radius: var(--dtb-radius);
   }
 
@@ -137,19 +148,14 @@ export const THEME_EDITOR_CSS = String.raw`@layer dev-toolbar {
 
   /* ---- Groups and rows ---- */
 
-  [data-dev-toolbar] [data-dtb-part="thm-group-name"] {
-    margin: 0;
-    font-size: calc(var(--dtb-font-size) - 1px);
-    text-transform: uppercase;
-    letter-spacing: 0.06em;
-    color: var(--dtb-muted);
-  }
+  /* The heading also carries data-dtb-legend — core owns that treatment, so
+     every extension's sections look alike. */
 
   [data-dev-toolbar] [data-dtb-part="thm-list"] {
     display: flex;
     flex-direction: column;
-    gap: 4px;
-    margin: 0 0 8px;
+    gap: var(--dtb-space-2);
+    margin: 0 0 var(--dtb-space-5);
     padding: 0;
     list-style: none;
   }
@@ -157,8 +163,9 @@ export const THEME_EDITOR_CSS = String.raw`@layer dev-toolbar {
   [data-dev-toolbar] [data-dtb-part="thm-row"] {
     display: grid;
     grid-template-columns: minmax(140px, 1fr) auto;
-    gap: 2px 8px;
-    padding: 6px 8px;
+    gap: var(--dtb-space-1) var(--dtb-space-4);
+    align-items: center;
+    padding: var(--dtb-space-2) var(--dtb-space-3);
     border: 1px solid var(--dtb-border);
     border-radius: var(--dtb-radius);
   }
@@ -179,7 +186,7 @@ export const THEME_EDITOR_CSS = String.raw`@layer dev-toolbar {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
-    gap: 6px;
+    gap: var(--dtb-chip-gap);
   }
 
   [data-dev-toolbar] [data-dtb-part="thm-token"] {
@@ -188,7 +195,7 @@ export const THEME_EDITOR_CSS = String.raw`@layer dev-toolbar {
   }
 
   [data-dev-toolbar] [data-dtb-part="thm-tag"] {
-    padding: 0 4px;
+    padding: 0 var(--dtb-space-1);
     border-radius: var(--dtb-radius);
     background: var(--dtb-warn-bg);
     color: var(--dtb-warn);
@@ -210,7 +217,7 @@ export const THEME_EDITOR_CSS = String.raw`@layer dev-toolbar {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
-    gap: 4px;
+    gap: var(--dtb-space-2);
     justify-content: flex-end;
   }
 
@@ -222,8 +229,8 @@ export const THEME_EDITOR_CSS = String.raw`@layer dev-toolbar {
   }
 
   [data-dev-toolbar] [data-dtb-part="thm-color"] {
-    width: 26px;
-    height: 20px;
+    width: 30px;
+    height: var(--dtb-control-height);
     padding: 0;
     border: 1px solid var(--dtb-border);
     border-radius: var(--dtb-radius);
@@ -234,7 +241,7 @@ export const THEME_EDITOR_CSS = String.raw`@layer dev-toolbar {
   [data-dev-toolbar] [data-dtb-part="thm-values"] {
     display: flex;
     flex-wrap: wrap;
-    gap: 10px;
+    gap: var(--dtb-space-3);
     grid-column: 1 / -1;
     color: var(--dtb-muted);
   }
@@ -260,7 +267,7 @@ export const THEME_EDITOR_CSS = String.raw`@layer dev-toolbar {
   [data-dev-toolbar] [data-dtb-part="thm-output"] {
     max-height: 220px;
     margin: 0;
-    padding: 8px;
+    padding: var(--dtb-space-3);
     overflow: auto;
     border: 1px solid var(--dtb-border);
     border-radius: var(--dtb-radius);

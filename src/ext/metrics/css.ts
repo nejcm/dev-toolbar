@@ -17,6 +17,16 @@ export const METRICS_CSS = String.raw`@layer dev-toolbar {
     gap: var(--dtb-item-gap);
   }
 
+  /* Five readouts in a row that has no dividers inside it, so the boundaries
+     have to come from binding rather than from more width — the bar cannot
+     afford more width or the whole extension collapses into the ⋮ sooner.
+     The dot belongs to the label after it, so it sits nearer that label than
+     the label sits to its own value, and the eye groups dot-label-value
+     before it groups value-dot. */
+  [data-dev-toolbar] [data-dtb-part="metrics-chip"] [data-dtb-part="metrics-dot"] {
+    margin-inline-end: calc(var(--dtb-space-1) - var(--dtb-chip-gap));
+  }
+
   [data-dev-toolbar] [data-dtb-part="metrics-chip"] {
     display: inline-flex;
     align-items: center;
@@ -61,21 +71,23 @@ export const METRICS_CSS = String.raw`@layer dev-toolbar {
     color: var(--dtb-danger);
   }
 
+  /* Inside a ⋮ row, which supplies the padding — see core's
+     overflow-menu-item. */
   [data-dev-toolbar] [data-dtb-part="metrics-overflow-list"] {
     display: flex;
     flex-direction: column;
-    gap: 4px;
-    padding: 2px 4px;
+    gap: var(--dtb-space-1);
+    padding: 0;
   }
 
   [data-dev-toolbar] [data-dtb-part="metrics-overflow-row"] {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 12px;
+    gap: var(--dtb-space-4);
     background: none;
     border: 0;
-    padding: 2px 0;
+    padding: 0;
     color: inherit;
     font: inherit;
     cursor: pointer;
@@ -84,24 +96,28 @@ export const METRICS_CSS = String.raw`@layer dev-toolbar {
   [data-dev-toolbar] [data-dtb-part="metrics-panel"] {
     display: flex;
     flex-direction: column;
-    gap: 8px;
+    gap: var(--dtb-space-3);
     height: 100%;
     min-height: 0;
   }
 
+  /* The tabs sit on the same rule the panel's footer closes with, and the
+     row is inset from it by a hair so a selected tab's ground does not touch
+     the rule. */
   [data-dev-toolbar] [data-dtb-part="metrics-tabs"] {
     display: flex;
-    gap: var(--dtb-gap);
+    gap: var(--dtb-space-1);
     flex: 0 0 auto;
     border-bottom: 1px solid var(--dtb-border);
-    padding-bottom: 4px;
+    padding-bottom: var(--dtb-space-2);
   }
 
   [data-dev-toolbar] [data-dtb-part="metrics-tab"] {
     display: inline-flex;
     align-items: center;
-    gap: 4px;
-    padding: 2px 8px;
+    gap: var(--dtb-space-1);
+    min-height: var(--dtb-control-height);
+    padding: 0 var(--dtb-control-padding-x);
     border: 0;
     border-radius: var(--dtb-radius);
     background: transparent;
@@ -127,7 +143,7 @@ export const METRICS_CSS = String.raw`@layer dev-toolbar {
   [data-dev-toolbar] [data-dtb-part="metrics-section"] {
     display: flex;
     flex-direction: column;
-    gap: 8px;
+    gap: var(--dtb-space-3);
     flex: 1 1 auto;
     min-height: 0;
     overflow: auto;
@@ -136,7 +152,7 @@ export const METRICS_CSS = String.raw`@layer dev-toolbar {
   [data-dev-toolbar] [data-dtb-part="metrics-headline"] {
     display: flex;
     align-items: baseline;
-    gap: 8px;
+    gap: var(--dtb-space-2);
   }
 
   [data-dev-toolbar] [data-dtb-part="metrics-headline-value"] {
@@ -179,7 +195,7 @@ export const METRICS_CSS = String.raw`@layer dev-toolbar {
   [data-dev-toolbar] [data-dtb-part="metrics-rows"] {
     display: grid;
     grid-template-columns: max-content 1fr;
-    gap: 2px 16px;
+    gap: var(--dtb-space-1) var(--dtb-space-5);
     margin: 0;
   }
 
@@ -207,8 +223,8 @@ export const METRICS_CSS = String.raw`@layer dev-toolbar {
 
   [data-dev-toolbar] [data-dtb-part="metrics-requests"] th,
   [data-dev-toolbar] [data-dtb-part="metrics-requests"] td {
-    padding-block: 2px;
-    padding-inline: 0 8px;
+    padding-block: var(--dtb-space-1);
+    padding-inline: 0 var(--dtb-space-4);
     border-bottom: 1px solid var(--dtb-border);
     white-space: nowrap;
   }
@@ -227,17 +243,22 @@ export const METRICS_CSS = String.raw`@layer dev-toolbar {
     color: var(--dtb-warn);
   }
 
+  /* The panel's floor — same rule and same measure as the tabs above it. */
   [data-dev-toolbar] [data-dtb-part="metrics-actions"] {
     display: flex;
     align-items: center;
-    gap: 8px;
+    flex-wrap: wrap;
+    gap: var(--dtb-space-2);
     flex: 0 0 auto;
     border-top: 1px solid var(--dtb-border);
-    padding-top: 6px;
+    padding-top: var(--dtb-space-3);
   }
 
   [data-dev-toolbar] [data-dtb-part="metrics-action"] {
-    padding: 2px 8px;
+    display: inline-flex;
+    align-items: center;
+    min-height: var(--dtb-control-height);
+    padding: 0 var(--dtb-control-padding-x);
     border: 1px solid var(--dtb-border);
     border-radius: var(--dtb-radius);
     background: transparent;
