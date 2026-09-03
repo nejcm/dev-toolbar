@@ -6,6 +6,27 @@
  * — had no injectStyles test until this file. Environment, metrics and overlays
  * already asserted own-sheet presence; this file generalises the pattern and
  * adds the foreign-sheet half that catches a wrong ensureXStyles argument.
+ *
+ * Mounting the toolbar renders only the `compact` slot and the overlay slots —
+ * `PanelHost` never mounts a panel that has not been opened — so six of the
+ * fifteen call sites live in a panel component that a bare `mount()` would
+ * never run. Each case therefore names its `panel` id and the test opens it
+ * before asserting.
+ *
+ * What `mountEverySurface` checks is a floor, not a proof: it catches the host
+ * slot failing to render, and an extension whose surface threw. It cannot
+ * prove the extension's own component ran. Core renders the
+ * `data-dtb-part="item"` wrapper for every extension and substitutes a default
+ * trigger when `compact` is absent (`src/core/Bar.tsx`), and the
+ * `data-dtb-part="panel"` wrapper sits outside `ExtensionBoundary`
+ * (`src/core/PanelHost.tsx`) — so a slot deleted from an extension's factory
+ * still leaves both wrappers in the DOM and this file drops to half coverage
+ * without failing. The error-chip assertion closes the crash half of that;
+ * the deleted-slot half has no cheap generic check and is not covered here.
+ *
+ * command-menu is the one extension with no panel: it lives in the overlay
+ * slot on purpose (see `src/ext/command-menu/index.tsx`), and both of its call
+ * sites — trigger and overlay — mount from the bare mount.
  */
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { cleanupToolbar, mountToolbar } from "@nejcm/dev-toolbar/testing";
@@ -17,6 +38,7 @@ import { flags } from "../flags";
 import { metrics } from "../metrics";
 import { overlays } from "../overlays";
 import { themeEditor } from "../theme-editor";
+import type { ToolbarHandle } from "@nejcm/dev-toolbar/testing";
 import type { DevToolbarExtension } from "../../core/contract";
 
 const EXTENSION_STYLE_ENTRIES = [
@@ -41,7 +63,14 @@ type ExtensionName =
 interface ExtensionCase {
   name: ExtensionName;
   entry: (typeof EXTENSION_STYLE_ENTRIES)[number];
-  mount(injectStyles: boolean): void;
+  /**
+   * Extension id whose panel holds a second `useExtensionSurface` call site,
+   * or `null` for command-menu, which has no panel slot at all.
+   */
+  panel: ExtensionName | null;
+  /** Extension ids whose overlay slot holds a call site. */
+  overlays: readonly ExtensionName[];
+  mount(injectStyles: boolean): ToolbarHandle;
 }
 
 const memoryRead = () => ({
@@ -53,41 +82,48 @@ const memoryRead = () => ({
 const mountExtension = (
   extension: DevToolbarExtension,
   ui: Parameters<typeof mountToolbar>[0] = null,
-) => {
+): ToolbarHandle =>
   mountToolbar(ui, {
     extensions: [extension],
     instanceId: "test",
     layout: { barWidth: 1200, itemWidth: 120 },
-  });
-};
+  }).toolbar;
 
 const EXTENSIONS: ExtensionCase[] = [
   {
     name: "command-menu",
     entry: "ext-command-menu",
+    panel: null,
+    overlays: ["command-menu"],
     mount(injectStyles) {
-      mountExtension(commandMenu({ apple: false, injectStyles }));
+      return mountExtension(commandMenu({ apple: false, injectStyles }));
     },
   },
   {
     name: "diagnostics",
     entry: "ext-diagnostics",
+    panel: "diagnostics",
+    overlays: [],
     mount(injectStyles) {
-      mountExtension(diagnostics({ injectStyles }));
+      return mountExtension(diagnostics({ injectStyles }));
     },
   },
   {
     name: "environment",
     entry: "ext-environment",
+    panel: "environment",
+    overlays: [],
     mount(injectStyles) {
-      mountExtension(environment({ injectStyles }));
+      return mountExtension(environment({ injectStyles }));
     },
   },
   {
     name: "flags",
     entry: "ext-flags",
+    panel: "flags",
+    overlays: [],
     mount(injectStyles) {
-      mountExtension(
+      return mountExtension(
         flags({
           injectStyles,
           flags: [{ key: "test", type: "boolean", defaultValue: false, value: false }],
@@ -98,8 +134,10 @@ const EXTENSIONS: ExtensionCase[] = [
   {
     name: "metrics",
     entry: "ext-metrics",
+    panel: "metrics",
+    overlays: [],
     mount(injectStyles) {
-      mountExtension(
+      return mountExtension(
         metrics({
           injectStyles,
           only: ["memory"],
@@ -111,15 +149,19 @@ const EXTENSIONS: ExtensionCase[] = [
   {
     name: "overlays",
     entry: "ext-overlays",
+    panel: "overlays",
+    overlays: ["overlays"],
     mount(injectStyles) {
-      mountExtension(overlays({ injectStyles }));
+      return mountExtension(overlays({ injectStyles }));
     },
   },
   {
     name: "theme-editor",
     entry: "ext-theme-editor",
+    panel: "theme-editor",
+    overlays: [],
     mount(injectStyles) {
-      mountExtension(
+      return mountExtension(
         themeEditor({
           injectStyles,
           tokens: [{ name: "--brand", type: "color", value: "#000000" }],
@@ -149,25 +191,73 @@ afterEach(() => {
   removeExtensionStyles();
 });
 
-describe.each(EXTENSIONS)("$name extension surface", ({ name, entry, mount }) => {
+/**
+ * Mounts, then opens the panel so every `useExtensionSurface` call site the
+ * extension owns is given the chance to run.
+ *
+ * The presence assertions prove the *host slot* rendered and that nothing
+ * degraded to an error chip — not that the extension's own component ran; see
+ * the file header for what this does and does not catch.
+ */
+function mountEverySurface(target: ExtensionCase, injectStyles: boolean): void {
+  const toolbar = target.mount(injectStyles);
+
+  expect(toolbar.item(target.name), `${target.name} must render a bar item`).not.toBeNull();
+
+  // A surface that throws is caught by `ExtensionBoundary` and replaced with an
+  // error chip, leaving the item/panel wrapper in place — so without this the
+  // remaining surface injects the own sheet and the swap check passes on half
+  // the call sites.
+  expect(
+    toolbar.errorChip(target.name),
+    `${target.name} must not degrade to an error chip — a thrown surface never reaches its ensureXStyles`,
+  ).toBeNull();
+
+  for (const id of target.overlays) {
+    expect(toolbar.overlay(id), `${target.name} must render the ${id} overlay slot`).not.toBeNull();
+  }
+
+  if (target.panel === null) return;
+  toolbar.openPanel(target.panel);
+  expect(
+    toolbar.panel(target.panel),
+    `${target.name} must render its panel once opened — the panel call sites are the point of this test`,
+  ).not.toBeNull();
+  expect(
+    toolbar.errorChip(target.name),
+    `${target.name}'s panel must not degrade to an error chip once opened`,
+  ).toBeNull();
+}
+
+/**
+ * Both halves in one assertion. Asserting the own-sheet count first would
+ * short-circuit a pure swap — `expect` throws before the foreign-sheet loop
+ * runs — and the failure would say "expected 1, got 0" without naming the
+ * foreign sheet that actually landed.
+ */
+function expectOnlyOwnSheet(target: ExtensionCase): void {
+  const own = document.head.querySelectorAll(`style[${STYLE_ATTRIBUTE}="${target.entry}"]`).length;
+  const foreign = EXTENSION_STYLE_ENTRIES.filter(
+    (other) => other !== target.entry && styleForEntry(other) !== null,
+  );
+
+  expect(
+    { own, foreign },
+    `${target.name} must inject exactly one ${target.entry} sheet and no other extension's`,
+  ).toEqual({ own: 1, foreign: [] });
+}
+
+describe.each(EXTENSIONS)("$name extension surface", (target) => {
   it("injects no stylesheet when injectStyles is false", () => {
-    mount(false);
+    mountEverySurface(target, false);
     expect(
-      styleForEntry(entry),
-      `${name} must not inject ${entry} when injectStyles is false`,
+      styleForEntry(target.entry),
+      `${target.name} must not inject ${target.entry} when injectStyles is false`,
     ).toBeNull();
   });
 
   it("injects only its own stylesheet when injectStyles is true", () => {
-    mount(true);
-    expect(
-      document.head.querySelectorAll(`style[${STYLE_ATTRIBUTE}="${entry}"]`).length,
-      `${name} must inject exactly one ${entry} sheet`,
-    ).toBe(1);
-
-    for (const other of EXTENSION_STYLE_ENTRIES) {
-      if (other === entry) continue;
-      expect(styleForEntry(other), `${name} must not inject ${other}`).toBeNull();
-    }
+    mountEverySurface(target, true);
+    expectOnlyOwnSheet(target);
   });
 });
