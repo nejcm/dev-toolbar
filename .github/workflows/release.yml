@@ -71,7 +71,11 @@ jobs:
         if: steps.release.outputs.prs_created == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
-          PR_NUMBER: ${{ fromJSON(steps.release.outputs.pr).number }}
+          # `|| '{}'` is load-bearing: step `env` is evaluated even when the
+          # step's `if` is false, and `pr` is unset on every run that opens no
+          # release PR. Bare `fromJSON('')` then aborts the whole job with
+          # "Error reading JToken from JsonReader".
+          PR_NUMBER: ${{ fromJSON(steps.release.outputs.pr || '{}').number }}
         run: |
           for attempt in 1 2 3 4 5; do
             if gh pr merge "$PR_NUMBER" --squash --delete-branch; then
