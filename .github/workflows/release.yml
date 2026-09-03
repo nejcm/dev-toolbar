@@ -33,9 +33,13 @@ jobs:
   release-please:
     name: release-please
     runs-on: ubuntu-latest
+    # These cover the `gh pr merge` step, which deliberately stays on
+    # `GITHUB_TOKEN`. Both `release-please` steps authenticate with
+    # `secrets.GH_TOKEN` instead and are bounded by that PAT's own scopes, not
+    # by this block.
     permissions:
-      contents: write # create tags and GitHub releases, push the release branch
-      pull-requests: write # open, update and label the release PR
+      contents: write # push the release branch; merge the release PR
+      pull-requests: write # the `gh pr merge` call below
     timeout-minutes: 10
     outputs:
       # `release_created`, not `releases_created`: the latter is always set —
@@ -52,12 +56,30 @@ jobs:
       tag_name: ${{ steps.tag.outputs.tag_name || steps.release.outputs.tag_name }}
       version: ${{ steps.tag.outputs.version || steps.release.outputs.version }}
     steps:
+      # Fail here rather than 40 lines later with an opaque 401/403. An unset
+      # secret is '', and passing '' to the action's `token` input overrides
+      # its `github.token` default with an empty credential.
+      - name: Assert the release PAT is configured
+        env:
+          RELEASE_TOKEN: ${{ secrets.GH_TOKEN }}
+        run: |
+          if [ -z "$RELEASE_TOKEN" ]; then
+            echo "::error::Secret GH_TOKEN is unset. release-please needs a PAT with contents+pull-requests+workflows write; GITHUB_TOKEN cannot create a release whose tag spans .github/workflows/ changes."
+            exit 1
+          fi
+
       # SHA-pinned as in `ci.yml`. The PR this opens lives for one API round
       # trip (next step); it exists to carry the squash subject.
       - name: Run release-please
         id: release
         uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5.0.0
         with:
+          # NOT `github.token`. GitHub refuses `POST /repos/{o}/{r}/releases`
+          # from `GITHUB_TOKEN` when the tag's commit range touches
+          # `.github/workflows/`, with a bare "Resource not accessible by
+          # integration" — which is what stalled v0.3.0. The PAT needs
+          # contents, pull-requests and workflows write.
+          token: ${{ secrets.GH_TOKEN }}
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
 
@@ -70,6 +92,13 @@ jobs:
         id: merge
         if: steps.release.outputs.prs_created == 'true'
         env:
+          # `github.token`, NOT the PAT, and unrelated to the secret that
+          # happens to share this name — `GH_TOKEN` is just what the `gh` CLI
+          # reads. Merging under `GITHUB_TOKEN` is what keeps the resulting
+          # release commit from re-triggering this workflow (see the `push`
+          # trigger above). The release PR touches no workflow files, so the
+          # restriction that forces the PAT on the steps around it does not
+          # apply here.
           GH_TOKEN: ${{ github.token }}
           # `|| '{}'` is load-bearing: step `env` is evaluated even when the
           # step's `if` is false, and `pr` is unset on every run that opens no
@@ -97,6 +126,12 @@ jobs:
         if: steps.merge.outcome == 'success'
         uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5.0.0
         with:
+          # NOT `github.token`. GitHub refuses `POST /repos/{o}/{r}/releases`
+          # from `GITHUB_TOKEN` when the tag's commit range touches
+          # `.github/workflows/`, with a bare "Resource not accessible by
+          # integration" — which is what stalled v0.3.0. The PAT needs
+          # contents, pull-requests and workflows write.
+          token: ${{ secrets.GH_TOKEN }}
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
 

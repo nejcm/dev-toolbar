@@ -316,6 +316,16 @@ not write changelog entries by hand.
 6. Publishing uses npm **trusted publishing** (OIDC). There is no npm token in
    this repository, and there should never be one again.
 
+Steps 2 and 4 authenticate with a repository secret, `GH_TOKEN` — a PAT with
+**contents**, **pull requests** and **workflows** write. `GITHUB_TOKEN` is not
+enough: GitHub refuses `POST /repos/{owner}/{repo}/releases` from it when the
+tag's commit range touches `.github/workflows/`, returning only `Resource not
+accessible by integration`. That is what stalled `v0.3.0`, which sat bumped and
+changelogged on `main` with no tag, no GitHub release and nothing on npm. Step 3
+deliberately keeps using `GITHUB_TOKEN` — merging under the PAT would make the
+release commit re-trigger this workflow. If the PAT expires, the job fails on its
+first step with an explicit message rather than an opaque 403.
+
 **There is no point at which a release is declined.** Every `feat:` or `fix:`
 that reaches `main` is on npm minutes later, under a version nobody chose by
 hand. The gate can stop a _broken_ release, not an unwanted one. If a change
