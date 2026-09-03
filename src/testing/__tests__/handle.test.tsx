@@ -110,7 +110,7 @@ describe("ToolbarHandle", () => {
 
     expect(toolbar.overflowButton()).toBeNull();
     expect(() => toolbar.openOverflow()).toThrow(
-      "[dev-toolbar/testing] nothing has collapsed — there is no ··· button to open.",
+      "[dev-toolbar/testing] nothing has collapsed — there is no ⋮ button to open.",
     );
   });
 

@@ -482,7 +482,7 @@ export function App() {
           </li>
           <li>
             Narrow the window: <code>boom</code>, <code>hydr</code>,{" "}
-            <code>metrics</code> collapse into <code>···</code> first — lowest{" "}
+            <code>metrics</code> collapse into <code>⋮</code> first — lowest{" "}
             <code>priority</code> goes first.
           </li>
           <li>
@@ -508,7 +508,7 @@ export function App() {
           </li>
           <li>
             <strong>UI Facelift 2026</strong> in the bar is the promoted flag:
-            its own switch, not a panel row. It collapses into <code>···</code>
+            its own switch, not a panel row. It collapses into <code>⋮</code>
             with the rest of <code>/ext/flags</code> — one extension is one
             overflow unit — and still works there.
           </li>

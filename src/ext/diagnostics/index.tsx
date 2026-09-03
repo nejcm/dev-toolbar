@@ -62,7 +62,7 @@ export interface DiagnosticsOptions extends Omit<DiagnosticsRuntimeOptions, "id"
   /**
    * Overflow collapse order. Default `10` — low. A snapshot is something you go
    * looking for once, when something is already wrong, and it stays reachable
-   * from the `···` menu and from the command palette when the chip collapses.
+   * from the `⋮` menu and from the command palette when the chip collapses.
    */
   priority?: number;
   hidden?: boolean;

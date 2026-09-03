@@ -88,7 +88,7 @@
       );
     })(),
     // A collapsed extension is REMOVED from its region and re-rendered inside
-    // the `···` menu, so `bar` lists only what is still visible — there is no
+    // the `⋮` menu, so `bar` lists only what is still visible — there is no
     // "overflowed" flag on a bar item to wait for. `overflow.menuItems` is
     // empty until the menu is opened. Compare the two lists.
     bar: all('[data-dtb-part="region"] > [data-dtb-part="item"][data-dtb-ext-id]').map(item),

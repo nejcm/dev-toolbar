@@ -26,7 +26,7 @@ broken the app badly enough that the panel is out of reach.
 
 - Click the `flags` chip in the bar to open the panel.
 - Use the **UI Facelift 2026** switch directly in the bar.
-- Reach either from inside the `···` menu when the bar is narrow.
+- Reach either from inside the `⋮` menu when the bar is narrow.
 - Run a flags command from `⌘K` (`Clear all local flag overrides`,
   `Copy flag override recipe`, `Copy flag overrides as JSON`,
   `Re-read feature flags`).

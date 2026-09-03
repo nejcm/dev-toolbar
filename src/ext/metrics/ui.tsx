@@ -33,7 +33,7 @@ export function MetricsChips({
 }: ChipsProps): ReactNode {
   const snapshot = useExtensionSurface(runtime.store, injectStyles, ensureMetricsStyles);
 
-  // In the ··· menu there's vertical room, so spell metrics out instead of shrinking them.
+  // In the ⋮ menu there's vertical room, so spell metrics out instead of shrinking them.
   if (isOverflowed) {
     return (
       <div data-dtb-part="metrics-overflow-list">

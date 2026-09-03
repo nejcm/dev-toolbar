@@ -28,7 +28,7 @@ The root entry is chrome plus hosting, and nothing else. It:
 - renders a fixed bar at the top or bottom of the viewport, in a portal on
   `document.body`;
 - sorts the extensions it is given by `align`, then `order`;
-- collapses the lowest-`priority` items into a `···` menu when the bar runs out of
+- collapses the lowest-`priority` items into a `⋮` menu when the bar runs out of
   width, and lets them back out when the width returns;
 - hosts at most one panel at a time, resizable and persisted;
 - renders every extension's `overlay` slot, uncollapsed, for modal surfaces;
@@ -96,7 +96,7 @@ Losing on purpose has a consequence worth stating, because it is the one most
 consumers meet: **a CSS reset is unlayered too.** Tailwind's Preflight ships
 `button, input, optgroup, select, textarea { padding: 0 }` and
 `button { background-color: transparent }`, and both beat core's layered rules.
-In a Tailwind app that means every trigger and the `···` button render with no
+In a Tailwind app that means every trigger and the `⋮` button render with no
 horizontal padding, no hover background and no selected background — core's
 look silently reset. Layout survives, because gaps, heights and dividers are
 properties no reset touches; only the button's own box is flattened.
@@ -112,6 +112,18 @@ side, where the reset came from. The whole remedy is `revert-layer`:
 [data-dev-toolbar] [data-dtb-part="flag-promoted"] {
   padding: revert-layer;
   background-color: revert-layer;
+}
+
+/* Preflight's border reset is `*, ::before, ::after { border-width: 0 }`, so
+   this one has to be as wide to win. It erases the bar's own edge, the popup,
+   panel rules and the promoted pill, and repaints what survives Tailwind grey. */
+[data-dev-toolbar],
+[data-dev-toolbar] *,
+[data-dev-toolbar] *::before,
+[data-dev-toolbar] *::after {
+  border-width: revert-layer;
+  border-style: revert-layer;
+  border-color: revert-layer;
 }
 ```
 
@@ -202,7 +214,7 @@ Concretely, a hidden extension:
 
 | | Enforced in |
 | --- | --- |
-| does not render in the bar or the `···` menu | `Bar.tsx` / `sortExtensions` |
+| does not render in the bar or the `⋮` menu | `Bar.tsx` / `sortExtensions` |
 | is never `start()`ed, and is torn down if it becomes hidden while running | `DevToolbar.tsx` |
 | has no panel mounted, `keepMounted` included | `PanelHost.tsx` |
 | has its `activePanelId` cleared on the transition | `DevToolbar.tsx` |
@@ -262,7 +274,7 @@ Lifecycle order for one extension:
 1. It appears in the merged extension list (props first, then dynamic registrations,
    de-duplicated by `id`) and is not `hidden`.
 2. `start(api)` runs once. Its return value, if a function, is the cleanup.
-3. It renders `compact` (in the bar or in the `···` menu), `overlay` (always, while
+3. It renders `compact` (in the bar or in the `⋮` menu), `overlay` (always, while
    the bar is visible) and, when its panel is active, `panel`.
 4. When it leaves the list, becomes `hidden`, `enabled` flips to `false`, or the
    toolbar unmounts: `api.signal` aborts, then the cleanup runs.
@@ -350,7 +362,7 @@ Set them on `[data-dev-toolbar]`, or on any ancestor. Unlayered CSS wins.
 | `--dtb-font-size` | `11px` | Base size (`12px` when comfortable) |
 | `--dtb-bar-height` | `32px` | Bar row height (`38px` when comfortable) |
 | `--dtb-radius` | `5px` | Corner radius on triggers, menu, chips |
-| `--dtb-gap` | `2px` | Gap inside the `···` popup and other dense lists |
+| `--dtb-gap` | `2px` | Gap inside the `⋮` popup and other dense lists |
 | `--dtb-item-gap` | `18px` | Gap between bar items (`24px` when comfortable); read back for collapse math. A divider is drawn centred in it |
 | `--dtb-chip-gap` | `6px` | Label-to-value gap inside one chip, and between two controls one extension renders |
 | `--dtb-padding-x` | `8px` | Bar's horizontal padding, and the panel body's |
@@ -366,8 +378,9 @@ Set them on `[data-dev-toolbar]`, or on any ancestor. Unlayered CSS wins.
 | `--dtb-item-active-bg` | `rgba(0,0,0,.13)` | Trigger with its panel open — a neutral darker ground, not a tint |
 | `--dtb-item-pressed-bg` | `rgba(0,0,0,.19)` | Trigger while the pointer is down |
 | `--dtb-panel-bg` | `#ffffff` | Panel background |
-| `--dtb-menu-bg` | `#ffffff` | `···` menu background |
-| `--dtb-shadow` | `0 6px 24px rgba(0,0,0,.14)` | `···` menu shadow |
+| `--dtb-menu-bg` | `#ffffff` | `⋮` menu background |
+| `--dtb-shadow` | `0 6px 24px rgba(0,0,0,.14)` | Floating surfaces: the command palette dialog, overlay labels |
+| `--dtb-menu-shadow` | `0 2px 10px rgba(0,0,0,.08)` | The `⋮` popup, which is flush and bordered so it needs only a hint of lift |
 | `--dtb-danger` | `#c0392b` | Error chip text; "bad" severity |
 | `--dtb-danger-bg` | `rgba(192,57,43,.12)` | Error chip background |
 | `--dtb-ok` | `#1e8a54` | "ok" severity |
@@ -387,7 +400,7 @@ the mono value beside it render a pixel apart. Both font bounding boxes are
 13px tall and land on the same top, so the mismatch survives any box-level
 check and only a baseline probe finds it — which is how it shipped in the first
 place. Label versus value is carried by colour instead: `--dtb-muted` label,
-`--dtb-fg` (or a severity colour) value. The `···` popup is a DOM child of the
+`--dtb-fg` (or a severity colour) value. The `⋮` popup is a DOM child of the
 bar and inherits the same family.
 
 Panels keep `--dtb-font-family`, because a panel is prose rather than a row of
@@ -397,7 +410,7 @@ way inline code does in running text.
 Every rule — core's and the first-party extensions' alike — uses logical properties
 (`inset-inline`, `inset-inline-end`, `margin-inline-start`, `padding-inline-start`,
 `text-align: start`, and flexbox's own direction-aware `flex-end`) instead of
-`left`/`right`, so the bar, the `···` popup and every extension's chips and panels
+`left`/`right`, so the bar, the `⋮` popup and every extension's chips and panels
 mirror correctly under `dir="rtl"` even though RTL is not otherwise tested. A
 regression table test (`src/ext/__tests__/stylesheets.test.ts`) asserts every
 exported CSS string contains no physical directional property; every extension
@@ -432,8 +445,8 @@ names inside core are not.
 | `region` | one align region | `data-dtb-align="start" \| "end"` |
 | `item` | one extension's compact slot | `data-dtb-ext-id`, `data-dtb-align`, `data-dtb-overflowed`, `data-dtb-panel-open` |
 | `trigger` | core's default button/label | Only when the extension supplies no `compact` |
-| `overflow-button` | the `···` button | `aria-expanded`, `aria-controls` while open |
-| `overflow-menu` | the `···` popover | `role="group"`, labelled, `tabindex="-1"` |
+| `overflow-button` | the `⋮` button | `aria-expanded`, `aria-controls` while open |
+| `overflow-menu` | the `⋮` popover | `role="group"`, labelled, `tabindex="-1"` |
 | `overflow-menu-item` | one collapsed item wrapper | `data-dtb-ext-id` |
 | `overlay` | one extension's overlay slot | `data-dtb-ext-id` |
 | `panel` | one panel | `data-dtb-ext-id`, `data-dtb-active`, `hidden` when inactive |
@@ -506,14 +519,14 @@ collapses first**, ties break toward the later item.
 The bar measures itself with a `ResizeObserver`, caches each item's natural width, and
 recomputes on every resize. Cached widths are sticky, which is what lets a collapsed
 item come back when the width returns even though it was not in the bar to be measured.
-The gap and the `···` button width are read back out of the DOM, so overriding
+The gap and the `⋮` button width are read back out of the DOM, so overriding
 `--dtb-item-gap` or restyling the button keeps the math honest. The width items may fill is
 the bar's `clientWidth` less its own horizontal padding, and less a gap for each side
 whose gap the item math does not already charge: one when the start region renders no
 items, one when there are no end items at all. A region that renders empty still takes
 its gap.
 
-The `···` popup is a **disclosure, not an ARIA menu**. Its entries are extensions'
+The `⋮` popup is a **disclosure, not an ARIA menu**. Its entries are extensions'
 compact slots, which usually render their own buttons, and a `menuitem` may not contain
 interactive content — the menu pattern would put the focusable thing *inside* the item
 rather than being it. So the button carries `aria-expanded` and, while open,
@@ -533,7 +546,7 @@ than reading `entries[0].contentRect` — which is what core itself does.
 
 The `overlay` slot is exempt from all of this. It renders once, uncollapsed, for as
 long as the extension is present, not hidden and the bar is visible — because a compact
-item that has collapsed into the `···` menu is not in the DOM at all, so an extension
+item that has collapsed into the `⋮` menu is not in the DOM at all, so an extension
 whose surface is a modal would lose it exactly when the window got narrow.
 
 ## 6. Failure isolation

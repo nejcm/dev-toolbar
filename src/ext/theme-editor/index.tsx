@@ -64,7 +64,7 @@ export interface ThemeEditorOptions extends ThemeEditorRuntimeOptions {
   /**
    * Overflow collapse order. Default `45` — below `/ext/flags` (60) and
    * `/ext/overlays` (50), above the metrics chips. Collapsing only costs
-   * position: the `···` menu renders the same chip, and every action is also
+   * position: the `⋮` menu renders the same chip, and every action is also
    * a palette command.
    */
   priority?: number;

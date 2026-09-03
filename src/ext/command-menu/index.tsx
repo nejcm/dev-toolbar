@@ -24,7 +24,7 @@
  *   shown in place rather than reaching the host app.
  * - **Lives in the `overlay` slot, not a panel** — a panel would evict
  *   whatever the palette was opened to act on, and the overlay is the one
- *   surface core never collapses into the `···` menu, so the shortcut always
+ *   surface core never collapses into the `⋮` menu, so the shortcut always
  *   works even when the bar chip has collapsed.
  *
  * Swapping in your own `cmdk` is one line: drop this extension and build over

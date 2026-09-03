@@ -1,6 +1,6 @@
 # Overflow
 
-When the bar runs out of room, the shell collapses extensions into a `···`
+When the bar runs out of room, the shell collapses extensions into a `⋮`
 menu — lowest `priority` first — and a collapsed extension stays fully usable
 from inside that menu. One extension is one overflow unit, however many things
 it renders into the bar.
@@ -8,7 +8,7 @@ it renders into the bar.
 ## Sub-features
 
 - `overflow-collapse` collapses in ascending `priority` as the bar narrows.
-- `overflow-button` shows a `···` button named `More developer toolbar items`
+- `overflow-button` shows a `⋮` button named `More developer toolbar items`
   only while something is collapsed.
 - `overflow-menu` lists the collapsed extensions and keeps them working.
 - `overflow-dismiss` closes the menu on `Escape` (returning focus to the
@@ -19,7 +19,7 @@ it renders into the bar.
 ## How to get to it (user POV)
 
 - Narrow the browser window until chips disappear from the bar.
-- Click the `···` button, or focus it and press `Enter`.
+- Click the `⋮` button, or focus it and press `Enter`.
 - Use a collapsed extension from inside the menu.
 - Press `Escape`, or click outside the menu.
 
@@ -57,9 +57,9 @@ Preconditions:
 - **A collapsed extension still works.** Click the `overlays` entry inside the
   menu (`[data-dtb-part="overflow-menu-item"][data-dtb-ext-id="overlays"] [data-dtb-part="trigger"]`)
   and drive it per [overlays.md](./overlays.md). The overlay turns on from
-  inside the `···` menu.
+  inside the `⋮` menu.
 - **Dismiss.** Press `Escape`. Probe: `overflow.menuOpen` is `false`; the
-  active element is the `···` button. Reopen, then click the page body:
+  active element is the `⋮` button. Reopen, then click the page body:
   the menu closes and focus stays where the click put it.
 - **Restore.** `resize_window` with `{"preset": "desktop"}`, then re-read.
   Probe: `overflow.buttonVisible` is `false` and `bar` is back to twelve.
@@ -83,7 +83,7 @@ Preconditions:
   entries on every load, so "no errors in the console" is neither the
   assertion nor achievable.
 - **Proof.** Capture the narrow-width probe snapshot (with `menuItems`
-  populated) and a screenshot at 520 px showing the `···` in the bar. For the
+  populated) and a screenshot at 520 px showing the `⋮` in the bar. For the
   loop check, capture the `__dtbErrors` array with the viewport sequence that
   produced it.
 

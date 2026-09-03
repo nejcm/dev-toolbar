@@ -30,7 +30,7 @@ export interface TriggerProps {
 /**
  * The `⌘` bar item. A convenience, not the way in — the shortcut is bound in
  * `start()`, so it (and the palette, rendered from the never-collapsed
- * `overlay` slot) keeps working even after this chip collapses into `···`.
+ * `overlay` slot) keeps working even after this chip collapses into `⋮`.
  */
 export function CommandMenuTrigger({
   runtime,

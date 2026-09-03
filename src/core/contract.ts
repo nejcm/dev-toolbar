@@ -168,7 +168,7 @@ export interface DevToolbarExtension {
   panel?: (props: PanelSlotProps) => ReactNode;
   /**
    * Always rendered while this extension is present, not hidden and the bar is
-   * visible — never collapsed into the `···` menu. For modal surfaces. See
+   * visible — never collapsed into the `⋮` menu. For modal surfaces. See
    * `OverlaySlotProps`.
    */
   overlay?: (props: OverlaySlotProps) => ReactNode;

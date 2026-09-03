@@ -365,7 +365,7 @@ describe("the shell contract", () => {
     expect(spy).toHaveBeenCalled();
   });
 
-  it("collapses into the ··· menu without losing its capability", () => {
+  it("collapses into the ⋮ menu without losing its capability", () => {
     const { toolbar } = mount();
     act(() => {
       toolbar.resize(60);

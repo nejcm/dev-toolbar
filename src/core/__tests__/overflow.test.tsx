@@ -203,7 +203,7 @@ const menuIds = () =>
   );
 
 describe("OverflowBar", () => {
-  it("collapses low-priority items into the ··· menu when space runs out", () => {
+  it("collapses low-priority items into the ⋮ menu when space runs out", () => {
     restore = patchLayout();
     vi.stubGlobal("ResizeObserver", MockResizeObserver);
 
@@ -261,7 +261,7 @@ describe("OverflowBar", () => {
     expect(document.querySelector('[data-dtb-part="overflow-button"]')).toBeNull();
   });
 
-  it("dismisses the ··· menu on Escape and on an outside click", () => {
+  it("dismisses the ⋮ menu on Escape and on an outside click", () => {
     restore = patchLayout();
     vi.stubGlobal("ResizeObserver", MockResizeObserver);
 
@@ -298,7 +298,7 @@ describe("OverflowBar", () => {
 });
 
 /**
- * The `···` button lives *inside* the end region, sharing its width with
+ * The `⋮` button lives *inside* the end region, sharing its width with
  * whatever end-aligned items stayed in the bar. Every case above passes
  * `endItems={[]}`, so none of them exercises that.
  *
@@ -316,7 +316,7 @@ describe("OverflowBar with a non-empty end region", () => {
   };
 
   it("collapses across both regions by priority, ignoring which region an item is in", () => {
-    // Every item is 60 wide, the gap is 2 and the ··· button 28. At an
+    // Every item is 60 wide, the gap is 2 and the ⋮ button 28. At an
     // available 160 the two lowest priorities have to go — b (start, 1) then
     // e (end, 2) — and the sums are what force it:
     //   drop b:        3×60 + 2×2 + 2 + 28 = 214 > 160, so keep going
@@ -334,7 +334,7 @@ describe("OverflowBar with a non-empty end region", () => {
     expect(menuIds()).toEqual(["b", "e"]);
   });
 
-  it("puts the ··· button in the end region, after the end items that stayed", () => {
+  it("puts the ⋮ button in the end region, after the end items that stayed", () => {
     // 60 more room than above, and one item's worth of collapse now suffices:
     //   drop b: 3×60 + 2×2 + 2 + 28 = 214 ≤ 220, so e stays in the end region
     // next to the button, which is the arrangement this test is about.
@@ -456,13 +456,13 @@ describe("OverflowBar available width", () => {
 });
 
 /**
- * The `···` popup is a disclosure, not an ARIA menu. Each entry is an
+ * The `⋮` popup is a disclosure, not an ARIA menu. Each entry is an
  * extension's own compact slot, which usually renders its own button, and a
  * `menuitem` may not contain interactive content — so the promise is the
  * disclosure one: `aria-expanded` and `aria-controls` on the button, focus
  * moved into the popup on open, Escape closing it and handing focus back.
  */
-describe("OverflowBar ··· popup", () => {
+describe("OverflowBar ⋮ popup", () => {
   const setUp = () => {
     restore = patchLayout();
     vi.stubGlobal("ResizeObserver", MockResizeObserver);
@@ -495,7 +495,7 @@ describe("OverflowBar ··· popup", () => {
   const trigger = () => screen.getByRole("button", { name: "More developer toolbar items" });
   const popup = () => document.querySelector<HTMLElement>('[data-dtb-part="overflow-menu"]');
 
-  it("points the ··· button at the popup it controls", () => {
+  it("points the ⋮ button at the popup it controls", () => {
     setUp();
     renderCompact((id) => <span>{id}</span>);
 
@@ -548,7 +548,7 @@ describe("OverflowBar ··· popup", () => {
     expect(document.activeElement).toBe(popup());
   });
 
-  it("closes on Escape and hands focus back to the ··· button", () => {
+  it("closes on Escape and hands focus back to the ⋮ button", () => {
     setUp();
     renderCompact((id) => (
       <button type="button">

@@ -47,6 +47,11 @@ export const CORE_CSS = String.raw`/**
     --dtb-panel-bg: #ffffff;
     --dtb-menu-bg: #ffffff;
     --dtb-shadow: 0 6px 24px rgba(0, 0, 0, 0.14);
+    /* The overflow popup is flush against the bar and the viewport edge with a
+       border on both free sides, so it needs a hint of lift, not the shadow a
+       floating dialog wants. Separate from --dtb-shadow, which the command
+       palette still uses to sit above the page. */
+    --dtb-menu-shadow: 0 2px 10px rgba(0, 0, 0, 0.08);
     --dtb-danger: #c0392b;
     --dtb-danger-bg: rgba(192, 57, 43, 0.12);
     --dtb-ok: #1e8a54;
@@ -90,6 +95,7 @@ export const CORE_CSS = String.raw`/**
     --dtb-panel-bg: #1d1e21;
     --dtb-menu-bg: #1d1e21;
     --dtb-shadow: 0 6px 24px rgba(0, 0, 0, 0.5);
+    --dtb-menu-shadow: 0 2px 10px rgba(0, 0, 0, 0.22);
     --dtb-danger: #ff7b6b;
     --dtb-danger-bg: rgba(255, 123, 107, 0.16);
     --dtb-ok: #56d39a;
@@ -111,6 +117,7 @@ export const CORE_CSS = String.raw`/**
       --dtb-panel-bg: #1d1e21;
       --dtb-menu-bg: #1d1e21;
       --dtb-shadow: 0 6px 24px rgba(0, 0, 0, 0.5);
+      --dtb-menu-shadow: 0 2px 10px rgba(0, 0, 0, 0.22);
       --dtb-danger: #ff7b6b;
       --dtb-danger-bg: rgba(255, 123, 107, 0.16);
       --dtb-ok: #56d39a;
@@ -153,7 +160,7 @@ export const CORE_CSS = String.raw`/**
        down and ui-monospace puts it 10px down, so a sans label and a mono
        value beside it render a pixel apart. Their font bounding boxes are
        both 13px tall and land on the same top, which is why the mismatch
-       survives a box-level check and only the baseline shows it. The ···
+       survives a box-level check and only the baseline shows it. The ⋮
        popup is inside this element, so it inherits and matches.
        Panels keep --dtb-font-family: they are prose, not readouts. */
     font-family: var(--dtb-font-mono);
@@ -206,7 +213,7 @@ export const CORE_CSS = String.raw`/**
      measures these hosts: a border would widen every item by a pixel and a
      margin would widen the gap it is meant to occupy. Out of flow, it costs
      nothing. The direct-child combinator restricts it to hosts in a region,
-     which is what excludes the copies inside the ··· popup, and
+     which is what excludes the copies inside the ⋮ popup, and
      :not(:first-child) is per region — so neither the bar's leading edge nor
      the start of the end region opens with a stray rule. */
   [data-dev-toolbar] [data-dtb-part="region"] > [data-dtb-part="item"],
@@ -305,7 +312,7 @@ export const CORE_CSS = String.raw`/**
     border: 1px solid var(--dtb-border);
     border-inline-end: 0;
     background: var(--dtb-menu-bg);
-    box-shadow: var(--dtb-shadow);
+    box-shadow: var(--dtb-menu-shadow);
     overflow: auto;
   }
 

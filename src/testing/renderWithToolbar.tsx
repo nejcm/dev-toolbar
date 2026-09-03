@@ -52,7 +52,7 @@ export interface ToolbarHandle {
   parts(part: string): HTMLElement[];
   /**
    * The bar item for an extension. Collapsed items aren't rendered while the
-   * `···` menu is closed, so this returns `null` until `openOverflow()` runs.
+   * `⋮` menu is closed, so this returns `null` until `openOverflow()` runs.
    * Use `isOverflowed()` / `overflowedIds()` to ask *whether* it collapsed —
    * neither needs the menu open.
    */
@@ -71,17 +71,17 @@ export interface ToolbarHandle {
   overflowButton(): HTMLButtonElement | null;
   overflowMenu(): HTMLElement | null;
   /**
-   * Ids currently collapsed into the `···` menu.
+   * Ids currently collapsed into the `⋮` menu.
    *
    * Derived from the extension list minus what is in the bar, so it is correct
    * whether or not the menu is open.
    */
   overflowedIds(): string[];
-  /** True when this extension has been collapsed into the `···` menu. */
+  /** True when this extension has been collapsed into the `⋮` menu. */
   isOverflowed(extensionId: string): boolean;
   /** Ids currently rendered in the bar itself. */
   barIds(): string[];
-  /** Clicks the `···` button. Throws when there is nothing collapsed. */
+  /** Clicks the `⋮` button. Throws when there is nothing collapsed. */
   openOverflow(): void;
   /**
    * The height this instance publishes, e.g. `"30px"` — read from
@@ -294,7 +294,7 @@ export function renderWithToolbar(
       const button = toolbar.overflowButton();
       if (!button) {
         throw new Error(
-          "[dev-toolbar/testing] nothing has collapsed — there is no ··· button to open.",
+          "[dev-toolbar/testing] nothing has collapsed — there is no ⋮ button to open.",
         );
       }
       run(() => button.click());

@@ -72,7 +72,7 @@ function readGap(element: HTMLElement, fallback: number): number {
  * Width of the bar that items may not fill: its horizontal padding (included
  * in `clientWidth`) plus any inter-region gap the item math doesn't already
  * charge for. `computeOverflow` charges one gap per adjacent item pair plus
- * one before the `···` button, which undercounts when the start region has no
+ * one before the `⋮` button, which undercounts when the start region has no
  * items or the end region has none — both still reserve a gap, since the
  * (empty) region elements are always present.
  *
@@ -82,7 +82,7 @@ function readGap(element: HTMLElement, fallback: number): number {
  * - `startRegionEmpty` is read from the *rendered* children, because the start
  *   region really is empty exactly when every start item has collapsed.
  * - `endItemsEmpty` is read from the *props*, because the end region also
- *   hosts the `···` button: once anything collapses it is never empty, so
+ *   hosts the `⋮` button: once anything collapses it is never empty, so
  *   rendered children would report "not empty" for a region that holds nothing
  *   but the button whose width `computeOverflow` already charges separately.
  *
@@ -108,7 +108,7 @@ function readReserved(
 
 /**
  * The item hosts the bar measures. The direct-child `>` combinator is
- * load-bearing: it structurally excludes the copies rendered inside the `···`
+ * load-bearing: it structurally excludes the copies rendered inside the `⋮`
  * popup, whose hosts carry `data-dtb-part="overflow-menu-item"` but whose
  * *contents* may nest anything. One selector, used by every caller, so no
  * second one can drift away from it.
@@ -148,7 +148,7 @@ function syncObserved(
  * listening to them, until its own width changes again.
  *
  * The case this guards is a chip that re-renders to a width that depends on the
- * collapse state — one rendering wider in the bar than in the `···` popup, say.
+ * collapse state — one rendering wider in the bar than in the `⋮` popup, say.
  * Collapsing it changes its width, which changes the collapse decision, so
  * there is no fixed point to settle on and no amount of debouncing converges
  * it. A hard bound terminates it instead. Four leaves room for the legitimate
@@ -167,7 +167,7 @@ function syncObserved(
 const MAX_ITEM_DRIVEN_FLIPS = 4;
 
 /**
- * What can take focus inside the `···` popup. Deliberately shallow: the popup
+ * What can take focus inside the `⋮` popup. Deliberately shallow: the popup
  * holds extensions' compact slots, and the first thing in the first of them is
  * where a keyboard user expects to land.
  */
@@ -176,7 +176,7 @@ const FOCUSABLE =
 
 /**
  * The bar row itself. Measures rendered items with a `ResizeObserver` and
- * collapses the lowest-priority ones into a `···` menu.
+ * collapses the lowest-priority ones into a `⋮` menu.
  */
 export function OverflowBar({
   startItems,
@@ -190,7 +190,7 @@ export function OverflowBar({
   const menuRef = useRef<HTMLDivElement | null>(null);
   const buttonRef = useRef<HTMLButtonElement | null>(null);
   const widthsRef = useRef(new Map<string, number>());
-  // Read back out of the DOM so overriding --dtb-item-gap or restyling the ···
+  // Read back out of the DOM so overriding --dtb-item-gap or restyling the ⋮
   // button keeps the collapse math honest.
   const gapRef = useRef(gap);
   const buttonWidthRef = useRef(DEFAULT_OVERFLOW_BUTTON_WIDTH);
@@ -362,7 +362,7 @@ export function OverflowBar({
     if (overflowIds.size === 0) setMenuOpen(false);
   }, [overflowIds]);
 
-  // Move focus into the ··· popup when it opens, so a keyboard user reaches
+  // Move focus into the ⋮ popup when it opens, so a keyboard user reaches
   // the collapsed items. Falls back to the popup itself if nothing inside
   // can take focus.
   useEffect(() => {
@@ -430,7 +430,7 @@ export function OverflowBar({
             aria-label={overflowLabel}
             onClick={() => setMenuOpen((open) => !open)}
           >
-            {"···"}
+            {"⋮"}
           </button>
         ) : null}
       </div>

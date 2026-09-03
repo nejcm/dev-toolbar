@@ -90,7 +90,7 @@ publishes, but only some were executed end to end when this map was written:
 
 - **Driven and confirmed:** the shell (mount, panel hosting and eviction,
   position, the height variable and inset, the keyboard toggle, reload
-  persistence, the `boom` error chip), overflow (collapse at 520 px, the `···`
+  persistence, the `boom` error chip), overflow (collapse at 520 px, the `⋮`
   menu contents, a collapsed extension still working), flags (boolean
   override, the app resolving it, storage, reload persistence, masking, the
   promoted switch, `?dtb-flags=reset`), the command menu (open, enumerate,
@@ -123,7 +123,7 @@ handles, required state, calls and observable proof.
 
 - [The shell](./shell.md) — the bar, panel hosting, position, density,
   visibility, the inset, the height variable, and what survives a reload.
-- [Overflow](./overflow.md) — collapsing into `···` in priority order, and
+- [Overflow](./overflow.md) — collapsing into `⋮` in priority order, and
   reaching a collapsed extension from the menu.
 - [Feature flags](./flags.md) — overriding, persistence, masking, the promoted
   flag in the bar, and the `?dtb-flags=reset` escape hatch.

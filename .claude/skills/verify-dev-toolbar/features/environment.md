@@ -20,7 +20,7 @@ in anything copied out of it.
 ## How to get to it (user POV)
 
 - Click the `env` chip at the start of the bar.
-- Reach it from inside the `···` menu when the bar is narrow.
+- Reach it from inside the `⋮` menu when the bar is narrow.
 - Use `Copy environment summary`, `Copy environment context as JSON` or
   `Re-read environment context` from `⌘K`.
 - The playground's own `env-impersonate`, `env-sync` and `env-supply` buttons

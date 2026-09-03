@@ -12,7 +12,7 @@ import type { DesignTokenDefinition } from "@nejcm/dev-toolbar/ext/theme-editor"
 import type { FlagReading, FlagValue } from "@nejcm/dev-toolbar/ext/flags";
 
 /**
- * Deliberately varied `priority` so narrowing the window collapses extensions into `···` in order:
+ * Deliberately varied `priority` so narrowing the window collapses extensions into `⋮` in order:
  * boom (5) → diagnostics (10) → hydr (20) → metrics (35) → overlays (55) → tw (70) → flags (80)
  * → cmds (85) → env (90) → user (100, aligned end). metrics/env/flags are the real extensions; the rest are placeholders.
  */
@@ -370,7 +370,7 @@ const user: DevToolbarExtension = {
 /**
  * The real `@nejcm/dev-toolbar/ext/command-menu`. It contributes no commands of its own — it
  * only reads the aggregation — and its surface is the `overlay` slot, so `⌘K` keeps working
- * when its chip collapses into `···`.
+ * when its chip collapses into `⋮`.
  */
 const runtimeCommandMenu = commandMenu();
 

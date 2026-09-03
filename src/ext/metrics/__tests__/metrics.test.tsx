@@ -94,7 +94,7 @@ describe("metrics extension in the bar", () => {
     expect(labels).toContain("Share of limit");
   });
 
-  it("spells the metrics out when it collapses into the ··· menu", () => {
+  it("spells the metrics out when it collapses into the ⋮ menu", () => {
     const { toolbar } = mount({ only: ["memory", "jank"] });
     toolbar.resize(60);
     expect(toolbar.isOverflowed("metrics")).toBe(true);

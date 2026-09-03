@@ -23,7 +23,7 @@ throws is caught and shown in the palette rather than reaching the app.
 
 - Click the `⌘K` chip at the end of the bar.
 - Press `Cmd+K` (macOS) or `Ctrl+K` elsewhere, with focus outside a text field.
-- Both still work when the chip has collapsed into `···`.
+- Both still work when the chip has collapsed into `⋮`.
 - The playground's `cmds` panel lists the same commands as plain buttons — the
   declarative snapshot core exposes, plus a `Re-enumerate` button.
 
@@ -86,7 +86,7 @@ Preconditions:
 - `Tab` is swallowed on purpose — the input is the only focusable thing inside
   an `aria-modal` dialog. Do not use it to move between options.
 - The palette lives in the `overlay` slot, not a panel, so opening it does not
-  evict an open panel and it survives its own chip collapsing into `···`.
+  evict an open panel and it survives its own chip collapsing into `⋮`.
   A missing `⌘K` chip at a narrow viewport is not a broken palette.
 - It contributes no commands of its own; if the list is empty, the fault is in
   the extensions, not here.

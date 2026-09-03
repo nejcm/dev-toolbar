@@ -21,7 +21,7 @@ underneath stays usable while one is on.
 
 - Click the `overlays` chip to open its panel, then turn one on.
 - Run `Show overlay: <name>` or `Turn every overlay off` from `⌘K`.
-- Both work from inside the `···` menu when the bar is narrow.
+- Both work from inside the `⋮` menu when the bar is narrow.
 
 ## Driving it with the Browser pane
 

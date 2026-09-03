@@ -136,7 +136,7 @@ describe("the promoted flag", () => {
     expect(toolbar.activePanelId()).toBeNull();
   });
 
-  it("keeps working when the extension collapses into the ··· menu", () => {
+  it("keeps working when the extension collapses into the ⋮ menu", () => {
     // One extension is one overflow unit, so the promoted control collapses
     // with the chip. Collapsing must cost its position, never its capability.
     const { toolbar } = mount({

@@ -2,7 +2,7 @@
  * The `overlay` slot, added by P2's third extension.
  *
  * It exists because the bar is not a place to hang a modal: a compact item that
- * has collapsed into the `···` menu is not in the DOM at all, so an extension
+ * has collapsed into the `⋮` menu is not in the DOM at all, so an extension
  * whose whole surface is a dialog would lose it exactly when the window got
  * narrow. Everything below is that promise, plus the usual containment.
  */
@@ -37,7 +37,7 @@ describe("overlay slot", () => {
     expect(document.querySelectorAll('[data-dtb-part="overlay"]')).toHaveLength(1);
   });
 
-  it("survives its own item collapsing into the ··· menu", () => {
+  it("survives its own item collapsing into the ⋮ menu", () => {
     const { toolbar } = mount(null, {
       extensions: [
         makeExtension({ id: "wide", priority: 10 }),

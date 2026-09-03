@@ -219,6 +219,28 @@ body {
   background-color: revert-layer;
 }
 
+/*
+ * Preflight's border reset is the same problem one selector wider:
+ * `*, ::before, ::after { border-width: 0; border-style: solid; border-color:
+ * #e5e7eb }`. It erases every border core declares — the bar's own edge rule,
+ * the overflow popup, panel rules, the promoted flag's pill — and repaints the
+ * colour Tailwind grey where anything survives. The bar was rendering with no
+ * edge at all, which is also why the popup's shadow had to do all the work of
+ * separating it from the page.
+ *
+ * Every border in the toolbar is declared by a layered rule (82 of them across
+ * core and the extensions, covering all 12 form controls), so reverting lands
+ * on a real value everywhere rather than falling through to a UA border.
+ */
+[data-dev-toolbar],
+[data-dev-toolbar] *,
+[data-dev-toolbar] *::before,
+[data-dev-toolbar] *::after {
+  border-width: revert-layer;
+  border-style: revert-layer;
+  border-color: revert-layer;
+}
+
 /* --------------------------------------------------------------------------
  * Restyle demo.
  *

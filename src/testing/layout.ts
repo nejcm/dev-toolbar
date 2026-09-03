@@ -17,7 +17,7 @@ export interface InstallToolbarLayoutOptions {
   itemWidth?: number;
   /** Per-extension-id item widths. */
   itemWidths?: Record<string, number>;
-  /** Width reported for the `···` button. Default `28`. */
+  /** Width reported for the `⋮` button. Default `28`. */
   overflowButtonWidth?: number;
   /** Height reported for the toolbar root, i.e. `--dev-toolbar-height`. Default `30`. */
   rootHeight?: number;

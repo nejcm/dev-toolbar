@@ -94,7 +94,7 @@ describe("the compact chip", () => {
     expect(chip?.getAttribute("data-dtb-severity")).toBe("bad");
   });
 
-  it("still reads as an environment when it collapses into the ··· menu", () => {
+  it("still reads as an environment when it collapses into the ⋮ menu", () => {
     const { toolbar } = mount({ context: { environment: "production" } });
     act(() => toolbar.resize(40));
     expect(toolbar.overflowedIds()).toContain("environment");
