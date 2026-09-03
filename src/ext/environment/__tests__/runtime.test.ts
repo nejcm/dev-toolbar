@@ -678,3 +678,47 @@ describe("URL-shaped fields", () => {
     expect(note?.masked).toBe(false);
   });
 });
+
+describe("revision", () => {
+  /*
+   * Regression: `buildSnapshot` and `failedSnapshot` bumped `revision` on every
+   * `build()` call, so `snapshotText()`/`diagnostics()` advanced the counter
+   * even though they never publish — and each `publish()` advanced it twice.
+   */
+  it("advances revision only on publish, not on export reads", () => {
+    let env = "dev";
+    const runtime = createEnvironmentRuntime({
+      detect: false,
+      context: () => ({ environment: env }),
+    });
+    const before = runtime.store.getSnapshot().revision;
+    runtime.snapshotText();
+    runtime.snapshotText();
+    runtime.diagnostics();
+    expect(runtime.store.getSnapshot().revision).toBe(before);
+    env = "staging";
+    runtime.refresh();
+    runtime.store.flush();
+    expect(runtime.store.getSnapshot().revision).toBe(before + 1);
+  });
+
+  it("does not advance revision when export reads hit a throwing context getter", () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    let healthy = false;
+    const runtime = createEnvironmentRuntime({
+      detect: false,
+      context: () => {
+        if (!healthy) throw new Error("boom");
+        return { environment: "dev" };
+      },
+    });
+    const before = runtime.store.getSnapshot().revision;
+    runtime.snapshotText();
+    runtime.diagnostics();
+    expect(runtime.store.getSnapshot().revision).toBe(before);
+    healthy = true;
+    runtime.refresh();
+    runtime.store.flush();
+    expect(runtime.store.getSnapshot().revision).toBe(before + 1);
+  });
+});

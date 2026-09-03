@@ -25,6 +25,7 @@ import type { ExtensionRuntimeApi, ToolbarStorage } from "../../core/contract";
 import { formatValue, inferType } from "./types";
 import type {
   FlagReading,
+  FlagType,
   FlagValue,
   FlagView,
   FlagsInput,
@@ -132,6 +133,62 @@ function isFlagValue(value: unknown): value is FlagValue {
   );
 }
 
+const emptyOverrides = (): Record<string, FlagValue> =>
+  Object.create(null) as Record<string, FlagValue>;
+
+const warnedDuplicateCatalogueKeys = new Set<string>();
+
+function warnDuplicateCatalogueKey(key: string): void {
+  if (warnedDuplicateCatalogueKeys.has(key)) return;
+  warnedDuplicateCatalogueKeys.add(key);
+  // eslint-disable-next-line no-console
+  console.warn(`[dev-toolbar/ext/flags] duplicate catalogue key "${key}" — first wins.`);
+}
+
+/** Test seam: duplicate-key warnings are per process and would leak between cases. */
+export function resetDuplicateCatalogueKeyWarnings(): void {
+  warnedDuplicateCatalogueKeys.clear();
+}
+
+function valueMatchesFlagType(
+  value: FlagValue,
+  type: FlagType,
+  variants: readonly FlagValue[] | undefined,
+): boolean {
+  if (type === "boolean") return typeof value === "boolean";
+  if (type === "number") return typeof value === "number";
+  if (type === "string") return typeof value === "string";
+  if (type === "variant") {
+    if (variants === undefined || variants.length === 0) return false;
+    return variants.some((candidate) => Object.is(candidate, value));
+  }
+  return false;
+}
+
+/** Drops overrides whose value does not match the catalogue entry's declared type. */
+export function vetOverrides(
+  parsed: Record<string, FlagValue>,
+  catalogue: readonly FlagReading[],
+): Record<string, FlagValue> {
+  const byKey = new Map<string, FlagReading>();
+  for (const reading of catalogue) {
+    if (typeof reading?.key !== "string" || reading.key === "") continue;
+    if (!byKey.has(reading.key)) byKey.set(reading.key, reading);
+  }
+  const output = emptyOverrides();
+  for (const [key, value] of Object.entries(parsed)) {
+    const reading = byKey.get(key);
+    if (reading === undefined) {
+      output[key] = value;
+      continue;
+    }
+    const type = inferType(reading);
+    if (!valueMatchesFlagType(value, type, reading.variants)) continue;
+    output[key] = value;
+  }
+  return output;
+}
+
 /** Parses a persisted override map, dropping anything that is not a flag value. */
 export function parseOverrides(raw: string | null): Record<string, FlagValue> {
   if (raw === null) return {};
@@ -156,9 +213,6 @@ export function parseOverrides(raw: string | null): Record<string, FlagValue> {
 function cloneOverrides(source: Record<string, FlagValue>): Record<string, FlagValue> {
   return Object.assign(Object.create(null) as Record<string, FlagValue>, source);
 }
-
-const emptyOverrides = (): Record<string, FlagValue> =>
-  Object.create(null) as Record<string, FlagValue>;
 
 /**
  * True when the URL asks for every override to be dropped.
@@ -288,6 +342,10 @@ export function createFlagsRuntime(options: FlagsRuntimeOptions = {}): FlagsRunt
     for (const reading of readings) {
       if (typeof reading?.key !== "string" || reading.key === "") continue;
       const key = reading.key;
+      if (seen.has(key)) {
+        warnDuplicateCatalogueKey(key);
+        continue;
+      }
       seen.add(key);
       const type = inferType(reading);
       const base = reading.value !== undefined ? reading.value : (reading.defaultValue ?? null);
@@ -443,10 +501,15 @@ export function createFlagsRuntime(options: FlagsRuntimeOptions = {}): FlagsRunt
 
   const signature = (snapshot: FlagsSnapshot): string =>
     `${snapshot.readError ?? ""}|${snapshot.reloadPending.join(",")}|` +
+    `${snapshot.maskedCount}|${snapshot.supplied ? 1 : 0}|` +
     snapshot.flags
       .map(
         (view) =>
-          `${view.key}=${view.effectiveText}:${view.baseText}:${view.defaultText}:${view.source}:${view.overridden ? 1 : 0}:${view.promoted ? 1 : 0}:${view.orphaned ? 1 : 0}:${view.applyError ?? ""}`,
+          `${view.key}=${view.label}:${view.description ?? ""}:${view.type}:` +
+          `${view.projectUrl ?? ""}:${view.expiresAt ?? ""}:${view.masked ? 1 : 0}:` +
+          `${view.effectiveText}:${view.baseText}:${view.defaultText}:${view.source}:` +
+          `${view.overridden ? 1 : 0}:${view.promoted ? 1 : 0}:${view.orphaned ? 1 : 0}:` +
+          `${view.applyError ?? ""}`,
       )
       .join("|");
 
@@ -582,14 +645,14 @@ export function createFlagsRuntime(options: FlagsRuntimeOptions = {}): FlagsRunt
       if (resetRequested(resetParam)) {
         overrides = emptyOverrides();
         persist();
-      } else {
+      } else if (writable) {
         let raw: string | null = null;
         try {
           raw = api.storage.getItem(OVERRIDES_KEY);
         } catch {
           raw = null;
         }
-        overrides = parseOverrides(raw);
+        overrides = vetOverrides(parseOverrides(raw), readFlags());
         // Re-apply on every mount — this is what makes an override outlive
         // the tab. Applying the same value twice is fine; setting a flag is
         // inherently idempotent.

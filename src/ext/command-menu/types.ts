@@ -39,12 +39,13 @@ function subsequence(haystack: string, needle: string): boolean {
 }
 
 /** 0 when the term does not appear at all. Prefix beats word-start beats infix. */
-function fieldScore(field: string, term: string): number {
+function fieldScore(field: string, term: string, wordStart?: RegExp): number {
   const haystack = field.toLowerCase();
   if (haystack === term) return 8;
   if (haystack.startsWith(term)) return 6;
   // A term starting any word — "over" in "Clear all local flag overrides".
-  if (new RegExp(`(^|[^a-z0-9])${escapeRegExp(term)}`).test(haystack)) return 4;
+  const pattern = wordStart ?? new RegExp(`(^|[^a-z0-9])${escapeRegExp(term)}`);
+  if (pattern.test(haystack)) return 4;
   if (haystack.includes(term)) return 3;
   if (subsequence(haystack, term)) return 1;
   return 0;
@@ -61,23 +62,28 @@ function escapeRegExp(value: string): string {
  * narrow, which is the behaviour a keyboard user is steering by. `0` means it
  * is filtered out.
  */
-export function scoreCommand(command: ToolbarCommand, query: string): number {
+export function scoreCommand(
+  command: ToolbarCommand,
+  query: string,
+  termPatterns?: ReadonlyMap<string, RegExp>,
+): number {
   const terms = query.trim().toLowerCase().split(/\s+/).filter(Boolean);
   if (terms.length === 0) return 1;
 
   let total = 0;
   for (const term of terms) {
+    const wordStart = termPatterns?.get(term);
     let best = 0;
     for (const [field, weight] of FIELD_WEIGHTS) {
       if (field === "keyword") {
         for (const keyword of command.keywords ?? []) {
-          best = Math.max(best, fieldScore(keyword, term) * weight);
+          best = Math.max(best, fieldScore(keyword, term, wordStart) * weight);
         }
         continue;
       }
       const value = command[field];
       if (typeof value !== "string") continue;
-      best = Math.max(best, fieldScore(value, term) * weight);
+      best = Math.max(best, fieldScore(value, term, wordStart) * weight);
     }
     if (best === 0) return 0;
     total += best;
@@ -104,9 +110,20 @@ export function filterCommands(
   query: string,
   recent: readonly string[] = [],
 ): CommandMatch[] {
+  const terms = query.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  const termPatterns =
+    terms.length === 0
+      ? undefined
+      : new Map(
+          terms.map((term) => [term, new RegExp(`(^|[^a-z0-9])${escapeRegExp(term)}`)] as const),
+        );
   const recentRank = new Map(recent.map((id, index) => [id, index]));
   const scored = commands
-    .map((command, index) => ({ command, index, score: scoreCommand(command, query) }))
+    .map((command, index) => ({
+      command,
+      index,
+      score: scoreCommand(command, query, termPatterns),
+    }))
     .filter((entry) => entry.score > 0);
 
   const searching = query.trim() !== "";

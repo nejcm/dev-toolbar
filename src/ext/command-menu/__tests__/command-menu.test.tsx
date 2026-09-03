@@ -273,6 +273,27 @@ describe("searching and keyboard navigation", () => {
     expect(dialog()).not.toBeNull();
     expect(ran).toEqual([]);
   });
+
+  /*
+   * Regression: Arrow/Home/End moved the palette during IME composition while
+   * Escape and Enter already checked isComposing.
+   */
+  it("ignores arrow and Home/End navigation while an IME is composing", () => {
+    mount();
+    hotkey();
+    const idOf = () => activeOption()?.dataset["dtbCommandId"];
+    expect(idOf()).toBe("flags.toggle.a");
+    fireEvent.keyDown(dialog() as HTMLElement, {
+      key: "ArrowDown",
+      isComposing: true,
+    });
+    expect(idOf()).toBe("flags.toggle.a");
+    fireEvent.keyDown(dialog() as HTMLElement, {
+      key: "End",
+      isComposing: true,
+    });
+    expect(idOf()).toBe("flags.toggle.a");
+  });
 });
 
 describe("running", () => {
@@ -292,8 +313,24 @@ describe("running", () => {
     hotkey();
     await act(async () => {
       fireEvent.pointerDown(options()[2] as HTMLElement);
+      fireEvent.click(options()[2] as HTMLElement);
     });
     expect(ran).toEqual(["metrics.reset"]);
+  });
+
+  /*
+   * Regression: pointerdown ran the command, so touch could not cancel a slow
+   * run and the first finger-down executed whatever was under it.
+   */
+  it("does not run on pointerdown alone — only on click", async () => {
+    mount();
+    hotkey();
+    fireEvent.pointerDown(options()[0] as HTMLElement);
+    expect(ran).toEqual([]);
+    await act(async () => {
+      fireEvent.click(options()[0] as HTMLElement);
+    });
+    expect(ran).toEqual(["flags.toggle.a"]);
   });
 
   it("keeps the palette open and shows the failure when a command throws", async () => {
@@ -355,6 +392,7 @@ describe("running", () => {
     press("Enter");
     press("Enter");
     fireEvent.pointerDown(options()[0] as HTMLElement);
+    fireEvent.click(options()[0] as HTMLElement);
     expect(calls).toBe(1);
     expect(options()[0]?.getAttribute("aria-busy")).toBe("true");
 

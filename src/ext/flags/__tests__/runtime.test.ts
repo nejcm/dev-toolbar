@@ -5,7 +5,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Mock } from "vitest";
 import { createMemoryStorage } from "../../../core/storage";
-import { createFlagsRuntime, OVERRIDES_KEY, parseOverrides } from "../runtime";
+import {
+  createFlagsRuntime,
+  OVERRIDES_KEY,
+  parseOverrides,
+  resetDuplicateCatalogueKeyWarnings,
+  vetOverrides,
+} from "../runtime";
 import { parseValue, severityFor } from "../types";
 import type { FlagReading, FlagValue, FlagView } from "../types";
 import type { ExtensionRuntimeApi, ToolbarStorage } from "../../../core/contract";
@@ -184,6 +190,23 @@ describe("read-only mode", () => {
     runtime.setOverride("ui-facelift", true);
     expect(storage.getItem(OVERRIDES_KEY)).toBeNull();
   });
+
+  /*
+   * Regression: read-only panels loaded stored overrides on start() and claimed
+   * source: "local-override" even though apply() is a no-op — the app never saw them.
+   */
+  it("does not load stored overrides on start when there is no adapter", () => {
+    const storage = createMemoryStorage({
+      [OVERRIDES_KEY]: JSON.stringify({ "ui-facelift": true }),
+    });
+    const runtime = createFlagsRuntime({ flags: CATALOGUE });
+    runtime.start(fakeApi(storage).api);
+    expect(runtime.overrides()).toEqual({});
+    const view = runtime.store.getSnapshot().flags.find((entry) => entry.key === "ui-facelift");
+    expect(view?.overridden).toBe(false);
+    expect(view?.source).not.toBe("local-override");
+    expect(view?.source).toBe("default");
+  });
 });
 
 describe("persistence", () => {
@@ -226,6 +249,69 @@ describe("persistence", () => {
       a: true,
       c: "x",
     });
+  });
+
+  /*
+   * Regression: persisted overrides were union-vetted but not per-flag typed;
+   * a string stored for a boolean flag reached the adapter with the wrong type.
+   */
+  it("drops type-mismatched overrides on start rather than applying them", () => {
+    const storage = createMemoryStorage({
+      [OVERRIDES_KEY]: JSON.stringify({ "ui-facelift": "true", "search.rank": "9" }),
+    });
+    const applied: [string, FlagValue | undefined][] = [];
+    const runtime = createFlagsRuntime({
+      flags: CATALOGUE,
+      onOverride: (key, value) => applied.push([key, value]),
+    });
+    runtime.start(fakeApi(storage).api);
+    expect(applied).toEqual([]);
+    expect(runtime.overrides()).toEqual({});
+    expect(runtime.store.getSnapshot().overriddenCount).toBe(0);
+  });
+
+  it("drops variant overrides outside the declared list on start", () => {
+    const catalogue: FlagReading[] = [
+      {
+        key: "theme",
+        type: "variant",
+        variants: ["light", "dark", null],
+        value: "light",
+      },
+    ];
+    const storage = createMemoryStorage({
+      [OVERRIDES_KEY]: JSON.stringify({ theme: "neon" }),
+    });
+    const applied: [string, FlagValue | undefined][] = [];
+    const runtime = createFlagsRuntime({
+      flags: catalogue,
+      onOverride: (key, value) => applied.push([key, value]),
+    });
+    runtime.start(fakeApi(storage).api);
+    expect(applied).toEqual([]);
+    expect(runtime.overrides()).toEqual({});
+  });
+
+  it("keeps variant overrides that are declared", () => {
+    const catalogue: FlagReading[] = [
+      {
+        key: "theme",
+        type: "variant",
+        variants: ["light", "dark", null],
+        value: "light",
+      },
+    ];
+    const storage = createMemoryStorage({
+      [OVERRIDES_KEY]: JSON.stringify({ theme: "dark" }),
+    });
+    const applied: [string, FlagValue | undefined][] = [];
+    const runtime = createFlagsRuntime({
+      flags: catalogue,
+      onOverride: (key, value) => applied.push([key, value]),
+    });
+    runtime.start(fakeApi(storage).api);
+    expect(applied).toEqual([["theme", "dark"]]);
+    expect(runtime.overrides()).toEqual({ theme: "dark" });
   });
 
   it("round-trips a __proto__ key as data, in both directions", () => {
@@ -623,6 +709,60 @@ describe("promotion", () => {
 });
 
 describe("the flag list signature", () => {
+  /*
+   * Regression: duplicate catalogue keys produced two rows under one React key.
+   */
+  it("keeps the first of a duplicated catalogue key and warns once per key", () => {
+    resetDuplicateCatalogueKeyWarnings();
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const runtime = createFlagsRuntime({
+      flags: [
+        { key: "dup", type: "boolean", value: true, label: "first" },
+        { key: "dup", type: "boolean", value: false, label: "second" },
+      ],
+    });
+    const snapshot = runtime.store.getSnapshot();
+    expect(snapshot.flags).toHaveLength(1);
+    expect(snapshot.flags[0]?.label).toBe("first");
+    expect(snapshot.flags[0]?.effective).toBe(true);
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(String(warn.mock.calls[0]?.[0])).toContain('duplicate catalogue key "dup"');
+    runtime.refresh();
+    runtime.store.flush();
+    expect(warn).toHaveBeenCalledTimes(1);
+    warn.mockRestore();
+  });
+
+  it("warns once for each distinct duplicate catalogue key", () => {
+    resetDuplicateCatalogueKeyWarnings();
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    createFlagsRuntime({
+      flags: [
+        { key: "a", type: "boolean", value: true },
+        { key: "a", type: "boolean", value: false },
+        { key: "b", type: "boolean", value: true },
+        { key: "b", type: "boolean", value: false },
+      ],
+    });
+    expect(warn).toHaveBeenCalledTimes(2);
+    expect(String(warn.mock.calls[0]?.[0])).toContain('"a"');
+    expect(String(warn.mock.calls[1]?.[0])).toContain('"b"');
+    warn.mockRestore();
+  });
+
+  it("republishes when label or masked metadata changes", () => {
+    let label = "Alpha";
+    const runtime = createFlagsRuntime({
+      flags: () => [{ key: "a", type: "string", value: "secret-token-abc", label }],
+    });
+    const before = runtime.store.getSnapshot().revision;
+    label = "Beta";
+    runtime.refresh();
+    runtime.store.flush();
+    expect(runtime.store.getSnapshot().revision).toBeGreaterThan(before);
+    expect(runtime.store.getSnapshot().flags[0]?.label).toBe("Beta");
+  });
+
   it("republishes when only the default or the source changed", () => {
     let extra = false;
     const runtime = createFlagsRuntime({
@@ -644,6 +784,33 @@ describe("the flag list signature", () => {
     const view = runtime.store.getSnapshot().flags[0];
     expect(view?.defaultText).toBe("changed");
     expect(view?.source).toBe("cohort");
+  });
+});
+
+describe("vetOverrides", () => {
+  it("drops catalogue entries whose value does not match the declared type", () => {
+    expect(
+      vetOverrides({ "ui-facelift": "true" }, [
+        { key: "ui-facelift", type: "boolean", value: false },
+      ]),
+    ).toEqual({});
+  });
+
+  it("keeps orphans and valid catalogue overrides", () => {
+    expect(
+      vetOverrides({ orphan: "on", "ui-facelift": true }, [
+        { key: "ui-facelift", type: "boolean", value: false },
+      ]),
+    ).toEqual({ orphan: "on", "ui-facelift": true });
+  });
+
+  it("vets against the first catalogue entry when a key is duplicated", () => {
+    expect(
+      vetOverrides({ x: "on" }, [
+        { key: "x", type: "boolean", value: false },
+        { key: "x", type: "string", value: "off" },
+      ]),
+    ).toEqual({});
   });
 });
 

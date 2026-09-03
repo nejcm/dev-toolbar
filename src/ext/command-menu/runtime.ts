@@ -394,7 +394,14 @@ export function createCommandMenuRuntime(
 
     start(runtimeApi) {
       api = runtimeApi;
-      const recent = rememberRecent ? readRecent(runtimeApi.storage.getItem(RECENT_KEY)) : [];
+      let recent: string[] = [];
+      if (rememberRecent) {
+        try {
+          recent = readRecent(runtimeApi.storage.getItem(RECENT_KEY));
+        } catch {
+          recent = [];
+        }
+      }
       store.set({ ...store.peek(), ready: true, recent });
 
       const onKeyDown = (event: KeyboardEvent) => {

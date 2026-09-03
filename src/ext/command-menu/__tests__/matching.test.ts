@@ -105,4 +105,28 @@ describe("filterCommands", () => {
     expect(filterCommands(commands, "zzzz")).toEqual([]);
     expect(sectionsOf([])).toEqual([]);
   });
+
+  /*
+   * Regression: fieldScore compiled a RegExp per command × field × term on every
+   * keystroke instead of once per distinct term.
+   */
+  it("compiles one word-start pattern per query term, not per command field", () => {
+    const Original = globalThis.RegExp;
+    let constructions = 0;
+    globalThis.RegExp = class extends Original {
+      constructor(...args: ConstructorParameters<typeof Original>) {
+        constructions += 1;
+        super(...args);
+      }
+    } as typeof RegExp;
+    try {
+      const many = Array.from({ length: 40 }, (_, index) =>
+        make(`cmd-${index}`, `Command number ${index}`, "Group"),
+      );
+      filterCommands(many, "number");
+      expect(constructions).toBe(1);
+    } finally {
+      globalThis.RegExp = Original;
+    }
+  });
 });

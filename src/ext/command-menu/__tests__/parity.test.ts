@@ -11,28 +11,45 @@ import {
 } from "../../../core/shortcut";
 import { isApplePlatform, matchesHotkey, parseHotkey } from "../runtime";
 
-// Closed list: when an alias or CODES entry is added to src/core/shortcut.ts, add
-// a chord here — otherwise a new one-sided entry would not be noticed.
-const CHORDS = [
-  "Mod+Shift+.",
-  "Mod+K",
-  "Ctrl+Alt+Shift+P",
-  "Cmd+/",
-  "Meta+,",
-  "Alt+[",
-  "Mod+]",
-  "Mod+\\",
-  "Mod+-",
-  "Mod+=",
-  "Mod+`",
-  "Mod+;",
-  "Mod+'",
-  "Ctrl+Enter",
+const MODIFIER_ALIASES = [
+  "mod",
+  "cmdorctrl",
+  "ctrl",
+  "control",
+  "meta",
+  "cmd",
+  "command",
+  "alt",
+  "option",
+  "shift",
+] as const;
+
+const PRINTABLE_KEYS = Array.from({ length: 0x7e - 0x21 + 1 }, (_, index) =>
+  String.fromCharCode(0x21 + index),
+);
+
+// Named keys `codeFor` resolves outside the printable-ASCII table — the old
+// hand-picked list covered these explicitly. A new *alias* in core's modifier
+// switch is undetectable by any closed chord list; only a new physical key or
+// CODES entry is caught structurally below.
+const NAMED_KEYS = [
+  "Mod+Enter",
+  "Mod+Escape",
+  "Mod+Tab",
   "Mod+F1",
-  "  mod + k  ",
+  "Mod+ArrowDown",
+  "Mod+Space",
+  "Ctrl+Alt+Shift+P",
+] as const;
+
+const CHORDS = [
+  ...PRINTABLE_KEYS.map((key) => `Mod+${key}`),
+  ...MODIFIER_ALIASES.flatMap((alias) => [`${alias}+k`, `Mod+${alias}+k`]),
+  ...NAMED_KEYS,
   "Mod+Shift",
   "Shift+",
   "",
+  "  mod + k  ",
 ] as const;
 
 const PARSEABLE_CHORDS = CHORDS.filter((chord) => parseShortcut(chord) !== null);

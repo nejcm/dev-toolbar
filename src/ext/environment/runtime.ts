@@ -377,7 +377,6 @@ export function createEnvironmentRuntime(
       });
     }
 
-    revision += 1;
     return {
       revision,
       at: now(),
@@ -419,7 +418,6 @@ export function createEnvironmentRuntime(
 
   /** What the panel shows when the context could not be read at all. */
   const failedSnapshot = (): EnvironmentSnapshot => {
-    revision += 1;
     return {
       revision,
       at: now(),
@@ -459,7 +457,10 @@ export function createEnvironmentRuntime(
     equals: (a, b) => signature(a) === signature(b),
   });
 
-  const publish = () => store.set(build());
+  const publish = () => {
+    revision += 1;
+    store.set(build());
+  };
 
   return {
     store,
