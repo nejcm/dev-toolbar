@@ -13,7 +13,8 @@ underneath stays usable while one is on.
 - `overlay-under-chrome` stays below the bar, the panel and the palette.
 - `overlay-click-through` passes clicks to whatever is underneath.
 - `overlay-flags` marks controls with no accessible name and a positive
-  `tabindex` in focus order.
+  `tabindex` in focus order (and, with the pending PR stack, `aria-hidden`
+  focusables — see Gotchas).
 - `overlay-clear` leaves no trace once every overlay is off.
 
 ## How to get to it (user POV)
@@ -90,3 +91,12 @@ Preconditions:
 - These are the assertions least suited to jsdom and most likely to be
   hand-waved. A screenshot alone is not proof of click-through — pair it with
   the counter.
+- The focus-order scan changes with the pending PR stack #21–#28
+  (`fix(ext/overlays): keep geometry current …`): an `aria-hidden="true"`
+  element that is still a Tab stop is no longer skipped but badged, with a
+  `[data-dtb-part="ovl-tag"]` inside its badge reading `aria-hidden` (a
+  screen reader cannot see it, a keyboard user still lands on it), and
+  anything inside an `inert` ancestor is skipped via `closest("[inert]")`
+  rather than the element's own attribute. Source-confirmed, not driven: the
+  playground ships no `aria-hidden` *focusable* — `overlay-unnamed` hides only
+  its icon span — so the badge is unverifiable here until a fixture exists.

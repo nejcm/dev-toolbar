@@ -94,6 +94,13 @@ Preconditions:
   `title` or a `data-` attribute to compare against. Nothing in the DOM proves
   the redactor saw the secret — the fixture in `extensions.tsx` is the record
   of what was fed in, so cite it alongside the artifact.
+- The panel root `[data-dtb-part="env-panel"]` carries no `aria-label` once
+  the pending PR stack #21–#28 lands (a role-less `div` with a label is an
+  ARIA violation, so it was removed). The panel's accessible name is core's:
+  the `[data-dtb-part="panel"]` host is a `region` named `Environment`
+  (`src/core/PanelHost.tsx`), so `find` by role `region` still resolves; the
+  chip is the one with no name of its own (`envstaging`). Source-confirmed,
+  not driven.
 - `Route`, `Viewport` and `Connection` in the `client` group are detected by
   the extension, not supplied by the app; they change with the viewport you
   pinned.

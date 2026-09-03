@@ -10,6 +10,11 @@ driving the app, then use the matching feature file as the recipe.
   `{"name": "playground"}`. It serves `http://localhost:5273` and rebuilds
   `dist/` first.
 - Run `sh .claude/skills/verify-dev-toolbar/doctor.sh` and require exit 0.
+  If the preview was already running when you arrived, also require the
+  probe's `loadedAt` to be later than the `dist/ built` stamp doctor printed;
+  otherwise `navigate` to `http://localhost:5273/` first. A rebuild reaches a
+  running tab through HMR and a remount, not a reload, so only `loadedAt`
+  says which build the document was loaded over (SKILL.md, Launch).
 - Require a clean store: `localStorage.clear()` then reload, so no
   `dtb:v1:playground:*` key survives from an earlier run. The probe's
   `storage` is `{}` at that point — but only at that point. Ordinary driving
@@ -29,6 +34,12 @@ driving the app, then use the matching feature file as the recipe.
 - For any keyboard step, the Browser pane must be **displayed**: `computer`
   `{"action":"key"}` delivers nothing to the page while it is hidden, silently.
   `left_click` and `type` are unaffected. `tabs_context` reports which it is.
+- A hidden pane also delivers **no frames**: `requestAnimationFrame` never
+  ticks and `ResizeObserver` callbacks are never delivered until something
+  forces a compositor frame, and only `computer {"action":"screenshot"}`
+  does — `wait` does not. Any frame-driven step (the overflow collapse first
+  of all) is therefore *act → screenshot → read* while hidden, and a report
+  from a hidden pane says so (see [shell.md](./shell.md) Gotchas).
 - Start the run's artifact directory once with `capture.sh --new-run`; every
   later `capture.sh` call reuses the id it recorded. Exporting `VERIFY_RUN_ID`
   does not work — shell state does not survive between Bash tool calls.
@@ -44,7 +55,8 @@ driving the app, then use the matching feature file as the recipe.
 - Treat every selector, key name and query string here as literal.
 - Send `Enter`, never `Return`.
 - Re-read after a resize or a context mutation instead of asserting on the
-  first snapshot.
+  first snapshot — with a screenshot between the reads when the pane is
+  hidden, or they agree for the wrong reason.
 - Restore the baseline after a mutation. Cleanup never touches
   `.verify-artifacts/`.
 
@@ -59,7 +71,15 @@ driving the app, then use the matching feature file as the recipe.
 - Prove persistence by reloading, never by reading back the store you wrote.
 - Pair a screenshot with a probe snapshot asserting the same fact in text;
   screenshots do not survive the run.
-- Record the feature ID and the entry point used with every artifact.
+- Record the feature ID and the entry point used with every artifact, and
+  pass the feature *file's* name as `capture.sh`'s `<feature>` — `overflow`,
+  not `c1-per-item-width`. The script warns on stderr when the name matches
+  no file here; the artifact tree is only greppable against this map when
+  they agree.
+- A claim that something *never* happened during a stress needs a `window`
+  `error` listener installed before the stress, not a console read after it:
+  `read_console_messages` does not see the `ResizeObserver loop …`
+  `ErrorEvent`. [overflow.md](./overflow.md) has the recipe.
 - Report an unreachable path with the attempted call and the unmet
   precondition. A path you skipped is not verified by a different path.
 
@@ -80,7 +100,17 @@ publishes, but only some were executed end to end when this map was written:
 - **Not driven — verify before reporting:** the flags text/number editors and
   their `rejected` state, clipboard assertions anywhere, the environment
   impersonation and empty-context fixtures, the focus-order overlay's markings,
-  and every feature listed as unmapped below.
+  the overflow loop check's stepping sequence, and every feature listed as
+  unmapped below.
+- **Not verifiable from the playground as it stands:** core's `styleNonce`
+  prop (arriving with the pending PR stack #21–#28 — it sets the `nonce`
+  *property* on core's injected `<style>` so a `style-src 'nonce-…'` policy
+  keeps the sheet). `App.tsx` never passes it and has no `?dtb-nonce=` hatch
+  the way it has `?dtb-flags=reset`, and this skill forbids editing the app
+  to verify; report it as not driven until the playground grows one. Likewise
+  the flags read-only branch ([flags.md](./flags.md)) and the focus-order
+  `aria-hidden` badge ([overlays.md](./overlays.md)) — both need a fixture
+  the playground lacks.
 
 ## Feature entry contract
 
@@ -108,4 +138,12 @@ Not yet mapped, and therefore not yet verified: `theme-editor` (token editing,
 reserved `--dtb-*` names refused, `?dtb-theme=reset`, the four export formats),
 `metrics` (the `LoadControls` buttons drive it), `diagnostics` (snapshot
 capture and download), and the error-isolation chip the `boom` extension
-raises. Add them here before claiming them.
+raises. Add them here before claiming them. Three of those surfaces move with
+the pending PR stack #21–#28, source-confirmed there and not driven — the
+metrics tabs gain `id`, `aria-controls`, a roving `tabindex` and
+Arrow/Home/End keys, with the `tabpanel` `aria-labelledby` the active tab;
+the theme-editor chip's `aria-label` becomes `Theme, 1 edited` once a token
+is edited; the diagnostics chip's becomes `Diagnostics, 1 missing` once a
+snapshot has omissions — so a `find` by role `button` and the bare label
+stops matching in exactly the states worth verifying. Map them with those
+names, not the resting ones.

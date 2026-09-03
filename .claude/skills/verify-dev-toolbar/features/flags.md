@@ -112,6 +112,16 @@ Preconditions:
   extension's draft stays empty and the commit is a no-op — it looks like a
   silent pass. Verify this step with the pane displayed, using `computer`
   `type` plus `Enter`, before reporting it either way.
+- **The read-only branch is unreachable in the playground.** `writable` is
+  `typeof onOverride === "function"` in `src/ext/flags/runtime.ts`, and the
+  playground adapter always passes one, so every step above is the writable
+  path and the `switch` named `Toggle new-header` stays. Without it (pending
+  PR stack #21–#28, `fix(ext): stop trusting unvetted overrides …`) a
+  promoted boolean drops `role="switch"` and `aria-checked` entirely, its
+  click opens the panel instead of toggling, the chip `title` ends in
+  `read-only`, and the row's `switchChecked` is `null`. Source-confirmed, not
+  driven; there is no fixture for it, and `flag-break-adapter` is not one — it
+  keeps `onOverride` and makes it throw, which is the `not-applied` path.
 - Overrides live in the browser, not the URL. Copying the recipe writes to the
   clipboard, which needs the pane focused; prefer asserting on the panel and
   storage rather than on clipboard contents.

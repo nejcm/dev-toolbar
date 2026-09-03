@@ -28,7 +28,9 @@ fi
 # 2. The playground consumes `file:../..`, so a missing dist/ or a missing
 #    install gives a blank page rather than an error worth reading.
 if [ -f dist/index.js ] && [ -f dist/styles.css ]; then
-  say OK "dist/ built ($(date -r dist/index.js '+%Y-%m-%d %H:%M'))"
+  # UTC ISO on purpose: the probe's `loadedAt` is the same shape, so a tab
+  # whose `loadedAt` sorts before this stamp is serving an older build.
+  say OK "dist/ built $(date -u -r dist/index.js '+%Y-%m-%dT%H:%M:%SZ') — a tab whose probe \`loadedAt\` is earlier predates it"
   newer=$(find src -newer dist/index.js -name '*.ts*' -print -quit 2>/dev/null)
   [ -n "$newer" ] && say WARN "src/ is newer than dist/ ($newer) — \`bun run build\` or restart the preview"
 else

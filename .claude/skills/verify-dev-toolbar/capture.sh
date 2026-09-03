@@ -57,6 +57,16 @@ for arg in "$1" "$2"; do
   esac
 done
 
+# The feature name is advisory, not enforced — a run may need a directory the
+# map has no file for yet — but an ad-hoc name (`c1-per-item-width`) makes the
+# artifact ungreppable against features/*.md, so say so. Stderr only, and the
+# write goes ahead: refusing would lose the evidence over its label.
+skill_dir=$(cd "$(dirname "$0")" && pwd)
+if [ "$1" = "README" ] || [ ! -f "$skill_dir/features/$1.md" ]; then
+  known=$(ls "$skill_dir/features" | sed -n 's/\.md$//p' | grep -v '^README$' | tr '\n' ' ')
+  echo "capture.sh: warning: '$1' matches no features/*.md — canonical names: ${known% }" >&2
+fi
+
 if [ -n "${VERIFY_RUN_ID:-}" ]; then
   run=$VERIFY_RUN_ID
   case "$run" in
