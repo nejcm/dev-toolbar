@@ -81,6 +81,10 @@ export const DEFAULT_SENSITIVE_KEYS: readonly string[] = [
   "creditcard",
   "cardnumber",
   "cvv",
+  "cvc",
+  "jwt",
+  "passphrase",
+  "passcode",
 ];
 
 export interface RedactOptions {
@@ -95,6 +99,10 @@ export interface RedactOptions {
   extraKeys?: readonly string[];
   /**
    * Keys that survive even when they match. Wins over the lists above.
+   *
+   * Metric payloads sometimes carry innocent keys whose segments overlap a
+   * sensitive entry (`promptTokens` → `token` via the trailing-`s` fold).
+   * Name the exact key here rather than trimming the default list.
    *
    * Unlike `keys`/`extraKeys`, an entry here must match the key's **entire**
    * canonicalised form, not just a run inside it: `allowKeys: ["sessionName"]`
@@ -148,9 +156,13 @@ export interface RedactOptions {
   maxNodes?: number;
   /**
    * Also mask string *values* that look like credentials regardless of key:
-   * `Bearer …`/`Basic …` scheme headers, bare JWTs, and absolute `http(s)`
-   * URLs with a sensitive query/fragment parameter (the OAuth-callback
-   * shape, where key matching can't find the secret). Default `true`.
+   * `Bearer …`/`Basic …`/`Digest …` (parameterised `key=` form) scheme headers,
+   * bare JWTs, and absolute
+   * URLs (`scheme://…` for any registered scheme — `postgres://`,
+   * `redis://`, `wss://`, etc.) with a sensitive query/fragment parameter
+   * (the OAuth-callback shape, where key matching can't find the secret).
+   * Relative references and header values that are not bare absolute URLs
+   * are out of scope here — call `redactUrl()` on those. Default `true`.
    *
    * A URL with nothing to mask is returned byte-for-byte unchanged.
    */
@@ -163,7 +175,7 @@ export interface RedactOptions {
 // onto a word. Unicode properties (not `[A-Za-z]`) so `contraseña`, `пароль`,
 // `密码` segment correctly too — `NOT_WORD` as `[^a-z\d]+` used to treat `ñ`
 // as a separator and split `contraseña` into `contrase`/`a`.
-const ACRONYM = /(\p{Lu}+)(\p{Lu}\p{Ll})/gu;
+const ACRONYM = /(\p{Lu})(?=\p{Lu}\p{Ll})/gu;
 const CAMEL = /([\p{Ll}\p{N}])(\p{Lu})/gu;
 const LETTER_DIGIT = /(\p{L})(\p{N})/gu;
 const DIGIT_LETTER = /(\p{N})(\p{L})/gu;
@@ -176,7 +188,8 @@ const NOT_WORD = /[^\p{L}\p{N}]+/u;
  */
 function segments(key: string): string[] {
   return key
-    .replace(ACRONYM, "$1 $2")
+    .normalize("NFC")
+    .replace(ACRONYM, "$1 ")
     .replace(CAMEL, "$1 $2")
     .replace(LETTER_DIGIT, "$1 $2")
     .replace(DIGIT_LETTER, "$1 $2")
@@ -346,14 +359,15 @@ function matches(key: string, resolved: ResolvedOptions): boolean {
 
 // `xxxxx.yyyyy.zzzzz` with base64url segments.
 const JWT = /^[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}$/;
-const SCHEME = /^(bearer|basic|digest|token)\s+\S+/i;
+const SCHEME_CREDENTIAL = /^(bearer|basic|token)\s+\S+$/i;
+const SCHEME_DIGEST = /^digest\s+[a-z-]+=/i;
 
 // Cheap prefix gate before paying for a URL parse.
-const ABSOLUTE_URL = /^https?:\/\/\S+$/i;
+const ABSOLUTE_URL = /^[A-Za-z][A-Za-z0-9+.-]*:\/\/\S+$/;
 
 function redactString(value: string, resolved: ResolvedOptions): string {
   if (!resolved.values) return value;
-  if (SCHEME.test(value)) {
+  if (SCHEME_CREDENTIAL.test(value) || SCHEME_DIGEST.test(value)) {
     const scheme = value.split(/\s+/, 1)[0] as string;
     return `${scheme} ${resolved.mask}`;
   }
@@ -501,20 +515,31 @@ function walk(
     }
     if (value instanceof Error) {
       // A subclass or manually constructed Error can shadow `name`/`message`
-      // with a throwing getter.
-      let name: string;
+      // with a throwing getter. The instance stays in `seen` while those
+      // properties are read and walked so `error.message = error` becomes
+      // `[circular]`, not a depth blow-up.
+      seen.add(object);
+      let name: unknown;
       try {
         name = value.name;
       } catch {
         name = "[getter threw]";
       }
-      let message: string;
+      let message: unknown;
       try {
-        message = redactString(value.message, resolved);
+        message = value.message;
       } catch {
         message = "[getter threw]";
       }
-      return { name, message };
+      const output = {
+        name: typeof name === "string" ? name : walk(name, resolved, depth + 1, seen, budget),
+        message:
+          typeof message === "string"
+            ? redactString(message, resolved)
+            : walk(message, resolved, depth + 1, seen, budget),
+      };
+      seen.delete(object);
+      return output;
     }
     if (value instanceof URL) return redactUrlResolved(value.href, resolved);
     if (typeof Headers !== "undefined" && value instanceof Headers) {
@@ -757,8 +782,10 @@ function maskUrl(url: string, resolved: ResolvedOptions): UrlPass {
 
   if (parsed.hash.includes("=")) {
     const raw = parsed.hash.slice(1);
-    const separator = raw.startsWith("?") ? "?" : "";
-    const params = new URLSearchParams(separator ? raw.slice(1) : raw);
+    const question = raw.indexOf("?");
+    const prefix = question === -1 ? "" : raw.slice(0, question + 1);
+    const query = question === -1 ? raw : raw.slice(question + 1);
+    const params = new URLSearchParams(query);
     let touched = false;
     // Copied: `set` below mutates the params being iterated.
     for (const key of Array.from(params.keys())) {
@@ -768,7 +795,7 @@ function maskUrl(url: string, resolved: ResolvedOptions): UrlPass {
       }
     }
     if (touched) {
-      parsed.hash = `#${separator}${params.toString()}`;
+      parsed.hash = `#${prefix}${params.toString()}`;
       masked = true;
     }
   }
@@ -873,8 +900,14 @@ function redactHeadersResolved(
     return output;
   }
   if (Array.isArray(headers)) {
+    const joined = new Map<string, string[]>();
     for (const pair of headers as readonly (readonly [string, string])[]) {
-      put(pair[0], pair[1]);
+      const values = joined.get(pair[0]);
+      if (values === undefined) joined.set(pair[0], [pair[1]]);
+      else values.push(pair[1]);
+    }
+    for (const [key, values] of joined) {
+      put(key, values.join(", "));
     }
     return output;
   }
