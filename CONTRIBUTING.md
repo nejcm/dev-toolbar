@@ -312,9 +312,11 @@ not write changelog entries by hand.
    than a second workflow run because the merge lands through the API under
    `GITHUB_TOKEN`, which triggers no workflows — so the `push` trigger never
    sees it. One push to `main` is one whole release.
-5. The same run then gates on CI and publishes to npm. The gate is `ci.yml`
-   called as a reusable workflow, and it is the only CI the release commit
-   gets: `ci.yml` skips the release PR itself (by release-please's
+5. The same run then gates on CI and publishes to npm. Both jobs check out the
+   release **tag**, not `github.sha` — that is the push that started the run,
+   which predates the release commit, and checking it out would gate the wrong
+   tree and pack the previous version. The gate is `ci.yml` called as a
+   reusable workflow, and it is the only CI the release commit gets: `ci.yml` skips the release PR itself (by release-please's
    `release-please--*` branch prefix, or the `chore(release):` title marker)
    and skips `chore(release):` pushes.
 6. Publishing uses npm **trusted publishing** (OIDC). There is no npm token in

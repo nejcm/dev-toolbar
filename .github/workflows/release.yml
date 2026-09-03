@@ -179,6 +179,12 @@ jobs:
     permissions:
       contents: read
     uses: ./.github/workflows/ci.yml
+    with:
+      # Load-bearing. Without it CI checks out the caller's `github.sha` — the
+      # push that started this run, one commit *before* the release commit the
+      # job above just created — so the gate would verify the pre-release tree
+      # and pass while saying it had tested the release.
+      ref: ${{ needs.release-please.outputs.tag_name }}
 
   # 3. Publish to npm via trusted publishing (OIDC). No token, anywhere.
   #
@@ -208,6 +214,13 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # The release tag, not the default `github.sha`. `github.sha` is the
+          # push that triggered this run, which predates the release commit —
+          # checking it out packs the *previous* version's `package.json` and
+          # publishes that, leaving the tag that was just created unpublished
+          # forever. Observed: v0.4.0 tagged, tarball built as 0.3.0.
+          ref: ${{ needs.release-please.outputs.tag_name }}
 
       - name: Set up bun
         uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0

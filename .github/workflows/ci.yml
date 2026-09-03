@@ -24,6 +24,17 @@ on:
         type: boolean
         required: false
         default: true
+      ref:
+        description: >-
+          Commit-ish to check out. Callers that gate a release MUST pass the
+          release tag: on `workflow_call` the checkout defaults to the
+          *caller's* `github.sha`, which for a release run is the push that
+          started it — not the release commit the caller created mid-run. Left
+          empty this verifies the triggering ref, which is what `pull_request`
+          wants.
+        type: string
+        required: false
+        default: ""
 
 permissions:
   contents: read
@@ -71,6 +82,10 @@ jobs:
       # checkout; Dependabot pins inside them the same way.
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # Empty is what the action already defaults to, so `pull_request`
+          # runs are unaffected. See the `ref` input.
+          ref: ${{ inputs.ref }}
 
       # bun + Node + install cache + `bun install --frozen-lockfile`; details
       # live in the action.
