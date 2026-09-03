@@ -25,7 +25,13 @@ interface Frame {
 export interface JankCollectorOptions {
   /** Rolling active window. Default `5000` ms, per §3D. */
   windowMs?: number;
-  /** Target frame budget. Default `1000 / 60`. */
+  /**
+   * Target frame budget override. Without one, the collector calibrates once
+   * from its first 120 active frame intervals; only `reset()` recalibrates it.
+   * Set this explicitly on displays whose refresh rate switches at runtime.
+   * Calibration intervals are not recorded as jank, so `worstFrame` also
+   * excludes startup stalls from those first 120 intervals.
+   */
   frameMs?: number;
   /**
    * Deltas longer than this are treated as "the page was not animating" and
@@ -41,18 +47,31 @@ export interface JankCollectorOptions {
 export function createJankCollector(options: JankCollectorOptions = {}): Collector {
   const {
     windowMs = 5000,
-    frameMs = 1000 / 60,
     idleGapMs = 1000,
     historySize = 360,
     thresholds = { warn: 0.02, bad: 0.05 },
   } = options;
+  const frameMsOverride = options.frameMs;
 
   const frames = createRingBuffer<Frame>(historySize);
   const series = createTimeSeries(120);
+  const calibrationSamples: number[] = [];
   const supported =
     typeof requestAnimationFrame === "function" && typeof cancelAnimationFrame === "function";
   let worstFrame = 0;
   let discarded = 0;
+  let calibratedFrameMs = frameMsOverride ?? null;
+
+  const percentile = (sorted: readonly number[], fraction: number): number =>
+    sorted[Math.floor((sorted.length - 1) * fraction)] as number;
+
+  const calibrate = (): number => {
+    const sorted = [...calibrationSamples].sort((left, right) => left - right);
+    // p20 already ignores a right tail of startup stalls. The removed IQR
+    // fence did not improve those cases; mixed refresh-rate clusters need an
+    // explicit `frameMs` until a mode-based estimator can distinguish them.
+    return percentile(sorted, 0.2);
+  };
 
   const summarise = (now: number) => {
     const since = now - windowMs;
@@ -102,8 +121,14 @@ export function createJankCollector(options: JankCollectorOptions = {}): Collect
           const hidden = typeof document !== "undefined" && document.visibilityState === "hidden";
           if (delta > idleGapMs || hidden) {
             discarded += 1;
+          } else if (calibratedFrameMs === null) {
+            if (Number.isFinite(delta) && delta > 0) calibrationSamples.push(delta);
+            if (calibrationSamples.length >= 120) {
+              calibratedFrameMs = calibrate();
+              context.invalidate();
+            }
           } else {
-            const expected = Math.max(1, Math.round(delta / frameMs));
+            const expected = Math.max(1, Math.round(delta / calibratedFrameMs));
             frames.push({
               at: context.now(),
               delta,
@@ -152,6 +177,7 @@ export function createJankCollector(options: JankCollectorOptions = {}): Collect
 
       const window = summarise(now);
       if (window.count === 0) {
+        const calibrating = calibratedFrameMs === null && calibrationSamples.length > 0;
         return {
           id: "jank",
           label: "jank",
@@ -161,8 +187,15 @@ export function createJankCollector(options: JankCollectorOptions = {}): Collect
           display: "—",
           value: Number.NaN,
           unit: "%",
-          hint: "Idle: no frames were produced in the rolling window, which is not the same as no jank.",
-          detail: [["Frames discarded as idle", String(discarded)]],
+          hint: calibrating
+            ? `Calibrating the display cadence: ${calibrationSamples.length} of 120 active frame intervals measured.`
+            : "Idle: no frames were produced in the rolling window, which is not the same as no jank.",
+          detail: calibrating
+            ? [
+                ["Calibration intervals", `${calibrationSamples.length} / 120`],
+                ["Frames discarded as idle", String(discarded)],
+              ]
+            : [["Frames discarded as idle", String(discarded)]],
         };
       }
 
@@ -173,6 +206,7 @@ export function createJankCollector(options: JankCollectorOptions = {}): Collect
         ["Slowest frame", formatMs(window.slowest, 1)],
         ["Worst frame (session)", formatMs(worstFrame, 1)],
         ["Frames discarded as idle", String(discarded)],
+        ["Frame budget", formatMs(calibratedFrameMs ?? Number.NaN, 2)],
         ["Window", `${Math.round(windowMs / 1000)} s`],
       );
 
@@ -194,6 +228,8 @@ export function createJankCollector(options: JankCollectorOptions = {}): Collect
       series.clear();
       worstFrame = 0;
       discarded = 0;
+      calibrationSamples.length = 0;
+      calibratedFrameMs = frameMsOverride ?? null;
     },
     diagnostics(now: number) {
       return {
@@ -201,6 +237,8 @@ export function createJankCollector(options: JankCollectorOptions = {}): Collect
         ...summarise(now),
         worstFrame,
         discarded,
+        frameMs: calibratedFrameMs,
+        calibrationSamples: calibrationSamples.length,
       };
     },
   };

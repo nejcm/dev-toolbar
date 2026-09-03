@@ -47,6 +47,8 @@ export interface MemoryCollectorOptions {
 }
 
 const GROWTH_MIN_SAMPLES = 5;
+const GROWTH_MIN_DELTA_BYTES = 1024 * 1024;
+const GROWTH_MIN_DELTA_RATIO = 0.01;
 
 export function createMemoryCollector(options: MemoryCollectorOptions = {}): Collector {
   const {
@@ -68,16 +70,23 @@ export function createMemoryCollector(options: MemoryCollectorOptions = {}): Col
     series.push(now, memory.usedJSHeapSize);
   };
 
-  /** Monotonic climb across the whole growth window is the leak signature. */
+  /** A non-decreasing, material climb across most samples is the leak signal. */
   const sustainedGrowth = (now: number): boolean => {
     const since = now - growthWindowMs;
     const count = series.countSince(since);
     if (count < GROWTH_MIN_SAMPLES) return false;
     const first = series.size - count;
+    const firstValue = series.values.at(first);
+    let rising = 0;
     for (let index = first + 1; index < series.size; index += 1) {
-      if (series.values.at(index) <= series.values.at(index - 1)) return false;
+      const previous = series.values.at(index - 1);
+      const current = series.values.at(index);
+      if (current < previous) return false;
+      if (current > previous) rising += 1;
     }
-    return true;
+    const net = series.values.last() - firstValue;
+    const material = Math.max(GROWTH_MIN_DELTA_BYTES, firstValue * GROWTH_MIN_DELTA_RATIO);
+    return net >= material && rising > (count - 1) / 2;
   };
 
   return {
@@ -157,7 +166,7 @@ export function createMemoryCollector(options: MemoryCollectorOptions = {}): Col
         value: latest.usedJSHeapSize,
         unit: "bytes",
         hint: growing
-          ? "Used JS heap has climbed on every sample for the last minute."
+          ? "Used JS heap rose on most samples without falling, with a material net increase."
           : "Used JS heap, as a share of the browser's heap limit. Not process memory.",
         detail,
       };

@@ -64,6 +64,13 @@ describe("network collector — fetch present", () => {
     expect(globalThis.fetch).toBe(inner);
   });
 
+  it("explains what the network time column measures", () => {
+    const collector = createNetworkCollector({ patchXhr: false });
+    expect(collector.read(0).hint).toContain(
+      "Time is the span between bus events when a bus reports; patched fetch stops at response headers, patched XMLHttpRequest after the body.",
+    );
+  });
+
   it("redacts credentials out of the URL before retaining it", async () => {
     globalThis.fetch = vi.fn(async () => response(200)) as unknown as typeof fetch;
     const collector = createNetworkCollector({ patchXhr: false });
@@ -435,6 +442,216 @@ describe("network collector — instrumented client instead of a patch", () => {
     // The signal unsubscribes both handlers.
     controller.abort();
     expect(bus.listenerCount()).toBe(0);
+  });
+
+  it("keeps an evicted request pending until its matching end arrives", () => {
+    /**
+     * Deleting the pending map looked like a bound, but it lost completions as
+     * soon as the display ring evicted an in-flight start.
+     */
+    const bus = createEventBus<ToolbarEventMap>();
+    const clock = { t: 0 };
+    const collector = createNetworkCollector({
+      patchFetch: false,
+      patchXhr: false,
+      bus,
+      historySize: 1,
+    });
+    const controller = new AbortController();
+    collector.start(context(controller, clock));
+    bus.emit("network-start", { requestId: "old", method: "GET", url: "/old" });
+    bus.emit("network-start", { requestId: "new", method: "GET", url: "/new" });
+
+    clock.t = 50;
+    bus.emit("network-end", { requestId: "old", ok: true, status: 204, duration: 50 });
+
+    expect(
+      (collector.diagnostics(clock.t) as { totals: { completed: number } }).totals.completed,
+    ).toBe(1);
+    expect(collector.entries?.(clock.t)[0]?.id).toBe("new");
+    controller.abort();
+  });
+
+  it("clears pending bus starts on reset", () => {
+    /**
+     * The pending map lived inside start(), so reset could clear visible history
+     * while a later end still incremented the reset session's completion total.
+     */
+    const bus = createEventBus<ToolbarEventMap>();
+    const clock = { t: 0 };
+    const collector = createNetworkCollector({ patchFetch: false, patchXhr: false, bus });
+    const controller = new AbortController();
+    collector.start(context(controller, clock));
+    bus.emit("network-start", { requestId: "before-reset", method: "GET", url: "/slow" });
+
+    collector.reset();
+    clock.t = 20;
+    bus.emit("network-end", {
+      requestId: "before-reset",
+      ok: true,
+      status: 200,
+      duration: 20,
+    });
+
+    const diagnostics = collector.diagnostics(clock.t) as {
+      totals: { started: number; completed: number };
+      pendingDropped: number;
+    };
+    expect(diagnostics.totals).toMatchObject({ started: 0, completed: 0 });
+    expect(diagnostics.pendingDropped).toBe(0);
+    controller.abort();
+  });
+
+  it("clears evicted pending bus starts when observation stops", () => {
+    /**
+     * An evicted in-flight request remained reachable only through `pending`.
+     * Without abort cleanup, its late end completed in the next observation
+     * cycle even though the first cycle had stopped.
+     */
+    const bus = createEventBus<ToolbarEventMap>();
+    const clock = { t: 0 };
+    const collector = createNetworkCollector({
+      patchFetch: false,
+      patchXhr: false,
+      bus,
+      historySize: 1,
+    });
+    const first = new AbortController();
+    collector.start(context(first, clock));
+    bus.emit("network-start", { requestId: "old", method: "GET", url: "/old" });
+    bus.emit("network-start", { requestId: "new", method: "GET", url: "/new" });
+    first.abort();
+
+    const second = new AbortController();
+    collector.start(context(second, clock));
+    clock.t = 50;
+    bus.emit("network-end", { requestId: "old", ok: true, status: 204, duration: 50 });
+
+    expect(
+      (collector.diagnostics(clock.t) as { totals: { completed: number } }).totals.completed,
+    ).toBe(0);
+    expect(collector.entries?.(clock.t)[0]).toMatchObject({ id: "new", state: "active" });
+    second.abort();
+  });
+
+  it("drops old unmatched starts without inventing completions", () => {
+    /**
+     * Unmatched bus starts stayed strongly reachable forever. The age sweep must
+     * release them, and a late end for an evicted start must remain an unmatched
+     * end rather than creating a synthetic request.
+     */
+    const bus = createEventBus<ToolbarEventMap>();
+    const clock = { t: 0 };
+    const collector = createNetworkCollector({
+      patchFetch: false,
+      patchXhr: false,
+      bus,
+      historySize: 1,
+      windowMs: 1000,
+    });
+    const controller = new AbortController();
+    collector.start(context(controller, clock));
+    bus.emit("network-start", { requestId: "old", method: "GET", url: "/old" });
+
+    clock.t = 60_001;
+    bus.emit("network-start", { requestId: "young", method: "GET", url: "/young" });
+    bus.emit("network-end", { requestId: "old", ok: true, status: 200, duration: 60_001 });
+
+    const diagnostics = collector.diagnostics(clock.t) as {
+      totals: { completed: number };
+      pendingDropped: number;
+    };
+    expect(diagnostics.pendingDropped).toBe(1);
+    expect(diagnostics.totals.completed).toBe(0);
+    expect(collector.entries?.(clock.t).map((item) => item.id)).toEqual(["young"]);
+    controller.abort();
+  });
+
+  it("caps unmatched starts while preserving recent completions", () => {
+    const bus = createEventBus<ToolbarEventMap>();
+    const clock = { t: 0 };
+    const collector = createNetworkCollector({
+      patchFetch: false,
+      patchXhr: false,
+      bus,
+      historySize: 1,
+    });
+    const controller = new AbortController();
+    collector.start(context(controller, clock));
+    for (let index = 0; index < 66; index += 1) {
+      bus.emit("network-start", { requestId: `request-${index}`, method: "GET", url: "/wait" });
+    }
+
+    bus.emit("network-end", { requestId: "request-0", ok: true, status: 200, duration: 1 });
+    bus.emit("network-end", { requestId: "request-65", ok: true, status: 200, duration: 1 });
+
+    const diagnostics = collector.diagnostics(clock.t) as {
+      totals: { completed: number };
+      pendingDropped: number;
+    };
+    expect(diagnostics.pendingDropped).toBe(2);
+    expect(diagnostics.totals.completed).toBe(1);
+    expect(collector.entries?.(clock.t)[0]).toMatchObject({ id: "request-65", state: "ok" });
+    controller.abort();
+  });
+
+  it("keeps the newest duplicate id indexed when the older entry is evicted", () => {
+    /**
+     * Evicting an older duplicate deleted the newer entry's by-id index. Once
+     * its aged pending record was swept, the matching end could not finish it.
+     */
+    const bus = createEventBus<ToolbarEventMap>();
+    const clock = { t: 0 };
+    const collector = createNetworkCollector({
+      patchFetch: false,
+      patchXhr: false,
+      bus,
+      historySize: 2,
+      windowMs: 1000,
+    });
+    const controller = new AbortController();
+    collector.start(context(controller, clock));
+    bus.emit("network-start", { requestId: "same", method: "GET", url: "/first" });
+    bus.emit("network-start", { requestId: "same", method: "GET", url: "/second" });
+    bus.emit("network-start", { requestId: "other", method: "GET", url: "/other" });
+
+    clock.t = 60_001;
+    bus.emit("network-end", { requestId: "same", ok: true, status: 201, duration: 60_001 });
+
+    const duplicate = collector.entries?.(clock.t).find((item) => item.id === "same");
+    expect(duplicate).toMatchObject({ url: "/second", state: "ok", status: 201 });
+    expect((collector.diagnostics(clock.t) as { duplicateStarts: number }).duplicateStarts).toBe(1);
+    controller.abort();
+  });
+
+  it("uses a supplied bus instead of patching by default", async () => {
+    /**
+     * The option doc said the bus replaced patching, but both patchers remained
+     * enabled and one request could be counted twice under unrelated ids.
+     */
+    const original = vi.fn(async () => response(200)) as unknown as typeof fetch;
+    globalThis.fetch = original;
+    const bus = createEventBus<ToolbarEventMap>();
+    const collector = createNetworkCollector({ bus });
+    const controller = new AbortController();
+    collector.start(context(controller, { t: 0 }));
+
+    expect(globalThis.fetch).toBe(original);
+    await globalThis.fetch("/only-patched-if-requested");
+
+    expect(collector.entries?.(0)).toEqual([]);
+    expect(detailOf(collector.read(0))["Instrumentation"]).toBe("bus");
+    controller.abort();
+  });
+
+  it("labels an explicitly combined bus and fetch patch", () => {
+    const bus = createEventBus<ToolbarEventMap>();
+    const collector = createNetworkCollector({ bus, patchFetch: true, patchXhr: false });
+    const controller = new AbortController();
+    collector.start(context(controller, { t: 0 }));
+
+    expect(detailOf(collector.read(0))["Instrumentation"]).toBe("bus + patched fetch");
+    controller.abort();
   });
 
   // The point of shipping a bus double in `./testing` is that it can stand in

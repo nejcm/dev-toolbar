@@ -430,7 +430,7 @@ export function Root({ children }) {
 
 | Chip | Shows | Thresholds (default, all configurable) |
 | --- | --- | --- |
-| `mem` | Used JS heap, and whether it has climbed on every sample for a minute | 50% / 75% of the heap limit |
+| `mem` | Used JS heap, and whether it has risen on most samples without falling, by a material amount, over a minute | 50% / 75% of the heap limit |
 | `delay` | The *worst* interaction in a rolling 30 s window, not the latest | 200 ms / 500 ms, per INP guidance |
 | `jank` | Dropped frames over expected frames, across 5 s of *active* frames | 2% / 5% |
 | `net` | Requests in flight; the panel lists recent ones | any slow → warn, any failed → bad |

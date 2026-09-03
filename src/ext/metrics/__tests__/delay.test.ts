@@ -117,6 +117,44 @@ describe("delay collector — Event Timing present", () => {
     controller.abort();
   });
 
+  it("uses the measured start time for buffered interactions", () => {
+    /**
+     * Buffered entries were stamped with callback delivery time. A ten-minute-old
+     * interaction therefore appeared current and its sparkline point moved to the
+     * delivery timestamp.
+     */
+    const observer = install({});
+    const clock = { t: 600_000 };
+    const collector = createDelayCollector({ windowMs: 30_000 });
+    const controller = new AbortController();
+    collector.start(context(controller, clock));
+
+    observer.emit([entry({ startTime: 20_000, duration: 1800 })]);
+
+    expect(collector.series.lastAt()).toBe(20_000);
+    expect(collector.read(clock.t).status).toBe("pending");
+    controller.abort();
+  });
+
+  it("clears buffered interactions when observation stops", () => {
+    /**
+     * A real stop and restart creates a new buffered observer. Keeping the old
+     * ring let the browser's replay accumulate on top of dead samples.
+     */
+    const observer = install({});
+    const clock = { t: 100 };
+    const collector = createDelayCollector();
+    const controller = new AbortController();
+    collector.start(context(controller, clock));
+    observer.emit([entry({ startTime: 100 })]);
+    expect(collector.read(clock.t).status).toBe("ok");
+
+    controller.abort();
+
+    expect(collector.series.size).toBe(0);
+    expect(collector.read(clock.t).status).toBe("pending");
+  });
+
   it("describes the target element", () => {
     const observer = install({});
     const clock = { t: 0 };

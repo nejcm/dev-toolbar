@@ -58,6 +58,7 @@ export interface NetworkEntryView {
   /** Already through `redactUrl()`. */
   url: string;
   startedAt: number;
+  /** Bus event span; patched fetch ends at headers, patched XHR after the response body. */
   duration: number;
   status: number | undefined;
   state: "active" | "ok" | "failed" | "aborted";
