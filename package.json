@@ -184,7 +184,7 @@
     "@types/react-dom": "^19.2.5",
     "@vitest/coverage-v8": "^4.1.11",
     "jsdom": "^30.0.1",
-    "knip": "^6.33.0",
+    "knip": "^6.34.0",
     "lint-staged": "^17.4.1",
     "oxfmt": "^0.66.0",
     "oxlint": "^1.81.0",
