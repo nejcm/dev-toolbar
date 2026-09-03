@@ -14,6 +14,26 @@
   style break at the boundary is accepted, not an oversight.
 -->
 
+## [0.5.0](https://github.com/nejcm/dev-toolbar/compare/v0.4.1...v0.5.0) (2026-09-03)
+
+
+### ⚠ BREAKING CHANGES
+
+* **ext/metrics:** `metrics({ network: { bus } })` now disables the fetch and XMLHttpRequest patches by default, because a bus and a patch recorded the same request twice under unrelated ids — patched requests were keyed `r${sequence}` and bus requests by `payload.requestId`, with nothing correlating them. Pass `patchFetch: true` and/or `patchXhr: true` alongside `bus` to keep patching. Consumers already passing
+
+### Features
+
+* **runtime:** widen and correct the redaction passes ([#21](https://github.com/nejcm/dev-toolbar/issues/21)) ([bec1cb5](https://github.com/nejcm/dev-toolbar/commit/bec1cb53e712adbae989ebb11bc2da25a0388210))
+
+
+### Bug Fixes
+
+* **core:** survive hydration, self-resizing chips and hostile throws ([#25](https://github.com/nejcm/dev-toolbar/issues/25)) ([64cc80d](https://github.com/nejcm/dev-toolbar/commit/64cc80dd887662c9c623d15c702b00c4b901b274))
+* **ext/metrics:** report what was measured, not when it was delivered ([#27](https://github.com/nejcm/dev-toolbar/issues/27)) ([e918e2d](https://github.com/nejcm/dev-toolbar/commit/e918e2d10430c663fa2ec62b1f687d6d1c87386e))
+* **ext/overlays:** keep geometry current and stop re-walking the hovered subtree ([#26](https://github.com/nejcm/dev-toolbar/issues/26)) ([36c397b](https://github.com/nejcm/dev-toolbar/commit/36c397b787c7ce25f60bf6f91e7b5016684d66a8))
+* **ext:** redact URL-shaped fields before they reach the clipboard ([#22](https://github.com/nejcm/dev-toolbar/issues/22)) ([0a1b32a](https://github.com/nejcm/dev-toolbar/commit/0a1b32a17f763f3a2bbb391e436febefb61dddfe))
+* **ext:** stop trusting unvetted overrides and unguarded storage reads ([#24](https://github.com/nejcm/dev-toolbar/issues/24)) ([24f4a77](https://github.com/nejcm/dev-toolbar/commit/24f4a77c8955e6a551506a044ec34cef13c43b9e))
+
 ## [0.4.1](https://github.com/nejcm/dev-toolbar/compare/v0.4.0...v0.4.1) (2026-09-03)
 
 
