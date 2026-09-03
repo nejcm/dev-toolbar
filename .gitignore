@@ -17,3 +17,6 @@ coverage/
 plans/
 
 TODO.md
+
+# Verification evidence from .claude/skills/verify-dev-toolbar.
+.verify-artifacts/
