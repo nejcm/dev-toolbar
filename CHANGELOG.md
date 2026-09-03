@@ -14,6 +14,18 @@
   style break at the boundary is accepted, not an oversight.
 -->
 
+## [0.4.0](https://github.com/nejcm/dev-toolbar/compare/v0.3.0...v0.4.0) (2026-09-03)
+
+
+### ⚠ BREAKING CHANGES
+
+* **runtime:** sensitive-key matching is by word segment, so keys that only matched as a substring of a longer word are no longer redacted, and `DEFAULT_SENSITIVE_KEYS` gains 15 entries. `redactUrl` returns unmasked input verbatim and writes the mask literally inside URLs.
+
+### Bug Fixes
+
+* **runtime:** fix the runtime review findings and match sensitive keys by segment ([#11](https://github.com/nejcm/dev-toolbar/issues/11)) ([855bd8f](https://github.com/nejcm/dev-toolbar/commit/855bd8f50370428f5e394f6c6ace8a2783fd41b8))
+* **testing:** fix the testing review findings and share one core instance in CJS ([#12](https://github.com/nejcm/dev-toolbar/issues/12)) ([4e09040](https://github.com/nejcm/dev-toolbar/commit/4e090400dbff72c3f5d27d3ea2b5e53a1659daad))
+
 ## [0.3.0](https://github.com/nejcm/dev-toolbar/compare/v0.2.0...v0.3.0) (2026-09-02)
 
 
