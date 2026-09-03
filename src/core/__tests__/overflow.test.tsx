@@ -1,6 +1,6 @@
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import type { ReactNode } from "react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { DevToolbarExtension } from "../contract";
 import { OverflowBar, computeOverflow } from "../Overflow";
 
@@ -115,6 +115,18 @@ const itemObserver = () =>
   );
 
 let restore: (() => void) | null = null;
+
+/**
+ * The fixture geometry every collapse test below is written against: no bar
+ * padding and a 2px inter-item gap. It used to arrive implicitly — jsdom
+ * reports neither, so the component fell back to its own constants — which
+ * quietly coupled this file's arithmetic to whatever `src/styles.css` happened
+ * to default to. Pinning it here is the same environment, stated. A test that
+ * needs different values calls `patchComputedStyle` again and wins.
+ */
+beforeEach(() => {
+  patchComputedStyle({ paddingX: 0, gap: 2 });
+});
 
 afterEach(() => {
   restore?.();

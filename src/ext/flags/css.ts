@@ -16,7 +16,7 @@ export const FLAGS_CSS = String.raw`@layer dev-toolbar {
   [data-dev-toolbar] [data-dtb-part="flag-chip"] {
     display: inline-flex;
     align-items: center;
-    gap: 6px;
+    gap: var(--dtb-chip-gap);
     white-space: nowrap;
   }
 
@@ -38,15 +38,20 @@ export const FLAGS_CSS = String.raw`@layer dev-toolbar {
   [data-dev-toolbar] [data-dtb-part="flag-promoted"] {
     display: inline-flex;
     align-items: center;
-    gap: 5px;
-    padding: 1px 7px;
+    gap: var(--dtb-chip-gap);
+    /* The same box a core trigger gets, so the pill does not sit shorter than
+       the chips either side of it. */
+    height: calc(var(--dtb-bar-height) - 10px);
+    padding: 0 var(--dtb-item-padding-x);
     border: 1px solid var(--dtb-border);
     border-radius: 999px;
     background: transparent;
     color: inherit;
     font: inherit;
+    line-height: 1;
     cursor: pointer;
     white-space: nowrap;
+    transition: background-color 120ms ease, border-color 120ms ease;
   }
 
   [data-dev-toolbar] [data-dtb-part="flag-promoted"]:hover {
@@ -93,6 +98,12 @@ export const FLAGS_CSS = String.raw`@layer dev-toolbar {
     align-items: flex-start;
     gap: 6px;
     padding: 2px 4px;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    [data-dev-toolbar] [data-dtb-part="flag-promoted"] {
+      transition: none;
+    }
   }
 
   /* Panel */

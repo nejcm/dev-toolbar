@@ -9,16 +9,18 @@
 import { ensureStyleSheet } from "../../runtime";
 
 export const METRICS_CSS = String.raw`@layer dev-toolbar {
+  /* Several readouts in one slot. They are peers, not one label-value pair,
+     so they take the bar's inter-item gap rather than the tighter chip gap. */
   [data-dev-toolbar] [data-dtb-part="metrics-chips"] {
     display: inline-flex;
     align-items: center;
-    gap: 10px;
+    gap: var(--dtb-item-gap);
   }
 
   [data-dev-toolbar] [data-dtb-part="metrics-chip"] {
     display: inline-flex;
     align-items: center;
-    gap: 4px;
+    gap: var(--dtb-chip-gap);
     white-space: nowrap;
   }
 

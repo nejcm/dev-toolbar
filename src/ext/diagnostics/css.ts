@@ -11,7 +11,7 @@ export const DIAGNOSTICS_CSS = String.raw`@layer dev-toolbar {
   [data-dev-toolbar] [data-dtb-part="diag-chip"] {
     display: inline-flex;
     align-items: center;
-    gap: 6px;
+    gap: var(--dtb-chip-gap);
     white-space: nowrap;
   }
 

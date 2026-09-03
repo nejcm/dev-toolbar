@@ -20,11 +20,18 @@ export const CORE_CSS = String.raw`/**
       sans-serif;
     --dtb-font-mono: ui-monospace, SFMono-Regular, Menlo, monospace;
     --dtb-font-size: 11px;
-    --dtb-bar-height: 30px;
-    --dtb-radius: 4px;
+    --dtb-bar-height: 32px;
+    --dtb-radius: 5px;
+    /* Menu and internal gaps. --dtb-item-gap is the one the bar reads back
+       for its collapse math, so the two are deliberately separate: a tight
+       popup list and a bar whose items are legibly apart. */
     --dtb-gap: 2px;
-    --dtb-padding-x: 6px;
-    --dtb-item-padding-x: 6px;
+    --dtb-item-gap: 10px;
+    /* Label-to-value inside one chip. Extensions read this so every chip in
+       the bar breathes the same amount. */
+    --dtb-chip-gap: 6px;
+    --dtb-padding-x: 8px;
+    --dtb-item-padding-x: 7px;
     --dtb-z-index: 2147483000;
     --dtb-bg: #f6f6f7;
     --dtb-fg: #202124;
@@ -119,21 +126,25 @@ export const CORE_CSS = String.raw`/**
   }
 
   [data-dev-toolbar][data-dtb-density="comfortable"] {
-    --dtb-bar-height: 36px;
+    --dtb-bar-height: 38px;
     --dtb-font-size: 12px;
-    --dtb-item-padding-x: 8px;
+    --dtb-item-padding-x: 9px;
+    --dtb-item-gap: 14px;
   }
 
   [data-dev-toolbar] [data-dtb-part="bar"] {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: var(--dtb-gap);
+    gap: var(--dtb-item-gap);
     flex: 0 0 auto;
     min-height: var(--dtb-bar-height);
     height: var(--dtb-bar-height);
     padding: 0 var(--dtb-padding-x);
     background: var(--dtb-bg);
+    /* Every number in the bar is a live readout, so digits must not change
+       width as they tick. */
+    font-variant-numeric: tabular-nums;
     overflow: hidden;
   }
 
@@ -155,7 +166,7 @@ export const CORE_CSS = String.raw`/**
   [data-dev-toolbar] [data-dtb-part="region"] {
     display: flex;
     align-items: center;
-    gap: var(--dtb-gap);
+    gap: var(--dtb-item-gap);
     min-width: 0;
   }
 
@@ -163,9 +174,13 @@ export const CORE_CSS = String.raw`/**
     justify-content: flex-end;
   }
 
+  /* One extension may render several controls into its slot — the flags
+     promoted switch next to its own chip, say. They are one unit, so they sit
+     closer together than two separate extensions do. Without this they touch. */
   [data-dev-toolbar] [data-dtb-part="item"] {
     display: inline-flex;
     align-items: center;
+    gap: var(--dtb-chip-gap);
     flex: 0 0 auto;
     max-width: 100%;
   }
@@ -174,16 +189,37 @@ export const CORE_CSS = String.raw`/**
   [data-dev-toolbar] [data-dtb-part="overflow-button"] {
     display: inline-flex;
     align-items: center;
-    gap: 4px;
-    height: calc(var(--dtb-bar-height) - 8px);
+    gap: var(--dtb-chip-gap);
+    height: calc(var(--dtb-bar-height) - 10px);
     padding: 0 var(--dtb-item-padding-x);
     border: 0;
     border-radius: var(--dtb-radius);
     background: var(--dtb-item-bg);
     color: inherit;
     font: inherit;
+    /* font: inherit brings the root's 1.4 line-height with it, which makes a
+       chip's own box shorter than the button and pushes mixed sans/mono text
+       off a shared baseline. Collapsing it here keeps one line, centred. */
+    line-height: 1;
     white-space: nowrap;
     cursor: pointer;
+    transition: background-color 120ms ease;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    [data-dev-toolbar] [data-dtb-part="trigger"],
+    [data-dev-toolbar] [data-dtb-part="overflow-button"] {
+      transition: none;
+    }
+  }
+
+  /* The one control that sits in a region without an item host around it, so
+     the region's own shrinking reaches it. It must not shrink: the collapse
+     math reserves the width it *measures*, so a squeezed button reserves less,
+     which stops the collapse that would have unsqueezed it — the bar settles
+     with an unreadable, clipped button instead. */
+  [data-dev-toolbar] [data-dtb-part="overflow-button"] {
+    flex: 0 0 auto;
   }
 
   [data-dev-toolbar] [data-dtb-part="trigger"]:hover,
@@ -208,11 +244,11 @@ export const CORE_CSS = String.raw`/**
     display: flex;
     flex-direction: column;
     gap: var(--dtb-gap);
-    min-width: 160px;
+    min-width: 180px;
     max-height: 50vh;
-    padding: 4px;
+    padding: 5px;
     border: 1px solid var(--dtb-border);
-    border-radius: var(--dtb-radius);
+    border-radius: calc(var(--dtb-radius) + 2px);
     background: var(--dtb-menu-bg);
     box-shadow: var(--dtb-shadow);
     overflow: auto;
@@ -230,7 +266,8 @@ export const CORE_CSS = String.raw`/**
   [data-dev-toolbar] [data-dtb-part="overflow-menu-item"] {
     display: flex;
     align-items: center;
-    padding: 2px;
+    gap: var(--dtb-chip-gap);
+    padding: 1px 3px;
     border-radius: var(--dtb-radius);
   }
 
@@ -259,7 +296,9 @@ export const CORE_CSS = String.raw`/**
   [data-dev-toolbar] [data-dtb-part="panel-body"] {
     flex: 1 1 auto;
     min-height: 0;
-    padding: 8px;
+    /* Matches the bar's own horizontal padding, so a panel's first column
+       lines up with the bar item that opened it. */
+    padding: 10px var(--dtb-padding-x) 12px;
     overflow: auto;
   }
 
@@ -287,13 +326,14 @@ export const CORE_CSS = String.raw`/**
   [data-dev-toolbar] [data-dtb-part="error-chip"] {
     display: inline-flex;
     align-items: center;
-    gap: 4px;
-    height: calc(var(--dtb-bar-height) - 8px);
+    gap: var(--dtb-chip-gap);
+    height: calc(var(--dtb-bar-height) - 10px);
     padding: 0 var(--dtb-item-padding-x);
     border-radius: var(--dtb-radius);
     background: var(--dtb-danger-bg);
     color: var(--dtb-danger);
     font-family: var(--dtb-font-mono);
+    line-height: 1;
     white-space: nowrap;
   }
 

@@ -92,6 +92,18 @@ The playground exercises this both ways: a Tailwind-classed extension renders
 correctly (the regression test), and the playground's own stylesheet restyles the bar
 with no `!important` anywhere.
 
+Losing on purpose has a consequence worth stating, because it is the one most
+consumers meet: a CSS reset is unlayered too. Tailwind's Preflight ships
+`button, input, optgroup, select, textarea { padding: 0 }`, which beats core's
+layered `[data-dtb-part="trigger"] { padding: 0 var(--dtb-item-padding-x) }` — so
+in a Tailwind app every trigger and the `···` button render with no horizontal
+padding at all. The bar still lays out correctly (gaps and heights are properties
+no reset touches), it just reads tighter than the screenshots. This is the
+contract working, not a bug, and the fix belongs on the consumer's side: one
+unlayered rule of their own restoring
+`padding-inline: var(--dtb-item-padding-x)` on `[data-dtb-part="trigger"]`.
+The playground loads the Tailwind Play CDN, so its bar shows exactly this.
+
 Recorded as [ADR-002](./adr/ADR-002-light-dom.md).
 
 ### No global registry
@@ -318,11 +330,13 @@ Set them on `[data-dev-toolbar]`, or on any ancestor. Unlayered CSS wins.
 | `--dtb-font-family` | system sans stack | Bar and panel text |
 | `--dtb-font-mono` | system mono stack | Numeric values, error chips |
 | `--dtb-font-size` | `11px` | Base size (`12px` when comfortable) |
-| `--dtb-bar-height` | `30px` | Bar row height (`36px` when comfortable) |
-| `--dtb-radius` | `4px` | Corner radius on triggers, menu, chips |
-| `--dtb-gap` | `2px` | Gap between items; read back for collapse math |
-| `--dtb-padding-x` | `6px` | Bar's horizontal padding |
-| `--dtb-item-padding-x` | `6px` | Trigger padding (`8px` when comfortable) |
+| `--dtb-bar-height` | `32px` | Bar row height (`38px` when comfortable) |
+| `--dtb-radius` | `5px` | Corner radius on triggers, menu, chips |
+| `--dtb-gap` | `2px` | Gap inside the `···` popup and other dense lists |
+| `--dtb-item-gap` | `10px` | Gap between bar items (`14px` when comfortable); read back for collapse math |
+| `--dtb-chip-gap` | `6px` | Label-to-value gap inside one chip, and between two controls one extension renders |
+| `--dtb-padding-x` | `8px` | Bar's horizontal padding, and the panel body's |
+| `--dtb-item-padding-x` | `7px` | Trigger padding (`9px` when comfortable) |
 | `--dtb-z-index` | `2147483000` | Toolbar root stacking |
 | `--dtb-bg` | `#f6f6f7` | Bar background |
 | `--dtb-fg` | `#202124` | Foreground |
@@ -459,7 +473,7 @@ The bar measures itself with a `ResizeObserver`, caches each item's natural widt
 recomputes on every resize. Cached widths are sticky, which is what lets a collapsed
 item come back when the width returns even though it was not in the bar to be measured.
 The gap and the `···` button width are read back out of the DOM, so overriding
-`--dtb-gap` or restyling the button keeps the math honest. The width items may fill is
+`--dtb-item-gap` or restyling the button keeps the math honest. The width items may fill is
 the bar's `clientWidth` less its own horizontal padding, and less a gap for each side
 whose gap the item math does not already charge: one when the start region renders no
 items, one when there are no end items at all. A region that renders empty still takes

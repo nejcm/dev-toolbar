@@ -21,7 +21,7 @@ export const THEME_EDITOR_CSS = String.raw`@layer dev-toolbar {
   [data-dev-toolbar] [data-dtb-part="thm-chip"] {
     display: inline-flex;
     align-items: center;
-    gap: 4px;
+    gap: var(--dtb-chip-gap);
   }
 
   [data-dev-toolbar] [data-dtb-part="thm-dot"] {

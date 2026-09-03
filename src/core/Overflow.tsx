@@ -54,7 +54,7 @@ export interface OverflowBarProps {
 }
 
 /** Fallbacks used only until the DOM has been measured. */
-const DEFAULT_GAP = 2;
+const DEFAULT_GAP = 10;
 const DEFAULT_OVERFLOW_BUTTON_WIDTH = 28;
 
 function readPx(raw: string | undefined, fallback: number): number {
@@ -190,7 +190,7 @@ export function OverflowBar({
   const menuRef = useRef<HTMLDivElement | null>(null);
   const buttonRef = useRef<HTMLButtonElement | null>(null);
   const widthsRef = useRef(new Map<string, number>());
-  // Read back out of the DOM so overriding --dtb-gap or restyling the ···
+  // Read back out of the DOM so overriding --dtb-item-gap or restyling the ···
   // button keeps the collapse math honest.
   const gapRef = useRef(gap);
   const buttonWidthRef = useRef(DEFAULT_OVERFLOW_BUTTON_WIDTH);
