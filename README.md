@@ -103,12 +103,25 @@ one.
 | `defaultVisible` / `defaultPosition` / `defaultPanelHeight` | — | Used only when nothing is persisted yet |
 | `shortcut` | `"Mod+Shift+."` | `null` disables it |
 | `injectStyles` | `true` | `false` → import `@nejcm/dev-toolbar/styles.css` yourself |
+| `styleNonce` | — | CSP nonce for the injected core stylesheet |
 | `classNames` | — | Per-part class map |
 | `container` | `document.body` | Portal target |
 
 `instanceId` and `storage` are read **once, on mount**, so the store and everything
 derived from it can never disagree about where preferences live. Changing either
 prop later is ignored; remount the toolbar (`key={instanceId}`) to move it.
+
+`classNames` is compared **field by field**, not by identity, so writing the object
+inline (`classNames={{ bar: "my-bar" }}`) is fine — it does not defeat the
+memoisation of the context value or of the overlay host.
+
+Under a `style-src 'self' 'nonce-…'` CSP an un-nonced `<style>` is dropped silently:
+the bar renders unstyled with nothing in the console but a CSP report. Pass
+`styleNonce` to prevent that. It applies to **core's** sheet only, and only to the
+injection that creates it — first-writer-wins, so changing the nonce later does not
+restyle an existing element. First-party extensions inject their own sheets and are
+not covered; with `injectStyles={false}` the prop does nothing, because nothing is
+injected.
 
 ### Toggle shortcut
 

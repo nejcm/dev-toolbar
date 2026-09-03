@@ -121,3 +121,65 @@ describe("toolbar store", () => {
     expect(store.getSnapshot().panelHeight).toBe(DEFAULT_PANEL_HEIGHT);
   });
 });
+
+/**
+ * Original bug: `getSnapshot` was passed to `useSyncExternalStore` as the
+ * *server* snapshot too. The store reads storage eagerly at construction, so
+ * hydration's first client render saw the persisted preferences where the
+ * server render had seen the defaults, and every consumer reading `position`
+ * or `visible` during render mismatched.
+ */
+describe("createToolbarStore server snapshot", () => {
+  it("returns the resolved defaults, not what is persisted — a server cannot read the browser's storage", () => {
+    const storage = createMemoryStorage({
+      visible: "false",
+      position: '"top"',
+      activePanel: '"metrics"',
+      panelHeight: "500",
+    });
+    const store = createToolbarStore({ storage });
+
+    expect(store.getSnapshot()).toMatchObject({
+      visible: false,
+      position: "top",
+      activePanelId: "metrics",
+      panelHeight: 500,
+    });
+    expect(store.getServerSnapshot()).toMatchObject({
+      visible: true,
+      position: "bottom",
+      activePanelId: null,
+      panelHeight: DEFAULT_PANEL_HEIGHT,
+    });
+  });
+
+  it("honours the explicit defaults on both sides, and clamps the default height", () => {
+    const store = createToolbarStore({
+      storage: createMemoryStorage(),
+      defaultVisible: false,
+      defaultPosition: "top",
+      defaultPanelHeight: 5000,
+    });
+
+    expect(store.getServerSnapshot()).toMatchObject({
+      visible: false,
+      position: "top",
+      panelHeight: MAX_PANEL_HEIGHT,
+    });
+    // Nothing persisted, so the two agree — which is the whole point of
+    // resolving the defaults in one place.
+    expect(store.getSnapshot()).toEqual(store.getServerSnapshot());
+  });
+
+  it("hands back one stable object, as useSyncExternalStore requires of a server snapshot", () => {
+    const store = createToolbarStore({ storage: createMemoryStorage() });
+    const first = store.getServerSnapshot();
+
+    store.setPosition("top");
+    store.setPanelHeight(400);
+    store.openPanel("x");
+
+    expect(store.getServerSnapshot()).toBe(first);
+    expect(store.getServerSnapshot().position).toBe("bottom");
+  });
+});

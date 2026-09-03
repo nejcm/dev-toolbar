@@ -138,9 +138,30 @@ export interface NumericRingView {
   readonly written: number;
   at(index: number): number;
   last(): number;
-  /** Fills `into` oldest-to-newest and returns how many values were written. */
+  /**
+   * Fills `into` oldest-to-newest and returns how many values were written.
+   *
+   * Writes **up to** `into.length` values, never more: given a destination
+   * shorter than `size` it keeps the *newest* that fit and drops the oldest,
+   * which is what a sparkline wants. Slots past the return value are left as
+   * the caller had them — read only the prefix the return value covers, since
+   * a reused array still holds the previous pass's tail beyond it.
+   */
   copyInto(into: Float64Array | number[]): number;
-  /** Fills and returns `into` when given; allocates a fresh object otherwise. */
+  /**
+   * Fills and returns `into` when given; allocates a fresh object otherwise.
+   *
+   * Non-finite samples are **not** filtered, and count asymmetrically on
+   * purpose. `NaN` fails every comparison, so it is skipped by `min`/`max` but
+   * folded into `sum`, making `mean` `NaN` as soon as one `NaN` is in the
+   * window; `±Infinity` participates in all three. `count` is always `size`.
+   * The asymmetry is the useful one: `min`/`max` stay usable as a chart's
+   * scale, while a `NaN` `mean` is a loud, un-ignorable signal that a bad
+   * sample was pushed — quietly averaging around it would be worse. Reject
+   * non-finite values at the collector if you would rather they never land.
+   *
+   * On an empty ring every field is `NaN` except `count`, which is `0`.
+   */
   stats(into?: NumericRingStats): NumericRingStats;
   forEach(visit: (value: number, index: number) => void): void;
 }

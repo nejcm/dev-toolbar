@@ -1,6 +1,7 @@
 import { act, fireEvent, render, screen } from "@testing-library/react";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { ReactNode } from "react";
 import type { Mock } from "vitest";
 import { CONTRACT_VERSION } from "../contract";
 import type { DevToolbarExtension, ExtensionRuntimeApi } from "../contract";
@@ -994,5 +995,177 @@ describe("an extension list with nothing visible in it", () => {
     expect(bar).not.toBeNull();
     expect(bar!.querySelectorAll('[data-dtb-part="item"]').length).toBe(0);
     expect(bar!.querySelectorAll('[data-dtb-part="region"]').length).toBe(2);
+  });
+});
+
+/**
+ * Original bug: `ExtensionBoundary.getDerivedStateFromError` called
+ * `String(error)` unguarded. `String()` invokes the thrown value's own
+ * `toString`, so a hostile or merely broken one threw from inside React's error
+ * path — and a throw there is not caught again: it unmounted the whole tree the
+ * boundary exists to protect.
+ */
+describe("a thrown value that cannot be described", () => {
+  it("degrades to an error chip rather than emptying the tree", () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    const hostile = {
+      toString() {
+        throw new Error("nope");
+      },
+    };
+    const boom: DevToolbarExtension = {
+      id: "boom",
+      label: "Boom",
+      compact: () => {
+        throw hostile;
+      },
+    };
+
+    render(
+      <DevToolbar instanceId="t" extensions={[boom, panelExtension("ok")]}>
+        <div />
+      </DevToolbar>,
+    );
+
+    const chip = document.querySelector('[data-dtb-part="error-chip"][data-dtb-ext-id="boom"]');
+    expect(chip).not.toBeNull();
+    expect(chip!.getAttribute("title")).toBe("threw a value that could not be described");
+    // The rest of the bar is untouched, which is the whole promise.
+    expect(screen.getByRole("button", { name: "ok" })).toBeTruthy();
+    expect(document.querySelector('[data-dtb-part="bar"]')).not.toBeNull();
+    error.mockRestore();
+  });
+
+  it("still describes an ordinary non-Error throw", () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    const boom: DevToolbarExtension = {
+      id: "boom",
+      label: "Boom",
+      compact: () => {
+        // oxlint-disable-next-line no-throw-literal
+        throw "just a string";
+      },
+    };
+
+    render(
+      <DevToolbar instanceId="t" extensions={[boom]}>
+        <div />
+      </DevToolbar>,
+    );
+
+    expect(document.querySelector('[data-dtb-part="error-chip"]')!.getAttribute("title")).toBe(
+      "just a string",
+    );
+    error.mockRestore();
+  });
+});
+
+/**
+ * Original bug: both the context value's `useMemo` and `OverlayHost`'s `memo`
+ * keyed on the `classNames` *object identity*, so `classNames={{ bar: "x" }}`
+ * written inline in JSX — the ordinary way to write it — produced a new object
+ * every render and defeated both.
+ */
+describe("an inline classNames object", () => {
+  const overlayRenders: string[] = [];
+  const contexts: unknown[] = [];
+  const STABLE: readonly DevToolbarExtension[] = [
+    {
+      id: "ov",
+      label: "Ov",
+      overlay: () => {
+        overlayRenders.push("ov");
+        return <i data-testid="ov" />;
+      },
+    },
+  ];
+
+  function Probe(): ReactNode {
+    contexts.push(useDevToolbar());
+    return null;
+  }
+
+  function Host(): ReactNode {
+    const [tick, setTick] = useState(0);
+    return (
+      <DevToolbar instanceId="t" extensions={STABLE} classNames={{ bar: "b", overlay: "o" }}>
+        <button type="button" onClick={() => setTick(tick + 1)}>
+          {`tick ${tick}`}
+        </button>
+        <Probe />
+      </DevToolbar>
+    );
+  }
+
+  it("does not re-invoke overlay slots or rebuild the context on an unrelated re-render", () => {
+    overlayRenders.length = 0;
+    contexts.length = 0;
+
+    render(<Host />);
+    expect(overlayRenders).toHaveLength(1);
+    expect(contexts.length).toBeGreaterThan(0);
+    const firstContext = contexts.at(-1);
+    const before = overlayRenders.length;
+
+    // A re-render of the host with a fresh, string-identical classNames object.
+    fireEvent.click(screen.getByRole("button", { name: "tick 0" }));
+    expect(screen.getByRole("button", { name: "tick 1" })).toBeTruthy();
+
+    expect(overlayRenders).toHaveLength(before);
+    expect(contexts.at(-1)).toBe(firstContext);
+  });
+
+  it("still picks up a real change to one of the strings", () => {
+    const Changing = ({ bar }: { bar: string }): ReactNode => (
+      <DevToolbar instanceId="t" extensions={[]} classNames={{ bar }}>
+        <div />
+      </DevToolbar>
+    );
+
+    const { rerender } = render(<Changing bar="one" />);
+    expect(document.querySelector('[data-dtb-part="bar"]')!.className).toBe("one");
+
+    rerender(<Changing bar="two" />);
+    expect(document.querySelector('[data-dtb-part="bar"]')!.className).toBe("two");
+  });
+});
+
+/**
+ * Original bug: core's injector took no nonce, so under a
+ * `style-src 'self' 'nonce-…'` policy the sheet was dropped silently and the
+ * bar rendered unstyled.
+ */
+describe("the styleNonce prop", () => {
+  const coreStyle = () =>
+    document.head.querySelector<HTMLStyleElement>('style[data-dev-toolbar-styles="core"]');
+
+  beforeEach(() => {
+    coreStyle()?.remove();
+  });
+
+  afterEach(() => {
+    coreStyle()?.remove();
+  });
+
+  it("reaches the injected core stylesheet", () => {
+    render(
+      <DevToolbar instanceId="t" styleNonce="n0nce">
+        <div />
+      </DevToolbar>,
+    );
+
+    expect(coreStyle()).not.toBeNull();
+    expect(coreStyle()!.nonce).toBe("n0nce");
+  });
+
+  it("injects without one when the prop is absent", () => {
+    render(
+      <DevToolbar instanceId="t">
+        <div />
+      </DevToolbar>,
+    );
+
+    expect(coreStyle()).not.toBeNull();
+    expect(coreStyle()!.nonce).toBe("");
   });
 });

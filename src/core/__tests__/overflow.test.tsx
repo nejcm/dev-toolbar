@@ -81,16 +81,38 @@ const patchComputedStyle = ({ paddingX, gap }: { paddingX: number; gap: number }
 
 class MockResizeObserver implements ResizeObserver {
   static instances: MockResizeObserver[] = [];
+  /** What this observer is watching, so a test can tell the two apart. */
+  readonly targets = new Set<Element>();
   constructor(private readonly callback: ResizeObserverCallback) {
     MockResizeObserver.instances.push(this);
   }
-  observe(): void {}
-  unobserve(): void {}
-  disconnect(): void {}
+  observe(target: Element): void {
+    this.targets.add(target);
+  }
+  unobserve(target: Element): void {
+    this.targets.delete(target);
+  }
+  disconnect(): void {
+    this.targets.clear();
+  }
   trigger(): void {
     this.callback([], this);
   }
 }
+
+const part = (node: Element) => (node as HTMLElement).dataset["dtbPart"];
+
+/** The observer watching the bar's own box. */
+const barObserver = () =>
+  MockResizeObserver.instances.find((observer) =>
+    [...observer.targets].some((target) => part(target) === "bar"),
+  );
+
+/** The observer watching the individual item hosts. */
+const itemObserver = () =>
+  MockResizeObserver.instances.find((observer) =>
+    [...observer.targets].some((target) => part(target) === "item"),
+  );
 
 let restore: (() => void) | null = null;
 
@@ -546,5 +568,158 @@ describe("OverflowBar ··· popup", () => {
 
     expect(popup()).toBeNull();
     expect(document.activeElement).not.toBe(trigger());
+  });
+});
+
+/**
+ * Original bug: `widthsRef` was written only by a dependency-less
+ * `useLayoutEffect`, i.e. only on renders of `OverflowBar` itself, and the one
+ * `ResizeObserver` watched the bar — which is fixed-height and full-width, so
+ * it never fires for anything a chip does. A chip that re-rendered wider on its
+ * own store change therefore grew invisibly: the cached width stayed stale and
+ * the bar never collapsed, so the chip clipped or pushed the row.
+ *
+ * The item hosts are `flex: 0 0 auto; max-width: 100%`, so unlike the
+ * flex-constrained region elements they really are content-sized and a
+ * `ResizeObserver` on them reports the growth.
+ */
+describe("OverflowBar per-item width observation", () => {
+  const setUp = (width: number) => {
+    containerWidth = width;
+    restore = patchLayout();
+    vi.stubGlobal("ResizeObserver", MockResizeObserver);
+  };
+
+  const idsInBar = () =>
+    [...document.querySelectorAll('[data-dtb-part="region"] > [data-dtb-part="item"]')].map(
+      (node) => (node as HTMLElement).dataset["dtbExtId"],
+    );
+
+  /**
+   * Fires the observer watching the item hosts, and nothing else.
+   *
+   * `MockResizeObserver` has no geometry and `trigger()` ignores what the
+   * observer is actually watching, so firing every instance would let an
+   * implementation that *constructs* an item observer but never `observe()`s a
+   * host still pass. Selecting by recorded target closes that, and firing the
+   * bar's observer as well would hand the test to the `measureWidths` call in
+   * `read()` instead of the item-observer path.
+   */
+  const fireItems = () => act(() => itemObserver()!.trigger());
+
+  afterEach(() => {
+    widths["a"] = 60;
+  });
+
+  it("collapses when a chip grows on its own tick — the bar's own box never changes, so only the item observer can see it", () => {
+    // 1000px of bar, three 60px chips: nothing collapses.
+    setUp(1000);
+    renderBar();
+    expect(idsInBar()).toEqual(["a", "b", "c"]);
+
+    // `a` re-renders wider entirely on its own — no prop change, no render of
+    // OverflowBar, no change to the bar's own box.
+    //   available 1000 − 2 (the empty end region's gap) = 998
+    //   as rendered: 900 + 60 + 60 + 2×2 = 1024 > 998
+    //   drop b:      900 + 60 + 2 + 2 + 28 = 992 ≤ 998
+    widths["a"] = 900;
+
+    // Only the item observer fires. The bar's own box is unchanged, so in a
+    // browser its observer stays silent — and firing it here would let the
+    // `measureWidths` call in `read()` carry the test, proving nothing about
+    // the item-observer path this case is named for.
+    fireItems();
+
+    expect(idsInBar()).toEqual(["a", "c"]);
+    expect(document.querySelector('[data-dtb-part="overflow-button"]')).not.toBeNull();
+  });
+
+  it("observes the item hosts rather than the regions — a flex-constrained region does not resize when a child grows", () => {
+    setUp(1000);
+    renderBar();
+
+    const hosts = [
+      ...document.querySelectorAll('[data-dtb-part="region"] > [data-dtb-part="item"]'),
+    ];
+    expect(hosts).toHaveLength(3);
+    expect([...itemObserver()!.targets]).toEqual(hosts);
+    expect([...itemObserver()!.targets].map(part)).toEqual(["item", "item", "item"]);
+    expect([...barObserver()!.targets].map(part)).toEqual(["bar"]);
+  });
+
+  it("keeps the observed set in step with the rendered item hosts as items collapse and return", () => {
+    setUp(100);
+    renderBar();
+
+    // b and c collapsed into the popup; only `a` is still an item host in a
+    // region, and the popup copies carry a different part name.
+    const observed = () =>
+      [...itemObserver()!.targets].map((node) => (node as HTMLElement).dataset["dtbExtId"]);
+    expect(observed()).toEqual(["a"]);
+
+    containerWidth = 1000;
+    act(() => barObserver()!.trigger());
+
+    expect(observed()).toEqual(["a", "b", "c"]);
+  });
+
+  it("stops letting item resizes drive the collapse after four flips — a chip sized by its container must not loop", () => {
+    setUp(1000);
+    renderBar();
+    expect(idsInBar()).toEqual(["a", "b", "c"]);
+
+    // A chip whose width depends on whether it is collapsed: the pathological
+    // case the latch exists for. Only the *item* observer fires, because the
+    // bar's own box is unchanged throughout — which is the whole premise.
+    const flip = (width: number) => {
+      widths["a"] = width;
+      act(() => itemObserver()!.trigger());
+      return idsInBar();
+    };
+
+    expect(flip(900)).toEqual(["a", "c"]); // flip 1
+    expect(flip(60)).toEqual(["a", "b", "c"]); // flip 2
+    expect(flip(900)).toEqual(["a", "c"]); // flip 3
+    expect(flip(60)).toEqual(["a", "b", "c"]); // flip 4 — the bound
+
+    // Latched: the callback returns *before* `measureWidths`, so past the bound
+    // an item resize costs no DOM read at all, let alone a recompute.
+    expect(flip(900)).toEqual(["a", "b", "c"]);
+    expect(flip(60)).toEqual(["a", "b", "c"]);
+
+    // The bar's own observer reporting a *new* width reopens the latch. Its
+    // `read()` re-measures, which is where the width set during the latched
+    // passes is finally picked up — the latched callbacks never read it.
+    containerWidth = 999;
+    widths["a"] = 900;
+    act(() => barObserver()!.trigger());
+    expect(idsInBar()).toEqual(["a", "c"]);
+  });
+
+  it("disconnects both observers on unmount", () => {
+    setUp(1000);
+    const { unmount } = renderBar();
+
+    expect(itemObserver()).toBeDefined();
+    const item = itemObserver()!;
+    const bar = barObserver()!;
+
+    unmount();
+
+    expect(item.targets.size).toBe(0);
+    expect(bar.targets.size).toBe(0);
+  });
+
+  it("renders everything and observes nothing where ResizeObserver is undefined", () => {
+    containerWidth = 100;
+    restore = patchLayout();
+    vi.stubGlobal("ResizeObserver", undefined);
+
+    renderBar();
+
+    expect(MockResizeObserver.instances).toEqual([]);
+    // The window-resize fallback still measures, so the collapse is real; what
+    // must not exist is a polling timer keeping a dead host busy.
+    expect(idsInBar()).toEqual(["a"]);
   });
 });

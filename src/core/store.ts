@@ -39,6 +39,24 @@ export interface ToolbarStoreOptions {
 export interface ToolbarStore {
   subscribe(listener: () => void): () => void;
   getSnapshot(): ToolbarState;
+  /**
+   * The snapshot a server render sees: **the defaults**, resolved but never
+   * read from storage.
+   *
+   * `useSyncExternalStore` requires the server snapshot and the first client
+   * render to agree, and a server has no access to the browser's persisted
+   * preferences — so returning the persisted state here is what made hydration
+   * see `position: "top"` where the server HTML said `"bottom"`. Stable by
+   * construction: one frozen object built once, so React never sees it change
+   * identity mid-render.
+   *
+   * The consequence, deliberately: an SSR-side storage adapter is unsupported.
+   * Preferences supplied through `storage` on the server would be ignored for
+   * the server snapshot and then appear on the client, which is the mismatch
+   * this exists to prevent. Pass `defaultVisible`/`defaultPosition`/
+   * `defaultPanelHeight` instead — those *are* honoured on both sides.
+   */
+  getServerSnapshot(): ToolbarState;
   setVisible(visible: boolean): void;
   toggleVisible(): void;
   setPosition(position: ToolbarPosition): void;
@@ -65,27 +83,35 @@ export function clampPanelHeight(height: number): number {
 export function createToolbarStore(options: ToolbarStoreOptions): ToolbarStore {
   const { storage } = options;
 
+  /**
+   * The single place `?? true` / `?? "bottom"` / `clampPanelHeight` resolve, so
+   * the server snapshot and the storage fallbacks can never disagree about what
+   * a default is. Clamped here too: `defaultPanelHeight: 5000` must not reach a
+   * server render unclamped and then snap on the client.
+   *
+   * Built once, and never mutated — {@link ToolbarStore.getServerSnapshot}
+   * hands this exact object back on every call, which is the identity stability
+   * `useSyncExternalStore` requires of a server snapshot.
+   */
+  const defaults: ToolbarState = Object.freeze({
+    visible: options.defaultVisible ?? true,
+    position: options.defaultPosition ?? "bottom",
+    activePanelId: null as string | null,
+    panelHeight: clampPanelHeight(options.defaultPanelHeight ?? DEFAULT_PANEL_HEIGHT),
+    registered: Object.freeze([]) as readonly DevToolbarExtension[],
+  });
+
   let state: ToolbarState = {
-    visible: readJson(storage, STORAGE_KEYS.visible, options.defaultVisible ?? true, isBoolean),
-    position: readJson(
-      storage,
-      STORAGE_KEYS.position,
-      options.defaultPosition ?? "bottom",
-      isPosition,
-    ),
+    visible: readJson(storage, STORAGE_KEYS.visible, defaults.visible, isBoolean),
+    position: readJson(storage, STORAGE_KEYS.position, defaults.position, isPosition),
     activePanelId: readJson(
       storage,
       STORAGE_KEYS.activePanel,
-      null as string | null,
+      defaults.activePanelId,
       isStringOrNull,
     ),
     panelHeight: clampPanelHeight(
-      readJson(
-        storage,
-        STORAGE_KEYS.panelHeight,
-        options.defaultPanelHeight ?? DEFAULT_PANEL_HEIGHT,
-        isNumber,
-      ),
+      readJson(storage, STORAGE_KEYS.panelHeight, defaults.panelHeight, isNumber),
     ),
     registered: [],
   };
@@ -118,6 +144,7 @@ export function createToolbarStore(options: ToolbarStoreOptions): ToolbarStore {
   };
 
   const getSnapshot = () => state;
+  const getServerSnapshot = () => defaults;
 
   const setVisible = (visible: boolean) => {
     if (visible === state.visible) return;
@@ -177,6 +204,7 @@ export function createToolbarStore(options: ToolbarStoreOptions): ToolbarStore {
   return {
     subscribe,
     getSnapshot,
+    getServerSnapshot,
     setVisible,
     toggleVisible,
     setPosition,

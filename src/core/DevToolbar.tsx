@@ -86,6 +86,26 @@ export interface DevToolbarProps {
   storage?: ToolbarStorage | null;
   /** `false` skips runtime CSS injection; import `./styles.css` instead. */
   injectStyles?: boolean;
+  /**
+   * CSP nonce for the injected core stylesheet. Required under a
+   * `style-src 'self' 'nonce-…'` policy, where an un-nonced `<style>` is
+   * dropped silently — the bar renders unstyled with nothing in the console
+   * but a CSP report.
+   *
+   * Applies to **core's** sheet only, and only to the injection that creates
+   * it: first-writer-wins, so changing the nonce later does not restyle an
+   * existing element. First-party extensions inject their own sheets through
+   * `useExtensionSurface` (`src/ext/shared/hooks.ts`), which is where a nonce
+   * would have to be threaded for them; it is not, yet.
+   */
+  styleNonce?: string;
+  /**
+   * Class names merged onto core's own parts.
+   *
+   * Compared field by field, not by identity, so an object literal written
+   * inline in JSX is fine and does not defeat the memoisation of the context
+   * value or of the overlay host.
+   */
   classNames?: DevToolbarClassNames;
   /**
    * e.g. `"Mod+Shift+."`. `null` disables the toggle shortcut. Ignored when
@@ -100,6 +120,42 @@ export interface DevToolbarProps {
 }
 
 const EMPTY_EXTENSIONS: readonly DevToolbarExtension[] = [];
+const EMPTY_CLASS_NAMES: DevToolbarClassNames = {};
+
+/** Field-by-field equality. Every value is `string | undefined`, so this is exact. */
+function sameClassNames(a: DevToolbarClassNames, b: DevToolbarClassNames): boolean {
+  if (a === b) return true;
+  const keys = new Set([...Object.keys(a), ...Object.keys(b)]) as Set<keyof DevToolbarClassNames>;
+  for (const key of keys) if (a[key] !== b[key]) return false;
+  return true;
+}
+
+/**
+ * Holds one `classNames` object identity for as long as its *strings* are
+ * unchanged.
+ *
+ * `classNames={{ bar: "x" }}` written inline in JSX is a new object every
+ * render, and two things key on that identity: the context value's `useMemo`,
+ * which would then re-run for every consumer of `useDevToolbar()`, and
+ * `OverlayHost`'s `memo`, which would re-invoke every extension's overlay slot
+ * on every panel-height drag frame — exactly the two costs those memos exist
+ * to avoid.
+ *
+ * Chosen over documenting "hoist the object": the inline form is the natural
+ * React idiom, a doc note is unenforceable, and eleven optional string fields
+ * make the comparison exact rather than a heuristic. The ref is written during
+ * render, which is safe because the write is idempotent and derived purely
+ * from props — a discarded render can only store a value string-equal to the
+ * one the retried render would produce.
+ */
+function useStableClassNames(next: DevToolbarClassNames | undefined): DevToolbarClassNames {
+  const held = useRef<DevToolbarClassNames>(EMPTY_CLASS_NAMES);
+  const value = next ?? EMPTY_CLASS_NAMES;
+  /* oxlint-disable react/refs -- read and written in render on purpose, above. */
+  if (!sameClassNames(held.current, value)) held.current = value;
+  return held.current;
+  /* oxlint-enable react/refs */
+}
 
 export function DevToolbar(props: DevToolbarProps): ReactNode {
   const { children, ...rest } = props;
@@ -122,12 +178,15 @@ function DevToolbarRoot({
   defaultPanelHeight,
   storage: storageProp,
   injectStyles = true,
-  classNames,
+  styleNonce,
+  classNames: classNamesProp,
   shortcut = DEFAULT_SHORTCUT,
   container,
   className,
   style,
 }: DevToolbarProps): ReactNode {
+  const classNames = useStableClassNames(classNamesProp);
+
   // Captured once, on mount, so the store and everything derived from it
   // can never disagree about where preferences live. See prop docs above.
   const [{ raw: rawStorage, base: baseStorage, instance: instanceId }] = useState(() => {
@@ -144,7 +203,12 @@ function DevToolbarRoot({
     }),
   );
 
-  const state = useSyncExternalStore(store.subscribe, store.getSnapshot, store.getSnapshot);
+  // The third argument is the *server* snapshot, and it is deliberately not
+  // `getSnapshot`: storage is a browser fact, so hydration's first client
+  // render has to see the same defaults the server did or every consumer
+  // reading `position`/`visible` during render mismatches. See
+  // `ToolbarStore.getServerSnapshot`.
+  const state = useSyncExternalStore(store.subscribe, store.getSnapshot, store.getServerSnapshot);
 
   // Client-only mount: the bar is never part of server HTML, so nothing to
   // hydrate or mismatch. Whether we've mounted can't be derived during
@@ -357,11 +421,14 @@ function DevToolbarRoot({
     };
   }, []);
 
-  // Style injection.
+  // Style injection. `styleNonce` is in the deps because a host that resolves
+  // its nonce asynchronously would otherwise inject before it arrives; the
+  // re-run is a no-op once the sheet exists (first-writer-wins), so the only
+  // thing it buys is the first injection landing with the nonce.
   useEffect(() => {
     if (!enabled || !injectStyles) return;
-    ensureStyles();
-  }, [enabled, injectStyles]);
+    ensureStyles(undefined, undefined, undefined, styleNonce);
+  }, [enabled, injectStyles, styleNonce]);
 
   // Toggle shortcut.
   const parsedShortcut = useMemo(
@@ -439,7 +506,7 @@ function DevToolbarRoot({
       getCommands,
       runCommand: scopedRunCommand,
       density,
-      classNames: classNames ?? {},
+      classNames,
       storage: baseStorage,
       visible: state.visible,
       position: state.position,

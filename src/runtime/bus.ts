@@ -105,7 +105,12 @@ export interface EventBus<Events extends Record<string, unknown>> extends BusLik
   onAny(handler: AnyBusHandler<Events>, options?: BusSubscribeOptions): () => void;
   /** Live subscribers, optionally for one type. `onAny` counts toward the total. */
   listenerCount(type?: keyof Events & string): number;
-  /** Drops every subscriber. */
+  /**
+   * Drops every subscriber, including the `AbortSignal` `abort` listeners that
+   * signal-bound subscriptions installed — so a later abort of a pre-`clear()`
+   * signal does nothing rather than reaching into whatever has been subscribed
+   * since.
+   */
   clear(): void;
 }
 
@@ -116,6 +121,12 @@ export interface CreateEventBusOptions {
    * Called when a handler throws. A throwing subscriber must never stop the
    * remaining subscribers or propagate into the emitter (usually a `fetch`
    * wrapper or `PerformanceObserver` callback).
+   *
+   * `onError` itself is called **outside** the try/catch, so if it throws the
+   * throw propagates out of `emit()` and the handlers after the failing one
+   * are not called for that event — same as `throttledStore`'s `onError`, and
+   * for the same reason: swallowing an error reporter's own failure would hide
+   * the one thing left that could report it. Keep an `onError` total.
    */
   onError?: (error: unknown, event: BusEvent) => void;
 }
@@ -164,17 +175,37 @@ export function createEventBus<Events extends Record<string, unknown> = Record<s
     }
   };
 
+  /**
+   * Every live subscription's teardown, so `clear()` can run them rather than
+   * just emptying the handler sets.
+   *
+   * Emptying the sets alone left each signal-bound subscription's `abort`
+   * listener attached and its unsubscribe un-run. `on`'s stale-unsubscribe
+   * guard (`handlers.get(type) === set`) covers the typed path, because
+   * `clear()` drops the whole `Map` entry and a later `on` builds a fresh
+   * `Set` the stale closure no longer points at — but `anyHandlers` is one
+   * `Set` for the life of the bus, so an old signal aborting after a `clear()`
+   * deleted an `onAny` handler registered *after* it. Running the teardowns
+   * here trips each `live` latch and detaches each listener, which closes both.
+   */
+  const teardowns = new Set<() => void>();
+
   const bind = (unsubscribe: () => void, signal?: AbortSignal) => {
-    if (!signal) return unsubscribe;
-    if (signal.aborted) {
+    if (signal?.aborted) {
       unsubscribe();
       return () => {};
     }
-    signal.addEventListener("abort", unsubscribe, { once: true });
-    return () => {
-      signal.removeEventListener("abort", unsubscribe);
+    // One wrapper for all three exits — manual unsubscribe, abort, and
+    // `clear()` — so each of them removes the other two's hold. Idempotent:
+    // re-running it re-deletes nothing and `unsubscribe` is latched.
+    const off = () => {
+      teardowns.delete(off);
+      signal?.removeEventListener("abort", off);
       unsubscribe();
     };
+    teardowns.add(off);
+    signal?.addEventListener("abort", off, { once: true });
+    return off;
   };
 
   const on = <K extends keyof Events & string>(
@@ -237,6 +268,9 @@ export function createEventBus<Events extends Record<string, unknown> = Record<s
       return handlers.get(type)?.size ?? 0;
     },
     clear() {
+      // Copied: each teardown removes itself from the set.
+      for (const off of Array.from(teardowns)) off();
+      teardowns.clear();
       handlers.clear();
       anyHandlers.clear();
     },
