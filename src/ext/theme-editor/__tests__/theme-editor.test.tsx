@@ -586,3 +586,91 @@ describe("the shell contract", () => {
     expect(app().hasAttribute("style")).toBe(false);
   });
 });
+
+describe("the panel, after the surface moves", () => {
+  it("holds the colour picker's draft until blur — a drag used to commit every step", () => {
+    /* Regression: the native colour input committed on every `change`, and a
+       drag fires one per step — a hundred `setOverride` calls, each of them a
+       write, a `persistOverrides` and a publish, for one colour choice. */
+    const { toolbar } = mount();
+    act(() => {
+      toolbar.openPanel("theme-editor");
+    });
+    const picker = row(
+      toolbar.panel("theme-editor"),
+      "--brand-500",
+    )?.querySelector<HTMLInputElement>('input[data-dtb-part="thm-color"]') as HTMLInputElement;
+
+    act(() => {
+      fireEvent.change(picker, { target: { value: "#00ff00" } });
+    });
+    expect(app().style.getPropertyValue("--brand-500")).toBe("");
+    expect(picker.value).toBe("#00ff00");
+
+    act(() => {
+      fireEvent.focusOut(picker);
+    });
+    expect(app().style.getPropertyValue("--brand-500")).toBe("#00ff00");
+  });
+
+  it("drops a held colour draft when the surface vanishes — a disabling input fires no blur", async () => {
+    /* Chrome does not fire `blur` on a focused element that *becomes*
+       disabled, so a draft held when `writable` flips would sit there showing
+       a colour nothing on the page is wearing until the field was focused and
+       left again. */
+    const { toolbar } = mount();
+    act(() => {
+      toolbar.openPanel("theme-editor");
+    });
+    const picker = () =>
+      row(toolbar.panel("theme-editor"), "--brand-500")?.querySelector<HTMLInputElement>(
+        'input[data-dtb-part="thm-color"]',
+      ) as HTMLInputElement;
+
+    act(() => {
+      fireEvent.change(picker(), { target: { value: "#00ff00" } });
+    });
+    expect(picker().value).toBe("#00ff00");
+
+    document.getElementById("app")?.remove();
+    await toolbar.runCommand("theme-editor.refresh");
+
+    expect(picker().disabled).toBe(true);
+    // Back to the application's own value — the draft was never committed.
+    expect(picker().value).toBe("#3355ff");
+  });
+
+  it("says the edits are no longer on the page when the surface disappears", async () => {
+    const { toolbar } = mount();
+    act(() => {
+      toolbar.openPanel("theme-editor");
+    });
+    const input = row(
+      toolbar.panel("theme-editor"),
+      "--brand-500",
+    )?.querySelector<HTMLInputElement>('input[data-dtb-part="thm-input"]') as HTMLInputElement;
+    act(() => {
+      fireEvent.change(input, { target: { value: "#ff0000" } });
+      fireEvent.keyDown(input, { key: "Enter" });
+    });
+    expect(app().style.getPropertyValue("--brand-500")).toBe("#ff0000");
+
+    document.getElementById("app")?.remove();
+    await toolbar.runCommand("theme-editor.refresh");
+
+    const banner = toolbar
+      .panel("theme-editor")
+      ?.querySelector('[data-dtb-part="thm-banner"][data-dtb-detached="true"]');
+    expect(text(banner)).toBe(
+      "Nothing matches the #app surface any more, so 1 edit is no longer on the page. " +
+        "They are kept, and go back on when it returns.",
+    );
+    // …and no row was marked failed for it. The `edited` count is the control:
+    // it proves the row rendered its tags at all in this state, so the zero
+    // above is a real absence rather than a selector that matches nothing.
+    const tags = (tag: string) =>
+      toolbar.panel("theme-editor")?.querySelectorAll(`[data-dtb-tag="${tag}"]`).length ?? 0;
+    expect(tags("not-applied")).toBe(0);
+    expect(tags("edited")).toBe(1);
+  });
+});

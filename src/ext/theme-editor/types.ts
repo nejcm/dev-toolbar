@@ -134,10 +134,87 @@ export const MAX_VALUE_LENGTH = 512;
 const VALUE_FORBIDDEN =
   /[;{}<>\\]|\/\*|\*\/|\burl\s*\(|\bimage-set\s*\(|\bexpression\s*\(|@import|\bsrc\s*:/i;
 
+/** How deeply `()`/`[]` may nest before a value is treated as pathological. */
+const MAX_NESTING_DEPTH = 32;
+
+/**
+ * A quote-aware structural scan of a value that is about to be written into a
+ * declaration and printed into exported CSS text.
+ *
+ * `VALUE_FORBIDDEN` is a *character* deny list; it cannot see that `calc(`
+ * never closes. An unbalanced value is not merely useless — printed into a
+ * `cssText()` export it swallows the declarations that follow it, so a
+ * refusal here is what keeps a truncated paste from re-scoping somebody's
+ * stylesheet.
+ *
+ * **It runs after `VALUE_FORBIDDEN`, and that ordering is load-bearing:** `\`
+ * is already denied by the time this is reached, so the scanner carries no
+ * escape state. Move it earlier and `"a\"b"` becomes a string this scanner
+ * mis-reads.
+ *
+ * `!` is refused *outside quotes only*, because `--label: "wow!"` is a
+ * legitimate custom-property value. The reason to refuse it unquoted is not
+ * syntax: CSSOM takes priority as a separate argument, so a conforming
+ * browser drops the whole `red !important` declaration silently while the
+ * panel would go on claiming the edit was applied.
+ */
+function structurallySound(value: string): boolean {
+  const stack: string[] = [];
+  let quote: string | null = null;
+  for (const character of value) {
+    if (quote !== null) {
+      // An unescaped newline inside a string is a `<bad-string>` token, and a
+      // browser drops the whole declaration — a silent failure exactly like
+      // `!important`'s. Unreachable from an `<input>`, reachable from an
+      // imported recipe, a shared link or storage.
+      if (character === "\n") return false;
+      if (character === quote) quote = null;
+      continue;
+    }
+    if (character === '"' || character === "'") {
+      quote = character;
+      continue;
+    }
+    if (character === "(" || character === "[") {
+      stack.push(character === "(" ? ")" : "]");
+      if (stack.length > MAX_NESTING_DEPTH) return false;
+      continue;
+    }
+    if (character === ")" || character === "]") {
+      if (stack.pop() !== character) return false;
+      continue;
+    }
+    if (character === "!") return false;
+  }
+  return quote === null && stack.length === 0;
+}
+
 const NUMBER_SHAPE = /^-?(?:\d+\.?\d*|\.\d+)(?:e[-+]?\d+)?$/i;
 const LENGTH_SHAPE =
   /^-?(?:\d+\.?\d*|\.\d+)(?:px|rem|em|%|vh|vw|vmin|vmax|ch|ex|pt|pc|cm|mm|in|q|deg|rad|turn|s|ms|fr)?$/i;
 const FUNCTIONAL = /^(?:calc|clamp|min|max|var|env|round)\s*\(/i;
+
+/**
+ * The type-*independent* half of `checkTokenValue`, and the whole of its
+ * security-relevant half: trim → empty → too long → forbidden constructs →
+ * structurally sound.
+ *
+ * Split out so the pre-mount reader (`readStoredThemeOverrides`) and the
+ * mounted runtime can share one policy instead of drifting. Everything a
+ * caller without a catalogue can still check lives here.
+ *
+ * Not exported: `checkStoredEntry` is the door a caller without a catalogue
+ * is meant to use, and a second exported entry point invites a third caller
+ * that runs only half the policy.
+ */
+function checkTokenValueShape(raw: string): ValueRefusal | null {
+  const value = raw.trim();
+  if (value === "") return "empty";
+  if (value.length > MAX_VALUE_LENGTH) return "too-long";
+  if (VALUE_FORBIDDEN.test(value)) return "syntax";
+  if (!structurallySound(value)) return "syntax";
+  return null;
+}
 
 /**
  * Accepts or refuses one edited value. The safety pass is universal and
@@ -148,10 +225,12 @@ const FUNCTIONAL = /^(?:calc|clamp|min|max|var|env|round)\s*\(/i;
  * refused edit is recoverable, a silently corrected one is not.
  */
 export function checkTokenValue(type: TokenType, raw: string): ValueRefusal | null {
+  const shape = checkTokenValueShape(raw);
+  if (shape !== null) return shape;
   const value = raw.trim();
-  if (value === "") return "empty";
-  if (value.length > MAX_VALUE_LENGTH) return "too-long";
-  if (VALUE_FORBIDDEN.test(value)) return "syntax";
+  // After the structural scan, never before: `calc(` is *functional-looking*
+  // and structurally broken, and short-circuiting on the prefix first is what
+  // let it through.
   if (FUNCTIONAL.test(value)) return null;
   if (type === "number" && !NUMBER_SHAPE.test(value)) return "type";
   if (type === "length" && !LENGTH_SHAPE.test(value)) return "type";
@@ -165,10 +244,51 @@ export function describeValueRefusal(refusal: ValueRefusal, type: TokenType): st
     case "too-long":
       return `longer than ${MAX_VALUE_LENGTH} characters.`;
     case "syntax":
-      return "contains something this editor will not write into a stylesheet — ; { } < > \\ /* or url().";
+      return (
+        "contains something this editor will not write into a stylesheet — ; { } < > \\ /* or " +
+        "url(), an unbalanced bracket, an unterminated string, or a bare `!`."
+      );
     case "type":
       return `not a ${type}.`;
   }
+}
+
+/** The literal `/runtime` mask, refused as an incoming value. */
+export const MASK_SENTINEL = "[redacted]";
+
+/** Why a persisted entry was refused. `null` means it can be applied. */
+export type StoredEntryRefusal = TokenRefusal | ValueRefusal;
+
+/**
+ * The one policy for a `name → value` pair arriving from **storage** rather
+ * than from the editor.
+ *
+ * Storage is a door like a pasted recipe or a link: `localStorage` is
+ * writable by every script on the origin, so an entry cannot be trusted just
+ * because we wrote it. Two callers share this — the mounted runtime's
+ * `vetStored`, and `readStoredThemeOverrides`, which runs before anything is
+ * mounted and hands its result to the consumer's own theme provider. They
+ * disagreed before this existed.
+ *
+ * `type` is optional because the pre-mount caller may have no catalogue;
+ * omitting it falls back to `"string"`, the loosest type, which still runs
+ * the entire security-relevant pass.
+ */
+export function checkStoredEntry(
+  name: string,
+  value: unknown,
+  options: { type?: TokenType; mask?: string } = {},
+): StoredEntryRefusal | null {
+  const nameRefusal = checkTokenName(name);
+  // A **reserved** name is dropped rather than orphaned: it can never be
+  // written, so keeping it would be residue with no way to clear one row.
+  if (nameRefusal !== null) return nameRefusal;
+  if (typeof value !== "string") return "syntax";
+  const mask = options.mask ?? MASK_SENTINEL;
+  // Never the mask itself: a redacted export read back would otherwise pin a
+  // token to the literal string `[redacted]`.
+  if (value.trim() === mask || value.includes(MASK_SENTINEL)) return "syntax";
+  return checkTokenValue(options.type ?? "string", value);
 }
 
 /**

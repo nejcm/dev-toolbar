@@ -30,6 +30,8 @@ import type { RedactOptions, ThrottledStore } from "../../runtime";
 import type { ExtensionRuntimeApi, ToolbarStorage } from "../../core/contract";
 import {
   DEFAULT_SURFACE,
+  MASK_SENTINEL,
+  checkStoredEntry,
   checkTokenName,
   checkTokenValue,
   humanise,
@@ -55,9 +57,6 @@ export const PREVIEW_KEY = "preview";
 
 /** Query parameter carrying a shared recipe, or the word `reset`. */
 export const DEFAULT_THEME_PARAM = "dtb-theme";
-
-/** The literal `/runtime` mask, refused as an incoming value. See `sanitize`. */
-const MASK_SENTINEL = "[redacted]";
 
 export type ThemeMode = "light" | "dark";
 
@@ -233,6 +232,15 @@ export function readStoredThemeOverrides(
     id?: string;
     storage?: ToolbarStorage;
     themeParam?: string | null;
+    /**
+     * The same catalogue you pass to `themeEditor()`. Supply it and this
+     * helper reaches parity with the mounted runtime's own vetting; omit it
+     * and every entry is checked as a `"string"`, the loosest type — the
+     * whole security-relevant pass still runs either way.
+     */
+    tokens?: TokensInput;
+    /** `redactOptions.mask`, when you changed it. Default `"[redacted]"`. */
+    mask?: string;
   } = {},
 ): Record<string, string> {
   const {
@@ -240,18 +248,54 @@ export function readStoredThemeOverrides(
     id = "theme-editor",
     storage,
     themeParam = DEFAULT_THEME_PARAM,
+    tokens,
+    mask,
   } = options;
   if (resetRequested(themeParam)) return {};
   const key = `dtb:v1:${instanceId}:ext:${id}:${OVERRIDES_KEY}`;
   try {
     const source = storage ?? (typeof localStorage === "undefined" ? null : localStorage);
     if (source === null) return {};
-    // A spread copy, never the null-prototype map directly: that would break
+    const declared = declaredTypesOf(tokens);
+    // A plain object, never the null-prototype map: that would break
     // `result.hasOwnProperty(...)` for every consumer.
-    return { ...parseOverrides(source.getItem(key)) };
+    const output: Record<string, string> = {};
+    for (const [name, value] of Object.entries(parseOverrides(source.getItem(key)))) {
+      // The same policy `start()` applies to the same bytes. This helper used
+      // to hand back raw storage, so an app seeding its own theme provider
+      // from it disagreed with the panel about exactly the entries the panel
+      // had refused.
+      if (checkStoredEntry(name, value, { type: declared.get(name), mask }) !== null) continue;
+      define(output, name, value.trim());
+    }
+    return output;
   } catch {
     return {};
   }
+}
+
+/**
+ * `name → inferred type` for a catalogue supplied to a *pre-mount* helper.
+ *
+ * Wrapped: `tokens` may be a getter, and a definition may itself carry one, so
+ * reading it before the application has mounted is exactly where a throw is
+ * plausible. A throw degrades to the type-independent half of the check
+ * rather than to no check.
+ */
+function declaredTypesOf(tokens: TokensInput | undefined): Map<string, TokenType> {
+  const declared = new Map<string, TokenType>();
+  if (tokens === undefined) return declared;
+  try {
+    const list = typeof tokens === "function" ? tokens() : tokens;
+    if (!Array.isArray(list)) return declared;
+    for (const definition of list as readonly DesignTokenDefinition[]) {
+      if (typeof definition?.name !== "string" || declared.has(definition.name)) continue;
+      declared.set(definition.name, inferType(definition));
+    }
+  } catch {
+    /* see above */
+  }
+  return declared;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -457,26 +501,78 @@ export function createThemeEditorRuntime(
     }
   };
 
-  /**
-   * True when `currentHold()` has just moved to a *different* element and the
-   * other edits therefore need re-applying. Read and cleared by `writeOne()`.
-   */
-  let surfaceReplaced = false;
-  /** Reentrancy guard for the re-apply, which calls `writeOne()` again. */
-  let remigrating = false;
-
   const currentHold = (): SurfaceHold | null => {
     const element = resolveElement();
     if (element === null) return null;
     if (hold !== null && hold.element === element) return hold;
     // A *replacement*, not the first acquisition — only that leaves edits
     // stranded on a node no longer in the document.
-    if (hold !== null) {
-      hold.releaseAll();
-      surfaceReplaced = true;
-    }
+    if (hold !== null) hold.releaseAll();
     hold = new SurfaceHold(element);
     return hold;
+  };
+
+  /**
+   * Reentrancy latch — a **termination guarantee**, not a redundancy.
+   *
+   * The migration re-applies every edit through `writeOne`, which reconciles
+   * again. Against a deterministic DOM the identity check below already stops
+   * that on the first hop, because the new hold is installed before the loop
+   * runs. Against a resolver that does *not* return the same element twice —
+   * a proxied `document`, a test double, a shim — it does not: every write
+   * re-enters with a fresh element, and `writeOne`'s `try/catch` swallows the
+   * eventual `RangeError` and keeps going, so the re-entry is exponential
+   * rather than a fast stack overflow. This latch is what bounds it. It also
+   * saves N redundant `querySelector` calls per migration.
+   */
+  let migrating = false;
+
+  /**
+   * False before `start()` and after teardown. A stopped runtime must not
+   * write to the page: the handle outlives the toolbar (the factory exposes
+   * it, and `refresh` is the `${id}.refresh` command's body), and unmounting
+   * has to leave the document exactly as it was found.
+   */
+  let active = false;
+
+  /**
+   * Keeps the edits on whatever element the surface selector resolves to
+   * *now*. The single owner of surface migration, called from `publish()` and
+   * as `writeOne()`'s first statement — the two places that already run
+   * whenever anything could have changed.
+   *
+   * Deliberately **not** called from `buildSnapshot()`: `cssText()`,
+   * `diagnostics()` and every other export helper build a snapshot without
+   * publishing, and a read that repaints the page is a worse defect than the
+   * one this fixes.
+   *
+   * The comparison is **element identity**, not `isConnected`. An SPA that
+   * re-renders `#app` swaps in a live element, and a surface that moved inside
+   * a `[data-dev-toolbar]` subtree resolves to `null` while the old node is
+   * still connected — neither is visible to a connectivity test, and both
+   * strand every edit on a node nothing holds. Identity also makes releasing
+   * the old element mandatory rather than cosmetic: it may still be on the
+   * page, wearing our inline values.
+   */
+  const reconcileSurface = (): void => {
+    if (migrating || !active) return;
+    const element = resolveElement();
+    if (hold !== null && hold.element === element) return;
+    // Exact reversal of the *old* element before anything else, whether it is
+    // still in the document or not.
+    if (hold !== null) releaseAll();
+    // Nowhere to write: no per-token `applyError` is set on purpose. A
+    // transient `null` between two renders would otherwise spam every row
+    // with a failure that resolves itself, and `buildSnapshot` already reports
+    // `writable: false`, which is the truthful signal.
+    if (element === null || !preview) return;
+    migrating = true;
+    try {
+      hold = new SurfaceHold(element);
+      for (const [name, value] of Object.entries(overrides)) writeOne(name, value);
+    } finally {
+      migrating = false;
+    }
   };
 
   /**
@@ -504,7 +600,11 @@ export function createThemeEditorRuntime(
     }
   };
 
+  /** Whitespace is the only difference CSSOM is allowed to introduce here. */
+  const normalise = (text: string): string => text.trim().replace(/\s+/g, " ");
+
   const writeOne = (name: string, value: string): void => {
+    reconcileSurface();
     // The bleed invariant, enforced at the single funnel every write passes
     // through. Every door into `overrides` (setOverride, sanitize, stored-value
     // loading, the URL) already stops a reserved name earlier, so this line is
@@ -532,22 +632,28 @@ export function createThemeEditorRuntime(
           return;
         }
         target.write(name, value);
-        // The surface element was replaced — an SPA re-rendered the subtree
-        // this surface selects — and the hold with the *other* edits went
-        // with it. Writing only the token just touched would leave every
-        // other row claiming `override ?? base` while the page had reverted
-        // to the app's own values, so a migration re-applies everything.
-        // Cannot bite the default `:root` surface, which is never replaced.
-        if (surfaceReplaced && !remigrating) {
-          surfaceReplaced = false;
-          remigrating = true;
-          try {
-            for (const [other, otherValue] of Object.entries(overrides)) {
-              if (other !== name) writeOne(other, otherValue);
-            }
-          } finally {
-            remigrating = false;
-          }
+        // Read it back. `setProperty` reports nothing when CSSOM rejects a
+        // declaration — `red !important` is dropped whole, because priority
+        // is a separate argument there — and the unconditional
+        // `applyErrors.delete` below used to launder that refusal into a
+        // success the panel then reported as `overridden: true`.
+        //
+        // Comparing a read-back is safe **only because this extension writes
+        // custom properties exclusively**, guaranteed by `checkTokenName`'s
+        // `^--` shape: a custom property — registered with `@property` or not
+        // — round-trips its *specified* value verbatim apart from whitespace,
+        // since only computed values are normalised. Generalising this to a
+        // standard property would be a bug: `1.0px` legitimately comes back
+        // as `1px` there, and this would call that a failure.
+        const applied = target.element.style.getPropertyValue(name);
+        if (normalise(applied) !== normalise(value)) {
+          applyErrors.set(
+            name,
+            `The page refused this value — it reads back as ${
+              applied.trim() === "" ? "empty" : `"${applied.trim()}"`
+            }.`,
+          );
+          return;
         }
       }
       applyErrors.delete(name);
@@ -572,7 +678,15 @@ export function createThemeEditorRuntime(
     }
   };
 
-  /** Every stored edit, on. Used on start, on surface change and on preview on. */
+  /**
+   * Every stored edit, on. Used on start, on surface change and on preview on.
+   *
+   * The first `writeOne` reconciles, which acquires the hold and writes every
+   * override already, so this loop then rewrites them. Harmless — `write`
+   * records `prior` only for the first write of a name — and left alone
+   * deliberately: `applyAll` is the caller that must not depend on whether a
+   * reconcile happened to run.
+   */
   const applyAll = (): void => {
     for (const [name, value] of Object.entries(overrides)) writeOne(name, value);
   };
@@ -830,6 +944,9 @@ export function createThemeEditorRuntime(
   // `revision` advances on *publish*, not on build: the export helpers build
   // without publishing, and bumping there would make revision a count of reads.
   const publish = () => {
+    // Before the revision bump, so the snapshot this publishes already
+    // describes the surface the edits are actually on.
+    reconcileSurface();
     revision += 1;
     store.set(build());
     store.flush();
@@ -946,17 +1063,10 @@ export function createThemeEditorRuntime(
     const accepted = emptyMap();
     const dropped: string[] = [];
     for (const [name, value] of Object.entries(incoming)) {
-      if (
-        // A **reserved** name is dropped here, unlike an orphan: an orphan is
-        // still applicable (the catalogue may name it again), while a
-        // reserved name can never be written, so keeping it would be residue
-        // with no way to clear a single row — only "Reset everything" or the
-        // kill switch would remove it.
-        checkTokenName(name) !== null ||
-        value.trim() === maskText ||
-        value.includes(MASK_SENTINEL) ||
-        checkTokenValue(declaredType(name), value) !== null
-      ) {
+      // One shared policy with `readStoredThemeOverrides`, which vets the same
+      // bytes before anything mounts. Inlining the condition here is what let
+      // the two drift.
+      if (checkStoredEntry(name, value, { type: declaredType(name), mask: maskText }) !== null) {
         dropped.push(name);
         continue;
       }
@@ -1346,6 +1456,7 @@ export function createThemeEditorRuntime(
 
     start(api: ExtensionRuntimeApi) {
       storage = api.storage;
+      active = true;
 
       // The kill switch runs before anything is applied, so an edit that made
       // the page unreadable never reaches it on the reset load.
@@ -1401,8 +1512,12 @@ export function createThemeEditorRuntime(
         }
       }
 
-      const timer =
-        typeof tokens === "function" ? setInterval(publish, Math.max(250, pollMs)) : null;
+      // A *static* catalogue on a non-`:root` surface still needs the timer:
+      // the poll is the only thing that notices an SPA replacing the element
+      // the edits are written to. `:root` alone is never replaced.
+      const needsPoll =
+        typeof tokens === "function" || surfaces.some((entry) => entry.selector !== ":root");
+      const timer = needsPoll ? setInterval(publish, Math.max(250, pollMs)) : null;
 
       // Visibility is *reported*, not acted on (§2). This extension deliberately
       // keeps its edits applied while the bar is hidden — see the note at the
@@ -1415,6 +1530,9 @@ export function createThemeEditorRuntime(
       // StrictMode runs mount → cleanup → mount, and destroying it on the first
       // cleanup drops React's subscription and freezes the panel (§10.6).
       const dispose = () => {
+        // Before `releaseAll`, so a `publish` racing the teardown cannot
+        // reconcile the edits straight back onto the page.
+        active = false;
         if (timer !== null) clearInterval(timer);
         stopWatching();
         // Unmounting the toolbar must leave the page exactly as it found it.

@@ -1079,3 +1079,375 @@ describe("type inference", () => {
     expect(inferType({ name: "--a", type: "color", value: "12px" })).toBe("color");
   });
 });
+
+/* -------------------------------------------------------------------------- */
+
+describe("structural validation — the half a character deny list cannot see", () => {
+  it("refuses a value whose brackets never close — a truncated `calc(` used to be accepted", () => {
+    /* Regression: `checkTokenValue` short-circuited on the `FUNCTIONAL`
+       prefix before anything looked at structure, so `calc(` returned `null`,
+       was written to the surface as a live declaration, and was printed into
+       `cssText()` — where an unclosed function swallows every declaration
+       after it. */
+    expect(checkTokenValue("color", "calc(")).toBe("syntax");
+    expect(checkTokenValue("length", "clamp(1px, 2vw")).toBe("syntax");
+    expect(checkTokenValue("string", "var(--a")).toBe("syntax");
+    // Balanced functional values are untouched.
+    expect(checkTokenValue("length", "calc(1px + 2px)")).toBeNull();
+    expect(checkTokenValue("color", "color-mix(in oklab, red, blue)")).toBeNull();
+  });
+
+  it("refuses a stray closer and a mismatched pair", () => {
+    expect(checkTokenValue("string", "1px)")).toBe("syntax");
+    expect(checkTokenValue("string", "min(1px]")).toBe("syntax");
+    expect(checkTokenValue("string", "[a]")).toBeNull();
+  });
+
+  it("refuses an unterminated string", () => {
+    expect(checkTokenValue("string", '"Inter')).toBe("syntax");
+    expect(checkTokenValue("string", '"Inter", sans-serif')).toBeNull();
+  });
+
+  it("refuses nesting deeper than 32", () => {
+    expect(checkTokenValue("string", `${"min(".repeat(32)}1px${")".repeat(32)}`)).toBeNull();
+    expect(checkTokenValue("string", `${"min(".repeat(33)}1px${")".repeat(33)}`)).toBe("syntax");
+  });
+
+  it("refuses a bare `!` but keeps one inside quotes — `!important` is dropped by CSSOM", () => {
+    // CSSOM takes priority as a separate argument, so a conforming browser
+    // drops `red !important` whole while the panel claims it applied.
+    expect(checkTokenValue("color", "red !important")).toBe("syntax");
+    expect(checkTokenValue("string", "red!important")).toBe("syntax");
+    expect(checkTokenValue("string", '"wow!"')).toBeNull();
+  });
+
+  it("denies a backslash before the scanner sees it — which is why the scanner has no escape state", () => {
+    /* Ordering pin. `structurallySound` runs *after* `VALUE_FORBIDDEN` and
+       treats `\` as an ordinary character, so `"a\("` reads to it as a
+       balanced quoted string and would be accepted on its own. Only the
+       earlier deny list refuses it. Drop `\` from `VALUE_FORBIDDEN`, or move
+       the scanner in front of it, and this value reaches the page. */
+    expect(checkTokenValue("string", '"a\\("')).toBe("syntax");
+    expect(checkTokenValue("string", '"a\\""')).toBe("syntax");
+  });
+});
+
+describe("write verification — a declaration the page refused is not a success", () => {
+  it("records an applyError when the value does not read back off the element", () => {
+    /* Regression: `writeOne` ended with an unconditional
+       `applyErrors.delete(name)`, so a declaration CSSOM dropped — which is
+       what a real browser does with `red !important`, where priority is a
+       separate argument to `setProperty` — was laundered into an applied
+       edit, and the row went on reporting `overridden: true`. */
+    const runtime = createThemeEditorRuntime({ tokens: TOKENS });
+    runtime.start(fakeApi(null));
+    const refuse = vi.spyOn(root().style, "setProperty").mockImplementation(() => {});
+
+    expect(runtime.setOverride("--brand-500", "#ff0000")).toBeNull();
+    const snapshot = runtime.store.peek();
+    expect(snapshot.applyErrors["--brand-500"]).toBe(
+      "The page refused this value — it reads back as empty.",
+    );
+    expect(snapshot.tokens.find((view) => view.name === "--brand-500")?.applyError).toBe(
+      "The page refused this value — it reads back as empty.",
+    );
+
+    // …and a write that does land clears it again.
+    refuse.mockRestore();
+    expect(runtime.setOverride("--brand-500", "#00ff00")).toBeNull();
+    expect(runtime.store.peek().applyErrors["--brand-500"]).toBeUndefined();
+    expect(root().style.getPropertyValue("--brand-500")).toBe("#00ff00");
+  });
+
+  it("accepts a value the element normalises only in whitespace", () => {
+    // Custom properties round-trip verbatim; the one difference CSSOM may
+    // introduce is whitespace collapsing, which must not read as a refusal.
+    const runtime = createThemeEditorRuntime({
+      tokens: [{ name: "--stack", type: "string", value: "a" }],
+    });
+    runtime.start(fakeApi(null));
+    expect(runtime.setOverride("--stack", "Inter,   sans-serif")).toBeNull();
+    expect(runtime.store.peek().applyErrors["--stack"]).toBeUndefined();
+  });
+});
+
+describe("`readStoredThemeOverrides` — the pre-mount door", () => {
+  const reader = (payload: unknown): ToolbarStorage => ({
+    getItem: (key) =>
+      key === "dtb:v1:test:ext:theme-editor:overrides" ? JSON.stringify(payload) : null,
+    setItem: () => {},
+    removeItem: () => {},
+  });
+
+  it("vets what it hands back — it used to return raw storage", () => {
+    /* Regression: the helper returned `parseOverrides()` verbatim while
+       `start()` vetted the same bytes, and README § "It changes what your app
+       looks like" tells consumers to feed the result into their own theme
+       provider — so the app applied values the panel had already refused. */
+    const result = readStoredThemeOverrides({
+      instanceId: "test",
+      storage: reader({
+        "--good": "#ff0000",
+        "--closes-the-rule": "red; } body {",
+        "--unbalanced": "calc(",
+        "--dtb-bg": "#000000",
+        "--masked": "[redacted]",
+        "--empty": "   ",
+        "--not-a-string": 5,
+      }),
+    });
+    expect(result).toEqual({ "--good": "#ff0000" });
+  });
+
+  it("reaches the mounted runtime's answer when handed the catalogue, and says where it cannot", () => {
+    /* The residual divergence, pinned on purpose so nobody closes it by
+       copying validation into a second place: without `tokens` every value is
+       checked as a `"string"`, the loosest type, so a value the catalogue
+       declares `number`/`length` and would refuse as one survives here.
+       `color` and `string` cannot diverge at all — `checkTokenValue`
+       short-circuits before any type branch. */
+    const stored = { "--radius-md": "wide", "--brand-500": "not-a-colour" };
+
+    expect(readStoredThemeOverrides({ instanceId: "test", storage: reader(stored) })).toEqual({
+      "--radius-md": "wide",
+      "--brand-500": "not-a-colour",
+    });
+
+    const withCatalogue = readStoredThemeOverrides({
+      instanceId: "test",
+      storage: reader(stored),
+      tokens: TOKENS,
+    });
+    expect(withCatalogue).toEqual({ "--brand-500": "not-a-colour" });
+
+    // …and that is exactly what `start()` keeps out of the same bytes.
+    const storage = createMemoryStorage();
+    storage.setItem(OVERRIDES_KEY, JSON.stringify(stored));
+    const runtime = createThemeEditorRuntime({ tokens: TOKENS });
+    runtime.start(fakeApi(storage));
+    expect(runtime.overrides()).toEqual(withCatalogue);
+  });
+
+  it("falls back to the type-independent check when the catalogue getter throws", () => {
+    // A getter reading application state that has not been built yet is the
+    // plausible pre-mount failure; it must not cost the security pass.
+    const result = readStoredThemeOverrides({
+      instanceId: "test",
+      storage: reader({ "--radius-md": "wide", "--unbalanced": "calc(" }),
+      tokens: () => {
+        throw new Error("not mounted yet");
+      },
+    });
+    expect(result).toEqual({ "--radius-md": "wide" });
+  });
+
+  it("honours a custom mask", () => {
+    expect(
+      readStoredThemeOverrides({
+        instanceId: "test",
+        storage: reader({ "--a": "***", "--b": "#fff" }),
+        mask: "***",
+      }),
+    ).toEqual({ "--b": "#fff" });
+  });
+});
+
+describe("surface migration — one reconciler, one owner", () => {
+  const APP_SURFACE = [{ id: "app", label: "App", selector: "#app" }];
+  const makeApp = (): HTMLElement => {
+    const element = document.createElement("div");
+    element.id = "app";
+    document.body.appendChild(element);
+    return element;
+  };
+
+  afterEach(() => {
+    for (const node of Array.from(document.querySelectorAll("#app"))) node.remove();
+  });
+
+  const started = (extra: Partial<Parameters<typeof createThemeEditorRuntime>[0]> = {}) => {
+    const runtime = createThemeEditorRuntime({
+      tokens: TOKENS,
+      surfaces: APP_SURFACE,
+      ...extra,
+    });
+    runtime.start(fakeApi(null));
+    return runtime;
+  };
+
+  it("moves the edits onto a replaced surface element on publish, not only on the next write", () => {
+    /* Regression: migration ran only inside `writeOne`, driven by a
+       `surfaceReplaced` flag set in `currentHold()`. An SPA that re-rendered
+       `#app` therefore stranded every edit on the detached node until
+       somebody happened to type another value, while the snapshot went on
+       reporting `overridden: true`. */
+    const first = makeApp();
+    const runtime = started();
+    runtime.setOverride("--brand-500", "#ff0000");
+    expect(first.style.getPropertyValue("--brand-500")).toBe("#ff0000");
+
+    first.remove();
+    const second = makeApp();
+    runtime.refresh();
+
+    expect(second.style.getPropertyValue("--brand-500")).toBe("#ff0000");
+    expect(runtime.store.peek().writable).toBe(true);
+  });
+
+  it("releases a surface that was retargeted while still on the page — identity, not connectedness", () => {
+    // The case an `isConnected` test cannot see: both elements are live, and
+    // the old one is still wearing our inline values.
+    const first = makeApp();
+    const runtime = started();
+    runtime.setOverride("--brand-500", "#ff0000");
+
+    const second = document.createElement("div");
+    second.id = "app";
+    document.body.insertBefore(second, first);
+    runtime.refresh();
+
+    expect(second.style.getPropertyValue("--brand-500")).toBe("#ff0000");
+    expect(first.hasAttribute("style")).toBe(false);
+  });
+
+  it("sets no per-token error when the surface is gone, and re-applies when it returns", () => {
+    // A surface missing for one render between two paints must not mark every
+    // row failed; `writable: false` is the truthful signal and the snapshot
+    // already carries it.
+    const first = makeApp();
+    const runtime = started();
+    runtime.setOverride("--brand-500", "#ff0000");
+    first.remove();
+    runtime.refresh();
+
+    const gone = runtime.store.peek();
+    expect(gone.writable).toBe(false);
+    expect(gone.applyErrors).toEqual({});
+    expect(gone.tokens.find((view) => view.name === "--brand-500")?.applyError).toBeUndefined();
+    expect(gone.overriddenCount).toBe(1);
+    expect(first.hasAttribute("style")).toBe(false);
+
+    const back = makeApp();
+    runtime.refresh();
+    expect(back.style.getPropertyValue("--brand-500")).toBe("#ff0000");
+  });
+
+  it("polls a static catalogue on a non-root surface — the timer used to need a function", () => {
+    /* Regression: the reconcile timer existed only when `tokens` was a
+       function, so an application with a fixed catalogue and a `#app` surface
+       never noticed the element being replaced. */
+    vi.useFakeTimers();
+    try {
+      const first = makeApp();
+      const runtime = started({ pollMs: 250 });
+      runtime.setOverride("--brand-500", "#ff0000");
+      first.remove();
+      const second = makeApp();
+
+      vi.advanceTimersByTime(300);
+      expect(second.style.getPropertyValue("--brand-500")).toBe("#ff0000");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("does not touch the page from an export helper", () => {
+    // The rejected fix was to reconcile inside `buildSnapshot()`, which would
+    // make `cssText()`, `diagnostics()` and every export mutate the document.
+    const first = makeApp();
+    const runtime = started();
+    runtime.setOverride("--brand-500", "#ff0000");
+    first.remove();
+    const second = makeApp();
+
+    runtime.cssText();
+    runtime.figmaText();
+    runtime.diagnostics();
+    expect(second.style.getPropertyValue("--brand-500")).toBe("");
+    expect(second.hasAttribute("style")).toBe(false);
+  });
+});
+
+describe("surface migration — the guards on the reconciler itself", () => {
+  const APP_SURFACE = [{ id: "app", label: "App", selector: "#app" }];
+
+  const detached = (): HTMLElement => document.createElement("div");
+
+  /**
+   * A `document` whose `querySelector` hands back a *different* live element
+   * on each of its first few calls, then settles. A proxied document, a shim
+   * or a test double does exactly this; a real one does not.
+   */
+  const alternatingDocument = (a: HTMLElement, b: HTMLElement, alternations: number) => {
+    let calls = 0;
+    const target = {
+      documentElement: document.documentElement,
+      defaultView: null,
+      querySelector: () => {
+        calls += 1;
+        // It settles eventually, so an unguarded reconciler *terminates* here
+        // rather than hanging the suite — the evidence is the call count, not
+        // a timeout.
+        if (calls > alternations) return b;
+        return calls % 2 === 0 ? a : b;
+      },
+    } as unknown as Document;
+    return { target, calls: () => calls };
+  };
+
+  it("terminates against a resolver that never returns the same element twice", () => {
+    /* The `migrating` latch is a termination guarantee, not a redundancy.
+       Without it every re-applied write re-enters the reconciler with a fresh
+       element, and `writeOne`'s try/catch swallows the eventual RangeError
+       and keeps going — so the re-entry is exponential rather than a fast
+       stack overflow. */
+    // One override, so an unguarded reconciler recurses *linearly* — with two
+    // it branches, and 300 alternations would not finish this century.
+    const { target, calls } = alternatingDocument(detached(), detached(), 300);
+    const runtime = createThemeEditorRuntime({
+      tokens: [{ name: "--brand-500", type: "color", value: "#3355ff" }],
+      surfaces: APP_SURFACE,
+      document: target,
+    });
+    runtime.start(fakeApi(null));
+    runtime.setOverride("--brand-500", "#ff0000");
+    runtime.refresh();
+
+    // The bound is the evidence: the work is a function of the number of
+    // edits, not of how many times the resolver changed its mind.
+    expect(calls()).toBeLessThan(60);
+  });
+
+  it("writes nothing to the page once the runtime has been disposed", () => {
+    /* Regression: `publish()` gained a `reconcileSurface()` call, and
+       `refresh()` is `publish` — and also the `${id}.refresh` command's body.
+       A consumer holding the runtime handle could therefore re-apply every
+       edit *after* teardown had restored the page, breaking "unmounting the
+       toolbar must leave the page exactly as it found it". */
+    const element = document.createElement("div");
+    element.id = "app";
+    document.body.appendChild(element);
+    try {
+      const runtime = createThemeEditorRuntime({ tokens: TOKENS, surfaces: APP_SURFACE });
+      const dispose = runtime.start(fakeApi(null));
+      runtime.setOverride("--brand-500", "#ff0000");
+      expect(element.getAttribute("style")).toBe("--brand-500: #ff0000;");
+
+      dispose();
+      expect(element.hasAttribute("style")).toBe(false);
+
+      runtime.refresh();
+      expect(element.getAttribute("style")).toBeNull();
+      expect(element.style.getPropertyValue("--brand-500")).toBe("");
+    } finally {
+      element.remove();
+    }
+  });
+
+  it("refuses a newline inside a quoted value — a browser reads it as a bad-string", () => {
+    // Unreachable from the panel's `<input>`, reachable from an imported
+    // recipe, a shared link or storage.
+    expect(checkTokenValue("string", '"a\nb"')).toBe("syntax");
+    expect(checkTokenValue("string", '"a b"')).toBeNull();
+  });
+});
