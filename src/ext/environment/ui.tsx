@@ -1,6 +1,7 @@
-import { useEffect, useState, useSyncExternalStore } from "react";
+import { useState } from "react";
 import type { ReactNode } from "react";
 import { writeClipboardText } from "../../runtime";
+import { useExtensionSurface } from "../shared/hooks";
 import { ensureEnvironmentStyles } from "./css";
 import { GROUP_LABELS } from "./types";
 import type { EnvironmentFieldView, EnvironmentGroup, EnvironmentSnapshot } from "./types";
@@ -14,20 +15,6 @@ import type { EnvironmentRuntime } from "./runtime";
  * comes from the snapshot, which is redacted before it is built — the panel has
  * no access to the raw context and cannot accidentally print it.
  */
-
-function useSnapshot(runtime: EnvironmentRuntime): EnvironmentSnapshot {
-  return useSyncExternalStore(
-    runtime.store.subscribe,
-    runtime.store.getSnapshot,
-    runtime.store.getSnapshot,
-  );
-}
-
-function useEnvironmentStyles(inject: boolean): void {
-  useEffect(() => {
-    if (inject) ensureEnvironmentStyles();
-  }, [inject]);
-}
 
 const kindLabel = (snapshot: EnvironmentSnapshot): string =>
   snapshot.supplied && snapshot.kind !== "unknown" ? String(snapshot.kind) : "unknown";
@@ -49,8 +36,7 @@ export function EnvironmentChip({
   injectStyles,
   onToggle,
 }: ChipProps): ReactNode {
-  useEnvironmentStyles(injectStyles);
-  const snapshot = useSnapshot(runtime);
+  const snapshot = useExtensionSurface(runtime.store, injectStyles, ensureEnvironmentStyles);
   const kind = kindLabel(snapshot);
   const title = snapshot.supplied
     ? `${label}: ${kind} — click for the full context`
@@ -95,8 +81,7 @@ export interface PanelProps {
 }
 
 export function EnvironmentPanel({ runtime, label, injectStyles }: PanelProps): ReactNode {
-  useEnvironmentStyles(injectStyles);
-  const snapshot = useSnapshot(runtime);
+  const snapshot = useExtensionSurface(runtime.store, injectStyles, ensureEnvironmentStyles);
   const [copied, setCopied] = useState<"idle" | "ok" | "failed">("idle");
 
   // `/runtime`'s shared writer, not a hand-rolled one: a missing clipboard API
