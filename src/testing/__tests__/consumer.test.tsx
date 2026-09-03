@@ -38,6 +38,28 @@ describe("@nejcm/dev-toolbar/testing", () => {
     unmount();
   });
 
+  it("keeps a keepMounted panel in the DOM while it is closed", () => {
+    // The documented caveat on `panel()`: it answers presence, which is the
+    // same thing as *open* for an ordinary panel — but a `keepMounted` one is
+    // still there, `hidden`, after `closePanel()`. `activePanelId()` is the
+    // question to ask when open is what you mean.
+    const sticky: DevToolbarExtension = {
+      ...makeExtension({ id: "sticky", label: "Sticky", panel: "sticky detail" }),
+      keepMounted: true,
+    };
+
+    const { toolbar, unmount } = renderWithToolbar(null, { extensions: [sticky] });
+
+    toolbar.openPanel("sticky");
+    expect(toolbar.panel("sticky")?.hidden).toBe(false);
+
+    toolbar.closePanel();
+    expect(toolbar.activePanelId()).toBeNull();
+    expect(toolbar.panel("sticky")).not.toBeNull();
+    expect(toolbar.panel("sticky")?.hidden).toBe(true);
+    unmount();
+  });
+
   it("contains a throwing extension in an error chip", () => {
     const error = vi.spyOn(console, "error").mockImplementation(() => {});
     const { toolbar, unmount } = renderWithToolbar(null, {
@@ -56,7 +78,7 @@ describe("@nejcm/dev-toolbar/testing", () => {
   });
 
   it("reports collapsed ids without opening the ··· menu (the documented snippet)", () => {
-    // This is verbatim the snippet in README.md and docs/architecture.md. It
+    // This is verbatim the snippet in README.md and plans/architecture.md. It
     // must keep working exactly as written — no openOverflow() first.
     const myExtension = makeExtension({
       id: "my-extension",
@@ -123,7 +145,9 @@ describe("@nejcm/dev-toolbar/testing", () => {
 
     expect(toolbar.height()).toBe("30px");
     const inset = container.querySelector<HTMLElement>('[data-dtb-part="inset"]');
-    expect(inset?.style.paddingBottom).toBe("var(--dev-toolbar-height, 0px)");
+    expect(inset?.style.paddingBottom).toBe(
+      "var(--dev-toolbar-height-test, var(--dev-toolbar-height, 0px))",
+    );
 
     toolbar.setVisible(false);
     expect(toolbar.root()).toBeNull();
