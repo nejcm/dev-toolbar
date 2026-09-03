@@ -9,6 +9,7 @@ coverage/
 .turbo/
 .vite/
 *.tsbuildinfo
+.examples
 
 # Claude Code: machine-local permissions. .claude/launch.json is shared.
 .claude/settings.local.json
