@@ -14,22 +14,6 @@ export default defineConfig({
         replacement: resolve("./src/testing/index.ts"),
       },
       {
-        find: /^@nejcm\/dev-toolbar\/runtime$/,
-        replacement: resolve("./src/runtime/index.ts"),
-      },
-      {
-        find: /^@nejcm\/dev-toolbar\/ext\/metrics$/,
-        replacement: resolve("./src/ext/metrics/index.tsx"),
-      },
-      {
-        find: /^@nejcm\/dev-toolbar\/ext\/environment$/,
-        replacement: resolve("./src/ext/environment/index.tsx"),
-      },
-      {
-        find: /^@nejcm\/dev-toolbar\/ext\/overlays$/,
-        replacement: resolve("./src/ext/overlays/index.tsx"),
-      },
-      {
         find: /^@nejcm\/dev-toolbar$/,
         replacement: resolve("./src/index.ts"),
       },
@@ -59,16 +43,17 @@ export default defineConfig({
       // lines out of reach of the floors below. Don't reintroduce an exclude
       // list without measuring coverage both ways first.
       exclude: ["src/**/*.test.{ts,tsx}"],
-      // Floors, not targets: set ~1.5-2 points under the measured baseline
-      // (statements 90.53, branches 81.82, functions 89.80, lines 92.97) so a
-      // real regression fails the build without gating on ordinary movement.
-      // `functions` is tightest in practice (~19 functions of slack) — if it
-      // fires on ordinary work, add tests rather than lowering the number.
+      // Floors, not targets: measured at the Phase 8 ratchet — statements
+      // 93.06, branches 85.26, functions 93.57, lines 95.38. The floors leave
+      // roughly two to three points of room for ordinary movement while a
+      // real regression still fails the build. `functions` is tightest in
+      // practice — if it fires on ordinary work, add tests rather than
+      // lowering the number.
       thresholds: {
-        statements: 89,
-        branches: 80,
-        functions: 88,
-        lines: 91,
+        statements: 91,
+        branches: 82,
+        functions: 91,
+        lines: 93,
       },
     },
   },

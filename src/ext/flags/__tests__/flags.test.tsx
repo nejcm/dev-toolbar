@@ -634,3 +634,41 @@ describe("commands", () => {
     ).toBe("");
   });
 });
+
+/*
+ * A1 regression: a read-only promoted boolean still claimed role="switch" while
+ * activation only opened the panel. Pre-fix:
+ * {...(view.type === "boolean" ? { role: "switch", "aria-checked": on } : {})}
+ */
+describe("accessibility", () => {
+  it("does not claim role=switch on a read-only promoted boolean", () => {
+    const { toolbar } = mount({
+      promoted: { flagKey: "ui-facelift", label: "UI Facelift 2026" },
+    });
+    const promoted = toolbar
+      .item("flags")
+      ?.querySelector<HTMLButtonElement>('[data-dtb-part="flag-promoted"]');
+    expect(promoted?.getAttribute("role")).toBeNull();
+    expect(promoted?.hasAttribute("aria-checked")).toBe(false);
+
+    act(() => promoted?.click());
+    expect(toolbar.activePanelId()).toBe("flags");
+    expect(applied).toEqual([]);
+  });
+
+  /*
+   * A1 regression: the overflow wrapper was a role-less div with aria-label.
+   * Pre-fix: <div data-dtb-part="flag-overflow" aria-label={label}>
+   */
+  it("does not put a bare aria-label on the role-less overflow wrapper", () => {
+    const { toolbar } = mount({
+      onOverride: record,
+      promoted: { flagKey: "ui-facelift" },
+    });
+    act(() => toolbar.resize(40));
+    act(() => toolbar.openOverflow());
+    const wrapper = toolbar.overflowMenu()?.querySelector('[data-dtb-part="flag-overflow"]');
+    expect(wrapper).not.toBeNull();
+    expect(wrapper?.getAttribute("aria-label")).toBeNull();
+  });
+});

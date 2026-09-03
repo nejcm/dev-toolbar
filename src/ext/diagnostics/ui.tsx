@@ -51,13 +51,14 @@ export function DiagnosticsChip({
   const state = useExtensionSurface(runtime.store, injectStyles, ensureDiagnosticsStyles);
   const omissions = state.snapshot?.omissions.length ?? 0;
   const captured = state.snapshot !== null;
+  const accessibleLabel = omissions > 0 ? `${label}, ${omissions} missing` : label;
 
   return (
     <button
       type="button"
       data-dtb-part="trigger"
       aria-expanded={isPanelOpen}
-      aria-label={label}
+      aria-label={accessibleLabel}
       onClick={onToggle}
       title={
         captured

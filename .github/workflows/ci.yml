@@ -52,22 +52,17 @@ jobs:
   verify:
     name: verify
     runs-on: ubuntu-latest
-    # Three skips. The first two hand the release commit to `release.yml`'s
-    # `gate`, which is the CI that actually blocks publishing.
-    #  1. `chore(release):` pushes. `inputs.called` keeps the gate itself from
-    #     skipping: on `workflow_call` the payload is the caller's release
-    #     push. Truncation of `event.commits` fails safe.
-    #  2. The release PR — which GitHub does trigger, despite `GITHUB_TOKEN`
+    # Two skips hand the release commit to `release.yml`'s `gate`, which is the
+    # CI that actually blocks publishing.
+    #  1. The release PR — which GitHub does trigger, despite `GITHUB_TOKEN`
     #     opening it. The title marker is a backstop for the branch prefix, in
     #     case `release-please-config.json`'s title patterns change it; the
     #     cost is that a hand-written `chore(release):` PR would skip its CI.
-    #  3. Draft PRs. `converted_to_draft` is deliberately not a trigger: a
+    #  2. Draft PRs. `converted_to_draft` is deliberately not a trigger: a
     #     ready->draft flip changes no code, and would replace a real
     #     (possibly red) status with a skipped green one.
     if: >-
-      (inputs.called || github.event_name != 'push'
-      || !contains(toJSON(github.event.commits.*.message), 'chore(release):'))
-      && (github.event_name != 'pull_request'
+      (github.event_name != 'pull_request'
       || !(startsWith(github.head_ref, 'release-please--')
       || startsWith(github.event.pull_request.title, 'chore(release):')))
       && (github.event_name != 'pull_request'
@@ -101,6 +96,15 @@ jobs:
       # shouldn't pay for it.
       - name: Verify (format, typecheck, lint, unused code, build, test, package shape)
         run: bun run verify
+
+      # This fixture must stay outside release.yml's only credentialed job.
+      # `--ignore-scripts` is not sufficient on its own: code Jest loads can
+      # still mint the OIDC token, so the whole test must leave that job.
+      - name: Install the jest-consumer fixture
+        run: npm ci --prefix test/fixtures/jest-consumer --ignore-scripts
+
+      - name: Verify the packaged CommonJS consumer
+        run: bun run test:jest-consumer
 
       # `!cancelled()` rather than `always()`: both reporting steps below are
       # useful on a failed `verify` but shouldn't block a cancellation.

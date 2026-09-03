@@ -674,3 +674,33 @@ describe("the panel, after the surface moves", () => {
     expect(tags("edited")).toBe(1);
   });
 });
+
+/*
+ * A1 regression: the chip trigger's aria-label omitted the edited count.
+ * Pre-fix markup: aria-label={label} — screen readers heard only "Theme".
+ */
+describe("accessibility", () => {
+  it("includes the edited count in the chip trigger's aria-label", () => {
+    const { toolbar } = mount();
+    const trigger = () =>
+      toolbar.item("theme-editor")?.querySelector<HTMLButtonElement>('[data-dtb-part="trigger"]');
+
+    expect(trigger()?.getAttribute("aria-label")).toBe("Theme");
+
+    act(() => {
+      toolbar.openPanel("theme-editor");
+    });
+    const input = row(
+      toolbar.panel("theme-editor"),
+      "--brand-500",
+    )?.querySelector<HTMLInputElement>('input[data-dtb-part="thm-input"]');
+    act(() => {
+      fireEvent.change(input as HTMLInputElement, {
+        target: { value: "#ff0000" },
+      });
+      fireEvent.keyDown(input as HTMLInputElement, { key: "Enter" });
+    });
+
+    expect(trigger()?.getAttribute("aria-label")).toBe("Theme, 1 edited");
+  });
+});

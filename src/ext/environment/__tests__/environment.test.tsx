@@ -477,3 +477,17 @@ describe("live context", () => {
     }
   });
 });
+
+/*
+ * A1 regression: env-panel was a role-less div with aria-label={label}.
+ * Pre-fix: aria-label on [data-dtb-part="env-panel"].
+ */
+describe("accessibility", () => {
+  it("does not put a bare aria-label on the role-less panel root", () => {
+    const { toolbar } = mount({ context: { environment: "staging" } });
+    act(() => toolbar.openPanel("environment"));
+    const panel = toolbar.panel("environment")?.querySelector('[data-dtb-part="env-panel"]');
+    expect(panel).not.toBeNull();
+    expect(panel?.getAttribute("aria-label")).toBeNull();
+  });
+});
