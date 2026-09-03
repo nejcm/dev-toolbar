@@ -8,13 +8,16 @@ import { commandMenu } from "@nejcm/dev-toolbar/ext/command-menu";
 import { overlays } from "@nejcm/dev-toolbar/ext/overlays";
 import { diagnostics } from "@nejcm/dev-toolbar/ext/diagnostics";
 import { themeEditor } from "@nejcm/dev-toolbar/ext/theme-editor";
+import { agentBridge } from "@nejcm/dev-toolbar/ext/agent";
 import type { DesignTokenDefinition } from "@nejcm/dev-toolbar/ext/theme-editor";
 import type { FlagReading, FlagValue } from "@nejcm/dev-toolbar/ext/flags";
 
 /**
  * Deliberately varied `priority` so narrowing the window collapses extensions into `⋮` in order:
- * boom (5) → diagnostics (10) → hydr (20) → metrics (35) → overlays (55) → tw (70) → flags (80)
- * → cmds (85) → env (90) → user (100, aligned end). metrics/env/flags are the real extensions; the rest are placeholders.
+ * agent (-1) → boom (5) → diagnostics (10) → hydr (20) → metrics (35) → overlays (55) → tw (70)
+ * → flags (80) → cmds (85) → env (90) → user (100, aligned end). The agent bridge goes first by
+ * design: it is a transport, and nothing is lost when its chip collapses.
+ * metrics/env/flags are the real extensions; the rest are placeholders.
  */
 
 function Chip({
@@ -571,7 +574,21 @@ const runtimeMetrics = metrics({
   jank: { windowMs: 5000 },
 });
 
+/**
+ * The real `@nejcm/dev-toolbar/ext/agent`. It publishes this instance's commands and
+ * diagnostics at `window.__DEV_TOOLBAR__.instances["playground"]`, which is how a browser
+ * agent reads toolbar state and invokes a command by id instead of scraping the DOM and
+ * clicking coordinates.
+ *
+ * `allowRun: true` here and nowhere by default: the playground is a development build whose
+ * whole purpose is to be driven, and `runCommand` is arbitrary effect for any script on the
+ * page. `instanceId` repeats what `<App>` passes `<DevToolbar>` — the contract hands
+ * `start(api)` no instance identity.
+ */
+const runtimeAgent = agentBridge({ instanceId: "playground", allowRun: true });
+
 export const playgroundExtensions: DevToolbarExtension[] = [
+  runtimeAgent,
   runtimeCommandMenu,
   runtimeDiagnostics,
   runtimeEnvironment,

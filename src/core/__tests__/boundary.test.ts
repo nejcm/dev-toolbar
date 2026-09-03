@@ -36,6 +36,8 @@ const EXT_MARKERS = [
   "[dev-toolbar/ext/overlays]",
   "[dev-toolbar/ext/diagnostics]",
   "[dev-toolbar/ext/theme-editor]",
+  // Appended, never inserted: the indices below are positional.
+  "[dev-toolbar/ext/agent]",
 ];
 
 function sourceFiles(directory: string): string[] {
@@ -208,9 +210,10 @@ describe("core boundary (source)", () => {
 describe("shared extension glue (source)", () => {
   /**
    * `src/ext/shared` is internal and unpublished, and the CJS build does not
-   * code-split, so every byte of it is inlined into all seven
-   * `dist/ext/*.cjs`. That makes it the one directory where a mistake is
-   * multiplied sevenfold, so it is held to the rules the seven extensions are:
+   * code-split, so every byte of it is inlined into every `dist/ext/*.cjs`
+   * that uses it — seven of the eight today. That makes it the one directory
+   * where a mistake is multiplied sevenfold, so it is held to the rules the
+   * eight extensions are:
    * no extension marker (the dist scan below reads markers as proof one
    * bundle does not carry another's code), no core message prefix, no value
    * import of core, and nothing reaching sideways into a sibling extension.
@@ -268,8 +271,9 @@ describe("shared extension glue (source)", () => {
       // Both halves of `coreValueImports` above, for the same reason it has
       // them: a static clause is the ordinary form, and `import(` / `require(`
       // carry no clause, so a pattern that only reads `from "…"` would let
-      // `() => import("../metrics/css")` through — inlined into all seven
-      // bundles, and only maybe caught later by the dist marker scan.
+      // `() => import("../metrics/css")` through — inlined into every bundle
+      // that reaches this glue, and only maybe caught later by the dist
+      // marker scan.
       const specifiers = [
         ...source.matchAll(/from\s+["']([^"']+)["']/g),
         ...source.matchAll(/\b(?:import|require)\s*\(\s*["']([^"']+)["']/g),
@@ -412,6 +416,7 @@ if (!built && mustBeBuilt) {
       expect(readFileSync(`${root}dist/ext/theme-editor.cjs`, "utf8")).toContain(
         EXT_MARKERS[6] as string,
       );
+      expect(readFileSync(`${root}dist/ext/agent.cjs`, "utf8")).toContain(EXT_MARKERS[7] as string);
     });
   });
 }
@@ -472,6 +477,24 @@ if (built || !mustBeBuilt) {
         expect(bundle).not.toContain(EXT_MARKERS[6] as string);
       }
 
+      // Eight. /ext/agent publishes core's aggregations on a global. It reads
+      // them through `api`, so it must carry none of the extensions that
+      // produce them — a bridge is a transport, and a transport that ships a
+      // flag editor is not one.
+      const agentBundle = readFileSync(`${root}dist/ext/agent.cjs`, "utf8");
+      for (const marker of EXT_MARKERS.slice(0, 7)) {
+        expect(agentBundle, marker).not.toContain(marker);
+      }
+      for (const bundle of [
+        flagsBundle,
+        menuBundle,
+        overlaysBundle,
+        diagnosticsBundle,
+        themeBundle,
+      ]) {
+        expect(bundle).not.toContain(EXT_MARKERS[7] as string);
+      }
+
       for (const [name, bundle] of [
         ["metrics", readFileSync(`${root}dist/ext/metrics.cjs`, "utf8")],
         ["environment", readFileSync(`${root}dist/ext/environment.cjs`, "utf8")],
@@ -480,6 +503,7 @@ if (built || !mustBeBuilt) {
         ["overlays", overlaysBundle],
         ["diagnostics", diagnosticsBundle],
         ["theme-editor", themeBundle],
+        ["agent", agentBundle],
       ] as const) {
         expect(bundle, name).not.toContain(CORE_PREFIX);
       }
@@ -500,6 +524,7 @@ if (built || !mustBeBuilt) {
         "./ext/overlays",
         "./ext/diagnostics",
         "./ext/theme-editor",
+        "./ext/agent",
       ];
       for (const subpath of subpaths) {
         const base = subpath === "." ? "./dist/index" : `./dist/${subpath.replace(/^\.\//, "")}`;
@@ -529,6 +554,8 @@ if (built || !mustBeBuilt) {
         "dist/ext/diagnostics.cjs",
         "dist/ext/theme-editor.js",
         "dist/ext/theme-editor.cjs",
+        "dist/ext/agent.js",
+        "dist/ext/agent.cjs",
       ]) {
         expect(readFileSync(`${root}${file}`, "utf8").startsWith('"use client";'), file).toBe(true);
       }
@@ -556,6 +583,7 @@ if (built || !mustBeBuilt) {
       expect(readFileSync(`${root}dist/ext/theme-editor.d.ts`, "utf8")).toContain(
         "ThemeEditorOptions",
       );
+      expect(readFileSync(`${root}dist/ext/agent.d.ts`, "utf8")).toContain("AgentBridgeOptions");
     });
 
     it("declares every subpath the plan promised, and nothing by wildcard", () => {
@@ -565,6 +593,7 @@ if (built || !mustBeBuilt) {
       // own — is what makes a *missing* entry fail rather than only a wrong one.
       expect(Object.keys(pkg.exports).sort()).toEqual([
         ".",
+        "./ext/agent",
         "./ext/command-menu",
         "./ext/diagnostics",
         "./ext/environment",
@@ -589,7 +618,8 @@ if (built || !mustBeBuilt) {
           `const o = await import("@nejcm/dev-toolbar/ext/overlays");` +
           `const d = await import("@nejcm/dev-toolbar/ext/diagnostics");` +
           `const t = await import("@nejcm/dev-toolbar/ext/theme-editor");` +
-          `console.log(JSON.stringify({ runtime: Object.keys(r).sort(), metrics: Object.keys(m).sort(), environment: Object.keys(e).sort(), flags: Object.keys(f).sort(), commandMenu: Object.keys(c).sort(), overlays: Object.keys(o).sort(), diagnostics: Object.keys(d).sort(), themeEditor: Object.keys(t).sort() }));`,
+          `const a = await import("@nejcm/dev-toolbar/ext/agent");` +
+          `console.log(JSON.stringify({ runtime: Object.keys(r).sort(), metrics: Object.keys(m).sort(), environment: Object.keys(e).sort(), flags: Object.keys(f).sort(), commandMenu: Object.keys(c).sort(), overlays: Object.keys(o).sort(), diagnostics: Object.keys(d).sort(), themeEditor: Object.keys(t).sort(), agent: Object.keys(a).sort() }));`,
       );
       const result = JSON.parse(names) as {
         runtime: string[];
@@ -600,6 +630,7 @@ if (built || !mustBeBuilt) {
         overlays: string[];
         diagnostics: string[];
         themeEditor: string[];
+        agent: string[];
       };
       expect(result.runtime).toEqual(
         expect.arrayContaining([
@@ -650,6 +681,15 @@ if (built || !mustBeBuilt) {
           "parseRecipe",
           "RESERVED_PREFIXES",
           "THEME_EDITOR_CSS",
+        ]),
+      );
+      expect(result.agent).toEqual(
+        expect.arrayContaining([
+          "agentBridge",
+          "createAgentHandle",
+          "createAgentRegistry",
+          "installAgentBridge",
+          "DEFAULT_GLOBAL_NAME",
         ]),
       );
       expect(result.runtime).toEqual(

@@ -28,6 +28,7 @@ Subpaths, each opt-in and each with its own bundle:
 | `@nejcm/dev-toolbar/ext/overlays` | Layout boxes, a column grid, an element inspector and focus order — drawn over your page, never in the way of it. |
 | `@nejcm/dev-toolbar/ext/diagnostics` | One snapshot for a bug report: the page, long tasks, and every other extension's own diagnostics. Reviewed before it is sent. |
 | `@nejcm/dev-toolbar/ext/theme-editor` | Edit your design tokens live, see the before and after, hand the result to a designer. The tokens stay yours. |
+| `@nejcm/dev-toolbar/ext/agent` | The bar's state and commands on a global, for an in-page agent to read from `page.evaluate`. Development builds. |
 | `@nejcm/dev-toolbar/testing` | `renderWithToolbar`, mount lifecycle, fake extensions, mock bus, fake layout. |
 | `@nejcm/dev-toolbar/styles.css` | The stylesheet, if you would rather not inject it at runtime. |
 
@@ -1007,6 +1008,107 @@ Commands: `theme-editor.preset.<name>` (one per preset, enumerated live),
 `theme-editor.refresh`.
 
 panel.
+
+## `@nejcm/dev-toolbar/ext/agent`
+
+The bridge. An in-page agent — Playwright, CDP, a computer-use tool, the console —
+gets the toolbar's own aggregations as JSON instead of scraping the DOM and clicking
+pixel coordinates.
+
+**For development builds.** It publishes a handle on a global, and a global is
+reachable by any script on the page. Ship it where you would ship a devtool.
+
+```tsx
+import { agentBridge } from "@nejcm/dev-toolbar/ext/agent";
+
+// Once, at module scope. Not inside render.
+const extensions = [agentBridge({ instanceId: "playground" })];
+```
+
+```js
+// …then, from the page:
+window.__DEV_TOOLBAR__.instances["playground"].read();
+window.__DEV_TOOLBAR__.default.listCommands();
+```
+
+`read()` returns `{ instanceId, contractVersion, visible, allowRun, commands,
+diagnostics }` — plain JSON-serialisable data, because the reader on the other side is
+usually `page.evaluate`, which structured-clones what it returns.
+
+### It is a registry, not a singleton
+
+Core supports several mounted roots, so handles are keyed by `instanceId` and
+`__DEV_TOOLBAR__.default` **throws** — naming the ids to choose from — when there is
+not exactly one mounted. A guess would make the second toolbar an invisible source of
+wrong answers. `start(api)` is handed no instance identity, so pass `instanceId` the
+same value you pass `<DevToolbar>`, exactly as `/ext/flags` and `/ext/theme-editor` ask
+you to.
+
+A foreign value already sitting at `globalName`, or a second bridge claiming an
+`instanceId` that is taken, is refused with a warning rather than overwritten.
+
+### `allowRun` is off by default
+
+Reading is already-redacted extension output. `runCommand` is arbitrary effect chosen
+by whoever got a script onto the page, so it is a **second** opt-in:
+
+```tsx
+agentBridge({ instanceId: "playground", allowRun: true });
+```
+
+With it off there is no way to run anything at all — the handle carries no
+`runCommand`, rather than one that refuses.
+
+With it on, errors are values, never rejections: a rejection crossing `page.evaluate`
+arrives as a string with no shape to branch on.
+
+```js
+await handle.runCommand("diagnostics.copyJson"); // { ok: true }
+await handle.runCommand("nope");                 // { ok: false, reason: "unknown-command" }
+await handle.runCommand("jobs.explode");         // { ok: false, reason: "threw", error, errorName }
+```
+
+### What it does not do
+
+- **It adds no enumeration path.** Commands and diagnostics come from `api`, so a
+  `hidden` extension contributes nothing through the bridge for exactly the reason it
+  contributes nothing to the bar.
+- **It reads no DOM**, and it touches no global at module evaluation — importing it on
+  a server is inert.
+- **It redacts on the way out.** `read()` runs `api.getDiagnostics()` through
+  `redact()` (with your `extraKeys`) as defence in depth on top of the contract's
+  requirement that an extension redacts at the source. That is the reason this is an
+  extension and not a core feature: core may not import `/runtime`, so a bridge in core
+  would publish unredacted output on a global.
+- **It renders almost nothing.** No panel and no stylesheet; the `compact` slot is one
+  `<span>` carrying the label, a `title`, and
+  `data-dtb-agent-mode="read-only" | "run-enabled"` — in an `allowRun: true` build that
+  chip is the only in-bar sign that a command-running global is on the page. `priority`
+  is `-1`, below core's default of `0`, so it is the **first** item to collapse into the
+  `···` menu: nothing is lost when it does, and a metrics sparkline in its place would
+  be. Pass `hidden: true` to remove it — and the bridge with it, since `hidden` means the
+  extension does not exist for this actor, so core never calls `start()`.
+
+### The global goes when the toolbar does
+
+`api.signal` deletes the handle on unregister or unmount, and the last instance out
+deletes the global itself. A name still resolving to an empty registry reads as "a
+toolbar is mounted" to anything probing for one.
+
+A handle someone captured *before* that refuses afterwards rather than answering out of
+an unmounted toolbar: `read()` and `listCommands()` throw, and `runCommand()` resolves
+`{ ok: false, reason: "torn-down" }`. Reads throw because the only value-shaped answer
+available — an empty snapshot — is indistinguishable from a live toolbar with nothing in
+it, which is the wrong answer to hand an agent.
+
+`globalName` (default `"__DEV_TOOLBAR__"`) exists to opt into a *different* name, not
+to hide the surface. Discoverability is the point for an agent; obscurity is not a
+control, and `allowRun` is.
+
+Options: `globalName`, `allowRun`, `extraKeys`, `instanceId`, plus the usual `id` /
+`label` / `align` / `order` / `priority` / `hidden`.
+
+Commands: none. It contributes a transport, not behaviour.
 
 ## Styling
 

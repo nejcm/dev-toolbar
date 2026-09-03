@@ -8,7 +8,8 @@ is the *why*, and is the thing to read before changing the contract.
 - Contract version: **1** (`CONTRACT_VERSION`, in `src/core/contract.ts`)
 - Entries: `@nejcm/dev-toolbar` (root), `/runtime`, `/ext/metrics`,
   `/ext/environment`, `/ext/flags`, `/ext/command-menu`, `/ext/overlays`,
-  `/ext/diagnostics`, `/ext/theme-editor`, `/testing`, `/styles.css`
+  `/ext/diagnostics`, `/ext/theme-editor`, `/ext/agent`, `/testing`,
+  `/styles.css`
 - Runtime dependencies: **none**
 
 `src/core/contract.ts` is the source of truth for the types. Where this document and
@@ -739,9 +740,10 @@ published subpath and must be added **explicitly** to both the `exports` map in
 wildcard. An entry missing from either is silently unpublishable or untyped. The one
 thing under `src/ext/` that is not a subpath is shared React glue (`useExtensionSurface`
 in `src/ext/shared/hooks.ts`), which lives outside the per-extension file layout. The
-CJS build does not code-split, so it is inlined into every `dist/ext/*.cjs`; the ESM
-build emits it as one shared chunk. Seven copies is why it is held to the extensions'
-rules and one more: types only from core, values only from `src/runtime`, nothing from
+CJS build does not code-split, so it is inlined into every `dist/ext/*.cjs` that uses
+it — seven of the eight, all but `/ext/agent`, which renders almost nothing and needs
+none of it; the ESM build emits it as one shared chunk. Seven copies is why it is held
+to the extensions' rules and one more: types only from core, values only from `src/runtime`, nothing from
 a sibling `ext/<name>/`, no `[dev-toolbar/ext/…]` marker (the dist scan reads markers
 as proof one bundle carries no other's code), and no module-level state, or each bundle
 would own a different copy of it. The "shared extension glue" block in
