@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
+import { useExtensionSurface } from "../shared/hooks";
 import { ensureDiagnosticsStyles } from "./css";
 import { SNAPSHOT_FORMATS } from "./types";
-import type { DiagnosticsSnapshotState, SnapshotFormat } from "./types";
+import type { SnapshotFormat } from "./types";
 import type { DiagnosticsRuntime } from "./runtime";
 
 /**
@@ -14,20 +15,6 @@ import type { DiagnosticsRuntime } from "./runtime";
  * snapshot, so no component here has access to a raw value to print one
  * (same construction as `/ext/environment` and `/ext/flags`).
  */
-
-function useSnapshotState(runtime: DiagnosticsRuntime): DiagnosticsSnapshotState {
-  return useSyncExternalStore(
-    runtime.store.subscribe,
-    runtime.store.getSnapshot,
-    runtime.store.getSnapshot,
-  );
-}
-
-function useDiagnosticsStyles(inject: boolean): void {
-  useEffect(() => {
-    if (inject) ensureDiagnosticsStyles();
-  }, [inject]);
-}
 
 const FORMAT_LABEL: Record<SnapshotFormat, string> = {
   markdown: "Markdown",
@@ -61,8 +48,7 @@ export function DiagnosticsChip({
   injectStyles,
   onToggle,
 }: ChipProps): ReactNode {
-  useDiagnosticsStyles(injectStyles);
-  const state = useSnapshotState(runtime);
+  const state = useExtensionSurface(runtime.store, injectStyles, ensureDiagnosticsStyles);
   const omissions = state.snapshot?.omissions.length ?? 0;
   const captured = state.snapshot !== null;
 
@@ -101,8 +87,7 @@ export interface PanelProps {
 }
 
 export function DiagnosticsPanel({ runtime, label, injectStyles }: PanelProps): ReactNode {
-  useDiagnosticsStyles(injectStyles);
-  const state = useSnapshotState(runtime);
+  const state = useExtensionSurface(runtime.store, injectStyles, ensureDiagnosticsStyles);
   const [format, setFormat] = useState<SnapshotFormat>(() => runtime.readFormat());
   const [status, setStatus] = useState<string | null>(null);
 

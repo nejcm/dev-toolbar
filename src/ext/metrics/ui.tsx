@@ -1,7 +1,8 @@
-import { useEffect, useState, useSyncExternalStore } from "react";
+import { useState } from "react";
 import type { ReactNode } from "react";
 import { Sparkline } from "./Sparkline";
 import { writeClipboardText } from "../../runtime";
+import { useExtensionSurface } from "../shared/hooks";
 import { ensureMetricsStyles } from "./css";
 import { formatBytes, formatMs, shortenUrl } from "./format";
 import type { MetricsRuntime } from "./runtime";
@@ -14,20 +15,6 @@ import type { MetricId, MetricsSnapshot } from "./types";
  * subscribe to the metrics store themselves and re-render only when it
  * publishes (at most `updateHz` times a second).
  */
-
-function useSnapshot(runtime: MetricsRuntime): MetricsSnapshot {
-  return useSyncExternalStore(
-    runtime.store.subscribe,
-    runtime.store.getSnapshot,
-    runtime.store.getSnapshot,
-  );
-}
-
-function useMetricsStyles(inject: boolean): void {
-  useEffect(() => {
-    if (inject) ensureMetricsStyles();
-  }, [inject]);
-}
 
 export interface ChipsProps {
   runtime: MetricsRuntime;
@@ -44,8 +31,7 @@ export function MetricsChips({
   injectStyles,
   onToggle,
 }: ChipsProps): ReactNode {
-  useMetricsStyles(injectStyles);
-  const snapshot = useSnapshot(runtime);
+  const snapshot = useExtensionSurface(runtime.store, injectStyles, ensureMetricsStyles);
 
   // In the ··· menu there's vertical room, so spell metrics out instead of shrinking them.
   if (isOverflowed) {
@@ -112,8 +98,7 @@ export interface PanelProps {
 const STORAGE_TAB_KEY = "tab";
 
 export function MetricsPanel({ runtime, injectStyles }: PanelProps): ReactNode {
-  useMetricsStyles(injectStyles);
-  const snapshot = useSnapshot(runtime);
+  const snapshot = useExtensionSurface(runtime.store, injectStyles, ensureMetricsStyles);
   const first = snapshot.order[0] ?? "memory";
   // start(api) has already run by the time a panel can open, so the
   // persisted tab is readable here.

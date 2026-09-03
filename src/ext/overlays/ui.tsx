@@ -1,8 +1,8 @@
-import { useEffect, useSyncExternalStore } from "react";
 import type { CSSProperties, ReactNode } from "react";
+import { useExtensionSurface } from "../shared/hooks";
 import { ensureOverlaysStyles } from "./css";
 import { OVERLAY_IDS, OVERLAY_META } from "./types";
-import type { FocusItem, GridSettings, HoverTarget, OverlaysSnapshot, RectLike } from "./types";
+import type { FocusItem, GridSettings, HoverTarget, RectLike } from "./types";
 import type { OverlaysRuntime } from "./runtime";
 
 /**
@@ -14,20 +14,6 @@ import type { OverlaysRuntime } from "./runtime";
  * host-outline stylesheet, lives in `runtime.ts` and tears down with the
  * listeners.
  */
-
-function useSnapshot(runtime: OverlaysRuntime): OverlaysSnapshot {
-  return useSyncExternalStore(
-    runtime.store.subscribe,
-    runtime.store.getSnapshot,
-    runtime.store.getSnapshot,
-  );
-}
-
-function useOverlayStyles(inject: boolean): void {
-  useEffect(() => {
-    if (inject) ensureOverlaysStyles();
-  }, [inject]);
-}
 
 const box = (rect: RectLike): CSSProperties => ({
   left: `${rect.x}px`,
@@ -57,8 +43,7 @@ export function OverlaysChip({
   injectStyles,
   onToggle,
 }: ChipProps): ReactNode {
-  useOverlayStyles(injectStyles);
-  const snapshot = useSnapshot(runtime);
+  const snapshot = useExtensionSurface(runtime.store, injectStyles, ensureOverlaysStyles);
   const on = snapshot.activeCount > 0;
   const names = OVERLAY_IDS.filter((id) => snapshot.enabled[id]).map(
     (id) => OVERLAY_META[id].label,
@@ -97,8 +82,7 @@ export interface PanelProps {
 }
 
 export function OverlaysPanel({ runtime, label, injectStyles }: PanelProps): ReactNode {
-  useOverlayStyles(injectStyles);
-  const snapshot = useSnapshot(runtime);
+  const snapshot = useExtensionSurface(runtime.store, injectStyles, ensureOverlaysStyles);
 
   return (
     <div data-dtb-part="ovl-panel" aria-label={label}>
@@ -190,8 +174,7 @@ export interface SurfaceProps {
  * overlay is on, which is the common case.
  */
 export function OverlaysSurface({ runtime, injectStyles }: SurfaceProps): ReactNode {
-  useOverlayStyles(injectStyles);
-  const snapshot = useSnapshot(runtime);
+  const snapshot = useExtensionSurface(runtime.store, injectStyles, ensureOverlaysStyles);
   if (snapshot.activeCount === 0) return null;
 
   const drawsSomething =

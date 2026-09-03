@@ -1,9 +1,10 @@
-import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
+import { useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import { writeClipboardText } from "../../runtime";
+import { useExtensionSurface } from "../shared/hooks";
 import { ensureFlagsStyles } from "./css";
 import { formatValue, matchesQuery, parseValue, severityFor } from "./types";
-import type { FlagValue, FlagView, FlagsSnapshot } from "./types";
+import type { FlagValue, FlagView } from "./types";
 import type { FlagsRuntime } from "./runtime";
 
 /**
@@ -14,20 +15,6 @@ import type { FlagsRuntime } from "./runtime";
  * snapshot, already redacted before it's built — no component here has
  * access to a raw flag value.
  */
-
-function useSnapshot(runtime: FlagsRuntime): FlagsSnapshot {
-  return useSyncExternalStore(
-    runtime.store.subscribe,
-    runtime.store.getSnapshot,
-    runtime.store.getSnapshot,
-  );
-}
-
-function useFlagsStyles(inject: boolean): void {
-  useEffect(() => {
-    if (inject) ensureFlagsStyles();
-  }, [inject]);
-}
 
 /* Bar */
 
@@ -103,8 +90,7 @@ export function FlagsChip({
   onToggle,
   onOpen,
 }: ChipProps): ReactNode {
-  useFlagsStyles(injectStyles);
-  const snapshot = useSnapshot(runtime);
+  const snapshot = useExtensionSurface(runtime.store, injectStyles, ensureFlagsStyles);
 
   const count = snapshot.supplied ? snapshot.flags.length : 0;
   const summary =
@@ -438,8 +424,7 @@ export interface PanelProps {
 }
 
 export function FlagsPanel({ runtime, label, injectStyles }: PanelProps): ReactNode {
-  useFlagsStyles(injectStyles);
-  const snapshot = useSnapshot(runtime);
+  const snapshot = useExtensionSurface(runtime.store, injectStyles, ensureFlagsStyles);
   const [query, setQuery] = useState("");
   const [copied, setCopied] = useState<"idle" | "ok" | "failed">("idle");
 

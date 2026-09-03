@@ -1,5 +1,6 @@
-import { useEffect, useId, useRef, useSyncExternalStore } from "react";
+import { useEffect, useId, useRef } from "react";
 import type { KeyboardEvent as ReactKeyboardEvent, ReactNode } from "react";
+import { useExtensionSurface } from "../shared/hooks";
 import { ensureCommandMenuStyles } from "./css";
 import { describeHotkey, ariaKeyshortcuts } from "./runtime";
 import type { CommandMenuRuntime, CommandMenuSnapshot } from "./runtime";
@@ -13,20 +14,6 @@ import { sectionsOf } from "./types";
  * `aria-activedescendant`, and the dialog is `aria-modal` with the one
  * focusable element it claims.
  */
-
-function useSnapshot(runtime: CommandMenuRuntime): CommandMenuSnapshot {
-  return useSyncExternalStore(
-    runtime.store.subscribe,
-    runtime.store.getSnapshot,
-    runtime.store.getSnapshot,
-  );
-}
-
-function useStyles(inject: boolean): void {
-  useEffect(() => {
-    if (inject) ensureCommandMenuStyles();
-  }, [inject]);
-}
 
 /* -------------------------------------------------------------------------- */
 /* Bar trigger                                                                 */
@@ -52,8 +39,7 @@ export function CommandMenuTrigger({
   injectStyles,
   apple,
 }: TriggerProps): ReactNode {
-  useStyles(injectStyles);
-  const snapshot = useSnapshot(runtime);
+  const snapshot = useExtensionSurface(runtime.store, injectStyles, ensureCommandMenuStyles);
   const hint = describeHotkey(runtime.shortcut, apple);
   const keyshortcuts = ariaKeyshortcuts(runtime.shortcut, apple);
 
@@ -94,8 +80,11 @@ export interface OverlayProps {
 
 /** Rendered by the `overlay` slot on every toolbar render; `null` while closed. */
 export function CommandMenuOverlay(props: OverlayProps): ReactNode {
-  useStyles(props.injectStyles);
-  const snapshot = useSnapshot(props.runtime);
+  const snapshot = useExtensionSurface(
+    props.runtime.store,
+    props.injectStyles,
+    ensureCommandMenuStyles,
+  );
   if (!snapshot.open) return null;
   return <Dialog {...props} snapshot={snapshot} />;
 }
