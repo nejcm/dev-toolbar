@@ -1,12 +1,4 @@
-import {
-  useCallback,
-  useEffect,
-  useLayoutEffect,
-  useMemo,
-  useRef,
-  useState,
-  useSyncExternalStore,
-} from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import type { CSSProperties, ReactNode } from "react";
 import { createPortal } from "react-dom";
 import {
@@ -37,6 +29,8 @@ import { createExtensionStorage, createInstanceStorage, resolveStorage } from ".
 import { createToolbarStore } from "./store";
 import { DEFAULT_SHORTCUT, matchesShortcut, parseShortcut } from "./shortcut";
 import { ensureStyles } from "./styles";
+import { useStableClassNames } from "./classNames";
+import { useLatestRef } from "./latest";
 
 /**
  * CSS custom property published on `document.documentElement` while the bar is
@@ -156,42 +150,6 @@ export interface DevToolbarProps {
 }
 
 const EMPTY_EXTENSIONS: readonly DevToolbarExtension[] = [];
-const EMPTY_CLASS_NAMES: DevToolbarClassNames = {};
-
-/** Field-by-field equality. Every value is `string | undefined`, so this is exact. */
-function sameClassNames(a: DevToolbarClassNames, b: DevToolbarClassNames): boolean {
-  if (a === b) return true;
-  const keys = new Set([...Object.keys(a), ...Object.keys(b)]) as Set<keyof DevToolbarClassNames>;
-  for (const key of keys) if (a[key] !== b[key]) return false;
-  return true;
-}
-
-/**
- * Holds one `classNames` object identity for as long as its *strings* are
- * unchanged.
- *
- * `classNames={{ bar: "x" }}` written inline in JSX is a new object every
- * render, and two things key on that identity: the context value's `useMemo`,
- * which would then re-run for every consumer of `useDevToolbar()`, and
- * `OverlayHost`'s `memo`, which would re-invoke every extension's overlay slot
- * on every panel-height drag frame — exactly the two costs those memos exist
- * to avoid.
- *
- * Chosen over documenting "hoist the object": the inline form is the natural
- * React idiom, a doc note is unenforceable, and eleven optional string fields
- * make the comparison exact rather than a heuristic. The ref is written during
- * render, which is safe because the write is idempotent and derived purely
- * from props — a discarded render can only store a value string-equal to the
- * one the retried render would produce.
- */
-function useStableClassNames(next: DevToolbarClassNames | undefined): DevToolbarClassNames {
-  const held = useRef<DevToolbarClassNames>(EMPTY_CLASS_NAMES);
-  const value = next ?? EMPTY_CLASS_NAMES;
-  /* oxlint-disable react/refs -- read and written in render on purpose, above. */
-  if (!sameClassNames(held.current, value)) held.current = value;
-  return held.current;
-  /* oxlint-enable react/refs */
-}
 
 export function DevToolbar(props: DevToolbarProps): ReactNode {
   const { children, ...rest } = props;
@@ -201,14 +159,6 @@ export function DevToolbar(props: DevToolbarProps): ReactNode {
     </DevToolbarRoot>
   );
 }
-
-/**
- * `useLayoutEffect` in a browser, `useEffect` where there is no window, so the
- * commit-time ref writes in `DevToolbarRoot` do not trip React's
- * "useLayoutEffect does nothing on the server" warning during SSR. Resolved
- * once, at module load, so the hook order can never change between renders.
- */
-const useIsomorphicLayoutEffect = typeof window === "undefined" ? useEffect : useLayoutEffect;
 
 function DevToolbarRoot({
   children,
@@ -237,10 +187,11 @@ function DevToolbarRoot({
   style,
 }: DevToolbarProps): ReactNode {
   const classNames = useStableClassNames(classNamesProp);
-  const onExtensionErrorRef = useRef(onExtensionError);
-  const onVisibleChangeRef = useRef(onVisibleChange);
-  const onPositionChangeRef = useRef(onPositionChange);
-  const onPanelChangeRef = useRef(onPanelChange);
+  // Latest prop values are seeded in render and updated at commit time.
+  const onExtensionErrorRef = useLatestRef(onExtensionError);
+  const onVisibleChangeRef = useLatestRef(onVisibleChange);
+  const onPositionChangeRef = useLatestRef(onPositionChange);
+  const onPanelChangeRef = useLatestRef(onPanelChange);
 
   // Captured once, on mount, so the store and everything derived from it
   // can never disagree about where preferences live. See prop docs above.
@@ -273,53 +224,46 @@ function DevToolbarRoot({
   const effectivePosition = positionProp ?? state.position;
   const visibilitySubscribersRef = useRef(new Set<(visible: boolean) => void>());
   const lastNotifiedVisibleRef = useRef(effectiveVisible);
-  // Seeded from the first render, then maintained at commit time below.
-  const effectiveVisibleRef = useRef(effectiveVisible);
-  // Written at commit, never during render. A render React abandons — a
-  // suspended transition over a controlled `visible`, say — would otherwise
-  // leave these refs describing a state nothing committed: the window
-  // shortcut listener would read a visibility no handler agrees with and
-  // toggle to the value that is already live, doing nothing at all.
-  //
-  // Everything that reads them runs later than this: the listeners are
-  // installed in passive effects, `api.isVisible()` is called by extension
-  // code that `start()` reaches from a passive effect, and passive effects
-  // run after every layout effect in the same commit. No dependency array —
-  // "latest value after every commit" is the whole contract.
-  useIsomorphicLayoutEffect(() => {
-    onExtensionErrorRef.current = onExtensionError;
-    onVisibleChangeRef.current = onVisibleChange;
-    onPositionChangeRef.current = onPositionChange;
-    onPanelChangeRef.current = onPanelChange;
-    effectiveVisibleRef.current = effectiveVisible;
-  });
-  const reportExtensionError = useCallback((error: Error, info: ExtensionErrorInfo): void => {
-    onExtensionErrorRef.current?.(error, info);
-  }, []);
-  const reportVisibleChange = useCallback((next: boolean): void => {
-    try {
-      onVisibleChangeRef.current?.(next);
-    } catch (error) {
-      // eslint-disable-next-line no-console
-      console.error("[dev-toolbar] onVisibleChange handler threw.", error);
-    }
-  }, []);
-  const reportPositionChange = useCallback((next: ToolbarPosition): void => {
-    try {
-      onPositionChangeRef.current?.(next);
-    } catch (error) {
-      // eslint-disable-next-line no-console
-      console.error("[dev-toolbar] onPositionChange handler threw.", error);
-    }
-  }, []);
-  const reportPanelChange = useCallback((next: string | null): void => {
-    try {
-      onPanelChangeRef.current?.(next);
-    } catch (error) {
-      // eslint-disable-next-line no-console
-      console.error("[dev-toolbar] onPanelChange handler threw.", error);
-    }
-  }, []);
+  const effectiveVisibleRef = useLatestRef(effectiveVisible);
+  const reportExtensionError = useCallback(
+    (error: Error, info: ExtensionErrorInfo): void => {
+      onExtensionErrorRef.current?.(error, info);
+    },
+    [onExtensionErrorRef],
+  );
+  const reportVisibleChange = useCallback(
+    (next: boolean): void => {
+      try {
+        onVisibleChangeRef.current?.(next);
+      } catch (error) {
+        // eslint-disable-next-line no-console
+        console.error("[dev-toolbar] onVisibleChange handler threw.", error);
+      }
+    },
+    [onVisibleChangeRef],
+  );
+  const reportPositionChange = useCallback(
+    (next: ToolbarPosition): void => {
+      try {
+        onPositionChangeRef.current?.(next);
+      } catch (error) {
+        // eslint-disable-next-line no-console
+        console.error("[dev-toolbar] onPositionChange handler threw.", error);
+      }
+    },
+    [onPositionChangeRef],
+  );
+  const reportPanelChange = useCallback(
+    (next: string | null): void => {
+      try {
+        onPanelChangeRef.current?.(next);
+      } catch (error) {
+        // eslint-disable-next-line no-console
+        console.error("[dev-toolbar] onPanelChange handler threw.", error);
+      }
+    },
+    [onPanelChangeRef],
+  );
 
   useEffect(() => {
     if (lastNotifiedVisibleRef.current === effectiveVisible) return;
@@ -409,6 +353,8 @@ function DevToolbarRoot({
     hasVisibleChangeHandler,
     positionControlled,
     visibleControlled,
+    onPositionChangeRef,
+    onVisibleChangeRef,
     warnControlOnce,
   ]);
 
@@ -427,7 +373,10 @@ function DevToolbarRoot({
   // is not just churn: the keydown effect below depends on this callback, and
   // a flip used to tear its listener down and add it back — silently changing
   // the `window` listener order the two shortcut paths once relied on.
-  const toggleVisible = useCallback(() => setVisible(!effectiveVisibleRef.current), [setVisible]);
+  const toggleVisible = useCallback(
+    () => setVisible(!effectiveVisibleRef.current),
+    [effectiveVisibleRef, setVisible],
+  );
   const setPosition = useCallback(
     (next: ToolbarPosition) => {
       if (positionControlled) {
@@ -644,7 +593,7 @@ function DevToolbarRoot({
         console.error(`[dev-toolbar] extension "${extension.id}" threw from start().`, error);
       }
     }
-  }, [extensions, enabled, store, rawStorage, instanceId]);
+  }, [effectiveVisibleRef, extensions, enabled, store, rawStorage, instanceId]);
 
   useEffect(() => {
     const running = runningRef.current;
