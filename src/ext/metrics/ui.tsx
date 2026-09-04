@@ -1,7 +1,15 @@
 import { useId, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { Sparkline } from "./Sparkline";
-import { Action, Chip, CopyButton, Note, useExtensionSurface } from "@nejcm/dev-toolbar/kit";
+import {
+  Action,
+  Chip,
+  CopyButton,
+  Note,
+  Row,
+  Rows,
+  useExtensionSurface,
+} from "@nejcm/dev-toolbar/kit";
 import { ensureMetricsStyles } from "./css";
 import { formatBytes, formatMs, shortenUrl } from "./format";
 import type { MetricsRuntime } from "./runtime";
@@ -231,11 +239,13 @@ export function MetricsPanel({ runtime, injectStyles, styleNonce }: PanelProps):
         ) : null}
 
         {view.detail.length > 0 ? (
-          <dl data-dtb-part="metrics-rows">
+          <Rows data-dtb-part="metrics-rows">
             {view.detail.map(([label, value]) => (
-              <Row key={label} label={label} value={value} />
+              <Row key={label} label={label}>
+                {value}
+              </Row>
             ))}
-          </dl>
+          </Rows>
         ) : null}
 
         {view.id === "network" ? <RequestTable requests={snapshot.requests} /> : null}
@@ -268,15 +278,6 @@ export function MetricsPanel({ runtime, injectStyles, styleNonce }: PanelProps):
         </CopyButton>
       </div>
     </div>
-  );
-}
-
-function Row({ label, value }: { label: string; value: string }): ReactNode {
-  return (
-    <>
-      <dt>{label}</dt>
-      <dd>{value}</dd>
-    </>
   );
 }
 

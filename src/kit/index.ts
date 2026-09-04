@@ -1,12 +1,31 @@
 export { KIT_CSS } from "./css";
-export { Action, Banner, Chip, EmptyState, Note, Tag } from "./controls";
+export {
+  Action,
+  Banner,
+  Chip,
+  EmptyState,
+  Field,
+  Note,
+  Row,
+  Rows,
+  SearchField,
+  Select,
+  Tag,
+  TextInput,
+} from "./controls";
 export type {
   ActionProps,
   BannerProps,
   ChipProps,
   EmptyStateProps,
+  FieldProps,
   NoteProps,
+  RowProps,
+  RowsProps,
+  SearchFieldProps,
+  SelectProps,
   TagProps,
+  TextInputProps,
 } from "./controls";
 export { CopyButton, useCopyStatus } from "./CopyButton";
 export type {

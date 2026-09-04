@@ -8,7 +8,13 @@
  * control cannot express stays hand-written JSX; nothing here is required.
  */
 import { forwardRef } from "react";
-import type { ButtonHTMLAttributes, HTMLAttributes, ReactNode } from "react";
+import type {
+  ButtonHTMLAttributes,
+  HTMLAttributes,
+  InputHTMLAttributes,
+  ReactNode,
+  SelectHTMLAttributes,
+} from "react";
 import type { SeverityWithOverride } from "./types";
 
 type DataAttributes = { [name: `data-${string}`]: string | undefined };
@@ -144,4 +150,157 @@ export const EmptyState = forwardRef<HTMLElement, EmptyStateProps>(function Empt
   ref,
 ) {
   return <Element {...rest} ref={ref as never} data-dtb-kind="empty" />;
+});
+
+/**
+ * Props for the panel search box. `value` and `onChange` are the pair the two
+ * sites already hold in a `useState("")`; the state stays in the extension,
+ * because a control that owned it could not be filtered against or reset.
+ */
+export interface SearchFieldProps
+  extends
+    Omit<InputHTMLAttributes<HTMLInputElement>, "aria-label" | "onChange" | "type" | "value">,
+    DataAttributes {
+  value: string;
+  /** Receives the new value, not the event — every site reads only that. */
+  onChange: (value: string) => void;
+  /**
+   * The accessible name, written as `aria-label`. Required, because a bare
+   * `type="search"` with only a placeholder is announced as "search" and
+   * nothing else. `aria-labelledby` still passes through `...rest` and wins in
+   * the accessibility tree where a site has a visible heading to point at.
+   */
+  label: string;
+}
+
+/** A `type="search"` input with an accessible name it cannot be built without. */
+export const SearchField = forwardRef<HTMLInputElement, SearchFieldProps>(function SearchField(
+  { label, onChange, value, ...rest },
+  ref,
+) {
+  return (
+    <input
+      {...rest}
+      ref={ref}
+      value={value}
+      onChange={(event) => onChange(event.target.value)}
+      type="search"
+      aria-label={label}
+      data-dtb-kind="search"
+    />
+  );
+});
+
+/** Props for the key/value readout. Everything a `<dl>` takes. */
+export type RowsProps = HTMLAttributes<HTMLDListElement> & DataAttributes;
+
+/** The two-column `<dl>` grid a panel prints a key/value readout into. */
+export const Rows = forwardRef<HTMLDListElement, RowsProps>(function Rows(rest, ref) {
+  return <dl {...rest} ref={ref} data-dtb-kind="rows" />;
+});
+
+type RowSlotProps = HTMLAttributes<HTMLElement> & DataAttributes;
+
+/** Props for one key/value pair inside `<Rows>`. */
+export interface RowProps {
+  label: ReactNode;
+  /** The value cell's content. */
+  children?: ReactNode;
+  labelProps?: RowSlotProps;
+  valueProps?: RowSlotProps;
+}
+
+/**
+ * A `<dt>`/`<dd>` pair, as a fragment, so the pairs stay direct children of the
+ * `<Rows>` grid rather than being wrapped in an element that would break it.
+ *
+ * There is no `ref`: a fragment has no single DOM node, and inventing a wrapper
+ * to hang one on would change the layout. A site that needs a ref writes the
+ * two elements by hand — they are two lines.
+ */
+export function Row({ children, label, labelProps, valueProps }: RowProps): ReactNode {
+  return (
+    <>
+      <dt data-dtb-kind="label" {...labelProps}>
+        {label}
+      </dt>
+      <dd data-dtb-kind="value" {...valueProps}>
+        {children}
+      </dd>
+    </>
+  );
+}
+
+/** Props for a label wrapping its own control. */
+export interface FieldProps extends Omit<NoteProps, "as"> {
+  /** The visible label text, rendered before the control with a space between. */
+  label: ReactNode;
+}
+
+/**
+ * A muted `<label>` wrapping its control, which *is* the association — no `id`
+ * to generate, none to collide, and nothing to keep in sync. It is `Note as=
+ * "label"` with the pattern named, so both are the same DOM.
+ *
+ * Where the control inside also carries an `aria-label`, that name wins over
+ * this text in the accessibility tree. That is not a duplicate to tidy away:
+ * both theme-editor sites do it deliberately, spelling out for a screen reader
+ * what a one-word visible label means in context.
+ */
+export const Field = forwardRef<HTMLLabelElement, FieldProps>(function Field(
+  { children, label, ...rest },
+  ref,
+) {
+  return (
+    <Note {...rest} ref={ref as never} as="label">
+      {label} {children}
+    </Note>
+  );
+});
+
+/** Props for a single-line text field. */
+export interface TextInputProps extends Omit<InputHTMLAttributes<HTMLInputElement>, "onChange"> {
+  /** Receives the new value, not the event. */
+  onChange?: (value: string) => void;
+}
+
+/**
+ * A text field. Geometry and ground come from core's `:where(input, select,
+ * textarea)` rule, so the kit adds no rules of its own — `data-dtb-kind="field"`
+ * is a hook, letting a consumer reach every kit field with one selector.
+ */
+export const TextInput = forwardRef<HTMLInputElement, TextInputProps>(function TextInput(
+  { onChange, type = "text", ...rest },
+  ref,
+) {
+  return (
+    <input
+      {...rest}
+      ref={ref}
+      type={type}
+      onChange={onChange === undefined ? undefined : (event) => onChange(event.target.value)}
+      data-dtb-kind="field"
+    />
+  );
+});
+
+/** Props for a select. */
+export interface SelectProps extends Omit<SelectHTMLAttributes<HTMLSelectElement>, "onChange"> {
+  /** Receives the new value, not the event. */
+  onChange?: (value: string) => void;
+}
+
+/** A select carrying the shared field hook. */
+export const Select = forwardRef<HTMLSelectElement, SelectProps>(function Select(
+  { onChange, ...rest },
+  ref,
+) {
+  return (
+    <select
+      {...rest}
+      ref={ref}
+      onChange={onChange === undefined ? undefined : (event) => onChange(event.target.value)}
+      data-dtb-kind="field"
+    />
+  );
 });

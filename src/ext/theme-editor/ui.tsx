@@ -4,8 +4,12 @@ import {
   Action,
   Banner,
   Chip,
+  Field,
   Note,
+  SearchField,
+  Select,
   Tag,
+  TextInput,
   useCopyStatus,
   useExtensionSurface,
 } from "@nejcm/dev-toolbar/kit";
@@ -227,7 +231,7 @@ function Editor({
           style={{ background: view.effective }}
         />
       ) : null}
-      <input
+      <TextInput
         type="text"
         data-dtb-part="thm-input"
         data-dtb-token={view.name}
@@ -241,8 +245,8 @@ function Editor({
         placeholder={view.masked ? "masked — type a new value" : (view.effectiveText ?? "")}
         title={rejected ?? `Edit ${view.name}`}
         value={draft}
-        onChange={(event) => {
-          setDraft(event.target.value);
+        onChange={(next) => {
+          setDraft(next);
           setRejected(null);
         }}
         onKeyDown={(event) => {
@@ -418,33 +422,30 @@ export function ThemePanel({ runtime, label, injectStyles, styleNonce }: PanelPr
       {/* This masthead deliberately omits data-dtb-bleed: the panel caps itself at 860px,
           so its rule must stop at the same measure as the content below it. */}
       <div data-dtb-part="thm-toolbar" data-dtb-kind="toolbar">
-        <input
+        <SearchField
           data-dtb-part="thm-search"
-          data-dtb-kind="search"
-          type="search"
-          aria-label="Search tokens"
+          label="Search tokens"
           placeholder={`Search ${snapshot.tokens.length} tokens`}
           value={query}
-          onChange={(event) => setQuery(event.target.value)}
+          onChange={setQuery}
         />
 
         {snapshot.surfaces.length > 1 ? (
-          <Note as="label" data-dtb-part="thm-note">
-            surface{" "}
-            <select
+          <Field label="surface" data-dtb-part="thm-note">
+            <Select
               data-dtb-part="thm-select"
               data-dtb-role="surface"
               aria-label="Surface the edits apply to"
               value={snapshot.surface.id}
-              onChange={(event) => runtime.selectSurface(event.target.value)}
+              onChange={(next) => runtime.selectSurface(next)}
             >
               {snapshot.surfaces.map((entry) => (
                 <option key={entry.id} value={entry.id}>
                   {entry.label ?? entry.id}
                 </option>
               ))}
-            </select>
-          </Note>
+            </Select>
+          </Field>
         ) : null}
 
         <Action
@@ -572,22 +573,21 @@ export function ThemePanel({ runtime, label, injectStyles, styleNonce }: PanelPr
       {/* The panel's largest element is the payload itself — the exact string
           the buttons copy, not a summary of it. */}
       <div data-dtb-part="thm-actions" data-dtb-role="export">
-        <Note as="label" data-dtb-part="thm-note">
-          export{" "}
-          <select
+        <Field label="export" data-dtb-part="thm-note">
+          <Select
             data-dtb-part="thm-select"
             data-dtb-role="format"
             aria-label="Export format"
             value={format}
-            onChange={(event) => setFormat(event.target.value as ExportFormat)}
+            onChange={(next) => setFormat(next as ExportFormat)}
           >
             {(Object.keys(FORMAT_LABEL) as ExportFormat[]).map((key) => (
               <option key={key} value={key}>
                 {FORMAT_LABEL[key]}
               </option>
             ))}
-          </select>
-        </Note>
+          </Select>
+        </Field>
         <Action data-dtb-part="thm-action" data-dtb-action="copy" onClick={() => copy(output)}>
           Copy
         </Action>

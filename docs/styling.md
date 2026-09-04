@@ -26,8 +26,13 @@ restyles every extension's severity at once.
 `data-dtb-part` identifies the exact part; `data-dtb-kind` identifies its shared kind,
 such as `action`, `chip`, `note` or `value`. `KIT_CSS`, exported from
 `@nejcm/dev-toolbar/kit`, styles those kinds and can be shipped once in a combined
-manual stylesheet. First-party `*_CSS` strings include `KIT_CSS` deliberately so each
-one remains self-contained; combining several repeats that shared prefix. The kit
+manual stylesheet. One kind is deliberately not among them: `field`, which `TextInput`
+and `Select` emit, is a hook for selecting a kit form control, not a promise of a kit
+rule — core already owns field geometry through its `:where(input, select, textarea)`
+rule, so the kit adds nothing on top. That core rule skips `type="color"` and
+`type="checkbox"`, so a `<TextInput type="color">` carries `data-dtb-kind="field"`
+while getting neither core's treatment nor a kit one. First-party `*_CSS` strings
+include `KIT_CSS` deliberately so each one remains self-contained; combining several repeats that shared prefix. The kit
 sheet uses `@layer dev-toolbar`, so unlayered consumer overrides still win.
 
 **3. `classNames`.** A narrow map for putting your own class on a part:

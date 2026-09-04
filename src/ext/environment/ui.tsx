@@ -5,6 +5,8 @@ import {
   Chip,
   EmptyState,
   Note,
+  Row,
+  Rows,
   Tag,
   useCopyStatus,
   useExtensionSurface,
@@ -147,11 +149,11 @@ export function EnvironmentPanel({ runtime, injectStyles, styleNonce }: PanelPro
               <h3 data-dtb-part="env-group-title" data-dtb-legend="">
                 {GROUP_LABELS[group]}
               </h3>
-              <dl data-dtb-part="env-rows">
+              <Rows data-dtb-part="env-rows">
                 {fields.map((field) => (
-                  <Row key={field.id} field={field} />
+                  <FieldRow key={field.id} field={field} />
                 ))}
-              </dl>
+              </Rows>
             </section>
           );
         })}
@@ -184,44 +186,42 @@ export function EnvironmentPanel({ runtime, injectStyles, styleNonce }: PanelPro
   );
 }
 
-function Row({ field }: { field: EnvironmentFieldView }): ReactNode {
+function FieldRow({ field }: { field: EnvironmentFieldView }): ReactNode {
   return (
-    <>
-      <dt data-dtb-part="env-row-label" data-dtb-kind="label">
-        {field.label}
-      </dt>
-      <dd
-        data-dtb-part="env-row-value"
-        data-dtb-kind="value"
-        data-dtb-field={field.id}
-        data-dtb-source={field.source}
-        data-dtb-masked={field.masked ? "true" : "false"}
-        data-dtb-alarming={field.alarming ? "true" : "false"}
-      >
-        {field.source === "missing" ? (
-          <span data-dtb-part="env-missing">not supplied</span>
-        ) : (
-          field.value
-        )}
-        {field.masked ? (
-          <Tag
-            data-dtb-part="env-tag"
-            data-dtb-tag="masked"
-            title="This value was masked before it was rendered or copied."
-          >
-            masked
-          </Tag>
-        ) : null}
-        {field.source === "detected" ? (
-          <Tag
-            data-dtb-part="env-tag"
-            data-dtb-tag="detected"
-            title="Read from this browser, not from the deployment."
-          >
-            detected
-          </Tag>
-        ) : null}
-      </dd>
-    </>
+    <Row
+      label={field.label}
+      labelProps={{ "data-dtb-part": "env-row-label" }}
+      valueProps={{
+        "data-dtb-part": "env-row-value",
+        "data-dtb-field": field.id,
+        "data-dtb-source": field.source,
+        "data-dtb-masked": field.masked ? "true" : "false",
+        "data-dtb-alarming": field.alarming ? "true" : "false",
+      }}
+    >
+      {field.source === "missing" ? (
+        <span data-dtb-part="env-missing">not supplied</span>
+      ) : (
+        field.value
+      )}
+      {field.masked ? (
+        <Tag
+          data-dtb-part="env-tag"
+          data-dtb-tag="masked"
+          title="This value was masked before it was rendered or copied."
+        >
+          masked
+        </Tag>
+      ) : null}
+      {field.source === "detected" ? (
+        <Tag
+          data-dtb-part="env-tag"
+          data-dtb-tag="detected"
+          title="Read from this browser, not from the deployment."
+        >
+          detected
+        </Tag>
+      ) : null}
+    </Row>
   );
 }

@@ -57,6 +57,20 @@ export const KIT_CSS = String.raw`@layer dev-toolbar {
     border-radius: var(--dtb-radius);
   }
 
+  /* The two-column key/value readout. A max-content first track is what makes
+     the values line up as their own column instead of trailing their labels,
+     and the wide column gap is what makes that column scannable. */
+  [data-dev-toolbar] [data-dtb-kind="rows"] {
+    display: grid;
+    grid-template-columns: max-content 1fr;
+    gap: var(--dtb-space-1) var(--dtb-space-5);
+    margin: 0;
+  }
+
+  [data-dev-toolbar] [data-dtb-kind="rows"] dd {
+    margin: 0;
+  }
+
   [data-dev-toolbar] [data-dtb-kind="list"] {
     display: flex;
     flex-direction: column;

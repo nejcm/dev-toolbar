@@ -151,22 +151,6 @@ const METRICS_EXTENSION_CSS = String.raw`@layer dev-toolbar {
     stroke: var(--dtb-danger);
   }
 
-  [data-dev-toolbar] [data-dtb-part="metrics-rows"] {
-    display: grid;
-    grid-template-columns: max-content 1fr;
-    gap: var(--dtb-space-1) var(--dtb-space-5);
-    margin: 0;
-  }
-
-  [data-dev-toolbar] [data-dtb-part="metrics-rows"] dt {
-    color: var(--dtb-muted);
-  }
-
-  [data-dev-toolbar] [data-dtb-part="metrics-rows"] dd {
-    margin: 0;
-    font-family: var(--dtb-font-mono);
-  }
-
   [data-dev-toolbar] [data-dtb-part="metrics-requests"] {
     width: 100%;
     border-collapse: collapse;

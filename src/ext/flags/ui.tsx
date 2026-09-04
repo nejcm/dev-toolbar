@@ -6,7 +6,10 @@ import {
   CopyButton,
   EmptyState,
   Note,
+  SearchField,
+  Select,
   Tag,
+  TextInput,
   useExtensionSurface,
 } from "@nejcm/dev-toolbar/kit";
 import { ensureFlagsStyles } from "./css";
@@ -218,15 +221,13 @@ function Editor({
   if (view.type === "variant" && view.variants && view.variants.length > 0) {
     return (
       <>
-        <select
+        <Select
           data-dtb-part="flag-input"
           data-dtb-flag={view.key}
           aria-label={`Override ${view.key}`}
           value={view.masked ? "" : formatValue(view.effective)}
-          onChange={(event) => {
-            const chosen = view.variants?.find(
-              (variant) => formatValue(variant) === event.target.value,
-            );
+          onChange={(next) => {
+            const chosen = view.variants?.find((variant) => formatValue(variant) === next);
             if (chosen !== undefined) commit(chosen);
           }}
         >
@@ -236,7 +237,7 @@ function Editor({
               {formatValue(variant)}
             </option>
           ))}
-        </select>
+        </Select>
         <ClearButton view={view} runtime={runtime} />
       </>
     );
@@ -258,7 +259,7 @@ function Editor({
 
   return (
     <>
-      <input
+      <TextInput
         data-dtb-part="flag-input"
         data-dtb-flag={view.key}
         aria-label={`Override ${view.key}`}
@@ -275,8 +276,8 @@ function Editor({
         placeholder={view.masked ? "masked — type a new value" : view.effectiveText}
         title={rejected ? `Not a ${view.type} — nothing was applied.` : `Override ${view.key}`}
         value={draft}
-        onChange={(event) => {
-          setDraft(event.target.value);
+        onChange={(next) => {
+          setDraft(next);
           setRejected(false);
         }}
         onKeyDown={(event) => {
@@ -460,14 +461,12 @@ export function FlagsPanel({ runtime, label, injectStyles, styleNonce }: PanelPr
       aria-label={label}
     >
       <div data-dtb-part="flag-toolbar" data-dtb-kind="toolbar" data-dtb-bleed="">
-        <input
+        <SearchField
           data-dtb-part="flag-search"
-          data-dtb-kind="search"
-          type="search"
-          aria-label="Search flags"
+          label="Search flags"
           placeholder={`Search ${snapshot.flags.length} flags`}
           value={query}
-          onChange={(event) => setQuery(event.target.value)}
+          onChange={setQuery}
         />
         <Action
           data-dtb-part="flag-action"

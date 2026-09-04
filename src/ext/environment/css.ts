@@ -53,17 +53,11 @@ const ENVIRONMENT_EXTENSION_CSS = String.raw`@layer dev-toolbar {
      trailing rule come from — core owns that treatment so every extension's
      sections look alike. Nothing is left to restate here. */
 
-  [data-dev-toolbar] [data-dtb-part="env-rows"] {
-    display: grid;
-    grid-template-columns: max-content 1fr;
-    /* A wide column gap is what makes a two-column readout scannable: the
-       values line up as their own column instead of trailing their labels. */
-    gap: var(--dtb-space-1) var(--dtb-space-5);
-    margin: 0;
-  }
-
+  /* Grid, gap and the dd reset come from the kit's rows kind. What stays
+     here is the one thing only this panel needs: a hostname or a build id is a
+     single unbreakable token, and without this it widens the value column past
+     the panel instead of wrapping. */
   [data-dev-toolbar] [data-dtb-part="env-rows"] dd {
-    margin: 0;
     word-break: break-word;
   }
 
