@@ -56,11 +56,18 @@ dynamic-import-only load that broke every Jest consumer even with it installed.
 ## Running it
 
 ```bash
-npm run test:jest-consumer     # from the repo root; builds first
+bun run test:jest-consumer     # from the repo root; builds first
 ```
 
-It is a **standalone script, deliberately outside `npm test`**: it needs a fresh
+It is a **standalone script, deliberately outside `bun run test`**: it needs a fresh
 `dist/`, and a second test runner inside the vitest run would confuse both.
+
+Its dependencies are installed with bun, like the rest of the repo, and locked in
+`bun.lock`. What this fixture exists to exercise is Jest's CommonJS resolver against
+a real `exports` map — `sync-package.mjs` places the package by hand, so no installer
+ever resolves `@nejcm/dev-toolbar` here and npm contributed nothing to what the tests
+assert. It did cost 2m33 of every CI run, since npm cannot read the bun cache the
+rest of the job already warms.
 
 `sync-package.mjs` copies the built `dist/` into this fixture's `node_modules` as
 `@nejcm/dev-toolbar`, with the real `exports` map. It copies rather than links

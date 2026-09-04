@@ -17,8 +17,8 @@ const dist = join(root, "dist");
 
 if (!existsSync(join(dist, "testing.cjs"))) {
   console.error(
-    "[jest-consumer] dist/testing.cjs is missing. Run `npm run build` in the " +
-      "repo root first, or use `npm run test:jest-consumer`, which does it for you.",
+    "[jest-consumer] dist/testing.cjs is missing. Run `bun run build` in the " +
+      "repo root first, or use `bun run test:jest-consumer`, which does it for you.",
   );
   process.exit(1);
 }

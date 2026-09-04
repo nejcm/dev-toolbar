@@ -1,0 +1,113 @@
+name: Audit
+
+# `bun audit` used to be the last step of ci.yml (~4m20/PR, gated nothing —
+# continue-on-error swallowed its exit code). It's scheduled instead because
+# its answer depends on the advisory database, not the diff: a commit can go
+# vulnerable without anyone pushing, which only a daily run catches.
+#
+# `bun audit` takes minutes even on a warm machine, so `timeout-minutes` below
+# is a real guard, not a formality.
+#
+# Only the root `bun.lock` is audited — the playground and jest-consumer
+# lockfiles are dev-only trees that nothing ships from, so an advisory against
+# one is not a finding about this package. The lockfile cache key in
+# `setup-job` is about restoring an install, not audit scope.
+on:
+  schedule:
+    # 06:00 UTC daily. GitHub cron is best-effort; a late run is fine for a report.
+    - cron: "0 6 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: true
+
+jobs:
+  audit:
+    name: audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # `bun audit` still wants a resolved tree even though the advisory
+      # lookup itself reads bun.lock, not node_modules.
+      - name: Set up job
+        uses: ./.github/actions/setup-job
+
+      # `--json` is the whole answer in one run. bun 1.4.0 emits an object keyed
+      # by package name, each value an array of advisories carrying `severity`,
+      # `title`, `url` and `vulnerable_versions`:
+      #
+      #     {"esbuild":[{"severity":"low","title":"esbuild allows arbitrary
+      #       file read ...","url":"https://github.com/advisories/GHSA-...",
+      #       "vulnerable_versions":">=0.27.3 <0.28.1", ...}]}
+      #
+      # That is a structure the gate can count, rather than severity labels
+      # grepped out of prose that bun is free to reword.
+      #
+      # `timeout-minutes` is on the step, not just the job, so a registry
+      # stall fails fast instead of riding out the job's own limit.
+      - name: Audit dependencies
+        id: audit
+        timeout-minutes: 12
+        run: |
+          set +e
+          bun audit --json > audit.json 2> audit.err
+          code=$?
+          set -e
+
+          # Every advisory bun reported, and the blocking subset. `jq` fails on
+          # anything that is not the shape above — including the empty file a
+          # registry error leaves behind — so `found` stays empty and the
+          # self-check below fires instead of the gate passing on nothing.
+          found=$(jq '[.[][]] | length' audit.json 2>/dev/null || echo "")
+          blocking=$(jq '[.[][] | select(.severity == "high" or .severity == "critical")] | length' audit.json 2>/dev/null || echo "")
+          echo "blocking=${blocking:-0}" >> "$GITHUB_OUTPUT"
+
+          # Non-zero exit with nothing parsed out of the JSON means one of two
+          # things, and neither may pass silently.
+          if [ "$code" -ne 0 ] && { [ -z "$found" ] || [ "$found" -eq 0 ]; }; then
+            echo "::error::bun audit exited ${code} but no advisory was parsed from its JSON. Either it could not reach the advisory registry (a 503 there is not rare), or bun changed its output and the gate in this workflow is now stale. Read the job summary."
+            exit 1
+          fi
+
+      # Runs before the gate below so findings land on the run that fails.
+      - name: Report
+        if: ${{ !cancelled() }}
+        run: |
+          {
+            echo "## Dependency audit"
+            echo
+            if ! jq -e 'type == "object"' audit.json > /dev/null 2>&1; then
+              echo "No parseable JSON came back from the audit. stderr:"
+              echo
+              echo '```'
+              cat audit.err 2>/dev/null || echo "(nothing captured)"
+              echo '```'
+            elif [ "$(jq '[.[][]] | length' audit.json)" -eq 0 ]; then
+              echo "No advisories."
+            else
+              echo "| Package | Severity | Advisory | Vulnerable versions |"
+              echo "| --- | --- | --- | --- |"
+              jq -r 'to_entries[] as $pkg | $pkg.value[] | "| \($pkg.key) | \(.severity) | [\(.title)](\(.url)) | `\(.vulnerable_versions)` |"' audit.json
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # Only high/critical fail; today's baseline is one `low` (esbuild's
+      # Windows-only dev-server file read via tsup/vitest, never shipped in
+      # dist/) — failing on that daily would train everyone to ignore this
+      # workflow. `success() &&` is load-bearing: an `if:` replaces the
+      # implicit success check, so without it a failed audit step would fall
+      # through here and report an empty count.
+      - name: Fail on high or critical
+        if: ${{ success() && steps.audit.outputs.blocking != '0' }}
+        run: |
+          echo "::error::${BLOCKING} high/critical advisory(ies); see the job summary"
+          exit 1
+        env:
+          BLOCKING: ${{ steps.audit.outputs.blocking }}

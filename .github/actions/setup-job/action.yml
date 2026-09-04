@@ -13,28 +13,36 @@ runs:
     - name: Set up bun
       uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
       with:
-        # Reads `packageManager`, so CI runs the same bun as contributors.
-        # Matters beyond reproducibility: `lint` allows zero warnings, and a
-        # different bun-hosted oxlint could surface new ones and fail the run
-        # for no real reason.
+        # Reads `packageManager` so CI runs the same bun as contributors —
+        # `lint` allows zero warnings, and a different bun-hosted oxlint
+        # could surface new ones for no real reason.
         bun-version-file: package.json
         # The explicit actions/cache step below owns the install cache.
         no-cache: true
 
     # vitest/tsup spawn real Node workers, so the major matters: below Node 22,
     # jsdom's `Storage` replaces the shim in vitest.setup.ts and a `setItem`
-    # spy stops seeing writes. `.nvmrc` is the source of truth, as
-    # `packageManager` is for bun above.
+    # spy stops seeing writes. `.nvmrc` is the source of truth here.
     - name: Set up Node
       uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
       with:
         node-version-file: .nvmrc
 
+    # Every lockfile, not just the root one — the fixture and playground
+    # install from this cache too. Keyed on the root alone, a fixture bump
+    # would restore a cache missing those packages and decline to save
+    # (actions/cache only writes on a primary-key miss), re-fetching forever.
+    #
+    # Listed explicitly, not `**/bun.lock`: the post step re-evaluates this key
+    # to save, by which point node_modules exists, and the playground's
+    # `file:../..` install has mirrored the whole repo root — lockfiles,
+    # node_modules and all — into its own node_modules, recursively. A `**`
+    # walk from the root hits that and hashFiles fails.
     - name: Cache bun install cache
       uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       with:
         path: ~/.bun/install/cache
-        key: ${{ runner.os }}-bun-${{ hashFiles('bun.lock') }}
+        key: ${{ runner.os }}-bun-${{ hashFiles('bun.lock', 'examples/playground/bun.lock', 'test/fixtures/jest-consumer/bun.lock') }}
         restore-keys: |
           ${{ runner.os }}-bun-
 

@@ -24,15 +24,18 @@ bun run verify
 ```
 
 That is `format:check && typecheck && lint && knip && build && test &&
-check:package`, in sequence — the exact gate CI runs. `format:check` goes
-first because it takes about ten milliseconds: if the tree is mis-formatted
-you find out immediately rather than after `tsc` has run. If it passes locally
-it passes in CI, and a PR that fails it will not merge.
+check:package`, in sequence. `format:check` goes first because it takes about
+ten milliseconds: if the tree is mis-formatted you find out immediately rather
+than after `tsc` has run. If it passes locally it passes in CI, and a PR that
+fails it will not merge. CI does not run it verbatim, though: it runs
+`verify:static` and then `test:coverage`, so the suite runs once there instead
+of twice.
 
 The individual pieces, when you want a faster loop:
 
 | Command                 | What it does                                                   |
 | ----------------------- | -------------------------------------------------------------- |
+| `bun run verify:static` | everything in `verify` but `vitest run` — what CI runs         |
 | `bun run typecheck`     | `tsc --noEmit`                                                 |
 | `bun run lint`          | `oxlint --max-warnings=0`                                      |
 | `bun run lint:fix`      | `oxlint --fix`                                                 |
@@ -76,7 +79,8 @@ it.
 out of `verify` because the instrumentation is slow enough to notice in a local
 loop. The thresholds in `vitest.config.ts` are floors set just under the measured
 numbers, so they fail on a regression rather than on ordinary movement. CI runs
-this after `verify`, and a drop below a floor fails the build.
+this after `verify:static`, where it is the only run of the suite, and a drop
+below a floor fails the build.
 
 Coverage measures **all** of `src/` bar the test files. If you are tempted to add
 an `exclude` entry, measure both ways first and put the numbers in the comment —
@@ -89,8 +93,8 @@ it runs inside `verify`, right after `lint` — it needs no build and takes well
 under a second, so the cheapest failure comes first. Unused code fails your
 local run before it fails CI. CI also runs it a second time as a report-only
 step that writes the findings to the job summary — that copy swallows its exit
-code, so the report still renders on a run `verify` has already failed. Its
-value here is specific: with 11 separately importable entry points, a subpath
+code, so the report still renders on a run `verify:static` has already failed.
+Its value here is specific: with 11 separately importable entry points, a subpath
 can stop being referenced without anything else noticing.
 
 Keep it clean by fixing the code, not by widening `knip.json`. An export used
@@ -163,7 +167,7 @@ commitlint hook is the actual gate.
 - **`commit-msg`** runs `commitlint`.
 
 To bypass both in an emergency: `SKIP_SIMPLE_GIT_HOOKS=1 git commit ...`. CI
-still runs `bun run verify`, so bypassing buys you nothing except a red PR.
+still runs the same checks, so bypassing buys you nothing except a red PR.
 
 ## Pull requests
 
@@ -505,7 +509,7 @@ release after it gets provenance automatically through trusted publishing.
 
    bun run verify                         # format, typecheck, lint, build, test,
                                           #   package shape
-   npm ci --prefix test/fixtures/jest-consumer
+   bun install --frozen-lockfile --cwd test/fixtures/jest-consumer
    bun run test:jest-consumer             # the CommonJS packaging check
 
    npm whoami                             # `npm login` if this fails; it opens
