@@ -201,8 +201,13 @@ export const Rows = forwardRef<HTMLDListElement, RowsProps>(function Rows(rest, 
 
 type RowSlotProps = HTMLAttributes<HTMLElement> & DataAttributes;
 
-/** Props for one key/value pair inside `<Rows>`. */
-export interface RowProps {
+/**
+ * Props for one key/value pair inside `<Rows>`. Anything else spreads onto the
+ * `<dd>` — the value cell is the one a site names and targets — so a stray
+ * `data-dtb-part` lands somewhere rather than vanishing. `valueProps` wins on a
+ * collision, being the explicit way to address that cell.
+ */
+export interface RowProps extends RowSlotProps {
   label: ReactNode;
   /** The value cell's content. */
   children?: ReactNode;
@@ -218,13 +223,13 @@ export interface RowProps {
  * to hang one on would change the layout. A site that needs a ref writes the
  * two elements by hand — they are two lines.
  */
-export function Row({ children, label, labelProps, valueProps }: RowProps): ReactNode {
+export function Row({ children, label, labelProps, valueProps, ...rest }: RowProps): ReactNode {
   return (
     <>
       <dt data-dtb-kind="label" {...labelProps}>
         {label}
       </dt>
-      <dd data-dtb-kind="value" {...valueProps}>
+      <dd data-dtb-kind="value" {...rest} {...valueProps}>
         {children}
       </dd>
     </>

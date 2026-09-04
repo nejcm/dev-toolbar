@@ -241,6 +241,31 @@ describe("Rows and Row", () => {
     expect(values[1]?.getAttribute("data-dtb-masked")).toBe("true");
   });
 
+  it("spreads an unexpected prop onto the value cell rather than dropping it", () => {
+    const { container } = render(
+      <Rows>
+        <Row label="build" data-dtb-part="example-row-value" title="the commit">
+          abc123
+        </Row>
+      </Rows>,
+    );
+    const value = container.querySelector("dd");
+    expect(value?.getAttribute("data-dtb-part")).toBe("example-row-value");
+    expect(value?.getAttribute("title")).toBe("the commit");
+    expect(container.querySelector("dt")?.hasAttribute("data-dtb-part")).toBe(false);
+  });
+
+  it("lets valueProps win over a colliding spread prop", () => {
+    const { container } = render(
+      <Rows>
+        <Row label="build" data-dtb-part="spread" valueProps={{ "data-dtb-part": "explicit" }}>
+          abc123
+        </Row>
+      </Rows>,
+    );
+    expect(container.querySelector("dd")?.getAttribute("data-dtb-part")).toBe("explicit");
+  });
+
   it("lets a slot opt out of the kit kind", () => {
     const { container } = render(
       <Rows>

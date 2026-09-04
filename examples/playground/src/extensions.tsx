@@ -11,11 +11,19 @@ import { themeEditor } from "@nejcm/dev-toolbar/ext/theme-editor";
 import { agentBridge } from "@nejcm/dev-toolbar/ext/agent";
 import type { DesignTokenDefinition } from "@nejcm/dev-toolbar/ext/theme-editor";
 import type { FlagReading, FlagValue } from "@nejcm/dev-toolbar/ext/flags";
+import { kitDemo } from "./kitDemo";
+
+/**
+ * `kit-demo` is not a first-party extension: it lives in this app and is built entirely
+ * from `@nejcm/dev-toolbar/kit`, as the worked example docs/kit.md points at. It ships no
+ * stylesheet of its own — every element is a kit control or carries a `data-dtb-kind`.
+ */
+const runtimeKitDemo = kitDemo({ order: 40, priority: 60, pollMs: 1000 });
 
 /**
  * Deliberately varied `priority` so narrowing the window collapses extensions into `⋮` in order:
- * agent (-1) → boom (5) → diagnostics (10) → hydr (20) → metrics (35) → overlays (55) → tw (70)
- * → flags (80) → cmds (85) → env (90) → user (100, aligned end). The agent bridge goes first by
+ * agent (-1) → boom (5) → diagnostics (10) → hydr (20) → metrics (35) → theme (45) → overlays (55)
+ * → kit (60) → tw (70) → flags (80) → cmds (85) → env (90) → user (100, aligned end). The agent bridge goes first by
  * design: it is a transport, and nothing is lost when its chip collapses.
  * metrics/env/flags are the real extensions; the rest are placeholders.
  */
@@ -632,6 +640,7 @@ export const playgroundExtensions: DevToolbarExtension[] = [
   runtimeOverlays,
   runtimeThemeEditor,
   runtimeMetrics,
+  runtimeKitDemo,
   hydration,
   tailwind,
   broken,

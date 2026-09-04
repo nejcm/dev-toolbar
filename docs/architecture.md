@@ -108,13 +108,17 @@ side, where the reset came from. The whole remedy is `revert-layer`:
 
 ```css
 /* Unlayered, so it beats Preflight; resolves to whatever @layer dev-toolbar
-   would have produced for that element in that state. Reverting by part, not
-   by element, is the whole design: Preflight resets every control the toolbar
-   draws plus the margins and list markers on its headings, paragraphs and
-   lists, and [data-dtb-part] covers all of them at a specificity Preflight
-   cannot reach — while leaving alone any element the toolbar does not own, so
-   a consumer's own utility classes on their own chip still win. */
-[data-dev-toolbar] [data-dtb-part] {
+   would have produced for that element in that state. Reverting by toolbar
+   attribute, not by element, is the whole design: Preflight resets every
+   control the toolbar draws plus the margins and list markers on its headings,
+   paragraphs and lists, and these two attributes cover all of them at a
+   specificity Preflight cannot reach — while leaving alone any element the
+   toolbar does not own, so a consumer's own utility classes on their own chip
+   still win. Both attributes are needed: a control from the kit carries
+   data-dtb-kind and need not carry a part, and the kit's rules lose to a reset
+   exactly as core's do. :is() takes its specificity from its widest argument,
+   so this is the same weight as the part-only selector it replaces. */
+[data-dev-toolbar] :is([data-dtb-part], [data-dtb-kind]) {
   margin: revert-layer;
   padding: revert-layer;
   background-color: revert-layer;
@@ -499,6 +503,23 @@ on the same element for targeting.
 
 `data-dtb-bleed` must not be nested inside another bled element — a second bleed
 overflows rather than aligning, which is why a legend's rule stops at the measure.
+
+A second attribute cuts the other way. `data-dtb-part` says *which* part this is;
+`data-dtb-kind` says *what sort of thing* it is — `action`, `chip`, `dot`, `label`,
+`value`, `note`, `tag`, `row`, `rows`, `list`, `empty`, `banner`, `search`, `toolbar`,
+`field`.
+Parts are namespaced per extension and so cannot be styled across extensions in one
+rule; kinds are shared and exist precisely for that. `KIT_CSS`, from
+[`@nejcm/dev-toolbar/kit`](./kit.md), is the one stylesheet keyed on them, and it
+replaced a button reset that had been hand-copied into five extensions and had already
+drifted three ways. Severity rules there are **compound** —
+`[data-dtb-kind="dot"][data-dtb-severity="warn"]`, both attributes on one element — so
+a container carrying a severity never tints its descendants. `field` is a kind with no
+kit rule at all: core's `:where(input, select, textarea)` already owns field geometry,
+so that fifteenth kind is a selector hook and nothing more. The kit's sheet is subject to the
+same three gates as core's and every extension's — logical properties only,
+`@layer dev-toolbar`, `[data-dev-toolbar]`-scoped — enforced by
+`src/ext/__tests__/stylesheets.test.ts`.
 
 Core owns the unprefixed names; an extension that ships CSS **namespaces its parts by
 kind** — a prefix fixed by the extension package, not by the `id` an individual
