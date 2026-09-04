@@ -74,18 +74,17 @@ to write the readable report to the job summary — the gate is the `knip` insid
 `bun audit` is **not** on the pull-request path. It lives in
 `.github/workflows/audit.yml`, daily and on demand: its answer depends on the
 advisory database rather than the diff, and it takes minutes. High and critical
-findings fail it; anything lower is a job-summary report.
+findings fail it; anything lower is a job-summary report. It audits the root
+`bun.lock` only — the playground and jest-consumer lockfiles are dev-only trees
+that ship nothing.
 
 ## Conventions
 
 - **Bun, not npm, for installing anything** — `test/fixtures/jest-consumer` included.
   (Publishing is still `npm publish`; that is the registry client, not a package
-  manager choice.) The fixture used `npm ci` on the theory that it should be a real
-  npm consumer, but `sync-package.mjs` places the package into its `node_modules` by
-  hand: no installer ever resolves `@nejcm/dev-toolbar` there, so npm proved nothing
-  the fixture asserts and cost ~2m30 of every CI run by not being able to read the
-  bun cache. What it is a real consumer *of* — Jest 30, CommonJS, the published
-  `exports` map — is unchanged.
+  manager choice.) Why the fixture stopped using `npm ci`, and what it is still a
+  real consumer *of*, is in
+  [its README](./test/fixtures/jest-consumer/README.md#running-it).
 - **Zero runtime dependencies is a rule, not an accident.** New `dependencies` need a
   reason that survives the question "why can't the consumer pass this in?".
 - **Core never imports `runtime/` or `ext/`.** Extensions import only *types* from

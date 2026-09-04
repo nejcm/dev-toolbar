@@ -305,8 +305,9 @@ bun run verify
 ```
 
 That is `format:check && typecheck && lint && knip && build && test &&
-check:package`, in sequence — the exact gate CI runs. If it passes locally it
-passes in CI. The pieces, for a faster loop:
+check:package`, in sequence. If it passes locally it passes in CI — though CI
+does not run it verbatim: it runs `verify:static` (everything but the suite) and
+then `test:coverage`, rather than the suite twice. The pieces, for a faster loop:
 
 | Command | What it does |
 | --- | --- |
@@ -346,8 +347,8 @@ already shipped twice.
 
 ## House rules
 
-- **Bun, not npm** — except inside `test/fixtures/jest-consumer`, which is meant to
-  be an npm consumer.
+- **Bun, not npm, for installing anything** — `test/fixtures/jest-consumer`
+  included. npm is the publish client, not a package manager choice.
 - **Zero runtime dependencies is a rule.** A new `dependency` needs an answer to
   "why can't the consumer pass this in?".
 - **Core never imports `runtime/` or `ext/`**, and extensions import only *types*

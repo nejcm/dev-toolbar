@@ -97,9 +97,9 @@ jobs:
       # loads can still mint the OIDC token, so `--ignore-scripts` alone isn't
       # enough; the whole test has to live elsewhere.
       #
-      # bun, not `npm ci`: sync-package.mjs places the package by hand, so no
-      # installer ever resolves `@nejcm/dev-toolbar` here — npm was paying
-      # ~2m30/run without reading the bun cache `Set up job` already warmed.
+      # bun, not `npm ci`: npm proved nothing here and cost 2m33 a run, unable
+      # to read the bun cache `Set up job` above already warmed. Full reasoning
+      # in `test/fixtures/jest-consumer/README.md`.
       - name: Install the jest-consumer fixture
         run: bun install --frozen-lockfile --ignore-scripts
         working-directory: test/fixtures/jest-consumer
