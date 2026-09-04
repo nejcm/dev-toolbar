@@ -31,6 +31,7 @@ import { DEFAULT_SHORTCUT, matchesShortcut, parseShortcut } from "./shortcut";
 import { ensureStyles } from "./styles";
 import { useStableClassNames } from "./classNames";
 import { useLatestRef } from "./latest";
+import { useControlledToolbarState } from "./useControlledToolbarState";
 
 /**
  * CSS custom property published on `document.documentElement` while the bar is
@@ -189,9 +190,6 @@ function DevToolbarRoot({
   const classNames = useStableClassNames(classNamesProp);
   // Latest prop values are seeded in render and updated at commit time.
   const onExtensionErrorRef = useLatestRef(onExtensionError);
-  const onVisibleChangeRef = useLatestRef(onVisibleChange);
-  const onPositionChangeRef = useLatestRef(onPositionChange);
-  const onPanelChangeRef = useLatestRef(onPanelChange);
 
   // Captured once, on mount, so the store and everything derived from it
   // can never disagree about where preferences live. See prop docs above.
@@ -216,177 +214,27 @@ function DevToolbarRoot({
   // `ToolbarStore.getServerSnapshot`.
   const state = useSyncExternalStore(store.subscribe, store.getSnapshot, store.getServerSnapshot);
 
-  const visibleControlled = visibleProp !== undefined;
-  const positionControlled = positionProp !== undefined;
-  const hasVisibleChangeHandler = onVisibleChange !== undefined;
-  const hasPositionChangeHandler = onPositionChange !== undefined;
-  const effectiveVisible = visibleProp ?? state.visible;
-  const effectivePosition = positionProp ?? state.position;
-  const visibilitySubscribersRef = useRef(new Set<(visible: boolean) => void>());
-  const lastNotifiedVisibleRef = useRef(effectiveVisible);
-  const effectiveVisibleRef = useLatestRef(effectiveVisible);
   const reportExtensionError = useCallback(
     (error: Error, info: ExtensionErrorInfo): void => {
       onExtensionErrorRef.current?.(error, info);
     },
     [onExtensionErrorRef],
   );
-  const reportVisibleChange = useCallback(
-    (next: boolean): void => {
-      try {
-        onVisibleChangeRef.current?.(next);
-      } catch (error) {
-        // eslint-disable-next-line no-console
-        console.error("[dev-toolbar] onVisibleChange handler threw.", error);
-      }
-    },
-    [onVisibleChangeRef],
-  );
-  const reportPositionChange = useCallback(
-    (next: ToolbarPosition): void => {
-      try {
-        onPositionChangeRef.current?.(next);
-      } catch (error) {
-        // eslint-disable-next-line no-console
-        console.error("[dev-toolbar] onPositionChange handler threw.", error);
-      }
-    },
-    [onPositionChangeRef],
-  );
-  const reportPanelChange = useCallback(
-    (next: string | null): void => {
-      try {
-        onPanelChangeRef.current?.(next);
-      } catch (error) {
-        // eslint-disable-next-line no-console
-        console.error("[dev-toolbar] onPanelChange handler threw.", error);
-      }
-    },
-    [onPanelChangeRef],
-  );
-
-  useEffect(() => {
-    if (lastNotifiedVisibleRef.current === effectiveVisible) return;
-    lastNotifiedVisibleRef.current = effectiveVisible;
-    for (const subscriber of Array.from(visibilitySubscribersRef.current)) {
-      subscriber(effectiveVisible);
-    }
-  }, [effectiveVisible]);
-
-  // The baseline is the snapshot the *first render* saw, not the one that
-  // exists when the observer subscribes: React runs a descendant's effects
-  // before the parent's, so a child calling `setVisible`/`setPosition`/
-  // `openPanel` in its own mount effect has already mutated the store by the
-  // time this effect runs. Baselining here would swallow exactly that change.
-  // Reading through the store rather than the rendered `state` keeps
-  // hydration honest too — `state` is the *server* snapshot on the first
-  // client render, so it would make every persisted preference look like a
-  // change and fire the callbacks on mount.
-  const observedStateRef = useRef(store.getSnapshot());
-  useEffect(() => {
-    const observe = () => {
-      const previous = observedStateRef.current;
-      const next = store.getSnapshot();
-      if (next === previous) return;
-      observedStateRef.current = next;
-      if (next.visible !== previous.visible) reportVisibleChange(next.visible);
-      if (next.position !== previous.position) reportPositionChange(next.position);
-      if (next.activePanelId !== previous.activePanelId) reportPanelChange(next.activePanelId);
-    };
-    // Reconcile before subscribing, so a mutation that landed between the
-    // first render and this line is reported rather than lost.
-    observe();
-    return store.subscribe(observe);
-  }, [store, reportVisibleChange, reportPositionChange, reportPanelChange]);
-
-  const controlWarningsRef = useRef(new Set<string>());
-  const previousVisibleControlledRef = useRef<boolean | null>(null);
-  const previousPositionControlledRef = useRef<boolean | null>(null);
-  const warnControlOnce = useCallback((key: string, message: string): void => {
-    if (controlWarningsRef.current.has(key)) return;
-    controlWarningsRef.current.add(key);
-    // eslint-disable-next-line no-console
-    console.warn(`[dev-toolbar] ${message}`);
-  }, []);
-
-  useEffect(() => {
-    const previousVisibleControlled = previousVisibleControlledRef.current;
-    if (previousVisibleControlled !== null && previousVisibleControlled !== visibleControlled) {
-      const transition = previousVisibleControlled
-        ? "controlled to uncontrolled"
-        : "uncontrolled to controlled";
-      warnControlOnce(
-        `visible:${transition}`,
-        `<DevToolbar> changed from ${transition} for "visible". Do not switch between controlled and uncontrolled props.`,
-      );
-    }
-    previousVisibleControlledRef.current = visibleControlled;
-
-    const previousPositionControlled = previousPositionControlledRef.current;
-    if (previousPositionControlled !== null && previousPositionControlled !== positionControlled) {
-      const transition = previousPositionControlled
-        ? "controlled to uncontrolled"
-        : "uncontrolled to controlled";
-      warnControlOnce(
-        `position:${transition}`,
-        `<DevToolbar> changed from ${transition} for "position". Do not switch between controlled and uncontrolled props.`,
-      );
-    }
-    previousPositionControlledRef.current = positionControlled;
-  }, [positionControlled, visibleControlled, warnControlOnce]);
-
-  useEffect(() => {
-    if (visibleControlled && onVisibleChangeRef.current === undefined) {
-      warnControlOnce(
-        "visible:missing-callback",
-        `<DevToolbar> controlled "visible" needs an "onVisibleChange" callback; internal visibility controls are inert.`,
-      );
-    }
-    if (positionControlled && onPositionChangeRef.current === undefined) {
-      warnControlOnce(
-        "position:missing-callback",
-        `<DevToolbar> controlled "position" needs an "onPositionChange" callback; internal position controls are inert.`,
-      );
-    }
-  }, [
-    hasPositionChangeHandler,
-    hasVisibleChangeHandler,
-    positionControlled,
-    visibleControlled,
-    onPositionChangeRef,
-    onVisibleChangeRef,
-    warnControlOnce,
-  ]);
-
-  const setVisible = useCallback(
-    (next: boolean) => {
-      if (visibleControlled) {
-        if (next !== visibleProp) reportVisibleChange(next);
-        return;
-      }
-      store.setVisible(next);
-    },
-    [reportVisibleChange, store, visibleControlled, visibleProp],
-  );
-  // Reads the current effective visibility from the ref rather than closing
-  // over it, so the identity does not change on every visibility flip. That
-  // is not just churn: the keydown effect below depends on this callback, and
-  // a flip used to tear its listener down and add it back — silently changing
-  // the `window` listener order the two shortcut paths once relied on.
-  const toggleVisible = useCallback(
-    () => setVisible(!effectiveVisibleRef.current),
-    [effectiveVisibleRef, setVisible],
-  );
-  const setPosition = useCallback(
-    (next: ToolbarPosition) => {
-      if (positionControlled) {
-        if (next !== positionProp) reportPositionChange(next);
-        return;
-      }
-      store.setPosition(next);
-    },
-    [positionControlled, positionProp, reportPositionChange, store],
-  );
+  const {
+    visible: effectiveVisible,
+    position: effectivePosition,
+    setVisible,
+    toggleVisible,
+    setPosition,
+    visibleRef,
+    subscribeVisibility,
+  } = useControlledToolbarState(store, state, {
+    visible: visibleProp,
+    position: positionProp,
+    onVisibleChange,
+    onPositionChange,
+    onPanelChange,
+  });
 
   // Client-only mount: the bar is never part of server HTML, so nothing to
   // hydrate or mismatch. Whether we've mounted can't be derived during
@@ -532,7 +380,7 @@ function DevToolbarRoot({
       const controller = new AbortController();
       const api: ExtensionRuntimeApi = {
         signal: controller.signal,
-        isVisible: () => effectiveVisibleRef.current,
+        isVisible: () => visibleRef.current,
         subscribeVisibility: (callback) => {
           // The signal is documented as aborted on teardown, and this is the
           // subscription abort must release, so an extension keeping only the
@@ -552,7 +400,7 @@ function DevToolbarRoot({
               );
             }
           };
-          visibilitySubscribersRef.current.add(subscriber);
+          const unsubscribeVisibility = subscribeVisibility(subscriber);
 
           // Idempotent and removes the abort listener too, so nothing leaks
           // regardless of whether the extension unsubscribes or the signal
@@ -561,7 +409,7 @@ function DevToolbarRoot({
           const unsubscribe = () => {
             if (released) return;
             released = true;
-            visibilitySubscribersRef.current.delete(subscriber);
+            unsubscribeVisibility();
             controller.signal.removeEventListener("abort", unsubscribe);
           };
           controller.signal.addEventListener("abort", unsubscribe, { once: true });
@@ -593,7 +441,7 @@ function DevToolbarRoot({
         console.error(`[dev-toolbar] extension "${extension.id}" threw from start().`, error);
       }
     }
-  }, [effectiveVisibleRef, extensions, enabled, store, rawStorage, instanceId]);
+  }, [visibleRef, subscribeVisibility, extensions, enabled, store, rawStorage, instanceId]);
 
   useEffect(() => {
     const running = runningRef.current;
