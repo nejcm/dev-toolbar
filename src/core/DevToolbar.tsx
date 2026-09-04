@@ -1,20 +1,10 @@
-import {
-  useCallback,
-  useEffect,
-  useLayoutEffect,
-  useMemo,
-  useRef,
-  useState,
-  useSyncExternalStore,
-} from "react";
+import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import type { CSSProperties, ReactNode } from "react";
 import { createPortal } from "react-dom";
 import {
-  CONTRACT_VERSION,
   type DevToolbarClassNames,
   type DevToolbarExtension,
   type ExtensionErrorInfo,
-  type ExtensionRuntimeApi,
   type ToolbarColorScheme,
   type ToolbarDensity,
   type ToolbarPosition,
@@ -25,49 +15,18 @@ import { OverlayHost } from "./OverlayHost";
 import { PanelHost } from "./PanelHost";
 import { DevToolbarContext, cx } from "./context";
 import type { DevToolbarContextValue } from "./context";
-import {
-  collectCommands,
-  findShortcutCommand,
-  invokeCommand,
-  registerCommandHost,
-  warnShortcutYieldsToToggle,
-} from "./commands";
-import { collectDiagnostics } from "./diagnostics";
-import { createExtensionStorage, createInstanceStorage, resolveStorage } from "./storage";
+import { createInstanceStorage, resolveStorage } from "./storage";
 import { createToolbarStore } from "./store";
-import { DEFAULT_SHORTCUT, matchesShortcut, parseShortcut } from "./shortcut";
+import { DEFAULT_SHORTCUT } from "./shortcut";
 import { ensureStyles } from "./styles";
-
-/**
- * CSS custom property published on `document.documentElement` while the bar is
- * mounted and visible. Measures the whole toolbar root — bar *plus* open panel
- * — so insetting by it never leaves content underneath an expanded panel.
- */
-export const HEIGHT_VARIABLE = "--dev-toolbar-height";
-
-/**
- * The `instanceId` default, and the one instance that owns `HEIGHT_VARIABLE`.
- *
- * Internal: not exported from any entry point. Exported only so
- * `src/testing/__tests__/heightVariable.test.ts` can assert the copy in
- * `src/testing/heightVariable.ts` still agrees with this one (that package may
- * not value-import a relative path into `core/`, per AGENTS.md).
- */
-export const DEFAULT_INSTANCE_ID = "default";
-
-/**
- * The per-instance form of {@link HEIGHT_VARIABLE}, e.g.
- * `--dev-toolbar-height-admin`. Every mounted toolbar publishes this, so
- * multiple instances on a page never overwrite each other's value; the
- * unsuffixed name stays the default instance's.
- *
- * `instanceId` is arbitrary, so non-CSS-identifier characters are folded to
- * `_` rather than escaped — ids differing only in punctuation collide, hence
- * `[A-Za-z0-9_-]` ids are safest.
- */
-export function instanceHeightVariable(instanceId: string): string {
-  return `${HEIGHT_VARIABLE}-${instanceId.replace(/[^A-Za-z0-9_-]+/g, "_")}`;
-}
+import { useStableClassNames } from "./classNames";
+import { useLatestRef } from "./latest";
+import { useControlledToolbarState } from "./useControlledToolbarState";
+import { useCommandHost } from "./useCommandHost";
+import { useExtensionLifecycle } from "./useExtensionLifecycle";
+import { DEFAULT_INSTANCE_ID, useHeightVariables } from "./useHeightVariables";
+import { useToolbarShortcuts } from "./useToolbarShortcuts";
+export { DEFAULT_INSTANCE_ID, HEIGHT_VARIABLE, instanceHeightVariable } from "./useHeightVariables";
 
 export interface DevToolbarProps {
   /** Rendered untouched, in a fragment. The bar itself portals to the body. */
@@ -156,42 +115,6 @@ export interface DevToolbarProps {
 }
 
 const EMPTY_EXTENSIONS: readonly DevToolbarExtension[] = [];
-const EMPTY_CLASS_NAMES: DevToolbarClassNames = {};
-
-/** Field-by-field equality. Every value is `string | undefined`, so this is exact. */
-function sameClassNames(a: DevToolbarClassNames, b: DevToolbarClassNames): boolean {
-  if (a === b) return true;
-  const keys = new Set([...Object.keys(a), ...Object.keys(b)]) as Set<keyof DevToolbarClassNames>;
-  for (const key of keys) if (a[key] !== b[key]) return false;
-  return true;
-}
-
-/**
- * Holds one `classNames` object identity for as long as its *strings* are
- * unchanged.
- *
- * `classNames={{ bar: "x" }}` written inline in JSX is a new object every
- * render, and two things key on that identity: the context value's `useMemo`,
- * which would then re-run for every consumer of `useDevToolbar()`, and
- * `OverlayHost`'s `memo`, which would re-invoke every extension's overlay slot
- * on every panel-height drag frame — exactly the two costs those memos exist
- * to avoid.
- *
- * Chosen over documenting "hoist the object": the inline form is the natural
- * React idiom, a doc note is unenforceable, and eleven optional string fields
- * make the comparison exact rather than a heuristic. The ref is written during
- * render, which is safe because the write is idempotent and derived purely
- * from props — a discarded render can only store a value string-equal to the
- * one the retried render would produce.
- */
-function useStableClassNames(next: DevToolbarClassNames | undefined): DevToolbarClassNames {
-  const held = useRef<DevToolbarClassNames>(EMPTY_CLASS_NAMES);
-  const value = next ?? EMPTY_CLASS_NAMES;
-  /* oxlint-disable react/refs -- read and written in render on purpose, above. */
-  if (!sameClassNames(held.current, value)) held.current = value;
-  return held.current;
-  /* oxlint-enable react/refs */
-}
 
 export function DevToolbar(props: DevToolbarProps): ReactNode {
   const { children, ...rest } = props;
@@ -201,14 +124,6 @@ export function DevToolbar(props: DevToolbarProps): ReactNode {
     </DevToolbarRoot>
   );
 }
-
-/**
- * `useLayoutEffect` in a browser, `useEffect` where there is no window, so the
- * commit-time ref writes in `DevToolbarRoot` do not trip React's
- * "useLayoutEffect does nothing on the server" warning during SSR. Resolved
- * once, at module load, so the hook order can never change between renders.
- */
-const useIsomorphicLayoutEffect = typeof window === "undefined" ? useEffect : useLayoutEffect;
 
 function DevToolbarRoot({
   children,
@@ -237,10 +152,8 @@ function DevToolbarRoot({
   style,
 }: DevToolbarProps): ReactNode {
   const classNames = useStableClassNames(classNamesProp);
-  const onExtensionErrorRef = useRef(onExtensionError);
-  const onVisibleChangeRef = useRef(onVisibleChange);
-  const onPositionChangeRef = useRef(onPositionChange);
-  const onPanelChangeRef = useRef(onPanelChange);
+  // Latest prop values are seeded in render and updated at commit time.
+  const onExtensionErrorRef = useLatestRef(onExtensionError);
 
   // Captured once, on mount, so the store and everything derived from it
   // can never disagree about where preferences live. See prop docs above.
@@ -265,179 +178,40 @@ function DevToolbarRoot({
   // `ToolbarStore.getServerSnapshot`.
   const state = useSyncExternalStore(store.subscribe, store.getSnapshot, store.getServerSnapshot);
 
-  const visibleControlled = visibleProp !== undefined;
-  const positionControlled = positionProp !== undefined;
-  const hasVisibleChangeHandler = onVisibleChange !== undefined;
-  const hasPositionChangeHandler = onPositionChange !== undefined;
-  const effectiveVisible = visibleProp ?? state.visible;
-  const effectivePosition = positionProp ?? state.position;
-  const visibilitySubscribersRef = useRef(new Set<(visible: boolean) => void>());
-  const lastNotifiedVisibleRef = useRef(effectiveVisible);
-  // Seeded from the first render, then maintained at commit time below.
-  const effectiveVisibleRef = useRef(effectiveVisible);
-  // Written at commit, never during render. A render React abandons — a
-  // suspended transition over a controlled `visible`, say — would otherwise
-  // leave these refs describing a state nothing committed: the window
-  // shortcut listener would read a visibility no handler agrees with and
-  // toggle to the value that is already live, doing nothing at all.
-  //
-  // Everything that reads them runs later than this: the listeners are
-  // installed in passive effects, `api.isVisible()` is called by extension
-  // code that `start()` reaches from a passive effect, and passive effects
-  // run after every layout effect in the same commit. No dependency array —
-  // "latest value after every commit" is the whole contract.
-  useIsomorphicLayoutEffect(() => {
-    onExtensionErrorRef.current = onExtensionError;
-    onVisibleChangeRef.current = onVisibleChange;
-    onPositionChangeRef.current = onPositionChange;
-    onPanelChangeRef.current = onPanelChange;
-    effectiveVisibleRef.current = effectiveVisible;
+  const extensionInput = useMemo(
+    () => [...extensionsProp, ...state.registered],
+    [extensionsProp, state.registered],
+  );
+  const {
+    extensions,
+    commands,
+    getCommands,
+    runCommand: scopedRunCommand,
+    invokeCommand: scopedInvokeCommand,
+    getDiagnostics,
+  } = useCommandHost(extensionInput, enabled);
+
+  const reportExtensionError = useCallback(
+    (error: Error, info: ExtensionErrorInfo): void => {
+      onExtensionErrorRef.current?.(error, info);
+    },
+    [onExtensionErrorRef],
+  );
+  const {
+    visible: effectiveVisible,
+    position: effectivePosition,
+    setVisible,
+    toggleVisible,
+    setPosition,
+    visibleRef,
+    subscribeVisibility,
+  } = useControlledToolbarState(store, state, {
+    visible: visibleProp,
+    position: positionProp,
+    onVisibleChange,
+    onPositionChange,
+    onPanelChange,
   });
-  const reportExtensionError = useCallback((error: Error, info: ExtensionErrorInfo): void => {
-    onExtensionErrorRef.current?.(error, info);
-  }, []);
-  const reportVisibleChange = useCallback((next: boolean): void => {
-    try {
-      onVisibleChangeRef.current?.(next);
-    } catch (error) {
-      // eslint-disable-next-line no-console
-      console.error("[dev-toolbar] onVisibleChange handler threw.", error);
-    }
-  }, []);
-  const reportPositionChange = useCallback((next: ToolbarPosition): void => {
-    try {
-      onPositionChangeRef.current?.(next);
-    } catch (error) {
-      // eslint-disable-next-line no-console
-      console.error("[dev-toolbar] onPositionChange handler threw.", error);
-    }
-  }, []);
-  const reportPanelChange = useCallback((next: string | null): void => {
-    try {
-      onPanelChangeRef.current?.(next);
-    } catch (error) {
-      // eslint-disable-next-line no-console
-      console.error("[dev-toolbar] onPanelChange handler threw.", error);
-    }
-  }, []);
-
-  useEffect(() => {
-    if (lastNotifiedVisibleRef.current === effectiveVisible) return;
-    lastNotifiedVisibleRef.current = effectiveVisible;
-    for (const subscriber of Array.from(visibilitySubscribersRef.current)) {
-      subscriber(effectiveVisible);
-    }
-  }, [effectiveVisible]);
-
-  // The baseline is the snapshot the *first render* saw, not the one that
-  // exists when the observer subscribes: React runs a descendant's effects
-  // before the parent's, so a child calling `setVisible`/`setPosition`/
-  // `openPanel` in its own mount effect has already mutated the store by the
-  // time this effect runs. Baselining here would swallow exactly that change.
-  // Reading through the store rather than the rendered `state` keeps
-  // hydration honest too — `state` is the *server* snapshot on the first
-  // client render, so it would make every persisted preference look like a
-  // change and fire the callbacks on mount.
-  const observedStateRef = useRef(store.getSnapshot());
-  useEffect(() => {
-    const observe = () => {
-      const previous = observedStateRef.current;
-      const next = store.getSnapshot();
-      if (next === previous) return;
-      observedStateRef.current = next;
-      if (next.visible !== previous.visible) reportVisibleChange(next.visible);
-      if (next.position !== previous.position) reportPositionChange(next.position);
-      if (next.activePanelId !== previous.activePanelId) reportPanelChange(next.activePanelId);
-    };
-    // Reconcile before subscribing, so a mutation that landed between the
-    // first render and this line is reported rather than lost.
-    observe();
-    return store.subscribe(observe);
-  }, [store, reportVisibleChange, reportPositionChange, reportPanelChange]);
-
-  const controlWarningsRef = useRef(new Set<string>());
-  const previousVisibleControlledRef = useRef<boolean | null>(null);
-  const previousPositionControlledRef = useRef<boolean | null>(null);
-  const warnControlOnce = useCallback((key: string, message: string): void => {
-    if (controlWarningsRef.current.has(key)) return;
-    controlWarningsRef.current.add(key);
-    // eslint-disable-next-line no-console
-    console.warn(`[dev-toolbar] ${message}`);
-  }, []);
-
-  useEffect(() => {
-    const previousVisibleControlled = previousVisibleControlledRef.current;
-    if (previousVisibleControlled !== null && previousVisibleControlled !== visibleControlled) {
-      const transition = previousVisibleControlled
-        ? "controlled to uncontrolled"
-        : "uncontrolled to controlled";
-      warnControlOnce(
-        `visible:${transition}`,
-        `<DevToolbar> changed from ${transition} for "visible". Do not switch between controlled and uncontrolled props.`,
-      );
-    }
-    previousVisibleControlledRef.current = visibleControlled;
-
-    const previousPositionControlled = previousPositionControlledRef.current;
-    if (previousPositionControlled !== null && previousPositionControlled !== positionControlled) {
-      const transition = previousPositionControlled
-        ? "controlled to uncontrolled"
-        : "uncontrolled to controlled";
-      warnControlOnce(
-        `position:${transition}`,
-        `<DevToolbar> changed from ${transition} for "position". Do not switch between controlled and uncontrolled props.`,
-      );
-    }
-    previousPositionControlledRef.current = positionControlled;
-  }, [positionControlled, visibleControlled, warnControlOnce]);
-
-  useEffect(() => {
-    if (visibleControlled && onVisibleChangeRef.current === undefined) {
-      warnControlOnce(
-        "visible:missing-callback",
-        `<DevToolbar> controlled "visible" needs an "onVisibleChange" callback; internal visibility controls are inert.`,
-      );
-    }
-    if (positionControlled && onPositionChangeRef.current === undefined) {
-      warnControlOnce(
-        "position:missing-callback",
-        `<DevToolbar> controlled "position" needs an "onPositionChange" callback; internal position controls are inert.`,
-      );
-    }
-  }, [
-    hasPositionChangeHandler,
-    hasVisibleChangeHandler,
-    positionControlled,
-    visibleControlled,
-    warnControlOnce,
-  ]);
-
-  const setVisible = useCallback(
-    (next: boolean) => {
-      if (visibleControlled) {
-        if (next !== visibleProp) reportVisibleChange(next);
-        return;
-      }
-      store.setVisible(next);
-    },
-    [reportVisibleChange, store, visibleControlled, visibleProp],
-  );
-  // Reads the current effective visibility from the ref rather than closing
-  // over it, so the identity does not change on every visibility flip. That
-  // is not just churn: the keydown effect below depends on this callback, and
-  // a flip used to tear its listener down and add it back — silently changing
-  // the `window` listener order the two shortcut paths once relied on.
-  const toggleVisible = useCallback(() => setVisible(!effectiveVisibleRef.current), [setVisible]);
-  const setPosition = useCallback(
-    (next: ToolbarPosition) => {
-      if (positionControlled) {
-        if (next !== positionProp) reportPositionChange(next);
-        return;
-      }
-      store.setPosition(next);
-    },
-    [positionControlled, positionProp, reportPositionChange, store],
-  );
 
   // Client-only mount: the bar is never part of server HTML, so nothing to
   // hydrate or mismatch. Whether we've mounted can't be derived during
@@ -446,213 +220,20 @@ function DevToolbarRoot({
   // oxlint-disable-next-line react/set-state-in-effect
   useEffect(() => setMounted(true), []);
 
-  const extensions = useMemo(() => {
-    const merged: DevToolbarExtension[] = [];
-    const seen = new Set<string>();
-    for (const extension of [...extensionsProp, ...state.registered]) {
-      if (seen.has(extension.id)) continue;
-      seen.add(extension.id);
-      merged.push(extension);
-    }
-    return merged;
-  }, [extensionsProp, state.registered]);
-
-  // Keeps the extension list, not the aggregated commands, in a ref: every
-  // imperative path re-enumerates via `getCommands` below instead of reading
-  // a stale aggregation.
-  const extensionsRef = useRef(extensions);
-  // Written in render, not an effect: an effect would leave `getCommands()`
-  // a render behind the list it exists to enumerate.
-  // oxlint-disable-next-line react/refs
-  extensionsRef.current = extensions;
-
-  const getCommands = useCallback(() => collectCommands(extensionsRef.current), []);
-
-  /**
-   * The declarative snapshot behind `useToolbarCommands()`. Recomputed only
-   * when the extension list changes. Anything that must be current (a
-   * palette opening, `runCommand`) calls `getCommands()` instead.
-   */
-  const commands = useMemo(() => collectCommands(extensions), [extensions]);
-
-  useEffect(() => {
-    if (!enabled) return;
-    return registerCommandHost({ getCommands });
-  }, [enabled, getCommands]);
-
-  const scopedRunCommand = useCallback(
-    (id: string, input?: unknown) =>
-      invokeCommand(id, { input, scope: getCommands() }).then((outcome) => outcome.ok),
-    [getCommands],
-  );
-
-  const scopedInvokeCommand = useCallback(
-    <Out,>(id: string, input?: unknown) => invokeCommand<Out>(id, { input, scope: getCommands() }),
-    [getCommands],
-  );
-
-  // Contract version check, deduped by id (not object): an `extensions` array
-  // rebuilt inside render re-runs this effect every render, which without the
-  // ref would flood the console in exactly the case the warning is for.
-  const contractWarnedRef = useRef(new Set<string>());
-  useEffect(() => {
-    if (!enabled) return;
-    for (const extension of extensions) {
-      if (
-        extension.contractVersion !== undefined &&
-        extension.contractVersion !== CONTRACT_VERSION &&
-        !contractWarnedRef.current.has(extension.id)
-      ) {
-        contractWarnedRef.current.add(extension.id);
-        // eslint-disable-next-line no-console
-        console.warn(
-          `[dev-toolbar] extension "${extension.id}" targets contract version ` +
-            `${extension.contractVersion}, but this core implements ${CONTRACT_VERSION}. ` +
-            "It may not render correctly.",
-        );
-      }
-    }
-  }, [extensions, enabled]);
-
-  // A panel open when its extension becomes hidden must close, not just stop
-  // painting: `activePanelId` is persisted, so leaving it set would reopen the
-  // panel next reload. Only a *present and hidden* extension closes — an
-  // absent id is left alone, so a persisted panel survives until its
-  // extension registers.
-  useEffect(() => {
-    if (!enabled) return;
-    const active = state.activePanelId;
-    if (active === null) return;
-    const match = extensions.find((extension) => extension.id === active);
-    if (match?.hidden === true) store.closePanel(active);
-  }, [enabled, extensions, state.activePanelId, store]);
-
-  // start(api): once per extension id while it is present *and not hidden*.
-  // Core reports visibility and never pauses an extension on its behalf.
-  const runningRef = useRef(
-    new Map<string, { controller: AbortController; dispose?: () => void; start: unknown }>(),
-  );
-  const identityWarnedRef = useRef(new Set<string>());
-  useEffect(() => {
-    const running = runningRef.current;
-
-    // Disabling at runtime is a real teardown: abort every signal and run
-    // every dispose, rather than leaving timers alive until unmount.
-    if (!enabled) {
-      for (const [id, entry] of Array.from(running)) stopExtension(id, entry);
-      running.clear();
-      return;
-    }
-
-    // `hidden` means this extension does not exist for this actor. Running
-    // its collectors anyway would be exactly the leak `hidden` exists to
-    // prevent, so a hidden extension is stopped, not merely unpainted.
-    const present = new Set(
-      extensions.filter((extension) => extension.hidden !== true).map((extension) => extension.id),
-    );
-
-    // Copied: the loop deletes from `running`.
-    for (const [id, entry] of Array.from(running)) {
-      if (present.has(id)) continue;
-      stopExtension(id, entry);
-      running.delete(id);
-    }
-
-    for (const extension of extensions) {
-      if (extension.hidden === true || typeof extension.start !== "function") {
-        continue;
-      }
-      const existing = running.get(extension.id);
-      if (existing) {
-        // The running lifecycle belongs to the object that was started. If the
-        // consumer rebuilt the extension inside render, its state is silently
-        // lost. `{...ext, hidden}` keeps the same `start` reference, so this
-        // does not fire for that legitimate pattern.
-        if (existing.start !== extension.start && !identityWarnedRef.current.has(extension.id)) {
-          identityWarnedRef.current.add(extension.id);
-          // eslint-disable-next-line no-console
-          console.warn(
-            `[dev-toolbar] extension "${extension.id}" was rebuilt after it started. ` +
-              "Its start() lifecycle still belongs to the first object, so whatever " +
-              "that object owns is unreachable from what the bar now renders. Build " +
-              "extensions once, at module scope, not inside render.",
-          );
-        }
-        continue;
-      }
-      const controller = new AbortController();
-      const api: ExtensionRuntimeApi = {
-        signal: controller.signal,
-        isVisible: () => effectiveVisibleRef.current,
-        subscribeVisibility: (callback) => {
-          // The signal is documented as aborted on teardown, and this is the
-          // subscription abort must release, so an extension keeping only the
-          // signal is a legal reading of the contract. Already aborted at call
-          // time: subscribe to nothing rather than leak an unreleasable listener.
-          if (controller.signal.aborted) return () => {};
-
-          const subscriber = (next: boolean) => {
-            try {
-              callback(next);
-            } catch (error) {
-              // eslint-disable-next-line no-console
-              console.error(
-                `[dev-toolbar] extension "${extension.id}" threw from its ` +
-                  "subscribeVisibility() callback.",
-                error,
-              );
-            }
-          };
-          visibilitySubscribersRef.current.add(subscriber);
-
-          // Idempotent and removes the abort listener too, so nothing leaks
-          // regardless of whether the extension unsubscribes or the signal
-          // aborts first.
-          let released = false;
-          const unsubscribe = () => {
-            if (released) return;
-            released = true;
-            visibilitySubscribersRef.current.delete(subscriber);
-            controller.signal.removeEventListener("abort", unsubscribe);
-          };
-          controller.signal.addEventListener("abort", unsubscribe, { once: true });
-          return unsubscribe;
-        },
-        storage: createExtensionStorage(rawStorage, instanceId, extension.id),
-        getCommands: () => collectCommands(extensionsRef.current),
-        runCommand: (id: string, input?: unknown) =>
-          invokeCommand(id, { input, scope: collectCommands(extensionsRef.current) }).then(
-            (outcome) => outcome.ok,
-          ),
-        invokeCommand: <Out,>(id: string, input?: unknown) =>
-          invokeCommand<Out>(id, { input, scope: collectCommands(extensionsRef.current) }),
-        // Reads through the ref, like `getCommands`, so a snapshot taken now
-        // reflects the extension list now.
-        getDiagnostics: () => collectDiagnostics(extensionsRef.current),
-      };
-      const entry: {
-        controller: AbortController;
-        dispose?: () => void;
-        start: unknown;
-      } = { controller, start: extension.start };
-      running.set(extension.id, entry);
-      try {
-        const dispose = extension.start(api);
-        if (typeof dispose === "function") entry.dispose = dispose;
-      } catch (error) {
-        // eslint-disable-next-line no-console
-        console.error(`[dev-toolbar] extension "${extension.id}" threw from start().`, error);
-      }
-    }
-  }, [extensions, enabled, store, rawStorage, instanceId]);
-
-  useEffect(() => {
-    const running = runningRef.current;
-    return () => {
-      for (const [id, entry] of Array.from(running)) stopExtension(id, entry);
-      running.clear();
-    };
-  }, []);
+  useExtensionLifecycle({
+    enabled,
+    extensions,
+    activePanelId: state.activePanelId,
+    store,
+    rawStorage,
+    instanceId,
+    visibleRef,
+    subscribeVisibility,
+    getCommands,
+    runCommand: scopedRunCommand,
+    invokeCommand: scopedInvokeCommand,
+    getDiagnostics,
+  });
 
   // Style injection. `styleNonce` is in the deps because a host that resolves
   // its nonce asynchronously would otherwise inject before it arrives; the
@@ -663,24 +244,6 @@ function DevToolbarRoot({
     ensureStyles(undefined, undefined, undefined, styleNonce);
   }, [enabled, injectStyles, styleNonce]);
 
-  // Toggle shortcut.
-  const parsedShortcut = useMemo(
-    () =>
-      shortcut === null
-        ? null
-        : parseShortcut(
-            shortcut,
-            "Pass `shortcut={null}` to disable the toggle shortcut deliberately.",
-          ),
-    [shortcut],
-  );
-  // One listener for both shortcut paths — the toggle chord and the opt-in
-  // command bindings. Two listeners meant the toggle's `preventDefault()` made
-  // the command listener bail on `defaultPrevented` before it could warn about
-  // a command shadowed by the toggle, so precedence depended on which effect
-  // registered first. Here the toggle wins by construction: the chord is
-  // tested before the aggregation is consulted, and the guards run once.
-  //
   // Order against extensions matters and is deliberate: this effect is
   // declared *after* the `start(api)` effect, so a listener an extension put
   // up in `start()` is registered first and wins a chord both claim — its
@@ -690,94 +253,24 @@ function DevToolbarRoot({
   // (while the bar is hidden). Keep the declaration order. Core cannot warn
   // about the collision: it does not know which chords extension listeners
   // claim, and it may not import `ext/` to find out.
-  //
-  // Command bindings are opt-in because existing `shortcut` strings are often
-  // hints describing a host's own binding. They do not read visibility —
-  // hidden extensions already contribute no commands, and a visible-only rule
-  // would make the binding depend on UI state the command has nothing to do
-  // with. Effective vs store visibility (phase 3) is therefore irrelevant here.
-  useEffect(() => {
-    if (!enabled || typeof window === "undefined") return;
-    if (!parsedShortcut && !bindCommandShortcuts) return;
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (isIgnoredShortcutEvent(event)) return;
-      if (parsedShortcut !== null && matchesShortcut(event, parsedShortcut)) {
-        // Still enumerate: a command that declared this chord is otherwise
-        // silently unbound, which is the failure mode rule 3 exists to
-        // surface. Warn before toggling, so the report does not depend on
-        // what the visibility change does.
-        if (bindCommandShortcuts) {
-          const shadowed = findShortcutCommand(event, getCommands());
-          if (shadowed !== undefined) warnShortcutYieldsToToggle(shadowed.id);
-        }
-        event.preventDefault();
-        toggleVisible();
-        return;
-      }
-      // `parsedShortcut === null` (or unparseable) disables the toggle only;
-      // command bindings stay live.
-      if (!bindCommandShortcuts) return;
-      // Re-enumerated per keypress, so a shortcut a function-form `commands`
-      // starts declaring after mount binds without a re-render.
-      const command = findShortcutCommand(event, getCommands());
-      if (command === undefined) return;
-      event.preventDefault();
-      try {
-        void Promise.resolve(command.run()).catch((error: unknown) => {
-          reportShortcutCommandError(command.id, error);
-        });
-      } catch (error) {
-        reportShortcutCommandError(command.id, error);
-      }
-    };
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [bindCommandShortcuts, enabled, getCommands, parsedShortcut, toggleVisible]);
+  useToolbarShortcuts({
+    enabled,
+    shortcut,
+    bindCommandShortcuts,
+    toggleVisible,
+    getCommands,
+  });
 
   // Publish the height variables on the document element.
-  const rootRef = useRef<HTMLDivElement | null>(null);
   const shouldRender = enabled && mounted && effectiveVisible;
-  // What this instance owns, and therefore all it ever removes.
-  const heightVariables = useMemo(
-    () =>
-      instanceId === DEFAULT_INSTANCE_ID
-        ? [HEIGHT_VARIABLE, instanceHeightVariable(instanceId)]
-        : [instanceHeightVariable(instanceId)],
-    [instanceId],
-  );
-  useEffect(() => {
-    if (!enabled || typeof document === "undefined") return;
-    const root = document.documentElement;
-    const node = rootRef.current;
-    const write = (value: string) => {
-      for (const name of heightVariables) root.style.setProperty(name, value);
-    };
-    const clear = () => {
-      for (const name of heightVariables) root.style.removeProperty(name);
-    };
-    if (!shouldRender || !node) {
-      write("0px");
-      return clear;
-    }
-
-    const publish = () => write(`${Math.round(node.getBoundingClientRect().height)}px`);
-    publish();
-
-    if (typeof ResizeObserver === "undefined") return clear;
-    const observer = new ResizeObserver(publish);
-    observer.observe(node);
-    return () => {
-      observer.disconnect();
-      clear();
-    };
-  }, [
+  const rootRef = useHeightVariables({
     enabled,
     shouldRender,
-    heightVariables,
-    effectivePosition,
-    state.panelHeight,
-    state.activePanelId,
-  ]);
+    instanceId,
+    position: effectivePosition,
+    panelHeight: state.panelHeight,
+    activePanelId: state.activePanelId,
+  });
 
   /* oxlint-disable react/use-memo, react-hooks/exhaustive-deps -- reporter is stable; handler presence is the only context dependency. */
   const contextValue = useMemo<DevToolbarContextValue>(
@@ -884,37 +377,4 @@ function DevToolbarRoot({
         : null}
     </DevToolbarContext.Provider>
   );
-}
-
-/**
- * Listener is on `window`, so `document` handlers ran first: `defaultPrevented`
- * is how a host claims the chord. `isComposing` keeps IME out; `repeat` keeps a
- * held chord from auto-firing. Checked once, for both the toggle and the
- * command bindings; the focused element is deliberately not consulted.
- */
-function isIgnoredShortcutEvent(event: KeyboardEvent): boolean {
-  return event.defaultPrevented || event.isComposing || event.repeat;
-}
-
-/** Covers both a synchronous throw from `run()` and a rejected promise. */
-function reportShortcutCommandError(id: string, error: unknown): void {
-  // eslint-disable-next-line no-console
-  console.error(`[dev-toolbar] command "${id}" failed from its shortcut.`, error);
-}
-
-function stopExtension(
-  id: string,
-  entry: { controller: AbortController; dispose?: () => void },
-): void {
-  try {
-    entry.controller.abort();
-  } catch {
-    /* ignore */
-  }
-  try {
-    entry.dispose?.();
-  } catch (error) {
-    // eslint-disable-next-line no-console
-    console.error(`[dev-toolbar] extension "${id}" threw from its start() cleanup.`, error);
-  }
 }
