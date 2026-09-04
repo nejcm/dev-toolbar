@@ -1,19 +1,17 @@
 name: CI
 
 on:
-  # No `branches:` filter: it filters on the PR's *base* branch and silently
-  # matches nothing for stacked/slash-named branches.
+  # No `branches:` filter: it matches on the PR's *base* branch, which misses
+  # stacked/slash-named branches.
   #
-  # `types:` adds `ready_for_review` to the defaults — without it, a draft PR
-  # (job skips, check goes green) could be marked ready without re-running
-  # `verify`, merging with a stale green check. `converted_to_draft` is
-  # deliberately absent; see the job's `if:`.
+  # `ready_for_review` is added so a draft->ready flip re-runs `verify` instead
+  # of merging on a stale green check. `converted_to_draft` is deliberately
+  # absent; see the job's `if:`.
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
-    # Nothing `verify` runs reads prose. Skips only when *every* changed file
-    # matches, and only on this trigger — `workflow_call` has no path filter,
-    # so release.yml's gate is untouched. A skipped workflow reports no status,
-    # so if `verify` becomes a required check this needs a same-named no-op job.
+    # Only on this trigger — `workflow_call` has no path filter, so
+    # release.yml's gate is untouched. A skipped workflow reports no status, so
+    # if `verify` becomes a required check this needs a same-named no-op job.
     paths-ignore:
       - "**/*.md"
       - "docs/**"
@@ -23,23 +21,20 @@ on:
     inputs:
       called:
         description: >-
-          Always true when this workflow runs as a reusable workflow. Callers do
-          not need to pass it; the default supplies it. It exists only so the
-          release-commit skip below can tell "a push of a release commit" apart
-          from "a release workflow calling CI as its gate" — on `workflow_call`
-          the whole `github` context (including `event_name`) belongs to the
-          *caller's* triggering event, so `github` alone cannot distinguish them.
+          Always true when reusable. Lets the release-commit skip below tell a
+          release push apart from a release workflow calling CI as its gate —
+          on `workflow_call`, `github.event_name` belongs to the caller, so
+          `github` alone can't distinguish them.
         type: boolean
         required: false
         default: true
       ref:
         description: >-
-          Commit-ish to check out. Callers that gate a release MUST pass the
-          release tag: on `workflow_call` the checkout defaults to the
-          *caller's* `github.sha`, which for a release run is the push that
-          started it — not the release commit the caller created mid-run. Left
-          empty this verifies the triggering ref, which is what `pull_request`
-          wants.
+          Commit-ish to check out. Release callers MUST pass the release tag:
+          on `workflow_call` checkout defaults to the caller's `github.sha`,
+          which is the push that started the run, not the release commit
+          created mid-run. Empty verifies the triggering ref (what
+          `pull_request` wants).
         type: string
         required: false
         default: ""
@@ -47,11 +42,10 @@ on:
 permissions:
   contents: read
 
-# `github.workflow`/`github.ref` resolve to the *caller's* values on
-# `workflow_call`, so a release-triggered CI run lands in the caller's
-# concurrency group, not this one — the caller must declare its own
-# `concurrency` with `cancel-in-progress: false` so a release isn't cancelled
-# mid-flight.
+# `github.workflow`/`github.ref` resolve to the caller's values on
+# `workflow_call`, so a release-triggered run lands in the caller's
+# concurrency group — the caller needs its own `concurrency` with
+# `cancel-in-progress: false` so a release isn't cancelled mid-flight.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -60,15 +54,14 @@ jobs:
   verify:
     name: verify
     runs-on: ubuntu-latest
-    # Two skips hand the release commit to `release.yml`'s `gate`, which is the
-    # CI that actually blocks publishing.
-    #  1. The release PR — which GitHub does trigger, despite `GITHUB_TOKEN`
-    #     opening it. The title marker is a backstop for the branch prefix, in
-    #     case `release-please-config.json`'s title patterns change it; the
-    #     cost is that a hand-written `chore(release):` PR would skip its CI.
-    #  2. Draft PRs. `converted_to_draft` is deliberately not a trigger: a
-    #     ready->draft flip changes no code, and would replace a real
-    #     (possibly red) status with a skipped green one.
+    # Two skips hand the release commit to release.yml's `gate`, the CI that
+    # actually blocks publishing:
+    #  1. The release PR (GitHub triggers it despite `GITHUB_TOKEN` opening
+    #     it). The title marker backstops the branch prefix in case
+    #     release-please-config.json's title pattern changes; cost is a
+    #     hand-written `chore(release):` PR skipping CI.
+    #  2. Draft PRs — `converted_to_draft` isn't a trigger since that flip
+    #     changes no code and would replace a real status with a skipped one.
     if: >-
       (github.event_name != 'pull_request'
       || !(startsWith(github.head_ref, 'release-please--')
@@ -77,17 +70,13 @@ jobs:
       || github.event.pull_request.draft != true)
     timeout-minutes: 15
     steps:
-      # Third-party actions are pinned to a full commit SHA with the resolved
-      # version in a trailing comment (tags are mutable). `.github/dependabot.yml`
-      # bumps these by reading the `# vX.Y.Z` comment — don't replace with tags
-      # without removing that. Local composite actions under `.github/actions/`
-      # are referenced by path, not SHA — this repo's own code, covered by the
-      # checkout; Dependabot pins inside them the same way.
+      # Third-party actions pin a full commit SHA with the version in a
+      # trailing comment (tags are mutable); dependabot.yml bumps by reading
+      # that comment. Local composite actions are referenced by path, not
+      # SHA — they're this repo's own code, covered by the checkout.
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          # Empty is what the action already defaults to, so `pull_request`
-          # runs are unaffected. See the `ref` input.
           ref: ${{ inputs.ref }}
 
       # bun + Node + install cache + `bun install --frozen-lockfile`; details
@@ -95,59 +84,47 @@ jobs:
       - name: Set up job
         uses: ./.github/actions/setup-job
 
-      # `verify:static` is `verify` without the `vitest run` at the end:
-      # format:check, typecheck, lint, knip, build, check:package. The Coverage
-      # step below runs the same 2,706 tests with instrumentation on, so a plain
-      # `bun run verify` here paid for the suite twice — ~90s of the job spent
-      # re-proving what the gating run proves anyway. Contributors still get the
-      # whole thing from `bun run verify`; only CI splits it.
-      #
-      # `format:check` leads because it's cheap and is the only enforcement for
-      # commits that skip the `pre-commit` hook (web edits, `--no-verify`,
-      # Dependabot's YAML bumps, etc). The build here is what both the
-      # jest-consumer fixture and the size report below read.
+      # `verify:static` is `verify` minus `vitest run` (format:check,
+      # typecheck, lint, knip, build, check:package) — Coverage below runs the
+      # same suite instrumented, so a plain `verify` here paid for it twice
+      # (~90s). Contributors still get the full `bun run verify`; only CI
+      # splits it. `format:check` leads since it's cheap and the only
+      # enforcement for commits that skip the pre-commit hook.
       - name: Verify (format, typecheck, lint, unused code, build, package shape)
         run: bun run verify:static
 
-      # This fixture must stay outside release.yml's only credentialed job.
-      # `--ignore-scripts` is not sufficient on its own: code Jest loads can
-      # still mint the OIDC token, so the whole test must leave that job.
+      # Must stay outside release.yml's only credentialed job — code Jest
+      # loads can still mint the OIDC token, so `--ignore-scripts` alone isn't
+      # enough; the whole test has to live elsewhere.
       #
-      # bun, not `npm ci`. What the fixture exercises is Jest's CommonJS
-      # resolver against the real `exports` map, and `sync-package.mjs` places
-      # the package by hand — no installer ever resolves `@nejcm/dev-toolbar`
-      # here, so npm was contributing nothing but ~2m30 per run: it cannot read
-      # the bun cache the `Set up job` step above has already warmed.
+      # bun, not `npm ci`: sync-package.mjs places the package by hand, so no
+      # installer ever resolves `@nejcm/dev-toolbar` here — npm was paying
+      # ~2m30/run without reading the bun cache `Set up job` already warmed.
       - name: Install the jest-consumer fixture
         run: bun install --frozen-lockfile --ignore-scripts
         working-directory: test/fixtures/jest-consumer
 
-      # Not the `test:jest-consumer` script, which builds first for the sake of
-      # someone running it locally: `verify:static` above already produced the
-      # `dist/` this reads, and tsup is ~16s.
+      # Not `test:jest-consumer`, which rebuilds for local use — verify:static
+      # already produced the `dist/` this reads.
       - name: Verify the packaged CommonJS consumer
         run: bun run --cwd test/fixtures/jest-consumer test
 
-      # `examples/` is outside every gate in `verify` — its own tsconfig, its
-      # own dependencies, excluded from vitest, oxlint and knip. That was fine
-      # while the playground was only a manual-verification app; it stopped
-      # being fine when it grew `plugins/devToolbarAgent.ts`, the dev-server
-      # half of `/ext/agent`'s reporter, which the README tells consumers to
-      # copy. `node --test` uses Node's own type stripping — no build, no test
-      # dependency — and covers the malformed-body cases that once took the
-      # dev server down. Needs the `dist/` `verify:static` just built, since the
-      # playground links the package with `file:../..`.
-      # No install: the suite imports only `node:*` and the plugin, whose one
-      # `vite` import is `import type` and is erased by the type stripping.
-      # Verified from a directory with no `node_modules` at all.
+      # `examples/` sits outside every `verify` gate (own tsconfig/deps,
+      # excluded from vitest/oxlint/knip) — fine while the playground was
+      # manual-only, not once it grew plugins/devToolbarAgent.ts, the
+      # dev-server half of /ext/agent's reporter that the README tells
+      # consumers to copy. `node --test` uses Node's type stripping (no build,
+      # no deps) and covers the malformed-body cases that once crashed the dev
+      # server. Needs the dist/ verify:static just built (file:../.. link); no
+      # install since the suite only imports node:* and the plugin's
+      # type-only `vite` import.
       - name: Test the playground's dev-server plugin
         run: bun run test
         working-directory: examples/playground
 
-      # This one does need the link, so it follows the install. Not
-      # `--frozen-lockfile`: the `file:../..` dependency is re-linked against
-      # the `dist/` `verify:static` just built, and bun declines to restore
-      # that one from cache.
+      # Needs the link, so it follows the install above. Not
+      # --frozen-lockfile: file:../.. re-links against the dist/ just built,
+      # and bun won't restore that from cache.
       - name: Install the playground
         run: bun install
         working-directory: examples/playground
@@ -156,26 +133,24 @@ jobs:
         run: bun run typecheck
         working-directory: examples/playground
 
-      # `!cancelled()` rather than `always()`: both reporting steps below are
-      # useful on a failed `verify:static` but shouldn't block a cancellation.
+      # `!cancelled()` rather than `always()`: useful on a failed
+      # verify:static, but shouldn't block a cancellation.
       #
       # The package's pitch is low overhead across 11 entry points, so this is
-      # the number a reviewer most wants. Reads the `dist/` `verify:static` just
-      # built.
+      # the number a reviewer most wants.
       - name: Report bundle size
         if: ${{ !cancelled() }}
         uses: ./.github/actions/report-bundle-size
 
-      # Report-only: swallows its own exit code (see the action). The `knip`
-      # inside `verify:static` above is the real gate; this re-runs it purely
-      # for the report, even when that step failed.
+      # Report-only (swallows its own exit code, see the action). knip inside
+      # verify:static above is the real gate; this re-runs it for the report
+      # even when that step failed.
       - name: Knip
         if: ${{ !cancelled() }}
         uses: ./.github/actions/knip-check
 
-      # The only run of the suite in this job, now that `verify:static` above
-      # stops short of `vitest run`. The floors in `vitest.config.ts` gate on
-      # top of the 2,706 tests themselves.
+      # The only run of the suite now that verify:static stops short of
+      # `vitest run`. vitest.config.ts's floors gate on top of it.
       - name: Coverage
         run: bun run test:coverage
 

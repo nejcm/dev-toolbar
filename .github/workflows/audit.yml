@@ -1,19 +1,15 @@
 name: Audit
 
-# `bun audit` used to be the last step of `ci.yml`, where it cost ~4m20 of every
-# pull request and gated nothing (`continue-on-error: true` swallowed its exit
-# code). It is on a schedule instead because its answer does not depend on the
-# diff: it compares the lockfile against GitHub's advisory database, so two
-# commits a day apart get different results from identical code, and a commit
-# from last week can become vulnerable without anyone pushing anything. A daily
-# run catches that; a per-PR run cannot.
+# `bun audit` used to be the last step of ci.yml (~4m20/PR, gated nothing —
+# continue-on-error swallowed its exit code). It's scheduled instead because
+# its answer depends on the advisory database, not the diff: a commit can go
+# vulnerable without anyone pushing, which only a daily run catches.
 #
-# The cost is real: `bun audit` in bun 1.4.0 takes minutes even on a warm local
-# machine, so `timeout-minutes` below is a guard, not a formality.
+# `bun audit` takes minutes even on a warm machine, so `timeout-minutes` below
+# is a real guard, not a formality.
 on:
   schedule:
-    # 06:00 UTC daily. Cron on GitHub is best-effort and skews under load; this
-    # is a report, so a late run is fine.
+    # 06:00 UTC daily. GitHub cron is best-effort; a late run is fine for a report.
     - cron: "0 6 * * *"
   workflow_dispatch:
 
@@ -33,24 +29,22 @@ jobs:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      # For bun itself and the lockfile-shaped install. The advisory lookup
-      # reads `bun.lock`, not `node_modules`, but `bun audit` still wants a
-      # resolved tree.
+      # `bun audit` still wants a resolved tree even though the advisory
+      # lookup itself reads bun.lock, not node_modules.
       - name: Set up job
         uses: ./.github/actions/setup-job
 
-      # One run. `bun audit` takes minutes (4m20 measured in CI, worse on a
-      # warm local machine), so invoking it again for a machine-readable copy
-      # would double the slowest thing here. Its text output is parsed instead,
-      # and the shape below is the one this repo has actually observed:
+      # One run only — `bun audit` takes minutes (4m20 measured in CI), so a
+      # second invocation for a machine-readable copy would double the
+      # slowest step here. Text output is parsed instead; observed shape:
       #
       #     esbuild@0.27.7
       #       tsup > bundle-require > esbuild
       #       low: esbuild allows arbitrary file read ... - https://...
       #     1 vulnerability (1 low)
       #
-      # `timeout-minutes` on the step, not just the job: a registry stall should
-      # fail this step rather than sit until the job's own limit.
+      # `timeout-minutes` is on the step, not just the job, so a registry
+      # stall fails fast instead of riding out the job's own limit.
       - name: Audit dependencies
         id: audit
         timeout-minutes: 12
@@ -65,15 +59,15 @@ jobs:
           blocking=$(grep -cE '^[[:space:]]+(high|critical):' audit.txt || true)
           echo "blocking=${blocking}" >> "$GITHUB_OUTPUT"
 
-          # A non-zero exit means bun found something. If it did and no severity
-          # line matched, the gate below would wave it through — bun changed its
-          # output and this workflow is now blind. Say so rather than pass.
+          # Non-zero exit but no severity line matched means bun's output
+          # format changed and the gate below would wave it through blind.
+          # Fail loudly instead.
           if [ "$code" -ne 0 ] && [ "$found" -eq 0 ]; then
             echo "::error::bun audit reported findings (exit ${code}) but no severity line was recognised; the gate in this workflow is stale. Read the job summary."
             exit 1
           fi
 
-      # Written before the gate below, so the findings land on the run that fails.
+      # Runs before the gate below so findings land on the run that fails.
       - name: Report
         if: ${{ !cancelled() }}
         run: |
@@ -85,14 +79,12 @@ jobs:
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
 
-      # Only high and critical fail. Everything below that is a report, which is
-      # what `ci.yml`'s old `continue-on-error` was really expressing — today's
-      # baseline is one `low` (esbuild's Windows-only dev-server file read,
-      # reached through tsup and vitest, never shipped in `dist/`). Failing on
-      # that daily would train everyone to ignore this workflow.
-      # `success() &&` is load-bearing: any `if:` at all replaces the implicit
-      # success check, so without it a failed audit step would fall through to
-      # here and report an empty count.
+      # Only high/critical fail; today's baseline is one `low` (esbuild's
+      # Windows-only dev-server file read via tsup/vitest, never shipped in
+      # dist/) — failing on that daily would train everyone to ignore this
+      # workflow. `success() &&` is load-bearing: an `if:` replaces the
+      # implicit success check, so without it a failed audit step would fall
+      # through here and report an empty count.
       - name: Fail on high or critical
         if: ${{ success() && steps.audit.outputs.blocking != '0' }}
         run: |
