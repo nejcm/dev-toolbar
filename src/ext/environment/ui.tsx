@@ -1,7 +1,16 @@
-import { useState } from "react";
 import type { ReactNode } from "react";
-import { writeClipboardText } from "../../runtime";
-import { useExtensionSurface } from "../shared/hooks";
+import {
+  Action,
+  Banner,
+  Chip,
+  EmptyState,
+  Note,
+  Row,
+  Rows,
+  Tag,
+  useCopyStatus,
+  useExtensionSurface,
+} from "@nejcm/dev-toolbar/kit";
 import { ensureEnvironmentStyles } from "./css";
 import { GROUP_LABELS } from "./types";
 import type { EnvironmentFieldView, EnvironmentGroup, EnvironmentSnapshot } from "./types";
@@ -50,14 +59,18 @@ export function EnvironmentChip({
     : `${label}: unknown — no context supplied to environment()`;
 
   const inner = (
-    <span data-dtb-part="env-chip" data-dtb-severity={snapshot.severity}>
-      <span data-dtb-part="env-dot" aria-hidden="true" />
-      <span data-dtb-part="env-label">env</span>
-      <span data-dtb-part="env-value" data-dtb-env={kind}>
-        {kind}
-      </span>
+    <Chip
+      label="env"
+      value={kind}
+      severity={snapshot.severity}
+      data-dtb-part="env-chip"
+      data-dtb-severity={snapshot.severity}
+      dotProps={{ "data-dtb-part": "env-dot" }}
+      labelProps={{ "data-dtb-part": "env-label", "data-dtb-kind": "label" }}
+      valueProps={{ "data-dtb-part": "env-value", "data-dtb-env": kind }}
+    >
       {snapshot.impersonating ? <span data-dtb-part="env-alert">impersonating</span> : null}
-    </span>
+    </Chip>
   );
 
   if (isOverflowed) {
@@ -94,17 +107,9 @@ export function EnvironmentPanel({ runtime, injectStyles, styleNonce }: PanelPro
     ensureEnvironmentStyles,
     styleNonce,
   );
-  const [copied, setCopied] = useState<"idle" | "ok" | "failed">("idle");
-
-  // `/runtime`'s shared writer, not a hand-rolled one: a missing clipboard API
-  // and a rejected write are the same answer to this panel, and four copies of
-  // that judgement is three too many. See `runtime/clipboard.ts`.
-  const copy = (text: string) => {
-    void writeClipboardText(text).then((ok) => setCopied(ok ? "ok" : "failed"));
-  };
-
   const groups: EnvironmentGroup[] = ["build", "session", "client"];
   const anythingSupplied = snapshot.fields.some((field) => field.source === "supplied");
+  const { status: copyStatus, copy } = useCopyStatus();
 
   return (
     <div
@@ -113,27 +118,27 @@ export function EnvironmentPanel({ runtime, injectStyles, styleNonce }: PanelPro
       data-dtb-impersonating={snapshot.impersonating ? "true" : "false"}
     >
       {snapshot.impersonating ? (
-        <p data-dtb-part="env-banner" role="alert">
+        <Banner data-dtb-part="env-banner" role="alert">
           Impersonation is active. Everything you do here happens as somebody else.
-        </p>
+        </Banner>
       ) : null}
 
       <div data-dtb-part="env-body" data-dtb-bleed="">
         {anythingSupplied ? null : (
-          <div data-dtb-part="env-empty">
-            <p data-dtb-part="env-note">
+          <EmptyState data-dtb-part="env-empty">
+            <Note data-dtb-part="env-note">
               No environment context was supplied, so this environment is <strong>unknown</strong> —
               not "local". Nothing here is guessed from the hostname, and nothing is read from{" "}
               <code>process.env</code>.
-            </p>
-            <p data-dtb-part="env-note">
+            </Note>
+            <Note data-dtb-part="env-note">
               Pass what you know:{" "}
               <code>
                 {'environment({ context: { environment: "staging", release: __RELEASE__ } })'}
               </code>
               , or a function for values that change.
-            </p>
-          </div>
+            </Note>
+          </EmptyState>
         )}
 
         {groups.map((group) => {
@@ -144,80 +149,79 @@ export function EnvironmentPanel({ runtime, injectStyles, styleNonce }: PanelPro
               <h3 data-dtb-part="env-group-title" data-dtb-legend="">
                 {GROUP_LABELS[group]}
               </h3>
-              <dl data-dtb-part="env-rows">
+              <Rows data-dtb-part="env-rows">
                 {fields.map((field) => (
-                  <Row key={field.id} field={field} />
+                  <FieldRow key={field.id} field={field} />
                 ))}
-              </dl>
+              </Rows>
             </section>
           );
         })}
       </div>
 
       <div data-dtb-part="env-actions" data-dtb-bleed="">
-        <button
-          type="button"
+        <Action
           data-dtb-part="env-action"
           data-dtb-action="copy"
           onClick={() => copy(runtime.snapshotText())}
         >
           Copy summary
-        </button>
-        <button
-          type="button"
+        </Action>
+        <Action
           data-dtb-part="env-action"
           data-dtb-action="copy-json"
           onClick={() => copy(JSON.stringify(runtime.diagnostics(), null, 2))}
         >
           Copy JSON
-        </button>
-        <span data-dtb-part="env-note" role="status">
-          {copied === "failed"
+        </Action>
+        <Note as="span" data-dtb-part="env-note" role="status">
+          {copyStatus === "failed"
             ? "Clipboard unavailable."
-            : copied === "ok"
+            : copyStatus === "ok"
               ? `Copied — ${snapshot.maskedCount} value${snapshot.maskedCount === 1 ? "" : "s"} masked.`
               : `Credential-shaped values and email addresses are masked before anything is copied${snapshot.maskedCount > 0 ? ` (${snapshot.maskedCount} here)` : ""}. Read it before you paste it.`}
-        </span>
+        </Note>
       </div>
     </div>
   );
 }
 
-function Row({ field }: { field: EnvironmentFieldView }): ReactNode {
+function FieldRow({ field }: { field: EnvironmentFieldView }): ReactNode {
   return (
-    <>
-      <dt data-dtb-part="env-row-label">{field.label}</dt>
-      <dd
-        data-dtb-part="env-row-value"
-        data-dtb-field={field.id}
-        data-dtb-source={field.source}
-        data-dtb-masked={field.masked ? "true" : "false"}
-        data-dtb-alarming={field.alarming ? "true" : "false"}
-      >
-        {field.source === "missing" ? (
-          <span data-dtb-part="env-missing">not supplied</span>
-        ) : (
-          field.value
-        )}
-        {field.masked ? (
-          <span
-            data-dtb-part="env-tag"
-            data-dtb-tag="masked"
-            title="This value was masked before it was rendered or copied."
-          >
-            masked
-          </span>
-        ) : null}
-        {field.source === "detected" ? (
-          <span
-            data-dtb-part="env-tag"
-            data-dtb-tag="detected"
-            title="Read from this browser, not from the deployment."
-          >
-            detected
-          </span>
-        ) : null}
-      </dd>
-    </>
+    <Row
+      label={field.label}
+      labelProps={{ "data-dtb-part": "env-row-label" }}
+      valueProps={{
+        "data-dtb-part": "env-row-value",
+        "data-dtb-field": field.id,
+        "data-dtb-source": field.source,
+        "data-dtb-masked": field.masked ? "true" : "false",
+        "data-dtb-alarming": field.alarming ? "true" : "false",
+      }}
+    >
+      {field.source === "missing" ? (
+        <span data-dtb-part="env-missing">not supplied</span>
+      ) : (
+        field.value
+      )}
+      {field.masked ? (
+        <Tag
+          data-dtb-part="env-tag"
+          data-dtb-tag="masked"
+          title="This value was masked before it was rendered or copied."
+        >
+          masked
+        </Tag>
+      ) : null}
+      {field.source === "detected" ? (
+        <Tag
+          data-dtb-part="env-tag"
+          data-dtb-tag="detected"
+          title="Read from this browser, not from the deployment."
+        >
+          detected
+        </Tag>
+      ) : null}
+    </Row>
   );
 }

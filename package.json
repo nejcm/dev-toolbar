@@ -56,6 +56,16 @@
         "default": "./dist/runtime.cjs"
       }
     },
+    "./kit": {
+      "import": {
+        "types": "./dist/kit.d.ts",
+        "default": "./dist/kit.js"
+      },
+      "require": {
+        "types": "./dist/kit.d.cts",
+        "default": "./dist/kit.cjs"
+      }
+    },
     "./ext/agent": {
       "import": {
         "types": "./dist/ext/agent.d.ts",

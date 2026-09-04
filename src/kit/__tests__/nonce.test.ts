@@ -1,9 +1,3 @@
-/**
- * The one nonce policy the seven factories share: the factory option wins, an
- * empty option defers to the slot prop core forwards, and neither means
- * `undefined`. Each factory's own tests assert it end to end; this pins the
- * rule itself.
- */
 import { describe, expect, it } from "vitest";
 import { resolveStyleNonce } from "../nonce";
 

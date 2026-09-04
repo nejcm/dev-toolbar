@@ -10,7 +10,7 @@
  */
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { act, fireEvent } from "@testing-library/react";
-import { cleanupToolbar, mountToolbar } from "@nejcm/dev-toolbar/testing";
+import { cleanupToolbar, installClipboard, mountToolbar } from "@nejcm/dev-toolbar/testing";
 import { createMemoryStorage } from "../../../core/storage";
 import { CONTRACT_VERSION } from "../../../core/contract";
 import { diagnostics } from "../index";
@@ -135,21 +135,22 @@ describe("the panel", () => {
   });
 
   it("copies exactly what it displays", async () => {
-    const writes: string[] = [];
-    vi.stubGlobal("navigator", {
-      clipboard: { writeText: async (text: string) => void writes.push(text) },
-    });
-    const { toolbar } = mount({}, [{ id: "n", label: "N", diagnostics: () => ({ n: 1 }) }]);
-    act(() => toolbar.openPanel("diagnostics"));
-    const displayed = preview()?.textContent ?? "";
+    const clipboard = installClipboard();
+    try {
+      const { toolbar } = mount({}, [{ id: "n", label: "N", diagnostics: () => ({ n: 1 }) }]);
+      act(() => toolbar.openPanel("diagnostics"));
+      const displayed = preview()?.textContent ?? "";
 
-    await act(async () => {
-      fireEvent.click(button("copy"));
-    });
+      await act(async () => {
+        fireEvent.click(button("copy"));
+      });
 
-    expect(writes).toHaveLength(1);
-    expect(writes[0]).toBe(displayed);
-    expect(document.body.textContent).toContain("Copied Markdown");
+      expect(clipboard.writes).toHaveLength(1);
+      expect(clipboard.writes[0]).toBe(displayed);
+      expect(document.body.textContent).toContain("Copied Markdown");
+    } finally {
+      clipboard.restore();
+    }
   });
 
   it("says so rather than lying when the clipboard is unavailable", async () => {

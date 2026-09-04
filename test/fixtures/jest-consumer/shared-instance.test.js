@@ -24,6 +24,30 @@ test("both entries resolve to the same core module", () => {
   expect(testing.createNullStorage).toBe(main.createNullStorage);
 });
 
+test("extensions resolve the same kit module as the consumer", () => {
+  jest.isolateModules(() => {
+    const actual = jest.requireActual("@nejcm/dev-toolbar/kit");
+    const resolveStyleNonce = jest.fn(actual.resolveStyleNonce);
+    jest.doMock("@nejcm/dev-toolbar/kit", () => ({ ...actual, resolveStyleNonce }));
+
+    const { flags } = require("@nejcm/dev-toolbar/ext/flags");
+    const extension = flags();
+
+    extension.compact({
+      isOverflowed: false,
+      isPanelOpen: false,
+      density: "comfortable",
+      openPanel: () => {},
+      closePanel: () => {},
+      togglePanel: () => {},
+      styleNonce: "host-nonce",
+    });
+
+    expect(resolveStyleNonce).toHaveBeenCalledWith(undefined, "host-nonce");
+    jest.dontMock("@nejcm/dev-toolbar/kit");
+  });
+});
+
 test("useDevToolbar() from the main entry works inside renderWithToolbar()", () => {
   const seen = [];
 

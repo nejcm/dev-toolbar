@@ -10,6 +10,10 @@ export default defineConfig({
     // separately, through Node's own resolver, in testing/__tests__/exports.
     alias: [
       {
+        find: /^@nejcm\/dev-toolbar\/kit$/,
+        replacement: resolve("./src/kit/index.ts"),
+      },
+      {
         find: /^@nejcm\/dev-toolbar\/testing$/,
         replacement: resolve("./src/testing/index.ts"),
       },
@@ -43,17 +47,22 @@ export default defineConfig({
       // lines out of reach of the floors below. Don't reintroduce an exclude
       // list without measuring coverage both ways first.
       exclude: ["src/**/*.test.{ts,tsx}"],
-      // Floors, not targets: measured at the Phase 8 ratchet — statements
-      // 93.06, branches 85.26, functions 93.57, lines 95.38. The floors leave
-      // roughly two to three points of room for ordinary movement while a
-      // real regression still fails the build. `functions` is tightest in
-      // practice — if it fires on ordinary work, add tests rather than
-      // lowering the number.
+      // Floors, not targets. Re-measured at the end of the extension-kit tier C
+      // work — statements 93.84, branches 86.40, functions 95.08, lines 96.09,
+      // every one of them up on the Phase 8 ratchet (93.06 / 85.26 / 93.57 /
+      // 95.38) because the kit is small, densely tested code and the seven
+      // extensions handed it the branches they used to carry themselves.
+      // The floors keep roughly two to three points of room for ordinary
+      // movement while a real regression still fails the build; `branches` and
+      // `functions` are raised here to hold the gain rather than let it drain
+      // away unnoticed. `statements` already sat at that margin, so it stays.
+      // `functions` is tightest in practice — if it fires on ordinary work, add
+      // tests rather than lowering the number.
       thresholds: {
         statements: 91,
-        branches: 82,
-        functions: 91,
-        lines: 93,
+        branches: 84,
+        functions: 92,
+        lines: 94,
       },
     },
   },

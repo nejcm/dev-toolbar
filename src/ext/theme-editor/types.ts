@@ -16,6 +16,7 @@
  *   about to be written into the page; redacted because it's about to leave
  *   on a clipboard.
  */
+import { matchesQuery as matchesKitQuery, type SeverityWithOverride } from "@nejcm/dev-toolbar/kit";
 
 /** What kind of value a token holds — decides the editor, parsing strictness, and (per `render()` in the runtime) whether the value may be masked by key name. */
 export type TokenType = "color" | "length" | "number" | "string";
@@ -442,7 +443,7 @@ export interface ThemeSnapshot {
 }
 
 /** Chip/row colour. Same vocabulary the other extensions use. */
-export type TokenSeverity = "unknown" | "warn" | "bad" | "override";
+export type TokenSeverity = Exclude<SeverityWithOverride, "ok">;
 
 export function severityFor(view: TokenView): TokenSeverity {
   if (view.applyError !== undefined) return "bad";
@@ -452,11 +453,7 @@ export function severityFor(view: TokenView): TokenSeverity {
 }
 
 export function matchesQuery(view: TokenView, query: string): boolean {
-  const needle = query.trim().toLowerCase();
-  if (needle === "") return true;
-  return [view.name, view.label, view.description, view.group]
-    .filter((part): part is string => typeof part === "string")
-    .some((part) => part.toLowerCase().includes(needle));
+  return matchesKitQuery([view.name, view.label, view.description, view.group], query);
 }
 
 /* -------------------------------------------------------------------------- */

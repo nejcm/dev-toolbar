@@ -1058,6 +1058,8 @@ describe("persistence", () => {
     });
     expect(parseOverrides("[1,2]")).toEqual({});
     expect(parseOverrides("nope")).toEqual({});
+    expect(Object.getPrototypeOf(parseOverrides(null))).toBeNull();
+    expect(Object.getPrototypeOf(parseOverrides("nope"))).toBeNull();
   });
 });
 
@@ -1344,13 +1346,19 @@ describe("surface migration — one reconciler, one owner", () => {
     }
   });
 
-  it("treats pollMs: NaN as the default interval — NaN makes setInterval fire every tick", () => {
+  it("uses the theme-editor default when pollMs is non-finite", () => {
     vi.useFakeTimers();
     try {
-      const interval = vi.spyOn(globalThis, "setInterval");
-      started({ pollMs: Number.NaN });
-      expect(interval).toHaveBeenCalled();
-      expect(interval.mock.calls[0]?.[1]).toBe(1000);
+      const first = makeApp();
+      const runtime = started({ pollMs: Number.NaN });
+      runtime.setOverride("--brand-500", "#ff0000");
+      first.remove();
+      const second = makeApp();
+
+      vi.advanceTimersByTime(999);
+      expect(second.style.getPropertyValue("--brand-500")).toBe("");
+      vi.advanceTimersByTime(1);
+      expect(second.style.getPropertyValue("--brand-500")).toBe("#ff0000");
     } finally {
       vi.useRealTimers();
     }

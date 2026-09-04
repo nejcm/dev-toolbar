@@ -4,7 +4,8 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, fireEvent } from "@testing-library/react";
-import { cleanupToolbar, mountToolbar } from "@nejcm/dev-toolbar/testing";
+import { cleanupToolbar, installClipboard, mountToolbar } from "@nejcm/dev-toolbar/testing";
+import type { ClipboardStub } from "@nejcm/dev-toolbar/testing";
 import { collectCommands } from "../../../core/commands";
 import { createMemoryStorage } from "../../../core/storage";
 import { flags, readStoredOverrides } from "../index";
@@ -32,7 +33,8 @@ const CATALOGUE: FlagReading[] = [
   },
 ];
 
-let written: string[] = [];
+let written: readonly string[] = [];
+let clipboard: ClipboardStub;
 let applied: [string, FlagValue | undefined][] = [];
 
 const mount = (
@@ -58,20 +60,13 @@ const row = (panel: HTMLElement | null, key: string) =>
   panel?.querySelector<HTMLElement>(`[data-dtb-part="flag-row"][data-dtb-flag="${key}"]`) ?? null;
 
 beforeEach(() => {
-  written = [];
+  clipboard = installClipboard();
+  written = clipboard.writes;
   applied = [];
-  Object.defineProperty(globalThis.navigator, "clipboard", {
-    configurable: true,
-    value: {
-      writeText: (value: string) => {
-        written.push(value);
-        return Promise.resolve();
-      },
-    },
-  });
 });
 
 afterEach(() => {
+  clipboard.restore();
   cleanupToolbar();
   document.head
     .querySelectorAll('style[data-dev-toolbar-styles="ext-flags"]')

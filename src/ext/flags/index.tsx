@@ -62,7 +62,7 @@ import {
 } from "./runtime";
 import { writeClipboardTextOrThrow } from "../../runtime";
 import { FlagsChip, FlagsPanel } from "./ui";
-import { resolveStyleNonce } from "../shared/nonce";
+import { resolveStyleNonce } from "@nejcm/dev-toolbar/kit";
 import type { FlagsRuntimeOptions } from "./runtime";
 import type { FlagValue } from "./types";
 import type {

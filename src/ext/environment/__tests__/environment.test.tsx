@@ -4,12 +4,14 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act } from "@testing-library/react";
-import { cleanupToolbar, mountToolbar } from "@nejcm/dev-toolbar/testing";
+import { cleanupToolbar, installClipboard, mountToolbar } from "@nejcm/dev-toolbar/testing";
+import type { ClipboardStub } from "@nejcm/dev-toolbar/testing";
 import { collectCommands } from "../../../core/commands";
 import { environment } from "../index";
 import type { EnvironmentOptions } from "../index";
 
-let written: string[] = [];
+let written: readonly string[] = [];
+let clipboard: ClipboardStub;
 
 const mount = (options: EnvironmentOptions = {}) => {
   const extension = environment(options);
@@ -27,19 +29,12 @@ const row = (panel: HTMLElement | null, field: string) =>
   panel?.querySelector<HTMLElement>(`[data-dtb-field="${field}"]`) ?? null;
 
 beforeEach(() => {
-  written = [];
-  Object.defineProperty(globalThis.navigator, "clipboard", {
-    configurable: true,
-    value: {
-      writeText: (value: string) => {
-        written.push(value);
-        return Promise.resolve();
-      },
-    },
-  });
+  clipboard = installClipboard();
+  written = clipboard.writes;
 });
 
 afterEach(() => {
+  clipboard.restore();
   cleanupToolbar();
   document.head
     .querySelectorAll('style[data-dev-toolbar-styles="ext-environment"]')
@@ -396,10 +391,8 @@ describe("the clipboard path", () => {
   });
 
   it("reports a clipboard it cannot reach instead of pretending", async () => {
-    Object.defineProperty(globalThis.navigator, "clipboard", {
-      configurable: true,
-      value: undefined,
-    });
+    clipboard.restore();
+    clipboard = installClipboard(null);
     const { toolbar } = mount({ context: { environment: "local" } });
     toolbar.openPanel("environment");
     const panel = toolbar.panel("environment");

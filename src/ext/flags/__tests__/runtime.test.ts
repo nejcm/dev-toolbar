@@ -579,6 +579,30 @@ describe("failing closed", () => {
     expect(() => runtime.refresh()).not.toThrow();
     expect(runtime.store.peek().flags).toEqual([]);
   });
+
+  it("uses the flags default when pollMs is non-finite", () => {
+    vi.useFakeTimers();
+    try {
+      let reads = 0;
+      const runtime = createFlagsRuntime({
+        flags: () => {
+          reads += 1;
+          return CATALOGUE;
+        },
+        pollMs: Number.NaN,
+      });
+      const stop = runtime.start(fakeApi(createMemoryStorage()).api);
+      const afterStart = reads;
+
+      vi.advanceTimersByTime(999);
+      expect(reads).toBe(afterStart);
+      vi.advanceTimersByTime(1);
+      expect(reads).toBe(afterStart + 1);
+      stop();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });
 
 describe("redaction", () => {

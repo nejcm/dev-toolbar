@@ -1,8 +1,15 @@
 import { useId, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { Sparkline } from "./Sparkline";
-import { writeClipboardText } from "../../runtime";
-import { useExtensionSurface } from "../shared/hooks";
+import {
+  Action,
+  Chip,
+  CopyButton,
+  Note,
+  Row,
+  Rows,
+  useExtensionSurface,
+} from "@nejcm/dev-toolbar/kit";
 import { ensureMetricsStyles } from "./css";
 import { formatBytes, formatMs, shortenUrl } from "./format";
 import type { MetricsRuntime } from "./runtime";
@@ -56,11 +63,20 @@ export function MetricsChips({
               onClick={onToggle}
               title={view.hint}
             >
-              <span data-dtb-part="metrics-chip">
-                <span data-dtb-part="metrics-dot" aria-hidden="true" />
-                <span data-dtb-part="metrics-label">{view.title}</span>
+              <Chip
+                label={view.title}
+                severity={view.severity}
+                data-dtb-part="metrics-chip"
+                dotProps={{ "data-dtb-part": "metrics-dot" }}
+                labelProps={{ "data-dtb-part": "metrics-label", "data-dtb-kind": "label" }}
+              />
+              <span
+                data-dtb-part="metrics-value"
+                data-dtb-kind="value"
+                data-dtb-severity={view.severity}
+              >
+                {view.display}
               </span>
-              <span data-dtb-part="metrics-value">{view.display}</span>
             </button>
           );
         })}
@@ -80,16 +96,18 @@ export function MetricsChips({
         {snapshot.order.map((id) => {
           const view = snapshot.views[id];
           return (
-            <span
+            <Chip
               key={id}
+              label={view.label}
+              value={view.display}
+              severity={view.severity}
               data-dtb-part="metrics-chip"
               data-dtb-metric={id}
               data-dtb-severity={view.severity}
-            >
-              <span data-dtb-part="metrics-dot" aria-hidden="true" />
-              <span data-dtb-part="metrics-label">{view.label}</span>
-              <span data-dtb-part="metrics-value">{view.display}</span>
-            </span>
+              dotProps={{ "data-dtb-part": "metrics-dot" }}
+              labelProps={{ "data-dtb-part": "metrics-label", "data-dtb-kind": "label" }}
+              valueProps={{ "data-dtb-part": "metrics-value" }}
+            />
           );
         })}
       </span>
@@ -121,7 +139,6 @@ export function MetricsPanel({ runtime, injectStyles, styleNonce }: PanelProps):
     const stored = runtime.storage()?.getItem(STORAGE_TAB_KEY);
     return stored && snapshot.order.includes(stored as MetricId) ? (stored as MetricId) : first;
   });
-  const [copied, setCopied] = useState<"idle" | "ok" | "failed">("idle");
 
   const select = (id: MetricId) => {
     setActive(id);
@@ -142,11 +159,6 @@ export function MetricsPanel({ runtime, injectStyles, styleNonce }: PanelProps):
     const index = snapshot.order.indexOf(id);
     const nextIndex = (index + offset + snapshot.order.length) % snapshot.order.length;
     focusTab(snapshot.order[nextIndex]);
-  };
-
-  const copy = () => {
-    const text = JSON.stringify(runtime.diagnostics(), null, 2);
-    void writeClipboardText(text).then((ok) => setCopied(ok ? "ok" : "failed"));
   };
 
   return (
@@ -186,7 +198,12 @@ export function MetricsPanel({ runtime, injectStyles, styleNonce }: PanelProps):
               }}
               onClick={() => select(id)}
             >
-              <span data-dtb-part="metrics-dot" aria-hidden="true" />
+              <span
+                data-dtb-part="metrics-dot"
+                data-dtb-kind="dot"
+                data-dtb-severity={tab.severity}
+                aria-hidden="true"
+              />
               {tab.title}
             </button>
           );
@@ -202,10 +219,16 @@ export function MetricsPanel({ runtime, injectStyles, styleNonce }: PanelProps):
         aria-labelledby={tabId(view.id)}
       >
         <div data-dtb-part="metrics-headline">
-          <span data-dtb-part="metrics-headline-value">{view.display}</span>
-          <span data-dtb-part="metrics-note">{view.unit}</span>
+          <span data-dtb-part="metrics-headline-value" data-dtb-kind="value">
+            {view.display}
+          </span>
+          <Note as="span" data-dtb-part="metrics-note">
+            {view.unit}
+          </Note>
           {view.status === "unsupported" ? (
-            <span data-dtb-part="metrics-note">— unsupported here</span>
+            <Note as="span" data-dtb-part="metrics-note">
+              — unsupported here
+            </Note>
           ) : null}
         </div>
 
@@ -216,56 +239,51 @@ export function MetricsPanel({ runtime, injectStyles, styleNonce }: PanelProps):
         ) : null}
 
         {view.detail.length > 0 ? (
-          <dl data-dtb-part="metrics-rows">
+          <Rows data-dtb-part="metrics-rows">
             {view.detail.map(([label, value]) => (
-              <Row key={label} label={label} value={value} />
+              <Row key={label} label={label}>
+                {value}
+              </Row>
             ))}
-          </dl>
+          </Rows>
         ) : null}
 
         {view.id === "network" ? <RequestTable requests={snapshot.requests} /> : null}
 
         {collector ? (
-          <p data-dtb-part="metrics-note">Collector cost: {collector.estimatedCost}.</p>
+          <Note data-dtb-part="metrics-note">Collector cost: {collector.estimatedCost}.</Note>
         ) : null}
       </div>
 
       <div data-dtb-part="metrics-actions" data-dtb-bleed="">
-        <button
-          type="button"
+        <Action
           data-dtb-part="metrics-action"
           data-dtb-action="reset"
           onClick={() => runtime.reset()}
         >
           Reset
-        </button>
-        <button type="button" data-dtb-part="metrics-action" data-dtb-action="copy" onClick={copy}>
+        </Action>
+        <CopyButton
+          text={() => JSON.stringify(runtime.diagnostics(), null, 2)}
+          statusText={{
+            ok: "Copied — URLs and credential-shaped values are masked.",
+            failed: "Clipboard unavailable.",
+            idle: "URLs and credential-shaped values are masked before this leaves the page. Read it before you paste it.",
+          }}
+          statusProps={{ "data-dtb-part": "metrics-note" }}
+          data-dtb-part="metrics-action"
+          data-dtb-action="copy"
+        >
           Copy diagnostic data
-        </button>
-        <span data-dtb-part="metrics-note" role="status">
-          {copied === "ok"
-            ? "Copied — URLs and credential-shaped values are masked."
-            : copied === "failed"
-              ? "Clipboard unavailable."
-              : "URLs and credential-shaped values are masked before this leaves the page. Read it before you paste it."}
-        </span>
+        </CopyButton>
       </div>
     </div>
   );
 }
 
-function Row({ label, value }: { label: string; value: string }): ReactNode {
-  return (
-    <>
-      <dt>{label}</dt>
-      <dd>{value}</dd>
-    </>
-  );
-}
-
 function RequestTable({ requests }: { requests: MetricsSnapshot["requests"] }): ReactNode {
   if (requests.length === 0) {
-    return <p data-dtb-part="metrics-note">No requests observed yet.</p>;
+    return <Note data-dtb-part="metrics-note">No requests observed yet.</Note>;
   }
   return (
     <table data-dtb-part="metrics-requests">

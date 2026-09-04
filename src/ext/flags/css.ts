@@ -10,20 +10,9 @@
  * tokens) — a row claiming "overridden" while the app disagrees is the one
  * failure this panel exists to make impossible.
  */
-import { ensureStyleSheet } from "../../runtime";
+import { KIT_CSS, createStyleInjector, ensureKitStyles } from "@nejcm/dev-toolbar/kit";
 
-export const FLAGS_CSS = String.raw`@layer dev-toolbar {
-  [data-dev-toolbar] [data-dtb-part="flag-chip"] {
-    display: inline-flex;
-    align-items: center;
-    gap: var(--dtb-chip-gap);
-    white-space: nowrap;
-  }
-
-  [data-dev-toolbar] [data-dtb-part="flag-label"] {
-    color: var(--dtb-muted);
-  }
-
+const FLAGS_EXTENSION_CSS = String.raw`@layer dev-toolbar {
   [data-dev-toolbar] [data-dtb-part="flag-count"] {
     font-family: var(--dtb-font-mono);
   }
@@ -74,22 +63,10 @@ export const FLAGS_CSS = String.raw`@layer dev-toolbar {
     border-style: dashed;
   }
 
-  [data-dev-toolbar] [data-dtb-part="flag-promoted-dot"] {
-    width: 6px;
-    height: 6px;
-    border-radius: 999px;
-    background: var(--dtb-muted);
-    flex: 0 0 auto;
-  }
-
   [data-dev-toolbar]
     [data-dtb-part="flag-promoted"][aria-checked="true"]
     [data-dtb-part="flag-promoted-dot"] {
     background: var(--dtb-accent);
-  }
-
-  [data-dev-toolbar] [data-dtb-part="flag-promoted-value"] {
-    font-family: var(--dtb-font-mono);
   }
 
   /* Inside a ⋮ row, which supplies the padding — see core's
@@ -121,38 +98,7 @@ export const FLAGS_CSS = String.raw`@layer dev-toolbar {
   /* The search field leads, the actions follow it, and the note wraps to its
      own line rather than squeezing the field — hence the field's basis. */
   [data-dev-toolbar] [data-dtb-part="flag-toolbar"] {
-    display: flex;
-    align-items: center;
-    gap: var(--dtb-space-2);
     flex: 0 0 auto;
-    flex-wrap: wrap;
-    padding-bottom: var(--dtb-space-3);
-    border-bottom: 1px solid var(--dtb-border);
-  }
-
-  /* Padding, border, ground and height all come from core's field rule; only
-     the width is this panel's business. */
-  [data-dev-toolbar] [data-dtb-part="flag-search"] {
-    flex: 1 1 220px;
-    min-width: 140px;
-    max-width: 320px;
-  }
-
-  [data-dev-toolbar] [data-dtb-part="flag-action"] {
-    display: inline-flex;
-    align-items: center;
-    min-height: var(--dtb-control-height);
-    padding: 0 var(--dtb-control-padding-x);
-    border: 1px solid var(--dtb-border);
-    border-radius: var(--dtb-radius);
-    background: transparent;
-    color: inherit;
-    font: inherit;
-    cursor: pointer;
-  }
-
-  [data-dev-toolbar] [data-dtb-part="flag-action"]:hover:not(:disabled) {
-    background: var(--dtb-item-hover-bg);
   }
 
   [data-dev-toolbar] [data-dtb-part="flag-action"]:disabled {
@@ -173,6 +119,7 @@ export const FLAGS_CSS = String.raw`@layer dev-toolbar {
     border: 1px solid var(--dtb-border);
   }
 
+  /* Preserve the pre-kit tone hooks for consumer-authored flag banners. */
   [data-dev-toolbar] [data-dtb-part="flag-banner"][data-dtb-tone="error"] {
     background: var(--dtb-danger-bg);
     color: var(--dtb-danger);
@@ -189,12 +136,6 @@ export const FLAGS_CSS = String.raw`@layer dev-toolbar {
     flex: 1 1 auto;
     min-height: 0;
     overflow: auto;
-    display: flex;
-    flex-direction: column;
-    gap: var(--dtb-space-2);
-    margin: 0;
-    padding: 0;
-    list-style: none;
   }
 
   /* One flag is one card: its name and tags on the first line, its values on
@@ -202,13 +143,9 @@ export const FLAGS_CSS = String.raw`@layer dev-toolbar {
      be small — the two lines are one statement — and the column gap large, so
      the editor never crowds the values it is about to change. */
   [data-dev-toolbar] [data-dtb-part="flag-row"] {
-    display: grid;
     grid-template-columns: 1fr max-content;
     gap: var(--dtb-space-1) var(--dtb-space-4);
     align-items: center;
-    padding: var(--dtb-space-2) var(--dtb-space-3);
-    border: 1px solid var(--dtb-border);
-    border-radius: var(--dtb-radius);
   }
 
   [data-dev-toolbar] [data-dtb-part="flag-row"][data-dtb-severity="override"] {
@@ -239,10 +176,7 @@ export const FLAGS_CSS = String.raw`@layer dev-toolbar {
   }
 
   [data-dev-toolbar] [data-dtb-part="flag-tag"] {
-    padding: 0 var(--dtb-space-1);
-    border-radius: var(--dtb-radius);
     font-weight: 400;
-    font-size: calc(var(--dtb-font-size) - 1px);
     color: var(--dtb-muted);
     background: var(--dtb-item-hover-bg);
   }
@@ -314,7 +248,6 @@ export const FLAGS_CSS = String.raw`@layer dev-toolbar {
   }
 
   [data-dev-toolbar] [data-dtb-part="flag-value"] {
-    font-family: var(--dtb-font-mono);
     color: var(--dtb-fg);
   }
 
@@ -329,14 +262,10 @@ export const FLAGS_CSS = String.raw`@layer dev-toolbar {
     color: var(--dtb-muted);
   }
 
-  [data-dev-toolbar] [data-dtb-part="flag-empty"] {
+  [data-dev-toolbar] [data-dtb-part="flag-empty"][data-dtb-kind="empty"] {
     max-width: 70ch;
     margin: 0;
-  }
-
-  [data-dev-toolbar] [data-dtb-part="flag-note"] {
-    margin: 0;
-    color: var(--dtb-muted);
+    color: var(--dtb-fg);
   }
 
   /* The panel's floor: the last thing to read, under a rule that matches the
@@ -354,9 +283,14 @@ export const FLAGS_CSS = String.raw`@layer dev-toolbar {
 }
 `;
 
-const FLAGS_STYLE_ENTRY = "ext-flags";
+// Self-contained manual CSS deliberately repeats KIT_CSS; automatic injection deduplicates it.
+export const FLAGS_CSS = `${KIT_CSS}\n${FLAGS_EXTENSION_CSS}`;
 
-/** Injects the stylesheet once per document, via `/runtime`'s shared injector. */
+const FLAGS_STYLE_ENTRY = "ext-flags";
+const injectFlagsStyles = createStyleInjector(FLAGS_STYLE_ENTRY, FLAGS_EXTENSION_CSS);
+
+/** Injects the kit and extension sheets once per document. */
 export function ensureFlagsStyles(doc?: Document, nonce?: string): HTMLStyleElement | null {
-  return ensureStyleSheet(FLAGS_STYLE_ENTRY, FLAGS_CSS, doc, nonce);
+  ensureKitStyles(doc, nonce);
+  return injectFlagsStyles(doc, nonce);
 }

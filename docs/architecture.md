@@ -108,13 +108,17 @@ side, where the reset came from. The whole remedy is `revert-layer`:
 
 ```css
 /* Unlayered, so it beats Preflight; resolves to whatever @layer dev-toolbar
-   would have produced for that element in that state. Reverting by part, not
-   by element, is the whole design: Preflight resets every control the toolbar
-   draws plus the margins and list markers on its headings, paragraphs and
-   lists, and [data-dtb-part] covers all of them at a specificity Preflight
-   cannot reach — while leaving alone any element the toolbar does not own, so
-   a consumer's own utility classes on their own chip still win. */
-[data-dev-toolbar] [data-dtb-part] {
+   would have produced for that element in that state. Reverting by toolbar
+   attribute, not by element, is the whole design: Preflight resets every
+   control the toolbar draws plus the margins and list markers on its headings,
+   paragraphs and lists, and these two attributes cover all of them at a
+   specificity Preflight cannot reach — while leaving alone any element the
+   toolbar does not own, so a consumer's own utility classes on their own chip
+   still win. Both attributes are needed: a control from the kit carries
+   data-dtb-kind and need not carry a part, and the kit's rules lose to a reset
+   exactly as core's do. :is() takes its specificity from its widest argument,
+   so this is the same weight as the part-only selector it replaces. */
+[data-dev-toolbar] :is([data-dtb-part], [data-dtb-kind]) {
   margin: revert-layer;
   padding: revert-layer;
   background-color: revert-layer;
@@ -500,6 +504,23 @@ on the same element for targeting.
 `data-dtb-bleed` must not be nested inside another bled element — a second bleed
 overflows rather than aligning, which is why a legend's rule stops at the measure.
 
+A second attribute cuts the other way. `data-dtb-part` says *which* part this is;
+`data-dtb-kind` says *what sort of thing* it is — `action`, `chip`, `dot`, `label`,
+`value`, `note`, `tag`, `row`, `rows`, `list`, `empty`, `banner`, `search`, `toolbar`,
+`field`.
+Parts are namespaced per extension and so cannot be styled across extensions in one
+rule; kinds are shared and exist precisely for that. `KIT_CSS`, from
+[`@nejcm/dev-toolbar/kit`](./kit.md), is the one stylesheet keyed on them, and it
+replaced a button reset that had been hand-copied into five extensions and had already
+drifted three ways. Severity rules there are **compound** —
+`[data-dtb-kind="dot"][data-dtb-severity="warn"]`, both attributes on one element — so
+a container carrying a severity never tints its descendants. `field` is a kind with no
+kit rule at all: core's `:where(input, select, textarea)` already owns field geometry,
+so that fifteenth kind is a selector hook and nothing more. The kit's sheet is subject to the
+same three gates as core's and every extension's — logical properties only,
+`@layer dev-toolbar`, `[data-dev-toolbar]`-scoped — enforced by
+`src/ext/__tests__/stylesheets.test.ts`.
+
 Core owns the unprefixed names; an extension that ships CSS **namespaces its parts by
 kind** — a prefix fixed by the extension package, not by the `id` an individual
 instance happens to carry — which is why `/ext/metrics` renders
@@ -742,24 +763,25 @@ Rules worth stating explicitly:
 First-party extensions live one directory per extension under `src/ext/<name>/`, each
 following the same file convention: `index.tsx` (the factory), `runtime.ts` (non-React
 logic), `ui.tsx`, `types.ts`, `css.ts`, `__tests__/`. A new extension is a new
-published subpath and must be added **explicitly** to both the `exports` map in
-`package.json` and the `entry` / `dts.entry` maps in `tsup.config.ts` — never as a
-wildcard. An entry missing from either is silently unpublishable or untyped. The one
-thing under `src/ext/` that is not a subpath is shared React glue (`useExtensionSurface`
-in `src/ext/shared/hooks.ts`), which lives outside the per-extension file layout. The
-CJS build does not code-split, so it is inlined into every `dist/ext/*.cjs` that uses
-it — seven of the eight, all but `/ext/agent`, which renders almost nothing and needs
-none of it; the ESM build emits it as one shared chunk. Seven copies is why it is held
-to the extensions' rules and one more: types only from core, values only from `src/runtime`, nothing from
-a sibling `ext/<name>/`, no `[dev-toolbar/ext/…]` marker (the dist scan reads markers
-as proof one bundle carries no other's code), and no module-level state, or each bundle
-would own a different copy of it. The "shared extension glue" block in
-`src/core/__tests__/boundary.test.ts` fails on the first four.
+published subpath. Add it to `package.json` `exports`, `tsup.config.ts` `entry`, and
+the two hardcoded subpath lists in `src/core/__tests__/boundary.test.ts`. `dts.entry`
+is derived, `knip.json` already covers `src/ext/*/index.tsx`, and extensions need no
+Vitest alias or TypeScript path mapping. For a non-extension subpath such as `/kit`,
+use the six-file checklist in `AGENTS.md`. Never use a wildcard. Shared
+extension vocabulary and glue, including `useExtensionSurface`, lives in the published
+`@nejcm/dev-toolbar/kit` subpath. First-party extensions import that package specifier,
+which stays external in their CJS bundles and resolves to one kit instance; ESM keeps
+the same package boundary. The kit follows the extensions' rules and one more: types
+only from core, values only from `src/runtime`, nothing from a sibling `ext/<name>/`, no
+`[dev-toolbar/ext/…]` marker (the dist scan reads markers as proof one bundle carries no
+other's code), and no module-level state that would couple otherwise independent
+extensions. The "extension kit (source)" block in
+`src/core/__tests__/boundary.test.ts` enforces those rules.
 
 Testing it: [`@nejcm/dev-toolbar/testing`](./testing.md) is the whole surface —
 `renderWithToolbar` / `mountToolbar`, `makeExtension`, `makeCommand`,
-`fakeExtensionApi`, `createMockBus` and `installToolbarLayout`. That page is the
-reference; three things about it are architecture rather than API.
+`fakeExtensionApi`, `createMockBus`, `installClipboard` and `installToolbarLayout`.
+That page is the reference; three things about it are architecture rather than API.
 
 **The fake layout is global state, made safe twice over.** It patches
 `HTMLElement.prototype` and `globalThis.ResizeObserver`, which the whole file

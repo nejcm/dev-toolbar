@@ -334,6 +334,27 @@ describe("staleness", () => {
       vi.useRealTimers();
     }
   });
+
+  it("uses the environment default when pollMs is non-finite", () => {
+    vi.useFakeTimers();
+    const controller = new AbortController();
+    const context = vi.fn(() => ({ environment: "staging" }));
+    try {
+      const runtime = createEnvironmentRuntime({ pollMs: Number.NaN, detect: false, context });
+      const stop = runtime.start(
+        fakeExtensionApi({ signal: controller.signal, storage: createNullStorage() }).api,
+      );
+      expect(context).toHaveBeenCalledTimes(2);
+      vi.advanceTimersByTime(3999);
+      expect(context).toHaveBeenCalledTimes(2);
+      vi.advanceTimersByTime(1);
+      expect(context).toHaveBeenCalledTimes(3);
+      stop();
+    } finally {
+      controller.abort();
+      vi.useRealTimers();
+    }
+  });
 });
 
 describe("a context that throws while being read", () => {

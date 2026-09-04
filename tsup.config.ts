@@ -7,6 +7,7 @@ import { defineConfig } from "tsup";
 const entry = {
   index: "src/index.ts",
   runtime: "src/runtime/index.ts",
+  kit: "src/kit/index.ts",
   "ext/agent": "src/ext/agent/index.tsx",
   "ext/metrics": "src/ext/metrics/index.tsx",
   "ext/environment": "src/ext/environment/index.tsx",

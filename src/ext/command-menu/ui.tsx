@@ -1,6 +1,6 @@
 import { useEffect, useId, useRef } from "react";
 import type { KeyboardEvent as ReactKeyboardEvent, ReactNode } from "react";
-import { useExtensionSurface } from "../shared/hooks";
+import { EmptyState, useExtensionSurface } from "@nejcm/dev-toolbar/kit";
 import { ensureCommandMenuStyles } from "./css";
 import { describeHotkey, ariaKeyshortcuts } from "./runtime";
 import type { CommandMenuRuntime, CommandMenuSnapshot } from "./runtime";
@@ -228,9 +228,9 @@ function Dialog({
         />
         <div ref={listRef} id={listId} data-dtb-part="cmd-list" role="listbox" aria-label={label}>
           {snapshot.results.length === 0 ? (
-            <div data-dtb-part="cmd-empty" role="status">
+            <EmptyState data-dtb-part="cmd-empty" role="status">
               {emptyMessage}
-            </div>
+            </EmptyState>
           ) : (
             sections.map((section) => (
               <div

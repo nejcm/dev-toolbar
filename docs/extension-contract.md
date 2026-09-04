@@ -117,6 +117,8 @@ Two lifecycle rules the metrics extension paid for, so you do not have to:
   per id when it detects this. A hot-module reload of the module that builds your
   extensions does the same thing; reload the page.
 
+## Writing one that looks native
+
 A minimal one:
 
 ```tsx
@@ -133,6 +135,69 @@ const build: DevToolbarExtension = {
   panel: () => <BuildDetails />,
 };
 ```
+
+A dozen lines, and it imports nothing. That is the floor on purpose: an extension is
+a plain object, and none of what follows is required to render one.
+
+The next step, when you want it to look like the first-party panels rather than like a
+`<button>` on a page, is [`@nejcm/dev-toolbar/kit`](./kit.md) — the shared stylesheet
+and the thin controls over it. Nothing there is a framework; each control renders the
+DOM you would have written, plus a `data-dtb-kind` the shared sheet styles. A useful
+order to pick them up:
+
+**`Chip` first**, because the compact slot is what everybody sees. A dot, a label and a
+value, laid out and coloured like every other chip in the bar:
+
+```tsx
+import { Chip } from "@nejcm/dev-toolbar/kit";
+
+compact: ({ isPanelOpen, togglePanel }) => (
+  <button type="button" data-dtb-part="trigger" aria-expanded={isPanelOpen} onClick={togglePanel}>
+    <Chip label="build" value={commit} severity="ok" data-dtb-part="build-chip" />
+  </button>
+),
+```
+
+`severity` colours the dot and the value from `--dtb-ok` / `--dtb-warn` /
+`--dtb-danger`, so your chip agrees with the rest of the bar for free.
+
+**`Note` and `Action` next** — the two things every panel has. `Note` is muted,
+margin-free secondary text; `Action` is a `<button type="button">` carrying the shared
+reset, so your buttons match the ones next door and cannot accidentally submit a form.
+
+```tsx
+<Note data-dtb-part="build-note">Read from `import.meta.env` at build time.</Note>
+<Action data-dtb-part="build-action" onClick={reload}>Reload</Action>
+```
+
+**`Rows` then**, once the panel has more than a sentence to say. It is the two-column
+key/value `<dl>` grid the first-party panels print their readouts into; `Row` is one
+`<dt>`/`<dd>` pair:
+
+```tsx
+<Rows data-dtb-part="build-rows">
+  <Row label="Commit">{commit}</Row>
+  <Row label="Built">{builtAt}</Row>
+</Rows>
+```
+
+**`SearchField` last**, when the list is long enough that scrolling it stops working.
+It pairs with the kit's `matchesQuery(haystack, query)`, and the state stays yours:
+
+```tsx
+const [query, setQuery] = useState("");
+const visible = rows.filter((row) => matchesQuery([row.label, row.value], query));
+…
+<SearchField label="Search build facts" value={query} onChange={setQuery} />
+```
+
+Two more things belong in the same step. `useExtensionSurface(store, injectStyles,
+ensureStyles, styleNonce)` is how a slot stays cheap — the slot returns a component,
+the component subscribes to your store and ensures your stylesheet. And if you ship
+CSS, `createStyleInjector` plus `ensureKitStyles` is the pair that delivers the shared
+sheet alongside your own. The full reference, including what deliberately is *not* in
+the kit, is [docs/kit.md](./kit.md); `examples/playground/src/kitDemo.tsx` is one
+extension built entirely from it, end to end.
 
 For subtree-scoped tools, register from inside the tree instead:
 

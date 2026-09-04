@@ -43,7 +43,7 @@
 import { createOverlaysRuntime } from "./runtime";
 import { OverlaysChip, OverlaysPanel, OverlaysSurface } from "./ui";
 import { OVERLAY_IDS, OVERLAY_META } from "./types";
-import { resolveStyleNonce } from "../shared/nonce";
+import { resolveStyleNonce } from "@nejcm/dev-toolbar/kit";
 import type { OverlaysRuntimeOptions } from "./runtime";
 import type {
   DevToolbarExtension,

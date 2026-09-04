@@ -9,6 +9,7 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, fireEvent } from "@testing-library/react";
+import { KIT_CSS } from "@nejcm/dev-toolbar/kit";
 import { cleanupToolbar, mountToolbar } from "@nejcm/dev-toolbar/testing";
 import { createMemoryStorage } from "../../../core/storage";
 import { overlays } from "../index";
@@ -296,10 +297,11 @@ describe("what it refuses to touch", () => {
    * in a real engine — is verified in a browser, and recorded in §14.7.
    */
   it("marks its safety declarations !important, so app CSS cannot undo them", () => {
-    // jsdom rejects a sheet containing `@layer` outright, so the wrapper comes
-    // off before the parser sees it. The declarations are untouched.
+    // jsdom rejects a sheet containing `@layer` outright, so the self-contained
+    // kit prefix and extension wrapper come off before the parser sees it.
     const sheet = document.createElement("style");
-    sheet.textContent = OVERLAYS_CSS.replace(/^@layer dev-toolbar \{/, "").replace(/\}\s*$/, "");
+    const extensionCss = OVERLAYS_CSS.replace(KIT_CSS, "").trimStart();
+    sheet.textContent = extensionCss.replace(/^@layer dev-toolbar \{/, "").replace(/\}\s*$/, "");
     document.head.appendChild(sheet);
     const rules = [...(sheet.sheet?.cssRules ?? [])] as CSSStyleRule[];
     expect(rules.length).toBeGreaterThan(10);

@@ -7,6 +7,7 @@
  * mistaken for something the deploy asserted. Nothing supplied → `"unknown"`,
  * spelled out rather than guessed from the hostname.
  */
+import type { Severity } from "@nejcm/dev-toolbar/kit";
 
 /** §3B's four, plus the two honest extras. Any other string is passed through. */
 export type EnvironmentKind =
@@ -19,7 +20,7 @@ export type EnvironmentKind =
   | "unknown";
 
 /** Chip/dot colour. Same vocabulary `/ext/metrics` uses, same `--dtb-*` tokens. */
-export type EnvironmentSeverity = "unknown" | "ok" | "warn" | "bad";
+export type EnvironmentSeverity = Severity;
 
 export type EnvironmentGroup = "build" | "session" | "client";
 

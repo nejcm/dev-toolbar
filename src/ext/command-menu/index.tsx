@@ -32,7 +32,7 @@
  */
 import { createCommandMenuRuntime, isApplePlatform } from "./runtime";
 import { CommandMenuOverlay, CommandMenuTrigger } from "./ui";
-import { resolveStyleNonce } from "../shared/nonce";
+import { resolveStyleNonce } from "@nejcm/dev-toolbar/kit";
 import type { CommandMenuRuntimeOptions } from "./runtime";
 import type { DevToolbarExtension, ExtensionRuntimeApi, ToolbarAlign } from "../../core/contract";
 

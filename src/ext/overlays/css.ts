@@ -26,9 +26,9 @@
  *
  * Everything else is ordinary layered CSS and stays overridable.
  */
-import { ensureStyleSheet } from "../../runtime";
+import { KIT_CSS, createStyleInjector, ensureKitStyles } from "@nejcm/dev-toolbar/kit";
 
-export const OVERLAYS_CSS = String.raw`@layer dev-toolbar {
+const OVERLAYS_EXTENSION_CSS = String.raw`@layer dev-toolbar {
   [data-dev-toolbar] [data-dtb-part="ovl-surface"] {
     /* The four !important declarations — see file header. Do not remove. */
     position: fixed !important;
@@ -166,26 +166,9 @@ export const OVERLAYS_CSS = String.raw`@layer dev-toolbar {
 
   /* ---- Bar chip ---- */
 
-  [data-dev-toolbar] [data-dtb-part="ovl-chip"] {
-    display: inline-flex;
-    align-items: center;
-    gap: var(--dtb-chip-gap);
-  }
-
-  [data-dev-toolbar] [data-dtb-part="ovl-dot"] {
-    width: 6px;
-    height: 6px;
-    border-radius: 999px;
-    background: var(--dtb-muted);
-  }
-
   [data-dev-toolbar] [data-dtb-part="ovl-chip"][data-dtb-active="true"]
     [data-dtb-part="ovl-dot"] {
     background: var(--dtb-accent);
-  }
-
-  [data-dev-toolbar] [data-dtb-part="ovl-value"] {
-    font-family: var(--dtb-font-mono);
   }
 
   /* ---- Panel ---- */
@@ -197,25 +180,14 @@ export const OVERLAYS_CSS = String.raw`@layer dev-toolbar {
     max-width: 720px;
   }
 
-  [data-dev-toolbar] [data-dtb-part="ovl-rows"] {
-    display: flex;
-    flex-direction: column;
-    gap: var(--dtb-space-2);
-    margin: 0;
-    padding: 0;
-    list-style: none;
-  }
-
   /* One overlay is one card: the switch on the first line, and its summary,
      cost and any note indented under it in the second column, so a row of
      four reads as four decisions rather than as a paragraph. */
-  [data-dev-toolbar] [data-dtb-part="ovl-row"] {
-    display: grid;
+  /* The part+kind pair keeps this padding override above the kit's row default. */
+  [data-dev-toolbar] [data-dtb-part="ovl-row"][data-dtb-kind="row"] {
     grid-template-columns: auto 1fr;
     gap: var(--dtb-space-1) var(--dtb-space-2);
     padding: var(--dtb-space-3);
-    border: 1px solid var(--dtb-border);
-    border-radius: var(--dtb-radius);
   }
 
   [data-dev-toolbar] [data-dtb-part="ovl-row"][data-dtb-on="true"] {
@@ -237,11 +209,14 @@ export const OVERLAYS_CSS = String.raw`@layer dev-toolbar {
   }
 
   [data-dev-toolbar] [data-dtb-part="ovl-summary"],
-  [data-dev-toolbar] [data-dtb-part="ovl-cost"],
-  [data-dev-toolbar] [data-dtb-part="ovl-note"] {
+  [data-dev-toolbar] [data-dtb-part="ovl-cost"] {
     grid-column: 2;
     margin: 0;
     color: var(--dtb-muted);
+  }
+
+  [data-dev-toolbar] [data-dtb-part="ovl-note"] {
+    grid-column: 2;
   }
 
   [data-dev-toolbar] [data-dtb-part="ovl-cost"]::before {
@@ -250,17 +225,12 @@ export const OVERLAYS_CSS = String.raw`@layer dev-toolbar {
   }
 
   [data-dev-toolbar] [data-dtb-part="ovl-tag"] {
-    padding: 0 var(--dtb-space-1);
-    border-radius: var(--dtb-radius);
     background: var(--dtb-warn-bg);
     color: var(--dtb-warn);
     font-family: var(--dtb-font-mono);
-    font-size: calc(var(--dtb-font-size) - 1px);
   }
 
   [data-dev-toolbar] [data-dtb-part="ovl-error"] {
-    padding: var(--dtb-space-2) var(--dtb-space-3);
-    border-radius: var(--dtb-radius);
     background: var(--dtb-danger-bg);
     color: var(--dtb-danger);
   }
@@ -279,6 +249,12 @@ export const OVERLAYS_CSS = String.raw`@layer dev-toolbar {
 }
 `;
 
+// Self-contained manual CSS deliberately repeats KIT_CSS; automatic injection deduplicates it.
+export const OVERLAYS_CSS = `${KIT_CSS}\n${OVERLAYS_EXTENSION_CSS}`;
+
+const injectOverlaysStyles = createStyleInjector("ext-overlays", OVERLAYS_EXTENSION_CSS);
+
 export function ensureOverlaysStyles(doc?: Document, nonce?: string): HTMLStyleElement | null {
-  return ensureStyleSheet("ext-overlays", OVERLAYS_CSS, doc, nonce);
+  ensureKitStyles(doc, nonce);
+  return injectOverlaysStyles(doc, nonce);
 }

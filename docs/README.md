@@ -17,6 +17,7 @@ Everything the [README](../README.md) links to, in one place.
 | --- | --- |
 | [extension-contract.md](./extension-contract.md) | The object you write, the slot props, `start(api)`, and the two lifecycle rules that bite |
 | [runtime.md](./runtime.md) | `@nejcm/dev-toolbar/runtime` — event bus, ring buffers, throttled store, `redact()` |
+| [kit.md](./kit.md) | `@nejcm/dev-toolbar/kit` — the shared severity vocabulary, the storage/poll/style helpers, `data-dtb-kind` and the thin React controls |
 | [architecture.md](./architecture.md) | What the shell guarantees, why the boundaries sit where they do, and the known gaps in the contract |
 | [adr/](./adr/) | Decision records, and the process for adding one |
 

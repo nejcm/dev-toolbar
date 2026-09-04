@@ -1,6 +1,6 @@
 /**
  * The rule that keeps the layering honest: **core may not import from
- * `runtime/` or `ext/`.**
+ * `runtime/`, `kit/` or `ext/`.**
  *
  * Asserting that against the source is necessary but not sufficient — a
  * transitive import through a third module, or a shared chunk the bundler
@@ -50,19 +50,30 @@ function sourceFiles(directory: string): string[] {
   return output;
 }
 
-/** One or more `../`, then `core/` — `src/testing/nested/x.ts` included. */
+function moduleSpecifiers(source: string): string[] {
+  return [
+    ...source.matchAll(/from\s+["']([^"']+)["']/g),
+    ...source.matchAll(/(?:^|\n)\s*import\s+["']([^"']+)["']/g),
+    ...source.matchAll(/\b(?:import|require)\s*\(\s*["']([^"']+)["']/g),
+  ].map((match) => match[1] as string);
+}
+
+/** One or more `../`, then the guarded source directory. */
 const RELATIVE_CORE = String.raw`(?:\.\.\/)+core\/[^"']+`;
+const RELATIVE_KIT = String.raw`(?:\.\.\/)+kit(?:\/[^"']+)?`;
+const PACKAGE_ROOT = String.raw`@nejcm\/dev-toolbar`;
+const PACKAGE_KIT = String.raw`@nejcm\/dev-toolbar\/kit(?:\/[^"']+)?`;
 
 /**
- * Every *value* import of a relative `core/` path in one source file. `import
- * type` and a wholly `{ type A, type B }` clause erase to nothing, so they are
- * not value imports and are deliberately not reported.
+ * Every *value* import matching a relative path pattern in one source file.
+ * `import type` and a wholly `{ type A, type B }` clause erase to nothing, so
+ * they are not value imports and are deliberately not reported.
  *
  * Exported shape rather than an inline regex because the forms it has to cover
  * are the point — `__tests__` below asserts each of them, so a blind spot fails
  * a test rather than passing review.
  */
-function coreValueImports(source: string): string[] {
+function valueImportsMatching(source: string, target: string): string[] {
   const found: string[] = [];
 
   // 1. `import ... from "…"` / `export ... from "…"`, with a binding clause.
@@ -70,7 +81,7 @@ function coreValueImports(source: string): string[] {
   //    the end of its own statement into a later one's specifier.
   for (const match of source.matchAll(
     new RegExp(
-      String.raw`(?:^|\n)\s*(?:import|export)\s+(?!type\s)([^"';]*?)from\s+["'](${RELATIVE_CORE})["']`,
+      String.raw`(?:^|\n)\s*(?:import|export)\s+(?!type\s)([^"';]*?)from\s+["'](${target})["']`,
       "g",
     ),
   )) {
@@ -87,7 +98,7 @@ function coreValueImports(source: string): string[] {
   // 2. Side-effect import: no binding at all, but the module still runs and is
   //    still inlined, so it is still a second copy of core.
   for (const match of source.matchAll(
-    new RegExp(String.raw`(?:^|\n)\s*import\s+["'](${RELATIVE_CORE})["']`, "g"),
+    new RegExp(String.raw`(?:^|\n)\s*import\s+["'](${target})["']`, "g"),
   )) {
     found.push(match[1] as string);
   }
@@ -95,7 +106,7 @@ function coreValueImports(source: string): string[] {
   // 3. `import("…")` and `require("…")`, which carry no clause to inspect and
   //    are invisible to pattern 1.
   for (const match of source.matchAll(
-    new RegExp(String.raw`\b(?:import|require)\s*\(\s*["'](${RELATIVE_CORE})["']`, "g"),
+    new RegExp(String.raw`\b(?:import|require)\s*\(\s*["'](${target})["']`, "g"),
   )) {
     found.push(match[1] as string);
   }
@@ -103,16 +114,52 @@ function coreValueImports(source: string): string[] {
   return found;
 }
 
+const coreValueImports = (source: string): string[] => valueImportsMatching(source, RELATIVE_CORE);
+const kitValueImports = (source: string): string[] => [
+  ...valueImportsMatching(source, RELATIVE_KIT),
+  ...valueImportsMatching(source, PACKAGE_KIT),
+];
+const outsideCoreLayer = (specifier: string): boolean =>
+  /(^|\/)(runtime|kit|ext)(\/|$)/.test(specifier);
+
 describe("core boundary (source)", () => {
-  it("never imports a value from runtime/ or ext/", () => {
+  it("never imports from runtime/, kit/ or ext/", () => {
+    const files = sourceFiles(resolve(root, "src/core")).filter(
+      // This file contains forbidden-import fixtures for the scanner's meta-tests.
+      (file) => file !== resolve(root, "src/core/__tests__/boundary.test.ts"),
+    );
     const offenders: string[] = [];
-    for (const file of sourceFiles(resolve(root, "src/core"))) {
-      const source = readFileSync(file, "utf8");
-      // `import type` would erase, but core has no business referencing these
-      // at all, so the check does not carve out an exception for it.
-      for (const match of source.matchAll(/from\s+["']([^"']+)["']/g)) {
-        const specifier = match[1] as string;
-        if (/(^|\/)(runtime|ext)(\/|$)/.test(specifier)) {
+    for (const file of files) {
+      for (const specifier of moduleSpecifiers(readFileSync(file, "utf8"))) {
+        if (outsideCoreLayer(specifier)) {
+          offenders.push(`${file} -> ${specifier}`);
+        }
+      }
+    }
+    expect(files.length).toBeGreaterThan(10);
+    expect(offenders).toEqual([]);
+  });
+
+  it("detects every import form that can cross core's layer", () => {
+    for (const source of [
+      'import type { Severity } from "../kit";',
+      'import { matchesQuery } from "../kit/query";',
+      'import "../kit";',
+      'void import("../kit/query");',
+      'const kit = require("../kit");',
+    ]) {
+      expect(moduleSpecifiers(source).some(outsideCoreLayer), source).toBe(true);
+    }
+    expect(moduleSpecifiers('import { storage } from "../storage";').some(outsideCoreLayer)).toBe(
+      false,
+    );
+  });
+
+  it("keeps /testing off runtime/, kit/ and ext/", () => {
+    const offenders: string[] = [];
+    for (const file of sourceFiles(resolve(root, "src/testing"))) {
+      for (const specifier of moduleSpecifiers(readFileSync(file, "utf8"))) {
+        if (outsideCoreLayer(specifier)) {
           offenders.push(`${file} -> ${specifier}`);
         }
       }
@@ -120,20 +167,18 @@ describe("core boundary (source)", () => {
     expect(offenders).toEqual([]);
   });
 
-  it("keeps /testing off runtime/ and ext/ too, so it works before they exist", () => {
-    const offenders: string[] = [];
-    for (const file of sourceFiles(resolve(root, "src/testing"))) {
-      // Every specifier, not only the relative ones: /testing now reaches core
-      // through `@nejcm/dev-toolbar`, so `@nejcm/dev-toolbar/runtime` and
-      // `@nejcm/dev-toolbar/ext/*` are the shapes this has to catch as well.
-      for (const match of readFileSync(file, "utf8").matchAll(/from\s+["']([^"']+)["']/g)) {
-        const specifier = match[1] as string;
-        if (/(^|\/)(runtime|ext)(\/|$)/.test(specifier)) {
-          offenders.push(`${file} -> ${specifier}`);
-        }
-      }
+  it("detects every import form forbidden in /testing", () => {
+    for (const source of [
+      'import { parseRecord } from "@nejcm/dev-toolbar/kit";',
+      'import "../kit";',
+      'void import("@nejcm/dev-toolbar/runtime");',
+      'const flags = require("@nejcm/dev-toolbar/ext/flags");',
+    ]) {
+      expect(moduleSpecifiers(source).some(outsideCoreLayer), source).toBe(true);
     }
-    expect(offenders).toEqual([]);
+    expect(
+      moduleSpecifiers('import { DevToolbar } from "@nejcm/dev-toolbar";').some(outsideCoreLayer),
+    ).toBe(false);
   });
 
   it("never value-imports a relative path into core/ from /testing", () => {
@@ -205,26 +250,85 @@ describe("core boundary (source)", () => {
       expect(coreValueImports(source), source).toEqual([]);
     }
   });
+
+  it("detects relative kit value imports but allows types and the package specifier", () => {
+    const from = (clause: string, specifier: string): string =>
+      `${clause} from ${JSON.stringify(specifier)};`;
+    for (const source of [
+      from("import { parseRecord }", "../../kit"),
+      from("export { matchesQuery }", "../kit/query"),
+      'const kit = await import("../../../kit");',
+      'const kit = require("../../kit/poller");',
+    ]) {
+      expect(valueImportsMatching(source, RELATIVE_KIT), source).not.toEqual([]);
+    }
+
+    for (const source of [
+      from("import type { Severity }", "../../kit"),
+      from("import { type Severity }", "../../kit"),
+      from("import { parseRecord }", "@nejcm/dev-toolbar/kit"),
+    ]) {
+      expect(valueImportsMatching(source, RELATIVE_KIT), source).toEqual([]);
+    }
+  });
 });
 
-describe("shared extension glue (source)", () => {
+describe("runtime boundary (source)", () => {
+  const files = sourceFiles(resolve(root, "src/runtime")).filter(
+    (file) => !/(^|\/)__tests__\//.test(file),
+  );
+
+  it("never value-imports kit", () => {
+    const offenders: string[] = [];
+    for (const file of files) {
+      for (const specifier of kitValueImports(readFileSync(file, "utf8"))) {
+        offenders.push(`${file} -> ${specifier}`);
+      }
+    }
+    expect(files.length).toBeGreaterThan(5);
+    expect(offenders).toEqual([]);
+  });
+
+  it("detects runtime-to-kit value imports and allows erased or sibling imports", () => {
+    for (const source of [
+      'import { parseRecord } from "../kit";',
+      'export { matchesQuery } from "../../kit/query";',
+      'const kit = await import("@nejcm/dev-toolbar/kit");',
+      'const poller = require("@nejcm/dev-toolbar/kit/poller");',
+    ]) {
+      expect(kitValueImports(source), source).not.toEqual([]);
+    }
+
+    for (const source of [
+      'import type { Severity } from "../kit";',
+      'import { type Severity } from "@nejcm/dev-toolbar/kit";',
+      'import { createRingBuffer } from "./ringBuffer";',
+      'import type { ToolbarStorage } from "../core/contract";',
+    ]) {
+      expect(kitValueImports(source), source).toEqual([]);
+    }
+  });
+});
+
+describe("extension kit (source)", () => {
   /**
-   * `src/ext/shared` is internal and unpublished, and the CJS build does not
-   * code-split, so every byte of it is inlined into every `dist/ext/*.cjs`
-   * that uses it — seven of the eight today. That makes it the one directory
-   * where a mistake is multiplied sevenfold, so it is held to the rules the
-   * eight extensions are:
+   * The kit is shared by first-party and third-party extensions, so it is held
+   * to the same rules as the eight extensions:
    * no extension marker (the dist scan below reads markers as proof one
    * bundle does not carry another's code), no core message prefix, no value
    * import of core, and nothing reaching sideways into a sibling extension.
    *
    * Everything here is expressed with path strings and `readFileSync`, never
    * an import: this file lives under `src/core`, whose own scan above rejects
-   * any specifier naming `runtime` or `ext`.
+   * any specifier naming `runtime`, `kit` or `ext`.
    */
-  const sharedDirectory = resolve(root, "src/ext/shared");
+  const kitDirectory = resolve(root, "src/kit");
   const extDirectory = resolve(root, "src/ext");
-  const files = sourceFiles(sharedDirectory).filter((file) => !/(^|\/)__tests__\//.test(file));
+  const files = sourceFiles(kitDirectory).filter((file) => !/(^|\/)__tests__\//.test(file));
+  const reachesExtension = (file: string, specifier: string): boolean => {
+    if (!specifier.startsWith(".")) return /(^|\/)ext\//.test(specifier);
+    return resolve(dirname(file), specifier).startsWith(`${extDirectory}/`);
+  };
 
   it("has files to check", () => {
     // A rename that empties the directory must fail here rather than pass
@@ -244,56 +348,68 @@ describe("shared extension glue (source)", () => {
     expect(offenders).toEqual([]);
   });
 
-  it("never value-imports core", () => {
+  it("never value-imports core relatively or through the package root", () => {
     const offenders: string[] = [];
     for (const file of files) {
-      for (const specifier of coreValueImports(readFileSync(file, "utf8"))) {
+      const source = readFileSync(file, "utf8");
+      for (const specifier of [
+        ...coreValueImports(source),
+        ...valueImportsMatching(source, PACKAGE_ROOT),
+      ]) {
         offenders.push(`${file} -> ${specifier}`);
       }
     }
     expect(offenders).toEqual([]);
   });
 
-  it("never reaches into a sibling extension", () => {
-    /**
-     * A specifier reaches sideways if it resolves inside `src/ext` but outside
-     * `src/ext/shared` — or, when it is bare, if it names an `ext/` subpath.
-     */
-    const reachesSibling = (file: string, specifier: string): boolean => {
-      if (!specifier.startsWith(".")) return /(^|\/)ext\//.test(specifier);
-      const target = resolve(dirname(file), specifier);
-      return target.startsWith(`${extDirectory}/`) && !target.startsWith(`${sharedDirectory}/`);
-    };
+  it("detects package-root value imports but allows type imports", () => {
+    const from = (clause: string): string =>
+      `${clause} from ${JSON.stringify("@nejcm/dev-toolbar")};`;
+    expect(valueImportsMatching(from("import { createMemoryStorage }"), PACKAGE_ROOT)).toEqual([
+      "@nejcm/dev-toolbar",
+    ]);
+    expect(valueImportsMatching(from("import type { ToolbarStorage }"), PACKAGE_ROOT)).toEqual([]);
+  });
 
+  it("never reaches into a sibling extension", () => {
     const offenders: string[] = [];
     for (const file of files) {
-      const source = readFileSync(file, "utf8");
-      // Both halves of `coreValueImports` above, for the same reason it has
-      // them: a static clause is the ordinary form, and `import(` / `require(`
-      // carry no clause, so a pattern that only reads `from "…"` would let
-      // `() => import("../metrics/css")` through — inlined into every bundle
-      // that reaches this glue, and only maybe caught later by the dist
-      // marker scan.
-      const specifiers = [
-        ...source.matchAll(/from\s+["']([^"']+)["']/g),
-        ...source.matchAll(/\b(?:import|require)\s*\(\s*["']([^"']+)["']/g),
-      ].map((match) => match[1] as string);
-      for (const specifier of specifiers) {
-        if (reachesSibling(file, specifier)) offenders.push(`${file} -> ${specifier}`);
+      for (const specifier of moduleSpecifiers(readFileSync(file, "utf8"))) {
+        if (reachesExtension(file, specifier)) offenders.push(`${file} -> ${specifier}`);
       }
     }
     expect(offenders).toEqual([]);
   });
+
+  it("detects every import form that can reach an extension", () => {
+    const file = resolve(kitDirectory, "example.ts");
+    for (const source of [
+      'import type { FlagValue } from "../ext/flags";',
+      'import { flags } from "../ext/flags";',
+      'import "../ext/flags";',
+      'void import("../ext/flags");',
+      'const flags = require("../ext/flags");',
+      'import { flags } from "@nejcm/dev-toolbar/ext/flags";',
+    ]) {
+      expect(
+        moduleSpecifiers(source).some((value) => reachesExtension(file, value)),
+        source,
+      ).toBe(true);
+    }
+  });
 });
 
 describe("extension boundary (source)", () => {
-  it("never value-imports a relative path into core", () => {
+  it("never value-imports a relative path into core or kit", () => {
     const files = sourceFiles(resolve(root, "src/ext")).filter(
       (file) => !/(^|\/)__tests__\//.test(file),
     );
     const offenders: string[] = [];
     for (const file of files) {
       for (const specifier of coreValueImports(readFileSync(file, "utf8"))) {
+        offenders.push(`${file} -> ${specifier}`);
+      }
+      for (const specifier of valueImportsMatching(readFileSync(file, "utf8"), RELATIVE_KIT)) {
         offenders.push(`${file} -> ${specifier}`);
       }
     }
@@ -509,7 +625,7 @@ if (built || !mustBeBuilt) {
       }
     });
 
-    it("declares the root, ./runtime and the ./ext/* entries explicitly, with no wildcards", () => {
+    it("declares the root, ./runtime, ./kit and the ./ext/* entries explicitly, with no wildcards", () => {
       // Per-condition `types`, not one shared `types` key. A single
       // `./dist/*.d.ts` resolves as ESM under `require` too, which tells a
       // CommonJS consumer the package is ESM and breaks every type in it.
@@ -517,6 +633,7 @@ if (built || !mustBeBuilt) {
       const subpaths = [
         ".",
         "./runtime",
+        "./kit",
         "./ext/metrics",
         "./ext/environment",
         "./ext/flags",
@@ -540,6 +657,8 @@ if (built || !mustBeBuilt) {
       for (const file of [
         "dist/runtime.js",
         "dist/runtime.cjs",
+        "dist/kit.js",
+        "dist/kit.cjs",
         "dist/ext/metrics.js",
         "dist/ext/metrics.cjs",
         "dist/ext/environment.js",
@@ -568,6 +687,8 @@ if (built || !mustBeBuilt) {
         );
       }
       expect(readFileSync(`${root}dist/runtime.d.ts`, "utf8")).toContain("createRingBuffer");
+      expect(readFileSync(`${root}dist/kit.d.ts`, "utf8")).toContain("createPoller");
+      expect(readFileSync(`${root}dist/kit.d.cts`, "utf8")).toContain("createPoller");
       expect(readFileSync(`${root}dist/ext/metrics.d.ts`, "utf8")).toContain("MetricsOptions");
       expect(readFileSync(`${root}dist/ext/environment.d.ts`, "utf8")).toContain(
         "EnvironmentOptions",
@@ -588,7 +709,7 @@ if (built || !mustBeBuilt) {
 
     it("declares every subpath the plan promised, and nothing by wildcard", () => {
       // The closing check for P4: the delivery plan's `exports` map is `.`,
-      // `./runtime`, `./testing`, `./styles.css` and one entry per `./ext/*`,
+      // `./runtime`, `./kit`, `./testing`, `./styles.css` and one entry per `./ext/*`,
       // enumerated. Asserting the whole key set — rather than each key on its
       // own — is what makes a *missing* entry fail rather than only a wrong one.
       expect(Object.keys(pkg.exports).sort()).toEqual([
@@ -601,6 +722,7 @@ if (built || !mustBeBuilt) {
         "./ext/metrics",
         "./ext/overlays",
         "./ext/theme-editor",
+        "./kit",
         "./package.json",
         "./runtime",
         "./styles.css",
@@ -611,6 +733,7 @@ if (built || !mustBeBuilt) {
     it("resolves through Node's own exports map", () => {
       const names = node(
         `const r = await import("@nejcm/dev-toolbar/runtime");` +
+          `const k = await import("@nejcm/dev-toolbar/kit");` +
           `const m = await import("@nejcm/dev-toolbar/ext/metrics");` +
           `const e = await import("@nejcm/dev-toolbar/ext/environment");` +
           `const f = await import("@nejcm/dev-toolbar/ext/flags");` +
@@ -619,10 +742,11 @@ if (built || !mustBeBuilt) {
           `const d = await import("@nejcm/dev-toolbar/ext/diagnostics");` +
           `const t = await import("@nejcm/dev-toolbar/ext/theme-editor");` +
           `const a = await import("@nejcm/dev-toolbar/ext/agent");` +
-          `console.log(JSON.stringify({ runtime: Object.keys(r).sort(), metrics: Object.keys(m).sort(), environment: Object.keys(e).sort(), flags: Object.keys(f).sort(), commandMenu: Object.keys(c).sort(), overlays: Object.keys(o).sort(), diagnostics: Object.keys(d).sort(), themeEditor: Object.keys(t).sort(), agent: Object.keys(a).sort() }));`,
+          `console.log(JSON.stringify({ runtime: Object.keys(r).sort(), kit: Object.keys(k).sort(), metrics: Object.keys(m).sort(), environment: Object.keys(e).sort(), flags: Object.keys(f).sort(), commandMenu: Object.keys(c).sort(), overlays: Object.keys(o).sort(), diagnostics: Object.keys(d).sort(), themeEditor: Object.keys(t).sort(), agent: Object.keys(a).sort() }));`,
       );
       const result = JSON.parse(names) as {
         runtime: string[];
+        kit: string[];
         metrics: string[];
         environment: string[];
         flags: string[];
@@ -640,6 +764,33 @@ if (built || !mustBeBuilt) {
           "redact",
         ]),
       );
+      expect(result.kit).toEqual([
+        "Action",
+        "Banner",
+        "Chip",
+        "CopyButton",
+        "EmptyState",
+        "Field",
+        "KIT_CSS",
+        "Note",
+        "Row",
+        "Rows",
+        "SearchField",
+        "Select",
+        "Tag",
+        "TextInput",
+        "createPoller",
+        "createStyleInjector",
+        "ensureKitStyles",
+        "matchesQuery",
+        "parseList",
+        "parseRecord",
+        "readJson",
+        "resolveStyleNonce",
+        "useCopyStatus",
+        "useExtensionSurface",
+        "writeJson",
+      ]);
       expect(result.metrics).toEqual(expect.arrayContaining(["metrics", "createMetricsRuntime"]));
       expect(result.environment).toEqual(
         expect.arrayContaining(["environment", "createEnvironmentRuntime", "ENVIRONMENT_CSS"]),

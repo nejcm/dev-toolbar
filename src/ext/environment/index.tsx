@@ -40,7 +40,7 @@
 import { writeClipboardTextOrThrow } from "../../runtime";
 import { createEnvironmentRuntime } from "./runtime";
 import { EnvironmentChip, EnvironmentPanel } from "./ui";
-import { resolveStyleNonce } from "../shared/nonce";
+import { resolveStyleNonce } from "@nejcm/dev-toolbar/kit";
 import type { EnvironmentContextInput, EnvironmentRuntimeOptions } from "./runtime";
 import type { DevToolbarExtension, ExtensionRuntimeApi, ToolbarAlign } from "../../core/contract";
 
@@ -62,8 +62,9 @@ export interface EnvironmentOptions extends Pick<
    */
   context?: EnvironmentContextInput;
   /**
-   * Inject this extension's stylesheet. Default `true`. Not tied to core's own
-   * `injectStyles` prop — turn both off and ship `ENVIRONMENT_CSS` yourself.
+   * Inject this extension's stylesheets. Default `true`. Not tied to core's own
+   * `injectStyles` prop — turn both off and ship the self-contained
+   * `ENVIRONMENT_CSS` yourself.
    */
   injectStyles?: boolean;
   /**

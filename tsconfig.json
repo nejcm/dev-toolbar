@@ -19,6 +19,7 @@
     "types": ["vitest/globals", "node"],
     "paths": {
       "@nejcm/dev-toolbar": ["./src/index.ts"],
+      "@nejcm/dev-toolbar/kit": ["./src/kit/index.ts"],
       "@nejcm/dev-toolbar/testing": ["./src/testing/index.ts"]
     }
   },

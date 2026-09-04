@@ -1,7 +1,18 @@
 import { useMemo, useState } from "react";
 import type { ReactNode } from "react";
-import { writeClipboardText } from "../../runtime";
-import { useExtensionSurface } from "../shared/hooks";
+import {
+  Action,
+  Banner,
+  Chip,
+  Field,
+  Note,
+  SearchField,
+  Select,
+  Tag,
+  TextInput,
+  useCopyStatus,
+  useExtensionSurface,
+} from "@nejcm/dev-toolbar/kit";
 import { ensureThemeEditorStyles } from "./css";
 import {
   describeRefusal,
@@ -81,15 +92,18 @@ export function ThemeChip({
       onClick={onToggle}
       title={title}
     >
-      <span
+      {/* The chip colours its own dot from data-dtb-edited/-preview, and the
+          label and count are unstyled here, so the kit adds no kind or
+          severity to those two slots. */}
+      <Chip
         data-dtb-part="thm-chip"
         data-dtb-edited={edited ? "true" : "false"}
         data-dtb-preview={snapshot.preview ? "true" : "false"}
-      >
-        <span data-dtb-part="thm-dot" aria-hidden="true" />
-        <span>theme</span>
-        <span data-dtb-part="thm-count">{summary}</span>
-      </span>
+        label="theme"
+        value={summary}
+        dotProps={{ "data-dtb-part": "thm-dot" }}
+        valueProps={{ "data-dtb-part": "thm-count", "data-dtb-kind": undefined }}
+      />
     </button>
   );
 }
@@ -150,8 +164,7 @@ function Editor({
   const [rejected, setRejected] = useState<string | null>(null);
 
   const clear = (
-    <button
-      type="button"
+    <Action
       data-dtb-part="thm-action"
       data-dtb-action="clear"
       data-dtb-token={view.name}
@@ -160,15 +173,15 @@ function Editor({
       onClick={() => runtime.clearOverride(view.name)}
     >
       reset
-    </button>
+    </Action>
   );
 
   if (view.refusal !== null) {
     return (
       <>
-        <span data-dtb-part="thm-tag" data-dtb-tag="refused" title={describeRefusal(view.refusal)}>
+        <Tag data-dtb-part="thm-tag" data-dtb-tag="refused" title={describeRefusal(view.refusal)}>
           {view.refusal === "reserved" ? "reserved name" : "unusable name"}
-        </span>
+        </Tag>
         {/* No clear button: a refused row can never be overridden — every door
             into the override map (setOverride, sanitize, vetStored) already
             drops a refused name. */}
@@ -218,7 +231,7 @@ function Editor({
           style={{ background: view.effective }}
         />
       ) : null}
-      <input
+      <TextInput
         type="text"
         data-dtb-part="thm-input"
         data-dtb-token={view.name}
@@ -232,8 +245,8 @@ function Editor({
         placeholder={view.masked ? "masked — type a new value" : (view.effectiveText ?? "")}
         title={rejected ?? `Edit ${view.name}`}
         value={draft}
-        onChange={(event) => {
-          setDraft(event.target.value);
+        onChange={(next) => {
+          setDraft(next);
           setRejected(null);
         }}
         onKeyDown={(event) => {
@@ -242,9 +255,9 @@ function Editor({
         onBlur={() => commit(draft)}
       />
       {rejected === null ? null : (
-        <span data-dtb-part="thm-tag" data-dtb-tag="rejected" role="alert">
+        <Tag data-dtb-part="thm-tag" data-dtb-tag="rejected" role="alert">
           {rejected}
-        </span>
+        </Tag>
       )}
       {clear}
     </>
@@ -263,6 +276,7 @@ function Row({
   return (
     <li
       data-dtb-part="thm-row"
+      data-dtb-kind="row"
       data-dtb-token={view.name}
       data-dtb-overridden={view.overridden ? "true" : "false"}
       data-dtb-severity={severityFor(view)}
@@ -272,32 +286,32 @@ function Row({
         <span>{view.label}</span>
         <code data-dtb-part="thm-token">{view.name}</code>
         {view.overridden ? (
-          <span data-dtb-part="thm-tag" data-dtb-tag="edited">
+          <Tag data-dtb-part="thm-tag" data-dtb-tag="edited">
             edited
-          </span>
+          </Tag>
         ) : null}
         {view.applyError ? (
-          <span data-dtb-part="thm-tag" data-dtb-tag="not-applied" title={view.applyError}>
+          <Tag data-dtb-part="thm-tag" data-dtb-tag="not-applied" title={view.applyError}>
             not applied
-          </span>
+          </Tag>
         ) : null}
         {view.orphaned ? (
-          <span
+          <Tag
             data-dtb-part="thm-tag"
             data-dtb-tag="orphaned"
             title="Your page is still receiving this edit, but the token catalogue no longer declares it — usually a renamed or deleted token."
           >
             no longer declared
-          </span>
+          </Tag>
         ) : null}
         {view.masked ? (
-          <span
+          <Tag
             data-dtb-part="thm-tag"
             data-dtb-tag="masked"
             title="This value was masked before it was rendered or exported."
           >
             masked
-          </span>
+          </Tag>
         ) : null}
       </div>
 
@@ -312,6 +326,7 @@ function Row({
           now{" "}
           <span
             data-dtb-part="thm-value"
+            data-dtb-kind="value"
             data-dtb-role="effective"
             data-dtb-overridden={view.overridden ? "true" : "false"}
           >
@@ -320,13 +335,13 @@ function Row({
         </span>
         <span>
           app{" "}
-          <span data-dtb-part="thm-value" data-dtb-role="base">
+          <span data-dtb-part="thm-value" data-dtb-kind="value" data-dtb-role="base">
             {view.baseText}
           </span>
         </span>
         <span>
           default{" "}
-          <span data-dtb-part="thm-value" data-dtb-role="default">
+          <span data-dtb-part="thm-value" data-dtb-kind="value" data-dtb-role="default">
             {view.defaultText}
           </span>
         </span>
@@ -361,8 +376,8 @@ export function ThemePanel({ runtime, label, injectStyles, styleNonce }: PanelPr
   );
   const [query, setQuery] = useState("");
   const [format, setFormat] = useState<ExportFormat>("css");
-  const [copied, setCopied] = useState<"idle" | "ok" | "failed">("idle");
   const [importText, setImportText] = useState("");
+  const { status: copyStatus, copy } = useCopyStatus();
 
   const visible = useMemo(
     () =>
@@ -397,10 +412,6 @@ export function ThemePanel({ runtime, label, injectStyles, styleNonce }: PanelPr
   const failed = Object.keys(snapshot.applyErrors);
   const presets = runtime.presets();
 
-  const copy = (text: string) => {
-    void writeClipboardText(text).then((ok) => setCopied(ok ? "ok" : "failed"));
-  };
-
   return (
     <div
       data-dtb-part="thm-panel"
@@ -408,37 +419,36 @@ export function ThemePanel({ runtime, label, injectStyles, styleNonce }: PanelPr
       data-dtb-preview={snapshot.preview ? "true" : "false"}
       aria-label={label}
     >
-      <div data-dtb-part="thm-toolbar">
-        <input
+      {/* This masthead deliberately omits data-dtb-bleed: the panel caps itself at 860px,
+          so its rule must stop at the same measure as the content below it. */}
+      <div data-dtb-part="thm-toolbar" data-dtb-kind="toolbar">
+        <SearchField
           data-dtb-part="thm-search"
-          type="search"
-          aria-label="Search tokens"
+          label="Search tokens"
           placeholder={`Search ${snapshot.tokens.length} tokens`}
           value={query}
-          onChange={(event) => setQuery(event.target.value)}
+          onChange={setQuery}
         />
 
         {snapshot.surfaces.length > 1 ? (
-          <label data-dtb-part="thm-note">
-            surface{" "}
-            <select
+          <Field label="surface" data-dtb-part="thm-note">
+            <Select
               data-dtb-part="thm-select"
               data-dtb-role="surface"
               aria-label="Surface the edits apply to"
               value={snapshot.surface.id}
-              onChange={(event) => runtime.selectSurface(event.target.value)}
+              onChange={(next) => runtime.selectSurface(next)}
             >
               {snapshot.surfaces.map((entry) => (
                 <option key={entry.id} value={entry.id}>
                   {entry.label ?? entry.id}
                 </option>
               ))}
-            </select>
-          </label>
+            </Select>
+          </Field>
         ) : null}
 
-        <button
-          type="button"
+        <Action
           data-dtb-part="thm-action"
           data-dtb-action="preview"
           data-dtb-on={snapshot.preview ? "true" : "false"}
@@ -447,10 +457,9 @@ export function ThemePanel({ runtime, label, injectStyles, styleNonce }: PanelPr
           onClick={() => runtime.togglePreview()}
         >
           {snapshot.preview ? "Preview: on" : "Preview: off (before)"}
-        </button>
+        </Action>
 
-        <button
-          type="button"
+        <Action
           data-dtb-part="thm-action"
           data-dtb-action="reset-all"
           disabled={snapshot.overriddenCount === 0}
@@ -458,11 +467,10 @@ export function ThemePanel({ runtime, label, injectStyles, styleNonce }: PanelPr
           onClick={() => runtime.resetAll()}
         >
           Reset everything ({snapshot.overriddenCount})
-        </button>
+        </Action>
 
         {snapshot.mode === null ? null : (
-          <button
-            type="button"
+          <Action
             data-dtb-part="thm-action"
             data-dtb-action="mode"
             disabled={!snapshot.modeWritable}
@@ -474,28 +482,28 @@ export function ThemePanel({ runtime, label, injectStyles, styleNonce }: PanelPr
             onClick={() => runtime.setMode(snapshot.mode === "dark" ? "light" : "dark")}
           >
             mode: {snapshot.mode}
-          </button>
+          </Action>
         )}
       </div>
 
       {snapshot.readError ? (
-        <p data-dtb-part="thm-banner" data-dtb-tone="error" role="alert">
+        <Banner data-dtb-part="thm-banner" data-dtb-tone="error" role="alert">
           {snapshot.readError}
-        </p>
+        </Banner>
       ) : null}
 
       {failed.length > 0 ? (
-        <p data-dtb-part="thm-banner" data-dtb-tone="error" role="alert">
+        <Banner data-dtb-part="thm-banner" data-dtb-tone="error" role="alert">
           {failed.length} edit{failed.length === 1 ? "" : "s"} could not be applied:{" "}
           {failed.join(", ")}. Those rows are marked; the page did not take them.
-        </p>
+        </Banner>
       ) : null}
 
       {snapshot.writable || snapshot.overriddenCount > 0 ? null : (
-        <p data-dtb-part="thm-banner" data-dtb-tone="warn" role="status">
+        <Banner data-dtb-part="thm-banner" data-dtb-tone="warn" role="status">
           Nothing on this page matches the <code>{snapshot.surface.selector}</code> surface, so
           edits are stored but not shown.
-        </p>
+        </Banner>
       )}
 
       {/* The surface went away while edits were held on it. They are kept and
@@ -504,25 +512,30 @@ export function ThemePanel({ runtime, label, injectStyles, styleNonce }: PanelPr
           deliberately, because a surface missing for one render would
           otherwise mark every row failed. */}
       {!snapshot.writable && snapshot.overriddenCount > 0 ? (
-        <p data-dtb-part="thm-banner" data-dtb-tone="warn" data-dtb-detached="true" role="status">
+        <Banner
+          data-dtb-part="thm-banner"
+          data-dtb-tone="warn"
+          data-dtb-detached="true"
+          role="status"
+        >
           Nothing matches the <code>{snapshot.surface.selector}</code> surface any more, so{" "}
           {snapshot.overriddenCount} edit{snapshot.overriddenCount === 1 ? " is" : "s are"} no
           longer on the page. They are kept, and go back on when it returns.
-        </p>
+        </Banner>
       ) : null}
 
       {snapshot.notice ? (
-        <p data-dtb-part="thm-banner" data-dtb-tone="info" role="status">
+        <Banner data-dtb-part="thm-banner" data-dtb-tone="info" role="status">
           {snapshot.notice}
-        </p>
+        </Banner>
       ) : null}
 
       {snapshot.supplied ? null : (
-        <p data-dtb-part="thm-note">
+        <Note data-dtb-part="thm-note">
           No tokens were supplied. This extension owns no design system and generates no palette —
           pass the tokens your application publishes:{" "}
           <code>{'themeEditor({ tokens: [{ name: "--brand-500", type: "color" }] })'}</code>.
-        </p>
+        </Note>
       )}
 
       {visible.map((group) => (
@@ -530,7 +543,7 @@ export function ThemePanel({ runtime, label, injectStyles, styleNonce }: PanelPr
           <h3 data-dtb-part="thm-group-name" data-dtb-legend="">
             {group.name}
           </h3>
-          <ul data-dtb-part="thm-list">
+          <ul data-dtb-part="thm-list" data-dtb-kind="list">
             {group.tokens.map((view) => (
               <Row key={view.name} view={view} runtime={runtime} writable={snapshot.writable} />
             ))}
@@ -540,18 +553,19 @@ export function ThemePanel({ runtime, label, injectStyles, styleNonce }: PanelPr
 
       {presets.length > 0 ? (
         <div data-dtb-part="thm-actions" data-dtb-role="presets">
-          <span data-dtb-part="thm-note">presets</span>
+          <Note as="span" data-dtb-part="thm-note">
+            presets
+          </Note>
           {presets.map((preset) => (
-            <button
+            <Action
               key={preset.name}
-              type="button"
               data-dtb-part="thm-action"
               data-dtb-action="preset"
               data-dtb-preset={preset.name}
               onClick={() => runtime.applyPreset(preset.name)}
             >
               {preset.name}
-            </button>
+            </Action>
           ))}
         </div>
       ) : null}
@@ -559,50 +573,39 @@ export function ThemePanel({ runtime, label, injectStyles, styleNonce }: PanelPr
       {/* The panel's largest element is the payload itself — the exact string
           the buttons copy, not a summary of it. */}
       <div data-dtb-part="thm-actions" data-dtb-role="export">
-        <label data-dtb-part="thm-note">
-          export{" "}
-          <select
+        <Field label="export" data-dtb-part="thm-note">
+          <Select
             data-dtb-part="thm-select"
             data-dtb-role="format"
             aria-label="Export format"
             value={format}
-            onChange={(event) => setFormat(event.target.value as ExportFormat)}
+            onChange={(next) => setFormat(next as ExportFormat)}
           >
             {(Object.keys(FORMAT_LABEL) as ExportFormat[]).map((key) => (
               <option key={key} value={key}>
                 {FORMAT_LABEL[key]}
               </option>
             ))}
-          </select>
-        </label>
-        <button
-          type="button"
-          data-dtb-part="thm-action"
-          data-dtb-action="copy"
-          onClick={() => copy(output)}
-        >
+          </Select>
+        </Field>
+        <Action data-dtb-part="thm-action" data-dtb-action="copy" onClick={() => copy(output)}>
           Copy
-        </button>
-        <button
-          type="button"
+        </Action>
+        <Action
           data-dtb-part="thm-action"
           data-dtb-action="copy-link"
           title="A link to this page carrying the recipe. Masked values are left out of it — a document a machine applies must not contain a value that is not a value."
-          onClick={() => {
-            const link = runtime.shareLink();
-            if (link === null) setCopied("failed");
-            else copy(link);
-          }}
+          onClick={() => copy(runtime.shareLink())}
         >
           Copy share link
-        </button>
-        <span data-dtb-part="thm-note" role="status">
-          {copied === "failed"
+        </Action>
+        <Note as="span" data-dtb-part="thm-note" role="status">
+          {copyStatus === "failed"
             ? "Clipboard unavailable — select the text below instead."
-            : copied === "ok"
+            : copyStatus === "ok"
               ? `Copied — ${snapshot.maskedCount} value${snapshot.maskedCount === 1 ? "" : "s"} masked.`
               : `Credential-shaped values are masked before anything leaves this panel${snapshot.maskedCount > 0 ? ` (${snapshot.maskedCount} here)` : ""}.`}
-        </span>
+        </Note>
       </div>
 
       <pre data-dtb-part="thm-output" data-dtb-format={format}>
@@ -617,20 +620,19 @@ export function ThemePanel({ runtime, label, injectStyles, styleNonce }: PanelPr
           value={importText}
           onChange={(event) => setImportText(event.target.value)}
         />
-        <button
-          type="button"
+        <Action
           data-dtb-part="thm-action"
           data-dtb-action="import"
           disabled={importText.trim() === ""}
           onClick={() => runtime.importRecipe(importText)}
         >
           Import
-        </button>
+        </Action>
       </div>
 
       {/* What was left out, and what leaving it out costs, stated next to the
           thing itself. */}
-      <p data-dtb-part="thm-note" data-dtb-role="limits">
+      <Note data-dtb-part="thm-note" data-dtb-role="limits">
         Edits are written as inline custom properties on <code>{snapshot.surface.selector}</code>,
         so an application rule marked <code>!important</code> still wins and this panel will show an
         edit the page is not honouring. Nothing here generates a palette from a base colour: this
@@ -639,14 +641,14 @@ export function ThemePanel({ runtime, label, injectStyles, styleNonce }: PanelPr
         design-tokens shape — the deterministic, versioned half of §3H's pipeline; no plugin ships
         here. Names beginning <code>--dtb-</code> or <code>--dev-toolbar</code> are never written,
         so an edit cannot restyle this toolbar; restyle the bar from your own stylesheet instead.
-      </p>
+      </Note>
 
       {snapshot.overriddenCount > 0 ? (
-        <p data-dtb-part="thm-note" data-dtb-role="escape-hatch">
+        <Note data-dtb-part="thm-note" data-dtb-role="escape-hatch">
           Edits persist across reloads in this browser. Reset them above, or load any page with{" "}
           <code>?dtb-theme=reset</code> if an edit has made the app unreadable enough that you
           cannot reach this panel.
-        </p>
+        </Note>
       ) : null}
     </div>
   );

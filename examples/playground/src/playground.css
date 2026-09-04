@@ -207,16 +207,28 @@ body {
  * state. So hover, `[aria-expanded="true"]` and `:active` all come back
  * without being restated here, and they keep tracking core if it changes.
  *
- * It reverts by part rather than by element, and that boundary is the whole
- * design. Preflight resets far more than the three bar parts this block used
- * to name — panel buttons, search fields, value inputs, selects, the theme
- * editor's import textarea, and the margins and list markers on every heading,
- * paragraph and list — and `[data-dtb-part]` covers all of them at once, at a
- * specificity Preflight cannot reach. Reverting by *element* instead would
- * also outrank a consumer's own utility classes on their own chip, which broke
- * the `tw` extension below: `text-[11px]` lost to `font-size: revert-layer`
- * and the chip came back at the UA's 13.3px. Anything without a
- * `data-dtb-part` is somebody else's element, and this block leaves it alone.
+ * It reverts by toolbar attribute rather than by element, and that boundary is
+ * the whole design. Preflight resets far more than the three bar parts this
+ * block used to name — panel buttons, search fields, value inputs, selects, the
+ * theme editor's import textarea, and the margins and list markers on every
+ * heading, paragraph and list — and the two toolbar attributes cover all of
+ * them at once, at a specificity Preflight cannot reach.
+ *
+ * `data-dtb-kind` is in the selector alongside `data-dtb-part` because a
+ * control from `@nejcm/dev-toolbar/kit` carries a kind and need not carry a
+ * part: the kit's own rules live in `@layer dev-toolbar` and lose to Preflight
+ * exactly as core's do, so a `<TextInput>` or `<Select>` without a part name
+ * rendered at `padding: 0` with an inherited muted colour while an otherwise
+ * identical `<SearchField>` that happened to carry a part looked right. The
+ * boundary this block means is "an element the toolbar owns", and both
+ * attributes say that; `:is()` takes its specificity from its widest argument,
+ * so this stays at the same weight it had.
+ *
+ * Reverting by *element* instead would outrank a consumer's own utility classes
+ * on their own chip, which broke the `tw` extension below: `text-[11px]` lost to
+ * `font-size: revert-layer` and the chip came back at the UA's 13.3px. Anything
+ * carrying neither attribute is somebody else's element, and this block leaves
+ * it alone.
  *
  * Reverting is safe because core states the same reset itself — see the
  * `:where(button)` and `:where(menu, ol, ul)` blocks in src/styles.css — so
@@ -228,7 +240,7 @@ body {
  * `!important` anywhere, which is the point of the layer contract.
  * -------------------------------------------------------------------------- */
 
-[data-dev-toolbar] [data-dtb-part] {
+[data-dev-toolbar] :is([data-dtb-part], [data-dtb-kind]) {
   margin: revert-layer;
   padding: revert-layer;
   background-color: revert-layer;

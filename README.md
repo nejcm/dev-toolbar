@@ -87,11 +87,15 @@ them and you have a bar that hosts only your own tools.
 | [`ext/theme-editor`](./docs/ext/theme-editor.md) | Live design-token editing, with the app's own value next to your edit, and CSS, a recipe, a design-tokens export or a link on the way out |
 | [`ext/agent`](./docs/ext/agent.md) | The bar's state and commands on a global, for an in-page agent to read from `page.evaluate` rather than scrape. Development builds; running commands is a second opt-in |
 
-Three more subpaths exist for the code you write yourself:
-[`/runtime`](./docs/runtime.md) — event bus, ring buffers, throttled store and
-`redact()`, for extensions that measure something — [`/testing`](./docs/testing.md),
-for testing them, and `@nejcm/dev-toolbar/styles.css`, the shell's stylesheet for a
-host that would rather import it than have it injected at runtime.
+Four more subpaths exist for the code you write yourself:
+[`/kit`](./docs/kit.md) — the extension kit: shared types, non-React helpers, one
+stylesheet keyed on `data-dtb-kind`, and the thin React controls the first-party panels
+are built from, so a third-party extension looks native without copying a few hundred
+lines of CSS — [`/runtime`](./docs/runtime.md), the event bus, ring buffers, throttled
+store and `redact()`, for extensions that measure something —
+[`/testing`](./docs/testing.md), for testing them, and
+`@nejcm/dev-toolbar/styles.css`, the shell's stylesheet for a host that would rather
+import it than have it injected at runtime.
 
 ## Writing your own extension
 
@@ -261,6 +265,7 @@ other. The whole surface, and the Jest caveats, are in
 | --- | --- |
 | [docs/api.md](./docs/api.md) | Every prop, export and type on the root entry |
 | [docs/extension-contract.md](./docs/extension-contract.md) | The object you write, the slot props, and `start(api)` |
+| [docs/kit.md](./docs/kit.md) | `/kit`: shared types, helpers, the `data-dtb-kind` stylesheet and the React controls |
 | [docs/runtime.md](./docs/runtime.md) | `/runtime`: event bus, ring buffers, throttled store, `redact()` |
 | [docs/testing.md](./docs/testing.md) | `/testing`: helpers, the fake layout, the mock bus |
 | [docs/styling.md](./docs/styling.md) | Tokens, parts, `classNames` |

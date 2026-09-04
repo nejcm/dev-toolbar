@@ -264,4 +264,20 @@ describe("createCommandMenuRuntime", () => {
     expect(runtime.store.peek()).toMatchObject({ ready: true, recent: ["a", "b"] });
     stop();
   });
+
+  it("filters stored recents before applying the limit", () => {
+    const stored = JSON.stringify(["a", 1, "b", "c", "d", "e", "f", "g"]);
+    const runtime = createCommandMenuRuntime({ shortcut: null });
+    const stop = runtime.start(
+      api({
+        storage: {
+          getItem: (key) => (key === RECENT_KEY ? stored : null),
+          setItem: () => {},
+          removeItem: () => {},
+        },
+      }),
+    );
+    expect(runtime.store.peek().recent).toEqual(["a", "b", "c", "d", "e", "f"]);
+    stop();
+  });
 });
