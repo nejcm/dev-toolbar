@@ -26,6 +26,7 @@
  * application every time you press the hide shortcut would be unusable.
  */
 import { createThrottledStore, redact } from "../../runtime";
+import { createPoller, parseRecord } from "@nejcm/dev-toolbar/kit";
 import type { RedactOptions, ThrottledStore } from "../../runtime";
 import type { ExtensionRuntimeApi, ToolbarStorage } from "../../core/contract";
 import {
@@ -203,21 +204,7 @@ export function resetRequested(param: string | null): boolean {
 
 /** Parses a persisted edit map, dropping anything that is not a string. */
 export function parseOverrides(raw: string | null): Record<string, string> {
-  if (raw === null) return {};
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(raw);
-  } catch {
-    return {};
-  }
-  if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
-    return {};
-  }
-  const output = emptyMap();
-  for (const [key, value] of Object.entries(parsed as Record<string, unknown>)) {
-    if (typeof value === "string") define(output, key, value);
-  }
-  return output;
+  return parseRecord(raw, (value): value is string => typeof value === "string");
 }
 
 /**
@@ -1520,8 +1507,13 @@ export function createThemeEditorRuntime(
       // the edits are written to. `:root` alone is never replaced.
       const needsPoll =
         typeof tokens === "function" || surfaces.some((entry) => entry.selector !== ":root");
-      const intervalMs = Number.isFinite(pollMs) ? pollMs : 1000;
-      const timer = needsPoll ? setInterval(publish, Math.max(250, intervalMs)) : null;
+      const stopPolling = needsPoll
+        ? createPoller(publish, {
+            intervalMs: pollMs,
+            fallbackMs: 1000,
+            signal: api.signal,
+          })
+        : () => {};
 
       // Visibility is *reported*, not acted on (§2). This extension deliberately
       // keeps its edits applied while the bar is hidden — see the note at the
@@ -1537,7 +1529,7 @@ export function createThemeEditorRuntime(
         // Before `releaseAll`, so a `publish` racing the teardown cannot
         // reconcile the edits straight back onto the page.
         active = false;
-        if (timer !== null) clearInterval(timer);
+        stopPolling();
         stopWatching();
         // Unmounting the toolbar must leave the page exactly as it found it.
         // Unconditional, and by restoring what we displaced rather than by

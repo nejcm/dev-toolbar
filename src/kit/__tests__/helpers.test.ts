@@ -195,13 +195,21 @@ describe("createPoller", () => {
     expect(poll).toHaveBeenCalledTimes(1);
   });
 
-  it("does not schedule an aborted signal or a non-function callback", () => {
+  it("returns a safe no-op without scheduling for an already-aborted signal", () => {
     vi.useFakeTimers();
     const interval = vi.spyOn(globalThis, "setInterval");
     const controller = new AbortController();
     controller.abort();
 
-    createPoller(vi.fn(), { intervalMs: 250, signal: controller.signal });
+    const stop = createPoller(vi.fn(), { intervalMs: 250, signal: controller.signal });
+    expect(stop).not.toThrow();
+    expect(interval).not.toHaveBeenCalled();
+  });
+
+  it("does not schedule a non-function callback", () => {
+    vi.useFakeTimers();
+    const interval = vi.spyOn(globalThis, "setInterval");
+
     createPoller(null as unknown as () => void, { intervalMs: 250 });
     expect(interval).not.toHaveBeenCalled();
   });

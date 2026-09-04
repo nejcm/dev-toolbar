@@ -62,6 +62,7 @@ function moduleSpecifiers(source: string): string[] {
 const RELATIVE_CORE = String.raw`(?:\.\.\/)+core\/[^"']+`;
 const RELATIVE_KIT = String.raw`(?:\.\.\/)+kit(?:\/[^"']+)?`;
 const PACKAGE_ROOT = String.raw`@nejcm\/dev-toolbar`;
+const PACKAGE_KIT = String.raw`@nejcm\/dev-toolbar\/kit(?:\/[^"']+)?`;
 
 /**
  * Every *value* import matching a relative path pattern in one source file.
@@ -114,6 +115,10 @@ function valueImportsMatching(source: string, target: string): string[] {
 }
 
 const coreValueImports = (source: string): string[] => valueImportsMatching(source, RELATIVE_CORE);
+const kitValueImports = (source: string): string[] => [
+  ...valueImportsMatching(source, RELATIVE_KIT),
+  ...valueImportsMatching(source, PACKAGE_KIT),
+];
 const outsideCoreLayer = (specifier: string): boolean =>
   /(^|\/)(runtime|kit|ext)(\/|$)/.test(specifier);
 
@@ -264,6 +269,43 @@ describe("core boundary (source)", () => {
       from("import { parseRecord }", "@nejcm/dev-toolbar/kit"),
     ]) {
       expect(valueImportsMatching(source, RELATIVE_KIT), source).toEqual([]);
+    }
+  });
+});
+
+describe("runtime boundary (source)", () => {
+  const files = sourceFiles(resolve(root, "src/runtime")).filter(
+    (file) => !/(^|\/)__tests__\//.test(file),
+  );
+
+  it("never value-imports kit", () => {
+    const offenders: string[] = [];
+    for (const file of files) {
+      for (const specifier of kitValueImports(readFileSync(file, "utf8"))) {
+        offenders.push(`${file} -> ${specifier}`);
+      }
+    }
+    expect(files.length).toBeGreaterThan(5);
+    expect(offenders).toEqual([]);
+  });
+
+  it("detects runtime-to-kit value imports and allows erased or sibling imports", () => {
+    for (const source of [
+      'import { parseRecord } from "../kit";',
+      'export { matchesQuery } from "../../kit/query";',
+      'const kit = await import("@nejcm/dev-toolbar/kit");',
+      'const poller = require("@nejcm/dev-toolbar/kit/poller");',
+    ]) {
+      expect(kitValueImports(source), source).not.toEqual([]);
+    }
+
+    for (const source of [
+      'import type { Severity } from "../kit";',
+      'import { type Severity } from "@nejcm/dev-toolbar/kit";',
+      'import { createRingBuffer } from "./ringBuffer";',
+      'import type { ToolbarStorage } from "../core/contract";',
+    ]) {
+      expect(kitValueImports(source), source).toEqual([]);
     }
   });
 });

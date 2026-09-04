@@ -244,13 +244,19 @@ describe("Rows and Row", () => {
   it("spreads an unexpected prop onto the value cell rather than dropping it", () => {
     const { container } = render(
       <Rows>
-        <Row label="build" data-dtb-part="example-row-value" title="the commit">
+        <Row
+          label="build"
+          data-dtb-kind="custom"
+          data-dtb-part="example-row-value"
+          title="the commit"
+        >
           abc123
         </Row>
       </Rows>,
     );
     const value = container.querySelector("dd");
     expect(value?.getAttribute("data-dtb-part")).toBe("example-row-value");
+    expect(value?.getAttribute("data-dtb-kind")).toBe("value");
     expect(value?.getAttribute("title")).toBe("the commit");
     expect(container.querySelector("dt")?.hasAttribute("data-dtb-part")).toBe(false);
   });

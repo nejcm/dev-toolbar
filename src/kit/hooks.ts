@@ -1,5 +1,6 @@
 /**
- * Keep the kit stateless because every extension shares one package instance.
+ * Keep the kit stateless: ESM extensions share this module, while the package
+ * specifier prevents CJS from inlining a private copy into each extension.
  * Keep it free of extension markers because the bundle boundary test treats
  * those markers as proof that one extension contains another's code.
  */
@@ -19,7 +20,8 @@ export function useExtensionSurface<T>(
 ): T {
   useEffect(() => {
     if (inject) ensureStyles(undefined, nonce);
-    // Style injectors deduplicate in the document, so a new function identity is a no-op.
+    // Keep `nonce` here so an asynchronously resolved value can reach the sheet's first insert.
+    // Injectors deduplicate in the document, so a new function identity is harmless.
   }, [inject, ensureStyles, nonce]);
 
   return useSyncExternalStore(store.subscribe, store.getSnapshot, store.getSnapshot);

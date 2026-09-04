@@ -10,7 +10,7 @@
  * nothing else in the app knows about — persisted via `api.storage` and
  * re-applied through your adapter.
  */
-import type { SeverityWithOverride } from "@nejcm/dev-toolbar/kit";
+import { matchesQuery as matchesKitQuery, type SeverityWithOverride } from "@nejcm/dev-toolbar/kit";
 
 /** `null` is a real value ("unset variant"), not "no value". */
 export type FlagValue = boolean | string | number | null;
@@ -220,11 +220,7 @@ export function parseValue(type: FlagType, raw: string): FlagValue | undefined {
 
 /** Matches key, label, description and owner. */
 export function matchesQuery(view: FlagView, query: string): boolean {
-  const needle = query.trim().toLowerCase();
-  if (needle === "") return true;
-  return [view.key, view.label, view.description, view.owner]
-    .filter((part): part is string => typeof part === "string")
-    .some((part) => part.toLowerCase().includes(needle));
+  return matchesKitQuery([view.key, view.label, view.description, view.owner], query);
 }
 
 /** Severity for a row: an active override outranks everything else. */

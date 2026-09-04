@@ -39,7 +39,9 @@ exported from [`@nejcm/dev-toolbar/kit`](./kit.md), is the stylesheet that style
 ```
 
 One of those fifteen is deliberately unstyled: `field`, which the kit's `TextInput` and
-`Select` emit, is a hook for selecting a kit form control, not a promise of a kit rule — core
+`Select` emit, is a hook for those two generic controls, not every kit input and not a
+promise of a kit rule. `SearchField` emits `search`; a kind is single-valued, so use
+`:is([data-dtb-kind="field"], [data-dtb-kind="search"])` to select all three. Core
 already owns field geometry through its `:where(input, select, textarea)` rule, so the
 kit adds nothing on top. That core rule skips `type="color"` and `type="checkbox"`, so
 a `<TextInput type="color">` carries `data-dtb-kind="field"` while getting neither
@@ -59,6 +61,11 @@ Borders and text come from `--dtb-ok`, `--dtb-warn` and `--dtb-danger` (and
 severity borders and text at once. Banner grounds are their own tokens —
 `--dtb-ok-bg`, `--dtb-warn-bg`, `--dtb-danger-bg`, and `--dtb-item-active-bg` for
 `override` — so a full re-tint means overriding both halves.
+
+`data-dtb-tone` is older, extension-local vocabulary rather than part of the kit.
+Flags banners retain `error` and `warn` alongside kit severity. Theme-editor banners
+use `error`, `warn` and `info`, interpreted only by its own stylesheet. New extensions
+should use `data-dtb-kind` with `data-dtb-severity` instead.
 
 **Delivery.** The kit sheet is injected through each extension's own `injectStyles`
 switch, so it arrives with the extension that uses it. If you deliver CSS yourself,

@@ -114,6 +114,22 @@ const FLAGS_EXTENSION_CSS = String.raw`@layer dev-toolbar {
   [data-dev-toolbar] [data-dtb-part="flag-banner"] {
     flex: 0 0 auto;
     margin: 0;
+    padding: var(--dtb-space-2) var(--dtb-space-3);
+    border-radius: var(--dtb-radius);
+    border: 1px solid var(--dtb-border);
+  }
+
+  /* Preserve the pre-kit tone hooks for consumer-authored flag banners. */
+  [data-dev-toolbar] [data-dtb-part="flag-banner"][data-dtb-tone="error"] {
+    background: var(--dtb-danger-bg);
+    color: var(--dtb-danger);
+    border-color: var(--dtb-danger);
+  }
+
+  [data-dev-toolbar] [data-dtb-part="flag-banner"][data-dtb-tone="warn"] {
+    background: var(--dtb-warn-bg);
+    color: var(--dtb-warn);
+    border-color: var(--dtb-warn);
   }
 
   [data-dev-toolbar] [data-dtb-part="flag-list"] {
@@ -246,9 +262,10 @@ const FLAGS_EXTENSION_CSS = String.raw`@layer dev-toolbar {
     color: var(--dtb-muted);
   }
 
-  [data-dev-toolbar] [data-dtb-part="flag-empty"] {
+  [data-dev-toolbar] [data-dtb-part="flag-empty"][data-dtb-kind="empty"] {
     max-width: 70ch;
     margin: 0;
+    color: var(--dtb-fg);
   }
 
   /* The panel's floor: the last thing to read, under a rule that matches the

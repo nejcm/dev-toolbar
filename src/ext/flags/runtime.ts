@@ -20,7 +20,7 @@
  * raw flag value skips it.
  */
 import { createThrottledStore, redact } from "../../runtime";
-import { parseRecord } from "@nejcm/dev-toolbar/kit";
+import { createPoller, parseRecord } from "@nejcm/dev-toolbar/kit";
 import type { RedactOptions, ThrottledStore } from "../../runtime";
 import type { ExtensionRuntimeApi, ToolbarStorage } from "../../core/contract";
 import { formatValue, inferType } from "./types";
@@ -725,8 +725,14 @@ export function createFlagsRuntime(options: FlagsRuntimeOptions = {}): FlagsRunt
         }
       }
 
-      const timer =
-        typeof flags === "function" ? setInterval(publish, Math.max(250, pollMs)) : null;
+      const stopPolling =
+        typeof flags === "function"
+          ? createPoller(publish, {
+              intervalMs: pollMs,
+              fallbackMs: 1000,
+              signal: api.signal,
+            })
+          : () => {};
       const stopWatching = api.subscribeVisibility(() => publish());
       publish();
       store.flush();
@@ -735,7 +741,7 @@ export function createFlagsRuntime(options: FlagsRuntimeOptions = {}): FlagsRunt
       // StrictMode runs mount -> cleanup -> mount, and destroying it on the
       // first cleanup would drop React's subscription and freeze the panel.
       const dispose = () => {
-        if (timer !== null) clearInterval(timer);
+        stopPolling();
         stopWatching();
       };
       api.signal.addEventListener("abort", dispose, { once: true });

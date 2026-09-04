@@ -204,8 +204,9 @@ type RowSlotProps = HTMLAttributes<HTMLElement> & DataAttributes;
 /**
  * Props for one key/value pair inside `<Rows>`. Anything else spreads onto the
  * `<dd>` — the value cell is the one a site names and targets — so a stray
- * `data-dtb-part` lands somewhere rather than vanishing. `valueProps` wins on a
- * collision, being the explicit way to address that cell.
+ * `data-dtb-part` lands somewhere rather than vanishing. The kit's `value` kind
+ * wins over that spread; `valueProps` wins on a collision as the explicit way
+ * to address the cell or opt out of its kind.
  */
 export interface RowProps extends RowSlotProps {
   label: ReactNode;
@@ -229,7 +230,7 @@ export function Row({ children, label, labelProps, valueProps, ...rest }: RowPro
       <dt data-dtb-kind="label" {...labelProps}>
         {label}
       </dt>
-      <dd data-dtb-kind="value" {...rest} {...valueProps}>
+      <dd {...rest} data-dtb-kind="value" {...valueProps}>
         {children}
       </dd>
     </>

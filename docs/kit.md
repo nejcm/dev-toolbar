@@ -286,8 +286,10 @@ by hand.
 
 `field` is the deliberate carve-out. Core already owns field geometry through its
 `:where(input, select, textarea)` rule, so the kit adds no rules of its own and
-`data-dtb-kind="field"` exists so a consumer can reach every kit form control with one
-selector. Core's rule skips `type="color"` and `type="checkbox"`, so a
+`data-dtb-kind="field"` lets a consumer reach `TextInput` and `Select` with one
+selector. `SearchField` emits `data-dtb-kind="search"`; a kind is single-valued, so
+target all three kit inputs with `:is([data-dtb-kind="field"],
+[data-dtb-kind="search"])`. Core's rule skips `type="color"` and `type="checkbox"`, so a
 `<TextInput type="color">` carries the hook and gets neither treatment.
 
 ### Severity is compound, never descendant
@@ -486,8 +488,9 @@ A fragment has no single node to spread onto either, so `Row` addresses its two 
 name: `labelProps` reaches the `<dt>`, `valueProps` the `<dd>`. Anything passed at the
 top level spreads onto the **`<dd>`** — the value cell is the one a site names and
 targets — so `<Row data-dtb-part="env-row-value">` lands where you meant it rather than
-disappearing. `valueProps` wins on a collision, being the explicit way to address that
-cell.
+disappearing. The kit-owned `value` kind wins over the top-level spread, as it does on
+the other controls. `valueProps` wins on a collision, being the explicit way to address
+that cell or opt out of the kind.
 
 `Rows` is for a key/value readout. A list of rich rows is a `<ul data-dtb-kind="list">`
 of `<li data-dtb-kind="row">`, written by hand; `/ext/overlays` is the worked example.

@@ -99,9 +99,10 @@ that ship nothing.
   so both formats resolve to the host's copy. `import type` from `../core/*` is fine:
   types erase. Guarded by `src/core/__tests__/boundary.test.ts` and
   `test/fixtures/jest-consumer/shared-instance.test.js`.
-- **A new subpath must be added explicitly** to the `exports` map in `package.json`
-  *and* to `entry` and `dts.entry` in `tsup.config.ts`. Never a wildcard. Missing from
-  either means silently unpublishable or untyped.
+- **A new subpath needs wiring in six places:** `package.json` `exports`,
+  `tsup.config.ts` `entry` (`dts.entry` is derived), `knip.json` `entry`,
+  `vitest.config.ts` `resolve.alias`, `tsconfig.json` `paths`, and both hardcoded
+  subpath lists in `src/core/__tests__/boundary.test.ts`. Never use a wildcard.
 - **`src/core/css.ts` is a hand-maintained byte-identical copy of `src/styles.css`**,
   enforced by `src/core/__tests__/css.test.ts`. Edit `src/styles.css`, then paste its
   contents into the template literal in `css.ts`; `src/styles.css` is excluded from

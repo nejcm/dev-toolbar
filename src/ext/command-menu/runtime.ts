@@ -14,6 +14,7 @@
  * listed, all shown in the palette rather than thrown at the host app.
  */
 import { createThrottledStore } from "../../runtime";
+import { parseList } from "@nejcm/dev-toolbar/kit";
 import type { ThrottledStore } from "../../runtime";
 import type { AnyToolbarCommand, ExtensionRuntimeApi } from "../../core/contract";
 import { filterCommands } from "./types";
@@ -245,16 +246,7 @@ export function ariaKeyshortcuts(
 const EMPTY: readonly AnyToolbarCommand[] = [];
 
 function readRecent(raw: string | null): string[] {
-  if (raw === null) return [];
-  try {
-    const parsed: unknown = JSON.parse(raw);
-    if (!Array.isArray(parsed)) return [];
-    return parsed
-      .filter((value): value is string => typeof value === "string")
-      .slice(0, RECENT_LIMIT);
-  } catch {
-    return [];
-  }
+  return parseList(raw, (value): value is string => typeof value === "string", RECENT_LIMIT);
 }
 
 export function createCommandMenuRuntime(

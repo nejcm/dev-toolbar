@@ -763,9 +763,11 @@ Rules worth stating explicitly:
 First-party extensions live one directory per extension under `src/ext/<name>/`, each
 following the same file convention: `index.tsx` (the factory), `runtime.ts` (non-React
 logic), `ui.tsx`, `types.ts`, `css.ts`, `__tests__/`. A new extension is a new
-published subpath and must be added **explicitly** to both the `exports` map in
-`package.json` and the `entry` / `dts.entry` maps in `tsup.config.ts` — never as a
-wildcard. An entry missing from either is silently unpublishable or untyped. Shared
+published subpath. Add it to `package.json` `exports`, `tsup.config.ts` `entry`, and
+the two hardcoded subpath lists in `src/core/__tests__/boundary.test.ts`. `dts.entry`
+is derived, `knip.json` already covers `src/ext/*/index.tsx`, and extensions need no
+Vitest alias or TypeScript path mapping. For a non-extension subpath such as `/kit`,
+use the six-file checklist in `AGENTS.md`. Never use a wildcard. Shared
 extension vocabulary and glue, including `useExtensionSurface`, lives in the published
 `@nejcm/dev-toolbar/kit` subpath. First-party extensions import that package specifier,
 which stays external in their CJS bundles and resolves to one kit instance; ESM keeps
