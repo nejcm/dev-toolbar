@@ -17,6 +17,7 @@ type it publishes. Start at the [README](../README.md) if you just want it mount
 | `visible` / `position` | — | Controlled values; provide `onVisibleChange` / `onPositionChange` for internal controls |
 | `onVisibleChange` / `onPositionChange` / `onPanelChange` | — | Called for uncontrolled changes and controlled internal setter requests |
 | `shortcut` | `"Mod+Shift+."` | `null` disables it |
+| `bindCommandShortcuts` | `false` | Bind every aggregated command that declares a `shortcut` |
 | `injectStyles` | `true` | `false` → import `@nejcm/dev-toolbar/styles.css` yourself |
 | `styleNonce` | — | CSP nonce for injected stylesheets (core's, and forwarded to every slot) |
 | `onExtensionError` | — | Called after core logs a slot failure; receives the normalized `Error` and slot metadata |
@@ -73,6 +74,42 @@ by `key` or by physical `code`, so a shifted punctuation key works on any layout
 It fires wherever focus is, text fields included, but not for an auto-repeat, not
 mid-IME-composition, and not when something else already called `preventDefault()`
 — the listener is on `window`, so your own `document` handler wins the chord.
+
+## Command shortcuts
+
+`ToolbarCommand.shortcut` is a hint until you opt in:
+
+```tsx
+<DevToolbar bindCommandShortcuts extensions={extensions} />
+```
+
+Default `false`. Turning it on by default would bind keys in every app that already
+ships display-only `shortcut` strings — including strings that describe a host's own
+listener, which would then fire twice.
+
+When on:
+
+- Core re-enumerates `getCommands()` on every keydown that passes the same guards as
+  the toggle (`defaultPrevented`, `isComposing`, `repeat`). A function-form roster
+  that starts declaring a shortcut after mount is bound without a re-render. There is
+  no modifier pre-gate — a declared bare letter would otherwise silently fail to bind —
+  so typing in a host text field rebuilds the roster and re-parses every declared
+  chord per character; a large `flags` roster may measure it.
+- Commands that declare `input` are not bound — a keypress has nowhere to put a value.
+- First declaration wins, in aggregation order; a later command with the same chord
+  warns once.
+- The toggle shortcut always wins over a command; a command that declared that
+  chord is warned once and not run.
+- Bindings fire while the bar is hidden. Hidden *extensions* contribute no commands,
+  so the roster is already correct; the listener does not consult visibility (store
+  or controlled).
+- There is no focus heuristic: a declared chord fires even from a text field. Make
+  the chord specific enough that this is safe.
+- `preventDefault()` runs on a match. A `run()` that throws or rejects is logged with
+  the command id and does not kill the listener.
+
+`/ext/command-menu`'s own `shortcut` option is a separate binding in `start()`. This
+prop does not double-bind the palette — that extension contributes no commands.
 
 ## The `⋮` menu
 

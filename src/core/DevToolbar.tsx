@@ -17,7 +17,13 @@ import { OverlayHost } from "./OverlayHost";
 import { PanelHost } from "./PanelHost";
 import { DevToolbarContext, cx } from "./context";
 import type { DevToolbarContextValue } from "./context";
-import { collectCommands, invokeCommand, registerCommandHost } from "./commands";
+import {
+  collectCommands,
+  findShortcutCommand,
+  invokeCommand,
+  registerCommandHost,
+  warnShortcutYieldsToToggle,
+} from "./commands";
 import { collectDiagnostics } from "./diagnostics";
 import { createExtensionStorage, createInstanceStorage, resolveStorage } from "./storage";
 import { createToolbarStore } from "./store";
@@ -124,6 +130,17 @@ export interface DevToolbarProps {
    * auto-repeat; the focused element does not matter.
    */
   shortcut?: string | null;
+  /**
+   * Bind every aggregated command that declares a `shortcut`. Default `false`.
+   *
+   * Off by default because many existing `shortcut` strings are display-only
+   * hints — some describe a host's own listener, which would then fire twice.
+   * Bindings re-enumerate on each keydown, skip commands that declare `input`,
+   * yield to {@link shortcut} (the toggle), fire while the bar is hidden, and
+   * do not suppress while a text field has focus. First declaration wins; a
+   * later command with the same chord warns once.
+   */
+  bindCommandShortcuts?: boolean;
   /** Portal target. Defaults to `document.body`. */
   container?: HTMLElement | null;
   className?: string;
@@ -198,6 +215,7 @@ function DevToolbarRoot({
   styleNonce,
   classNames: classNamesProp,
   shortcut = DEFAULT_SHORTCUT,
+  bindCommandShortcuts = false,
   container,
   className,
   style,
@@ -605,16 +623,19 @@ function DevToolbarRoot({
 
   // Toggle shortcut.
   const parsedShortcut = useMemo(
-    () => (shortcut === null ? null : parseShortcut(shortcut)),
+    () =>
+      shortcut === null
+        ? null
+        : parseShortcut(
+            shortcut,
+            "Pass `shortcut={null}` to disable the toggle shortcut deliberately.",
+          ),
     [shortcut],
   );
   useEffect(() => {
     if (!enabled || !parsedShortcut || typeof window === "undefined") return;
     const onKeyDown = (event: KeyboardEvent) => {
-      // Listener is on `window`, so `document` handlers ran first:
-      // `defaultPrevented` is how a host claims the chord. `isComposing` keeps
-      // IME out; `repeat` keeps a held chord from flickering the bar.
-      if (event.defaultPrevented || event.isComposing || event.repeat) return;
+      if (isIgnoredShortcutEvent(event)) return;
       if (!matchesShortcut(event, parsedShortcut)) return;
       event.preventDefault();
       toggleVisible();
@@ -622,6 +643,38 @@ function DevToolbarRoot({
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [enabled, parsedShortcut, toggleVisible]);
+
+  // Command shortcuts. Opt-in: existing `shortcut` strings are often hints
+  // describing a host's own binding. Does not read visibility — hidden
+  // extensions already contribute no commands, and a visible-only rule would
+  // make the binding depend on UI state the command has nothing to do with.
+  // Effective vs store visibility (phase 3) is therefore irrelevant here.
+  useEffect(() => {
+    if (!enabled || !bindCommandShortcuts || typeof window === "undefined") return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (isIgnoredShortcutEvent(event)) return;
+      // Toggle wins unconditionally, independent of listener registration order.
+      // Still enumerate: a command that declared this chord is otherwise
+      // silently unbound, which is the failure mode rule 3 exists to surface.
+      if (parsedShortcut !== null && matchesShortcut(event, parsedShortcut)) {
+        const shadowed = findShortcutCommand(event, getCommands());
+        if (shadowed !== undefined) warnShortcutYieldsToToggle(shadowed.id);
+        return;
+      }
+      const command = findShortcutCommand(event, getCommands());
+      if (command === undefined) return;
+      event.preventDefault();
+      try {
+        void Promise.resolve(command.run()).catch((error: unknown) => {
+          reportShortcutCommandError(command.id, error);
+        });
+      } catch (error) {
+        reportShortcutCommandError(command.id, error);
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [bindCommandShortcuts, enabled, getCommands, parsedShortcut]);
 
   // Publish the height variables on the document element.
   const rootRef = useRef<HTMLDivElement | null>(null);
@@ -773,6 +826,21 @@ function DevToolbarRoot({
         : null}
     </DevToolbarContext.Provider>
   );
+}
+
+/**
+ * Listener is on `window`, so `document` handlers ran first: `defaultPrevented`
+ * is how a host claims the chord. `isComposing` keeps IME out; `repeat` keeps a
+ * held chord from auto-firing. Shared by the toggle and command-shortcut
+ * listeners; the focused element is deliberately not consulted.
+ */
+function isIgnoredShortcutEvent(event: KeyboardEvent): boolean {
+  return event.defaultPrevented || event.isComposing || event.repeat;
+}
+
+function reportShortcutCommandError(id: string, error: unknown): void {
+  // eslint-disable-next-line no-console
+  console.error(`[dev-toolbar] command "${id}" rejected from its shortcut.`, error);
 }
 
 function stopExtension(

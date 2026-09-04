@@ -156,7 +156,7 @@ interface ToolbarCommand<In = void, Out = void> {
   description?: string;          // prose for a reader deciding whether to call it
   group?: string;
   keywords?: string[];
-  shortcut?: string;             // display-only
+  shortcut?: string;             // hint; bound only with bindCommandShortcuts
   input?: CommandInputSchema;    // absent = takes nothing
   run(input: In): Out | Promise<Out>;
 }

@@ -101,7 +101,13 @@ export interface ToolbarCommand<In = void, Out = void> {
   description?: string;
   group?: string;
   keywords?: string[];
-  /** Display-only hint, e.g. "Mod+Shift+F". Core does not bind it. */
+  /**
+   * Keyboard chord, e.g. `"Mod+Shift+F"`. Palettes may show it as a hint.
+   * Core binds it only when `<DevToolbar bindCommandShortcuts>` is set — the
+   * default is off, because existing strings are often a host's own binding.
+   * A bound chord fires while the bar is hidden, does not consult focus, skips
+   * commands that declare `input`, and loses to core's toggle shortcut.
+   */
   shortcut?: string;
   /**
    * Absent means "takes no input", and a palette can run it from a keypress.

@@ -11,17 +11,20 @@ import { act } from "@testing-library/react";
 import { cleanupToolbar, makeExtension, mountToolbar } from "@nejcm/dev-toolbar/testing";
 import {
   collectCommands,
+  findShortcutCommand,
   resetCommandWarnings,
   resolveExtensionCommands,
   runCommand,
 } from "../commands";
 import type { DevToolbarExtension, ToolbarCommand } from "../contract";
+import { isApplePlatform, resetShortcutWarnings } from "../shortcut";
 
 let errors: unknown[][] = [];
 let warns: unknown[][] = [];
 
 beforeEach(() => {
   resetCommandWarnings();
+  resetShortcutWarnings();
   errors = [];
   warns = [];
   vi.spyOn(console, "error").mockImplementation((...args) => {
@@ -169,6 +172,41 @@ describe("collectCommands", () => {
 describe("resolveExtensionCommands", () => {
   it("returns [] for an extension that declares none", () => {
     expect(resolveExtensionCommands(makeExtension({ id: "n" }))).toEqual([]);
+  });
+});
+
+describe("findShortcutCommand", () => {
+  const modK = () =>
+    new KeyboardEvent("keydown", {
+      key: "k",
+      code: "KeyK",
+      ...(isApplePlatform() ? { metaKey: true } : { ctrlKey: true }),
+    });
+
+  it("returns undefined when nothing matches, including unparseable chords", () => {
+    expect(
+      findShortcutCommand(modK(), [
+        command("plain"),
+        { id: "bad", label: "bad", shortcut: "Mod+Shift", run: () => {} },
+        { id: "other", label: "other", shortcut: "Mod+J", run: () => {} },
+      ]),
+    ).toBeUndefined();
+    expect(String(warns[0]?.[0])).toContain("Mod+Shift");
+    expect(String(warns[0]?.[0])).not.toContain("shortcut={null}");
+  });
+
+  it("skips a command that declares input even when the chord matches", () => {
+    expect(
+      findShortcutCommand(modK(), [
+        {
+          id: "form",
+          label: "form",
+          shortcut: "Mod+K",
+          input: { fields: { q: { type: "string" } } },
+          run: () => {},
+        },
+      ]),
+    ).toBeUndefined();
   });
 });
 

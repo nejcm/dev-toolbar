@@ -17,7 +17,7 @@ extension; with a query it is one flat list ordered by match quality. Options:
 plus the usual `id` / `label` / `align` / `order` / `priority` / `hidden` /
 `injectStyles` / `styleNonce`.
 
-Five things worth knowing:
+Six things worth knowing:
 
 - **It re-enumerates every time it opens.** `commands` may be a function, so an
   extension can begin contributing one after mount. The palette asks again rather
@@ -38,6 +38,12 @@ Five things worth knowing:
   with it. The bar chip is a convenience — the key binding is bound in `start()`.
   Hiding the toolbar (`Mod+Shift+.`) dismisses an open palette and disables the
   shortcut until the bar is back.
+- **Its `shortcut` option is unaffected by `<DevToolbar bindCommandShortcuts>`.**
+  That prop binds aggregated *commands*; this extension contributes none, so
+  turning it on does not double-bind the palette. Leave this option as it is.
+  A host command declaring `Mod+K` collides with this palette's default and both
+  fire: core's `preventDefault()` cannot suppress a listener an extension
+  registered in `start()`.
 
 Replacing it with your team's own `cmdk` is one line: leave it out and write your own
 over `useToolbarCommands()` (stable snapshot) or `useDevToolbar().getCommands()`

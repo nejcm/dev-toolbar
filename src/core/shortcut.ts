@@ -55,13 +55,12 @@ export function resetShortcutWarnings(): void {
   warnedShortcuts.clear();
 }
 
-function warnOnce(input: string, reason: string): void {
+function warnOnce(input: string, reason: string, hint?: string): void {
   if (warnedShortcuts.has(input)) return;
   warnedShortcuts.add(input);
   // eslint-disable-next-line no-console
   console.warn(
-    `[dev-toolbar] shortcut "${input}" ${reason}. ` +
-      "Pass `shortcut={null}` to disable the toggle shortcut deliberately.",
+    `[dev-toolbar] shortcut "${input}" ${reason}.` + (hint === undefined ? "" : ` ${hint}`),
   );
 }
 
@@ -75,9 +74,10 @@ function warnOnce(input: string, reason: string): void {
  * that would be a behaviour break for anyone relying on it) but it warns, once
  * per distinct input string. A modifier-only input returns `null`, which
  * `DevToolbar` cannot distinguish from the documented `shortcut={null}`
- * opt-out — so that warns too.
+ * opt-out — so that warns too. `hint` is appended as-is; pass the toggle
+ * opt-out sentence only from that path, not from command chords.
  */
-export function parseShortcut(input: string): ParsedShortcut | null {
+export function parseShortcut(input: string, hint?: string): ParsedShortcut | null {
   const parts = input
     .split("+")
     .map((part) => part.trim())
@@ -126,7 +126,7 @@ export function parseShortcut(input: string): ParsedShortcut | null {
   }
 
   if (keyTokens === 0) {
-    warnOnce(input, "names only modifiers and so binds nothing");
+    warnOnce(input, "names only modifiers and so binds nothing", hint);
     return null;
   }
   if (keyTokens > 1) {
@@ -134,6 +134,7 @@ export function parseShortcut(input: string): ParsedShortcut | null {
       input,
       `names ${keyTokens} non-modifier tokens; "${shortcut.key}" won and the rest ` +
         "were dropped (a misspelled modifier is the usual cause)",
+      hint,
     );
   }
   shortcut.code = codeFor(shortcut.key);

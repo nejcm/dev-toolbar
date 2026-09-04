@@ -95,6 +95,18 @@ describe("parseShortcut diagnostics", () => {
 
     expect(messages()).toHaveLength(1);
     expect(messages()[0]).toContain("names only modifiers");
+    expect(messages()[0]).not.toContain("shortcut={null}");
+  });
+
+  it("appends a caller-supplied hint, which is how the toggle names the opt-out", () => {
+    expect(
+      parseShortcut(
+        "Mod+Shift",
+        "Pass `shortcut={null}` to disable the toggle shortcut deliberately.",
+      ),
+    ).toBeNull();
+
+    expect(messages()).toHaveLength(1);
     expect(messages()[0]).toContain("shortcut={null}");
   });
 

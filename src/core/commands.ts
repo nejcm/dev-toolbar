@@ -4,6 +4,7 @@ import type {
   DevToolbarExtension,
   ToolbarCommandsInput,
 } from "./contract";
+import { matchesShortcut, parseShortcut } from "./shortcut";
 
 /**
  * Failures already reported, so a broken `commands()` logs once, not per render.
@@ -107,6 +108,54 @@ export function collectCommands(extensions: readonly DevToolbarExtension[]): Any
   } finally {
     aggregating = false;
   }
+}
+
+/**
+ * First command in `commands` whose declared shortcut matches `event`.
+ *
+ * Commands that declare `input` are skipped — a keypress has nowhere to put a
+ * value. Later declarations of the same chord are shadowed; the second warns
+ * once per id pair (`plans/extension-customization.md` § Phase 4).
+ *
+ * Parsed on every call so a function-form roster that starts declaring a
+ * shortcut after mount is bound without a re-render.
+ */
+export function findShortcutCommand(
+  event: KeyboardEvent,
+  commands: readonly AnyToolbarCommand[],
+): AnyToolbarCommand | undefined {
+  let winner: AnyToolbarCommand | undefined;
+  for (const command of commands) {
+    if (command.input !== undefined) continue;
+    const chord = command.shortcut;
+    if (typeof chord !== "string") continue;
+    const parsed = parseShortcut(chord);
+    if (parsed === null) continue;
+    if (!matchesShortcut(event, parsed)) continue;
+    if (winner === undefined) {
+      winner = command;
+      continue;
+    }
+    warnShortcutConflict(winner.id, command.id);
+  }
+  return winner;
+}
+
+function warnShortcutConflict(winnerId: string, shadowedId: string): void {
+  const key = `shortcut-conflict:${winnerId}\0${shadowedId}`;
+  if (warned.has(key)) return;
+  warned.add(key);
+  // eslint-disable-next-line no-console
+  console.warn(`[dev-toolbar] command "${shadowedId}" shortcut is shadowed by "${winnerId}".`);
+}
+
+/** Once per command id: the toggle chord always wins and the command is not run. */
+export function warnShortcutYieldsToToggle(commandId: string): void {
+  const key = `shortcut-toggle:${commandId}`;
+  if (warned.has(key)) return;
+  warned.add(key);
+  // eslint-disable-next-line no-console
+  console.warn(`[dev-toolbar] command "${commandId}" shortcut is shadowed by the toolbar toggle.`);
 }
 
 export interface CommandHost {
