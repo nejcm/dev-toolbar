@@ -1,6 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
-import { useExtensionSurface } from "@nejcm/dev-toolbar/kit";
+import {
+  Action,
+  Banner,
+  Chip,
+  EmptyState,
+  Note,
+  useExtensionSurface,
+} from "@nejcm/dev-toolbar/kit";
 import { ensureDiagnosticsStyles } from "./css";
 import { SNAPSHOT_FORMATS } from "./types";
 import type { SnapshotFormat } from "./types";
@@ -73,17 +80,14 @@ export function DiagnosticsChip({
           : `${label}: click to capture a snapshot for a bug report`
       }
     >
-      <span
+      <Chip
+        label={isOverflowed ? label : "diagnostics"}
+        value={captured ? (omissions === 0 ? "ready" : `${omissions} missing`) : "capture"}
         data-dtb-part="diag-chip"
-        data-dtb-kind="chip"
         data-dtb-incomplete={omissions > 0 ? "true" : "false"}
-      >
-        <span data-dtb-part="diag-dot" data-dtb-kind="dot" aria-hidden="true" />
-        <span>{isOverflowed ? label : "diagnostics"}</span>
-        <span data-dtb-part="diag-value" data-dtb-kind="value">
-          {captured ? (omissions === 0 ? "ready" : `${omissions} missing`) : "capture"}
-        </span>
-      </span>
+        dotProps={{ "data-dtb-part": "diag-dot" }}
+        valueProps={{ "data-dtb-part": "diag-value" }}
+      />
     </button>
   );
 }
@@ -181,36 +185,26 @@ export function DiagnosticsPanel({
             </button>
           ))}
         </div>
-        <button
-          type="button"
-          data-dtb-part="diag-action"
-          data-dtb-kind="action"
-          data-dtb-action="capture"
-          onClick={recapture}
-        >
+        <Action data-dtb-part="diag-action" data-dtb-action="capture" onClick={recapture}>
           Capture again
-        </button>
-        <button
-          type="button"
+        </Action>
+        <Action
           data-dtb-part="diag-action"
-          data-dtb-kind="action"
           data-dtb-action="copy"
           disabled={snapshot === null}
           onClick={copy}
         >
           Copy
-        </button>
-        <button
-          type="button"
+        </Action>
+        <Action
           data-dtb-part="diag-action"
-          data-dtb-kind="action"
           data-dtb-action="download"
           disabled={snapshot === null}
           onClick={download}
         >
           Download
-        </button>
-        <span data-dtb-part="diag-note" data-dtb-kind="note" role="status">
+        </Action>
+        <Note as="span" data-dtb-part="diag-note" role="status">
           {status ??
             (snapshot === null
               ? "Capturing…"
@@ -219,11 +213,11 @@ export function DiagnosticsPanel({
                     ? "No values matched the mask."
                     : `${masked} value${masked === 1 ? "" : "s"} masked.`
                 }`)}
-        </span>
+        </Note>
       </div>
 
       {snapshot !== null && snapshot.omissions.length > 0 ? (
-        <div data-dtb-part="diag-omissions" data-dtb-kind="banner" role="alert">
+        <Banner as="div" data-dtb-part="diag-omissions" role="alert">
           <strong>
             Incomplete — {snapshot.omissions.length} thing
             {snapshot.omissions.length === 1 ? "" : "s"} could not be included.
@@ -236,13 +230,13 @@ export function DiagnosticsPanel({
               </li>
             ))}
           </ul>
-        </div>
+        </Banner>
       ) : null}
 
       {snapshot === null ? (
-        <p data-dtb-part="diag-empty" data-dtb-kind="empty">
+        <EmptyState as="p" data-dtb-part="diag-empty">
           No snapshot yet.
-        </p>
+        </EmptyState>
       ) : (
         <pre
           data-dtb-part="diag-preview"

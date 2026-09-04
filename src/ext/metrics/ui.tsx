@@ -1,7 +1,7 @@
 import { useId, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { Sparkline } from "./Sparkline";
-import { CopyButton, useExtensionSurface } from "@nejcm/dev-toolbar/kit";
+import { Action, Chip, CopyButton, Note, useExtensionSurface } from "@nejcm/dev-toolbar/kit";
 import { ensureMetricsStyles } from "./css";
 import { formatBytes, formatMs, shortenUrl } from "./format";
 import type { MetricsRuntime } from "./runtime";
@@ -55,17 +55,13 @@ export function MetricsChips({
               onClick={onToggle}
               title={view.hint}
             >
-              <span data-dtb-part="metrics-chip" data-dtb-kind="chip">
-                <span
-                  data-dtb-part="metrics-dot"
-                  data-dtb-kind="dot"
-                  data-dtb-severity={view.severity}
-                  aria-hidden="true"
-                />
-                <span data-dtb-part="metrics-label" data-dtb-kind="label">
-                  {view.title}
-                </span>
-              </span>
+              <Chip
+                label={view.title}
+                severity={view.severity}
+                data-dtb-part="metrics-chip"
+                dotProps={{ "data-dtb-part": "metrics-dot" }}
+                labelProps={{ "data-dtb-part": "metrics-label", "data-dtb-kind": "label" }}
+              />
               <span
                 data-dtb-part="metrics-value"
                 data-dtb-kind="value"
@@ -92,30 +88,18 @@ export function MetricsChips({
         {snapshot.order.map((id) => {
           const view = snapshot.views[id];
           return (
-            <span
+            <Chip
               key={id}
+              label={view.label}
+              value={view.display}
+              severity={view.severity}
               data-dtb-part="metrics-chip"
-              data-dtb-kind="chip"
               data-dtb-metric={id}
               data-dtb-severity={view.severity}
-            >
-              <span
-                data-dtb-part="metrics-dot"
-                data-dtb-kind="dot"
-                data-dtb-severity={view.severity}
-                aria-hidden="true"
-              />
-              <span data-dtb-part="metrics-label" data-dtb-kind="label">
-                {view.label}
-              </span>
-              <span
-                data-dtb-part="metrics-value"
-                data-dtb-kind="value"
-                data-dtb-severity={view.severity}
-              >
-                {view.display}
-              </span>
-            </span>
+              dotProps={{ "data-dtb-part": "metrics-dot" }}
+              labelProps={{ "data-dtb-part": "metrics-label", "data-dtb-kind": "label" }}
+              valueProps={{ "data-dtb-part": "metrics-value" }}
+            />
           );
         })}
       </span>
@@ -230,13 +214,13 @@ export function MetricsPanel({ runtime, injectStyles, styleNonce }: PanelProps):
           <span data-dtb-part="metrics-headline-value" data-dtb-kind="value">
             {view.display}
           </span>
-          <span data-dtb-part="metrics-note" data-dtb-kind="note">
+          <Note as="span" data-dtb-part="metrics-note">
             {view.unit}
-          </span>
+          </Note>
           {view.status === "unsupported" ? (
-            <span data-dtb-part="metrics-note" data-dtb-kind="note">
+            <Note as="span" data-dtb-part="metrics-note">
               — unsupported here
-            </span>
+            </Note>
           ) : null}
         </div>
 
@@ -257,22 +241,18 @@ export function MetricsPanel({ runtime, injectStyles, styleNonce }: PanelProps):
         {view.id === "network" ? <RequestTable requests={snapshot.requests} /> : null}
 
         {collector ? (
-          <p data-dtb-part="metrics-note" data-dtb-kind="note">
-            Collector cost: {collector.estimatedCost}.
-          </p>
+          <Note data-dtb-part="metrics-note">Collector cost: {collector.estimatedCost}.</Note>
         ) : null}
       </div>
 
       <div data-dtb-part="metrics-actions" data-dtb-bleed="">
-        <button
-          type="button"
+        <Action
           data-dtb-part="metrics-action"
-          data-dtb-kind="action"
           data-dtb-action="reset"
           onClick={() => runtime.reset()}
         >
           Reset
-        </button>
+        </Action>
         <CopyButton
           text={() => JSON.stringify(runtime.diagnostics(), null, 2)}
           statusText={{
@@ -302,11 +282,7 @@ function Row({ label, value }: { label: string; value: string }): ReactNode {
 
 function RequestTable({ requests }: { requests: MetricsSnapshot["requests"] }): ReactNode {
   if (requests.length === 0) {
-    return (
-      <p data-dtb-part="metrics-note" data-dtb-kind="note">
-        No requests observed yet.
-      </p>
-    );
+    return <Note data-dtb-part="metrics-note">No requests observed yet.</Note>;
   }
   return (
     <table data-dtb-part="metrics-requests">

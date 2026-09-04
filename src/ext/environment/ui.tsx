@@ -1,5 +1,14 @@
 import type { ReactNode } from "react";
-import { useCopyStatus, useExtensionSurface } from "@nejcm/dev-toolbar/kit";
+import {
+  Action,
+  Banner,
+  Chip,
+  EmptyState,
+  Note,
+  Tag,
+  useCopyStatus,
+  useExtensionSurface,
+} from "@nejcm/dev-toolbar/kit";
 import { ensureEnvironmentStyles } from "./css";
 import { GROUP_LABELS } from "./types";
 import type { EnvironmentFieldView, EnvironmentGroup, EnvironmentSnapshot } from "./types";
@@ -48,26 +57,18 @@ export function EnvironmentChip({
     : `${label}: unknown — no context supplied to environment()`;
 
   const inner = (
-    <span data-dtb-part="env-chip" data-dtb-kind="chip" data-dtb-severity={snapshot.severity}>
-      <span
-        data-dtb-part="env-dot"
-        data-dtb-kind="dot"
-        data-dtb-severity={snapshot.severity}
-        aria-hidden="true"
-      />
-      <span data-dtb-part="env-label" data-dtb-kind="label">
-        env
-      </span>
-      <span
-        data-dtb-part="env-value"
-        data-dtb-kind="value"
-        data-dtb-severity={snapshot.severity}
-        data-dtb-env={kind}
-      >
-        {kind}
-      </span>
+    <Chip
+      label="env"
+      value={kind}
+      severity={snapshot.severity}
+      data-dtb-part="env-chip"
+      data-dtb-severity={snapshot.severity}
+      dotProps={{ "data-dtb-part": "env-dot" }}
+      labelProps={{ "data-dtb-part": "env-label", "data-dtb-kind": "label" }}
+      valueProps={{ "data-dtb-part": "env-value", "data-dtb-env": kind }}
+    >
       {snapshot.impersonating ? <span data-dtb-part="env-alert">impersonating</span> : null}
-    </span>
+    </Chip>
   );
 
   if (isOverflowed) {
@@ -115,27 +116,27 @@ export function EnvironmentPanel({ runtime, injectStyles, styleNonce }: PanelPro
       data-dtb-impersonating={snapshot.impersonating ? "true" : "false"}
     >
       {snapshot.impersonating ? (
-        <p data-dtb-part="env-banner" data-dtb-kind="banner" role="alert">
+        <Banner data-dtb-part="env-banner" role="alert">
           Impersonation is active. Everything you do here happens as somebody else.
-        </p>
+        </Banner>
       ) : null}
 
       <div data-dtb-part="env-body" data-dtb-bleed="">
         {anythingSupplied ? null : (
-          <div data-dtb-part="env-empty" data-dtb-kind="empty">
-            <p data-dtb-part="env-note" data-dtb-kind="note">
+          <EmptyState data-dtb-part="env-empty">
+            <Note data-dtb-part="env-note">
               No environment context was supplied, so this environment is <strong>unknown</strong> —
               not "local". Nothing here is guessed from the hostname, and nothing is read from{" "}
               <code>process.env</code>.
-            </p>
-            <p data-dtb-part="env-note" data-dtb-kind="note">
+            </Note>
+            <Note data-dtb-part="env-note">
               Pass what you know:{" "}
               <code>
                 {'environment({ context: { environment: "staging", release: __RELEASE__ } })'}
               </code>
               , or a function for values that change.
-            </p>
-          </div>
+            </Note>
+          </EmptyState>
         )}
 
         {groups.map((group) => {
@@ -157,31 +158,27 @@ export function EnvironmentPanel({ runtime, injectStyles, styleNonce }: PanelPro
       </div>
 
       <div data-dtb-part="env-actions" data-dtb-bleed="">
-        <button
-          type="button"
+        <Action
           data-dtb-part="env-action"
-          data-dtb-kind="action"
           data-dtb-action="copy"
           onClick={() => copy(runtime.snapshotText())}
         >
           Copy summary
-        </button>
-        <button
-          type="button"
+        </Action>
+        <Action
           data-dtb-part="env-action"
-          data-dtb-kind="action"
           data-dtb-action="copy-json"
           onClick={() => copy(JSON.stringify(runtime.diagnostics(), null, 2))}
         >
           Copy JSON
-        </button>
-        <span data-dtb-part="env-note" data-dtb-kind="note" role="status">
+        </Action>
+        <Note as="span" data-dtb-part="env-note" role="status">
           {copyStatus === "failed"
             ? "Clipboard unavailable."
             : copyStatus === "ok"
               ? `Copied — ${snapshot.maskedCount} value${snapshot.maskedCount === 1 ? "" : "s"} masked.`
               : `Credential-shaped values and email addresses are masked before anything is copied${snapshot.maskedCount > 0 ? ` (${snapshot.maskedCount} here)` : ""}. Read it before you paste it.`}
-        </span>
+        </Note>
       </div>
     </div>
   );
@@ -207,24 +204,22 @@ function Row({ field }: { field: EnvironmentFieldView }): ReactNode {
           field.value
         )}
         {field.masked ? (
-          <span
+          <Tag
             data-dtb-part="env-tag"
-            data-dtb-kind="tag"
             data-dtb-tag="masked"
             title="This value was masked before it was rendered or copied."
           >
             masked
-          </span>
+          </Tag>
         ) : null}
         {field.source === "detected" ? (
-          <span
+          <Tag
             data-dtb-part="env-tag"
-            data-dtb-kind="tag"
             data-dtb-tag="detected"
             title="Read from this browser, not from the deployment."
           >
             detected
-          </span>
+          </Tag>
         ) : null}
       </dd>
     </>

@@ -723,8 +723,14 @@ if (built || !mustBeBuilt) {
         ]),
       );
       expect(result.kit).toEqual([
+        "Action",
+        "Banner",
+        "Chip",
         "CopyButton",
+        "EmptyState",
         "KIT_CSS",
+        "Note",
+        "Tag",
         "createPoller",
         "createStyleInjector",
         "ensureKitStyles",

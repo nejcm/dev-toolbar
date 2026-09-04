@@ -1,6 +1,14 @@
 import { useMemo, useState } from "react";
 import type { ReactNode } from "react";
-import { CopyButton, useExtensionSurface } from "@nejcm/dev-toolbar/kit";
+import {
+  Action,
+  Banner,
+  CopyButton,
+  EmptyState,
+  Note,
+  Tag,
+  useExtensionSurface,
+} from "@nejcm/dev-toolbar/kit";
 import { ensureFlagsStyles } from "./css";
 import { formatValue, matchesQuery, parseValue, severityFor } from "./types";
 import type { FlagValue, FlagView } from "./types";
@@ -111,6 +119,9 @@ export function FlagsChip({
       onClick={onToggle}
       title={title}
     >
+      {/* Hand-written, not the kit's <Chip>: this chip has no dot, and the kit
+          chip always renders one. An extra node here would move the whole
+          summary by a dot and a gap. */}
       <span
         data-dtb-part="flag-chip"
         data-dtb-kind="chip"
@@ -172,9 +183,9 @@ function Editor({
 
   if (!writable) {
     return (
-      <span data-dtb-part="flag-note" data-dtb-kind="note" data-dtb-role="read-only">
+      <Note as="span" data-dtb-part="flag-note" data-dtb-role="read-only">
         read-only
-      </span>
+      </Note>
     );
   }
 
@@ -275,9 +286,9 @@ function Editor({
         onBlur={tryCommit}
       />
       {rejected ? (
-        <span data-dtb-part="flag-tag" data-dtb-kind="tag" data-dtb-tag="rejected" role="alert">
+        <Tag data-dtb-part="flag-tag" data-dtb-tag="rejected" role="alert">
           not a {view.type}
-        </span>
+        </Tag>
       ) : null}
       <ClearButton view={view} runtime={runtime} />
     </>
@@ -286,10 +297,8 @@ function Editor({
 
 function ClearButton({ view, runtime }: { view: FlagView; runtime: FlagsRuntime }): ReactNode {
   return (
-    <button
-      type="button"
+    <Action
       data-dtb-part="flag-action"
-      data-dtb-kind="action"
       data-dtb-action="clear"
       data-dtb-flag={view.key}
       disabled={!view.overridden}
@@ -297,7 +306,7 @@ function ClearButton({ view, runtime }: { view: FlagView; runtime: FlagsRuntime 
       onClick={() => runtime.clearOverride(view.key)}
     >
       clear
-    </button>
+    </Action>
   );
 }
 
@@ -327,59 +336,52 @@ function Row({
         <span>{view.label}</span>
         <code data-dtb-part="flag-key">{view.key}</code>
         {view.overridden ? (
-          <span data-dtb-part="flag-tag" data-dtb-kind="tag" data-dtb-tag="override">
+          <Tag data-dtb-part="flag-tag" data-dtb-tag="override">
             overridden
-          </span>
+          </Tag>
         ) : null}
         {view.applyError ? (
-          <span
-            data-dtb-part="flag-tag"
-            data-dtb-kind="tag"
-            data-dtb-tag="not-applied"
-            title={view.applyError}
-          >
+          <Tag data-dtb-part="flag-tag" data-dtb-tag="not-applied" title={view.applyError}>
             {/* Same slot also records a failed clear, where "override not applied" would read backwards. */}
             {view.overridden ? "override not applied" : "clear not applied"}
-          </span>
+          </Tag>
         ) : null}
         {view.orphaned ? (
-          <span
+          <Tag
             data-dtb-part="flag-tag"
-            data-dtb-kind="tag"
             data-dtb-tag="orphaned"
             title="Your application still receives this override, but no flag in the current catalogue has this key — usually a renamed or deleted flag."
           >
             no longer in the catalogue
-          </span>
+          </Tag>
         ) : null}
         {view.promoted ? (
-          <span data-dtb-part="flag-tag" data-dtb-kind="tag" data-dtb-tag="promoted">
+          <Tag data-dtb-part="flag-tag" data-dtb-tag="promoted">
             promoted
-          </span>
+          </Tag>
         ) : null}
         {view.masked ? (
-          <span
+          <Tag
             data-dtb-part="flag-tag"
-            data-dtb-kind="tag"
             data-dtb-tag="masked"
             title="This value was masked before it was rendered or copied."
           >
             masked
-          </span>
+          </Tag>
         ) : null}
         {view.expired ? (
-          <span data-dtb-part="flag-tag" data-dtb-kind="tag" data-dtb-tag="expired">
+          <Tag data-dtb-part="flag-tag" data-dtb-tag="expired">
             expired {view.expiresAt}
-          </span>
+          </Tag>
         ) : null}
         {reloadPending ? (
-          <span data-dtb-part="flag-tag" data-dtb-kind="tag" data-dtb-tag="reload">
+          <Tag data-dtb-part="flag-tag" data-dtb-tag="reload">
             reload required
-          </span>
+          </Tag>
         ) : view.reloadBehavior === "live" ? null : (
-          <span data-dtb-part="flag-tag" data-dtb-kind="tag" data-dtb-tag="reload-behavior">
+          <Tag data-dtb-part="flag-tag" data-dtb-tag="reload-behavior">
             {view.reloadBehavior}
-          </span>
+          </Tag>
         )}
       </div>
 
@@ -467,17 +469,15 @@ export function FlagsPanel({ runtime, label, injectStyles, styleNonce }: PanelPr
           value={query}
           onChange={(event) => setQuery(event.target.value)}
         />
-        <button
-          type="button"
+        <Action
           data-dtb-part="flag-action"
-          data-dtb-kind="action"
           data-dtb-action="clear-all"
           disabled={!snapshot.writable || snapshot.overriddenCount === 0}
           onClick={() => runtime.clearAll()}
           title="Drop every local override and go back to what the application resolves on its own"
         >
           Clear all overrides ({snapshot.overriddenCount})
-        </button>
+        </Action>
         <CopyButton
           text={() => runtime.recipeText()}
           statusText={{
@@ -494,76 +494,54 @@ export function FlagsPanel({ runtime, label, injectStyles, styleNonce }: PanelPr
       </div>
 
       {snapshot.readError ? (
-        <p
-          data-dtb-part="flag-banner"
-          data-dtb-kind="banner"
-          data-dtb-tone="error"
-          data-dtb-severity="bad"
-          role="alert"
-        >
+        <Banner data-dtb-part="flag-banner" data-dtb-tone="error" severity="bad" role="alert">
           {snapshot.readError}
-        </p>
+        </Banner>
       ) : null}
 
       {failed.length > 0 ? (
-        <p
-          data-dtb-part="flag-banner"
-          data-dtb-kind="banner"
-          data-dtb-tone="error"
-          data-dtb-severity="bad"
-          role="alert"
-        >
+        <Banner data-dtb-part="flag-banner" data-dtb-tone="error" severity="bad" role="alert">
           {failed.length} override{failed.length === 1 ? "" : "s"} could not be applied:{" "}
           {failed.join(", ")}. Those rows are marked; your application did not pick them up.
-        </p>
+        </Banner>
       ) : null}
 
       {pending.size > 0 ? (
-        <p
-          data-dtb-part="flag-banner"
-          data-dtb-kind="banner"
-          data-dtb-tone="warn"
-          data-dtb-severity="warn"
-          role="status"
-        >
+        <Banner data-dtb-part="flag-banner" data-dtb-tone="warn" severity="warn" role="status">
           {pending.size} override{pending.size === 1 ? " needs" : "s need"} a reload to take effect:{" "}
           {[...pending].join(", ")}.{" "}
-          <button
-            type="button"
+          <Action
             data-dtb-part="flag-action"
-            data-dtb-kind="action"
             data-dtb-action="reload"
             onClick={() => globalThis.location?.reload?.()}
           >
             Reload
-          </button>{" "}
-          <button
-            type="button"
+          </Action>{" "}
+          <Action
             data-dtb-part="flag-action"
-            data-dtb-kind="action"
             data-dtb-action="acknowledge"
             onClick={() => runtime.acknowledgeReload()}
           >
             Dismiss
-          </button>
-        </p>
+          </Action>
+        </Banner>
       ) : null}
 
       {snapshot.writable ? null : (
-        <p data-dtb-part="flag-note" data-dtb-kind="note" data-dtb-role="read-only-note">
+        <Note data-dtb-part="flag-note" data-dtb-role="read-only-note">
           Read-only: no <code>onOverride</code> adapter was supplied to <code>flags()</code>, so
           this panel lists and copies but changes nothing.
-        </p>
+        </Note>
       )}
 
       {snapshot.supplied ? null : (
-        <div data-dtb-part="flag-empty" data-dtb-kind="empty">
-          <p data-dtb-part="flag-note" data-dtb-kind="note">
+        <EmptyState data-dtb-part="flag-empty">
+          <Note data-dtb-part="flag-note">
             No flags were supplied. This extension owns no flag store and integrates no provider —
             pass what your application resolved:{" "}
             <code>{"flags({ flags: () => myFlags, onOverride: (k, v) => …  })"}</code>.
-          </p>
-        </div>
+          </Note>
+        </EmptyState>
       )}
 
       <ul data-dtb-part="flag-list" data-dtb-kind="list" data-dtb-bleed="">
@@ -579,16 +557,11 @@ export function FlagsPanel({ runtime, label, injectStyles, styleNonce }: PanelPr
       </ul>
 
       {snapshot.writable ? (
-        <p
-          data-dtb-part="flag-note"
-          data-dtb-kind="note"
-          data-dtb-role="escape-hatch"
-          data-dtb-bleed=""
-        >
+        <Note data-dtb-part="flag-note" data-dtb-role="escape-hatch" data-dtb-bleed="">
           Overrides persist across reloads in this browser. Clear them all above, or load any page
           with <code>?dtb-flags=reset</code> if an override has broken the app badly enough that you
           cannot reach this panel.
-        </p>
+        </Note>
       ) : null}
     </div>
   );
