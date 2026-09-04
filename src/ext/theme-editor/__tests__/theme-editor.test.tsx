@@ -4,7 +4,8 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, fireEvent } from "@testing-library/react";
-import { cleanupToolbar, mountToolbar } from "@nejcm/dev-toolbar/testing";
+import { cleanupToolbar, installClipboard, mountToolbar } from "@nejcm/dev-toolbar/testing";
+import type { ClipboardStub } from "@nejcm/dev-toolbar/testing";
 import { collectCommands } from "../../../core/commands";
 import { CONTRACT_VERSION } from "../../../core/contract";
 import { createMemoryStorage } from "../../../core/storage";
@@ -28,7 +29,8 @@ const TOKENS: DesignTokenDefinition[] = [
   { name: "--dtb-bg", type: "color", value: "#f6f6f7" },
 ];
 
-let written: string[] = [];
+let written: readonly string[] = [];
+let clipboard: ClipboardStub;
 
 /**
  * Edits land on a dedicated `#app` element rather than on `:root`, for a reason
@@ -68,24 +70,17 @@ const root = () => document.documentElement;
 const app = () => document.getElementById("app") as HTMLElement;
 
 beforeEach(() => {
-  written = [];
+  clipboard = installClipboard();
+  written = clipboard.writes;
   document.getElementById("app")?.remove();
   const host = document.createElement("div");
   host.id = "app";
   document.body.appendChild(host);
   root().removeAttribute("style");
-  Object.defineProperty(globalThis.navigator, "clipboard", {
-    configurable: true,
-    value: {
-      writeText: (value: string) => {
-        written.push(value);
-        return Promise.resolve();
-      },
-    },
-  });
 });
 
 afterEach(() => {
+  clipboard.restore();
   cleanupToolbar();
   document.getElementById("app")?.remove();
   root().removeAttribute("style");
@@ -269,6 +264,36 @@ describe("the panel", () => {
     expect(written[0]).toContain("--brand-500: #ff0000;");
   });
 
+  it("copies a share link and reports when share links are disabled", async () => {
+    const available = mount();
+    act(() => available.toolbar.openPanel("theme-editor"));
+    const availablePanel = available.toolbar.panel("theme-editor");
+
+    await act(async () => {
+      availablePanel?.querySelector<HTMLButtonElement>('[data-dtb-action="copy-link"]')?.click();
+    });
+
+    expect(written).toHaveLength(1);
+    expect(new URL(written[0] as string).searchParams.has("dtb-theme")).toBe(true);
+    expect(availablePanel?.querySelector('[role="status"]')?.textContent).toBe(
+      "Copied — 0 values masked.",
+    );
+    available.unmount();
+
+    const disabled = mount({ themeParam: null });
+    act(() => disabled.toolbar.openPanel("theme-editor"));
+    const disabledPanel = disabled.toolbar.panel("theme-editor");
+
+    await act(async () => {
+      disabledPanel?.querySelector<HTMLButtonElement>('[data-dtb-action="copy-link"]')?.click();
+    });
+
+    expect(written).toHaveLength(1);
+    expect(disabledPanel?.querySelector('[role="status"]')?.textContent).toBe(
+      "Clipboard unavailable — select the text below instead.",
+    );
+  });
+
   it("imports a pasted recipe and drops what this app does not declare", () => {
     const { toolbar } = mount();
     act(() => {
@@ -437,10 +462,8 @@ describe("the shell contract", () => {
   it("throws out of a copy command when nothing reached the clipboard", async () => {
     // §15.6: a palette closes over a resolve and reports a throw, so a copy
     // that silently did nothing must not resolve.
-    Object.defineProperty(globalThis.navigator, "clipboard", {
-      configurable: true,
-      value: undefined,
-    });
+    clipboard.restore();
+    clipboard = installClipboard(null);
     const { extension } = mount();
     const command = collectCommands([extension]).find(
       (entry) => entry.id === "theme-editor.copyCss",

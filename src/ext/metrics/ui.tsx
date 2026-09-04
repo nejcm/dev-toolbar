@@ -1,8 +1,7 @@
 import { useId, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { Sparkline } from "./Sparkline";
-import { writeClipboardText } from "../../runtime";
-import { useExtensionSurface } from "@nejcm/dev-toolbar/kit";
+import { CopyButton, useExtensionSurface } from "@nejcm/dev-toolbar/kit";
 import { ensureMetricsStyles } from "./css";
 import { formatBytes, formatMs, shortenUrl } from "./format";
 import type { MetricsRuntime } from "./runtime";
@@ -148,7 +147,6 @@ export function MetricsPanel({ runtime, injectStyles, styleNonce }: PanelProps):
     const stored = runtime.storage()?.getItem(STORAGE_TAB_KEY);
     return stored && snapshot.order.includes(stored as MetricId) ? (stored as MetricId) : first;
   });
-  const [copied, setCopied] = useState<"idle" | "ok" | "failed">("idle");
 
   const select = (id: MetricId) => {
     setActive(id);
@@ -169,11 +167,6 @@ export function MetricsPanel({ runtime, injectStyles, styleNonce }: PanelProps):
     const index = snapshot.order.indexOf(id);
     const nextIndex = (index + offset + snapshot.order.length) % snapshot.order.length;
     focusTab(snapshot.order[nextIndex]);
-  };
-
-  const copy = () => {
-    const text = JSON.stringify(runtime.diagnostics(), null, 2);
-    void writeClipboardText(text).then((ok) => setCopied(ok ? "ok" : "failed"));
   };
 
   return (
@@ -280,22 +273,19 @@ export function MetricsPanel({ runtime, injectStyles, styleNonce }: PanelProps):
         >
           Reset
         </button>
-        <button
-          type="button"
+        <CopyButton
+          text={() => JSON.stringify(runtime.diagnostics(), null, 2)}
+          statusText={{
+            ok: "Copied — URLs and credential-shaped values are masked.",
+            failed: "Clipboard unavailable.",
+            idle: "URLs and credential-shaped values are masked before this leaves the page. Read it before you paste it.",
+          }}
+          statusProps={{ "data-dtb-part": "metrics-note" }}
           data-dtb-part="metrics-action"
-          data-dtb-kind="action"
           data-dtb-action="copy"
-          onClick={copy}
         >
           Copy diagnostic data
-        </button>
-        <span data-dtb-part="metrics-note" data-dtb-kind="note" role="status">
-          {copied === "ok"
-            ? "Copied — URLs and credential-shaped values are masked."
-            : copied === "failed"
-              ? "Clipboard unavailable."
-              : "URLs and credential-shaped values are masked before this leaves the page. Read it before you paste it."}
-        </span>
+        </CopyButton>
       </div>
     </div>
   );

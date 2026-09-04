@@ -1,7 +1,5 @@
-import { useState } from "react";
 import type { ReactNode } from "react";
-import { writeClipboardText } from "../../runtime";
-import { useExtensionSurface } from "@nejcm/dev-toolbar/kit";
+import { useCopyStatus, useExtensionSurface } from "@nejcm/dev-toolbar/kit";
 import { ensureEnvironmentStyles } from "./css";
 import { GROUP_LABELS } from "./types";
 import type { EnvironmentFieldView, EnvironmentGroup, EnvironmentSnapshot } from "./types";
@@ -106,17 +104,9 @@ export function EnvironmentPanel({ runtime, injectStyles, styleNonce }: PanelPro
     ensureEnvironmentStyles,
     styleNonce,
   );
-  const [copied, setCopied] = useState<"idle" | "ok" | "failed">("idle");
-
-  // `/runtime`'s shared writer, not a hand-rolled one: a missing clipboard API
-  // and a rejected write are the same answer to this panel, and four copies of
-  // that judgement is three too many. See `runtime/clipboard.ts`.
-  const copy = (text: string) => {
-    void writeClipboardText(text).then((ok) => setCopied(ok ? "ok" : "failed"));
-  };
-
   const groups: EnvironmentGroup[] = ["build", "session", "client"];
   const anythingSupplied = snapshot.fields.some((field) => field.source === "supplied");
+  const { status: copyStatus, copy } = useCopyStatus();
 
   return (
     <div
@@ -186,9 +176,9 @@ export function EnvironmentPanel({ runtime, injectStyles, styleNonce }: PanelPro
           Copy JSON
         </button>
         <span data-dtb-part="env-note" data-dtb-kind="note" role="status">
-          {copied === "failed"
+          {copyStatus === "failed"
             ? "Clipboard unavailable."
-            : copied === "ok"
+            : copyStatus === "ok"
               ? `Copied — ${snapshot.maskedCount} value${snapshot.maskedCount === 1 ? "" : "s"} masked.`
               : `Credential-shaped values and email addresses are masked before anything is copied${snapshot.maskedCount > 0 ? ` (${snapshot.maskedCount} here)` : ""}. Read it before you paste it.`}
         </span>

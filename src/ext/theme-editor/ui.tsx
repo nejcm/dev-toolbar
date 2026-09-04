@@ -1,7 +1,6 @@
 import { useMemo, useState } from "react";
 import type { ReactNode } from "react";
-import { writeClipboardText } from "../../runtime";
-import { useExtensionSurface } from "@nejcm/dev-toolbar/kit";
+import { useCopyStatus, useExtensionSurface } from "@nejcm/dev-toolbar/kit";
 import { ensureThemeEditorStyles } from "./css";
 import {
   describeRefusal,
@@ -377,8 +376,8 @@ export function ThemePanel({ runtime, label, injectStyles, styleNonce }: PanelPr
   );
   const [query, setQuery] = useState("");
   const [format, setFormat] = useState<ExportFormat>("css");
-  const [copied, setCopied] = useState<"idle" | "ok" | "failed">("idle");
   const [importText, setImportText] = useState("");
+  const { status: copyStatus, copy } = useCopyStatus();
 
   const visible = useMemo(
     () =>
@@ -412,10 +411,6 @@ export function ThemePanel({ runtime, label, injectStyles, styleNonce }: PanelPr
 
   const failed = Object.keys(snapshot.applyErrors);
   const presets = runtime.presets();
-
-  const copy = (text: string) => {
-    void writeClipboardText(text).then((ok) => setCopied(ok ? "ok" : "failed"));
-  };
 
   return (
     <div
@@ -621,18 +616,14 @@ export function ThemePanel({ runtime, label, injectStyles, styleNonce }: PanelPr
           data-dtb-kind="action"
           data-dtb-action="copy-link"
           title="A link to this page carrying the recipe. Masked values are left out of it — a document a machine applies must not contain a value that is not a value."
-          onClick={() => {
-            const link = runtime.shareLink();
-            if (link === null) setCopied("failed");
-            else copy(link);
-          }}
+          onClick={() => copy(runtime.shareLink())}
         >
           Copy share link
         </button>
         <span data-dtb-part="thm-note" data-dtb-kind="note" role="status">
-          {copied === "failed"
+          {copyStatus === "failed"
             ? "Clipboard unavailable — select the text below instead."
-            : copied === "ok"
+            : copyStatus === "ok"
               ? `Copied — ${snapshot.maskedCount} value${snapshot.maskedCount === 1 ? "" : "s"} masked.`
               : `Credential-shaped values are masked before anything leaves this panel${snapshot.maskedCount > 0 ? ` (${snapshot.maskedCount} here)` : ""}.`}
         </span>

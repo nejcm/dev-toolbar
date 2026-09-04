@@ -48,6 +48,7 @@ const EXPECTED_EXPORTS = [
   "createMockBus",
   "createNullStorage",
   "fakeExtensionApi",
+  "installClipboard",
   "installToolbarLayout",
   "makeCommand",
   "makeExtension",

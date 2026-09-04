@@ -1,7 +1,6 @@
 import { useMemo, useState } from "react";
 import type { ReactNode } from "react";
-import { writeClipboardText } from "../../runtime";
-import { useExtensionSurface } from "@nejcm/dev-toolbar/kit";
+import { CopyButton, useExtensionSurface } from "@nejcm/dev-toolbar/kit";
 import { ensureFlagsStyles } from "./css";
 import { formatValue, matchesQuery, parseValue, severityFor } from "./types";
 import type { FlagValue, FlagView } from "./types";
@@ -444,7 +443,6 @@ export interface PanelProps {
 export function FlagsPanel({ runtime, label, injectStyles, styleNonce }: PanelProps): ReactNode {
   const snapshot = useExtensionSurface(runtime.store, injectStyles, ensureFlagsStyles, styleNonce);
   const [query, setQuery] = useState("");
-  const [copied, setCopied] = useState<"idle" | "ok" | "failed">("idle");
 
   const visible = useMemo(
     () => snapshot.flags.filter((view) => matchesQuery(view, query)),
@@ -452,12 +450,6 @@ export function FlagsPanel({ runtime, label, injectStyles, styleNonce }: PanelPr
   );
   const pending = new Set(snapshot.reloadPending);
   const failed = Object.keys(snapshot.adapterErrors);
-
-  // `/runtime`'s shared writer: a missing clipboard API and a rejected write
-  // are the same answer to this panel, so no need to hand-roll it here.
-  const copy = (text: string) => {
-    void writeClipboardText(text).then((ok) => setCopied(ok ? "ok" : "failed"));
-  };
 
   return (
     <div
@@ -486,22 +478,19 @@ export function FlagsPanel({ runtime, label, injectStyles, styleNonce }: PanelPr
         >
           Clear all overrides ({snapshot.overriddenCount})
         </button>
-        <button
-          type="button"
+        <CopyButton
+          text={() => runtime.recipeText()}
+          statusText={{
+            failed: "Clipboard unavailable.",
+            ok: `Copied — ${snapshot.maskedCount} value${snapshot.maskedCount === 1 ? "" : "s"} masked.`,
+            idle: `Credential-shaped keys and values are masked before anything is copied${snapshot.maskedCount > 0 ? ` (${snapshot.maskedCount} here)` : ""}.`,
+          }}
+          statusProps={{ "data-dtb-part": "flag-note" }}
           data-dtb-part="flag-action"
-          data-dtb-kind="action"
           data-dtb-action="copy-recipe"
-          onClick={() => copy(runtime.recipeText())}
         >
           Copy recipe
-        </button>
-        <span data-dtb-part="flag-note" data-dtb-kind="note" role="status">
-          {copied === "failed"
-            ? "Clipboard unavailable."
-            : copied === "ok"
-              ? `Copied — ${snapshot.maskedCount} value${snapshot.maskedCount === 1 ? "" : "s"} masked.`
-              : `Credential-shaped keys and values are masked before anything is copied${snapshot.maskedCount > 0 ? ` (${snapshot.maskedCount} here)` : ""}.`}
-        </span>
+        </CopyButton>
       </div>
 
       {snapshot.readError ? (

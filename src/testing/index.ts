@@ -39,5 +39,8 @@ export type {
 export { installToolbarLayout } from "./layout";
 export type { InstallToolbarLayoutOptions, ToolbarLayoutHandle } from "./layout";
 
+export { installClipboard } from "./clipboard";
+export type { ClipboardStub, ClipboardWrite } from "./clipboard";
+
 // The package's own specifier, not `../core/storage` — AGENTS.md, *Conventions*.
 export { createMemoryStorage, createNullStorage } from "@nejcm/dev-toolbar";

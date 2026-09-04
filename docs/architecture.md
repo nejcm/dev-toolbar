@@ -757,8 +757,8 @@ extensions. The "extension kit (source)" block in
 
 Testing it: [`@nejcm/dev-toolbar/testing`](./testing.md) is the whole surface —
 `renderWithToolbar` / `mountToolbar`, `makeExtension`, `makeCommand`,
-`fakeExtensionApi`, `createMockBus` and `installToolbarLayout`. That page is the
-reference; three things about it are architecture rather than API.
+`fakeExtensionApi`, `createMockBus`, `installClipboard` and `installToolbarLayout`.
+That page is the reference; three things about it are architecture rather than API.
 
 **The fake layout is global state, made safe twice over.** It patches
 `HTMLElement.prototype` and `globalThis.ResizeObserver`, which the whole file

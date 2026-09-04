@@ -6,7 +6,7 @@
  */
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { act, fireEvent } from "@testing-library/react";
-import { cleanupToolbar, mountToolbar } from "@nejcm/dev-toolbar/testing";
+import { cleanupToolbar, installClipboard, mountToolbar } from "@nejcm/dev-toolbar/testing";
 import { metrics } from "../index";
 
 const memoryRead = () => ({
@@ -92,6 +92,27 @@ describe("metrics extension in the bar", () => {
     );
     expect(labels).toContain("Heap limit");
     expect(labels).toContain("Share of limit");
+  });
+
+  it("copies diagnostics and keeps its own success wording", async () => {
+    const clipboard = installClipboard();
+    try {
+      const { toolbar } = mount();
+      toolbar.openPanel("metrics");
+      const panel = toolbar.panel("metrics");
+
+      await act(async () => {
+        panel?.querySelector<HTMLButtonElement>('[data-dtb-action="copy"]')?.click();
+      });
+
+      const copied = JSON.parse(clipboard.writes[0] as string) as { metrics: unknown[] };
+      expect(Array.isArray(copied.metrics)).toBe(true);
+      expect(panel?.querySelector('[role="status"]')?.textContent).toBe(
+        "Copied — URLs and credential-shaped values are masked.",
+      );
+    } finally {
+      clipboard.restore();
+    }
   });
 
   it("spells the metrics out when it collapses into the ⋮ menu", () => {

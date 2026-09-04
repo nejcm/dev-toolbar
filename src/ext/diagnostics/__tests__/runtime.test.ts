@@ -11,7 +11,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { REDACTED } from "../../../runtime";
 import { collectDiagnostics } from "../../../core/diagnostics";
-import { fakeExtensionApi } from "@nejcm/dev-toolbar/testing";
+import { fakeExtensionApi, installClipboard } from "@nejcm/dev-toolbar/testing";
 import {
   countOccurrences,
   createDiagnosticsRuntime,
@@ -987,17 +987,16 @@ describe("output", () => {
   });
 
   it("renders the same text copy and download send", async () => {
-    const writes: string[] = [];
-    vi.stubGlobal("navigator", {
-      clipboard: {
-        writeText: async (text: string) => void writes.push(text),
-      },
-    });
+    const clipboard = installClipboard();
     const { runtime, stop } = started({}, [{ id: "a", label: "A", status: "ok", data: { n: 1 } }]);
-    runtime.capture();
-    await expect(runtime.copy("markdown")).resolves.toBe(true);
-    expect(writes[0]).toBe(runtime.render("markdown"));
-    stop();
+    try {
+      runtime.capture();
+      await expect(runtime.copy("markdown")).resolves.toBe(true);
+      expect(clipboard.writes[0]).toBe(runtime.render("markdown"));
+    } finally {
+      clipboard.restore();
+      stop();
+    }
   });
 
   it("reports a failed copy rather than claiming success", async () => {

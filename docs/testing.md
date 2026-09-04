@@ -60,8 +60,11 @@ expect(outcome).toEqual({ ok: true, result: undefined });
 (including deliberately broken ones, via `throwInCompact` / `throwInPanel` /
 `throwInStart`), `fakeExtensionApi()` for the object `start()`
 receives, `createMockBus()` for a pub/sub bus with a hand-cranked clock, and
-`installToolbarLayout()` if you would rather drive the fake layout yourself. Storage defaults to a fresh in-memory adapter, so tests never leak
-preferences into each other.
+`installToolbarLayout()` if you would rather drive the fake layout yourself.
+`installClipboard()` records completed writes in a live readonly array without
+importing `/runtime` or `/kit`; pass `null` to make the clipboard explicitly
+unavailable. Call its idempotent `restore()` in teardown. Storage defaults to a fresh
+in-memory adapter, so tests never leak preferences into each other.
 
 **`makeCommand(options?)`.** The same idea as `makeExtension()`, but for a single
 `ToolbarCommand`: an id (auto-generated as `fake-command-N` if you don't pass one), a

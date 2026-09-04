@@ -723,6 +723,7 @@ if (built || !mustBeBuilt) {
         ]),
       );
       expect(result.kit).toEqual([
+        "CopyButton",
         "KIT_CSS",
         "createPoller",
         "createStyleInjector",
@@ -732,6 +733,7 @@ if (built || !mustBeBuilt) {
         "parseRecord",
         "readJson",
         "resolveStyleNonce",
+        "useCopyStatus",
         "useExtensionSurface",
         "writeJson",
       ]);
