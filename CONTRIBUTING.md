@@ -204,14 +204,15 @@ that subject and body away.
 ## The extension contract
 
 Most contributions are extensions, so this is the part worth reading carefully.
-`README.md` documents the contract for consumers; the notes below are the parts
-that matter when you are changing the library itself.
+[docs/extension-contract.md](./docs/extension-contract.md) documents the contract
+for consumers; the notes below are the parts that matter when you are changing the
+library itself.
 
 An extension is a **plain object**. Nothing needs to be imported from this
 package except its types. In practice extensions are factory functions returning
 that object, with state captured in the closure — there is no global registry.
 The interface lives in `src/core/contract.ts` (`DevToolbarExtension`), which is
-the source of truth; the README's copy is a summary and has drifted from it
+the source of truth; the copy in `docs/` is a summary and has drifted from it
 before.
 
 First-party extensions live one directory per extension under `src/ext/<name>/`,
@@ -321,8 +322,12 @@ not write changelog entries by hand.
 1. Land a conventional commit on `main`. `feat:` and `fix:` are what move the
    version; `chore:`, `docs:`, `refactor:` and friends do not, unless they carry
    a `BREAKING CHANGE:` footer.
-2. That push triggers `.github/workflows/release.yml`, which runs
-   `release-please`. It opens a **release PR** titled
+2. Run `.github/workflows/release.yml` from the Actions tab
+   (`workflow_dispatch`). The `push:` trigger is **commented out**, so landing on
+   `main` releases nothing by itself — a run is started by hand, and it releases
+   everything unreleased at once. Restore the `push:` block to go back to
+   release-on-merge. The workflow runs `release-please`, which opens a
+   **release PR** titled
    `chore(release): release X.Y.Z`, carrying the version bump and the generated
    `CHANGELOG.md` section.
 3. The same job **squash-merges the open release PR** and deletes its branch.
@@ -339,7 +344,7 @@ not write changelog entries by hand.
    `GITHUB_TOKEN`, which triggers no workflows — so the `push` trigger never
    sees it. One push to `main` is one whole release.
 5. The same run then gates on CI and publishes to npm. Both jobs check out the
-   release **tag**, not `github.sha` — that is the push that started the run,
+   release **tag**, not `github.sha` — that is the commit the run started from,
    which predates the release commit, and checking it out would gate the wrong
    tree and pack the previous version. The gate is `ci.yml` called as a
    reusable workflow, and it is the only CI the release commit gets.
@@ -359,26 +364,25 @@ deliberately keeps using `GITHUB_TOKEN` — merging under the PAT would make the
 release commit re-trigger this workflow. If the PAT expires, the job fails on its
 first step with an explicit message rather than an opaque 403.
 
-**There is no point at which a release is declined.** Every `feat:` or `fix:`
-that reaches `main` is on npm minutes later, under a version nobody chose by
-hand. The gate can stop a _broken_ release, not an unwanted one. If a change
-should not ship on its own, it must not land on `main` on its own — hold it on
-its branch, or land it behind `chore:`/`refactor:`, which move no version.
+**Within a run, no release is declined.** A dispatched run ships every `feat:`
+and `fix:` that has reached `main` since the last release, under a version
+nobody chose by hand; the gate can stop a _broken_ release, not an unwanted one.
+Deciding _when_ is the dispatch itself. If a change should not ship yet, either
+do not dispatch, or land it behind `chore:`/`refactor:`, which move no version.
 
-The workflow runs on pushes to `main`; it has no `workflow_dispatch` recovery
-path. After a failed `publish`, use "Re-run failed jobs" on the original run.
-Two merges in quick succession do not race: `concurrency` uses a fixed
-`release` group with `cancel-in-progress: false`, so the second run queues and
-releases whatever is still unreleased when its turn comes — often nothing,
-which is a clean no-op.
+After a failed `publish`, use "Re-run failed jobs" on the original run. Two runs
+in quick succession do not race: `concurrency` uses a fixed `release` group with
+`cancel-in-progress: false`, so the second queues and releases whatever is still
+unreleased when its turn comes — often nothing, which is a clean no-op.
 
 That title is not release-please's default, and the exact string is
 load-bearing. The default pattern is `chore${scope}: release${component}
 ${version}` with `${scope}` always filled from the target branch, so left alone
 the PR would be titled `chore(main): release dev-toolbar X.Y.Z`. `ci.yml` skips
-the release commit — both as a PR and as a push to `main` — by looking for
-`chore(release):`, because `release.yml` re-runs CI itself as its gate; with
-the default title that skip never fires and every release is verified twice.
+the release commit — both as a PR and, if the `push:` trigger is restored, as a
+push to `main` — by looking for `chore(release):`, because `release.yml` re-runs
+CI itself as its gate; with the default title that skip never fires and every
+release is verified twice.
 (The PR skip has a second, independent signal — the `release-please--*` branch
 prefix — so it survives the title pattern breaking. The push skip does not.)
 `pull-request-title-pattern` in `release-please-config.json` substitutes the
@@ -467,21 +471,19 @@ rolling forward.
 
 ### One-time bootstrap — NOT YET DONE
 
-**This has to happen once, in this order, before any of the above works.** npm
-trusted publishing cannot create a package that does not exist yet
-([npm/cli#8544](https://github.com/npm/cli/issues/8544)), and `0.1.0` has never
-been published. Until these steps are done, `release.yml` will tag and release
-versions it cannot publish.
+**This has to happen once before any of the above reaches npm.** npm trusted
+publishing cannot create a package that does not exist yet
+([npm/cli#8544](https://github.com/npm/cli/issues/8544)), and nothing has been
+published: `npm view @nejcm/dev-toolbar` is a 404. So the first version goes out
+**by hand, from a laptop**, and until it does, `release.yml` tags and releases
+versions it cannot publish — which is what `v0.2.0` … `v0.5.0` are.
 
-`0.1.0` is published **by hand, from a laptop**. That is the maintainer's own
-call, made when this section was written: a one-off CI job with a short-lived
-npm token would have got provenance onto `0.1.0`, and it was declined in favour
-of not creating a publish token at all. Read this before starting: **`0.1.0` will ship without provenance.** `npm --provenance`
-only works from CI, and CI cannot publish yet, so the first version is the one
-gap; every release after it gets provenance automatically through trusted
-publishing. That is the accepted price of not creating a publish token, not an
-oversight to fix later — a version, once published, cannot be re-published with
-provenance added.
+That means the first published version is **whatever `main` is at now**, not
+`0.1.0`; substitute it for `X.Y.Z` below. It ships **without provenance**:
+`npm --provenance` only works from CI, and CI cannot publish yet. That is the
+accepted price of never creating a publish token, not an oversight to fix later
+— a version, once published, cannot be re-published with provenance added. Every
+release after it gets provenance automatically through trusted publishing.
 
 1. **Confirm the npm account's 2FA is passkey/WebAuthn.** New TOTP enrolments
    have been disabled since October 2025.
@@ -492,12 +494,12 @@ provenance added.
 3. **Skim <https://docs.npmjs.com/policies/dual-use/>.** Almost certainly not
    applicable, but this package reads runtime diagnostics, and finding out at
    publish time would be a bad surprise.
-4. **Publish the real `0.1.0`.** Do **not** use the `0.0.0` placeholder trick
-   that circulates in npm/cli#8544 — a version number, once used, can never be
-   reused, even after an unpublish.
+4. **Publish from the tagged release commit.** Do **not** use the `0.0.0`
+   placeholder trick that circulates in npm/cli#8544 — a version number, once
+   used, can never be reused, even after an unpublish.
 
    ```sh
-   git switch main && git pull            # publish the exact commit you will tag
+   git switch main && git pull            # must be the commit vX.Y.Z tags
    git status --porcelain                 # must print nothing
    bun install --frozen-lockfile
 
@@ -517,41 +519,33 @@ provenance added.
    checkout with `dist/` deleted, where the dry run rebuilt it and packed exactly
    the `files` field — `dist/` plus `CHANGELOG.md`, `README.md`, `LICENSE` and the
    always-included `package.json` — and nothing from `src/`, `test/` or
-   `examples/`. That file list is what the dry run
-   is for; read it rather than trusting a size quoted here, which drifts every
-   time the bundle changes. `--access public` is passed explicitly even though
-   `publishConfig.access` already says so: a scoped package defaults to
-   restricted, and this is not a place to rely on one file agreeing with another.
-   `bun install` first because `prepublishOnly` needs `tsc` and `tsup`.
+   `examples/`. That file list is what the dry run is for; read it rather than
+   trusting a size quoted here, which drifts every time the bundle changes.
+   `--access public` is passed explicitly even though `publishConfig.access`
+   already says so: a scoped package defaults to restricted, and this is not a
+   place to rely on one file agreeing with another.
 
    Do **not** use `bun publish`. It supports neither provenance nor OIDC and
    silently ignores `publishConfig.provenance` ([oven-sh/bun#18611](https://github.com/oven-sh/bun/issues/18611))
    — a failure that looks like success.
 
-5. **Tag the published commit and push the tag.**
-
-   ```sh
-   git tag -a v0.1.0 -m "v0.1.0"
-   git push origin v0.1.0
-   ```
-
-   This is not cosmetic and it is the easiest step to skip.
-   `.release-please-manifest.json` is seeded to `0.1.0`, but release-please also
-   looks for the matching tag to know where to start reading commits. Without
-   it, the first release PR will summarise the entire history instead of only
-   what came after `0.1.0`. If that happens anyway, close the bad PR and set
-   `bootstrap-sha` in `release-please-config.json` to this commit.
-
-6. **Wait ~5 minutes** for npm's publish-time malware scan before expecting the
+5. **Wait ~5 minutes** for npm's publish-time malware scan before expecting the
    package to be installable.
-7. **Configure the Trusted Publisher on npmjs.com**: GitHub Actions, repository
+6. **Configure the Trusted Publisher on npmjs.com**: GitHub Actions, repository
    `nejcm/dev-toolbar`, workflow filename `release.yml`, no environment (see the
    comment in `release.yml` for why there is no environment).
-8. **Close the token path for good.** Set npm **Publishing access** to "Require
+7. **Close the token path for good.** Set npm **Publishing access** to "Require
    two-factor authentication and disallow tokens" — trusted publishing is
    compatible with that setting, tokens are not — and enable **immutable
    releases** in the GitHub repository settings. There is no publish token in
    this repository and there should never be one.
+8. **Update the README's status note**, which says the package is not on npm yet.
+
+Tagging is not a step here: release-please already tags each release, and
+`.release-please-manifest.json` tracks the current version, so it reads commits
+from the newest tag. (The original bootstrap plan hand-published and hand-tagged
+`0.1.0`; that never happened, and `v0.1.0` does not exist. Nothing depends on it
+now.)
 
 Delete this whole "One-time bootstrap" subsection once it is done.
 

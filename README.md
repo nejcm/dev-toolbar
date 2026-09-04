@@ -8,7 +8,7 @@ hosts *your* tools.
 ![zero runtime dependencies](https://img.shields.io/badge/runtime%20deps-0-brightgreen)
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/screen.png">
+  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/bar-dark.png">
   <img alt="The dev toolbar: a thin bar along the bottom of the page carrying an environment chip, an aggregated-commands count, a promoted feature flag, theme and overlay chips, memory, delay, jank and network readings, the ⌘K hint and the current actor." src="docs/assets/bar-light.png" width="1519">
 </picture>
 
@@ -29,7 +29,7 @@ ones arrive on their own opt-in subpaths, each with its own bundle.
 - **SSR-safe**: your app server-renders untouched, the bar is client-only.
 - **Failure-isolated**: a slot that throws becomes a retry chip, and the rest of the
   bar keeps working.
-- **Logical CSS properties throughout**, so `dir="rtl"` mirrors the bar, the `···`
+- **Logical CSS properties throughout**, so `dir="rtl"` mirrors the bar, the `⋮`
   popup and every first-party extension.
 
 ## Install
@@ -37,6 +37,9 @@ ones arrive on their own opt-in subpaths, each with its own bundle.
 ```bash
 npm install @nejcm/dev-toolbar
 ```
+
+**Not on npm yet.** The first publish is still outstanding, so that command does not
+resolve today — use a git or `file:` dependency until it does.
 
 React 18 or 19 and `react-dom` 18 or 19 are required peers — the root entry imports
 `react-dom` statically, for portals. `@testing-library/react` is an optional peer,
@@ -151,7 +154,7 @@ The props most applications touch:
 | `instanceId` | `"default"` | Namespaces persisted preferences. Mount-time only |
 | `storage` | `localStorage` | Adapter, or `null` to persist nothing. Mount-time only |
 
-Every prop, the `···` overflow behaviour, the escape-hatch exports and every
+Every prop, the `⋮` overflow behaviour, the escape-hatch exports and every
 published type are in [docs/api.md](./docs/api.md).
 
 ## Styling
@@ -267,11 +270,13 @@ other. The whole surface, and the Jest caveats, are in
 | [docs/adr/](./docs/adr/) | Decision records |
 | [CHANGELOG.md](./CHANGELOG.md) | Every release |
 
-> **Status:** complete and published. The shell, `/runtime` and all eight
-> first-party extensions are implemented, and the extension contract has been
-> through eight real consumers. `CONTRACT_VERSION` is **2**: commands may now
-> declare an `input` schema and resolve a result, which asks nothing of an
-> extension written against v1 — see
+> **Status:** complete, but **not on npm yet** — the first publish is a manual
+> step still outstanding ([CONTRIBUTING](./CONTRIBUTING.md#one-time-bootstrap--not-yet-done)),
+> so `npm install @nejcm/dev-toolbar` does not resolve today. Until it does, use
+> a git or `file:` dependency. The shell, `/runtime` and all eight first-party
+> extensions are implemented and released as tags. `CONTRACT_VERSION` is **2**:
+> commands may declare an `input` schema and resolve a result, which asks nothing
+> of an extension written against v1 — see
 > [contract v2](./docs/extension-contract.md#contract-v2--commands-with-input-and-a-result).
 > The places the contract has moved are in the [changelog](./CHANGELOG.md).
 

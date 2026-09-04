@@ -11,11 +11,17 @@ import {
   createNumericRing,
   createTimeSeries,
   createThrottledStore,
+  ensureStyleSheet,
   redact,
   redactUrl,
   redactHeaders,
+  writeClipboardText,
 } from "@nejcm/dev-toolbar/runtime";
 ```
+
+Also exported: `REDACTED` (the mask string), `DEFAULT_SENSITIVE_KEYS` and
+`isSensitiveKey()` for reusing the word list, `STYLE_ATTRIBUTE` for finding an
+injected sheet, and `writeClipboardTextOrThrow()`.
 
 - **`createEventBus<Events>()`** — typed pub/sub, one per instance (never a
   singleton). `on(type, handler, { signal })` unsubscribes on the `AbortSignal`
@@ -41,32 +47,39 @@ import {
   contained, not propagated into whatever published; pass `onError` to
   replace the default `console.error`, same as `createEventBus`.
 - **`redact(value)` / `redactUrl(url)` / `redactHeaders(headers)`** — masks
-  credentials by key name — an entry of the word list matches one or more adjacent
-  whole *segments* of the key, splitting on every non-alphanumeric character and on
-  case and letter/digit boundaries, so `apikey` covers `apiKey` and `x-api-key` while
-  `auth` does **not** cover `author` — plus `Bearer …`, bare JWTs, and URL values carrying a
-  sensitive parameter (the OAuth-callback shape, where the secret is in the value and
-  no key matching will find it). `allowKeys` is not the mirror image of that word list:
-  an allow entry is checked against the key's *entire* canonicalised form, not a run
-  inside it, so `allowKeys: ["sessionName"]` exempts `session-name` and `SESSION_NAME`
-  but not `sessionNameV2`, and `allowKeys: ["session"]` does not exempt `sessionName` at
-  all — name the exact key you mean to keep, not the word that would otherwise redact it.
-  A URL with nothing to mask is returned unchanged, so
-  two dumps that are identical still diff as identical. Inside a URL the mask is
-  written literally — `?token=[redacted]`, not `%5Bredacted%5D` — so a masked URL
-  stays readable, still parses, and still contains the exported `REDACTED`; a custom
-  `mask` carrying a URL delimiter (`&`, `=`, `%`, a space) is percent-encoded there
-  instead, because writing it literally would rewrite the URL rather than a value, and
-  so is one carrying a non-ASCII character (`██`), which `new URL` re-encodes anyway. This is hygiene for anything
-  headed to a screenshot or a clipboard, **not** a security boundary: it matches
-  names, so a secret under `data` survives. A string in gives a string back and a
-  number, boolean, bigint, `null` or `undefined` comes back as itself — masking a
-  value before you join it into a sentence needs no cast. Anything else is
-  `unknown`, because a cycle, a depth limit, a spent `maxNodes` budget (default
-  50,000 — bounds the total nodes one call walks, including a shared reference
-  walked once per path to it, which neither `maxDepth` nor `maxArrayLength`
-  catches) or an unwalkable object comes back as a short tag string rather than
-  the shape you handed in.
+  credentials on the way to a screenshot, a clipboard or a bug report. Hygiene,
+  **not a security boundary**: it matches names and shapes, so a secret under
+  `data` survives.
+  - **By key name**, where a word-list entry matches one or more adjacent whole
+    *segments* of the key — split on non-alphanumerics and on case and
+    letter/digit boundaries — so `apikey` covers `apiKey` and `x-api-key` while
+    `auth` does not cover `author`.
+  - **By value shape**: `Bearer …`, bare JWTs, and URLs carrying a sensitive
+    parameter (the OAuth-callback shape, where the secret is in the value and no
+    key matching would find it).
+  - **`allowKeys` is not the mirror of the word list.** An allow entry is matched
+    against the key's *entire* canonicalised form, so `["sessionName"]` exempts
+    `session-name` and `SESSION_NAME` but not `sessionNameV2`, and `["session"]`
+    exempts `sessionName` not at all. Name the exact key you mean to keep.
+  - **Inside a URL the mask is written literally** — `?token=[redacted]`, not
+    `%5Bredacted%5D` — so the URL stays readable, still parses, and still
+    contains the exported `REDACTED`. A custom `mask` carrying a URL delimiter
+    (`&`, `=`, `%`, a space) or a non-ASCII character is percent-encoded there
+    instead, since writing it literally would rewrite the URL rather than a
+    value. A URL with nothing to mask comes back unchanged, so two identical
+    dumps still diff as identical.
+  - **Return type follows the input.** A string gives a string; a number,
+    boolean, bigint, `null` or `undefined` comes back as itself, so masking a
+    value before joining it into a sentence needs no cast. Anything else is
+    `unknown` — a cycle, `maxDepth` (8), `maxArrayLength` (200) or a spent
+    `maxNodes` budget (50,000 total nodes per call, which is what catches a
+    shared reference walked once per path to it) yields a short tag string
+    rather than the shape you handed in.
+- **`writeClipboardText(text)` / `writeClipboardTextOrThrow(text, hint?)`** —
+  a clipboard write that never throws on a sandboxed frame or a denied
+  permission: the first resolves `false` when the write did not happen, the
+  second throws a message naming the fallback. Every first-party *Copy* button
+  goes through them.
 - **`ensureStyleSheet(entry, css, doc?, nonce?)`** — injects a stylesheet once per
   document, keyed on a `style[data-dev-toolbar-styles]` element rather than a module
   flag, so two bundled copies of your package still inject once. Core's

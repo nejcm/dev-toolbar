@@ -6,7 +6,7 @@ Everything the [README](../README.md) links to, in one place.
 
 | Document | What is in it |
 | --- | --- |
-| [api.md](./api.md) | The root entry: every `<DevToolbar>` prop, the toggle shortcut, the `···` menu, the escape-hatch exports and every published type |
+| [api.md](./api.md) | The root entry: every `<DevToolbar>` prop, the toggle shortcut, the `⋮` menu, the escape-hatch exports and every published type |
 | [styling.md](./styling.md) | The three ways to restyle the bar, and why none of them needs `!important` |
 | [ssr.md](./ssr.md) | Why the bar cannot mismatch on hydration, and the one Next.js app-router rule |
 | [testing.md](./testing.md) | `@nejcm/dev-toolbar/testing` — `renderWithToolbar`, the fake layout, the mock bus and the Jest caveats |
@@ -39,4 +39,4 @@ Everything the [README](../README.md) links to, in one place.
 | --- | --- |
 | [../CONTRIBUTING.md](../CONTRIBUTING.md) | Setup, the one command that matters, commits, PRs, releases |
 | [../AGENTS.md](../AGENTS.md) | The repo map: which folder is which layer, and what may import what |
-| [../CHANGELOG.md](../CHANGELOG.md) | Every release, including the four places the extension contract moved |
+| [../CHANGELOG.md](../CHANGELOG.md) | Every release, including each place the extension contract moved |

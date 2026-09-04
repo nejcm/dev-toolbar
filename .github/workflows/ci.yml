@@ -10,6 +10,14 @@ on:
   # deliberately absent; see the job's `if:`.
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
+    # Nothing `verify` runs reads prose. Skips only when *every* changed file
+    # matches, and only on this trigger — `workflow_call` has no path filter,
+    # so release.yml's gate is untouched. A skipped workflow reports no status,
+    # so if `verify` becomes a required check this needs a same-named no-op job.
+    paths-ignore:
+      - "**/*.md"
+      - "docs/**"
+      - "LICENSE"
   # Exposed so the Phase 4 release workflow can call CI as its release gate.
   workflow_call:
     inputs:

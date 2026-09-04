@@ -1,9 +1,13 @@
 # AGENTS.md
 
-`@nejcm/dev-toolbar` is a published React library: an extensible, low-overhead in-app
-developer toolbar. The package is a **shell** — chrome plus hosting. It renders a
-fixed bar, sorts and collapses the items it is given, hosts one panel at a time,
-persists preferences and isolates failures. It ships no metrics, no flag adapters and
+`@nejcm/dev-toolbar` is a React library: an extensible, low-overhead in-app
+developer toolbar. It is versioned and tagged here but **not on npm yet** — the
+first publish is a manual step still outstanding
+([CONTRIBUTING](./CONTRIBUTING.md#one-time-bootstrap--not-yet-done)).
+
+The package is a **shell** — chrome plus hosting. It renders a fixed bar, sorts
+and collapses the items it is given, hosts one panel at a time, persists
+preferences and isolates failures. It ships no metrics, no flag adapters and
 no opinions about what a number means; those are extensions, and the first-party ones
 live on their own subpath exports. Zero runtime dependencies, light DOM, SSR-safe.
 The contract an extension is written against is the real public API.
@@ -19,7 +23,7 @@ The contract an extension is written against is the real public API.
 | `src/testing/` | `renderWithToolbar`, `makeExtension`, `mockBus`, fake layout | React + optional `@testing-library/react` peer | core's *types* relatively, core's *values* through `@nejcm/dev-toolbar` |
 | `examples/playground/` | Vite app consuming the built package via `file:../..` | Vite, React | `dist/`, as a real consumer does |
 | `test/fixtures/jest-consumer/` | A real Jest 30 + CommonJS consumer of `dist/` | Jest, npm | `dist/`, as a CommonJS consumer does |
-| `docs/` | Durable architecture reference and ADRs | Markdown | — |
+| `docs/` | The reference: one page per entry point and per first-party extension, plus `architecture.md` and the ADRs | Markdown | — |
 | `scripts/` | Repo tooling with no home in `src/`: currently the per-entrypoint size report | Plain ESM `.mjs`, no deps | `dist/`, `package.json` `exports` |
 | `.github/actions/` | Composite actions the workflows share: `setup-job`, `report-bundle-size`, `knip-check` | GitHub Actions | `.github/workflows/` |
 
@@ -72,7 +76,7 @@ gate is the `knip` inside `verify`, so unused code fails on your machine first.
 - **Core never imports `runtime/` or `ext/`.** Extensions import only *types* from
   core — a value import is not guaranteed by the bundler to resolve to the same module
   instance as the host's copy. This is why `ExtensionRuntimeApi` carries
-  `getCommands()`, `runCommand()` and `getDiagnostics()`.
+  `getCommands()`, `runCommand()`, `invokeCommand()` and `getDiagnostics()`.
 - **`src/testing/` value-imports core through `@nejcm/dev-toolbar`, never `../core/*`.**
   The CJS build does not code-split, so a relative value import is *inlined* into
   `dist/testing.cjs` and a CommonJS consumer who requires both `.` and `./testing` gets
@@ -113,7 +117,9 @@ gate is the `knip` inside `verify`, so unused code fails on your machine first.
 
 ## Further reading
 
-- [README.md](./README.md) — the consumer-facing documentation for every entry point
+- [docs/README.md](./docs/README.md) — the documentation index: one page per entry
+  point, per first-party extension and per decision record
+- [README.md](./README.md) — the consumer-facing user guide
 - [CONTRIBUTING.md](./CONTRIBUTING.md) — setup, the commit convention, the contract as
   it matters when changing the library
 - [docs/architecture.md](./docs/architecture.md) — what the shell guarantees, why the
