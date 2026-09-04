@@ -183,7 +183,7 @@ export function useControlledToolbarState(
   );
   // Reads the current effective visibility from the ref rather than closing
   // over it, so the identity does not change on every visibility flip. That
-  // is not just churn: the keydown effect below depends on this callback, and
+  // is not just churn: `useToolbarShortcuts` depends on this callback, and
   // a flip used to tear its listener down and add it back — silently changing
   // the `window` listener order the two shortcut paths once relied on.
   const toggleVisible = useCallback(
