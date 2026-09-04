@@ -106,6 +106,34 @@ jobs:
       - name: Verify the packaged CommonJS consumer
         run: bun run test:jest-consumer
 
+      # `examples/` is outside every gate in `verify` — its own tsconfig, its
+      # own dependencies, excluded from vitest, oxlint and knip. That was fine
+      # while the playground was only a manual-verification app; it stopped
+      # being fine when it grew `plugins/devToolbarAgent.ts`, the dev-server
+      # half of `/ext/agent`'s reporter, which the README tells consumers to
+      # copy. `node --test` uses Node's own type stripping — no build, no test
+      # dependency — and covers the malformed-body cases that once took the
+      # dev server down. Needs the `dist/` `verify` just built, since the
+      # playground links the package with `file:../..`.
+      # No install: the suite imports only `node:*` and the plugin, whose one
+      # `vite` import is `import type` and is erased by the type stripping.
+      # Verified from a directory with no `node_modules` at all.
+      - name: Test the playground's dev-server plugin
+        run: bun run test
+        working-directory: examples/playground
+
+      # This one does need the link, so it follows the install. Not
+      # `--frozen-lockfile`: the `file:../..` dependency is re-linked against
+      # the `dist/` `verify` just built, and bun declines to restore that one
+      # from cache.
+      - name: Install the playground
+        run: bun install
+        working-directory: examples/playground
+
+      - name: Typecheck the playground
+        run: bun run typecheck
+        working-directory: examples/playground
+
       # `!cancelled()` rather than `always()`: both reporting steps below are
       # useful on a failed `verify` but shouldn't block a cancellation.
       #

@@ -107,7 +107,7 @@ export function metrics(options: MetricsOptions = {}): DevToolbarExtension {
   return {
     id,
     label,
-    contractVersion: 1,
+    contractVersion: 2,
     align,
     order,
     priority,

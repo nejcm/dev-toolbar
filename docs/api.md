@@ -80,8 +80,9 @@ hatches; everything here is public and covered by the package's versioning.
 
 | Export | What it is for |
 | --- | --- |
-| `runCommand(id, scope?)` | Runs an aggregated command from code with no React context — a hotkey, a console, a test. Resolves `false` when no mounted toolbar declares the id, `true` once the command's `run()` completes. Rejects with `run()`'s own error if it throws or rejects — callers must catch it. `scope`, a `readonly ToolbarCommand[]`, is searched instead of the mounted toolbars. Inside components prefer `useDevToolbar().runCommand`. |
-| `CONTRACT_VERSION` | The extension contract's version, currently `1`. See [ADR-003](./adr/ADR-003-contract-version-policy.md). |
+| `runCommand(id, scope?)` | Runs an aggregated command from code with no React context — a hotkey, a console, a test. Resolves `false` when no mounted toolbar declares the id, `true` once the command's `run()` completes. Rejects with `run()`'s own error if it throws or rejects — callers must catch it. `scope`, a `readonly AnyToolbarCommand[]`, is searched instead of the mounted toolbars. It still resolves a boolean under contract v2 — reach for `invokeCommand` when you need the result, or to pass input. Inside components prefer `useDevToolbar().runCommand`, which does take input. |
+| `invokeCommand(id, options?)` | `runCommand` that resolves **what the command returned**: `{ ok: true, result }`, or `{ ok: false, reason: "unknown-command" }`. `options` is `{ input?, scope? }` — an object rather than a third positional argument, so no existing `runCommand(id, scope)` call changes meaning. Rejects with `run()`'s own error, like `runCommand`. |
+| `CONTRACT_VERSION` | The extension contract's version, currently `2`. See [contract v2](./extension-contract.md#contract-v2--commands-with-input-and-a-result) and [ADR-003](./adr/ADR-003-contract-version-policy.md). |
 | `HEIGHT_VARIABLE` | The name of the CSS variable the shell publishes — `"--dev-toolbar-height"` — so a CSS-in-JS host need not retype the string. It is the `"default"` instance's; every instance also publishes `<HEIGHT_VARIABLE>-<instanceId>`. |
 | `createLocalStorage()` | The default adapter: `localStorage`, but it never throws. Useful as the base of your own wrapper. |
 | `createMemoryStorage(seed?)` | In-memory adapter for tests and non-browser hosts. `seed` is a plain key/value map of already-persisted JSON. |
@@ -108,7 +109,10 @@ Every type the root entry exports. The slot props, `DevToolbarExtension`,
 | --- | --- |
 | `DevToolbarProps` / `DevToolbarInsetProps` | The two components' props. |
 | `DevToolbarExtension` | One extension object. |
-| `ToolbarCommand` / `ToolbarCommandsInput` | A command, and the array-or-function form `commands` accepts. |
+| `ToolbarCommand` / `ToolbarCommandsInput` | A command, and the array-or-function form `commands` accepts. `ToolbarCommand<In, Out>` — both default to `void`. |
+| `AnyToolbarCommand` | The element type of a command *roster* — what `getCommands()`, `useToolbarCommands()` and `commands` hold. A roster mixes commands with different `In`/`Out`, so it needs one element type they all satisfy; `readonly ToolbarCommand[]` still works everywhere it did, because the two are mutually assignable. |
+| `CommandInputSchema` / `CommandInputField` / `CommandInputPrimitiveField` / `CommandInputEnumField` / `CommandInputType` / `CommandInputValue` | What a command declares it accepts. A flat bag of primitives and enums — see [contract v2](./extension-contract.md#commandinputschema-is-deliberately-small). |
+| `CommandInvocation` / `InvokeCommandOptions` | What `invokeCommand` resolves, and what it takes. |
 | `ExtensionRuntimeApi` | What `start(api)` receives. |
 | `CompactSlotProps` / `PanelSlotProps` / `OverlaySlotProps` | What each slot renders with. |
 | `ExtensionDiagnostics` / `DiagnosticStatus` | One entry in the diagnostics roster, and its `"ok" \| "absent" \| "failed"` status. |

@@ -532,12 +532,13 @@ describe("a failing clear", () => {
 });
 
 describe("commands", () => {
-  it("contributes a toggle per boolean flag, plus the shared four", async () => {
+  it("contributes a toggle per boolean flag, plus flags.set and the shared four", async () => {
     const { toolbar, extension } = mount({
       onOverride: record,
       promoted: { flagKey: "ui-facelift" },
     });
     expect(collectCommands([extension]).map((command) => command.id)).toEqual([
+      "flags.set",
       "flags.toggle.new-header",
       "flags.toggle.ui-facelift",
       "flags.clearOverrides",

@@ -90,7 +90,7 @@ export function commandMenu(options: CommandMenuOptions = {}): DevToolbarExtensi
   return {
     id,
     label,
-    contractVersion: 1,
+    contractVersion: 2,
     align,
     order,
     priority,
@@ -99,6 +99,12 @@ export function commandMenu(options: CommandMenuOptions = {}): DevToolbarExtensi
     start(api: ExtensionRuntimeApi) {
       return runtime.start(api);
     },
+
+    /**
+     * Whether the palette is open, and the current query.
+     * `plans/agent-readable-toolbar.md` § Phase 1.
+     */
+    diagnostics: () => runtime.diagnostics(),
 
     compact: ({ isOverflowed }) => (
       <CommandMenuTrigger

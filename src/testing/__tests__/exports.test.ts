@@ -47,6 +47,7 @@ const EXPECTED_EXPORTS = [
   "createMemoryStorage",
   "createMockBus",
   "createNullStorage",
+  "fakeExtensionApi",
   "installToolbarLayout",
   "makeCommand",
   "makeExtension",

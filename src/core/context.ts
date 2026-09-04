@@ -1,8 +1,9 @@
 import { createContext, useContext } from "react";
 import type {
+  AnyToolbarCommand,
+  CommandInvocation,
   DevToolbarClassNames,
   DevToolbarExtension,
-  ToolbarCommand,
   ToolbarDensity,
   ToolbarPosition,
   ToolbarStorage,
@@ -27,10 +28,13 @@ export interface DevToolbarContextValue {
    * `DevToolbarExtension.commands`, an extension can start contributing without
    * the list changing — anything that must be current calls `getCommands()`.
    */
-  commands: readonly ToolbarCommand[];
+  commands: readonly AnyToolbarCommand[];
   /** Re-enumerates every extension's commands now. */
-  getCommands(): readonly ToolbarCommand[];
-  runCommand(id: string): Promise<boolean>;
+  getCommands(): readonly AnyToolbarCommand[];
+  /** `input` is handed to the command's `run()` unchanged (contract v2). */
+  runCommand(id: string, input?: unknown): Promise<boolean>;
+  /** `runCommand` that resolves what the command returned. See `CommandInvocation`. */
+  invokeCommand<Out = unknown>(id: string, input?: unknown): Promise<CommandInvocation<Out>>;
   density: ToolbarDensity;
   classNames: DevToolbarClassNames;
   storage: ToolbarStorage;
@@ -73,7 +77,7 @@ export function useDevToolbar(): DevToolbarContextValue {
  * when it opens, since the function form of `commands` can start contributing
  * without the list changing.
  */
-export function useToolbarCommands(): readonly ToolbarCommand[] {
+export function useToolbarCommands(): readonly AnyToolbarCommand[] {
   return useDevToolbar().commands;
 }
 

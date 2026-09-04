@@ -93,7 +93,30 @@ Commands aggregated into `useToolbarCommands()`: one `flags.toggle.<key>` per
 boolean flag — re-enumerated on every aggregation pass, so a flag that appears after
 mount gets its command as soon as the extension's next poll sees it, with no reload —
 plus `flags.clearOverrides`, `flags.copyRecipe`,
-`flags.copyJson` and `flags.refresh`. Like the other extensions it ships its own
+`flags.copyJson` and `flags.refresh`.
+
+`flags.set` is the [contract v2](../extension-contract.md#contract-v2--commands-with-input-and-a-result)
+addition and takes `{ key, value? }`:
+
+```ts
+await api.invokeCommand("flags.set", { key: "new-header", value: false });
+await api.invokeCommand("flags.set", { key: "new-header" });   // clears the override
+```
+
+It refuses rather than coerces: an unknown key, or a value the flag's declared type
+rejects, throws a message saying which. **Omitting `value` is what clears an
+override** — `null` does not clear, because `null` is a real flag value. It is also
+*refused* for every boolean, string and number flag, since a `null` override of one
+would be discarded on the next reload anyway; only a variant flag whose `variants`
+list includes `null` accepts it. The schema says the same, which is why `value`
+advertises `["boolean", "string", "number"]` and nothing about null. It carries an
+`input` schema, so `⌘K` does not list it; the per-flag `flags.toggle.<key>` commands
+are what a human finds there, and they stay. The two are not redundant: the
+enumeration is the palette's affordance, `flags.set` is the tool call, and only
+`flags.set` can reach a string, number or variant flag at all. Through
+[`/ext/agent`](./agent.md) it is one call with no panel and no pixels.
+
+Like the other extensions it ships its own
 stylesheet — pair `injectStyles={false}` on `<DevToolbar>` with
 `flags({ injectStyles: false })` and deliver `FLAGS_CSS` yourself.
 

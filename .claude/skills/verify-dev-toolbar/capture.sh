@@ -2,7 +2,7 @@
 # Persist one piece of evidence. Reads the artifact body on stdin.
 #
 #   .claude/skills/verify-dev-toolbar/capture.sh flags override-applied.json <<'EOF'
-#   { ... the probe output you just read ... }
+#   { ... the bridge read you just took ... }
 #   EOF
 #
 # Prints the path it wrote. Artifacts live outside the skill directory, under

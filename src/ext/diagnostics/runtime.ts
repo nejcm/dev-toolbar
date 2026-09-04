@@ -53,7 +53,7 @@ import type {
 } from "./types";
 
 /** Kept in sync with core by hand: this file imports no *value* from core. */
-export const TARGET_CONTRACT_VERSION = 1;
+export const TARGET_CONTRACT_VERSION = 2;
 
 export const FORMAT_KEY = "format";
 
@@ -109,6 +109,13 @@ export interface DiagnosticsRuntime {
   copyOrThrow(format: SnapshotFormat): Promise<void>;
   /** `true` only when a download was actually started. */
   download(format: SnapshotFormat): boolean;
+  /**
+   * A **summary** of the last capture, never the snapshot itself. Publishing
+   * the snapshot would nest it in the roster because core builds that roster
+   * from `api.getDiagnostics()` (`plans/agent-readable-toolbar.md` § Phase 1).
+   * The full object remains available through this extension's commands.
+   */
+  summary(): unknown;
   /** Persisted panel format. */
   readFormat(): SnapshotFormat;
   writeFormat(format: SnapshotFormat): void;
@@ -622,6 +629,23 @@ export function createDiagnosticsRuntime(
   const render = (format: SnapshotFormat): string =>
     format === "json" ? renderJson(ensure()) : renderMarkdown(ensure(), mask);
 
+  /**
+   * The persisted panel format, fail-safe. `storage` may throw (a browser with
+   * site data blocked), and neither the panel nor `summary()` may fail over a
+   * preference.
+   */
+  const readFormat = (): SnapshotFormat => {
+    let stored: string | null = null;
+    try {
+      stored = storage?.getItem(FORMAT_KEY) ?? null;
+    } catch {
+      stored = null;
+    }
+    return SNAPSHOT_FORMATS.includes(stored as SnapshotFormat)
+      ? (stored as SnapshotFormat)
+      : "markdown";
+  };
+
   const filename = (format: SnapshotFormat): string => {
     // `:`/`.` are illegal or awkward in a filename; the failure path's literal
     // "unknown" stamp works fine through the same replace.
@@ -640,6 +664,28 @@ export function createDiagnosticsRuntime(
 
     maskedCount() {
       return countMasked(ensure(), mask);
+    },
+
+    summary() {
+      const state = store.peek();
+      const snapshot = state.snapshot;
+      return {
+        captured: snapshot !== null,
+        revision: state.revision,
+        // `performance.now()` at the capture, i.e. milliseconds since the
+        // document loaded. `generatedAt` below is the wall clock.
+        capturedAt: state.capturedAt,
+        generatedAt: snapshot?.generatedAt ?? null,
+        // False when the roster could not be read at all — the difference
+        // between an empty snapshot and a complete one.
+        gathered: snapshot?.toolbar.gathered ?? null,
+        contributionCount: snapshot?.contributions.length ?? 0,
+        omissionCount: snapshot?.omissions.length ?? 0,
+        // The ids alone. `reason` is a sentence per omission and belongs in
+        // the snapshot the commands hand over, not in every roster read.
+        omissions: (snapshot?.omissions ?? []).map((omission) => omission.id),
+        format: readFormat(),
+      };
     },
 
     async copy(format) {
@@ -667,12 +713,7 @@ export function createDiagnosticsRuntime(
       return true;
     },
 
-    readFormat() {
-      const stored = storage?.getItem(FORMAT_KEY);
-      return SNAPSHOT_FORMATS.includes(stored as SnapshotFormat)
-        ? (stored as SnapshotFormat)
-        : "markdown";
-    },
+    readFormat,
 
     writeFormat(format) {
       storage?.setItem(FORMAT_KEY, format);

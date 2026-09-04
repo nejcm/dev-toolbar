@@ -167,6 +167,7 @@ export function createMetricsRuntime(options: MetricsRuntimeOptions): MetricsRun
     },
     diagnostics() {
       const at = now();
+      const latest = store.peek();
       const payload: Record<string, unknown> = {
         generatedAt: new Date().toISOString(),
         userAgent: typeof navigator === "undefined" ? null : navigator.userAgent,
@@ -174,11 +175,27 @@ export function createMetricsRuntime(options: MetricsRuntimeOptions): MetricsRun
         // likely credential carrier here (e.g. an OAuth `?access_token=…`
         // callback), and this is headed for a clipboard.
         url: typeof location === "undefined" ? null : redactUrl(location.href),
+        /**
+         * Numeric values, not formatted chip text (`plans/agent-readable-toolbar.md`
+         * § Phase 1). Read from the last published snapshot because diagnostics
+         * runs on every roster read.
+         */
+        metrics: latest.order.map((id) => {
+          const view = latest.views[id];
+          return {
+            id,
+            status: view.status,
+            severity: view.severity,
+            // Keep the in-memory and JSON shapes aligned.
+            value: Number.isFinite(view.value) ? view.value : null,
+            unit: view.unit,
+          };
+        }),
       };
       for (const collector of collectors) {
         payload[collector.id] = collector.diagnostics(at);
       }
-      // Second redact() pass catches credential-shaped values anywhere else.
+      // Catch credential-shaped values added to the payload above.
       return redact(payload);
     },
     flush() {

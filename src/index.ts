@@ -1,5 +1,13 @@
 export { CONTRACT_VERSION } from "./core/contract";
 export type {
+  AnyToolbarCommand,
+  CommandInputEnumField,
+  CommandInputField,
+  CommandInputPrimitiveField,
+  CommandInputSchema,
+  CommandInputType,
+  CommandInputValue,
+  CommandInvocation,
   CompactSlotProps,
   DevToolbarClassNames,
   DevToolbarExtension,
@@ -32,7 +40,8 @@ export type { DevToolbarContextValue } from "./core/context";
 // registrations with `hidden` extensions filtered out, which a root-level
 // aggregator over a caller-assembled array could never do correctly.
 // `useDevToolbar().extensions` is the unfiltered list.
-export { runCommand } from "./core/commands";
+export { invokeCommand, runCommand } from "./core/commands";
+export type { InvokeCommandOptions } from "./core/commands";
 
 export {
   createLocalStorage,

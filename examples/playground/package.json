@@ -9,6 +9,8 @@
     "dev": "vite",
     "prebuild": "cd ../.. && bun run build",
     "build": "tsc --noEmit && vite build",
+    "typecheck": "tsc --noEmit",
+    "test": "node --test plugins/__tests__/devToolbarAgent.test.ts",
     "preview": "vite preview"
   },
   "dependencies": {

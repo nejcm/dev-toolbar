@@ -45,6 +45,7 @@
  */
 import { createThemeEditorRuntime } from "./runtime";
 import { writeClipboardTextOrThrow } from "../../runtime";
+import { describeValueRefusal } from "./types";
 import { ThemeChip, ThemePanel } from "./ui";
 import type { ThemeEditorRuntimeOptions } from "./runtime";
 import type {
@@ -112,6 +113,67 @@ export function themeEditor(options: ThemeEditorOptions = {}): DevToolbarExtensi
    * Uses `peek()`, not `getSnapshot()`, so a command reflects the latest edit
    * even while the store's publishes are coalesced for the chip.
    */
+  /**
+   * `theme.setToken` — the thing this extension could not express at all
+   * before contract v2 (`plans/agent-readable-toolbar.md` § Phase 2). A design
+   * token's value space is open (`#3b82f6`, `12px`, `1.4`), so no enumeration
+   * of per-value commands was ever possible; the only way in was the panel's
+   * text input.
+   *
+   * Refusals come back as thrown reasons rather than a coerced value, matching
+   * the editor: `setOverride` returns why it refused and the panel keeps the
+   * draft instead of writing something the author did not ask for.
+   */
+  const setTokenCommand: ToolbarCommand<{ name: string; value?: string }> = {
+    id: `${id}.setToken`,
+    label: "Set a design token",
+    description:
+      "Overrides one design token by CSS custom-property name, in one call. Omit " +
+      "`value` to clear that token's edit. Refuses a value the token's own type " +
+      "rejects rather than coercing it.",
+    group: "Theme",
+    keywords: ["theme", "token", "set", "css", "variable", "colour", "color"],
+    input: {
+      fields: {
+        name: {
+          type: "string",
+          required: true,
+          description: "The custom property, e.g. `--dtb-accent`. Reserved prefixes are refused.",
+        },
+        value: {
+          type: "string",
+          description: "The CSS value, e.g. `#3b82f6`. Omit to clear the edit.",
+        },
+      },
+    },
+    run: (input) => {
+      if (input === null || typeof input !== "object") {
+        throw new Error("`theme-editor.setToken` takes `{ name, value? }`.");
+      }
+      const { name, value } = input;
+      if (typeof name !== "string" || name === "") {
+        throw new Error("`name` is required and must be a non-empty string.");
+      }
+      if (value === undefined) {
+        runtime.clearOverride(name);
+        return;
+      }
+      if (typeof value !== "string") {
+        throw new Error("`value` must be a string — a CSS value is text.");
+      }
+      const refusal = runtime.setOverride(name, value);
+      if (refusal !== null) {
+        // The refused token's own declared type, so a `"type"` refusal reads
+        // "not a color" rather than the generic word. `checkTokenName` refuses
+        // an unknown/reserved name with the same `"syntax"` value, which needs
+        // no type to be legible.
+        const type =
+          runtime.store.peek().tokens.find((view) => view.name === name)?.type ?? "string";
+        throw new Error(`"${name}" was not set: ${describeValueRefusal(refusal, type)}`);
+      }
+    },
+  };
+
   const presetCommands = (): ToolbarCommand[] =>
     runtime.presets().map((preset) => ({
       id: `${id}.preset.${preset.name}`,
@@ -126,7 +188,7 @@ export function themeEditor(options: ThemeEditorOptions = {}): DevToolbarExtensi
   return {
     id,
     label,
-    contractVersion: 1,
+    contractVersion: 2,
     align,
     order,
     priority,
@@ -154,6 +216,7 @@ export function themeEditor(options: ThemeEditorOptions = {}): DevToolbarExtensi
     diagnostics: () => runtime.diagnostics(),
 
     commands: () => [
+      setTokenCommand,
       ...presetCommands(),
       {
         id: `${id}.reset`,

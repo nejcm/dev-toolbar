@@ -17,7 +17,7 @@ interface DevToolbarExtension {
   overlay?: (props: OverlaySlotProps) => React.ReactNode;   // modal; never collapsed
   // Core aggregates; it renders no palette. A function is re-enumerated on
   // every pass, so a command that only exists later is still reachable.
-  commands?: ToolbarCommand[] | (() => ToolbarCommand[]);
+  commands?: AnyToolbarCommand[] | (() => AnyToolbarCommand[]);
   // Aggregated the same way as commands; /ext/diagnostics renders the roster.
   diagnostics?: () => unknown;
   start?(api: ExtensionRuntimeApi): void | (() => void);
@@ -76,13 +76,14 @@ interface ExtensionRuntimeApi {
   isVisible(): boolean;
   subscribeVisibility(cb: (visible: boolean) => void): () => void;
   storage: ToolbarStorage;                              // scoped to this extension
-  getCommands(): readonly ToolbarCommand[];             // the live aggregation
-  runCommand(id: string): Promise<boolean>;             // false = nothing declares it
+  getCommands(): readonly AnyToolbarCommand[];          // the live aggregation
+  runCommand(id: string, input?: unknown): Promise<boolean>;   // false = nothing declares it
+  invokeCommand<Out>(id, input?): Promise<CommandInvocation<Out>>;  // ... and what it returned
   getDiagnostics(): readonly ExtensionDiagnostics[];    // one entry per present extension
 }
 ```
 
-`getCommands()` / `runCommand()` / `getDiagnostics()` are how an extension reads the
+`getCommands()` / `runCommand()` / `invokeCommand()` / `getDiagnostics()` are how an extension reads the
 aggregation without importing a *value* from core — `useToolbarCommands()` and
 `useDevToolbar().getCommands()` are for the host application. All three re-enumerate
 on call, so they are never behind. `runCommand()` rejects with the command's own error
@@ -137,6 +138,123 @@ A slot that throws degrades to an error chip. The bar and every other extension 
 working. In the `compact` and `panel` slots the chip is itself a retry button, so a slot
 that threw on transient state can be brought back without reloading.
 [docs/architecture.md](./architecture.md#7-writing-an-extension).
+
+## Contract v2 — commands with input and a result
+
+`CONTRACT_VERSION` is `2`. A command may now say what it takes and hand back what it
+produced:
+
+```ts
+interface ToolbarCommand<In = void, Out = void> {
+  id: string;
+  label: string;
+  description?: string;          // prose for a reader deciding whether to call it
+  group?: string;
+  keywords?: string[];
+  shortcut?: string;             // display-only
+  input?: CommandInputSchema;    // absent = takes nothing
+  run(input: In): Out | Promise<Out>;
+}
+```
+
+**If you wrote an extension against v1, you have nothing to do.** `In` and `Out` both
+default to `void`, so a `run(): void` you already wrote still satisfies
+`run(input: void): void`, and a roster typed `readonly ToolbarCommand[]` still type-checks.
+Declaring `contractVersion: 1` remains legal — core warns once in the console and
+changes nothing else, exactly as [ADR-003](./adr/ADR-003-contract-version-policy.md)
+describes. Bump the number when you start using `input`, `description` or a return
+value; leave it alone otherwise, or drop the field.
+
+**One exception, and it is a compile error rather than a surprise at runtime.**
+`ExtensionRuntimeApi` gained a required `invokeCommand`. Core is what *provides* that
+object, so writing an extension is unaffected — but if you **construct** one, which in
+practice means a hand-rolled fake `api` in your tests, it will not type-check until you
+add the method. It is required rather than optional on purpose: an optional method
+every caller has to guard is a weaker contract than one core guarantees. The one-line
+stub is:
+
+```ts
+invokeCommand: async () => ({ ok: false, reason: "unknown-command" }) as const,
+```
+
+`fakeExtensionApi()` from [`/testing`](./testing.md) is the answer that survives the
+*next* widening too — reach for it rather than writing the object out by hand.
+
+This is the only part of v2 that is not purely additive in source terms.
+
+The one thing worth knowing: to give a command a typed `In`, declare the generic
+explicitly. Inside a `ToolbarCommand[]` literal, contextual typing infers `In` as
+`void`:
+
+```ts
+const setFlag: ToolbarCommand<{ key: string; value?: FlagValue }> = {
+  id: "flags.set",
+  label: "Set a feature flag override",
+  input: {
+    fields: {
+      key: { type: "string", required: true },
+      value: { type: ["boolean", "string", "number"] },
+    },
+  },
+  run: ({ key, value }) => runtime.applyOverride(key, value),
+};
+```
+
+### `CommandInputSchema` is deliberately small
+
+It is **not** JSON Schema and **not** Zod. Zero runtime dependencies is a rule here,
+and every shape a toolbar command has actually needed is a flat bag of
+`boolean | string | number | enum`:
+
+```ts
+interface CommandInputSchema {
+  fields: Readonly<Record<string, CommandInputField>>;
+}
+
+type CommandInputField =
+  | { type: CommandInputType | readonly CommandInputType[]; ...common }  // boolean|string|number
+  | { type: "enum"; values: readonly CommandInputValue[]; ...common };
+
+// ...common: description?, required?, default?
+```
+
+No nesting, no arrays, no `anyOf`/`$ref`, no `minimum`/`pattern`, and **no validator**.
+The schema is a *description for a reader* — a palette deciding whether it can render
+a form, an agent deciding what to pass. `run()` is the only thing that knows what its
+own input means, so `run()` is what refuses bad input, by throwing a message that says
+why. [`/ext/flags`](./ext/flags.md)' `flags.set` refuses a value of the wrong type
+rather than coercing it, which is the same rule its panel editor already followed.
+
+The array form of `type` is there because polymorphic values are real: `flags.set`'s
+`value` is whatever type the *named* flag has, and a schema that could not say so
+would be a lie the first time it was used.
+
+### Running one, and reading the result
+
+`run()` may return a value. `runCommand` still resolves a boolean — it is published,
+and widening it would make every `if (await runCommand(id))` pass silently — so the
+result comes back through `invokeCommand`:
+
+```ts
+const outcome = await api.invokeCommand("diagnostics.capture");
+// { ok: true, result: DiagnosticSnapshot }   — the snapshot it just captured
+```
+
+Available as `useDevToolbar().invokeCommand(id, input?)` in the host, `api.invokeCommand`
+in an extension, `invokeCommand(id, { input, scope })` as a bare export, and
+`toolbar.invokeCommand()` in [`@nejcm/dev-toolbar/testing`](./testing.md). All of them
+reject with the command's own error if `run()` throws — only
+[`/ext/agent`](./ext/agent.md) turns that into a value, because a rejection crossing
+`page.evaluate` arrives as a bare string.
+
+### What a palette does with `input`
+
+[`/ext/command-menu`](./ext/command-menu.md) **skips every command that declares
+`input`**. It has no form to render one with, and a row that cannot be run — or one
+that runs with `undefined` and throws — would both be worse than not listing it. Those
+commands stay fully reachable through `getCommands()`, `invokeCommand()` and
+[`/ext/agent`](./ext/agent.md). A form in the palette is a later change, not a missing
+piece of this one.
 
 
 ---

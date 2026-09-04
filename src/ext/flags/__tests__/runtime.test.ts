@@ -3,6 +3,7 @@
  * redaction pass and the fail-closed guarantees.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { fakeExtensionApi } from "@nejcm/dev-toolbar/testing";
 import type { Mock } from "vitest";
 import { createMemoryStorage } from "../../../core/storage";
 import {
@@ -34,24 +35,8 @@ function fakeApi(storage: ToolbarStorage): {
   abort(): void;
   setVisible(visible: boolean): void;
 } {
-  const controller = new AbortController();
-  const listeners = new Set<(visible: boolean) => void>();
-  return {
-    api: {
-      signal: controller.signal,
-      isVisible: () => true,
-      subscribeVisibility(callback) {
-        listeners.add(callback);
-        return () => listeners.delete(callback);
-      },
-      getCommands: () => [],
-      getDiagnostics: () => [],
-      runCommand: async () => false,
-      storage,
-    },
-    abort: () => controller.abort(),
-    setVisible: (visible) => listeners.forEach((listener) => listener(visible)),
-  };
+  const fake = fakeExtensionApi({ storage });
+  return { api: fake.api, abort: fake.abort, setVisible: fake.setVisible };
 }
 
 let consoleError: Mock<typeof console.error>;

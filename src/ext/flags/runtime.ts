@@ -95,6 +95,15 @@ export interface FlagsRuntime {
   clearAll(): void;
   /** Flips a boolean flag's effective value. Used by the per-flag commands. */
   toggle(key: string): void;
+  /**
+   * The validated door `flags.set` uses. Refuses rather than coerces, and
+   * **throws** the reason — the caller is a command, and a command's only
+   * feedback channel is a rejection the palette or `/ext/agent` reports.
+   *
+   * `value === undefined` clears the override, the same meaning it has in
+   * `onOverride`. `null` is a value, not an absence, so it cannot mean "clear".
+   */
+  applyOverride(key: string, value?: FlagValue): void;
   /** Forgets the "reload required" markers without reloading. */
   acknowledgeReload(): void;
   /** §3C's shareable override recipe. Redacted. */
@@ -233,6 +242,26 @@ export function resetRequested(param: string | null): boolean {
   } catch {
     return false;
   }
+}
+
+/**
+ * The row's markers, in the panel's own vocabulary — the same strings the
+ * `data-dtb-tag` attributes carry in `ui.tsx`, so a reader of `diagnostics()`
+ * and a reader of the rendered row describe a flag the same way.
+ *
+ * Deliberately a plain derived list rather than a second source of truth:
+ * every entry is read straight off the `FlagView` the panel renders.
+ */
+function tagsFor(view: FlagView, reloadPending: ReadonlySet<string>): string[] {
+  const tags: string[] = [];
+  if (view.overridden) tags.push("override");
+  if (view.applyError !== undefined) tags.push("not-applied");
+  if (view.orphaned) tags.push("orphaned");
+  if (view.promoted) tags.push("promoted");
+  if (view.masked) tags.push("masked");
+  if (view.expired) tags.push("expired");
+  if (reloadPending.has(view.key)) tags.push("reload");
+  return tags;
 }
 
 export function createFlagsRuntime(options: FlagsRuntimeOptions = {}): FlagsRuntime {
@@ -518,9 +547,8 @@ export function createFlagsRuntime(options: FlagsRuntimeOptions = {}): FlagsRunt
     equals: (a, b) => signature(a) === signature(b),
   });
 
-  // `revision` advances on publish, not on build: `recipeText()` and
-  // `diagnostics()` build without publishing, and bumping there would make
-  // revision a count of reads instead of writes.
+  // `revision` advances on publish, not on build; recipe and diagnostics reads
+  // must not turn it into a read count.
   const publish = () => {
     revision += 1;
     store.set(build());
@@ -620,6 +648,56 @@ export function createFlagsRuntime(options: FlagsRuntimeOptions = {}): FlagsRunt
       store.flush();
     },
 
+    applyOverride(key: string, value?: FlagValue) {
+      if (typeof key !== "string" || key === "") {
+        throw new Error("`key` is required and must be a non-empty string.");
+      }
+      if (!writable) {
+        throw new Error(
+          `This toolbar's flags are read-only — no \`onOverride\` adapter was supplied, ` +
+            `so "${key}" cannot be overridden.`,
+        );
+      }
+      if (value === undefined) {
+        if (!Object.prototype.hasOwnProperty.call(overrides, key)) return;
+        drop(key);
+        return;
+      }
+      if (!isFlagValue(value)) {
+        throw new Error(
+          `"${key}" was given a ${typeof value}. A flag value is a boolean, string, number or null.`,
+        );
+      }
+      const reading = readFlags().find(
+        (candidate) => typeof candidate?.key === "string" && candidate.key === key,
+      );
+      // An unknown key is a typo far more often than a deliberate orphan, and
+      // an orphan created by a command is invisible until someone opens the
+      // panel. The panel's own editors can only reach catalogued rows, so this
+      // refuses what the UI could not have done either.
+      if (reading === undefined && !Object.prototype.hasOwnProperty.call(overrides, key)) {
+        throw new Error(
+          `No flag named "${key}". The catalogue lists: ` +
+            `${readFlags()
+              .map((candidate) => candidate?.key)
+              .filter((candidate): candidate is string => typeof candidate === "string")
+              .join(", ")}.`,
+        );
+      }
+      // The same rule `vetOverrides` applies to a persisted override, so a
+      // command cannot write a value a reload would then discard.
+      if (reading !== undefined) {
+        const type = inferType(reading);
+        if (!valueMatchesFlagType(value, type, reading.variants)) {
+          throw new Error(
+            `"${key}" is a ${type} flag; ${JSON.stringify(value)} is not a valid ${type} value` +
+              `${reading.variants === undefined ? "" : ` (variants: ${JSON.stringify(reading.variants)})`}.`,
+          );
+        }
+      }
+      write(key, value);
+    },
+
     toggle(key: string) {
       const view = store.peek().flags.find((candidate) => candidate.key === key);
       if (!view) return;
@@ -695,26 +773,42 @@ export function createFlagsRuntime(options: FlagsRuntimeOptions = {}): FlagsRunt
 
     diagnostics() {
       const snapshot = build();
+      const pending = new Set(snapshot.reloadPending);
       const payload = {
         generatedAt: new Date(now()).toISOString(),
         writable: snapshot.writable,
+        supplied: snapshot.supplied,
         overriddenCount: snapshot.overriddenCount,
         maskedCount: snapshot.maskedCount,
         reloadPending: snapshot.reloadPending,
+        readError: snapshot.readError,
+        /** Every catalogued row, so a reader can compare base and effective values. */
+        flags: snapshot.flags.map((view) => ({
+          key: view.key,
+          type: view.type,
+          source: view.source,
+          overridden: view.overridden,
+          masked: view.masked,
+          reloadBehavior: view.reloadBehavior,
+          // Preserve typed values while unmasked. Masked rows use the same
+          // redacted display strings as the panel.
+          effective: view.masked ? view.effectiveText : view.effective,
+          base: view.masked ? view.baseText : view.base,
+          default: view.masked ? view.defaultText : view.defaultValue,
+          tags: tagsFor(view, pending),
+        })),
         overrides: snapshot.flags
           .filter((view) => view.overridden)
           .map((view) => ({
             key: view.key,
-            // Redacted display strings, never raw values — a command must not
-            // be able to fetch what the panel wouldn't show.
+            // Never expose raw values that the panel would not show.
             value: view.effectiveText,
             was: view.baseText,
             masked: view.masked,
             reloadBehavior: view.reloadBehavior,
           })),
       };
-      // Values are already redacted; this second pass costs nothing and keeps
-      // the dump safe if a field is added above and this call is forgotten.
+      // Keep a second pass in case a field is added above without redaction.
       return redact(payload, redactOptions);
     },
   };

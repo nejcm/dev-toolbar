@@ -7,6 +7,7 @@
  * every foreign input — a token name, a token value, a pasted recipe, a URL.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { fakeExtensionApi } from "@nejcm/dev-toolbar/testing";
 import {
   DEFAULT_THEME_PARAM,
   OVERRIDES_KEY,
@@ -37,17 +38,9 @@ const TOKENS: DesignTokenDefinition[] = [
 let aborts: AbortController[] = [];
 
 function fakeApi(storage: ToolbarStorage | null): ExtensionRuntimeApi {
-  const controller = new AbortController();
-  aborts.push(controller);
-  return {
-    signal: controller.signal,
-    isVisible: () => true,
-    subscribeVisibility: () => () => {},
-    storage: storage ?? createMemoryStorage(),
-    getCommands: () => [],
-    runCommand: () => Promise.resolve(false),
-    getDiagnostics: () => [],
-  };
+  const fake = fakeExtensionApi({ storage: storage ?? createMemoryStorage() });
+  aborts.push(fake.controller);
+  return fake.api;
 }
 
 const root = () => document.documentElement;

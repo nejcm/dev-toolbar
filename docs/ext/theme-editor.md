@@ -144,7 +144,19 @@ Options: `tokens`, `onApply`, `surfaces`, `presets`, `mode`, `pollMs`, `redactOp
 Commands: `theme-editor.preset.<name>` (one per preset, enumerated live),
 `theme-editor.reset`, `theme-editor.togglePreview`, `theme-editor.copyCss`,
 `theme-editor.copyRecipe`, `theme-editor.copyFigma`, `theme-editor.copyLink`,
-`theme-editor.refresh`.
+`theme-editor.refresh` — plus `theme-editor.setToken`,
+[contract v2](../extension-contract.md#contract-v2--commands-with-input-and-a-result)'s
+addition:
+
+```ts
+await api.invokeCommand("theme-editor.setToken", { name: "--dtb-accent", value: "#3b82f6" });
+await api.invokeCommand("theme-editor.setToken", { name: "--dtb-accent" });  // clears it
+```
+
+This is the command that could not exist before v2. A token's value space is open —
+`#3b82f6`, `12px`, `1.4` — so no enumeration of per-value commands was ever possible
+and the panel's text input was the only way in. It refuses the same values the editor
+refuses, and says which; it declares `input`, so `⌘K` does not list it.
 
 panel.
 

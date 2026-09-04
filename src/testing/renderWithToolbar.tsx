@@ -12,7 +12,12 @@ import {
 import { DEFAULT_INSTANCE_ID, instanceHeightVariable } from "./heightVariable";
 import type { DevToolbarProps } from "../core/DevToolbar";
 import type { DevToolbarContextValue } from "../core/context";
-import type { DevToolbarExtension, ToolbarCommand, ToolbarPosition } from "../core/contract";
+import type {
+  AnyToolbarCommand,
+  CommandInvocation,
+  DevToolbarExtension,
+  ToolbarPosition,
+} from "../core/contract";
 import { installToolbarLayout, reinstallToolbarLayout } from "./layout";
 import type { InstallToolbarLayoutOptions, ToolbarLayoutHandle } from "./layout";
 import { requireTestingLibrary } from "./reactTestingLibrary";
@@ -106,9 +111,16 @@ export interface ToolbarHandle {
   setPanelHeight(height: number): void;
   /** Dynamic registration, the `useDevToolbar().register()` path. */
   register(extension: DevToolbarExtension): () => void;
-  runCommand(id: string): Promise<boolean>;
-  /** Re-enumerates every extension's commands, the way a palette does on open. */
-  getCommands(): readonly ToolbarCommand[];
+  runCommand(id: string, input?: unknown): Promise<boolean>;
+  /** `runCommand` that resolves what the command returned (contract v2). */
+  invokeCommand<Out = unknown>(id: string, input?: unknown): Promise<CommandInvocation<Out>>;
+  /**
+   * Re-enumerates every extension's commands, the way a palette does on open.
+   * `AnyToolbarCommand`, matching `DevToolbarContextValue.getCommands()` — a
+   * roster is heterogeneous in `In`/`Out`, and typing it `ToolbarCommand` here
+   * would hide `input` from a test that wants to assert on it.
+   */
+  getCommands(): readonly AnyToolbarCommand[];
 }
 
 export interface RenderWithToolbarResult extends RenderResult {
@@ -333,14 +345,21 @@ export function renderWithToolbar(
       });
       return () => run(() => unregister());
     },
-    async runCommand(id) {
+    async runCommand(id, input) {
       // Async `act`, unlike `run()`: a command's `run` may await, and state it
       // sets on the way back must be flushed too.
       let ran = false;
       await act(async () => {
-        ran = await context().runCommand(id);
+        ran = await context().runCommand(id, input);
       });
       return ran;
+    },
+    async invokeCommand<Out = unknown>(id: string, input?: unknown) {
+      let outcome: CommandInvocation<Out> = { ok: false, reason: "unknown-command" };
+      await act(async () => {
+        outcome = await context().invokeCommand<Out>(id, input);
+      });
+      return outcome;
     },
     getCommands: () => context().getCommands(),
   };

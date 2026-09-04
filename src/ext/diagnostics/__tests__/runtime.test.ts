@@ -11,6 +11,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { REDACTED } from "../../../runtime";
 import { collectDiagnostics } from "../../../core/diagnostics";
+import { fakeExtensionApi } from "@nejcm/dev-toolbar/testing";
 import {
   countOccurrences,
   createDiagnosticsRuntime,
@@ -37,15 +38,11 @@ const storage = () => {
 type Roster = readonly ExtensionDiagnostics[] | (() => readonly ExtensionDiagnostics[]);
 
 /** A minimal `ExtensionRuntimeApi` with a controllable diagnostics roster. */
-const api = (roster: Roster = []): ExtensionRuntimeApi => ({
-  signal: new AbortController().signal,
-  isVisible: () => true,
-  subscribeVisibility: () => () => {},
-  storage: storage(),
-  getCommands: () => [],
-  runCommand: async () => false,
-  getDiagnostics: typeof roster === "function" ? roster : () => roster,
-});
+const api = (roster: Roster = []): ExtensionRuntimeApi =>
+  fakeExtensionApi({
+    storage: storage(),
+    getDiagnostics: typeof roster === "function" ? roster : () => roster,
+  }).api;
 
 const started = (
   options: Parameters<typeof createDiagnosticsRuntime>[0] = {},

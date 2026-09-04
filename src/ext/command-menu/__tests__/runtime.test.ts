@@ -3,6 +3,7 @@
  * value, and this extension imports only types), and the fail-closed edges.
  */
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { fakeExtensionApi } from "@nejcm/dev-toolbar/testing";
 import { fireEvent } from "@testing-library/react";
 import {
   ariaKeyshortcuts,
@@ -22,23 +23,8 @@ afterEach(() => {
 const key = (init: Partial<KeyboardEventInit> & { key: string }) =>
   new KeyboardEvent("keydown", init);
 
-const api = (overrides: Partial<ExtensionRuntimeApi> = {}): ExtensionRuntimeApi => {
-  const store = new Map<string, string>();
-  return {
-    signal: new AbortController().signal,
-    isVisible: () => true,
-    subscribeVisibility: () => () => {},
-    storage: {
-      getItem: (k) => store.get(k) ?? null,
-      setItem: (k, value) => void store.set(k, value),
-      removeItem: (k) => void store.delete(k),
-    },
-    getCommands: () => [],
-    getDiagnostics: () => [],
-    runCommand: async () => false,
-    ...overrides,
-  };
-};
+const api = (overrides: Partial<ExtensionRuntimeApi> = {}): ExtensionRuntimeApi =>
+  fakeExtensionApi(overrides).api;
 
 const command = (id: string): ToolbarCommand => ({ id, label: id, run: () => {} });
 

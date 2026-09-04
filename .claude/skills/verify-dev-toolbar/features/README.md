@@ -10,13 +10,13 @@ driving the app, then use the matching feature file as the recipe.
   `{"name": "playground"}`. It serves `http://localhost:5273` and rebuilds
   `dist/` first.
 - Run `sh .claude/skills/verify-dev-toolbar/doctor.sh` and require exit 0.
-  If the preview was already running when you arrived, also require the
-  probe's `loadedAt` to be later than the `dist/ built` stamp doctor printed;
+  If the preview was already running when you arrived, also require the page
+  read's `loadedAt` to be later than the `dist/ built` stamp doctor printed;
   otherwise `navigate` to `http://localhost:5273/` first. A rebuild reaches a
   running tab through HMR and a remount, not a reload, so only `loadedAt`
   says which build the document was loaded over (SKILL.md, Launch).
 - Require a clean store: `localStorage.clear()` then reload, so no
-  `dtb:v1:playground:*` key survives from an earlier run. The probe's
+  `dtb:v1:playground:*` key survives from an earlier run. The page read's
   `storage` is `{}` at that point — but only at that point. Ordinary driving
   writes keys that no recipe declares: running any palette command writes
   `dtb:v1:playground:ext:command-menu:recent` (the palette's own recents), and
@@ -24,9 +24,25 @@ driving the app, then use the matching feature file as the recipe.
   `dtb:v1:playground:ext:overlays:enabled`. Later recipes in a sequence must
   therefore assert on the *keys they are about*, never on `storage` equalling
   a whole object — or re-clear and reload first.
-- Require the twelve-item bar in this order — `environment`, `cmds`, `flags`,
-  `theme-editor`, `overlays`, `metrics`, `hydr`, `tw`, `boom` (start) and
-  `command-menu`, `user`, `diagnostics` (end).
+- Require the **roster of thirteen** — twelve extensions plus the bridge's own
+  `agent` — as `diagnostics` (`curl -s localhost:5273/__dev-toolbar/state | jq
+  '.diagnostics|length'` → `13`, 7 `ok` and 6 `absent` at baseline). The roster
+  is the fixed number; `shell.bar` is **not**. `shell.bar` is only what still
+  fits, so it depends on the viewport: measured at the mandated 1280×800 it is
+  **8** — `environment`, `cmds`, `flags`, `theme-editor`, `overlays`, `tw`,
+  `command-menu`, `user` — with `shell.overflow.present: true` and `agent`,
+  `metrics`, `diagnostics`, `hydr`, `boom` collapsed. (Cross-checked the same
+  moment against the DOM: `[data-dtb-part="region"] > [data-dtb-part="item"]`
+  lists those same eight at `innerWidth: 1280`.) `agent` has the lowest
+  `priority` (`-1`), so it is the first to leave the bar as the window narrows.
+  Never assert a bar count you did not measure at a viewport you pinned.
+- Require the bridge itself: `window.__DEV_TOOLBAR__.instances["playground"]`
+  exists, `read().allowRun` is `true` (the playground opts in), and
+  `read().diagnostics` carries a `status: "ok"` entry for each of `flags`,
+  `metrics`, `environment`, `overlays`, `command-menu`, `theme-editor` and
+  `diagnostics`. A `"failed"` entry is a finding before any recipe runs; an
+  `"absent"` one means that extension publishes nothing and every state
+  assertion about it below is unreachable.
 - Pin the viewport: `resize_window` with `{"width": 1280, "height": 800}`.
   This is not optional — a hidden Browser pane otherwise reports a zero-sized
   viewport and every measurement reads `0`. Reset it with `{"preset":
@@ -48,10 +64,21 @@ driving the app, then use the matching feature file as the recipe.
 ## Driving conventions
 
 - Start every recipe from the baseline unless its preconditions say otherwise.
-- Read state with `probe.js`; project the fields you need in the same call.
-- Prefer `data-dtb-part` and `data-dtb-ext-id`, then ARIA role + name. The
-  playground's `data-testid` handles belong to the app, not the library —
-  use them to reach a state, never as the thing being proven.
+- Read state with `curl -s localhost:5273/__dev-toolbar/state` and a `jq`
+  projection — no browser call needed for any value (SKILL.md,
+  [Read](../SKILL.md#read--with-curl-not-a-browser)). The in-page
+  `window.__DEV_TOOLBAR__.instances["playground"].read()` returns the same
+  snapshot and is the right tool when the pane is already open, or when the
+  route says `connected: false`. Use the page read (SKILL.md, Drive) only for
+  geometry, computed style, `localStorage`, `loadedAt`, the error chips and the
+  app's own readouts.
+- Never assert an extension's state through a selector. If you cannot make the
+  assertion from `read().diagnostics`, the extension is under-publishing and
+  the fix is in `src/ext/<name>`.
+- For *input*, prefer a command id, then ARIA role + name, then
+  `data-dtb-part` / `data-dtb-ext-id`. The playground's `data-testid` handles
+  belong to the app, not the library — use them to reach a state, never as the
+  thing being proven.
 - Treat every selector, key name and query string here as literal.
 - Send `Enter`, never `Return`.
 - Re-read after a resize or a context mutation instead of asserting on the
@@ -64,12 +91,12 @@ driving the app, then use the matching feature file as the recipe.
 
 - Capture the user action and the resulting state, not only the final screen.
 - Every mutation proof includes its side effect: the `dtb:v1:playground:*`
-  key, the `--dev-toolbar-height-playground` property, or the app's own
-  readout (`flag-readout`, `theme-swatches`). Not `height-readout` — it reads
-  the *unsuffixed* variable and so always shows `(unset)` for this instance
-  (see [shell.md](./shell.md)); citing it proves nothing.
+  key, `shell.heightVariable`, or the app's own readout (`flag-readout`,
+  `theme-swatches`). Not `height-readout` — it reads the *unsuffixed*
+  variable and so always shows `(unset)` for this instance (see
+  [shell.md](./shell.md)); citing it proves nothing.
 - Prove persistence by reloading, never by reading back the store you wrote.
-- Pair a screenshot with a probe snapshot asserting the same fact in text;
+- Pair a screenshot with a bridge read asserting the same fact in text;
   screenshots do not survive the run.
 - Record the feature ID and the entry point used with every artifact, and
   pass the feature *file's* name as `capture.sh`'s `<feature>` — `overflow`,
@@ -85,8 +112,15 @@ driving the app, then use the matching feature file as the recipe.
 
 ## What the seeding run actually drove
 
-Recipes here are grounded in the source and in the handles the app really
-publishes, but only some were executed end to end when this map was written:
+Recipes here are grounded in the source and in the state the extensions really
+publish, but only some were executed end to end when this map was written.
+
+**Re-read this before quoting a "driven and confirmed" below.** The list is
+from the seeding run, which read state through a DOM scraper that no longer
+exists. The *behaviour* those runs proved still stands; the *assertions* below
+were rewritten against `read()` and its `diagnostics` payload and have not all
+been re-driven since. Treat a mismatch between a recipe and what the bridge
+actually returns as a finding about the recipe, and fix it here.
 
 - **Driven and confirmed:** the shell (mount, panel hosting and eviction,
   position, the height variable and inset, the keyboard toggle, reload
@@ -98,10 +132,13 @@ publishes, but only some were executed end to end when this map was written:
   leak anywhere in the snapshot), and overlays (on via `⌘K`, stacking below the
   bar, click-through).
 - **Not driven — verify before reporting:** the flags text/number editors and
-  their `rejected` state, clipboard assertions anywhere, the environment
-  impersonation and empty-context fixtures, the focus-order overlay's markings,
-  the overflow loop check's stepping sequence, and every feature listed as
-  unmapped below.
+  their `rejected` state, every `flags.set` and `theme-editor.setToken` step
+  (contract v2's input-carrying commands — written from the source and the
+  unit tests, never driven in a browser), the `⌘K`-skips-input assertion in
+  [command-menu.md](./command-menu.md), clipboard assertions anywhere, the
+  environment impersonation and empty-context fixtures, the focus-order
+  overlay's markings, the overflow loop check's stepping sequence, and every
+  feature listed as unmapped below.
 - **Not verifiable from the playground as it stands:** core's `styleNonce`
   prop (arriving with the pending PR stack #21–#28 — it sets the `nonce`
   *property* on core's injected `<style>` so a `style-src 'nonce-…'` policy
@@ -138,7 +175,15 @@ Not yet mapped, and therefore not yet verified: `theme-editor` (token editing,
 reserved `--dtb-*` names refused, `?dtb-theme=reset`, the four export formats),
 `metrics` (the `LoadControls` buttons drive it), `diagnostics` (snapshot
 capture and download), and the error-isolation chip the `boom` extension
-raises. Add them here before claiming them. Three of those surfaces move with
+raises. Add them here before claiming them. All three extensions now publish
+state through the bridge — `ext("theme-editor").overrides` (edited tokens and
+their values), `ext("metrics").metrics` (per metric: numeric `value`, `unit`,
+`severity`, `status`), `ext("diagnostics")` (`captured`, `revision`,
+`capturedAt`, `contributionCount`, `omissionCount`, `omissions`) — so a map for
+them is now mostly writing down assertions, not building a way to read them.
+`/ext/diagnostics` publishes a **summary**, never the snapshot: the snapshot is
+built from the roster, so embedding it would put one snapshot inside the next.
+Reach the full object through `diagnostics.copyJson` / `diagnostics.download`. Three of those surfaces move with
 the pending PR stack #21–#28, source-confirmed there and not driven — the
 metrics tabs gain `id`, `aria-controls`, a roving `tabindex` and
 Arrow/Home/End keys, with the `tabpanel` `aria-labelledby` the active tab;

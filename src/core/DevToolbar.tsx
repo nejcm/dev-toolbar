@@ -16,7 +16,7 @@ import { OverlayHost } from "./OverlayHost";
 import { PanelHost } from "./PanelHost";
 import { DevToolbarContext, cx } from "./context";
 import type { DevToolbarContextValue } from "./context";
-import { collectCommands, registerCommandHost, runCommand } from "./commands";
+import { collectCommands, invokeCommand, registerCommandHost } from "./commands";
 import { collectDiagnostics } from "./diagnostics";
 import { createExtensionStorage, createInstanceStorage, resolveStorage } from "./storage";
 import { createToolbarStore } from "./store";
@@ -252,7 +252,13 @@ function DevToolbarRoot({
   }, [enabled, getCommands]);
 
   const scopedRunCommand = useCallback(
-    (id: string) => runCommand(id, getCommands()),
+    (id: string, input?: unknown) =>
+      invokeCommand(id, { input, scope: getCommands() }).then((outcome) => outcome.ok),
+    [getCommands],
+  );
+
+  const scopedInvokeCommand = useCallback(
+    <Out,>(id: string, input?: unknown) => invokeCommand<Out>(id, { input, scope: getCommands() }),
     [getCommands],
   );
 
@@ -392,7 +398,12 @@ function DevToolbarRoot({
         },
         storage: createExtensionStorage(rawStorage, instanceId, extension.id),
         getCommands: () => collectCommands(extensionsRef.current),
-        runCommand: (id: string) => runCommand(id, collectCommands(extensionsRef.current)),
+        runCommand: (id: string, input?: unknown) =>
+          invokeCommand(id, { input, scope: collectCommands(extensionsRef.current) }).then(
+            (outcome) => outcome.ok,
+          ),
+        invokeCommand: <Out,>(id: string, input?: unknown) =>
+          invokeCommand<Out>(id, { input, scope: collectCommands(extensionsRef.current) }),
         // Reads through the ref, like `getCommands`, so a snapshot taken now
         // reflects the extension list now.
         getDiagnostics: () => collectDiagnostics(extensionsRef.current),
@@ -505,6 +516,7 @@ function DevToolbarRoot({
       commands,
       getCommands,
       runCommand: scopedRunCommand,
+      invokeCommand: scopedInvokeCommand,
       density,
       classNames,
       storage: baseStorage,
@@ -530,6 +542,7 @@ function DevToolbarRoot({
       commands,
       getCommands,
       scopedRunCommand,
+      scopedInvokeCommand,
       density,
       classNames,
       baseStorage,

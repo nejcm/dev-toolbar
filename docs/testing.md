@@ -48,10 +48,18 @@ one you await instead of wrapping again:
 expect(await toolbar.runCommand("queue.drain")).toBe(true);
 ```
 
+`toolbar.invokeCommand(id, input?)` is the contract v2 counterpart, `act()`-wrapped the
+same way, for a command that takes input or returns something:
+
+```ts
+const outcome = await toolbar.invokeCommand("flags.set", { key: "beta", value: true });
+expect(outcome).toEqual({ ok: true, result: undefined });
+```
+
 `@nejcm/dev-toolbar/testing` also ships `makeExtension()` for throwaway extensions
-(including deliberately broken ones), `createMockBus()` for a pub/sub bus with a
-hand-cranked clock, and `installToolbarLayout()` if you would rather drive the fake
-layout yourself. Storage defaults to a fresh in-memory adapter, so tests never leak
+(including deliberately broken ones), `fakeExtensionApi()` for the object `start()`
+receives, `createMockBus()` for a pub/sub bus with a hand-cranked clock, and
+`installToolbarLayout()` if you would rather drive the fake layout yourself. Storage defaults to a fresh in-memory adapter, so tests never leak
 preferences into each other.
 
 **`makeCommand(options?)`.** The same idea as `makeExtension()`, but for a single
@@ -65,6 +73,39 @@ import { makeCommand } from "@nejcm/dev-toolbar/testing";
 const run = vi.fn();
 const command = makeCommand({ label: "Drain queue", run });
 ```
+
+**`fakeExtensionApi(options?)`.** The `ExtensionRuntimeApi` object core hands to
+`start()`, built by hand — for a test that drives an extension's runtime directly
+without mounting a toolbar. Returns `{ api, setVisible, abort, controller }`:
+pass `api` to `start()`, call `setVisible(false)` to drive the visibility
+subscription, and `abort()` to fire the teardown path `api.signal` represents.
+
+```ts
+import { fakeExtensionApi } from "@nejcm/dev-toolbar/testing";
+
+const { api, setVisible, abort } = fakeExtensionApi({
+  getCommands: () => [myCommand],       // every member is overridable
+});
+
+const stop = myRuntime.start(api);
+setVisible(false);
+expect(myRuntime.store.getSnapshot().paused).toBe(true);
+stop();
+abort();
+```
+
+Defaults are the empty shape: visible, nothing aggregated, `runCommand`
+resolving `false`, `invokeCommand` resolving `{ ok: false, reason:
+"unknown-command" }`, and a fresh `createMemoryStorage()`. Overriding `isVisible`
+or `subscribeVisibility` opts that half out of `setVisible` — override both or
+neither.
+
+Reach for this rather than writing the object out by hand. `ExtensionRuntimeApi`
+is the one half of the contract a consumer *constructs* rather than consumes, so
+every widening of it is a compile error in every suite that fakes one:
+[contract v2](./extension-contract.md#contract-v2--commands-with-input-and-a-result)'s
+required `invokeCommand` broke ten inside this repo alone. This helper is where the
+next widening is absorbed.
 
 **`resetExtensionIds()`.** Resets the `fake-N` / `fake-command-N` counters that
 `makeExtension()` and `makeCommand()` draw generated ids from, back to zero. The two

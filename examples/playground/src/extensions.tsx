@@ -8,13 +8,16 @@ import { commandMenu } from "@nejcm/dev-toolbar/ext/command-menu";
 import { overlays } from "@nejcm/dev-toolbar/ext/overlays";
 import { diagnostics } from "@nejcm/dev-toolbar/ext/diagnostics";
 import { themeEditor } from "@nejcm/dev-toolbar/ext/theme-editor";
+import { agentBridge } from "@nejcm/dev-toolbar/ext/agent";
 import type { DesignTokenDefinition } from "@nejcm/dev-toolbar/ext/theme-editor";
 import type { FlagReading, FlagValue } from "@nejcm/dev-toolbar/ext/flags";
 
 /**
  * Deliberately varied `priority` so narrowing the window collapses extensions into `⋮` in order:
- * boom (5) → diagnostics (10) → hydr (20) → metrics (35) → overlays (55) → tw (70) → flags (80)
- * → cmds (85) → env (90) → user (100, aligned end). metrics/env/flags are the real extensions; the rest are placeholders.
+ * agent (-1) → boom (5) → diagnostics (10) → hydr (20) → metrics (35) → overlays (55) → tw (70)
+ * → flags (80) → cmds (85) → env (90) → user (100, aligned end). The agent bridge goes first by
+ * design: it is a transport, and nothing is lost when its chip collapses.
+ * metrics/env/flags are the real extensions; the rest are placeholders.
  */
 
 function Chip({
@@ -156,15 +159,41 @@ function CommandsPanel() {
       >
         Re-enumerate{live === null ? "" : ` — ${live} right now`}
       </button>
+      <p style={{ margin: 0, color: "var(--dtb-muted)" }}>
+        A command that declares <code>input</code> (contract v2) needs a form
+        this panel does not have, so it is listed and disabled rather than
+        offered — pressing it with no input is a guaranteed throw, and{" "}
+        <code>void command.run()</code> would swallow that into an unhandled
+        rejection. <code>/ext/command-menu</code> skips these for the same
+        reason; <code>/ext/agent</code> is the one that can supply input.
+      </p>
       <ul style={{ margin: 0, paddingLeft: 18 }}>
         {commandList.map((command) => (
           <li key={command.id}>
             <button
               type="button"
               data-dtb-part="trigger"
-              onClick={() => void command.run()}
+              disabled={command.input !== undefined}
+              title={
+                command.input === undefined
+                  ? command.description
+                  : `Takes input (${Object.keys(command.input.fields).join(", ")}) — run it through /ext/agent`
+              }
+              onClick={() => {
+                // `Promise.resolve(...)` inside the `try`, so a synchronous
+                // throw and a rejection both land in the same place. A bare
+                // `void command.run()` reports neither.
+                try {
+                  Promise.resolve(command.run()).catch((error: unknown) => {
+                    console.error(`[playground] ${command.id} rejected`, error);
+                  });
+                } catch (error) {
+                  console.error(`[playground] ${command.id} threw`, error);
+                }
+              }}
             >
               {command.label}
+              {command.input === undefined ? "" : " (needs input)"}
             </button>
           </li>
         ))}
@@ -571,7 +600,30 @@ const runtimeMetrics = metrics({
   jank: { windowMs: 5000 },
 });
 
+/**
+ * The real `@nejcm/dev-toolbar/ext/agent`. It publishes this instance's commands and
+ * diagnostics at `window.__DEV_TOOLBAR__.instances["playground"]`, which is how a browser
+ * agent reads toolbar state and invokes a command by id instead of scraping the DOM and
+ * clicking coordinates.
+ *
+ * `allowRun: true` here and nowhere by default: the playground is a development build whose
+ * whole purpose is to be driven, and `runCommand` is arbitrary effect for any script on the
+ * page. `instanceId` repeats what `<App>` passes `<DevToolbar>` — the contract hands
+ * `start(api)` no instance identity.
+ */
+const runtimeAgent = agentBridge({
+  instanceId: "playground",
+  allowRun: true,
+  // Phase 3: the same snapshot, pushed to the dev server so an agent that
+  // never loads this page can `curl localhost:5273/__dev-toolbar/state`. The
+  // receiving half is `plugins/devToolbarAgent.ts`. Gated on `import.meta.env.DEV`
+  // because a production `vite build` has no middleware to answer it — the
+  // reporter would post into the void and warn once.
+  ...(import.meta.env.DEV ? { report: { url: "/__dev-toolbar/state" } } : {}),
+});
+
 export const playgroundExtensions: DevToolbarExtension[] = [
+  runtimeAgent,
   runtimeCommandMenu,
   runtimeDiagnostics,
   runtimeEnvironment,

@@ -249,8 +249,25 @@ Rules that the code actually enforces or depends on:
 
 ## `CONTRACT_VERSION`
 
-`CONTRACT_VERSION` is exported from `src/core/contract.ts` and is currently `1`.
+`CONTRACT_VERSION` is exported from `src/core/contract.ts` and is currently `2`.
 Extensions may declare `contractVersion`; core compares the two.
+
+**What v2 added.** `ToolbarCommand` grew `description`, an optional `input`
+schema and a typed `run(input)` that may resolve a value, and
+`ExtensionRuntimeApi` grew `invokeCommand(id, input?)` — `runCommand` that
+resolves what `run()` returned rather than only whether the id was found.
+
+That is additive for anyone **writing** an extension: every v1 command object
+compiles unchanged, because `In` and `Out` both default to `void`. It is *not*
+additive for anyone **constructing** an `ExtensionRuntimeApi`. `invokeCommand`
+is a required member, so every hand-rolled fake `api` in a test suite is a
+compile error until it grows one. Core supplies the real object, so no shipped
+extension broke; ten fakes inside this repo did. Use
+`fakeExtensionApi()` from `@nejcm/dev-toolbar/testing` rather than hand-rolling
+another one — it is there so the next widening costs one edit instead of ten.
+[ADR-003](./docs/adr/ADR-003-contract-version-policy.md) records this as the gap
+none of its candidate policies can express: "additive" was doing duty for two
+different claims and only one of them held.
 
 **What a mismatch does today: it logs a `console.warn` and nothing else.** The
 extension still renders, still starts, still contributes commands and
@@ -266,7 +283,12 @@ reasoning that bumping for an additive change spends the one signal a version
 number carries. That precedent leaned partly on "nothing has been published
 yet", which stopped being true at `0.1.0`.
 
-So: **if you are changing the contract in a way that is not purely additive,
+So the interim rule is: **do not bump silently. If you are changing the contract
+in a way that is not purely additive, say so in the PR description and raise the
+version question there.** Do not assume the additive precedent covers you — the
+v2 bump above followed exactly this route, and is a data point rather than a
+settlement.
+
 Settling this properly is a pending architecture decision, written up as
 [ADR-003](./docs/adr/ADR-003-contract-version-policy.md) — which states the three
 candidate policies and what each costs, and settles none of them. Read it before
@@ -283,7 +305,11 @@ cannot drift unnoticed.
 
 `vitest`, with tests colocated in `__tests__/` next to what they cover. New
 behaviour needs a test; a bug fix needs a test that fails before the fix. The
-`src/testing/` entry point (`renderWithToolbar`, `makeExtension`, `mockBus`) is
+`src/testing/` entry point (`renderWithToolbar`, `makeExtension`,
+`createMockBus`, `fakeExtensionApi`) is both the published test-helper surface
+and what this repo's own tests use — so if you are writing setup boilerplate,
+check whether it belongs there before copying it into a third `__tests__/`
+directory.
 
 ## Releasing
 

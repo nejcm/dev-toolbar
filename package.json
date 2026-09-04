@@ -56,6 +56,16 @@
         "default": "./dist/runtime.cjs"
       }
     },
+    "./ext/agent": {
+      "import": {
+        "types": "./dist/ext/agent.d.ts",
+        "default": "./dist/ext/agent.js"
+      },
+      "require": {
+        "types": "./dist/ext/agent.d.cts",
+        "default": "./dist/ext/agent.cjs"
+      }
+    },
     "./ext/metrics": {
       "import": {
         "types": "./dist/ext/metrics.d.ts",

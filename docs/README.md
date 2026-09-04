@@ -31,6 +31,7 @@ Everything the [README](../README.md) links to, in one place.
 | `ext/overlays` | [ext/overlays.md](./ext/overlays.md) |
 | `ext/diagnostics` | [ext/diagnostics.md](./ext/diagnostics.md) |
 | `ext/theme-editor` | [ext/theme-editor.md](./ext/theme-editor.md) |
+| `ext/agent` | [ext/agent.md](./ext/agent.md) |
 
 ## Working on the package itself
 

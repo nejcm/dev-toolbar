@@ -32,7 +32,7 @@ the open panel back after a reload.
 
 Preconditions:
 
-- Baseline per [README](./README.md); probe `storage` is `{}`.
+- Baseline per [README](./README.md); the page read's `storage` is `{}`.
 - A viewport is pinned: `resize_window` with `{"width": 1280, "height": 800}`.
   Without it, a hidden Browser pane reports a zero-sized viewport (see
   Gotchas).
@@ -43,42 +43,58 @@ Preconditions:
   `computer {"action":"screenshot"}` → read*, and the report says so (see
   Gotchas).
 
-- **Mount.** Probe. `mounted` is `true`, `shell.instance` is `"playground"`,
-  `shell.barLabel` is `Developer toolbar`, and `bar` lists the twelve baseline
-  ids in the README's order.
+- **Mount.** State read (`curl … /state`, or the bridge in-page). `instanceId`
+  is `"playground"`, `shell.mounted` is `true`, and `diagnostics` carries the
+  thirteen-extension roster. `shell.bar` is the *width-dependent* subset — 8
+  ids at the mandated 1280×800, see the README — so assert on the ids you care
+  about, not on a count.
+  The bar's accessible name is not published state — check it with `find` for
+  role `toolbar` name `Developer toolbar`.
 - **Open a panel.** Click the flags chip: `find` for role `button` name
-  `Flags`, then click the ref. Probe: `panel.extension` is `"flags"`,
-  `panel.label` is `Flags`, the matching `bar` entry has `panelOpen: true`, and
+  `Flags`, then click the ref. Bridge read: `shell.activePanel` is `"flags"`,
+  the matching `shell.bar` entry has `panelOpen: true`, and (page read)
   `storage["dtb:v1:playground:activePanel"]` is `"\"flags\""`.
 - **One panel at a time.** Click the environment chip, by CSS selector:
   `[data-dtb-ext-id="environment"] [data-dtb-part="trigger"]`. It has no
   `aria-label`, so `find` by role `button` name `Environment` matches nothing —
-  its accessible name is its text content, `envstaging`. Probe:
-  `panel.extension` is `"environment"` and no other item reports `panelOpen`.
-- **Height and inset follow the panel.** Probe before and after opening a
-  panel. `heightVariable.value` grows from `30px` to the bar-plus-panel height
-  (`350px` at the default panel height) and `inset.paddingBottom` equals it
-  exactly. `heightVariable.unsuffixed` stays `null` — the unsuffixed name
-  belongs to `instanceId: "default"` and this app is `"playground"`.
-- **Move the bar.** Click `[data-testid="toggle-position"]`. Probe:
-  `shell.position` and `inset.position` are `"top"`, `inset.paddingTop` carries
-  the height and `paddingBottom` is `0px`, and
+  its accessible name is its text content, `envstaging`. Bridge read:
+  `shell.activePanel` is `"environment"` and no other `shell.bar` entry reports
+  `panelOpen`.
+- **Height and inset follow the panel.** Read before and after opening a panel.
+  `shell.heightVariable` is
+  `{name: "--dev-toolbar-height-playground", value: "30px"}` at rest and grows
+  to the bar-plus-panel height (`350px` at the default panel height); the page
+  read's `inset.bottom` equals it exactly. The bridge reports only the
+  instance-scoped name — the unsuffixed `--dev-toolbar-height` belongs to
+  `instanceId: "default"` and this app is `"playground"`, so it stays unset;
+  read it from the page if you want to assert that.
+- **Move the bar.** Click `[data-testid="toggle-position"]`. Bridge read:
+  `shell.position` is `"top"`. Page read: `inset.position` is `"top"`,
+  `inset.top` carries the height, `inset.bottom` is `0px`, and
   `storage["dtb:v1:playground:position"]` is `"\"top\""`.
 - **Keyboard toggle.** Click the page body once so the document has focus, then
-  `computer {"action":"key","text":"cmd+shift+."}`. Probe: `mounted` is
-  `false` — a hidden bar is removed from the DOM, not just visually hidden —
-  and `storage["dtb:v1:playground:visible"]` is `"false"`.
+  `computer {"action":"key","text":"cmd+shift+."}`. Bridge read: `visible` is
+  `false` and `shell.mounted` is `false` — a hidden bar is removed from the
+  DOM, not just visually hidden. The handle keeps answering throughout: core
+  reports visibility and never pauses an extension on its behalf, so nothing
+  is torn down and only the *rendered* shell goes. Page read:
+  `storage["dtb:v1:playground:visible"]` is `"false"`.
 - **Mod is exclusive.** Send `ctrl+shift+.` on macOS. Nothing changes:
-  `mounted` and the stored `visible` are unchanged.
+  `visible` and the stored `visible` are unchanged.
 - **Persistence.** With position `top`, visibility `false` and an active panel
-  stored, `navigate` to `http://localhost:5273/`. Probe: the same three
+  stored, `navigate` to `http://localhost:5273/`. The same three
   `dtb:v1:playground:*` values come back, the header readouts agree
   (`position: top`, `visible: false`), and re-showing the bar reopens the
-  stored panel.
-- **Error isolation.** Probe at baseline. `errorChips` contains exactly
-  `{extension: "boom", slot: "compact"}`, and `bar` still lists all twelve
-  ids — one extension throwing from both slots costs one chip and nothing else.
-- **Proof.** Capture the before/after probe snapshots around the panel open and
+  stored panel (`shell.activePanel`).
+- **Error isolation.** Page read at baseline. `errorChips` contains exactly
+  `{extension: "boom", slot: "compact"}`, while `diagnostics` still carries all
+  thirteen roster entries and every other extension is still reachable in
+  `shell.bar` or `shell.overflow` — one extension throwing from both slots
+  costs one chip and nothing else. This is the one extension fact still read from markup, and
+  deliberately: a slot that threw rendered nothing and has no state to
+  publish. `read().diagnostics` will list `boom` as `absent`, which is a
+  different claim.
+- **Proof.** Capture the before/after bridge reads around the panel open and
   the position change, plus a screenshot with the bar at `top` and the app
   content visibly padded above it.
 
@@ -109,15 +125,21 @@ Preconditions:
   check ran screenshot-flushed: the observer then sees one coalesced size
   change instead of the stream a visible resize produces, so it is a weaker
   test of anything that guards against oscillation.
-- The height variable is instance-scoped: `--dev-toolbar-height-playground`.
-  The playground's own `height-readout` control reads the *unsuffixed* name and
-  therefore always shows `(unset)`; that readout is stale, not a regression.
+- The height variable is instance-scoped: `--dev-toolbar-height-playground`,
+  which is the name `shell.heightVariable.name` reports. The playground's own
+  `height-readout` control reads the *unsuffixed* name and therefore always
+  shows `(unset)`; that readout is stale, not a regression.
 - Position, visibility and the active panel are store state, not props.
   Re-rendering `<DevToolbar>` with a different `defaultPosition` will not move
   a bar that already has a stored position.
 - `padding` on the inset lags the height variable by a frame after a position
   change. Re-read rather than asserting on the first snapshot — and in a
   hidden pane, screenshot first, because that frame otherwise never arrives.
+- `shell` is the one thing the bridge reads off the DOM, because the shell is
+  core and core has no extension to publish through `diagnostics()`. So it
+  reports what is *rendered*: with the bar hidden, `shell.mounted` is `false`
+  and every other `shell` field is `null` or empty — use `visible` beside it
+  to tell "hidden" from "never mounted".
 - `enabled: false` unmounts everything, storage included — use it to prove the
   kill switch, never as a way to reach a clean baseline.
 - The playground's `data-testid` header buttons drive the *app's* props. They

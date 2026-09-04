@@ -187,7 +187,7 @@ describe("@nejcm/dev-toolbar/testing", () => {
   });
 
   it("exposes the contract version the extension author compiles against", () => {
-    expect(CONTRACT_VERSION).toBe(1);
+    expect(CONTRACT_VERSION).toBe(2);
   });
 
   it("drives a collector with the mock bus's controllable clock", () => {

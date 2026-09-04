@@ -1,7 +1,12 @@
 import type { ReactNode } from "react";
 
-/** Contract version implemented by this core. Core warns (once per extension id) if an extension's `contractVersion` differs. */
-export const CONTRACT_VERSION = 1;
+/**
+ * Contract version implemented by core. Core warns once per extension id when
+ * `contractVersion` differs. Version 2 adds command descriptions, input schemas
+ * and returned values (`plans/agent-readable-toolbar.md` § Phase 2); it is
+ * source-compatible with v1. See [ADR-003](../../docs/adr/ADR-003-contract-version-policy.md).
+ */
+export const CONTRACT_VERSION = 2;
 
 export type ToolbarAlign = "start" | "end";
 export type ToolbarPosition = "bottom" | "top";
@@ -15,16 +20,127 @@ export interface ToolbarStorage {
   removeItem(key: string): void;
 }
 
-/** A command an extension contributes. Core aggregates them; it renders no palette. */
-export interface ToolbarCommand {
+/**
+ * A value a command input field may hold. Primitives only — a command input is
+ * a form, and a form has no nesting.
+ */
+export type CommandInputValue = boolean | string | number | null;
+
+/** Primitive field kinds; `"enum"` is separate because it carries `values`. */
+export type CommandInputType = "boolean" | "string" | "number";
+
+interface CommandInputFieldBase {
+  /** Prose for whoever is choosing what to pass. One line. */
+  description?: string;
+  /** Default `false`. An omitted optional field means "unset", never a coerced zero value. */
+  required?: boolean;
+  /** What a form should prefill, and what a reader should assume an omitted field means. */
+  default?: CommandInputValue;
+  /*
+   * There is deliberately no `nullable` here. It was drafted, and its only use
+   * — `flags.set`'s `value` — turned out to be false: a `null` override is
+   * refused for every non-variant flag, because it would not survive
+   * `vetOverrides` on the next reload. Rather than ship a field whose sole
+   * caller lied, it was removed until a command genuinely needs it. `null` is
+   * still a `CommandInputValue`, so an `enum` whose `values` include it says
+   * so exactly, which is the only case that has come up.
+   */
+}
+
+export interface CommandInputPrimitiveField extends CommandInputFieldBase {
+  /**
+   * One primitive, or the set of primitives this field accepts. The array form
+   * exists because genuinely polymorphic values exist — `flags.set`'s `value`
+   * is whatever type the named flag has — and a schema that cannot say so
+   * would be a lie the first time it is used.
+   */
+  type: CommandInputType | readonly CommandInputType[];
+}
+
+export interface CommandInputEnumField extends CommandInputFieldBase {
+  type: "enum";
+  /** The complete set of accepted values. */
+  values: readonly CommandInputValue[];
+}
+
+export type CommandInputField = CommandInputPrimitiveField | CommandInputEnumField;
+
+/**
+ * What one command accepts, described narrowly on purpose.
+ *
+ * **Not JSON Schema and not Zod.** Zero runtime dependencies is a rule, and
+ * command inputs are flat bags of `boolean | string | number | enum`. There is
+ * no nesting, composition or validator: `run()` knows what its input means and
+ * refuses bad input by throwing.
+ *
+ * The schema describes input for a palette or agent; it is not a validation gate.
+ */
+export interface CommandInputSchema {
+  /** Named fields. Flat: a value here is a primitive or an enum, never another object. */
+  fields: Readonly<Record<string, CommandInputField>>;
+}
+
+/**
+ * A command an extension contributes. Core aggregates commands but renders no palette.
+ *
+ * `In` and `Out` both default to `void`, which is what makes every v1 command a
+ * valid v2 command: a zero-argument `run(): void | Promise<void>` satisfies
+ * `run(input: void): void | Promise<void>` unchanged, and a `ToolbarCommand`
+ * written against v1 needs no edit.
+ *
+ * A roster uses `AnyToolbarCommand`, not `ToolbarCommand`; declare a generic
+ * explicitly in array literals when the command has an input type.
+ */
+export interface ToolbarCommand<In = void, Out = void> {
   id: string;
   label: string;
+  /**
+   * Prose for a reader deciding whether to call this — an agent, or a tool
+   * listing. `label` is for a palette row and stays short.
+   */
+  description?: string;
   group?: string;
   keywords?: string[];
   /** Display-only hint, e.g. "Mod+Shift+F". Core does not bind it. */
   shortcut?: string;
-  run(): void | Promise<void>;
+  /**
+   * Absent means "takes no input", and a palette can run it from a keypress.
+   * Present means a palette needs a form for it, or must skip it —
+   * `/ext/command-menu` skips, and leaves these to `/ext/agent`.
+   */
+  input?: CommandInputSchema;
+  run(input: In): Out | Promise<Out>;
 }
+
+/**
+ * The element type of every command **aggregation** — `getCommands()`,
+ * `useToolbarCommands()`, `commands`. A roster holds commands with different
+ * `In`/`Out`, so it needs one element type that all of them satisfy.
+ *
+ * `any` is load-bearing here and is the only one in the package. A
+ * heterogeneous list cannot be typed `ToolbarCommand<void, void>` (nothing is
+ * assignable to a `void` parameter) and typing it `ToolbarCommand<never, unknown>`
+ * would make `readonly ToolbarCommand[]` — what every v1 consumer writes —
+ * stop being assignable from it. `ToolbarCommand<any, any>` is mutually
+ * assignable with both, which is exactly the compatibility this needs.
+ * `invokeCommand` casts once before calling the selected command.
+ */
+/* oxlint-disable typescript/no-explicit-any -- see above; the alternatives break v1 source compatibility. */
+export interface AnyToolbarCommand extends Omit<ToolbarCommand<any, any>, "run"> {
+  /** Optional for v1 compatibility, so aggregated `command.run()` calls still compile. */
+  run(input?: any): any;
+}
+/* oxlint-enable typescript/no-explicit-any */
+
+/**
+ * What `invokeCommand` resolves. `ok: false` is only ever "no command declares
+ * that id" — a command that *ran* and threw rejects, exactly as `runCommand`
+ * has always done, so core keeps one error convention and `/ext/agent` turns
+ * the rejection into a value at the boundary an agent actually reads.
+ */
+export type CommandInvocation<Out = unknown> =
+  | { ok: true; result: Out }
+  | { ok: false; reason: "unknown-command" };
 
 /**
  * What `DevToolbarExtension.commands` may be. A static array is the simple case;
@@ -36,12 +152,13 @@ export interface ToolbarCommand {
  * and return a stable order for a given state. A throw is contained: core logs
  * once per extension and treats it as contributing nothing, as if `hidden`.
  */
-export type ToolbarCommandsInput = readonly ToolbarCommand[] | (() => readonly ToolbarCommand[]);
+export type ToolbarCommandsInput =
+  | readonly AnyToolbarCommand[]
+  | (() => readonly AnyToolbarCommand[]);
 
 /**
- * What one extension contributed to a diagnostic snapshot. Core emits one of these
- * per present, non-hidden extension whether or not it declares `diagnostics`, so a
- * bug-report snapshot can distinguish "had nothing to say" from "failed".
+ * One extension's diagnostic contribution. Core emits one per present,
+ * non-hidden extension so a snapshot can distinguish "absent" from "failed".
  */
 export type DiagnosticStatus =
   /** `diagnostics()` ran and returned a value. */
@@ -122,13 +239,25 @@ export interface ExtensionRuntimeApi {
    * Lets extensions on their own subpath (e.g. `/ext/command-menu`) read the
    * aggregation without importing a value from core.
    */
-  getCommands(): readonly ToolbarCommand[];
+  getCommands(): readonly AnyToolbarCommand[];
   /**
    * Runs an aggregated command by id. Resolves `true` once `run()` completes,
    * `false` if no command declares that id. If `run()` throws or rejects,
    * `runCommand()` rejects with the same error — callers must catch it.
+   *
+   * `input` is handed to `run()` unchanged; a command with no `input` schema
+   * ignores it. Use `invokeCommand` when you need what `run()` returned.
    */
-  runCommand(id: string): Promise<boolean>;
+  runCommand(id: string, input?: unknown): Promise<boolean>;
+  /**
+   * `runCommand` that resolves what `run()` returned rather than only whether
+   * it was found. Contract v2: a command that produces something (a captured
+   * snapshot, a computed value) is otherwise a dead end for a caller that is
+   * not looking at the screen.
+   *
+   * Rejects with whatever `run()` threw, like `runCommand`.
+   */
+  invokeCommand<Out = unknown>(id: string, input?: unknown): Promise<CommandInvocation<Out>>;
   /**
    * Diagnostics counterpart of `getCommands()`, one entry per present, non-hidden
    * extension (`status: "absent"` for those with no `diagnostics()`), so a reader

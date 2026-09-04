@@ -50,7 +50,13 @@
 import { createDiagnosticsRuntime } from "./runtime";
 import { DiagnosticsChip, DiagnosticsPanel } from "./ui";
 import type { DiagnosticsRuntimeOptions } from "./runtime";
-import type { DevToolbarExtension, ExtensionRuntimeApi, ToolbarAlign } from "../../core/contract";
+import type {
+  DevToolbarExtension,
+  ExtensionRuntimeApi,
+  ToolbarAlign,
+  ToolbarCommand,
+} from "../../core/contract";
+import type { DiagnosticSnapshot } from "./types";
 
 export interface DiagnosticsOptions extends Omit<DiagnosticsRuntimeOptions, "id"> {
   /** Extension id. Default `"diagnostics"`. */
@@ -104,7 +110,7 @@ export function diagnostics(options: DiagnosticsOptions = {}): DevToolbarExtensi
   return {
     id,
     label,
-    contractVersion: 1,
+    contractVersion: 2,
     align,
     order,
     priority,
@@ -129,11 +135,21 @@ export function diagnostics(options: DiagnosticsOptions = {}): DevToolbarExtensi
     panel: () => <DiagnosticsPanel runtime={runtime} label={label} injectStyles={injectStyles} />,
 
     /**
-     * Deliberately declares **no** `diagnostics()` — it's the reader of the
-     * aggregation, not a contributor. Declaring one would make the snapshot
-     * contain itself via core's `getDiagnostics()`. The gather step skips its
-     * own id for the same reason.
+     * A **summary** of the last capture — `capturedAt`, `revision`, how many
+     * contributions and how many omissions — never the snapshot itself
+     * (`plans/agent-readable-toolbar.md` § Phase 1).
+     *
+     * The snapshot is built *from* `api.getDiagnostics()`, so returning it
+     * here would make every roster read quadratic and embed one snapshot
+     * inside the next. The full object stays reachable through the commands
+     * below.
+     *
+     * The gather step skips its own id, so this summary never appears in the
+     * bug report; it is published for the readers that enumerate the roster
+     * directly — `/ext/agent`, and anything else built on
+     * `api.getDiagnostics()`.
      */
+    diagnostics: () => runtime.summary(),
 
     /**
      * Four commands. `capture` freezes state now (mid-repro) for reading
@@ -147,15 +163,24 @@ export function diagnostics(options: DiagnosticsOptions = {}): DevToolbarExtensi
      * panel control, since core owns single-active-panel state.)
      */
     commands: [
+      /**
+       * The one command that returns something (contract v2). It writes to
+       * this extension's own store, so before v2 a caller who was not looking
+       * at the panel had no way to read back what it produced — the plan's
+       * "dead end for a tool call". It now resolves the captured snapshot,
+       * which is already redacted on the way in, so this is not a second path
+       * around the panel's masks.
+       */
       {
         id: `${id}.capture`,
         label: "Capture a diagnostic snapshot",
+        description:
+          "Freezes the current state — page facts, long tasks, and every extension's " +
+          "contribution — and resolves the captured snapshot. Already redacted.",
         group: "Diagnostics",
         keywords: ["debug", "report", "bug", "snapshot", "longtask"],
-        run: () => {
-          runtime.capture();
-        },
-      },
+        run: () => runtime.capture(),
+      } satisfies ToolbarCommand<void, DiagnosticSnapshot>,
       {
         id: `${id}.copy`,
         label: "Copy diagnostic snapshot (Markdown)",

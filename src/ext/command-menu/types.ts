@@ -4,11 +4,11 @@
  * Pure functions, deliberately: what the palette shows for a given query and
  * aggregation is the part worth pinning down in tests, with no DOM involved.
  */
-import type { ToolbarCommand } from "../../core/contract";
+import type { AnyToolbarCommand } from "../../core/contract";
 
 /** One row. `section` is the heading it renders under, `""` for none. */
 export interface CommandMatch {
-  command: ToolbarCommand;
+  command: AnyToolbarCommand;
   /** Higher is a better match. `0` only ever appears for an unfiltered list. */
   score: number;
   section: string;
@@ -21,7 +21,7 @@ export const RECENT_SECTION = "Recent";
 /** Heading for commands whose extension declared no `group`. */
 export const OTHER_SECTION = "Other";
 
-const FIELD_WEIGHTS: readonly [keyof ToolbarCommand | "keyword", number][] = [
+const FIELD_WEIGHTS: readonly [keyof AnyToolbarCommand | "keyword", number][] = [
   ["label", 3],
   ["keyword", 2],
   ["group", 1],
@@ -63,7 +63,7 @@ function escapeRegExp(value: string): string {
  * is filtered out.
  */
 export function scoreCommand(
-  command: ToolbarCommand,
+  command: AnyToolbarCommand,
   query: string,
   termPatterns?: ReadonlyMap<string, RegExp>,
 ): number {
@@ -106,7 +106,7 @@ export function scoreCommand(
  * unrelated pass re-enumerates.
  */
 export function filterCommands(
-  commands: readonly ToolbarCommand[],
+  commands: readonly AnyToolbarCommand[],
   query: string,
   recent: readonly string[] = [],
 ): CommandMatch[] {

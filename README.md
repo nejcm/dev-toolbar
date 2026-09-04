@@ -82,6 +82,7 @@ them and you have a bar that hosts only your own tools.
 | [`ext/overlays`](./docs/ext/overlays.md) | Layout boxes, a column grid, an element inspector and focus order — drawn over your page, never intercepting a click |
 | [`ext/diagnostics`](./docs/ext/diagnostics.md) | One snapshot for a bug report: the page, long tasks and every other extension's diagnostics. You read the exact text before it goes anywhere |
 | [`ext/theme-editor`](./docs/ext/theme-editor.md) | Live design-token editing, with the app's own value next to your edit, and CSS, a recipe, a design-tokens export or a link on the way out |
+| [`ext/agent`](./docs/ext/agent.md) | The bar's state and commands on a global, for an in-page agent to read from `page.evaluate` rather than scrape. Development builds; running commands is a second opt-in |
 
 Three more subpaths exist for the code you write yourself:
 [`/runtime`](./docs/runtime.md) — event bus, ring buffers, throttled store and
@@ -244,8 +245,9 @@ unmount();
 ```
 
 `@nejcm/dev-toolbar/testing` also ships `makeExtension()` and `makeCommand()` for
-throwaway extensions and commands, `createMockBus()` for a bus with a hand-cranked
-clock, and `installToolbarLayout()` for driving the fake layout yourself. Storage
+throwaway extensions and commands, `fakeExtensionApi()` for the `ExtensionRuntimeApi`
+that `start()` receives, `createMockBus()` for a bus with a hand-cranked clock, and
+`installToolbarLayout()` for driving the fake layout yourself. Storage
 defaults to a fresh in-memory adapter, so tests never leak preferences into each
 other. The whole surface, and the Jest caveats, are in
 [docs/testing.md](./docs/testing.md).
@@ -260,16 +262,18 @@ other. The whole surface, and the Jest caveats, are in
 | [docs/testing.md](./docs/testing.md) | `/testing`: helpers, the fake layout, the mock bus |
 | [docs/styling.md](./docs/styling.md) | Tokens, parts, `classNames` |
 | [docs/ssr.md](./docs/ssr.md) | Hydration and the Next.js app router |
-| [docs/ext/](./docs/ext/) | One document per first-party extension |
+| [docs/ext/](./docs/ext/) | One document per first-party extension, including [`ext/agent`](./docs/ext/agent.md) |
 | [docs/architecture.md](./docs/architecture.md) | What the shell guarantees, and why the boundaries sit where they do |
 | [docs/adr/](./docs/adr/) | Decision records |
 | [CHANGELOG.md](./CHANGELOG.md) | Every release |
 
-> **Status:** complete and published. The shell, `/runtime` and all seven
+> **Status:** complete and published. The shell, `/runtime` and all eight
 > first-party extensions are implemented, and the extension contract has been
-> through seven real consumers. Every change to it so far has been additive, so
-> `CONTRACT_VERSION` is still `1` — the four places it moved for the first real
-> extension are in the [changelog](./CHANGELOG.md).
+> through eight real consumers. `CONTRACT_VERSION` is **2**: commands may now
+> declare an `input` schema and resolve a result, which asks nothing of an
+> extension written against v1 — see
+> [contract v2](./docs/extension-contract.md#contract-v2--commands-with-input-and-a-result).
+> The places the contract has moved are in the [changelog](./CHANGELOG.md).
 
 ---
 

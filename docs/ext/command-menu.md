@@ -17,7 +17,7 @@ extension; with a query it is one flat list ordered by match quality. Options:
 plus the usual `id` / `label` / `align` / `order` / `priority` / `hidden` /
 `injectStyles`.
 
-Four things worth knowing:
+Five things worth knowing:
 
 - **It re-enumerates every time it opens.** `commands` may be a function, so an
   extension can begin contributing one after mount. The palette asks again rather
@@ -27,6 +27,12 @@ Four things worth knowing:
   extension is as unreachable here as everywhere else.
 - **A failing command keeps the palette open** and shows the message where you can
   read it. It is running your code; the throw never reaches your app.
+- **It does not list a command that declares `input`.**
+  [Contract v2](../extension-contract.md#contract-v2--commands-with-input-and-a-result)
+  lets a command ask for `{ key, value }`; this palette has no form to collect that
+  with, so it skips those rows rather than offering one it cannot run. They stay
+  reachable from `getCommands()`, `invokeCommand()` and [`/ext/agent`](./agent.md). A
+  form here is a later change.
 - **It lives in the `overlay` slot, not a panel.** A panel would evict whatever you
   opened the palette to act on, and a collapsed compact item would take the shortcut
   with it. The bar chip is a convenience — the key binding is bound in `start()`.

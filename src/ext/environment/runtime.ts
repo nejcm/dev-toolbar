@@ -529,20 +529,28 @@ export function createEnvironmentRuntime(
       const payload: Record<string, unknown> = {
         generatedAt: new Date().toISOString(),
         environment: snapshot.kind,
+        severity: snapshot.severity,
         supplied: snapshot.supplied,
         impersonating: snapshot.impersonating,
         maskedCount: snapshot.maskedCount,
+        /** Panel rows with masking applied and the panel's `data-dtb-tag` vocabulary. */
         fields: snapshot.fields
           .filter((field) => field.source !== "missing")
           .map((field) => ({
             id: field.id,
             label: field.label,
+            group: field.group,
             source: field.source,
             masked: field.masked,
+            markers: [
+              ...(field.masked ? ["masked"] : []),
+              ...(field.source === "detected" ? ["detected"] : []),
+              ...(field.alarming === true ? ["alarming"] : []),
+            ],
             value: field.value,
           })),
       };
-      // Belt-and-braces: cheap second redact pass in case a field is added above and forgotten here.
+      // A second pass protects fields added here without a matching redaction.
       return redact(payload, options.redactOptions);
     },
   };

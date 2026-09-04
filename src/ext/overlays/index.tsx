@@ -117,7 +117,7 @@ export function overlays(options: OverlaysOptions = {}): DevToolbarExtension {
   return {
     id,
     label,
-    contractVersion: 1,
+    contractVersion: 2,
     align,
     order,
     priority,
@@ -127,6 +127,9 @@ export function overlays(options: OverlaysOptions = {}): DevToolbarExtension {
     start(api: ExtensionRuntimeApi) {
       return runtime.start(api);
     },
+
+    /** Which layers are on. `plans/agent-readable-toolbar.md` § Phase 1. */
+    diagnostics: () => runtime.diagnostics(),
 
     compact: ({ isOverflowed, isPanelOpen, togglePanel }) => (
       <OverlaysChip
