@@ -228,7 +228,7 @@ function Dialog({
         />
         <div ref={listRef} id={listId} data-dtb-part="cmd-list" role="listbox" aria-label={label}>
           {snapshot.results.length === 0 ? (
-            <div data-dtb-part="cmd-empty" role="status">
+            <div data-dtb-part="cmd-empty" data-dtb-kind="empty" role="status">
               {emptyMessage}
             </div>
           ) : (

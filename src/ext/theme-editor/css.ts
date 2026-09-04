@@ -13,23 +13,10 @@
  * application: app appearance is decided by the custom properties the runtime
  * writes, which are the consumer's own tokens, never ours.
  */
-import { ensureStyleSheet } from "../../runtime";
+import { KIT_CSS, createStyleInjector, ensureKitStyles } from "@nejcm/dev-toolbar/kit";
 
-export const THEME_EDITOR_CSS = String.raw`@layer dev-toolbar {
+const THEME_EDITOR_EXTENSION_CSS = String.raw`@layer dev-toolbar {
   /* ---- Bar chip ---- */
-
-  [data-dev-toolbar] [data-dtb-part="thm-chip"] {
-    display: inline-flex;
-    align-items: center;
-    gap: var(--dtb-chip-gap);
-  }
-
-  [data-dev-toolbar] [data-dtb-part="thm-dot"] {
-    width: 6px;
-    height: 6px;
-    border-radius: 999px;
-    background: var(--dtb-muted);
-  }
 
   [data-dev-toolbar]
     [data-dtb-part="thm-chip"][data-dtb-edited="true"]
@@ -56,22 +43,11 @@ export const THEME_EDITOR_CSS = String.raw`@layer dev-toolbar {
     max-width: 860px;
   }
 
-  [data-dev-toolbar] [data-dtb-part="thm-toolbar"],
   [data-dev-toolbar] [data-dtb-part="thm-actions"] {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
     gap: var(--dtb-space-2);
-  }
-
-  /* The row of buttons that opens the panel is its masthead, so it closes with
-     a rule the way every section below it does. It does not take
-     data-dtb-bleed: this panel caps itself at 860px, so the panel's inline
-     edges are not this content's edges and a bleed would run the rule past the
-     measure everything under it is set to. */
-  [data-dev-toolbar] [data-dtb-part="thm-toolbar"] {
-    padding-bottom: var(--dtb-space-3);
-    border-bottom: 1px solid var(--dtb-border);
   }
 
   /* Geometry, ground and border come from core's field rule; these are the
@@ -83,9 +59,9 @@ export const THEME_EDITOR_CSS = String.raw`@layer dev-toolbar {
     font-family: var(--dtb-font-mono);
   }
 
-  [data-dev-toolbar] [data-dtb-part="thm-search"] {
-    flex: 1 1 220px;
-    max-width: 320px;
+  /* The part+kind pair keeps the field's intrinsic minimum above the kit's 140px default. */
+  [data-dev-toolbar] [data-dtb-part="thm-search"][data-dtb-kind="search"] {
+    min-width: auto;
   }
 
   [data-dev-toolbar] [data-dtb-part="thm-import"] {
@@ -98,23 +74,6 @@ export const THEME_EDITOR_CSS = String.raw`@layer dev-toolbar {
     border-color: var(--dtb-danger);
   }
 
-  [data-dev-toolbar] [data-dtb-part="thm-action"] {
-    display: inline-flex;
-    align-items: center;
-    min-height: var(--dtb-control-height);
-    padding: 0 var(--dtb-control-padding-x);
-    border: 1px solid var(--dtb-border);
-    border-radius: var(--dtb-radius);
-    background: var(--dtb-item-bg);
-    color: inherit;
-    font: inherit;
-    cursor: pointer;
-  }
-
-  [data-dev-toolbar] [data-dtb-part="thm-action"]:hover:not(:disabled) {
-    background: var(--dtb-item-hover-bg);
-  }
-
   [data-dev-toolbar] [data-dtb-part="thm-action"]:disabled {
     opacity: 0.5;
     cursor: default;
@@ -124,15 +83,8 @@ export const THEME_EDITOR_CSS = String.raw`@layer dev-toolbar {
     background: var(--dtb-item-active-bg);
   }
 
-  [data-dev-toolbar] [data-dtb-part="thm-note"] {
-    margin: 0;
-    color: var(--dtb-muted);
-  }
-
   [data-dev-toolbar] [data-dtb-part="thm-banner"] {
     margin: 0;
-    padding: var(--dtb-space-2) var(--dtb-space-3);
-    border-radius: var(--dtb-radius);
   }
 
   [data-dev-toolbar] [data-dtb-part="thm-banner"][data-dtb-tone="error"] {
@@ -154,23 +106,15 @@ export const THEME_EDITOR_CSS = String.raw`@layer dev-toolbar {
   /* The heading also carries data-dtb-legend — core owns that treatment, so
      every extension's sections look alike. */
 
-  [data-dev-toolbar] [data-dtb-part="thm-list"] {
-    display: flex;
-    flex-direction: column;
-    gap: var(--dtb-space-2);
-    margin: 0 0 var(--dtb-space-5);
-    padding: 0;
-    list-style: none;
+  /* The part+kind pair keeps this margin override above the kit's zero-margin default. */
+  [data-dev-toolbar] [data-dtb-part="thm-list"][data-dtb-kind="list"] {
+    margin-block-end: var(--dtb-space-5);
   }
 
   [data-dev-toolbar] [data-dtb-part="thm-row"] {
-    display: grid;
     grid-template-columns: minmax(140px, 1fr) auto;
     gap: var(--dtb-space-1) var(--dtb-space-4);
     align-items: center;
-    padding: var(--dtb-space-2) var(--dtb-space-3);
-    border: 1px solid var(--dtb-border);
-    border-radius: var(--dtb-radius);
   }
 
   [data-dev-toolbar] [data-dtb-part="thm-row"][data-dtb-severity="override"] {
@@ -198,12 +142,9 @@ export const THEME_EDITOR_CSS = String.raw`@layer dev-toolbar {
   }
 
   [data-dev-toolbar] [data-dtb-part="thm-tag"] {
-    padding: 0 var(--dtb-space-1);
-    border-radius: var(--dtb-radius);
     background: var(--dtb-warn-bg);
     color: var(--dtb-warn);
     font-family: var(--dtb-font-mono);
-    font-size: calc(var(--dtb-font-size) - 1px);
   }
 
   [data-dev-toolbar] [data-dtb-part="thm-tag"][data-dtb-tag="edited"] {
@@ -250,7 +191,6 @@ export const THEME_EDITOR_CSS = String.raw`@layer dev-toolbar {
   }
 
   [data-dev-toolbar] [data-dtb-part="thm-value"] {
-    font-family: var(--dtb-font-mono);
     color: var(--dtb-fg);
   }
 
@@ -282,6 +222,12 @@ export const THEME_EDITOR_CSS = String.raw`@layer dev-toolbar {
 }
 `;
 
+// Self-contained manual CSS deliberately repeats KIT_CSS; automatic injection deduplicates it.
+export const THEME_EDITOR_CSS = `${KIT_CSS}\n${THEME_EDITOR_EXTENSION_CSS}`;
+
+const injectThemeEditorStyles = createStyleInjector("ext-theme-editor", THEME_EDITOR_EXTENSION_CSS);
+
 export function ensureThemeEditorStyles(doc?: Document, nonce?: string): HTMLStyleElement | null {
-  return ensureStyleSheet("ext-theme-editor", THEME_EDITOR_CSS, doc, nonce);
+  ensureKitStyles(doc, nonce);
+  return injectThemeEditorStyles(doc, nonce);
 }

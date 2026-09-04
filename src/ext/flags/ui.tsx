@@ -61,11 +61,13 @@ function PromotedControl({
       onClick={toggleable ? onToggle : onOpen}
       title={title}
     >
-      <span data-dtb-part="flag-promoted-dot" aria-hidden="true" />
+      <span data-dtb-part="flag-promoted-dot" data-dtb-kind="dot" aria-hidden="true" />
       {view.promotedIcon ? <span aria-hidden="true">{view.promotedIcon}</span> : null}
       <span>{label}</span>
       {view.type === "boolean" ? null : (
-        <span data-dtb-part="flag-promoted-value">{view.effectiveText}</span>
+        <span data-dtb-part="flag-promoted-value" data-dtb-kind="value">
+          {view.effectiveText}
+        </span>
       )}
     </button>
   );
@@ -112,9 +114,12 @@ export function FlagsChip({
     >
       <span
         data-dtb-part="flag-chip"
+        data-dtb-kind="chip"
         data-dtb-overridden={snapshot.overriddenCount > 0 ? "true" : "false"}
       >
-        <span data-dtb-part="flag-label">flags</span>
+        <span data-dtb-part="flag-label" data-dtb-kind="label">
+          flags
+        </span>
         <span data-dtb-part="flag-count">{summary}</span>
       </span>
     </button>
@@ -168,7 +173,7 @@ function Editor({
 
   if (!writable) {
     return (
-      <span data-dtb-part="flag-note" data-dtb-role="read-only">
+      <span data-dtb-part="flag-note" data-dtb-kind="note" data-dtb-role="read-only">
         read-only
       </span>
     );
@@ -271,7 +276,7 @@ function Editor({
         onBlur={tryCommit}
       />
       {rejected ? (
-        <span data-dtb-part="flag-tag" data-dtb-tag="rejected" role="alert">
+        <span data-dtb-part="flag-tag" data-dtb-kind="tag" data-dtb-tag="rejected" role="alert">
           not a {view.type}
         </span>
       ) : null}
@@ -285,6 +290,7 @@ function ClearButton({ view, runtime }: { view: FlagView; runtime: FlagsRuntime 
     <button
       type="button"
       data-dtb-part="flag-action"
+      data-dtb-kind="action"
       data-dtb-action="clear"
       data-dtb-flag={view.key}
       disabled={!view.overridden}
@@ -310,6 +316,7 @@ function Row({
   return (
     <li
       data-dtb-part="flag-row"
+      data-dtb-kind="row"
       data-dtb-flag={view.key}
       data-dtb-overridden={view.overridden ? "true" : "false"}
       data-dtb-orphaned={view.orphaned ? "true" : "false"}
@@ -321,12 +328,17 @@ function Row({
         <span>{view.label}</span>
         <code data-dtb-part="flag-key">{view.key}</code>
         {view.overridden ? (
-          <span data-dtb-part="flag-tag" data-dtb-tag="override">
+          <span data-dtb-part="flag-tag" data-dtb-kind="tag" data-dtb-tag="override">
             overridden
           </span>
         ) : null}
         {view.applyError ? (
-          <span data-dtb-part="flag-tag" data-dtb-tag="not-applied" title={view.applyError}>
+          <span
+            data-dtb-part="flag-tag"
+            data-dtb-kind="tag"
+            data-dtb-tag="not-applied"
+            title={view.applyError}
+          >
             {/* Same slot also records a failed clear, where "override not applied" would read backwards. */}
             {view.overridden ? "override not applied" : "clear not applied"}
           </span>
@@ -334,6 +346,7 @@ function Row({
         {view.orphaned ? (
           <span
             data-dtb-part="flag-tag"
+            data-dtb-kind="tag"
             data-dtb-tag="orphaned"
             title="Your application still receives this override, but no flag in the current catalogue has this key — usually a renamed or deleted flag."
           >
@@ -341,13 +354,14 @@ function Row({
           </span>
         ) : null}
         {view.promoted ? (
-          <span data-dtb-part="flag-tag" data-dtb-tag="promoted">
+          <span data-dtb-part="flag-tag" data-dtb-kind="tag" data-dtb-tag="promoted">
             promoted
           </span>
         ) : null}
         {view.masked ? (
           <span
             data-dtb-part="flag-tag"
+            data-dtb-kind="tag"
             data-dtb-tag="masked"
             title="This value was masked before it was rendered or copied."
           >
@@ -355,16 +369,16 @@ function Row({
           </span>
         ) : null}
         {view.expired ? (
-          <span data-dtb-part="flag-tag" data-dtb-tag="expired">
+          <span data-dtb-part="flag-tag" data-dtb-kind="tag" data-dtb-tag="expired">
             expired {view.expiresAt}
           </span>
         ) : null}
         {reloadPending ? (
-          <span data-dtb-part="flag-tag" data-dtb-tag="reload">
+          <span data-dtb-part="flag-tag" data-dtb-kind="tag" data-dtb-tag="reload">
             reload required
           </span>
         ) : view.reloadBehavior === "live" ? null : (
-          <span data-dtb-part="flag-tag" data-dtb-tag="reload-behavior">
+          <span data-dtb-part="flag-tag" data-dtb-kind="tag" data-dtb-tag="reload-behavior">
             {view.reloadBehavior}
           </span>
         )}
@@ -379,6 +393,7 @@ function Row({
           now{" "}
           <span
             data-dtb-part="flag-value"
+            data-dtb-kind="value"
             data-dtb-role="effective"
             data-dtb-overridden={view.overridden ? "true" : "false"}
           >
@@ -388,13 +403,13 @@ function Row({
         {/* App's own value stays visible next to the override, so nobody debugs against a number the server never sent. */}
         <span>
           app{" "}
-          <span data-dtb-part="flag-value" data-dtb-role="base">
+          <span data-dtb-part="flag-value" data-dtb-kind="value" data-dtb-role="base">
             {view.baseText}
           </span>
         </span>
         <span>
           default{" "}
-          <span data-dtb-part="flag-value" data-dtb-role="default">
+          <span data-dtb-part="flag-value" data-dtb-kind="value" data-dtb-role="default">
             {view.defaultText}
           </span>
         </span>
@@ -450,9 +465,10 @@ export function FlagsPanel({ runtime, label, injectStyles, styleNonce }: PanelPr
       data-dtb-writable={snapshot.writable ? "true" : "false"}
       aria-label={label}
     >
-      <div data-dtb-part="flag-toolbar" data-dtb-bleed="">
+      <div data-dtb-part="flag-toolbar" data-dtb-kind="toolbar" data-dtb-bleed="">
         <input
           data-dtb-part="flag-search"
+          data-dtb-kind="search"
           type="search"
           aria-label="Search flags"
           placeholder={`Search ${snapshot.flags.length} flags`}
@@ -462,6 +478,7 @@ export function FlagsPanel({ runtime, label, injectStyles, styleNonce }: PanelPr
         <button
           type="button"
           data-dtb-part="flag-action"
+          data-dtb-kind="action"
           data-dtb-action="clear-all"
           disabled={!snapshot.writable || snapshot.overriddenCount === 0}
           onClick={() => runtime.clearAll()}
@@ -472,12 +489,13 @@ export function FlagsPanel({ runtime, label, injectStyles, styleNonce }: PanelPr
         <button
           type="button"
           data-dtb-part="flag-action"
+          data-dtb-kind="action"
           data-dtb-action="copy-recipe"
           onClick={() => copy(runtime.recipeText())}
         >
           Copy recipe
         </button>
-        <span data-dtb-part="flag-note" role="status">
+        <span data-dtb-part="flag-note" data-dtb-kind="note" role="status">
           {copied === "failed"
             ? "Clipboard unavailable."
             : copied === "ok"
@@ -487,25 +505,44 @@ export function FlagsPanel({ runtime, label, injectStyles, styleNonce }: PanelPr
       </div>
 
       {snapshot.readError ? (
-        <p data-dtb-part="flag-banner" data-dtb-tone="error" role="alert">
+        <p
+          data-dtb-part="flag-banner"
+          data-dtb-kind="banner"
+          data-dtb-tone="error"
+          data-dtb-severity="bad"
+          role="alert"
+        >
           {snapshot.readError}
         </p>
       ) : null}
 
       {failed.length > 0 ? (
-        <p data-dtb-part="flag-banner" data-dtb-tone="error" role="alert">
+        <p
+          data-dtb-part="flag-banner"
+          data-dtb-kind="banner"
+          data-dtb-tone="error"
+          data-dtb-severity="bad"
+          role="alert"
+        >
           {failed.length} override{failed.length === 1 ? "" : "s"} could not be applied:{" "}
           {failed.join(", ")}. Those rows are marked; your application did not pick them up.
         </p>
       ) : null}
 
       {pending.size > 0 ? (
-        <p data-dtb-part="flag-banner" data-dtb-tone="warn" role="status">
+        <p
+          data-dtb-part="flag-banner"
+          data-dtb-kind="banner"
+          data-dtb-tone="warn"
+          data-dtb-severity="warn"
+          role="status"
+        >
           {pending.size} override{pending.size === 1 ? " needs" : "s need"} a reload to take effect:{" "}
           {[...pending].join(", ")}.{" "}
           <button
             type="button"
             data-dtb-part="flag-action"
+            data-dtb-kind="action"
             data-dtb-action="reload"
             onClick={() => globalThis.location?.reload?.()}
           >
@@ -514,6 +551,7 @@ export function FlagsPanel({ runtime, label, injectStyles, styleNonce }: PanelPr
           <button
             type="button"
             data-dtb-part="flag-action"
+            data-dtb-kind="action"
             data-dtb-action="acknowledge"
             onClick={() => runtime.acknowledgeReload()}
           >
@@ -523,15 +561,15 @@ export function FlagsPanel({ runtime, label, injectStyles, styleNonce }: PanelPr
       ) : null}
 
       {snapshot.writable ? null : (
-        <p data-dtb-part="flag-note" data-dtb-role="read-only-note">
+        <p data-dtb-part="flag-note" data-dtb-kind="note" data-dtb-role="read-only-note">
           Read-only: no <code>onOverride</code> adapter was supplied to <code>flags()</code>, so
           this panel lists and copies but changes nothing.
         </p>
       )}
 
       {snapshot.supplied ? null : (
-        <div data-dtb-part="flag-empty">
-          <p data-dtb-part="flag-note">
+        <div data-dtb-part="flag-empty" data-dtb-kind="empty">
+          <p data-dtb-part="flag-note" data-dtb-kind="note">
             No flags were supplied. This extension owns no flag store and integrates no provider —
             pass what your application resolved:{" "}
             <code>{"flags({ flags: () => myFlags, onOverride: (k, v) => …  })"}</code>.
@@ -539,7 +577,7 @@ export function FlagsPanel({ runtime, label, injectStyles, styleNonce }: PanelPr
         </div>
       )}
 
-      <ul data-dtb-part="flag-list" data-dtb-bleed="">
+      <ul data-dtb-part="flag-list" data-dtb-kind="list" data-dtb-bleed="">
         {visible.map((view) => (
           <Row
             key={view.key}
@@ -552,7 +590,12 @@ export function FlagsPanel({ runtime, label, injectStyles, styleNonce }: PanelPr
       </ul>
 
       {snapshot.writable ? (
-        <p data-dtb-part="flag-note" data-dtb-role="escape-hatch" data-dtb-bleed="">
+        <p
+          data-dtb-part="flag-note"
+          data-dtb-kind="note"
+          data-dtb-role="escape-hatch"
+          data-dtb-bleed=""
+        >
           Overrides persist across reloads in this browser. Clear them all above, or load any page
           with <code>?dtb-flags=reset</code> if an override has broken the app badly enough that you
           cannot reach this panel.

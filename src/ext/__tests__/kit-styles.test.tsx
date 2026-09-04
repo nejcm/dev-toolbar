@@ -1,12 +1,22 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { act } from "@testing-library/react";
+import { act, fireEvent } from "@testing-library/react";
 import { cleanupToolbar, mountToolbar } from "@nejcm/dev-toolbar/testing";
 import { KIT_CSS } from "../../kit";
 import { STYLE_ATTRIBUTE } from "../../runtime/styles";
+import { commandMenu } from "../command-menu";
+import { COMMAND_MENU_CSS } from "../command-menu/css";
 import { diagnostics } from "../diagnostics";
 import { DIAGNOSTICS_CSS } from "../diagnostics/css";
 import { environment } from "../environment";
 import { ENVIRONMENT_CSS } from "../environment/css";
+import { flags } from "../flags";
+import { FLAGS_CSS } from "../flags/css";
+import { metrics } from "../metrics";
+import { METRICS_CSS } from "../metrics/css";
+import { overlays } from "../overlays";
+import { OVERLAYS_CSS } from "../overlays/css";
+import { themeEditor } from "../theme-editor";
+import { THEME_EDITOR_CSS } from "../theme-editor/css";
 
 const styleCount = (entry: string): number =>
   document.head.querySelectorAll(`style[${STYLE_ATTRIBUTE}="${entry}"]`).length;
@@ -27,6 +37,14 @@ function installUnlayeredKitCss(): void {
   document.head.append(style);
 }
 
+function installUnlayeredExtensionCss(css: string, entry: string): void {
+  const style = document.createElement("style");
+  style.setAttribute(STYLE_ATTRIBUTE, entry);
+  const extensionCss = css.replace(KIT_CSS, "").trimStart();
+  style.textContent = extensionCss.replace(/^@layer dev-toolbar \{\n/, "").replace(/\}\n$/, "");
+  document.head.append(style);
+}
+
 afterEach(() => {
   cleanupToolbar();
   document.head.querySelectorAll(`style[${STYLE_ATTRIBUTE}]`).forEach((node) => node.remove());
@@ -38,6 +56,16 @@ describe("migrated extension kit styles", () => {
     expect(ENVIRONMENT_CSS).toContain('[data-dtb-part="env-alert"]');
     expect(DIAGNOSTICS_CSS.startsWith(KIT_CSS)).toBe(true);
     expect(DIAGNOSTICS_CSS).toContain('[data-dtb-part="diag-preview"]');
+    expect(COMMAND_MENU_CSS.startsWith(KIT_CSS)).toBe(true);
+    expect(COMMAND_MENU_CSS).toContain('[data-dtb-part="cmd-dialog"]');
+    expect(FLAGS_CSS.startsWith(KIT_CSS)).toBe(true);
+    expect(FLAGS_CSS).toContain('[data-dtb-part="flag-panel"]');
+    expect(METRICS_CSS.startsWith(KIT_CSS)).toBe(true);
+    expect(METRICS_CSS).toContain('[data-dtb-part="metrics-panel"]');
+    expect(OVERLAYS_CSS.startsWith(KIT_CSS)).toBe(true);
+    expect(OVERLAYS_CSS).toContain('[data-dtb-part="ovl-surface"]');
+    expect(THEME_EDITOR_CSS.startsWith(KIT_CSS)).toBe(true);
+    expect(THEME_EDITOR_CSS).toContain('[data-dtb-part="thm-panel"]');
   });
 
   it("shares one kit sheet while retaining one local sheet per extension", () => {
@@ -119,10 +147,62 @@ describe("migrated extension kit styles", () => {
     );
   });
 
+  it("colours each metrics tab dot by its own severity", () => {
+    installUnlayeredKitCss();
+    installUnlayeredExtensionCss(METRICS_CSS, "metrics-unlayered");
+    const { toolbar } = mountToolbar(null, {
+      extensions: [
+        metrics({
+          only: ["memory", "delay"],
+          memory: {
+            read: () => ({
+              usedJSHeapSize: 120 * 1024 * 1024,
+              totalJSHeapSize: 128 * 1024 * 1024,
+              jsHeapSizeLimit: 128 * 1024 * 1024,
+            }),
+          },
+        }),
+      ],
+      layout: { barWidth: 1200, itemWidth: 120 },
+    });
+    act(() => toolbar.openPanel("metrics"));
+
+    const panel = toolbar.panel("metrics")?.querySelector('[data-dtb-part="metrics-panel"]');
+    const memoryDot = panel?.querySelector(
+      '[data-dtb-part="metrics-tab"][data-dtb-metric="memory"] [data-dtb-part="metrics-dot"]',
+    );
+    const delayDot = panel?.querySelector(
+      '[data-dtb-part="metrics-tab"][data-dtb-metric="delay"] [data-dtb-part="metrics-dot"]',
+    );
+
+    expect(panel?.getAttribute("data-dtb-severity")).toBe("bad");
+    expect(memoryDot?.getAttribute("data-dtb-severity")).toBe("bad");
+    expect(delayDot?.getAttribute("data-dtb-severity")).toBe("unknown");
+    expect(getComputedStyle(memoryDot as HTMLElement).background).toBe("var(--dtb-danger)");
+    expect(getComputedStyle(delayDot as HTMLElement).background).toBe("var(--dtb-muted)");
+  });
+
   it("adds shared kinds without changing local part names", () => {
     const { toolbar } = mountToolbar(null, {
-      extensions: [environment(), diagnostics()],
-      layout: { barWidth: 1200, itemWidth: 120 },
+      extensions: [
+        environment(),
+        diagnostics(),
+        commandMenu({ apple: false }),
+        flags({ flags: [{ key: "enabled", type: "boolean", defaultValue: false }] }),
+        metrics({
+          only: ["memory"],
+          memory: {
+            read: () => ({
+              usedJSHeapSize: 48 * 1024 * 1024,
+              totalJSHeapSize: 64 * 1024 * 1024,
+              jsHeapSizeLimit: 128 * 1024 * 1024,
+            }),
+          },
+        }),
+        overlays(),
+        themeEditor({ tokens: [{ name: "--brand", type: "color", value: "#000000" }] }),
+      ],
+      layout: { barWidth: 4000, itemWidth: 120 },
     });
 
     expect(
@@ -146,6 +226,43 @@ describe("migrated extension kit styles", () => {
       toolbar
         .panel("diagnostics")
         ?.querySelector('[data-dtb-part="diag-note"][data-dtb-kind="note"]'),
+    ).not.toBeNull();
+
+    act(() => toolbar.openPanel("flags"));
+    expect(
+      toolbar.panel("flags")?.querySelector('[data-dtb-part="flag-row"][data-dtb-kind="row"]'),
+    ).not.toBeNull();
+
+    act(() => toolbar.openPanel("metrics"));
+    expect(
+      toolbar
+        .panel("metrics")
+        ?.querySelector('[data-dtb-part="metrics-note"][data-dtb-kind="note"]'),
+    ).not.toBeNull();
+
+    act(() => toolbar.openPanel("overlays"));
+    expect(
+      toolbar.panel("overlays")?.querySelector('[data-dtb-part="ovl-rows"][data-dtb-kind="list"]'),
+    ).not.toBeNull();
+
+    act(() => toolbar.openPanel("theme-editor"));
+    expect(
+      toolbar
+        .panel("theme-editor")
+        ?.querySelector('[data-dtb-part="thm-list"][data-dtb-kind="list"]'),
+    ).not.toBeNull();
+
+    act(() =>
+      toolbar
+        .item("command-menu")
+        ?.querySelector<HTMLButtonElement>('[data-dtb-part="trigger"]')
+        ?.click(),
+    );
+    fireEvent.change(document.querySelector('[data-dtb-part="cmd-input"]') as HTMLInputElement, {
+      target: { value: "no command matches this" },
+    });
+    expect(
+      document.querySelector('[data-dtb-part="cmd-empty"][data-dtb-kind="empty"]'),
     ).not.toBeNull();
   });
 });

@@ -6,9 +6,9 @@
  * are namespaced (`metrics-*`) since `data-dtb-part` is shared with core and
  * other extensions.
  */
-import { ensureStyleSheet } from "../../runtime";
+import { KIT_CSS, createStyleInjector, ensureKitStyles } from "@nejcm/dev-toolbar/kit";
 
-export const METRICS_CSS = String.raw`@layer dev-toolbar {
+const METRICS_EXTENSION_CSS = String.raw`@layer dev-toolbar {
   /* Several readouts in one slot. They are peers, not one label-value pair,
      so they take the bar's inter-item gap rather than the tighter chip gap. */
   [data-dev-toolbar] [data-dtb-part="metrics-chips"] {
@@ -27,48 +27,8 @@ export const METRICS_CSS = String.raw`@layer dev-toolbar {
     margin-inline-end: calc(var(--dtb-space-1) - var(--dtb-chip-gap));
   }
 
-  [data-dev-toolbar] [data-dtb-part="metrics-chip"] {
-    display: inline-flex;
-    align-items: center;
-    gap: var(--dtb-chip-gap);
-    white-space: nowrap;
-  }
-
-  [data-dev-toolbar] [data-dtb-part="metrics-label"] {
-    color: var(--dtb-muted);
-  }
-
   [data-dev-toolbar] [data-dtb-part="metrics-value"] {
-    font-family: var(--dtb-font-mono);
     font-variant-numeric: tabular-nums;
-  }
-
-  [data-dev-toolbar] [data-dtb-part="metrics-dot"] {
-    width: 6px;
-    height: 6px;
-    border-radius: 999px;
-    background: var(--dtb-muted);
-    flex: 0 0 auto;
-  }
-
-  [data-dev-toolbar] [data-dtb-severity="ok"] [data-dtb-part="metrics-dot"] {
-    background: var(--dtb-ok);
-  }
-
-  [data-dev-toolbar] [data-dtb-severity="warn"] [data-dtb-part="metrics-dot"] {
-    background: var(--dtb-warn);
-  }
-
-  [data-dev-toolbar] [data-dtb-severity="bad"] [data-dtb-part="metrics-dot"] {
-    background: var(--dtb-danger);
-  }
-
-  [data-dev-toolbar] [data-dtb-severity="warn"] [data-dtb-part="metrics-value"] {
-    color: var(--dtb-warn);
-  }
-
-  [data-dev-toolbar] [data-dtb-severity="bad"] [data-dtb-part="metrics-value"] {
-    color: var(--dtb-danger);
   }
 
   /* Inside a ⋮ row, which supplies the padding — see core's
@@ -156,7 +116,6 @@ export const METRICS_CSS = String.raw`@layer dev-toolbar {
   }
 
   [data-dev-toolbar] [data-dtb-part="metrics-headline-value"] {
-    font-family: var(--dtb-font-mono);
     font-size: calc(var(--dtb-font-size) * 2);
     line-height: 1.1;
   }
@@ -254,41 +213,21 @@ export const METRICS_CSS = String.raw`@layer dev-toolbar {
     padding-top: var(--dtb-space-3);
   }
 
-  [data-dev-toolbar] [data-dtb-part="metrics-action"] {
-    display: inline-flex;
-    align-items: center;
-    min-height: var(--dtb-control-height);
-    padding: 0 var(--dtb-control-padding-x);
-    border: 1px solid var(--dtb-border);
-    border-radius: var(--dtb-radius);
-    background: transparent;
-    color: inherit;
-    font: inherit;
-    cursor: pointer;
-  }
-
-  [data-dev-toolbar] [data-dtb-part="metrics-action"]:hover {
-    background: var(--dtb-item-hover-bg);
-  }
-
   [data-dev-toolbar] [data-dtb-part="metrics-action"]:focus-visible {
     outline: 2px solid var(--dtb-accent);
     outline-offset: -1px;
   }
-
-  [data-dev-toolbar] [data-dtb-part="metrics-note"] {
-    color: var(--dtb-muted);
-  }
 }
 `;
 
-const METRICS_STYLE_ENTRY = "ext-metrics";
+// Self-contained manual CSS deliberately repeats KIT_CSS; automatic injection deduplicates it.
+export const METRICS_CSS = `${KIT_CSS}\n${METRICS_EXTENSION_CSS}`;
 
-/**
- * Injects the stylesheet once per document via `/runtime`'s shared injector
- * (not core's, so this bundle doesn't pull in core's stylesheet). Dedup key
- * is a DOM attribute, so two bundled copies still inject once.
- */
+const METRICS_STYLE_ENTRY = "ext-metrics";
+const injectMetricsStyles = createStyleInjector(METRICS_STYLE_ENTRY, METRICS_EXTENSION_CSS);
+
+/** Injects the kit and extension sheets once per document. */
 export function ensureMetricsStyles(doc?: Document, nonce?: string): HTMLStyleElement | null {
-  return ensureStyleSheet(METRICS_STYLE_ENTRY, METRICS_CSS, doc, nonce);
+  ensureKitStyles(doc, nonce);
+  return injectMetricsStyles(doc, nonce);
 }

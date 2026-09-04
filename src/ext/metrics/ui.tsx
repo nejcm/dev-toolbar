@@ -56,11 +56,24 @@ export function MetricsChips({
               onClick={onToggle}
               title={view.hint}
             >
-              <span data-dtb-part="metrics-chip">
-                <span data-dtb-part="metrics-dot" aria-hidden="true" />
-                <span data-dtb-part="metrics-label">{view.title}</span>
+              <span data-dtb-part="metrics-chip" data-dtb-kind="chip">
+                <span
+                  data-dtb-part="metrics-dot"
+                  data-dtb-kind="dot"
+                  data-dtb-severity={view.severity}
+                  aria-hidden="true"
+                />
+                <span data-dtb-part="metrics-label" data-dtb-kind="label">
+                  {view.title}
+                </span>
               </span>
-              <span data-dtb-part="metrics-value">{view.display}</span>
+              <span
+                data-dtb-part="metrics-value"
+                data-dtb-kind="value"
+                data-dtb-severity={view.severity}
+              >
+                {view.display}
+              </span>
             </button>
           );
         })}
@@ -83,12 +96,26 @@ export function MetricsChips({
             <span
               key={id}
               data-dtb-part="metrics-chip"
+              data-dtb-kind="chip"
               data-dtb-metric={id}
               data-dtb-severity={view.severity}
             >
-              <span data-dtb-part="metrics-dot" aria-hidden="true" />
-              <span data-dtb-part="metrics-label">{view.label}</span>
-              <span data-dtb-part="metrics-value">{view.display}</span>
+              <span
+                data-dtb-part="metrics-dot"
+                data-dtb-kind="dot"
+                data-dtb-severity={view.severity}
+                aria-hidden="true"
+              />
+              <span data-dtb-part="metrics-label" data-dtb-kind="label">
+                {view.label}
+              </span>
+              <span
+                data-dtb-part="metrics-value"
+                data-dtb-kind="value"
+                data-dtb-severity={view.severity}
+              >
+                {view.display}
+              </span>
             </span>
           );
         })}
@@ -186,7 +213,12 @@ export function MetricsPanel({ runtime, injectStyles, styleNonce }: PanelProps):
               }}
               onClick={() => select(id)}
             >
-              <span data-dtb-part="metrics-dot" aria-hidden="true" />
+              <span
+                data-dtb-part="metrics-dot"
+                data-dtb-kind="dot"
+                data-dtb-severity={tab.severity}
+                aria-hidden="true"
+              />
               {tab.title}
             </button>
           );
@@ -202,10 +234,16 @@ export function MetricsPanel({ runtime, injectStyles, styleNonce }: PanelProps):
         aria-labelledby={tabId(view.id)}
       >
         <div data-dtb-part="metrics-headline">
-          <span data-dtb-part="metrics-headline-value">{view.display}</span>
-          <span data-dtb-part="metrics-note">{view.unit}</span>
+          <span data-dtb-part="metrics-headline-value" data-dtb-kind="value">
+            {view.display}
+          </span>
+          <span data-dtb-part="metrics-note" data-dtb-kind="note">
+            {view.unit}
+          </span>
           {view.status === "unsupported" ? (
-            <span data-dtb-part="metrics-note">— unsupported here</span>
+            <span data-dtb-part="metrics-note" data-dtb-kind="note">
+              — unsupported here
+            </span>
           ) : null}
         </div>
 
@@ -226,7 +264,9 @@ export function MetricsPanel({ runtime, injectStyles, styleNonce }: PanelProps):
         {view.id === "network" ? <RequestTable requests={snapshot.requests} /> : null}
 
         {collector ? (
-          <p data-dtb-part="metrics-note">Collector cost: {collector.estimatedCost}.</p>
+          <p data-dtb-part="metrics-note" data-dtb-kind="note">
+            Collector cost: {collector.estimatedCost}.
+          </p>
         ) : null}
       </div>
 
@@ -234,15 +274,22 @@ export function MetricsPanel({ runtime, injectStyles, styleNonce }: PanelProps):
         <button
           type="button"
           data-dtb-part="metrics-action"
+          data-dtb-kind="action"
           data-dtb-action="reset"
           onClick={() => runtime.reset()}
         >
           Reset
         </button>
-        <button type="button" data-dtb-part="metrics-action" data-dtb-action="copy" onClick={copy}>
+        <button
+          type="button"
+          data-dtb-part="metrics-action"
+          data-dtb-kind="action"
+          data-dtb-action="copy"
+          onClick={copy}
+        >
           Copy diagnostic data
         </button>
-        <span data-dtb-part="metrics-note" role="status">
+        <span data-dtb-part="metrics-note" data-dtb-kind="note" role="status">
           {copied === "ok"
             ? "Copied — URLs and credential-shaped values are masked."
             : copied === "failed"
@@ -265,7 +312,11 @@ function Row({ label, value }: { label: string; value: string }): ReactNode {
 
 function RequestTable({ requests }: { requests: MetricsSnapshot["requests"] }): ReactNode {
   if (requests.length === 0) {
-    return <p data-dtb-part="metrics-note">No requests observed yet.</p>;
+    return (
+      <p data-dtb-part="metrics-note" data-dtb-kind="note">
+        No requests observed yet.
+      </p>
+    );
   }
   return (
     <table data-dtb-part="metrics-requests">

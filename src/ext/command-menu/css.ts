@@ -6,9 +6,9 @@
  * `cmd-*`. The overlay is `position: fixed` inside the toolbar root (which sets
  * no containing block), so it covers the viewport, not the 30px bar.
  */
-import { ensureStyleSheet } from "../../runtime";
+import { KIT_CSS, createStyleInjector, ensureKitStyles } from "@nejcm/dev-toolbar/kit";
 
-export const COMMAND_MENU_CSS = String.raw`@layer dev-toolbar {
+const COMMAND_MENU_EXTENSION_CSS = String.raw`@layer dev-toolbar {
   [data-dev-toolbar] [data-dtb-part="cmd-trigger"] {
     font-family: var(--dtb-font-mono);
   }
@@ -132,7 +132,6 @@ export const COMMAND_MENU_CSS = String.raw`@layer dev-toolbar {
 
   [data-dev-toolbar] [data-dtb-part="cmd-empty"] {
     padding: var(--dtb-space-5) var(--dtb-space-4);
-    color: var(--dtb-muted);
     text-align: center;
   }
 
@@ -158,6 +157,12 @@ export const COMMAND_MENU_CSS = String.raw`@layer dev-toolbar {
 }
 `;
 
+// Self-contained manual CSS deliberately repeats KIT_CSS; automatic injection deduplicates it.
+export const COMMAND_MENU_CSS = `${KIT_CSS}\n${COMMAND_MENU_EXTENSION_CSS}`;
+
+const injectCommandMenuStyles = createStyleInjector("ext-command-menu", COMMAND_MENU_EXTENSION_CSS);
+
 export function ensureCommandMenuStyles(doc?: Document, nonce?: string): HTMLStyleElement | null {
-  return ensureStyleSheet("ext-command-menu", COMMAND_MENU_CSS, doc, nonce);
+  ensureKitStyles(doc, nonce);
+  return injectCommandMenuStyles(doc, nonce);
 }

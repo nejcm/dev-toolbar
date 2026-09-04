@@ -98,7 +98,7 @@ const EXTENSIONS: ExtensionCase[] = [
     entry: "ext-command-menu",
     panel: null,
     overlays: ["command-menu"],
-    usesKitStyles: false,
+    usesKitStyles: true,
     mount(injectStyles) {
       return mountExtension(commandMenu({ apple: false, injectStyles }));
     },
@@ -128,7 +128,7 @@ const EXTENSIONS: ExtensionCase[] = [
     entry: "ext-flags",
     panel: "flags",
     overlays: [],
-    usesKitStyles: false,
+    usesKitStyles: true,
     mount(injectStyles) {
       return mountExtension(
         flags({
@@ -143,7 +143,7 @@ const EXTENSIONS: ExtensionCase[] = [
     entry: "ext-metrics",
     panel: "metrics",
     overlays: [],
-    usesKitStyles: false,
+    usesKitStyles: true,
     mount(injectStyles) {
       return mountExtension(
         metrics({
@@ -159,7 +159,7 @@ const EXTENSIONS: ExtensionCase[] = [
     entry: "ext-overlays",
     panel: "overlays",
     overlays: ["overlays"],
-    usesKitStyles: false,
+    usesKitStyles: true,
     mount(injectStyles) {
       return mountExtension(overlays({ injectStyles }));
     },
@@ -169,7 +169,7 @@ const EXTENSIONS: ExtensionCase[] = [
     entry: "ext-theme-editor",
     panel: "theme-editor",
     overlays: [],
-    usesKitStyles: false,
+    usesKitStyles: true,
     mount(injectStyles) {
       return mountExtension(
         themeEditor({

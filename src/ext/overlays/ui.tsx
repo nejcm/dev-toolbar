@@ -69,11 +69,17 @@ export function OverlaysChip({
           : `${label}: none on — click to choose overlays`
       }
     >
-      <span data-dtb-part="ovl-chip" data-dtb-active={on ? "true" : "false"}>
-        <span data-dtb-part="ovl-dot" aria-hidden="true" />
+      <span data-dtb-part="ovl-chip" data-dtb-kind="chip" data-dtb-active={on ? "true" : "false"}>
+        <span data-dtb-part="ovl-dot" data-dtb-kind="dot" aria-hidden="true" />
         <span>{isOverflowed ? label : "overlays"}</span>
-        <span data-dtb-part="ovl-value">{on ? `${snapshot.activeCount} on` : "off"}</span>
-        {snapshot.error === null ? null : <span data-dtb-part="ovl-tag">error</span>}
+        <span data-dtb-part="ovl-value" data-dtb-kind="value">
+          {on ? `${snapshot.activeCount} on` : "off"}
+        </span>
+        {snapshot.error === null ? null : (
+          <span data-dtb-part="ovl-tag" data-dtb-kind="tag">
+            error
+          </span>
+        )}
       </span>
     </button>
   );
@@ -101,12 +107,12 @@ export function OverlaysPanel({ runtime, label, injectStyles, styleNonce }: Pane
   return (
     <div data-dtb-part="ovl-panel" aria-label={label}>
       {snapshot.error === null ? null : (
-        <p data-dtb-part="ovl-error" role="alert">
+        <p data-dtb-part="ovl-error" data-dtb-kind="banner" role="alert">
           {snapshot.error}
         </p>
       )}
 
-      <ul data-dtb-part="ovl-rows">
+      <ul data-dtb-part="ovl-rows" data-dtb-kind="list">
         {OVERLAY_IDS.map((id) => {
           const meta = OVERLAY_META[id];
           const on = snapshot.enabled[id] === true;
@@ -114,6 +120,7 @@ export function OverlaysPanel({ runtime, label, injectStyles, styleNonce }: Pane
             <li
               key={id}
               data-dtb-part="ovl-row"
+              data-dtb-kind="row"
               data-dtb-overlay={id}
               data-dtb-on={on ? "true" : "false"}
             >
@@ -129,6 +136,7 @@ export function OverlaysPanel({ runtime, label, injectStyles, styleNonce }: Pane
                 {meta.touchesHost === true ? (
                   <span
                     data-dtb-part="ovl-tag"
+                    data-dtb-kind="tag"
                     title="This overlay adds one stylesheet to document.head while it is on. It is removed the moment it is switched off, when the bar is hidden, and on teardown."
                   >
                     stylesheet
@@ -138,7 +146,7 @@ export function OverlaysPanel({ runtime, label, injectStyles, styleNonce }: Pane
               <p data-dtb-part="ovl-summary">{meta.summary}</p>
               <p data-dtb-part="ovl-cost">{meta.cost}</p>
               {id === "focus" && on ? (
-                <p data-dtb-part="ovl-note" role="status">
+                <p data-dtb-part="ovl-note" data-dtb-kind="note" role="status">
                   {snapshot.focusItems.length} badge
                   {snapshot.focusItems.length === 1 ? "" : "s"} on screen, {snapshot.unnamedCount}{" "}
                   with no accessible name
@@ -163,7 +171,7 @@ export function OverlaysPanel({ runtime, label, injectStyles, styleNonce }: Pane
         >
           Turn every overlay off
         </button>
-        <span data-dtb-part="ovl-note" role="status">
+        <span data-dtb-part="ovl-note" data-dtb-kind="note" role="status">
           Nothing drawn here can be clicked: the surface is{" "}
           <code>pointer-events: none !important</code>, which no ordinary app rule can undo, and it
           paints below the bar — so a click reaches your page and the toolbar and palette are never
@@ -331,7 +339,11 @@ function FocusBadge({ item }: { item: FocusItem }): ReactNode {
       >
         <span>{item.index}</span>
         {item.tabIndex !== null && item.tabIndex > 0 ? <span>tabindex={item.tabIndex}</span> : null}
-        {item.ariaHidden ? <span data-dtb-part="ovl-tag">aria-hidden</span> : null}
+        {item.ariaHidden ? (
+          <span data-dtb-part="ovl-tag" data-dtb-kind="tag">
+            aria-hidden
+          </span>
+        ) : null}
         <span>
           {named
             ? (item.name as string).length > 24
