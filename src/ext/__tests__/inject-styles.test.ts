@@ -50,6 +50,8 @@ const EXTENSION_STYLE_ENTRIES = [
   "ext-overlays",
   "ext-theme-editor",
 ] as const;
+const KIT_STYLE_ENTRY = "kit";
+const STYLE_ENTRIES = [KIT_STYLE_ENTRY, ...EXTENSION_STYLE_ENTRIES] as const;
 
 type ExtensionName =
   | "command-menu"
@@ -70,6 +72,7 @@ interface ExtensionCase {
   panel: ExtensionName | null;
   /** Extension ids whose overlay slot holds a call site. */
   overlays: readonly ExtensionName[];
+  usesKitStyles: boolean;
   mount(injectStyles: boolean): ToolbarHandle;
 }
 
@@ -95,6 +98,7 @@ const EXTENSIONS: ExtensionCase[] = [
     entry: "ext-command-menu",
     panel: null,
     overlays: ["command-menu"],
+    usesKitStyles: false,
     mount(injectStyles) {
       return mountExtension(commandMenu({ apple: false, injectStyles }));
     },
@@ -104,6 +108,7 @@ const EXTENSIONS: ExtensionCase[] = [
     entry: "ext-diagnostics",
     panel: "diagnostics",
     overlays: [],
+    usesKitStyles: true,
     mount(injectStyles) {
       return mountExtension(diagnostics({ injectStyles }));
     },
@@ -113,6 +118,7 @@ const EXTENSIONS: ExtensionCase[] = [
     entry: "ext-environment",
     panel: "environment",
     overlays: [],
+    usesKitStyles: true,
     mount(injectStyles) {
       return mountExtension(environment({ injectStyles }));
     },
@@ -122,6 +128,7 @@ const EXTENSIONS: ExtensionCase[] = [
     entry: "ext-flags",
     panel: "flags",
     overlays: [],
+    usesKitStyles: false,
     mount(injectStyles) {
       return mountExtension(
         flags({
@@ -136,6 +143,7 @@ const EXTENSIONS: ExtensionCase[] = [
     entry: "ext-metrics",
     panel: "metrics",
     overlays: [],
+    usesKitStyles: false,
     mount(injectStyles) {
       return mountExtension(
         metrics({
@@ -151,6 +159,7 @@ const EXTENSIONS: ExtensionCase[] = [
     entry: "ext-overlays",
     panel: "overlays",
     overlays: ["overlays"],
+    usesKitStyles: false,
     mount(injectStyles) {
       return mountExtension(overlays({ injectStyles }));
     },
@@ -160,6 +169,7 @@ const EXTENSIONS: ExtensionCase[] = [
     entry: "ext-theme-editor",
     panel: "theme-editor",
     overlays: [],
+    usesKitStyles: false,
     mount(injectStyles) {
       return mountExtension(
         themeEditor({
@@ -237,14 +247,20 @@ function mountEverySurface(target: ExtensionCase, injectStyles: boolean): void {
  */
 function expectOnlyOwnSheet(target: ExtensionCase): void {
   const own = document.head.querySelectorAll(`style[${STYLE_ATTRIBUTE}="${target.entry}"]`).length;
-  const foreign = EXTENSION_STYLE_ENTRIES.filter(
-    (other) => other !== target.entry && styleForEntry(other) !== null,
+  const kit = document.head.querySelectorAll(
+    `style[${STYLE_ATTRIBUTE}="${KIT_STYLE_ENTRY}"]`,
+  ).length;
+  const foreign = STYLE_ENTRIES.filter(
+    (other) =>
+      other !== target.entry &&
+      !(target.usesKitStyles && other === KIT_STYLE_ENTRY) &&
+      styleForEntry(other) !== null,
   );
 
   expect(
-    { own, foreign },
-    `${target.name} must inject exactly one ${target.entry} sheet and no other extension's`,
-  ).toEqual({ own: 1, foreign: [] });
+    { own, kit, foreign },
+    `${target.name} must inject its expected sheets and no foreign sheet`,
+  ).toEqual({ own: 1, kit: target.usesKitStyles ? 1 : 0, foreign: [] });
 }
 
 describe.each(EXTENSIONS)("$name extension surface", (target) => {
@@ -254,9 +270,13 @@ describe.each(EXTENSIONS)("$name extension surface", (target) => {
       styleForEntry(target.entry),
       `${target.name} must not inject ${target.entry} when injectStyles is false`,
     ).toBeNull();
+    expect(
+      styleForEntry(KIT_STYLE_ENTRY),
+      `${target.name} must not inject ${KIT_STYLE_ENTRY} when injectStyles is false`,
+    ).toBeNull();
   });
 
-  it("injects only its own stylesheet when injectStyles is true", () => {
+  it("injects only its expected stylesheets when injectStyles is true", () => {
     mountEverySurface(target, true);
     expectOnlyOwnSheet(target);
   });

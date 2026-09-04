@@ -73,10 +73,14 @@ export function DiagnosticsChip({
           : `${label}: click to capture a snapshot for a bug report`
       }
     >
-      <span data-dtb-part="diag-chip" data-dtb-incomplete={omissions > 0 ? "true" : "false"}>
-        <span data-dtb-part="diag-dot" aria-hidden="true" />
+      <span
+        data-dtb-part="diag-chip"
+        data-dtb-kind="chip"
+        data-dtb-incomplete={omissions > 0 ? "true" : "false"}
+      >
+        <span data-dtb-part="diag-dot" data-dtb-kind="dot" aria-hidden="true" />
         <span>{isOverflowed ? label : "diagnostics"}</span>
-        <span data-dtb-part="diag-value">
+        <span data-dtb-part="diag-value" data-dtb-kind="value">
           {captured ? (omissions === 0 ? "ready" : `${omissions} missing`) : "capture"}
         </span>
       </span>
@@ -162,7 +166,7 @@ export function DiagnosticsPanel({
 
   return (
     <div data-dtb-part="diag-panel" aria-label={label}>
-      <div data-dtb-part="diag-toolbar" data-dtb-bleed="">
+      <div data-dtb-part="diag-toolbar" data-dtb-kind="toolbar" data-dtb-bleed="">
         <div data-dtb-part="diag-formats" role="group" aria-label="Snapshot format">
           {SNAPSHOT_FORMATS.map((id) => (
             <button
@@ -180,6 +184,7 @@ export function DiagnosticsPanel({
         <button
           type="button"
           data-dtb-part="diag-action"
+          data-dtb-kind="action"
           data-dtb-action="capture"
           onClick={recapture}
         >
@@ -188,6 +193,7 @@ export function DiagnosticsPanel({
         <button
           type="button"
           data-dtb-part="diag-action"
+          data-dtb-kind="action"
           data-dtb-action="copy"
           disabled={snapshot === null}
           onClick={copy}
@@ -197,13 +203,14 @@ export function DiagnosticsPanel({
         <button
           type="button"
           data-dtb-part="diag-action"
+          data-dtb-kind="action"
           data-dtb-action="download"
           disabled={snapshot === null}
           onClick={download}
         >
           Download
         </button>
-        <span data-dtb-part="diag-note" role="status">
+        <span data-dtb-part="diag-note" data-dtb-kind="note" role="status">
           {status ??
             (snapshot === null
               ? "Capturing…"
@@ -216,7 +223,7 @@ export function DiagnosticsPanel({
       </div>
 
       {snapshot !== null && snapshot.omissions.length > 0 ? (
-        <div data-dtb-part="diag-omissions" role="alert">
+        <div data-dtb-part="diag-omissions" data-dtb-kind="banner" role="alert">
           <strong>
             Incomplete — {snapshot.omissions.length} thing
             {snapshot.omissions.length === 1 ? "" : "s"} could not be included.
@@ -233,7 +240,9 @@ export function DiagnosticsPanel({
       ) : null}
 
       {snapshot === null ? (
-        <p data-dtb-part="diag-empty">No snapshot yet.</p>
+        <p data-dtb-part="diag-empty" data-dtb-kind="empty">
+          No snapshot yet.
+        </p>
       ) : (
         <pre
           data-dtb-part="diag-preview"

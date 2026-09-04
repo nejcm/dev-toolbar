@@ -10,6 +10,7 @@
  * nothing else in the app knows about — persisted via `api.storage` and
  * re-applied through your adapter.
  */
+import type { SeverityWithOverride } from "@nejcm/dev-toolbar/kit";
 
 /** `null` is a real value ("unset variant"), not "no value". */
 export type FlagValue = boolean | string | number | null;
@@ -95,7 +96,7 @@ export interface PromotedFlag {
 }
 
 /** Chip/dot colour. Same vocabulary and tokens `/ext/metrics` and `/ext/environment` use. */
-export type FlagSeverity = "unknown" | "ok" | "warn" | "bad" | "override";
+export type FlagSeverity = SeverityWithOverride;
 
 /** One row, fully derived and already redacted. Shared by the panel and the clipboard. */
 export interface FlagView {

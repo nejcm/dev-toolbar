@@ -80,9 +80,9 @@ export interface DiagnosticsOptions extends Omit<DiagnosticsRuntimeOptions, "id"
    */
   keepMounted?: boolean;
   /**
-   * Inject this extension's stylesheet. Default `true`. Core's own
+   * Inject this extension's stylesheets. Default `true`. Core's own
    * `injectStyles` prop is not visible to extensions, so if you turned that off
-   * turn this off too and ship `DIAGNOSTICS_CSS` yourself.
+   * turn this off too and ship the self-contained `DIAGNOSTICS_CSS` yourself.
    */
   injectStyles?: boolean;
   /**

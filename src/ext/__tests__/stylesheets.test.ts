@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { KIT_CSS } from "../../kit/css";
 import { CORE_CSS } from "../../core/css";
 import { COMMAND_MENU_CSS } from "../command-menu/css";
 import { DIAGNOSTICS_CSS } from "../diagnostics/css";
@@ -150,6 +151,7 @@ function removeAllowlisted(
 
 const SHEETS = [
   { name: "core", css: CORE_CSS, allow: [] as const },
+  { name: "kit", css: KIT_CSS, allow: [] as const },
   {
     name: "command-menu",
     css: COMMAND_MENU_CSS,

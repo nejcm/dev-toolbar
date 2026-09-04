@@ -723,8 +723,10 @@ if (built || !mustBeBuilt) {
         ]),
       );
       expect(result.kit).toEqual([
+        "KIT_CSS",
         "createPoller",
         "createStyleInjector",
+        "ensureKitStyles",
         "matchesQuery",
         "parseList",
         "parseRecord",

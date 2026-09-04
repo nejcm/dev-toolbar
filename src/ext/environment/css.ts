@@ -5,52 +5,9 @@
  * the `dev-toolbar` cascade layer, colours from `--dtb-*` tokens, `data-dtb-part`
  * names namespaced by kind (`env-*`) rather than instance id.
  */
-import { ensureStyleSheet } from "../../runtime";
+import { KIT_CSS, createStyleInjector, ensureKitStyles } from "@nejcm/dev-toolbar/kit";
 
-export const ENVIRONMENT_CSS = String.raw`@layer dev-toolbar {
-  [data-dev-toolbar] [data-dtb-part="env-chip"] {
-    display: inline-flex;
-    align-items: center;
-    gap: var(--dtb-chip-gap);
-    white-space: nowrap;
-  }
-
-  [data-dev-toolbar] [data-dtb-part="env-dot"] {
-    width: 6px;
-    height: 6px;
-    border-radius: 999px;
-    background: var(--dtb-muted);
-    flex: 0 0 auto;
-  }
-
-  [data-dev-toolbar] [data-dtb-severity="ok"] [data-dtb-part="env-dot"] {
-    background: var(--dtb-ok);
-  }
-
-  [data-dev-toolbar] [data-dtb-severity="warn"] [data-dtb-part="env-dot"] {
-    background: var(--dtb-warn);
-  }
-
-  [data-dev-toolbar] [data-dtb-severity="bad"] [data-dtb-part="env-dot"] {
-    background: var(--dtb-danger);
-  }
-
-  [data-dev-toolbar] [data-dtb-part="env-label"] {
-    color: var(--dtb-muted);
-  }
-
-  [data-dev-toolbar] [data-dtb-part="env-value"] {
-    font-family: var(--dtb-font-mono);
-  }
-
-  [data-dev-toolbar] [data-dtb-severity="warn"] [data-dtb-part="env-value"] {
-    color: var(--dtb-warn);
-  }
-
-  [data-dev-toolbar] [data-dtb-severity="bad"] [data-dtb-part="env-value"] {
-    color: var(--dtb-danger);
-  }
-
+const ENVIRONMENT_EXTENSION_CSS = String.raw`@layer dev-toolbar {
   /* Impersonation has to be unmistakable, in the bar and in the panel. */
   [data-dev-toolbar] [data-dtb-part="env-alert"] {
     display: inline-flex;
@@ -75,8 +32,6 @@ export const ENVIRONMENT_CSS = String.raw`@layer dev-toolbar {
 
   [data-dev-toolbar] [data-dtb-part="env-banner"] {
     flex: 0 0 auto;
-    padding: var(--dtb-space-2) var(--dtb-space-3);
-    border-radius: var(--dtb-radius);
     background: var(--dtb-danger-bg);
     color: var(--dtb-danger);
     border: 1px solid var(--dtb-danger);
@@ -107,13 +62,8 @@ export const ENVIRONMENT_CSS = String.raw`@layer dev-toolbar {
     margin: 0;
   }
 
-  [data-dev-toolbar] [data-dtb-part="env-rows"] dt {
-    color: var(--dtb-muted);
-  }
-
   [data-dev-toolbar] [data-dtb-part="env-rows"] dd {
     margin: 0;
-    font-family: var(--dtb-font-mono);
     word-break: break-word;
   }
 
@@ -129,10 +79,7 @@ export const ENVIRONMENT_CSS = String.raw`@layer dev-toolbar {
 
   [data-dev-toolbar] [data-dtb-part="env-tag"] {
     margin-inline-start: var(--dtb-chip-gap);
-    padding: 0 var(--dtb-space-1);
-    border-radius: var(--dtb-radius);
     font-family: var(--dtb-font-family);
-    font-size: calc(var(--dtb-font-size) - 1px);
     color: var(--dtb-muted);
     background: var(--dtb-item-hover-bg);
     vertical-align: 1px;
@@ -143,7 +90,8 @@ export const ENVIRONMENT_CSS = String.raw`@layer dev-toolbar {
     background: var(--dtb-warn-bg);
   }
 
-  [data-dev-toolbar] [data-dtb-part="env-empty"] {
+  /* The part+kind pair keeps this foreground override above the kit's muted default. */
+  [data-dev-toolbar] [data-dtb-part="env-empty"][data-dtb-kind="empty"] {
     display: flex;
     flex-direction: column;
     gap: var(--dtb-space-2);
@@ -168,31 +116,9 @@ export const ENVIRONMENT_CSS = String.raw`@layer dev-toolbar {
     border-top: 1px solid var(--dtb-border);
   }
 
-  [data-dev-toolbar] [data-dtb-part="env-action"] {
-    display: inline-flex;
-    align-items: center;
-    min-height: var(--dtb-control-height);
-    padding: 0 var(--dtb-control-padding-x);
-    border: 1px solid var(--dtb-border);
-    border-radius: var(--dtb-radius);
-    background: transparent;
-    color: inherit;
-    font: inherit;
-    cursor: pointer;
-  }
-
-  [data-dev-toolbar] [data-dtb-part="env-action"]:hover {
-    background: var(--dtb-item-hover-bg);
-  }
-
   [data-dev-toolbar] [data-dtb-part="env-action"]:focus-visible {
     outline: 2px solid var(--dtb-accent);
     outline-offset: -1px;
-  }
-
-  [data-dev-toolbar] [data-dtb-part="env-note"] {
-    color: var(--dtb-muted);
-    margin: 0;
   }
 
   /* Inside a ⋮ row, which supplies the padding — see core's
@@ -212,15 +138,23 @@ export const ENVIRONMENT_CSS = String.raw`@layer dev-toolbar {
 }
 `;
 
+// Self-contained manual CSS deliberately repeats KIT_CSS; automatic injection deduplicates it.
+export const ENVIRONMENT_CSS = `${KIT_CSS}\n${ENVIRONMENT_EXTENSION_CSS}`;
+
 const ENVIRONMENT_STYLE_ENTRY = "ext-environment";
+const injectEnvironmentStyles = createStyleInjector(
+  ENVIRONMENT_STYLE_ENTRY,
+  ENVIRONMENT_EXTENSION_CSS,
+);
 
 /**
- * Injects the stylesheet once per document via `/runtime`'s shared injector
- * (dedup key is a DOM attribute, so two bundled copies still inject once).
+ * Injects both stylesheets once per document through the kit's injectors.
+ * Their DOM keys deduplicate across bundled copies.
  * Core's `injectStyles` prop isn't visible to extensions, so this extension
  * has its own switch — `environment({ injectStyles: false })` — and exports
- * `ENVIRONMENT_CSS` for consumers who ship CSS themselves.
+ * the self-contained `ENVIRONMENT_CSS` for consumers who ship CSS themselves.
  */
 export function ensureEnvironmentStyles(doc?: Document, nonce?: string): HTMLStyleElement | null {
-  return ensureStyleSheet(ENVIRONMENT_STYLE_ENTRY, ENVIRONMENT_CSS, doc, nonce);
+  ensureKitStyles(doc, nonce);
+  return injectEnvironmentStyles(doc, nonce);
 }

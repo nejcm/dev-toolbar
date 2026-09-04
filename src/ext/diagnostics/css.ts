@@ -5,31 +5,15 @@
  * tokens, parts namespaced `diag-*`. Nothing here is safety-load-bearing, so
  * (§14.7) nothing uses `!important`.
  */
-import { ensureStyleSheet } from "../../runtime";
+import { KIT_CSS, createStyleInjector, ensureKitStyles } from "@nejcm/dev-toolbar/kit";
 
-export const DIAGNOSTICS_CSS = String.raw`@layer dev-toolbar {
-  [data-dev-toolbar] [data-dtb-part="diag-chip"] {
-    display: inline-flex;
-    align-items: center;
-    gap: var(--dtb-chip-gap);
-    white-space: nowrap;
-  }
-
-  [data-dev-toolbar] [data-dtb-part="diag-dot"] {
-    width: 6px;
-    height: 6px;
-    border-radius: 999px;
-    background: var(--dtb-muted);
-    flex: 0 0 auto;
-  }
-
+const DIAGNOSTICS_EXTENSION_CSS = String.raw`@layer dev-toolbar {
   [data-dev-toolbar] [data-dtb-part="diag-chip"][data-dtb-incomplete="true"]
     [data-dtb-part="diag-dot"] {
     background: var(--dtb-warn);
   }
 
   [data-dev-toolbar] [data-dtb-part="diag-value"] {
-    font-family: var(--dtb-font-mono);
     color: var(--dtb-muted);
   }
 
@@ -39,32 +23,6 @@ export const DIAGNOSTICS_CSS = String.raw`@layer dev-toolbar {
     gap: var(--dtb-space-3);
     height: 100%;
     min-height: 0;
-  }
-
-  [data-dev-toolbar] [data-dtb-part="diag-toolbar"] {
-    display: flex;
-    align-items: center;
-    gap: var(--dtb-space-2);
-    flex-wrap: wrap;
-    padding-bottom: var(--dtb-space-3);
-    border-bottom: 1px solid var(--dtb-border);
-  }
-
-  [data-dev-toolbar] [data-dtb-part="diag-action"] {
-    display: inline-flex;
-    align-items: center;
-    min-height: var(--dtb-control-height);
-    padding: 0 var(--dtb-control-padding-x);
-    border: 1px solid var(--dtb-border);
-    border-radius: var(--dtb-radius);
-    background: transparent;
-    color: inherit;
-    font: inherit;
-    cursor: pointer;
-  }
-
-  [data-dev-toolbar] [data-dtb-part="diag-action"]:hover:not(:disabled) {
-    background: var(--dtb-item-hover-bg);
   }
 
   [data-dev-toolbar] [data-dtb-part="diag-action"]:disabled {
@@ -96,14 +54,8 @@ export const DIAGNOSTICS_CSS = String.raw`@layer dev-toolbar {
     color: var(--dtb-fg);
   }
 
-  [data-dev-toolbar] [data-dtb-part="diag-note"] {
-    color: var(--dtb-muted);
-  }
-
   [data-dev-toolbar] [data-dtb-part="diag-omissions"] {
     margin: 0;
-    padding: var(--dtb-space-2) var(--dtb-space-3);
-    border-radius: var(--dtb-radius);
     background: var(--dtb-warn-bg);
     color: var(--dtb-warn);
   }
@@ -131,13 +83,15 @@ export const DIAGNOSTICS_CSS = String.raw`@layer dev-toolbar {
     word-break: break-word;
     tab-size: 2;
   }
-
-  [data-dev-toolbar] [data-dtb-part="diag-empty"] {
-    color: var(--dtb-muted);
-  }
 }
 `;
 
+// Self-contained manual CSS deliberately repeats KIT_CSS; automatic injection deduplicates it.
+export const DIAGNOSTICS_CSS = `${KIT_CSS}\n${DIAGNOSTICS_EXTENSION_CSS}`;
+
+const injectDiagnosticsStyles = createStyleInjector("ext-diagnostics", DIAGNOSTICS_EXTENSION_CSS);
+
 export function ensureDiagnosticsStyles(doc?: Document, nonce?: string): HTMLStyleElement | null {
-  return ensureStyleSheet("ext-diagnostics", DIAGNOSTICS_CSS, doc, nonce);
+  ensureKitStyles(doc, nonce);
+  return injectDiagnosticsStyles(doc, nonce);
 }

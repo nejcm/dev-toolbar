@@ -4,6 +4,7 @@
  * Severity lives here, not in core, since "healthy" is app-specific. Every
  * threshold below is a default you are expected to override.
  */
+import type { Severity as KitSeverity } from "@nejcm/dev-toolbar/kit";
 import type { TimeSeries } from "../../runtime";
 
 export type MetricId = "memory" | "delay" | "jank" | "network";
@@ -11,7 +12,7 @@ export type MetricId = "memory" | "delay" | "jank" | "network";
 export const METRIC_IDS: readonly MetricId[] = ["memory", "delay", "jank", "network"];
 
 /** `"unknown"` is a real state: it is what an unsupported platform API looks like. */
-export type Severity = "unknown" | "ok" | "warn" | "bad";
+export type Severity = KitSeverity;
 
 export type MetricStatus =
   /** The platform API this metric needs does not exist here. */

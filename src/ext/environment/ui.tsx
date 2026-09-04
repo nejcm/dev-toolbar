@@ -50,10 +50,22 @@ export function EnvironmentChip({
     : `${label}: unknown — no context supplied to environment()`;
 
   const inner = (
-    <span data-dtb-part="env-chip" data-dtb-severity={snapshot.severity}>
-      <span data-dtb-part="env-dot" aria-hidden="true" />
-      <span data-dtb-part="env-label">env</span>
-      <span data-dtb-part="env-value" data-dtb-env={kind}>
+    <span data-dtb-part="env-chip" data-dtb-kind="chip" data-dtb-severity={snapshot.severity}>
+      <span
+        data-dtb-part="env-dot"
+        data-dtb-kind="dot"
+        data-dtb-severity={snapshot.severity}
+        aria-hidden="true"
+      />
+      <span data-dtb-part="env-label" data-dtb-kind="label">
+        env
+      </span>
+      <span
+        data-dtb-part="env-value"
+        data-dtb-kind="value"
+        data-dtb-severity={snapshot.severity}
+        data-dtb-env={kind}
+      >
         {kind}
       </span>
       {snapshot.impersonating ? <span data-dtb-part="env-alert">impersonating</span> : null}
@@ -113,20 +125,20 @@ export function EnvironmentPanel({ runtime, injectStyles, styleNonce }: PanelPro
       data-dtb-impersonating={snapshot.impersonating ? "true" : "false"}
     >
       {snapshot.impersonating ? (
-        <p data-dtb-part="env-banner" role="alert">
+        <p data-dtb-part="env-banner" data-dtb-kind="banner" role="alert">
           Impersonation is active. Everything you do here happens as somebody else.
         </p>
       ) : null}
 
       <div data-dtb-part="env-body" data-dtb-bleed="">
         {anythingSupplied ? null : (
-          <div data-dtb-part="env-empty">
-            <p data-dtb-part="env-note">
+          <div data-dtb-part="env-empty" data-dtb-kind="empty">
+            <p data-dtb-part="env-note" data-dtb-kind="note">
               No environment context was supplied, so this environment is <strong>unknown</strong> —
               not "local". Nothing here is guessed from the hostname, and nothing is read from{" "}
               <code>process.env</code>.
             </p>
-            <p data-dtb-part="env-note">
+            <p data-dtb-part="env-note" data-dtb-kind="note">
               Pass what you know:{" "}
               <code>
                 {'environment({ context: { environment: "staging", release: __RELEASE__ } })'}
@@ -158,6 +170,7 @@ export function EnvironmentPanel({ runtime, injectStyles, styleNonce }: PanelPro
         <button
           type="button"
           data-dtb-part="env-action"
+          data-dtb-kind="action"
           data-dtb-action="copy"
           onClick={() => copy(runtime.snapshotText())}
         >
@@ -166,12 +179,13 @@ export function EnvironmentPanel({ runtime, injectStyles, styleNonce }: PanelPro
         <button
           type="button"
           data-dtb-part="env-action"
+          data-dtb-kind="action"
           data-dtb-action="copy-json"
           onClick={() => copy(JSON.stringify(runtime.diagnostics(), null, 2))}
         >
           Copy JSON
         </button>
-        <span data-dtb-part="env-note" role="status">
+        <span data-dtb-part="env-note" data-dtb-kind="note" role="status">
           {copied === "failed"
             ? "Clipboard unavailable."
             : copied === "ok"
@@ -186,9 +200,12 @@ export function EnvironmentPanel({ runtime, injectStyles, styleNonce }: PanelPro
 function Row({ field }: { field: EnvironmentFieldView }): ReactNode {
   return (
     <>
-      <dt data-dtb-part="env-row-label">{field.label}</dt>
+      <dt data-dtb-part="env-row-label" data-dtb-kind="label">
+        {field.label}
+      </dt>
       <dd
         data-dtb-part="env-row-value"
+        data-dtb-kind="value"
         data-dtb-field={field.id}
         data-dtb-source={field.source}
         data-dtb-masked={field.masked ? "true" : "false"}
@@ -202,6 +219,7 @@ function Row({ field }: { field: EnvironmentFieldView }): ReactNode {
         {field.masked ? (
           <span
             data-dtb-part="env-tag"
+            data-dtb-kind="tag"
             data-dtb-tag="masked"
             title="This value was masked before it was rendered or copied."
           >
@@ -211,6 +229,7 @@ function Row({ field }: { field: EnvironmentFieldView }): ReactNode {
         {field.source === "detected" ? (
           <span
             data-dtb-part="env-tag"
+            data-dtb-kind="tag"
             data-dtb-tag="detected"
             title="Read from this browser, not from the deployment."
           >
