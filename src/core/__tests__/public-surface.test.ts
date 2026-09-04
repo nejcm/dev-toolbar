@@ -4,8 +4,8 @@
  * Every name `src/index.ts` exports is a semver commitment, and an export
  * nobody wrote down is the worst kind: it binds the package without ever
  * having been offered to anyone. So the rule is mechanical — if it is
- * exported, it is in the README — and this test is what makes it a gate
- * rather than an intention.
+ * exported, it is written down in the README or in `docs/api.md` — and this
+ * test is what makes it a gate rather than an intention.
  *
  * The list is read out of the source rather than restated here on purpose. A
  * hand-maintained copy of the surface is a second thing to forget, and the
@@ -17,7 +17,14 @@ import * as root from "@nejcm/dev-toolbar";
 
 const repo = `${process.cwd().replace(/\/$/, "")}/`;
 const source = readFileSync(`${repo}src/index.ts`, "utf8");
-const readme = readFileSync(`${repo}README.md`, "utf8");
+/**
+ * The consumer-facing documentation set. The README is the introduction and
+ * `docs/api.md` is the full reference for this entry, so an export is
+ * documented if it appears in either.
+ */
+const docs = [`${repo}README.md`, `${repo}docs/api.md`]
+  .map((path) => readFileSync(path, "utf8"))
+  .join("\n");
 
 /** `export { a, b }` / `export type { A, B }`, with the aliases stripped. */
 function exportedNames(onlyTypes: boolean): string[] {
@@ -59,12 +66,12 @@ describe("root entry surface", () => {
     expect(Object.keys(root).sort()).toEqual(values);
   });
 
-  it("documents every export in the README", () => {
+  it("documents every export in the README or docs/api.md", () => {
     const undocumented = [...values, ...types].filter(
-      (name) => !new RegExp(`\\b${name}\\b`).test(readme),
+      (name) => !new RegExp(`\\b${name}\\b`).test(docs),
     );
-    // If this fails: either write the export a line in README § Other exports
-    // (or § Types), or stop exporting it. Both are fine; leaving it undocumented
+    // If this fails: either write the export a line in docs/api.md § Other
+    // exports (or § Types), or stop exporting it. Both are fine; leaving it undocumented
     // is not — see the file comment.
     expect(undocumented).toEqual([]);
   });

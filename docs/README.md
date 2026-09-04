@@ -1,0 +1,42 @@
+# Documentation
+
+Everything the [README](../README.md) links to, in one place.
+
+## Using the package
+
+| Document | What is in it |
+| --- | --- |
+| [api.md](./api.md) | The root entry: every `<DevToolbar>` prop, the toggle shortcut, the `···` menu, the escape-hatch exports and every published type |
+| [styling.md](./styling.md) | The three ways to restyle the bar, and why none of them needs `!important` |
+| [ssr.md](./ssr.md) | Why the bar cannot mismatch on hydration, and the one Next.js app-router rule |
+| [testing.md](./testing.md) | `@nejcm/dev-toolbar/testing` — `renderWithToolbar`, the fake layout, the mock bus and the Jest caveats |
+
+## Writing an extension
+
+| Document | What is in it |
+| --- | --- |
+| [extension-contract.md](./extension-contract.md) | The object you write, the slot props, `start(api)`, and the two lifecycle rules that bite |
+| [runtime.md](./runtime.md) | `@nejcm/dev-toolbar/runtime` — event bus, ring buffers, throttled store, `redact()` |
+| [architecture.md](./architecture.md) | What the shell guarantees, why the boundaries sit where they do, and the known gaps in the contract |
+| [adr/](./adr/) | Decision records, and the process for adding one |
+
+## The first-party extensions
+
+| Extension | Document |
+| --- | --- |
+| `ext/metrics` | [ext/metrics.md](./ext/metrics.md) |
+| `ext/environment` | [ext/environment.md](./ext/environment.md) |
+| `ext/flags` | [ext/flags.md](./ext/flags.md) |
+| `ext/command-menu` | [ext/command-menu.md](./ext/command-menu.md) |
+| `ext/overlays` | [ext/overlays.md](./ext/overlays.md) |
+| `ext/diagnostics` | [ext/diagnostics.md](./ext/diagnostics.md) |
+| `ext/theme-editor` | [ext/theme-editor.md](./ext/theme-editor.md) |
+| `ext/agent` | [ext/agent.md](./ext/agent.md) |
+
+## Working on the package itself
+
+| Document | What is in it |
+| --- | --- |
+| [../CONTRIBUTING.md](../CONTRIBUTING.md) | Setup, the one command that matters, commits, PRs, releases |
+| [../AGENTS.md](../AGENTS.md) | The repo map: which folder is which layer, and what may import what |
+| [../CHANGELOG.md](../CHANGELOG.md) | Every release, including the four places the extension contract moved |
