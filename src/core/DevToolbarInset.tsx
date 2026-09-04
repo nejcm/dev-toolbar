@@ -13,9 +13,7 @@ export interface DevToolbarInsetProps extends HTMLAttributes<HTMLDivElement> {
  */
 export function DevToolbarInset({ children, style, ...rest }: DevToolbarInsetProps): ReactNode {
   const toolbar = useOptionalDevToolbar();
-  // Position/visibility come from persisted state (unknown to the server), so both
-  // stay at their defaults until the toolbar reports mounted, keeping SSR and the
-  // first client render in sync.
+  // Keep defaults until mount so server HTML and the first client render agree.
   const settled = toolbar !== null && toolbar.mounted;
   const position = settled ? toolbar.position : "bottom";
   const active = settled && toolbar.enabled && toolbar.visible;

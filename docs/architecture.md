@@ -255,7 +255,14 @@ may not see it.
 
 ## 3. State, storage and lifecycle
 
-State lives in a small store read through `useSyncExternalStore`. Four keys persist:
+Core-owned state lives in a small store read through `useSyncExternalStore`.
+`activePanelId` and `panelHeight` are always store-owned. `visible` and `position`
+may be controlled by `<DevToolbar>` props. When controlled, the context exposes the
+prop value for rendering while `store.getSnapshot()` continues to hold the persisted
+or uncontrolled value, so those two values can differ. The matching context setters
+call their change callbacks and do not write the store while controlled.
+
+Four keys persist when their state is changed through the store:
 
 | Key | Value |
 | --- | --- |

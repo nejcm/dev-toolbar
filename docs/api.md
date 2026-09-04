@@ -14,6 +14,8 @@ type it publishes. Start at the [README](../README.md) if you just want it mount
 | `density` | `"compact"` | `"compact" \| "comfortable"` |
 | `colorScheme` | `"system"` | `"light" \| "dark" \| "system"` |
 | `defaultVisible` / `defaultPosition` / `defaultPanelHeight` | — | Used only when nothing is persisted yet |
+| `visible` / `position` | — | Controlled values; provide `onVisibleChange` / `onPositionChange` for internal controls |
+| `onVisibleChange` / `onPositionChange` / `onPanelChange` | — | Called for uncontrolled changes and controlled internal setter requests |
 | `shortcut` | `"Mod+Shift+."` | `null` disables it |
 | `injectStyles` | `true` | `false` → import `@nejcm/dev-toolbar/styles.css` yourself |
 | `styleNonce` | — | CSP nonce for injected stylesheets (core's, and forwarded to every slot) |
@@ -30,6 +32,12 @@ prop later is ignored; remount the toolbar (`key={instanceId}`) to move it.
 `classNames` is compared **field by field**, not by identity, so writing the object
 inline (`classNames={{ bar: "my-bar" }}`) is fine — it does not defeat the
 memoisation of the context value or of the overlay host.
+
+`visible` and `position` are controlled values. Their matching callbacks receive
+requests from the toggle shortcut or context setters; those setters do not update
+the store or persistence while the field is controlled. Removing either prop returns
+to the persisted or default store value. Supplying `defaultVisible` or
+`defaultPosition` alongside its controlled prop is allowed and seeds that fallback.
 
 Under a `style-src 'self' 'nonce-…'` CSP an un-nonced `<style>` is dropped silently —
 the bar renders unstyled, with nothing in the console but a CSP report — so pass

@@ -40,7 +40,9 @@ export interface DevToolbarContextValue {
   classNames: DevToolbarClassNames;
   onExtensionError?: (error: Error, info: ExtensionErrorInfo) => void;
   storage: ToolbarStorage;
+  /** Effective visibility; controlled `visible` can differ from the store snapshot. */
   visible: boolean;
+  /** Effective position; controlled `position` can differ from the store snapshot. */
   position: ToolbarPosition;
   activePanelId: string | null;
   panelHeight: number;

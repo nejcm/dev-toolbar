@@ -77,6 +77,13 @@ export interface DevToolbarProps {
   defaultVisible?: boolean;
   defaultPosition?: ToolbarPosition;
   defaultPanelHeight?: number;
+  /** Controlled visibility. Requires `onVisibleChange` for internal controls. */
+  visible?: boolean;
+  /** Controlled position. Requires `onPositionChange` for internal controls. */
+  position?: ToolbarPosition;
+  onVisibleChange?: (visible: boolean) => void;
+  onPositionChange?: (position: ToolbarPosition) => void;
+  onPanelChange?: (activePanelId: string | null) => void;
   /**
    * `undefined` → localStorage, `null` → persistence disabled.
    *
@@ -180,6 +187,11 @@ function DevToolbarRoot({
   defaultVisible = true,
   defaultPosition = "bottom",
   defaultPanelHeight,
+  visible: visibleProp,
+  position: positionProp,
+  onVisibleChange,
+  onPositionChange,
+  onPanelChange,
   storage: storageProp,
   injectStyles = true,
   onExtensionError,
@@ -192,12 +204,10 @@ function DevToolbarRoot({
 }: DevToolbarProps): ReactNode {
   const classNames = useStableClassNames(classNamesProp);
   const onExtensionErrorRef = useRef(onExtensionError);
-  /* oxlint-disable react/refs -- render-phase prop ref, as in useStableClassNames above. */
-  onExtensionErrorRef.current = onExtensionError;
-  /* oxlint-enable react/refs */
-  const reportExtensionError = useCallback((error: Error, info: ExtensionErrorInfo): void => {
-    onExtensionErrorRef.current?.(error, info);
-  }, []);
+  const onVisibleChangeRef = useRef(onVisibleChange);
+  const onPositionChangeRef = useRef(onPositionChange);
+  const onPanelChangeRef = useRef(onPanelChange);
+  const effectiveVisibleRef = useRef(true);
 
   // Captured once, on mount, so the store and everything derived from it
   // can never disagree about where preferences live. See prop docs above.
@@ -221,6 +231,153 @@ function DevToolbarRoot({
   // reading `position`/`visible` during render mismatches. See
   // `ToolbarStore.getServerSnapshot`.
   const state = useSyncExternalStore(store.subscribe, store.getSnapshot, store.getServerSnapshot);
+
+  const visibleControlled = visibleProp !== undefined;
+  const positionControlled = positionProp !== undefined;
+  const hasVisibleChangeHandler = onVisibleChange !== undefined;
+  const hasPositionChangeHandler = onPositionChange !== undefined;
+  const effectiveVisible = visibleProp ?? state.visible;
+  const effectivePosition = positionProp ?? state.position;
+  const visibilitySubscribersRef = useRef(new Set<(visible: boolean) => void>());
+  const lastNotifiedVisibleRef = useRef(effectiveVisible);
+  /* oxlint-disable react/refs -- render-phase prop refs keep handlers and the effective visibility current. */
+  onExtensionErrorRef.current = onExtensionError;
+  onVisibleChangeRef.current = onVisibleChange;
+  onPositionChangeRef.current = onPositionChange;
+  onPanelChangeRef.current = onPanelChange;
+  effectiveVisibleRef.current = effectiveVisible;
+  /* oxlint-enable react/refs */
+  const reportExtensionError = useCallback((error: Error, info: ExtensionErrorInfo): void => {
+    onExtensionErrorRef.current?.(error, info);
+  }, []);
+  const reportVisibleChange = useCallback((next: boolean): void => {
+    try {
+      onVisibleChangeRef.current?.(next);
+    } catch (error) {
+      // eslint-disable-next-line no-console
+      console.error("[dev-toolbar] onVisibleChange handler threw.", error);
+    }
+  }, []);
+  const reportPositionChange = useCallback((next: ToolbarPosition): void => {
+    try {
+      onPositionChangeRef.current?.(next);
+    } catch (error) {
+      // eslint-disable-next-line no-console
+      console.error("[dev-toolbar] onPositionChange handler threw.", error);
+    }
+  }, []);
+  const reportPanelChange = useCallback((next: string | null): void => {
+    try {
+      onPanelChangeRef.current?.(next);
+    } catch (error) {
+      // eslint-disable-next-line no-console
+      console.error("[dev-toolbar] onPanelChange handler threw.", error);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (lastNotifiedVisibleRef.current === effectiveVisible) return;
+    lastNotifiedVisibleRef.current = effectiveVisible;
+    for (const subscriber of Array.from(visibilitySubscribersRef.current)) {
+      subscriber(effectiveVisible);
+    }
+  }, [effectiveVisible]);
+
+  useEffect(() => {
+    let previous = store.getSnapshot();
+    return store.subscribe(() => {
+      const next = store.getSnapshot();
+      const visibleChanged = next.visible !== previous.visible;
+      const positionChanged = next.position !== previous.position;
+      const panelChanged = next.activePanelId !== previous.activePanelId;
+      previous = next;
+      if (visibleChanged) reportVisibleChange(next.visible);
+      if (positionChanged) reportPositionChange(next.position);
+      if (panelChanged) reportPanelChange(next.activePanelId);
+    });
+  }, [store, reportVisibleChange, reportPositionChange, reportPanelChange]);
+
+  const controlWarningsRef = useRef(new Set<string>());
+  const previousVisibleControlledRef = useRef<boolean | null>(null);
+  const previousPositionControlledRef = useRef<boolean | null>(null);
+  const warnControlOnce = useCallback((key: string, message: string): void => {
+    if (controlWarningsRef.current.has(key)) return;
+    controlWarningsRef.current.add(key);
+    // eslint-disable-next-line no-console
+    console.warn(`[dev-toolbar] ${message}`);
+  }, []);
+
+  useEffect(() => {
+    const previousVisibleControlled = previousVisibleControlledRef.current;
+    if (previousVisibleControlled !== null && previousVisibleControlled !== visibleControlled) {
+      const transition = previousVisibleControlled
+        ? "controlled to uncontrolled"
+        : "uncontrolled to controlled";
+      warnControlOnce(
+        `visible:${transition}`,
+        `<DevToolbar> changed from ${transition} for "visible". Do not switch between controlled and uncontrolled props.`,
+      );
+    }
+    previousVisibleControlledRef.current = visibleControlled;
+
+    const previousPositionControlled = previousPositionControlledRef.current;
+    if (previousPositionControlled !== null && previousPositionControlled !== positionControlled) {
+      const transition = previousPositionControlled
+        ? "controlled to uncontrolled"
+        : "uncontrolled to controlled";
+      warnControlOnce(
+        `position:${transition}`,
+        `<DevToolbar> changed from ${transition} for "position". Do not switch between controlled and uncontrolled props.`,
+      );
+    }
+    previousPositionControlledRef.current = positionControlled;
+  }, [positionControlled, visibleControlled, warnControlOnce]);
+
+  useEffect(() => {
+    if (visibleControlled && onVisibleChangeRef.current === undefined) {
+      warnControlOnce(
+        "visible:missing-callback",
+        `<DevToolbar> controlled "visible" needs an "onVisibleChange" callback; internal visibility controls are inert.`,
+      );
+    }
+    if (positionControlled && onPositionChangeRef.current === undefined) {
+      warnControlOnce(
+        "position:missing-callback",
+        `<DevToolbar> controlled "position" needs an "onPositionChange" callback; internal position controls are inert.`,
+      );
+    }
+  }, [
+    hasPositionChangeHandler,
+    hasVisibleChangeHandler,
+    positionControlled,
+    visibleControlled,
+    warnControlOnce,
+  ]);
+
+  const setVisible = useCallback(
+    (next: boolean) => {
+      if (visibleControlled) {
+        if (next !== visibleProp) reportVisibleChange(next);
+        return;
+      }
+      store.setVisible(next);
+    },
+    [reportVisibleChange, store, visibleControlled, visibleProp],
+  );
+  const toggleVisible = useCallback(
+    () => setVisible(!effectiveVisible),
+    [effectiveVisible, setVisible],
+  );
+  const setPosition = useCallback(
+    (next: ToolbarPosition) => {
+      if (positionControlled) {
+        if (next !== positionProp) reportPositionChange(next);
+        return;
+      }
+      store.setPosition(next);
+    },
+    [positionControlled, positionProp, reportPositionChange, store],
+  );
 
   // Client-only mount: the bar is never part of server HTML, so nothing to
   // hydrate or mismatch. Whether we've mounted can't be derived during
@@ -366,7 +523,7 @@ function DevToolbarRoot({
       const controller = new AbortController();
       const api: ExtensionRuntimeApi = {
         signal: controller.signal,
-        isVisible: () => store.getSnapshot().visible,
+        isVisible: () => effectiveVisibleRef.current,
         subscribeVisibility: (callback) => {
           // The signal is documented as aborted on teardown, and this is the
           // subscription abort must release, so an extension keeping only the
@@ -374,15 +531,7 @@ function DevToolbarRoot({
           // time: subscribe to nothing rather than leak an unreleasable listener.
           if (controller.signal.aborted) return () => {};
 
-          let last = store.getSnapshot().visible;
-          const unsubscribeStore = store.subscribe(() => {
-            const next = store.getSnapshot().visible;
-            if (next === last) return;
-            last = next;
-            // Caught here, not in the store's `emit`: this callback is
-            // extension code running inside whatever flipped visibility, and
-            // letting it throw would abort the notification loop for every
-            // extension after this one.
+          const subscriber = (next: boolean) => {
             try {
               callback(next);
             } catch (error) {
@@ -393,7 +542,8 @@ function DevToolbarRoot({
                 error,
               );
             }
-          });
+          };
+          visibilitySubscribersRef.current.add(subscriber);
 
           // Idempotent and removes the abort listener too, so nothing leaks
           // regardless of whether the extension unsubscribes or the signal
@@ -402,7 +552,7 @@ function DevToolbarRoot({
           const unsubscribe = () => {
             if (released) return;
             released = true;
-            unsubscribeStore();
+            visibilitySubscribersRef.current.delete(subscriber);
             controller.signal.removeEventListener("abort", unsubscribe);
           };
           controller.signal.addEventListener("abort", unsubscribe, { once: true });
@@ -467,15 +617,15 @@ function DevToolbarRoot({
       if (event.defaultPrevented || event.isComposing || event.repeat) return;
       if (!matchesShortcut(event, parsedShortcut)) return;
       event.preventDefault();
-      store.toggleVisible();
+      toggleVisible();
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [enabled, parsedShortcut, store]);
+  }, [enabled, parsedShortcut, toggleVisible]);
 
   // Publish the height variables on the document element.
   const rootRef = useRef<HTMLDivElement | null>(null);
-  const shouldRender = enabled && mounted && state.visible;
+  const shouldRender = enabled && mounted && effectiveVisible;
   // What this instance owns, and therefore all it ever removes.
   const heightVariables = useMemo(
     () =>
@@ -513,7 +663,7 @@ function DevToolbarRoot({
     enabled,
     shouldRender,
     heightVariables,
-    state.position,
+    effectivePosition,
     state.panelHeight,
     state.activePanelId,
   ]);
@@ -534,13 +684,13 @@ function DevToolbarRoot({
       classNames,
       onExtensionError: onExtensionError ? reportExtensionError : undefined,
       storage: baseStorage,
-      visible: state.visible,
-      position: state.position,
+      visible: effectiveVisible,
+      position: effectivePosition,
       activePanelId: state.activePanelId,
       panelHeight: state.panelHeight,
-      setVisible: store.setVisible,
-      toggleVisible: store.toggleVisible,
-      setPosition: store.setPosition,
+      setVisible,
+      toggleVisible,
+      setPosition,
       openPanel: store.openPanel,
       closePanel: store.closePanel,
       togglePanel: store.togglePanel,
@@ -561,6 +711,11 @@ function DevToolbarRoot({
       classNames,
       onExtensionError !== undefined,
       baseStorage,
+      effectiveVisible,
+      effectivePosition,
+      setVisible,
+      toggleVisible,
+      setPosition,
       state,
     ],
   );
@@ -578,7 +733,7 @@ function DevToolbarRoot({
               data-dev-toolbar=""
               data-dtb-part="root"
               data-dtb-instance={instanceId}
-              data-dtb-position={state.position}
+              data-dtb-position={effectivePosition}
               data-dtb-density={density}
               data-dtb-color-scheme={colorScheme}
               className={cx(classNames?.root, className)}
@@ -597,14 +752,14 @@ function DevToolbarRoot({
               <OverlayHost
                 extensions={extensions}
                 density={density}
-                position={state.position}
+                position={effectivePosition}
                 classNames={classNames}
                 styleNonce={styleNonce}
               />
               <PanelHost
                 extensions={extensions}
                 activePanelId={state.activePanelId}
-                position={state.position}
+                position={effectivePosition}
                 density={density}
                 panelHeight={state.panelHeight}
                 setPanelHeight={store.setPanelHeight}

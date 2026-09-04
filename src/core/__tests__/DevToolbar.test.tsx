@@ -16,7 +16,7 @@ import { DevToolbarInset } from "../DevToolbarInset";
 import { useDevToolbar, useToolbarCommands } from "../context";
 import { runCommand } from "../commands";
 import { isApplePlatform } from "../shortcut";
-import { STORAGE_PREFIX } from "../storage";
+import { createMemoryStorage, STORAGE_PREFIX } from "../storage";
 
 const panelExtension = (
   id: string,
@@ -117,6 +117,28 @@ describe("DevToolbar rendering", () => {
       </DevToolbar>,
     );
     expect(document.head.querySelectorAll("style[data-dev-toolbar-styles]").length).toBe(0);
+  });
+
+  it("uses controlled visibility for rendering and reports toggle requests", () => {
+    const onVisibleChange = vi.fn();
+    render(
+      <DevToolbar
+        instanceId="controlled"
+        visible={false}
+        onVisibleChange={onVisibleChange}
+        extensions={[]}
+      >
+        <div />
+      </DevToolbar>,
+    );
+
+    expect(document.querySelector("[data-dev-toolbar]")).toBeNull();
+
+    fireToggleShortcut();
+
+    expect(onVisibleChange).toHaveBeenCalledWith(true);
+    expect(document.querySelector("[data-dev-toolbar]")).toBeNull();
+    expect(window.localStorage.getItem(`${STORAGE_PREFIX}:controlled:visible`)).toBeNull();
   });
 });
 
@@ -566,6 +588,230 @@ describe("persistence", () => {
     const keys = Object.keys(window.localStorage).filter((key) => key.startsWith(STORAGE_PREFIX));
     expect(keys).toEqual([]);
   });
+
+  it("does not write controlled visibility or position, but keeps uncontrolled writes", () => {
+    const controlledStorage = createMemoryStorage();
+    const onVisibleChange = vi.fn();
+    const onPositionChange = vi.fn();
+    const Controls = () => {
+      const { setPosition } = useDevToolbar();
+      return (
+        <button type="button" onClick={() => setPosition("top")}>
+          move
+        </button>
+      );
+    };
+    const controlled = render(
+      <DevToolbar
+        instanceId="controlled-storage"
+        storage={controlledStorage}
+        visible
+        position="bottom"
+        onVisibleChange={onVisibleChange}
+        onPositionChange={onPositionChange}
+        extensions={[]}
+      >
+        <Controls />
+      </DevToolbar>,
+    );
+
+    fireToggleShortcut();
+    fireEvent.click(screen.getByRole("button", { name: "move" }));
+
+    expect(onVisibleChange).toHaveBeenCalledWith(false);
+    expect(onPositionChange).toHaveBeenCalledWith("top");
+    expect(document.querySelector("[data-dev-toolbar]")?.getAttribute("data-dtb-position")).toBe(
+      "bottom",
+    );
+
+    controlled.rerender(
+      <DevToolbar
+        instanceId="controlled-storage"
+        storage={controlledStorage}
+        visible
+        position="top"
+        onVisibleChange={onVisibleChange}
+        onPositionChange={onPositionChange}
+        extensions={[]}
+      >
+        <Controls />
+      </DevToolbar>,
+    );
+
+    expect(document.querySelector("[data-dev-toolbar]")?.getAttribute("data-dtb-position")).toBe(
+      "top",
+    );
+    expect(controlledStorage.getItem("dtb:v1:controlled-storage:visible")).toBeNull();
+    expect(controlledStorage.getItem("dtb:v1:controlled-storage:position")).toBeNull();
+    controlled.unmount();
+
+    const uncontrolledStorage = createMemoryStorage();
+    render(
+      <DevToolbar instanceId="uncontrolled-storage" storage={uncontrolledStorage} extensions={[]}>
+        <Controls />
+      </DevToolbar>,
+    );
+
+    fireToggleShortcut();
+    fireEvent.click(screen.getByRole("button", { name: "move" }));
+
+    expect(uncontrolledStorage.getItem("dtb:v1:uncontrolled-storage:visible")).toBe("false");
+    expect(uncontrolledStorage.getItem("dtb:v1:uncontrolled-storage:position")).toBe('"top"');
+  });
+
+  it("falls back to persisted values when controlled props are removed", () => {
+    const storage = createMemoryStorage({
+      "dtb:v1:fallback:visible": "false",
+      "dtb:v1:fallback:position": '"top"',
+    });
+    const State = () => {
+      const { visible, position } = useDevToolbar();
+      return <span data-testid="state">{`${visible}/${position}`}</span>;
+    };
+    const view = render(
+      <DevToolbar
+        instanceId="fallback"
+        storage={storage}
+        visible
+        position="bottom"
+        onVisibleChange={() => {}}
+        onPositionChange={() => {}}
+        extensions={[]}
+      >
+        <State />
+      </DevToolbar>,
+    );
+
+    expect(screen.getByTestId("state").textContent).toBe("true/bottom");
+    expect(document.querySelector("[data-dev-toolbar]")).not.toBeNull();
+
+    view.rerender(
+      <DevToolbar instanceId="fallback" storage={storage} extensions={[]}>
+        <State />
+      </DevToolbar>,
+    );
+
+    expect(screen.getByTestId("state").textContent).toBe("false/top");
+    expect(document.querySelector("[data-dev-toolbar]")).toBeNull();
+  });
+});
+
+describe("controlled props and change callbacks", () => {
+  it("warns once for each controlled transition", () => {
+    const onVisibleChange = vi.fn();
+    const view = render(<DevToolbar instanceId="warnings" extensions={[]} />);
+
+    view.rerender(
+      <DevToolbar
+        instanceId="warnings"
+        visible={false}
+        onVisibleChange={onVisibleChange}
+        extensions={[]}
+      />,
+    );
+    view.rerender(<DevToolbar instanceId="warnings" extensions={[]} />);
+    view.rerender(
+      <DevToolbar
+        instanceId="warnings"
+        visible={true}
+        onVisibleChange={onVisibleChange}
+        extensions={[]}
+      />,
+    );
+    view.rerender(<DevToolbar instanceId="warnings" extensions={[]} />);
+
+    const messages = warn.mock.calls.map((call) => String(call[0]));
+    expect(
+      messages.filter((message) =>
+        message.includes('changed from uncontrolled to controlled for "visible"'),
+      ),
+    ).toHaveLength(1);
+    expect(
+      messages.filter((message) =>
+        message.includes('changed from controlled to uncontrolled for "visible"'),
+      ),
+    ).toHaveLength(1);
+  });
+
+  it("warns once when a controlled field has no matching callback", () => {
+    const view = render(
+      <DevToolbar instanceId="missing-callback" visible={false} position="top" extensions={[]}>
+        <div />
+      </DevToolbar>,
+    );
+    view.rerender(
+      <DevToolbar instanceId="missing-callback" visible={false} position="top" extensions={[]}>
+        <div />
+      </DevToolbar>,
+    );
+
+    const messages = warn.mock.calls.map((call) => String(call[0]));
+    expect(
+      messages.filter((message) => message.includes('controlled "visible" needs')).length,
+    ).toBe(1);
+    expect(
+      messages.filter((message) => message.includes('controlled "position" needs')).length,
+    ).toBe(1);
+  });
+
+  it("does not call change handlers on mount, reports store changes once, and catches throws", () => {
+    const onVisibleChange = vi.fn();
+    const onPositionChange = vi.fn();
+    const onPanelChange = vi.fn();
+    const Controls = () => {
+      const { setPosition } = useDevToolbar();
+      return (
+        <button type="button" onClick={() => setPosition("top")}>
+          move
+        </button>
+      );
+    };
+
+    const callbacksView = render(
+      <DevToolbar
+        instanceId="callbacks"
+        onVisibleChange={onVisibleChange}
+        onPositionChange={onPositionChange}
+        onPanelChange={onPanelChange}
+        extensions={[panelExtension("panel")]}
+      >
+        <Controls />
+      </DevToolbar>,
+    );
+
+    expect(onVisibleChange).not.toHaveBeenCalled();
+    expect(onPositionChange).not.toHaveBeenCalled();
+    expect(onPanelChange).not.toHaveBeenCalled();
+
+    fireToggleShortcut();
+    fireToggleShortcut();
+    fireEvent.click(screen.getByRole("button", { name: "move" }));
+    fireEvent.click(screen.getByRole("button", { name: "panel" }));
+    fireEvent.click(screen.getByRole("button", { name: "panel" }));
+
+    expect(onVisibleChange.mock.calls.map(([value]) => value)).toEqual([false, true]);
+    expect(onPositionChange).toHaveBeenCalledTimes(1);
+    expect(onPositionChange).toHaveBeenCalledWith("top");
+    expect(onPanelChange.mock.calls.map(([value]) => value)).toEqual(["panel", null]);
+    callbacksView.unmount();
+
+    const handlerError = new Error("callback exploded");
+    const throwing = vi.fn(() => {
+      throw handlerError;
+    });
+    const throwingView = render(
+      <DevToolbar instanceId="throwing-callback" onVisibleChange={throwing} extensions={[]}>
+        <div />
+      </DevToolbar>,
+    );
+
+    expect(() => fireToggleShortcut()).not.toThrow();
+    expect(error).toHaveBeenCalledWith(
+      "[dev-toolbar] onVisibleChange handler threw.",
+      handlerError,
+    );
+    throwingView.unmount();
+  });
 });
 
 describe("toggle shortcut", () => {
@@ -654,6 +900,44 @@ describe("toggle shortcut", () => {
 });
 
 describe("lifecycle", () => {
+  it("reports controlled visibility to extension runtimes", () => {
+    const seen: boolean[] = [];
+    const visibility: boolean[] = [];
+    const start = vi.fn((api: ExtensionRuntimeApi) => {
+      seen.push(api.isVisible());
+      api.subscribeVisibility((visible) => visibility.push(visible));
+    });
+
+    const extensions = [{ id: "controlled", label: "Controlled", start }];
+    const view = render(
+      <DevToolbar
+        instanceId="controlled-runtime"
+        visible={false}
+        onVisibleChange={() => {}}
+        extensions={extensions}
+      >
+        <div />
+      </DevToolbar>,
+    );
+
+    expect(seen).toEqual([false]);
+    expect(visibility).toEqual([]);
+
+    view.rerender(
+      <DevToolbar
+        instanceId="controlled-runtime"
+        visible
+        onVisibleChange={() => {}}
+        extensions={extensions}
+      >
+        <div />
+      </DevToolbar>,
+    );
+
+    expect(seen).toEqual([false]);
+    expect(visibility).toEqual([true]);
+  });
+
   it("starts each extension once with a signal and reports visibility", () => {
     const seen: ExtensionRuntimeApi[] = [];
     const visibility: boolean[] = [];

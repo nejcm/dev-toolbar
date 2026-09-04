@@ -152,4 +152,51 @@ describe("hydration with persisted preferences", () => {
     expect(container.querySelector('[data-testid="consumer"]')!.textContent).toBe("top/500");
     expect(error!.mock.calls.map((call) => String(call[0]))).toEqual([]);
   });
+
+  it("keeps controlled values on the server and the first client render", () => {
+    const seen: string[] = [];
+    const ControlledConsumer = (): ReactNode => {
+      const toolbar = useDevToolbar();
+      const text = `${toolbar.visible}/${toolbar.position}`;
+      seen.push(text);
+      return <p data-testid="controlled-consumer">{text}</p>;
+    };
+    const tree = (storage: ReturnType<typeof createMemoryStorage>) => (
+      <DevToolbar
+        instanceId="controlled-hydration"
+        storage={storage}
+        visible={false}
+        position="top"
+        onVisibleChange={() => {}}
+        onPositionChange={() => {}}
+      >
+        <ControlledConsumer />
+      </DevToolbar>
+    );
+
+    const html = renderToString(tree(createMemoryStorage()));
+    expect(html).toContain("false/top");
+
+    const container = document.createElement("div");
+    container.innerHTML = html;
+    document.body.append(container);
+    error = vi.spyOn(console, "error").mockImplementation(() => {});
+    let root: ReturnType<typeof hydrateRoot>;
+    act(() => {
+      root = hydrateRoot(
+        container,
+        tree(
+          createMemoryStorage({
+            "dtb:v1:controlled-hydration:visible": "true",
+            "dtb:v1:controlled-hydration:position": '"bottom"',
+          }),
+        ),
+      );
+    });
+    unmount = () => root.unmount();
+
+    expect(seen[0]).toBe("false/top");
+    expect(seen.at(-1)).toBe("false/top");
+    expect(error!.mock.calls.map((call) => String(call[0]))).toEqual([]);
+  });
 });
