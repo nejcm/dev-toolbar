@@ -3,6 +3,7 @@
   "entry": [
     "src/index.ts",
     "src/runtime/index.ts",
+    "src/kit/index.ts",
     "src/ext/*/index.tsx",
     "src/testing/index.ts",
     "src/**/*.test.{ts,tsx}",

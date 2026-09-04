@@ -2,7 +2,7 @@ import { useId, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { Sparkline } from "./Sparkline";
 import { writeClipboardText } from "../../runtime";
-import { useExtensionSurface } from "../shared/hooks";
+import { useExtensionSurface } from "@nejcm/dev-toolbar/kit";
 import { ensureMetricsStyles } from "./css";
 import { formatBytes, formatMs, shortenUrl } from "./format";
 import type { MetricsRuntime } from "./runtime";

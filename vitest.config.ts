@@ -10,6 +10,10 @@ export default defineConfig({
     // separately, through Node's own resolver, in testing/__tests__/exports.
     alias: [
       {
+        find: /^@nejcm\/dev-toolbar\/kit$/,
+        replacement: resolve("./src/kit/index.ts"),
+      },
+      {
         find: /^@nejcm\/dev-toolbar\/testing$/,
         replacement: resolve("./src/testing/index.ts"),
       },

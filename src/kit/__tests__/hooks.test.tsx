@@ -1,11 +1,6 @@
-/**
- * The shared surface hook, on its own. The seven extensions exercise it in
- * place; this pins the behaviour they all rely on — a live snapshot, one
- * stylesheet injection, and no listener left behind.
- */
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, renderHook } from "@testing-library/react";
-import { createThrottledStore } from "../../../runtime";
+import { createThrottledStore } from "../../runtime";
 import { useExtensionSurface } from "../hooks";
 
 afterEach(() => {
@@ -44,8 +39,6 @@ describe("useExtensionSurface", () => {
       throttled.flush();
     });
 
-    // A render, a re-render and a publish: the effect's deps never changed, so
-    // the sheet is ensured exactly once.
     expect(ensureStyles).toHaveBeenCalledTimes(1);
   });
 

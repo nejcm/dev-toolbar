@@ -1,7 +1,7 @@
 import { useState } from "react";
 import type { ReactNode } from "react";
 import { writeClipboardText } from "../../runtime";
-import { useExtensionSurface } from "../shared/hooks";
+import { useExtensionSurface } from "@nejcm/dev-toolbar/kit";
 import { ensureEnvironmentStyles } from "./css";
 import { GROUP_LABELS } from "./types";
 import type { EnvironmentFieldView, EnvironmentGroup, EnvironmentSnapshot } from "./types";

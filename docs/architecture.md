@@ -744,17 +744,16 @@ following the same file convention: `index.tsx` (the factory), `runtime.ts` (non
 logic), `ui.tsx`, `types.ts`, `css.ts`, `__tests__/`. A new extension is a new
 published subpath and must be added **explicitly** to both the `exports` map in
 `package.json` and the `entry` / `dts.entry` maps in `tsup.config.ts` — never as a
-wildcard. An entry missing from either is silently unpublishable or untyped. The one
-thing under `src/ext/` that is not a subpath is shared React glue (`useExtensionSurface`
-in `src/ext/shared/hooks.ts`), which lives outside the per-extension file layout. The
-CJS build does not code-split, so it is inlined into every `dist/ext/*.cjs` that uses
-it — seven of the eight, all but `/ext/agent`, which renders almost nothing and needs
-none of it; the ESM build emits it as one shared chunk. Seven copies is why it is held
-to the extensions' rules and one more: types only from core, values only from `src/runtime`, nothing from
-a sibling `ext/<name>/`, no `[dev-toolbar/ext/…]` marker (the dist scan reads markers
-as proof one bundle carries no other's code), and no module-level state, or each bundle
-would own a different copy of it. The "shared extension glue" block in
-`src/core/__tests__/boundary.test.ts` fails on the first four.
+wildcard. An entry missing from either is silently unpublishable or untyped. Shared
+extension vocabulary and glue, including `useExtensionSurface`, lives in the published
+`@nejcm/dev-toolbar/kit` subpath. First-party extensions import that package specifier,
+which stays external in their CJS bundles and resolves to one kit instance; ESM keeps
+the same package boundary. The kit follows the extensions' rules and one more: types
+only from core, values only from `src/runtime`, nothing from a sibling `ext/<name>/`, no
+`[dev-toolbar/ext/…]` marker (the dist scan reads markers as proof one bundle carries no
+other's code), and no module-level state that would couple otherwise independent
+extensions. The "extension kit (source)" block in
+`src/core/__tests__/boundary.test.ts` enforces those rules.
 
 Testing it: [`@nejcm/dev-toolbar/testing`](./testing.md) is the whole surface —
 `renderWithToolbar` / `mountToolbar`, `makeExtension`, `makeCommand`,

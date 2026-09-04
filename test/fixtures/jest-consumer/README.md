@@ -50,7 +50,7 @@ dynamic-import-only load that broke every Jest consumer even with it installed.
 | File | Asserts |
 | --- | --- |
 | `render.test.js` | The DOM-free helpers work; `renderWithToolbar()` renders **with no `setTestingLibrary()` call**; and Testing Library's `cleanup()`, called through the *test file's own* `require`, unmounts what the toolbar rendered — proving one shared registry copy rather than two instances. |
-| `shared-instance.test.js` | The main entry and `./testing` resolve to **one** core: their `createMemoryStorage` is identical, the main entry's `useDevToolbar()` works inside `renderWithToolbar()`, and `<DevToolbarInset>` reads the height variable the rendered toolbar publishes. `dist/testing.cjs` used to inline its own copy of core — CJS has no code splitting — so all three failed. Invisible to vitest, which aliases both specifiers to `src/`. |
+| `shared-instance.test.js` | The main entry and `./testing` resolve to **one** core, and extensions resolve the consumer's `./kit` instance. It checks function identity, the main entry's `useDevToolbar()` inside `renderWithToolbar()`, `<DevToolbarInset>` layout, and an extension call through a spied kit export. CJS has no code splitting, so relative imports silently create duplicate module instances. Invisible to vitest, which aliases package specifiers to `src/`. |
 | `missing-rtl.test.js` | With Testing Library mocked unresolvable: the subpath still imports and the non-DOM helpers still work, and `renderWithToolbar()` throws a message naming the `require(...)` remedy and the `setupFilesAfterEnv` note — not the `await import(...)` form, which is the one thing that cannot work here. |
 
 ## Running it

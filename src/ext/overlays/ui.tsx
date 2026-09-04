@@ -1,6 +1,6 @@
 import { useLayoutEffect } from "react";
 import type { CSSProperties, ReactNode } from "react";
-import { useExtensionSurface } from "../shared/hooks";
+import { useExtensionSurface } from "@nejcm/dev-toolbar/kit";
 import { ensureOverlaysStyles } from "./css";
 import { OVERLAY_IDS, OVERLAY_META } from "./types";
 import type { FocusItem, GridSettings, HoverTarget, RectLike } from "./types";

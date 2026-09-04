@@ -10,6 +10,7 @@
  * clipboard read the same redacted snapshot, and the raw bag is never stored.
  */
 import { createThrottledStore, redact, redactUrl } from "../../runtime";
+import { createPoller } from "@nejcm/dev-toolbar/kit";
 import type { RedactOptions, ThrottledStore } from "../../runtime";
 import type { ExtensionRuntimeApi, ToolbarStorage } from "../../core/contract";
 import { FIELD_SPECS, normaliseKind, severityForKind } from "./types";
@@ -279,10 +280,12 @@ function hasAnything(context: EnvironmentContext): boolean {
   return false;
 }
 
+const DEFAULT_POLL_MS = 4000;
+
 export function createEnvironmentRuntime(
   options: EnvironmentRuntimeOptions = {},
 ): EnvironmentRuntime {
-  const { context, pollMs = 4000, fields, detect = true } = options;
+  const { context, pollMs = DEFAULT_POLL_MS, fields, detect = true } = options;
   const allowed = fields === undefined ? null : new Set<string>(fields);
 
   let revision = 0;
@@ -474,10 +477,14 @@ export function createEnvironmentRuntime(
       // most: SPA routers navigate via `history.pushState`, which fires no
       // listenable event, so without this timer the Route row could be wrong
       // indefinitely.
-      const timer =
+      const stopPolling =
         typeof context === "function" || detect
-          ? setInterval(publish, Math.max(250, pollMs))
-          : null;
+          ? createPoller(publish, {
+              intervalMs: pollMs,
+              fallbackMs: DEFAULT_POLL_MS,
+              signal: api.signal,
+            })
+          : () => {};
 
       const onChange = () => publish();
       const target = typeof window === "undefined" ? null : window;
@@ -494,7 +501,7 @@ export function createEnvironmentRuntime(
       // Store belongs to the runtime, not one start/stop cycle: destroying it on
       // React StrictMode's first cleanup would drop the subscription and freeze the panel.
       const dispose = () => {
-        if (timer !== null) clearInterval(timer);
+        stopPolling();
         target?.removeEventListener("online", onChange);
         target?.removeEventListener("offline", onChange);
         target?.removeEventListener("resize", onChange);

@@ -23,7 +23,7 @@ import { writeClipboardTextOrThrow } from "../../runtime";
 import { createMetricsRuntime } from "./runtime";
 import { MetricsChips, MetricsPanel } from "./ui";
 import { METRIC_IDS } from "./types";
-import { resolveStyleNonce } from "../shared/nonce";
+import { resolveStyleNonce } from "@nejcm/dev-toolbar/kit";
 import type { Collector, MetricId } from "./types";
 import type { MemoryCollectorOptions } from "./collectors/memory";
 import type { DelayCollectorOptions } from "./collectors/delay";

@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import { writeClipboardText } from "../../runtime";
-import { useExtensionSurface } from "../shared/hooks";
+import { useExtensionSurface } from "@nejcm/dev-toolbar/kit";
 import { ensureFlagsStyles } from "./css";
 import { formatValue, matchesQuery, parseValue, severityFor } from "./types";
 import type { FlagValue, FlagView } from "./types";

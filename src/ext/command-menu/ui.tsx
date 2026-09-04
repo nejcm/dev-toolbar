@@ -1,6 +1,6 @@
 import { useEffect, useId, useRef } from "react";
 import type { KeyboardEvent as ReactKeyboardEvent, ReactNode } from "react";
-import { useExtensionSurface } from "../shared/hooks";
+import { useExtensionSurface } from "@nejcm/dev-toolbar/kit";
 import { ensureCommandMenuStyles } from "./css";
 import { describeHotkey, ariaKeyshortcuts } from "./runtime";
 import type { CommandMenuRuntime, CommandMenuSnapshot } from "./runtime";

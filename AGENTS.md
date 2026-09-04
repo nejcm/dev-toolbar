@@ -16,10 +16,10 @@ The contract an extension is written against is the real public API.
 
 | Folder | Layer | Stack | Talks to |
 | --- | --- | --- | --- |
-| `src/core/` | The shell: portal, bar, overflow, panel host, overlay host, storage, styles, aggregations | React 18/19, `useSyncExternalStore`, no deps | Nothing. **Never imports `runtime/` or `ext/`.** |
+| `src/core/` | The shell: portal, bar, overflow, panel host, overlay host, storage, styles, aggregations | React 18/19, `useSyncExternalStore`, no deps | Nothing. **Never imports `runtime/`, `kit/` or `ext/`.** |
 | `src/runtime/` | Opt-in primitives for extensions that measure: event bus, ring buffers, throttled store, `redact()`, style injection | Framework-free TS | Nothing in this package |
-| `src/ext/<name>/` | First-party extensions, one directory each | React + `src/runtime`, **types only** from core | `src/runtime`, core's *types* |
-| `src/ext/shared/` | React glue the first-party extensions share (`useExtensionSurface`); internal, not a published subpath | React + `src/runtime`, **types only** from core | `src/runtime`, core's *types*. **Never another `ext/<name>/`.** |
+| `src/kit/` | Shared vocabulary, helpers and controls for extension authors | React + `src/runtime`, **types only** from core | `src/runtime`, core's *types* |
+| `src/ext/<name>/` | First-party extensions, one directory each | React + `src/runtime`, **types only** from core | `src/runtime`, `src/kit`, core's *types* |
 | `src/testing/` | `renderWithToolbar`, `makeExtension`, `mockBus`, fake layout | React + optional `@testing-library/react` peer | core's *types* relatively, core's *values* through `@nejcm/dev-toolbar` |
 | `examples/playground/` | Vite app consuming the built package via `file:../..` | Vite, React | `dist/`, as a real consumer does |
 | `test/fixtures/jest-consumer/` | A real Jest 30 + CommonJS consumer of `dist/` | Jest, bun | `dist/`, as a CommonJS consumer does |
@@ -29,10 +29,10 @@ The contract an extension is written against is the real public API.
 
 Each extension directory follows the same convention: `index.tsx` (the factory),
 `runtime.ts` (non-React logic), `ui.tsx`, `types.ts`, `css.ts`, `__tests__/`.
-Shared React glue (`useExtensionSurface` in `src/ext/shared/hooks.ts`) lives outside
-that layout and is not a subpath: CJS inlines it into every `dist/ext/*.cjs`, ESM
-emits one shared chunk. Keep it stateless and marker-free;
-`src/core/__tests__/boundary.test.ts` guards the import rules.
+Shared extension glue lives in the published `src/kit/` subpath. First-party
+extensions value-import it through `@nejcm/dev-toolbar/kit` so CJS consumers get one
+instance. Keep it stateless and marker-free; `src/core/__tests__/boundary.test.ts`
+guards the import rules.
 
 ## Checks
 
@@ -87,7 +87,7 @@ that ship nothing.
   [its README](./test/fixtures/jest-consumer/README.md#running-it).
 - **Zero runtime dependencies is a rule, not an accident.** New `dependencies` need a
   reason that survives the question "why can't the consumer pass this in?".
-- **Core never imports `runtime/` or `ext/`.** Extensions import only *types* from
+- **Core never imports `runtime/`, `kit/` or `ext/`.** Extensions import only *types* from
   core — a value import is not guaranteed by the bundler to resolve to the same module
   instance as the host's copy. This is why `ExtensionRuntimeApi` carries
   `getCommands()`, `runCommand()`, `invokeCommand()` and `getDiagnostics()`.

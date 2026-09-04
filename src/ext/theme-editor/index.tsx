@@ -47,7 +47,7 @@ import { createThemeEditorRuntime } from "./runtime";
 import { writeClipboardTextOrThrow } from "../../runtime";
 import { describeValueRefusal } from "./types";
 import { ThemeChip, ThemePanel } from "./ui";
-import { resolveStyleNonce } from "../shared/nonce";
+import { resolveStyleNonce } from "@nejcm/dev-toolbar/kit";
 import type { ThemeEditorRuntimeOptions } from "./runtime";
 import type {
   DevToolbarExtension,

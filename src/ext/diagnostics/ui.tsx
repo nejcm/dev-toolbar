@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
-import { useExtensionSurface } from "../shared/hooks";
+import { useExtensionSurface } from "@nejcm/dev-toolbar/kit";
 import { ensureDiagnosticsStyles } from "./css";
 import { SNAPSHOT_FORMATS } from "./types";
 import type { SnapshotFormat } from "./types";

@@ -40,7 +40,7 @@
 import { writeClipboardTextOrThrow } from "../../runtime";
 import { createEnvironmentRuntime } from "./runtime";
 import { EnvironmentChip, EnvironmentPanel } from "./ui";
-import { resolveStyleNonce } from "../shared/nonce";
+import { resolveStyleNonce } from "@nejcm/dev-toolbar/kit";
 import type { EnvironmentContextInput, EnvironmentRuntimeOptions } from "./runtime";
 import type { DevToolbarExtension, ExtensionRuntimeApi, ToolbarAlign } from "../../core/contract";
 

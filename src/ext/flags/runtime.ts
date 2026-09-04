@@ -20,6 +20,7 @@
  * raw flag value skips it.
  */
 import { createThrottledStore, redact } from "../../runtime";
+import { parseRecord } from "@nejcm/dev-toolbar/kit";
 import type { RedactOptions, ThrottledStore } from "../../runtime";
 import type { ExtensionRuntimeApi, ToolbarStorage } from "../../core/contract";
 import { formatValue, inferType } from "./types";
@@ -200,22 +201,7 @@ export function vetOverrides(
 
 /** Parses a persisted override map, dropping anything that is not a flag value. */
 export function parseOverrides(raw: string | null): Record<string, FlagValue> {
-  if (raw === null) return {};
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(raw);
-  } catch {
-    return {};
-  }
-  if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
-    return {};
-  }
-  // Null prototype so a persisted `__proto__` key round-trips as data.
-  const output: Record<string, FlagValue> = Object.create(null) as Record<string, FlagValue>;
-  for (const [key, value] of Object.entries(parsed as Record<string, unknown>)) {
-    if (isFlagValue(value)) output[key] = value;
-  }
-  return output;
+  return parseRecord(raw, isFlagValue);
 }
 
 /** A null-prototype copy. Every write to the override map goes through this. */

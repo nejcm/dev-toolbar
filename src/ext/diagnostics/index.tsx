@@ -49,7 +49,7 @@
  */
 import { createDiagnosticsRuntime } from "./runtime";
 import { DiagnosticsChip, DiagnosticsPanel } from "./ui";
-import { resolveStyleNonce } from "../shared/nonce";
+import { resolveStyleNonce } from "@nejcm/dev-toolbar/kit";
 import type { DiagnosticsRuntimeOptions } from "./runtime";
 import type {
   DevToolbarExtension,
