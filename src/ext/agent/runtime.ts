@@ -68,7 +68,7 @@ function define(target: Record<string, unknown>, key: string, value: unknown): v
 }
 
 /**
- * Mirrors core's `instanceHeightVariable` (`src/core/DevToolbar.tsx`).
+ * Mirrors core's `instanceHeightVariable` (`src/core/useHeightVariables.ts`).
  *
  * Keep this as a copy: extensions may import only *types* from core, and a
  * value import is not guaranteed to resolve to the host's copy (AGENTS.md).

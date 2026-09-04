@@ -8,7 +8,7 @@
  * that shape paints a chip anyway, since `Bar.tsx` falls back to a `trigger`
  * span for any extension with neither. A null compact slot still creates the
  * item and its `:not(:first-child)::before` divider (`styles.css`), and
- * `hidden` stops `start()` entirely (`DevToolbar.tsx`), taking the global with
+ * `hidden` stops `start()` entirely (`useExtensionLifecycle.ts`), taking the global with
  * it. `priority: -1` makes the chip collapse first instead.
  *
  * `allowRun` defaults off because the global is reachable by any page script.
