@@ -42,7 +42,10 @@ updates:
         patterns: ["*"]
         update-types: [minor, patch]
 
-  - package-ecosystem: npm
+  # `bun`, matching the root entry above: the fixture installs with bun and is
+  # locked by `bun.lock`. It was `npm` while it carried a `package-lock.json`;
+  # left that way, this entry would find no manifest it understands.
+  - package-ecosystem: bun
     directory: "/test/fixtures/jest-consumer"
     schedule:
       interval: weekly

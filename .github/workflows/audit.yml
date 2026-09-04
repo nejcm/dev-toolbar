@@ -1,0 +1,102 @@
+name: Audit
+
+# `bun audit` used to be the last step of `ci.yml`, where it cost ~4m20 of every
+# pull request and gated nothing (`continue-on-error: true` swallowed its exit
+# code). It is on a schedule instead because its answer does not depend on the
+# diff: it compares the lockfile against GitHub's advisory database, so two
+# commits a day apart get different results from identical code, and a commit
+# from last week can become vulnerable without anyone pushing anything. A daily
+# run catches that; a per-PR run cannot.
+#
+# The cost is real: `bun audit` in bun 1.4.0 takes minutes even on a warm local
+# machine, so `timeout-minutes` below is a guard, not a formality.
+on:
+  schedule:
+    # 06:00 UTC daily. Cron on GitHub is best-effort and skews under load; this
+    # is a report, so a late run is fine.
+    - cron: "0 6 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: true
+
+jobs:
+  audit:
+    name: audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # For bun itself and the lockfile-shaped install. The advisory lookup
+      # reads `bun.lock`, not `node_modules`, but `bun audit` still wants a
+      # resolved tree.
+      - name: Set up job
+        uses: ./.github/actions/setup-job
+
+      # One run. `bun audit` takes minutes (4m20 measured in CI, worse on a
+      # warm local machine), so invoking it again for a machine-readable copy
+      # would double the slowest thing here. Its text output is parsed instead,
+      # and the shape below is the one this repo has actually observed:
+      #
+      #     esbuild@0.27.7
+      #       tsup > bundle-require > esbuild
+      #       low: esbuild allows arbitrary file read ... - https://...
+      #     1 vulnerability (1 low)
+      #
+      # `timeout-minutes` on the step, not just the job: a registry stall should
+      # fail this step rather than sit until the job's own limit.
+      - name: Audit dependencies
+        id: audit
+        timeout-minutes: 12
+        run: |
+          set +e
+          bun audit > audit.txt 2>&1
+          code=$?
+          set -e
+
+          # Every severity label bun printed, and the blocking subset.
+          found=$(grep -cE '^[[:space:]]+(low|moderate|high|critical):' audit.txt || true)
+          blocking=$(grep -cE '^[[:space:]]+(high|critical):' audit.txt || true)
+          echo "blocking=${blocking}" >> "$GITHUB_OUTPUT"
+
+          # A non-zero exit means bun found something. If it did and no severity
+          # line matched, the gate below would wave it through — bun changed its
+          # output and this workflow is now blind. Say so rather than pass.
+          if [ "$code" -ne 0 ] && [ "$found" -eq 0 ]; then
+            echo "::error::bun audit reported findings (exit ${code}) but no severity line was recognised; the gate in this workflow is stale. Read the job summary."
+            exit 1
+          fi
+
+      # Written before the gate below, so the findings land on the run that fails.
+      - name: Report
+        if: ${{ !cancelled() }}
+        run: |
+          {
+            echo "## Dependency audit"
+            echo
+            echo '```'
+            cat audit.txt 2>/dev/null || echo "no output captured"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # Only high and critical fail. Everything below that is a report, which is
+      # what `ci.yml`'s old `continue-on-error` was really expressing — today's
+      # baseline is one `low` (esbuild's Windows-only dev-server file read,
+      # reached through tsup and vitest, never shipped in `dist/`). Failing on
+      # that daily would train everyone to ignore this workflow.
+      # `success() &&` is load-bearing: any `if:` at all replaces the implicit
+      # success check, so without it a failed audit step would fall through to
+      # here and report an empty count.
+      - name: Fail on high or critical
+        if: ${{ success() && steps.audit.outputs.blocking != '0' }}
+        run: |
+          echo "::error::${BLOCKING} high/critical advisory(ies); see the job summary"
+          exit 1
+        env:
+          BLOCKING: ${{ steps.audit.outputs.blocking }}

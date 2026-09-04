@@ -505,7 +505,7 @@ release after it gets provenance automatically through trusted publishing.
 
    bun run verify                         # format, typecheck, lint, build, test,
                                           #   package shape
-   npm ci --prefix test/fixtures/jest-consumer
+   bun install --frozen-lockfile --cwd test/fixtures/jest-consumer
    bun run test:jest-consumer             # the CommonJS packaging check
 
    npm whoami                             # `npm login` if this fails; it opens

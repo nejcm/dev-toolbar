@@ -95,24 +95,38 @@ jobs:
       - name: Set up job
         uses: ./.github/actions/setup-job
 
-      # `verify` runs format:check, typecheck, lint, knip, build, test,
-      # check:package in order; the build here is what the size report below
-      # measures. `format:check` leads because it's cheap and is the only
-      # enforcement for commits that skip the `pre-commit` hook (web edits,
-      # `--no-verify`, Dependabot's YAML bumps, etc). Coverage is kept separate
-      # since instrumentation slows the suite and a local `bun run verify`
-      # shouldn't pay for it.
-      - name: Verify (format, typecheck, lint, unused code, build, test, package shape)
-        run: bun run verify
+      # `verify:static` is `verify` without the `vitest run` at the end:
+      # format:check, typecheck, lint, knip, build, check:package. The Coverage
+      # step below runs the same 2,706 tests with instrumentation on, so a plain
+      # `bun run verify` here paid for the suite twice — ~90s of the job spent
+      # re-proving what the gating run proves anyway. Contributors still get the
+      # whole thing from `bun run verify`; only CI splits it.
+      #
+      # `format:check` leads because it's cheap and is the only enforcement for
+      # commits that skip the `pre-commit` hook (web edits, `--no-verify`,
+      # Dependabot's YAML bumps, etc). The build here is what both the
+      # jest-consumer fixture and the size report below read.
+      - name: Verify (format, typecheck, lint, unused code, build, package shape)
+        run: bun run verify:static
 
       # This fixture must stay outside release.yml's only credentialed job.
       # `--ignore-scripts` is not sufficient on its own: code Jest loads can
       # still mint the OIDC token, so the whole test must leave that job.
+      #
+      # bun, not `npm ci`. What the fixture exercises is Jest's CommonJS
+      # resolver against the real `exports` map, and `sync-package.mjs` places
+      # the package by hand — no installer ever resolves `@nejcm/dev-toolbar`
+      # here, so npm was contributing nothing but ~2m30 per run: it cannot read
+      # the bun cache the `Set up job` step above has already warmed.
       - name: Install the jest-consumer fixture
-        run: npm ci --prefix test/fixtures/jest-consumer --ignore-scripts
+        run: bun install --frozen-lockfile --ignore-scripts
+        working-directory: test/fixtures/jest-consumer
 
+      # Not the `test:jest-consumer` script, which builds first for the sake of
+      # someone running it locally: `verify:static` above already produced the
+      # `dist/` this reads, and tsup is ~16s.
       - name: Verify the packaged CommonJS consumer
-        run: bun run test:jest-consumer
+        run: bun run --cwd test/fixtures/jest-consumer test
 
       # `examples/` is outside every gate in `verify` — its own tsconfig, its
       # own dependencies, excluded from vitest, oxlint and knip. That was fine
@@ -121,7 +135,7 @@ jobs:
       # half of `/ext/agent`'s reporter, which the README tells consumers to
       # copy. `node --test` uses Node's own type stripping — no build, no test
       # dependency — and covers the malformed-body cases that once took the
-      # dev server down. Needs the `dist/` `verify` just built, since the
+      # dev server down. Needs the `dist/` `verify:static` just built, since the
       # playground links the package with `file:../..`.
       # No install: the suite imports only `node:*` and the plugin, whose one
       # `vite` import is `import type` and is erased by the type stripping.
@@ -132,8 +146,8 @@ jobs:
 
       # This one does need the link, so it follows the install. Not
       # `--frozen-lockfile`: the `file:../..` dependency is re-linked against
-      # the `dist/` `verify` just built, and bun declines to restore that one
-      # from cache.
+      # the `dist/` `verify:static` just built, and bun declines to restore
+      # that one from cache.
       - name: Install the playground
         run: bun install
         working-directory: examples/playground
@@ -143,23 +157,25 @@ jobs:
         working-directory: examples/playground
 
       # `!cancelled()` rather than `always()`: both reporting steps below are
-      # useful on a failed `verify` but shouldn't block a cancellation.
+      # useful on a failed `verify:static` but shouldn't block a cancellation.
       #
       # The package's pitch is low overhead across 11 entry points, so this is
-      # the number a reviewer most wants. Reads the `dist/` `verify` just built.
+      # the number a reviewer most wants. Reads the `dist/` `verify:static` just
+      # built.
       - name: Report bundle size
         if: ${{ !cancelled() }}
         uses: ./.github/actions/report-bundle-size
 
-      # Report-only: swallows its own exit code (see the action). `verify`
-      # above is the real gate; this re-runs knip purely for the report, even
-      # when `verify` failed.
+      # Report-only: swallows its own exit code (see the action). The `knip`
+      # inside `verify:static` above is the real gate; this re-runs it purely
+      # for the report, even when that step failed.
       - name: Knip
         if: ${{ !cancelled() }}
         uses: ./.github/actions/knip-check
 
-      # Instrumented re-run; the floors in `vitest.config.ts` make this a real
-      # gate distinct from `verify` above.
+      # The only run of the suite in this job, now that `verify:static` above
+      # stops short of `vitest run`. The floors in `vitest.config.ts` gate on
+      # top of the 2,706 tests themselves.
       - name: Coverage
         run: bun run test:coverage
 
@@ -196,10 +212,3 @@ jobs:
           path: coverage/lcov.info
           retention-days: 14
           if-no-files-found: warn
-
-      # Uncached and after verify: results depend on the advisory database, not
-      # repo contents. `continue-on-error` while the baseline is noisy; tighten
-      # once quiet.
-      - name: Audit dependencies
-        run: bun audit
-        continue-on-error: true

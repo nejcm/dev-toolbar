@@ -22,7 +22,7 @@ The contract an extension is written against is the real public API.
 | `src/ext/shared/` | React glue the first-party extensions share (`useExtensionSurface`); internal, not a published subpath | React + `src/runtime`, **types only** from core | `src/runtime`, core's *types*. **Never another `ext/<name>/`.** |
 | `src/testing/` | `renderWithToolbar`, `makeExtension`, `mockBus`, fake layout | React + optional `@testing-library/react` peer | core's *types* relatively, core's *values* through `@nejcm/dev-toolbar` |
 | `examples/playground/` | Vite app consuming the built package via `file:../..` | Vite, React | `dist/`, as a real consumer does |
-| `test/fixtures/jest-consumer/` | A real Jest 30 + CommonJS consumer of `dist/` | Jest, npm | `dist/`, as a CommonJS consumer does |
+| `test/fixtures/jest-consumer/` | A real Jest 30 + CommonJS consumer of `dist/` | Jest, bun | `dist/`, as a CommonJS consumer does |
 | `docs/` | The reference: one page per entry point and per first-party extension, plus `architecture.md` and the ADRs | Markdown | — |
 | `scripts/` | Repo tooling with no home in `src/`: currently the per-entrypoint size report | Plain ESM `.mjs`, no deps | `dist/`, `package.json` `exports` |
 | `.github/actions/` | Composite actions the workflows share: `setup-job`, `report-bundle-size`, `knip-check` | GitHub Actions | `.github/workflows/` |
@@ -38,8 +38,10 @@ emits one shared chunk. Keep it stateless and marker-free;
 
 ```sh
 bun install                  # also installs the git hooks (simple-git-hooks)
-bun run verify               # format:check && typecheck && lint && knip && build &&
-                             #   test && check:package — the CI gate
+bun run verify               # verify:static && test — the one command that matters
+bun run verify:static        # format:check && typecheck && lint && knip && build &&
+                             #   check:package — everything but the suite; what CI runs,
+                             #   since test:coverage below re-runs the same tests
 bun run typecheck            # tsc --noEmit
 bun run lint                 # oxlint --max-warnings=0  (a ratchet, see below)
 bun run lint:fix             # oxlint --fix
@@ -62,15 +64,28 @@ invisible to the pre-`exports` `node10` algorithm, so consumers need
 unsupported.
 
 `bun run verify` is the one command that matters. If it passes locally it passes in
-CI; `.github/workflows/ci.yml` runs exactly it, then `test:coverage` as a second
-gate and `size` as an advisory job-summary report. CI re-runs `knip` after
-`verify` too, but only to write the readable report to the job summary — the
-gate is the `knip` inside `verify`, so unused code fails on your machine first.
+CI — but CI does not run it verbatim: `.github/workflows/ci.yml` runs `verify:static`
+and then `test:coverage`, which is `verify`'s `vitest run` with instrumentation and
+the floors on top. Running plain `verify` there paid for the same 2,706 tests twice.
+`size` is an advisory job-summary report. CI re-runs `knip` afterwards too, but only
+to write the readable report to the job summary — the gate is the `knip` inside
+`verify:static`, so unused code fails on your machine first.
+
+`bun audit` is **not** on the pull-request path. It lives in
+`.github/workflows/audit.yml`, daily and on demand: its answer depends on the
+advisory database rather than the diff, and it takes minutes. High and critical
+findings fail it; anything lower is a job-summary report.
 
 ## Conventions
 
-- **Bun, not npm.** The exception is `test/fixtures/jest-consumer`, which uses npm
-  internally on purpose — it exists to be a real npm/CommonJS consumer.
+- **Bun, not npm, for installing anything** — `test/fixtures/jest-consumer` included.
+  (Publishing is still `npm publish`; that is the registry client, not a package
+  manager choice.) The fixture used `npm ci` on the theory that it should be a real
+  npm consumer, but `sync-package.mjs` places the package into its `node_modules` by
+  hand: no installer ever resolves `@nejcm/dev-toolbar` there, so npm proved nothing
+  the fixture asserts and cost ~2m30 of every CI run by not being able to read the
+  bun cache. What it is a real consumer *of* — Jest 30, CommonJS, the published
+  `exports` map — is unchanged.
 - **Zero runtime dependencies is a rule, not an accident.** New `dependencies` need a
   reason that survives the question "why can't the consumer pass this in?".
 - **Core never imports `runtime/` or `ext/`.** Extensions import only *types* from
