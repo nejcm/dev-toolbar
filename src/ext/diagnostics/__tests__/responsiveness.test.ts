@@ -199,14 +199,180 @@ describe("createResponsivenessMonitor — measurement", () => {
     });
     monitor.start();
     control.emit("event", [
-      { startTime: 1, duration: 120, name: "pointerdown" },
-      { startTime: 2, duration: 400, name: "click" },
+      { startTime: 1, duration: 120, name: "pointerdown", interactionId: 1 },
+      { startTime: 2, duration: 400, name: "click", interactionId: 2 },
     ]);
     const events = monitor.report().interactions;
     expect(events.count).toBe(2);
     expect(events.slowCount).toBe(1);
     expect(events.worstDurationMs).toBe(400);
     expect(events.worstType).toBe("click");
+  });
+
+  it("counts one click as one interaction, not one per event entry", () => {
+    // The bug this grouping exists for: a single click emits pointerdown,
+    // pointerup, mousedown, mouseup and click. Counting entries reported that
+    // click as five interactions — and, at a 200 ms threshold, as five slow
+    // ones. Per the Event Timing spec only pointerdown, pointerup and click
+    // carry the interaction's id; mousedown and mouseup are given 0.
+    installObserver(["event"]);
+    const monitor = createResponsivenessMonitor({ windowMs: 1_000_000, slowInteractionMs: 200 });
+    // `start()` is what makes `support` "supported" — without it the report is
+    // all nulls by design. The entries then go in through the `ingest` seam.
+    monitor.start();
+    monitor.ingest("event", [
+      { startTime: 1, duration: 210, name: "pointerdown", interactionId: 7 },
+      { startTime: 2, duration: 240, name: "mousedown", interactionId: 0 },
+      { startTime: 3, duration: 260, name: "pointerup", interactionId: 7 },
+      { startTime: 4, duration: 250, name: "mouseup", interactionId: 0 },
+      { startTime: 5, duration: 300, name: "click", interactionId: 7 },
+    ]);
+    const events = monitor.report().interactions;
+
+    expect(events.count).toBe(1);
+    expect(events.slowCount).toBe(1);
+    // Nothing is lost: the raw entries are still reported.
+    expect(events.eventCount).toBe(5);
+    // INP's definition — the interaction's duration is its longest entry.
+    expect(events.worstDurationMs).toBe(300);
+    expect(events.worstType).toBe("click");
+    expect(events.note).toContain("interactionId");
+  });
+
+  it("excludes entries the spec gives interactionId 0, and says they are in eventCount", () => {
+    // The spec gives interactionId 0 to mousedown/mouseup, hover and move
+    // events, keypress, composition events and non-composing input — none of
+    // them is a user interaction. (keydown and keyup do get an id.)
+    const control = installObserver(["event"]);
+    const monitor = createResponsivenessMonitor({ windowMs: 1_000_000, slowInteractionMs: 200 });
+    monitor.start();
+    control.emit("event", [
+      { startTime: 1, duration: 300, name: "mouseover", interactionId: 0 },
+      { startTime: 2, duration: 120, name: "pointerover", interactionId: 0 },
+      { startTime: 3, duration: 400, name: "click", interactionId: 4 },
+    ]);
+    const events = monitor.report().interactions;
+
+    expect(events.count).toBe(1);
+    expect(events.slowCount).toBe(1);
+    expect(events.eventCount).toBe(3);
+    // The 300 ms hover must not be reported as the worst *interaction*.
+    expect(events.worstDurationMs).toBe(400);
+    expect(events.worstType).toBe("click");
+    expect(events.note).toContain("interactionId 0");
+  });
+
+  it("counts a zero-interaction window as zero interactions, not null", () => {
+    // Every entry is a hover: nothing to count, but the browser is observing,
+    // so this is a real 0 and must not be confused with "cannot tell".
+    const control = installObserver(["event"]);
+    const monitor = createResponsivenessMonitor({ windowMs: 1_000_000 });
+    monitor.start();
+    control.emit("event", [{ startTime: 1, duration: 300, name: "mouseover", interactionId: 0 }]);
+    const events = monitor.report().interactions;
+
+    expect(events.count).toBe(0);
+    expect(events.slowCount).toBe(0);
+    expect(events.eventCount).toBe(1);
+    expect(events.worstDurationMs).toBeNull();
+    expect(events.worstType).toBeNull();
+  });
+
+  it("falls back to one interaction per entry when the engine has no interactionId, and says so", () => {
+    const control = installObserver(["event"]);
+    const monitor = createResponsivenessMonitor({ windowMs: 1_000_000, slowInteractionMs: 200 });
+    monitor.start();
+    control.emit("event", [
+      { startTime: 1, duration: 210, name: "pointerdown" },
+      { startTime: 2, duration: 300, name: "click" },
+    ]);
+    const events = monitor.report().interactions;
+
+    expect(events.count).toBe(2);
+    expect(events.eventCount).toBe(2);
+    expect(events.slowCount).toBe(2);
+    expect(events.note).toContain("no interactionId");
+    expect(events.note).toContain("counted separately");
+  });
+
+  it("does not claim the engine lacks interactionId just because the window is empty", () => {
+    // The fallback note used to be derived from the samples in the window, and
+    // `[].some(...)` is false — so every snapshot taken before the first click
+    // on a Chromium-shaped engine asserted "this engine reports no
+    // interactionId" over 0 entries. Grouping is a property of the engine, not
+    // of what happened to be observed.
+    installObserver(["event"]);
+    const monitor = createResponsivenessMonitor({ windowMs: 1_000_000 });
+    monitor.start();
+    const events = monitor.report().interactions;
+
+    expect(events.count).toBe(0);
+    expect(events.eventCount).toBe(0);
+    expect(events.note).not.toContain("no interactionId");
+    expect(events.note).toContain("Counted by interactionId");
+    expect(events.note).toContain("0 raw event entries were reported");
+  });
+
+  it("keeps the no-interactionId verdict across reset, and re-asks it after stop", () => {
+    // The same page cannot grow an `interactionId` between two windows, so
+    // `reset()` — which only empties the rings — must not un-learn it. A
+    // `stop()`/`start()` cycle re-observes from scratch, so it may.
+    const control = installObserver(["event"]);
+    const monitor = createResponsivenessMonitor({ windowMs: 1_000_000 });
+    monitor.start();
+    control.emit("event", [{ startTime: 1, duration: 210, name: "click" }]);
+    expect(monitor.report().interactions.note).toContain("no interactionId");
+
+    monitor.reset();
+    expect(monitor.report().interactions.note).toContain("no interactionId");
+
+    monitor.stop();
+    monitor.start();
+    expect(monitor.report().interactions.note).not.toContain("no interactionId");
+  });
+
+  it("keeps the worst interaction when a burst of clicks exceeds the ring", () => {
+    // Grouping at report time over a ring of raw entries meant ~24 clicks
+    // (five entries each) evicted the worst interaction while it was still
+    // inside the window. Grouping at ingest makes one click cost one slot.
+    installObserver(["event"]);
+    const monitor = createResponsivenessMonitor({
+      windowMs: 1_000_000,
+      historySize: 120,
+      slowInteractionMs: 200,
+    });
+    monitor.start();
+    for (let click = 0; click < 30; click += 1) {
+      // The first click is the slow one, and 29 faster clicks follow it.
+      const worstOfClick = click === 0 ? 900 : 120;
+      const at = click * 10;
+      monitor.ingest("event", [
+        { startTime: at, duration: 40, name: "pointerdown", interactionId: click + 1 },
+        { startTime: at + 1, duration: 30, name: "mousedown", interactionId: 0 },
+        { startTime: at + 2, duration: 40, name: "pointerup", interactionId: click + 1 },
+        { startTime: at + 3, duration: 30, name: "mouseup", interactionId: 0 },
+        { startTime: at + 4, duration: worstOfClick, name: "click", interactionId: click + 1 },
+      ]);
+    }
+    const events = monitor.report().interactions;
+
+    expect(events.count).toBe(30);
+    expect(events.eventCount).toBe(150);
+    expect(events.slowCount).toBe(1);
+    // The early one is still the worst: 120 slots now hold 120 interactions.
+    expect(events.worstDurationMs).toBe(900);
+    expect(events.worstType).toBe("click");
+  });
+
+  it("still says unknown, never zero, when event timing cannot be observed", () => {
+    installObserver(["longtask"]);
+    const monitor = createResponsivenessMonitor();
+    monitor.start();
+    const events = monitor.report().interactions;
+
+    expect(events.count).toBeNull();
+    expect(events.slowCount).toBeNull();
+    expect(events.eventCount).toBeNull();
   });
 
   it("excludes layout shifts the browser attributed to recent input", () => {

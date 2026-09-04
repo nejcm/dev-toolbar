@@ -31,7 +31,7 @@ export const LONG_TASK_THRESHOLD_MS = 50;
 export interface ResponsivenessOptions {
   /** Rolling window every count is measured over, ms. Default `60000`. */
   windowMs?: number;
-  /** Samples retained per entry type. Default `120`. */
+  /** Samples retained per entry type. Default `120`. For `event`, non-zero ids share one slot. */
   historySize?: number;
   /** Long tasks listed in `recent`. Default `5`. */
   recentSize?: number;
@@ -62,6 +62,20 @@ interface TimedSample {
   value: number;
   label?: string;
   attribution?: string | null;
+  /**
+   * `PerformanceEventTiming.interactionId`: non-zero groups entries; `0` means no interaction;
+   * `undefined` means the engine does not report it.
+   *
+   * Per the Event Timing specification's *computing interactionId* algorithm, non-zero ids go to
+   * `keydown`/`keyup`, `pointerdown`/`pointerup`, `click`, `contextmenu`, and IME-composition
+   * `input`; `keydown`/`pointerdown` inherit the completing `keyup`/`pointerup` id. All
+   * other events get 0, including `mousedown`/`mouseup`, `mouseover`/`pointerover`/`pointermove`,
+   * `keypress`, `compositionstart`/`update`/`end`, non-composition `input`, and `pointercancel`,
+   * which leaves `pointerdown` at 0.
+   */
+  interactionId?: number;
+  /** Raw `event` entries folded into this sample; `1` for ungrouped samples and other rings. */
+  entries?: number;
 }
 
 /**
@@ -96,6 +110,7 @@ interface EntryLike {
   value?: unknown;
   hadRecentInput?: unknown;
   attribution?: unknown;
+  interactionId?: unknown;
 }
 
 const numberOr = (value: unknown, fallback: number): number =>
@@ -171,6 +186,14 @@ export function createResponsivenessMonitor(
   const longTasks = createRingBuffer<TimedSample>(historySize);
   const interactions = createRingBuffer<TimedSample>(historySize);
   const shifts = createRingBuffer<TimedSample>(historySize);
+  /** Maps non-zero ids to live samples so later entries fold into one slot. Removed on eviction. */
+  const byInteractionId = new Map<number, TimedSample>();
+  /**
+   * Sticky false once an entry lacks a usable `interactionId`; an empty window cannot establish
+   * that the engine lacks the field. `reset()` preserves it because page capability does not
+   * change.
+   */
+  let groupingAvailable = true;
 
   const support: Record<string, SupportState> = {
     [LONG_TASK]: "unavailable",
@@ -193,11 +216,46 @@ export function createResponsivenessMonitor(
       return;
     }
     if (entryType === EVENT) {
-      interactions.push({
+      // Preserve `undefined`: `0` means "not part of an interaction", unlike an omitted id.
+      const id =
+        typeof entry.interactionId === "number" && Number.isFinite(entry.interactionId)
+          ? entry.interactionId
+          : undefined;
+      if (id === undefined) groupingAvailable = false;
+      const value = numberOr(entry.duration, 0);
+      const label = typeof entry.name === "string" ? entry.name : "event";
+      const existing = id === undefined || id === 0 ? undefined : byInteractionId.get(id);
+      if (existing !== undefined) {
+        // Group at ingest so one interaction uses one ring slot.
+        existing.entries = (existing.entries ?? 1) + 1;
+        // Use the earliest entry time regardless of delivery order.
+        if (at < existing.at) existing.at = at;
+        // INP uses the longest entry's duration.
+        if (value > existing.value) {
+          existing.value = value;
+          existing.label = label;
+        }
+        return;
+      }
+      const sample: TimedSample = {
         at,
-        value: numberOr(entry.duration, 0),
-        label: typeof entry.name === "string" ? entry.name : "event",
-      });
+        value,
+        label,
+        entries: 1,
+        ...(id === undefined ? {} : { interactionId: id }),
+      };
+      // Remove an evicted id from the live map.
+      if (interactions.size === interactions.capacity) {
+        const evicted = interactions.at(0);
+        if (
+          evicted?.interactionId !== undefined &&
+          byInteractionId.get(evicted.interactionId) === evicted
+        ) {
+          byInteractionId.delete(evicted.interactionId);
+        }
+      }
+      interactions.push(sample);
+      if (id !== undefined && id !== 0) byInteractionId.set(id, sample);
       return;
     }
     if (entryType === LAYOUT_SHIFT) {
@@ -317,26 +375,43 @@ export function createResponsivenessMonitor(
         support: state,
         count: null,
         slowCount: null,
+        eventCount: null,
         worstDurationMs: null,
         worstType: null,
         note,
       };
     }
+    // Ingest groups non-zero ids by their longest entry, matching INP. Id-0 samples stay in
+    // `eventCount` but not interaction counts; missing ids remain one sample per entry.
     const samples = windowed(interactions, since);
+    let count = 0;
+    let entryCount = 0;
     let slow = 0;
     let worst: TimedSample | null = null;
     for (const sample of samples) {
+      entryCount += sample.entries ?? 1;
+      if (sample.interactionId === 0) continue;
+      count += 1;
       if (sample.value >= slowInteractionMs) slow += 1;
       if (worst === null || sample.value > worst.value) worst = sample;
     }
+    const grouping = groupingAvailable
+      ? `Counted by interactionId, the way INP is measured: the several entries one click or key press emits ` +
+        `(pointerdown, pointerup, click …) count as one interaction, at their longest duration. ` +
+        `${entryCount} raw event ${entryCount === 1 ? "entry was" : "entries were"} reported in the window; ` +
+        "entries the specification gives interactionId 0 — mousedown, mouseup, mouseover, pointermove, keypress " +
+        "and composition events, which belong to no interaction — are in that total but not in the count."
+      : `This engine reports no interactionId, so each of the ${entryCount} raw event ` +
+        `${entryCount === 1 ? "entry" : "entries"} is counted separately — one click can appear as several interactions.`;
     return {
       support: state,
-      count: samples.length,
+      count,
       slowCount: slow,
+      eventCount: entryCount,
       worstDurationMs: worst === null ? null : Math.round(worst.value),
       worstType: worst?.label ?? null,
       note:
-        `${note} Only events the browser considered worth reporting appear here — ` +
+        `${note} ${grouping} Only events the browser considered worth reporting appear here — ` +
         `by default that is everything over 104 ms. "Slow" is ${slowInteractionMs} ms or more.`,
     };
   };
@@ -393,7 +468,11 @@ export function createResponsivenessMonitor(
       // StrictMode disconnects the first observers before that task runs.
       longTasks.clear();
       interactions.clear();
+      byInteractionId.clear();
       shifts.clear();
+      // Restarting re-observes capability; `reset()` preserves it because one page's
+      // `interactionId` support does not change between windows.
+      groupingAvailable = true;
       // Leaving these at "supported" would make a post-teardown `report()`
       // claim live observation over counts that had stopped moving.
       for (const entryType of [LONG_TASK, EVENT, LAYOUT_SHIFT]) {
@@ -404,6 +483,7 @@ export function createResponsivenessMonitor(
     reset() {
       longTasks.clear();
       interactions.clear();
+      byInteractionId.clear();
       shifts.clear();
     },
 

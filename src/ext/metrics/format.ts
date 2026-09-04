@@ -16,7 +16,7 @@ export function formatBytes(bytes: number, digits = 0): string {
   return `${sign}${value.toFixed(precision)} ${units[unit] as string}`;
 }
 
-/** Signed, for "change over the last minute". */
+/** Signed, for the "change over the window" row. */
 export function formatBytesDelta(bytes: number, digits = 1): string {
   if (!Number.isFinite(bytes)) return NOT_AVAILABLE;
   const formatted = formatBytes(bytes, digits);

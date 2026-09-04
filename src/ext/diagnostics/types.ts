@@ -67,12 +67,27 @@ export interface LongTaskSample {
 
 export interface InteractionReport {
   support: SupportState;
-  /** Observed `event` entries in the window. `null` unless observed. */
+  /**
+   * Interactions in the window, grouped by non-zero `interactionId` like INP. Each group counts
+   * once at its longest entry; id-0 entries stay in `eventCount` but not interaction counts.
+   * Engines without the field count one entry as one interaction. `null` unless `support` is
+   * `"supported"`.
+   *
+   * Per the Event Timing specification's *computing interactionId* algorithm, non-zero ids go to
+   * `keydown`/`keyup`, `pointerdown`/`pointerup`, `click`, `contextmenu`, and IME-composition
+   * `input`; `keydown`/`pointerdown` inherit the completing `keyup`/`pointerup` id. All
+   * other events get 0, including `mousedown`/`mouseup`, `mouseover`/`pointerover`/`pointermove`,
+   * `keypress`, `compositionstart`/`update`/`end`, non-composition `input`, and `pointercancel`,
+   * which leaves `pointerdown` at 0.
+   */
   count: number | null;
-  /** Entries over `slowMs`. `null` unless observed. */
+  /** Interactions whose longest entry reaches `slowInteractionMs`; `null` unless observed. */
   slowCount: number | null;
+  /** Raw `event` entries in the window, before grouping; `null` unless observed. */
+  eventCount: number | null;
+  /** Longest entry in the worst interaction, ms, INP's per-interaction duration. */
   worstDurationMs: number | null;
-  /** The event type of the worst entry, e.g. `"pointerdown"`. */
+  /** The event type of that entry, e.g. `"pointerdown"`. */
   worstType: string | null;
   note: string;
 }

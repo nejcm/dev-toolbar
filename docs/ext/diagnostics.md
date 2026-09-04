@@ -41,6 +41,19 @@ Chromium-only today and `event` is not universal either, so every count is `null
 rather than `0` when it could not be observed, with a note saying which. "No long
 tasks" and "this browser cannot count long tasks" are opposite claims.
 
+**Interactions are counted the way INP counts them.** A click's several `event` entries
+share one non-zero `interactionId` and count once at the longest duration; raw event entries
+appear beside the count (`1 (5 event entries)`).
+Per the Event Timing specification's *computing interactionId* algorithm, non-zero ids go to
+`keydown`/`keyup`, `pointerdown`/`pointerup`, `click`, `contextmenu`, and IME-composition
+`input`; `keydown`/`pointerdown` inherit the completing `keyup`/`pointerup` id. All
+other events get 0, including `mousedown`/`mouseup`, `mouseover`/`pointerover`/`pointermove`,
+`keypress`, `compositionstart`/`update`/`end`, non-composition `input`, and `pointercancel`,
+which leaves `pointerdown` at 0. Entries with id 0 stay in the raw total but are not interactions.
+Engines
+without `interactionId` count one entry as one interaction and say so in the note. The
+layout-shift `total` is a plain sum of shift scores in the window, not Cumulative Layout Shift.
+
 **Redaction happens on the way in.** The consumer's `app` context, every `source`,
 every extension contribution, the page URL, a long task's container attribution and
 another extension's error message are all redacted as the snapshot is built, and the

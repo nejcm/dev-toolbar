@@ -16,15 +16,22 @@ export function Root({ children }) {
 
 | Chip | Shows | Thresholds (default, all configurable) |
 | --- | --- | --- |
-| `mem` | Used JS heap, and whether it has risen on most samples without falling, by a material amount, over a minute | 50% / 75% of the heap limit |
-| `delay` | The *worst* interaction in a rolling 30 s window, not the latest | 200 ms / 500 ms, per INP guidance |
-| `jank` | Dropped frames over expected frames, across 5 s of *active* frames | 2% / 5% |
+| `mem` | Used JS heap, and whether its *floor* rose across the last minute by a material amount — a leak is a sawtooth with a rising floor, not a monotonic climb | 50% / 75% of the heap limit |
+| `delay` | The *worst* interaction in a rolling 30 s window, not the latest. Event Timing entries are grouped by `interactionId` the way INP does, so one tap is one interaction; hover and other non-interaction entries are skipped unless `includeNonInteractions` is set | 200 ms / 500 ms, per INP guidance |
+| `jank` | Dropped frames over expected frames, across 5 s of *active* frames. The frame spanning a tab switch is discarded. A visible gap between 1 s and 30 s is a *stall*: counted and shown as "Longest stall", kept out of the ratio and out of "Worst frame", and a debugger pause or modal dialog counts as one. Gaps over 30 s (`stallCeilingMs`) are treated as absent | 2% / 5% |
 | `net` | Requests in flight; the panel lists recent ones | any slow → warn, any failed → bad |
 
 Every one degrades on its own. `performance.memory` is Chromium-only, Event Timing is
 not everywhere, and `requestAnimationFrame` may not exist at all: each missing API
 turns its chip into `NA` with a sentence in the panel saying why. None of them throws,
 and one missing API never breaks the others.
+
+Two platform limits the panel names rather than hides. Chromium rounds
+`performance.memory` and refreshes it only every 20 minutes unless the renderer is
+locked to one site (desktop Chrome usually is, Android mostly is not); when samples
+stop moving the `mem` panel says `Sampling: rate-limited` and stops reporting change or
+growth instead of printing a zero. Event Timing rounds every duration to 8 ms, so
+`delay` shows 248 ms or 256 ms, never 250.
 
 ```ts
 metrics({
