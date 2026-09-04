@@ -19,6 +19,8 @@ type it publishes. Start at the [README](../README.md) if you just want it mount
 | `styleNonce` | — | CSP nonce for the injected core stylesheet |
 | `classNames` | — | Per-part class map |
 | `container` | `document.body` | Portal target |
+| `className` / `style` | — | On the toolbar root |
+| `children` | — | Rendered untouched, in a fragment |
 
 `instanceId` and `storage` are read **once, on mount**, so the store and everything
 derived from it can never disagree about where preferences live. Changing either
@@ -28,22 +30,20 @@ prop later is ignored; remount the toolbar (`key={instanceId}`) to move it.
 inline (`classNames={{ bar: "my-bar" }}`) is fine — it does not defeat the
 memoisation of the context value or of the overlay host.
 
-Under a `style-src 'self' 'nonce-…'` CSP an un-nonced `<style>` is dropped silently:
-the bar renders unstyled with nothing in the console but a CSP report. Pass
-`styleNonce` to prevent that. It applies to **core's** sheet only, and only to the
-injection that creates it — first-writer-wins, so changing the nonce later does not
-restyle an existing element. First-party extensions inject their own sheets and are
-not covered; with `injectStyles={false}` the prop does nothing, because nothing is
-injected.
+Under a `style-src 'self' 'nonce-…'` CSP an un-nonced `<style>` is dropped silently —
+the bar renders unstyled, with nothing in the console but a CSP report — so pass
+`styleNonce`. It covers **core's** sheet only, and only the injection that creates it
+(first-writer-wins, so a later nonce does not restyle an existing element).
+First-party extensions inject their own sheets and are not covered; with
+`injectStyles={false}` the prop does nothing, because nothing is injected.
 
 ## Insetting your layout
 
-The shell publishes `--dev-toolbar-height` on `<html>` — the whole toolbar, bar
-*plus* any open panel. Every instance also publishes
-`--dev-toolbar-height-<instanceId>`, the `instanceId` with anything outside
-`A-Za-z0-9_-` folded to `_`, and the unsuffixed name belongs to the `"default"`
-instance alone. So two toolbars on one page never overwrite or remove each other's
-value; inset by the suffixed name when you mount more than one.
+The shell publishes `--dev-toolbar-height` on `<html>` — the whole toolbar, bar *plus*
+any open panel. Every instance also publishes `--dev-toolbar-height-<instanceId>`
+(anything outside `A-Za-z0-9_-` folded to `_`), and the unsuffixed name belongs to the
+`"default"` instance alone — so two toolbars never overwrite or remove each other's
+value. Inset by the suffixed name when you mount more than one;
 `<DevToolbarInset>` already pads by its own instance's, falling back to the
 unsuffixed one.
 
@@ -61,11 +61,11 @@ It fires wherever focus is, text fields included, but not for an auto-repeat, no
 mid-IME-composition, and not when something else already called `preventDefault()`
 — the listener is on `window`, so your own `document` handler wins the chord.
 
-## The `···` menu
+## The `⋮` menu
 
-Items that do not fit the bar collapse into a `···` popup, lowest `priority` first. It is a
+Items that do not fit the bar collapse into a `⋮` popup, lowest `priority` first. It is a
 disclosure, not an ARIA menu: its entries are your own compact slots, buttons and all,
-and a `menuitem` may not contain interactive content. So the `···` button carries
+and a `menuitem` may not contain interactive content. So the `⋮` button carries
 `aria-expanded` and, while open, `aria-controls`; the popup is a labelled
 `role="group"`; opening it moves focus to the first focusable thing inside it — the
 popup itself if there is none — and `Tab` walks the rest; `Escape` closes it and hands
@@ -80,7 +80,7 @@ hatches; everything here is public and covered by the package's versioning.
 
 | Export | What it is for |
 | --- | --- |
-| `runCommand(id, scope?)` | Runs an aggregated command from code with no React context — a hotkey, a console, a test. Resolves `false` when no mounted toolbar declares the id, `true` once the command's `run()` completes. Rejects with `run()`'s own error if it throws or rejects — callers must catch it. `scope`, a `readonly AnyToolbarCommand[]`, is searched instead of the mounted toolbars. It still resolves a boolean under contract v2 — reach for `invokeCommand` when you need the result, or to pass input. Inside components prefer `useDevToolbar().runCommand`, which does take input. |
+| `runCommand(id, scope?)` | Runs an aggregated command with no React context — a hotkey, a console, a test. Resolves `true` once `run()` completes, `false` when no mounted toolbar declares the id, and rejects with `run()`'s own error — catch it. `scope` (a `readonly AnyToolbarCommand[]`) is searched instead of the mounted toolbars. Still a boolean under contract v2; use `invokeCommand` to pass input or read a result, or `useDevToolbar().runCommand` inside components. |
 | `invokeCommand(id, options?)` | `runCommand` that resolves **what the command returned**: `{ ok: true, result }`, or `{ ok: false, reason: "unknown-command" }`. `options` is `{ input?, scope? }` — an object rather than a third positional argument, so no existing `runCommand(id, scope)` call changes meaning. Rejects with `run()`'s own error, like `runCommand`. |
 | `CONTRACT_VERSION` | The extension contract's version, currently `2`. See [contract v2](./extension-contract.md#contract-v2--commands-with-input-and-a-result) and [ADR-003](./adr/ADR-003-contract-version-policy.md). |
 | `HEIGHT_VARIABLE` | The name of the CSS variable the shell publishes — `"--dev-toolbar-height"` — so a CSS-in-JS host need not retype the string. It is the `"default"` instance's; every instance also publishes `<HEIGHT_VARIABLE>-<instanceId>`. |

@@ -749,75 +749,35 @@ as proof one bundle carries no other's code), and no module-level state, or each
 would own a different copy of it. The "shared extension glue" block in
 `src/core/__tests__/boundary.test.ts` fails on the first four.
 
-Testing it:
+Testing it: [`@nejcm/dev-toolbar/testing`](./testing.md) is the whole surface —
+`renderWithToolbar` / `mountToolbar`, `makeExtension`, `makeCommand`,
+`fakeExtensionApi`, `createMockBus` and `installToolbarLayout`. That page is the
+reference; three things about it are architecture rather than API.
 
-```tsx
-import { renderWithToolbar, makeExtension } from "@nejcm/dev-toolbar/testing";
+**The fake layout is global state, made safe twice over.** It patches
+`HTMLElement.prototype` and `globalThis.ResizeObserver`, which the whole file
+shares. `installToolbarLayout()` therefore keeps a module-level *stack* of live
+installs rather than each install remembering "the previous value" — the newest
+install measures, the prototype is patched once when the stack fills and
+unpatched once when it empties, so `restore()` is idempotent and
+order-independent. (Per-install capture was correct only in exact reverse order;
+drained in insertion order it left one fake on the prototype permanently.) And
+`renderWithToolbar({ layout })` owns the teardown from *inside* the rendered
+tree, as an effect cleanup: Testing Library exposes no hook into `cleanup()`, but
+it does unmount every tree it rendered, so `cleanup()`, RTL auto-cleanup and
+`unmount()` all restore the prototype whether or not the test remembered to.
 
-const { toolbar, unmount } = renderWithToolbar(<App />, {
-  extensions: [jobQueue()],
-  layout: { barWidth: 400, itemWidth: 90 },  // jsdom has no real layout
-});
+**`mountToolbar()`'s tracked list is ours, and nothing tells it about RTL's
+auto-cleanup**, so `afterEach(cleanupToolbar)` is required rather than tidy —
+this repo's own `vitest.setup.ts` calls it ahead of Testing Library's
+`cleanup()`.
 
-toolbar.openPanel("job-queue");
-expect(toolbar.panel("job-queue")).not.toBeNull();
-
-toolbar.resize(150);                          // drives the mocked ResizeObserver
-expect(toolbar.overflowedIds()).toContain("job-queue");
-
-// A collapsed item is not in the DOM until the menu opens, so ask about it
-// with overflowedIds()/isOverflowed(); reach for item() once it is visible.
-expect(toolbar.item("job-queue")).toBeNull();
-toolbar.openOverflow();
-expect(toolbar.item("job-queue")).not.toBeNull();
-unmount();
-```
-
-`panel(id)` answers presence in the DOM, not openness: a `keepMounted` panel stays
-mounted and `hidden` after `closePanel()`, so this idiom keeps passing for one even
-while it is closed — ask `activePanelId()` when the question is really whether it is
-open. Every state-changing method on `toolbar` is `act()`-wrapped, including
-`runCommand(id)`, which is `async` (the command it runs may be) and so is awaited
-rather than wrapped again: `await toolbar.runCommand("queue.drain")`. `rerender(ui)`,
-on the object `renderWithToolbar()` returns, re-renders inside the same mounted
-toolbar rather than replacing it — it overrides Testing Library's own `rerender`,
-which has no `wrapper` here to spare the toolbar from being torn out.
-
-`makeExtension()` builds throwaway extensions (including deliberately broken ones, via
-`throwInCompact` / `throwInPanel` / `throwInStart`), `fakeExtensionApi()` builds the
-`ExtensionRuntimeApi` core would hand to `start()` for a test that drives a `runtime.ts`
-without mounting anything, and `createMockBus()` gives a
-recording pub/sub bus whose `MockClock` stamps `event.at` and offers hand-cranked
-`setTimeout`/`setInterval`. `BusLike` itself carries no clock — a collector that wants
-one takes an injected *time reader* instead (`CollectorContext.now()` in
-`/ext/metrics/types.ts`, supplied by `runtime.ts` and faked in
-`network.test.ts` with a plain `() => clock.t`), which `clock.now` satisfies fine.
-What nothing first-party accepts is an injected *timer*: `/ext/metrics`'s own polling
-(`runtime.ts`'s `setInterval(publish, tickMs)`) and `createThrottledStore`
-(`throttledStore.ts`'s `setTimeout`) both call the globals directly, so `MockClock`'s
-`setTimeout`/`setInterval` cannot drive them — reach for `vi.useFakeTimers()` for
-those instead.
-
-`mountToolbar()` is `renderWithToolbar()` that remembers what it mounted, and
-`cleanupToolbar()` unmounts all of it — newest first — and restores any fake layout
-still installed. Together they replace the array-of-`unmount`s-plus-`afterEach` that
-every multi-mount suite in this repo used to keep for itself; the repo's own
-`vitest.setup.ts` calls `cleanupToolbar()` ahead of Testing Library's `cleanup()`. That
-hook is not optional for a `mountToolbar()` user: the tracked list is ours and never
-hears about RTL's auto-cleanup, so nothing else drains it.
-
-The net is only a net. The fake layout patches `HTMLElement.prototype` and
-`globalThis.ResizeObserver`, which are shared by the whole file, so two things make it
-safe. First, `installToolbarLayout()` keeps a module-level *stack* of live installs
-rather than each install remembering "the previous value" — the newest install
-measures, the prototype is patched once when the stack fills and unpatched once when it
-empties, and `restore()` is therefore idempotent and order-independent. (Per-install
-capture was only correct in exact reverse order; drained in insertion order it put one
-fake back on the prototype permanently.) Second, `renderWithToolbar({ layout })` owns
-the teardown from *inside* the rendered tree, as an effect cleanup. Testing Library
-exposes no hook into `cleanup()`, but it does unmount every tree it rendered — so
-`cleanup()`, RTL auto-cleanup and `unmount()` all restore the prototype, whether or not
-the test remembered to.
+**`MockClock` drives the bus, not the package's timers.** `BusLike` carries no
+clock; a collector that wants one takes an injected *time reader* instead
+(`CollectorContext.now()` in `/ext/metrics/types.ts`, faked in `network.test.ts`
+as `() => clock.t`). What nothing first-party accepts is an injected *timer*:
+`/ext/metrics`' polling and `createThrottledStore` both call the globals
+directly, so reach for `vi.useFakeTimers()` for those.
 
 `@testing-library/react` is an optional peer that only `renderWithToolbar` needs, and
 nothing on the subpath imports it statically — so `@nejcm/dev-toolbar/testing` imports

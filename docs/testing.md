@@ -32,7 +32,7 @@ unmount();
 ```
 
 `overflowedIds()` and `isOverflowed()` answer *whether* an item collapsed and work
-with the `···` menu closed. A collapsed item is not rendered at all until the menu
+with the `⋮` menu closed. A collapsed item is not rendered at all until the menu
 opens, so `item(id)` returns `null` for one until you call `toolbar.openOverflow()`.
 
 `panel(id)` answers presence in the DOM, which is not the same question as *open*: a
@@ -57,7 +57,8 @@ expect(outcome).toEqual({ ok: true, result: undefined });
 ```
 
 `@nejcm/dev-toolbar/testing` also ships `makeExtension()` for throwaway extensions
-(including deliberately broken ones), `fakeExtensionApi()` for the object `start()`
+(including deliberately broken ones, via `throwInCompact` / `throwInPanel` /
+`throwInStart`), `fakeExtensionApi()` for the object `start()`
 receives, `createMockBus()` for a pub/sub bus with a hand-cranked clock, and
 `installToolbarLayout()` if you would rather drive the fake layout yourself. Storage defaults to a fresh in-memory adapter, so tests never leak
 preferences into each other.

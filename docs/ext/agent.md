@@ -140,7 +140,7 @@ menu — read `input` to know what to pass. The shape of both is in
   `data-dtb-agent-mode="read-only" | "run-enabled"` — in an `allowRun: true` build that
   chip is the only in-bar sign that a command-running global is on the page. `priority`
   is `-1`, below core's default of `0`, so it is the **first** item to collapse into the
-  `···` menu: nothing is lost when it does, and a metrics sparkline in its place would
+  `⋮` menu: nothing is lost when it does, and a metrics sparkline in its place would
   be. Pass `hidden: true` to remove it — and the bridge with it, since `hidden` means the
   extension does not exist for this actor, so core never calls `start()`.
 
@@ -264,7 +264,7 @@ and `connection` reports `reporters` (distinct pages seen within `staleMs`),
 command result names the page that ran it in `ranIn`. Read `ambiguous` before trusting a
 snapshot. Keying the slot per page is the fix if this ever stops being a one-tab tool.
 
-**Threat model, because this runs arbitrary commands on your open page.** Four controls,
+**Threat model, because this runs arbitrary commands on your open page.** Five controls,
 all in the plugin: it is `apply: "serve"` with only a `configureServer` hook, so it
 cannot reach a production build; it refuses to install at all when the dev server is
 bound to anything but loopback (`--host` prints

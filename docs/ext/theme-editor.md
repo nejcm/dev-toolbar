@@ -122,11 +122,9 @@ matches value *shapes* anchored to the whole string, so a credential buried
 mid-sentence in your own prose survives.
 
 The recipe JSON and the share link are built by one function and carry the **raw**
-values, masked ones omitted with a count. They deliberately do *not* get a second
-key-matching pass: a token called `--session-panel-bg` collides with the credential
-word list, and masking it in a document something is about to apply is how a theme
-stops round-tripping. (`--sidebar-bg` and `--spinner-size` used to collide too, when
-the list was matched by substring rather than by word segment.)
+values, masked ones omitted with a count. They deliberately get no second
+key-matching pass, for the reason above: masking `--session-panel-bg` in a document
+something is about to apply is how a theme stops round-tripping.
 
 Persisted edits are re-checked on load rather than trusted: `localStorage` is writable
 by anything on the origin, and an unchecked custom-property value is accepted by the
@@ -149,16 +147,14 @@ Commands: `theme-editor.preset.<name>` (one per preset, enumerated live),
 addition:
 
 ```ts
-await api.invokeCommand("theme-editor.setToken", { name: "--dtb-accent", value: "#3b82f6" });
-await api.invokeCommand("theme-editor.setToken", { name: "--dtb-accent" });  // clears it
+await api.invokeCommand("theme-editor.setToken", { name: "--brand-500", value: "#3b82f6" });
+await api.invokeCommand("theme-editor.setToken", { name: "--brand-500" });  // clears it
 ```
 
 This is the command that could not exist before v2. A token's value space is open —
 `#3b82f6`, `12px`, `1.4` — so no enumeration of per-value commands was ever possible
 and the panel's text input was the only way in. It refuses the same values the editor
 refuses, and says which; it declares `input`, so `⌘K` does not list it.
-
-panel.
 
 
 ---

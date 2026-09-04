@@ -9,7 +9,7 @@ interface DevToolbarExtension {
   contractVersion?: number;      // core warns once on a mismatch
   align?: "start" | "end";       // default "start"
   order?: number;                // ascending, within the region
-  priority?: number;             // lowest collapses into ··· first
+  priority?: number;             // lowest collapses into ⋮ first
   hidden?: boolean;              // you compute this — core has no ctx
   keepMounted?: boolean;         // panel state survives closing
   compact?: (props: CompactSlotProps) => React.ReactNode;
@@ -29,7 +29,7 @@ state you cannot otherwise know:
 
 ```ts
 interface CompactSlotProps {
-  isOverflowed: boolean;         // rendered in the ··· menu rather than the bar
+  isOverflowed: boolean;         // rendered in the ⋮ menu rather than the bar
   isPanelOpen: boolean;
   density: "compact" | "comfortable";
   openPanel(): void;
@@ -54,7 +54,7 @@ interface OverlaySlotProps {
 over the page. It renders once,
 inside the toolbar root, for as long as you are present, not hidden and the bar is
 visible, and **overflow never collapses it**: a compact item that has collapsed into
-the `···` menu is not in the DOM at all, which would cost an extension its modal (and
+the `⋮` menu is not in the DOM at all, which would cost an extension its modal (and
 its key binding) exactly when the window got narrow. Most overlays render `null` most
 of the time. `/ext/command-menu` is the worked example for a modal;
 `/ext/overlays` for a persistent surface, where the trick worth stealing is
@@ -96,7 +96,7 @@ Two lifecycle rules the metrics extension paid for, so you do not have to:
 
 - **`hidden` is not "unpainted", it is "does not exist here".** A hidden extension is
   never `start()`ed and is torn down if it becomes hidden; its panel is unmounted and
-  closed; and it contributes no commands, so `runCommand()` and P2's palette cannot
+  closed; and it contributes no commands, so `runCommand()` and the ⌘K palette cannot
   reach it either. Anything less and hiding a collector would leave `fetch` patched,
   its request table on screen, and a copy-to-clipboard command one keystroke away for
   a user not allowed to see any of it. To merely collapse an item out of sight, use

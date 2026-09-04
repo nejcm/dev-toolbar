@@ -36,10 +36,11 @@ metrics({
 });
 ```
 
-**Instrument your own client instead of being patched.** By default the network
+**Instrument your own client instead of being patched.** With no bus, the network
 collector wraps `fetch` and `XMLHttpRequest` — once globally, feeding every live
 collector, and restoring the originals when the last one leaves. If you would rather
-report from your own HTTP client, hand it a bus:
+report from your own HTTP client, hand it a bus: that turns both patches off, so the
+same request is never recorded twice under two unrelated ids.
 
 ```ts
 import { createEventBus } from "@nejcm/dev-toolbar/runtime";
@@ -48,7 +49,7 @@ import type { ToolbarEventMap } from "@nejcm/dev-toolbar/runtime";
 export const bus = createEventBus<ToolbarEventMap>();
 
 const extensions = [
-  metrics({ network: { bus, patchFetch: false, patchXhr: false } }),
+  metrics({ network: { bus } }),   // patchFetch/patchXhr default to false with a bus
 ];
 
 // then, from your client:
