@@ -110,15 +110,10 @@ export interface DiagnosticsRuntime {
   /** `true` only when a download was actually started. */
   download(format: SnapshotFormat): boolean;
   /**
-   * A **summary** of the last capture — never the snapshot itself.
-   *
-   * This is what the extension publishes through `diagnostics()`
-   * (`plans/agent-readable-toolbar.md` § Phase 1). Returning the snapshot
-   * would make every roster read quadratic and embed one snapshot inside the
-   * next, because the snapshot is built *from* `api.getDiagnostics()`. The
-   * full object stays reachable through this extension's commands.
-   *
-   * Pure and cheap: it reads the store, and captures nothing.
+   * A **summary** of the last capture, never the snapshot itself. Publishing
+   * the snapshot would nest it in the roster because core builds that roster
+   * from `api.getDiagnostics()` (`plans/agent-readable-toolbar.md` § Phase 1).
+   * The full object remains available through this extension's commands.
    */
   summary(): unknown;
   /** Persisted panel format. */

@@ -1,14 +1,11 @@
 /**
- * The playground's own Vite plugin: the toolbar's state, off the page.
- *
- * `plans/agent-readable-toolbar.md` § Phase 3. An agent editing `src/ext/flags`
- * never loads the app, so everything the bridge publishes on `window` is
- * invisible to it. This middleware holds the latest snapshot the page reported
- * and serves it over HTTP, so
+ * Playground-only Vite middleware for the bridge's off-page transport
+ * (`plans/agent-readable-toolbar.md` § Phase 3). It serves the latest snapshot
+ * over HTTP for agents that never load the app:
  *
  *     curl -s localhost:5273/__dev-toolbar/state | jq '.extensions.flags.flags'
  *
- * answers "is the override applied" with no build, no browser, no screenshot.
+ * answers "is the override applied" without a browser or screenshot.
  *
  * ```
  * GET  /__dev-toolbar/state         the latest snapshot, plus how old it is
@@ -17,19 +14,15 @@
  * POST /__dev-toolbar/state         the page checking in (not for you to call)
  * ```
  *
- * **This lives in the playground on purpose.** It is not part of
- * `@nejcm/dev-toolbar` and there is no `./vite` subpath: a bundler plugin in a
- * zero-dependency React library is a new coupling, and a consumer who wants
- * this copies one file. The three lines that turn it on — the bridge's
- * `report` option — are in the README; everything below is the receiving half,
- * and it is this long because refusing honestly costs more code than hanging.
- * It gets promoted when a consumer asks.
+ * It stays here deliberately: a bundler plugin inside a zero-dependency library
+ * is a new coupling, and nothing yet asks for one. The library has no Vite
+ * runtime dependency or `./vite` subpath; a consumer who wants this copies one
+ * file, and it gets promoted when someone actually asks.
  *
  * ## Threat model
  *
  * This route runs **arbitrary registered toolbar commands** on the developer's
- * open page. Treat it as a debugger you left attached, because that is what it
- * is. Five controls, in the order they matter:
+ * open page. Treat it as a debugger left attached. Five controls protect it:
  *
  * 1. **Dev server only.** `apply: "serve"` and the only hook is
  *    `configureServer`, so nothing here can reach a production bundle. There is
@@ -79,7 +72,7 @@
  * limit. Keying the slot per reporter is the fix if this stops being a
  * one-tab development tool.
  *
- * Two edges in that accounting, both of which a reader will meet:
+ * Two accounting edges matter:
  *
  * - **Id-less clients collapse into one `"anonymous"` bucket.** The bridge
  *   sends `reporterId` on every body, so this only ever describes something
@@ -91,11 +84,10 @@
  *   slot, and `reporterId` can name a page that is no longer the last to
  *   speak. `ambiguous` is the field to branch on, not `reporterId`.
  *
- * ## Why polling, and why it is honest about it
+ * ## Polling limits
  *
- * The server cannot call the page — a middleware has no channel back — so the
- * page checks in every ~500 ms and picks up whatever was queued. Consequences,
- * all of them stated in a response body rather than hidden behind a hang:
+ * The server has no channel back to the page, so the page polls every ~500 ms.
+ * Each failure is explicit:
  *
  * - Nothing has ever reported: `503 no-page-connected`.
  * - The last check-in is older than `staleMs`: also `503 no-page-connected`,
@@ -104,6 +96,10 @@
  *   the latest snapshot, and saying how old it is beats refusing to say.
  * - Queued but never answered within `timeoutMs`: `504 timeout`, saying whether
  *   the page ever picked the command up.
+ * - The dev server shuts down with a caller still waiting: `503
+ *   server-closing`. Nothing is dropped on the floor.
+ * - A page reporting a protocol version this file does not speak: `400
+ *   protocol-mismatch`, naming both numbers.
  */
 import type { Plugin, ViteDevServer } from "vite";
 
@@ -112,8 +108,7 @@ export interface DevToolbarAgentOptions {
   base?: string;
   /**
    * How long `POST /commands/:id` waits for the page before answering `504`.
-   * Default `10000`. There is no "wait forever" — a hang is a worse answer
-   * than a body saying nobody picked it up.
+   * Default `10000`. A request always gets a timeout response.
    */
   timeoutMs?: number;
   /**
@@ -157,16 +152,18 @@ interface Waiting {
   settle(status: number, body: Record<string, unknown>): void;
 }
 
-/** The check-in body cap. A snapshot is tens of kilobytes; a megabyte is somebody else's idea. */
+/** Cap check-in bodies before they can consume unbounded memory. */
 const MAX_BODY_BYTES = 4 * 1024 * 1024;
+
+/**
+ * `AGENT_PROTOCOL_VERSION` restated so this copy builds with only Vite's types.
+ * Mismatches get a 400 naming both versions instead of surfacing later as a
+ * missing field.
+ */
+const PROTOCOL_VERSION = 2;
 
 const LOOPBACK = new Set(["localhost", "127.0.0.1", "::1", "[::1]", "0:0:0:0:0:0:0:1"]);
 
-/**
- * `server.host` as Vite resolved it. `undefined` and `false` both mean Vite's
- * own default, which is loopback; `true` means every interface. A string is
- * taken at face value and only the three loopback spellings pass.
- */
 /** `"[::1]:5273"` -> `"[::1]"`, `"localhost:5273"` -> `"localhost"`. */
 function hostname(header: string): string {
   const value = header.trim();
@@ -175,6 +172,7 @@ function hostname(header: string): string {
   return colon === -1 ? value : value.slice(0, colon);
 }
 
+/** Vite's default host is loopback; `true` means every interface. */
 function isLoopbackHost(host: string | boolean | undefined): boolean {
   if (host === undefined || host === false) return true;
   if (host === true) return false;
@@ -233,13 +231,13 @@ export function devToolbarAgent(options: DevToolbarAgentOptions = {}): Plugin {
   /** The last snapshot any page reported, and when. */
   let snapshot: Record<string, unknown> | null = null;
   let snapshotAt = 0;
-  /** The last check-in of any kind — a snapshot-free one still proves a page is there. */
+  /** A snapshot-free check-in still proves a page is connected. */
   let checkInAt = 0;
   let instanceId: string | null = null;
   let allowRun = false;
-  /** Whose snapshot is in the slot. `null` for a client that sent no id. */
+  /** Whose snapshot is in the single slot. */
   let reporterId: string | null = null;
-  /** Every reporter seen, so a second tab is *reported* rather than silently blended. */
+  /** Reporters seen recently, so a second tab is not silently blended. */
   const reporters = new Map<string, number>();
 
   const waiting = new Map<string, Waiting>();
@@ -248,7 +246,7 @@ export function devToolbarAgent(options: DevToolbarAgentOptions = {}): Plugin {
   const ageMs = (at: number): number | null => (at === 0 ? null : Date.now() - at);
   const connected = (): boolean => checkInAt !== 0 && Date.now() - checkInAt <= staleMs;
 
-  /** Distinct reporters that checked in within `staleMs`. Prunes as it counts. */
+  /** Counts distinct reporters within `staleMs`, pruning old entries. */
   function liveReporters(): number {
     const cutoff = Date.now() - staleMs;
     for (const [id, at] of reporters) if (at < cutoff) reporters.delete(id);
@@ -266,7 +264,7 @@ export function devToolbarAgent(options: DevToolbarAgentOptions = {}): Plugin {
       ageMs: ageMs(snapshotAt),
       stale: !connected(),
       staleMs,
-      /** Whose snapshot this is. Two tabs share one slot; see the header. */
+      /** Whose snapshot occupies the slot. */
       reporterId,
       reporters: live,
       /**
@@ -278,10 +276,7 @@ export function devToolbarAgent(options: DevToolbarAgentOptions = {}): Plugin {
     };
   };
 
-  /**
-   * The one refusal every route shares, and the reason this middleware never
-   * hangs: with no page there is nothing to ask, and saying so beats waiting.
-   */
+  /** Response shared by routes that need a live page. */
   const noPage = () => ({
     ok: false,
     reason: "no-page-connected" as const,
@@ -496,6 +491,25 @@ export function devToolbarAgent(options: DevToolbarAgentOptions = {}): Plugin {
       return;
     }
     const body = parsed as CheckInBody;
+
+    // Before anything below is trusted: an unknown protocol is a body whose
+    // shape this handler has no claim on. An *absent* version is accepted —
+    // it predates the field, and the fields it does carry are each checked
+    // anyway — but a present-and-different one is refused.
+    if (body.protocolVersion !== undefined && body.protocolVersion !== PROTOCOL_VERSION) {
+      send(400, {
+        ok: false,
+        reason: "protocol-mismatch",
+        message:
+          `This route speaks agent protocol ${PROTOCOL_VERSION}; the page reported ` +
+          `${JSON.stringify(body.protocolVersion)}. Update whichever of the two is older — ` +
+          `the app's @nejcm/dev-toolbar, or this copy of devToolbarAgent.ts.`,
+        expected: PROTOCOL_VERSION,
+        received: body.protocolVersion,
+      });
+      return;
+    }
+
     if (body.results !== undefined && !Array.isArray(body.results)) {
       send(400, {
         ok: false,

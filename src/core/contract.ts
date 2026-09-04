@@ -1,14 +1,10 @@
 import type { ReactNode } from "react";
 
 /**
- * Contract version implemented by this core. Core warns (once per extension id) if an
- * extension's `contractVersion` differs.
- *
- * **2** since `ToolbarCommand` grew `description`, `input` and a typed `run(input)`
- * that may resolve a value (`plans/agent-readable-toolbar.md` § Phase 2). The change
- * is source-compatible — every v1 command is a valid v2 command — so the bump is a
- * feature level, not a break; see
- * [ADR-003](../../docs/adr/ADR-003-contract-version-policy.md), which is still open.
+ * Contract version implemented by core. Core warns once per extension id when
+ * `contractVersion` differs. Version 2 adds command descriptions, input schemas
+ * and returned values (`plans/agent-readable-toolbar.md` § Phase 2); it is
+ * source-compatible with v1. See [ADR-003](../../docs/adr/ADR-003-contract-version-policy.md).
  */
 export const CONTRACT_VERSION = 2;
 
@@ -30,7 +26,7 @@ export interface ToolbarStorage {
  */
 export type CommandInputValue = boolean | string | number | null;
 
-/** The primitive kinds a field may hold. `"enum"` is spelled out separately, since it carries `values`. */
+/** Primitive field kinds; `"enum"` is separate because it carries `values`. */
 export type CommandInputType = "boolean" | "string" | "number";
 
 interface CommandInputFieldBase {
@@ -73,14 +69,11 @@ export type CommandInputField = CommandInputPrimitiveField | CommandInputEnumFie
  * What one command accepts, described narrowly on purpose.
  *
  * **Not JSON Schema and not Zod.** Zero runtime dependencies is a rule, and
- * every shape a toolbar command has needed is a flat bag of
- * `boolean | string | number | enum`. So there is no nesting, no array field,
- * no composition (`anyOf`, `$ref`), no validation vocabulary (`minimum`,
- * `pattern`) and no validator: `run()` is the only thing that knows what its
- * own input means, and it refuses bad input by throwing.
+ * command inputs are flat bags of `boolean | string | number | enum`. There is
+ * no nesting, composition or validator: `run()` knows what its input means and
+ * refuses bad input by throwing.
  *
- * The schema is a *description for a reader* — a palette deciding whether it
- * can render a form, an agent deciding what to pass — not a gate.
+ * The schema describes input for a palette or agent; it is not a validation gate.
  */
 export interface CommandInputSchema {
   /** Named fields. Flat: a value here is a primitive or an enum, never another object. */
@@ -88,17 +81,15 @@ export interface CommandInputSchema {
 }
 
 /**
- * A command an extension contributes. Core aggregates them; it renders no palette.
+ * A command an extension contributes. Core aggregates commands but renders no palette.
  *
  * `In` and `Out` both default to `void`, which is what makes every v1 command a
  * valid v2 command: a zero-argument `run(): void | Promise<void>` satisfies
  * `run(input: void): void | Promise<void>` unchanged, and a `ToolbarCommand`
  * written against v1 needs no edit.
  *
- * A *roster* of commands is typed `AnyToolbarCommand`, not `ToolbarCommand` —
- * see below. Declare the generic explicitly (`const c: ToolbarCommand<MyInput> = { ... }`)
- * rather than relying on contextual typing inside an array literal, where `In`
- * would be inferred as `void`.
+ * A roster uses `AnyToolbarCommand`, not `ToolbarCommand`; declare a generic
+ * explicitly in array literals when the command has an input type.
  */
 export interface ToolbarCommand<In = void, Out = void> {
   id: string;
@@ -132,11 +123,11 @@ export interface ToolbarCommand<In = void, Out = void> {
  * would make `readonly ToolbarCommand[]` — what every v1 consumer writes —
  * stop being assignable from it. `ToolbarCommand<any, any>` is mutually
  * assignable with both, which is exactly the compatibility this needs.
- * Nothing *calls* through this type: `invokeCommand` casts once, deliberately.
+ * `invokeCommand` casts once before calling the selected command.
  */
 /* oxlint-disable typescript/no-explicit-any -- see above; the alternatives break v1 source compatibility. */
 export interface AnyToolbarCommand extends Omit<ToolbarCommand<any, any>, "run"> {
-  /** Optional parameter, so `command.run()` on an aggregated command still compiles as it did in v1. */
+  /** Optional for v1 compatibility, so aggregated `command.run()` calls still compile. */
   run(input?: any): any;
 }
 /* oxlint-enable typescript/no-explicit-any */
@@ -166,9 +157,8 @@ export type ToolbarCommandsInput =
   | (() => readonly AnyToolbarCommand[]);
 
 /**
- * What one extension contributed to a diagnostic snapshot. Core emits one of these
- * per present, non-hidden extension whether or not it declares `diagnostics`, so a
- * bug-report snapshot can distinguish "had nothing to say" from "failed".
+ * One extension's diagnostic contribution. Core emits one per present,
+ * non-hidden extension so a snapshot can distinguish "absent" from "failed".
  */
 export type DiagnosticStatus =
   /** `diagnostics()` ran and returned a value. */

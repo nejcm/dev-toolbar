@@ -1,5 +1,6 @@
 /** The non-React half of `/ext/environment`. */
 import { describe, expect, it, vi } from "vitest";
+import { createNullStorage, fakeExtensionApi } from "@nejcm/dev-toolbar/testing";
 import { createEnvironmentRuntime, maskEmails } from "../runtime";
 import { normaliseKind, severityForKind } from "../types";
 
@@ -317,20 +318,9 @@ describe("staleness", () => {
         pollMs: 250,
         context: { environment: "staging" },
       });
-      const stop = runtime.start({
-        signal: controller.signal,
-        isVisible: () => true,
-        subscribeVisibility: () => () => {},
-        getCommands: () => [],
-        getDiagnostics: () => [],
-        runCommand: async () => false,
-        invokeCommand: async () => ({ ok: false, reason: "unknown-command" }) as const,
-        storage: {
-          getItem: () => null,
-          setItem: () => {},
-          removeItem: () => {},
-        },
-      });
+      const stop = runtime.start(
+        fakeExtensionApi({ signal: controller.signal, storage: createNullStorage() }).api,
+      );
       const route = () => runtime.store.getSnapshot().fields.find((f) => f.id === "route")?.value;
       expect(route()).toBe("/");
       history.pushState({}, "", "/acme/project/ABC");
@@ -432,20 +422,9 @@ describe("a context that throws while being read", () => {
           },
         }),
       });
-      const stop = runtime.start({
-        signal: controller.signal,
-        isVisible: () => true,
-        subscribeVisibility: () => () => {},
-        getCommands: () => [],
-        getDiagnostics: () => [],
-        runCommand: async () => false,
-        invokeCommand: async () => ({ ok: false, reason: "unknown-command" }) as const,
-        storage: {
-          getItem: () => null,
-          setItem: () => {},
-          removeItem: () => {},
-        },
-      });
+      const stop = runtime.start(
+        fakeExtensionApi({ signal: controller.signal, storage: createNullStorage() }).api,
+      );
       expect(() => vi.advanceTimersByTime(1000)).not.toThrow();
       expect(spy).toHaveBeenCalled();
       stop();

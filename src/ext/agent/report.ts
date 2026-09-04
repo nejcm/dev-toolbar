@@ -1,33 +1,8 @@
 /**
- * The reporter: the bridge's snapshot, pushed off the page.
- * [dev-toolbar/ext/agent]
- *
- * Phases 0–2 serve an agent that *loads the app* — Playwright, CDP,
- * computer-use. An agent editing `src/ext/flags` in an editor never loads it,
- * so everything on `window` is invisible to it and a screenshot is a token
- * bill (`plans/agent-readable-toolbar.md` § "Two kinds of agent"). This module
- * is the transport that closes that gap: the page checks in with a local
- * endpoint, the endpoint holds the latest snapshot, and `curl` answers "is the
- * override applied" with no build, no browser and no screenshot.
- *
- * Three properties are the design:
- *
- * - **The snapshot is coalesced, not streamed.** `read()` is cheap but not
- *   free, and the interesting state changes in bursts (a flag flipped, a panel
- *   opened). Writes go through `createThrottledStore` from `/runtime` — the
- *   same primitive the metrics sampler uses — so a burst produces one POST and
- *   an unchanged snapshot produces none at all.
- * - **The check-in is the only channel.** The page polls; the server never
- *   calls the page. That is what makes the whole thing work through an
- *   ordinary dev-server middleware with no socket, no SSE and no second port,
- *   and it is why a command posted to the server arrives at the page on the
- *   next check-in rather than instantly.
- * - **Running is still gated by `allowRun`.** The reporter reports the
- *   handle's `allowRun` in every check-in, and a handle with it off carries no
- *   `runCommand` to call. A consumer with `allowRun: false` gets a reporter,
- *   read routes, and no way to run anything.
- *
- * Nothing here runs at module evaluation, and nothing touches `window`.
+ * Pushes the bridge's coalesced, redacted snapshot to an off-page endpoint
+ * (`plans/agent-readable-toolbar.md` § Phase 3). The page polls because the
+ * server has no channel back; queued commands run on the next check-in.
+ * `allowRun` still gates command execution, and no global is touched here.
  */
 import { createThrottledStore } from "../../runtime";
 import { AGENT_MARKER, AGENT_PROTOCOL_VERSION } from "./types";
@@ -60,7 +35,7 @@ export interface AgentReportBody {
   results: readonly AgentCommandResult[];
 }
 
-/** One command the server is asking the page to run. */
+/** One command the server asks the page to run. */
 export interface AgentPendingCommand {
   /** Opaque; echoed back in the result so the server can match it to a waiting request. */
   token: string;
@@ -81,7 +56,7 @@ export interface AgentCommandResult {
   outcome: AgentReportRunOutcome;
 }
 
-/** What the page expects back. Anything else is ignored — an empty `{}` is a valid reply. */
+/** An empty `{}` is a valid reply; other response shapes are ignored. */
 export interface AgentReportResponse {
   pending?: readonly AgentPendingCommand[];
 }
@@ -118,7 +93,18 @@ export interface AgentReportOptions {
    * injected fake wrong for one of the two.
    */
   pollSchedule?: (callback: () => void, everyMs: number) => () => void;
-  /** Clock handed to the throttled store. Default `performance.now()`. */
+  /**
+   * One clock for both the throttled store and the check-in loop's own
+   * staleness check. Injectable so a test can drive coalescing without global
+   * fake timers.
+   *
+   * The two halves have *different* defaults when this is omitted — the store
+   * falls back to `performance.now()`, the loop to `Date.now()` — which is
+   * safe only because neither ever compares a reading against the other's.
+   * The loop's `sentAt` is set from this clock and compared against this
+   * clock, and nothing else reads it. Keep it that way: a single subtraction
+   * across the two bases would be off by however long the page has been open.
+   */
   now?: () => number;
   /**
    * This page's id in every check-in. Defaults to a fresh random one per
@@ -128,11 +114,11 @@ export interface AgentReportOptions {
   reporterId?: string;
 }
 
-/** The running reporter. `tick()` is exposed so a test can drive one check-in. */
+/** The running reporter. `tick()` is exposed for deterministic driving in tests. */
 export interface AgentReporter {
   /** One check-in: sample, coalesce, POST, run whatever came back. */
   tick(): Promise<void>;
-  /** Idempotent. Cancels the timer, destroys the store and stops posting. */
+  /** Idempotent. Destroys the store and stops posting. */
   stop(): void;
   /** Check-ins that reached the server. The coalescing assertion in the tests. */
   readonly posts: number;
@@ -150,14 +136,14 @@ const defaultPollSchedule = (callback: () => void, everyMs: number): (() => void
   return () => clearInterval(handle);
 };
 
-/** A per-page id. `randomUUID` where there is one; the fallback only has to not collide on one machine. */
+/** A per-page id, using `randomUUID` when available. */
 function newReporterId(): string {
   const crypto = (globalThis as { crypto?: { randomUUID?: () => string } }).crypto;
   if (typeof crypto?.randomUUID === "function") return crypto.randomUUID();
   return `r-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
 }
 
-/** What the store holds: the snapshot plus the serialisation that decides whether it changed. */
+/** The snapshot and its serialisation, used to detect changes. */
 interface Sample {
   json: string;
   snapshot: AgentSnapshot;
@@ -198,18 +184,17 @@ export function createAgentReporter(
     unsent = store.getSnapshot()?.snapshot ?? null;
   });
 
-  /** POSTs one body. Returns the parsed response, or `null` when the server could not be reached. */
+  /** POSTs one body, returning `null` when the server cannot be reached. */
   const send = async (body: AgentReportBody): Promise<AgentReportResponse | null> => {
     if (post === undefined) return null;
     try {
       const response = await post(url, {
         method: "POST",
-        // `application/json` on purpose: it is not a CORS-simple content type,
-        // so a cross-origin page cannot forge this check-in without a
-        // preflight the receiver does not answer.
+        // `application/json` is not CORS-simple, so a cross-origin page cannot
+        // forge this check-in without a preflight the receiver does not answer.
         headers: { "content-type": "application/json" },
         body: JSON.stringify(body),
-        // The check-in carries no credentials and wants no cache.
+        // The check-in carries no credentials and must not be cached.
         credentials: "omit",
         cache: "no-store",
       });
@@ -220,9 +205,8 @@ export function createAgentReporter(
       const parsed: unknown = await response.json();
       return parsed !== null && typeof parsed === "object" ? (parsed as AgentReportResponse) : null;
     } catch (error) {
-      // A dev server that is not running, or was just restarted, is the normal
-      // reason to land here. Say so once and keep quiet after that: a 500 ms
-      // poll would otherwise fill the console with the same line.
+      // Report a missing or restarting dev server once; the poll would repeat
+      // the same failure every 500 ms.
       failures += 1;
       if (failures === 1) {
         warn(
@@ -236,21 +220,19 @@ export function createAgentReporter(
   };
 
   const run = async (command: AgentPendingCommand): Promise<AgentCommandResult> => {
-    // Absent, not refusing (Phase 0, decision 2). The server is told
-    // `allowRun` on every check-in and should never have queued this.
+    // The server receives `allowRun` on every check-in and should not queue this
+    // when it is false, but keep the refusal honest if it does. The await below
+    // needs no try/catch: the handle turns a throwing command into a value.
     if (handle.runCommand === undefined) {
       return { token: command.token, outcome: { ok: false, reason: "run-not-allowed" } };
     }
-    // The handle already turns a throw into a value, so this cannot reject.
     return { token: command.token, outcome: await handle.runCommand(command.id, command.input) };
   };
 
   const tick = async (): Promise<void> => {
     if (stopped) return;
 
-    // `read()` throws once the toolbar has unmounted. That is the handle doing
-    // its job; the reporter's job is to stop rather than to keep posting the
-    // state of something that is gone.
+    // Stop when the toolbar unmounts; its handle no longer has state to report.
     try {
       const snapshot = handle.read();
       store.set({ json: JSON.stringify(snapshot), snapshot });
@@ -259,13 +241,9 @@ export function createAgentReporter(
       return;
     }
 
-    // The store's trailing publish lands on its own timer, which does not line
-    // up with the poll — left alone, a snapshot can sit written-but-unpublished
-    // across a tick and the served state drifts to several times `intervalMs`
-    // old. Flushing when nothing is queued *and* the last send is already a
-    // full interval behind publishes it on the tick boundary instead, which
-    // bounds staleness at roughly one interval plus one poll without
-    // publishing any more often than the throttle allows.
+    // The store timer and poll can drift. Flush only when no snapshot is queued
+    // and the last send is at least one interval old, bounding staleness without
+    // exceeding the throttle rate.
     const clock = options.now ?? Date.now;
     if (unsent === null && clock() - sentAt >= intervalMs) store.flush();
 
@@ -285,9 +263,8 @@ export function createAgentReporter(
     const response = await send(body);
     if (snapshot !== null && response !== null) sentAt = clock();
     if (response === null) {
-      // Nothing reached the server: put both halves back so the next check-in
-      // carries them. `unsent` may have been overwritten by a newer snapshot
-      // in the meantime, which is the right one to send.
+      // Retry both the snapshot and outcomes. Preserve a newer `unsent` snapshot
+      // if one arrived while the request was in flight.
       if (unsent === null && snapshot !== null) unsent = snapshot;
       outbox = [...results, ...outbox];
       return;
@@ -300,13 +277,9 @@ export function createAgentReporter(
     const outcomes = await Promise.all(pending.map(run));
     if (stopped) return;
 
-    // A command is the most likely thing in the world to have changed the
-    // state, and the caller who ran it is about to read it. So the follow-up
-    // carries a *fresh* snapshot rather than waiting for the coalescing
-    // interval — otherwise `POST /commands/flags.set` followed immediately by
-    // `GET /state` answers with the state from before the write, which is the
-    // single most misleading thing this transport could do. The store is
-    // written too, so the next ordinary check-in still sees no change.
+    // Send a fresh snapshot with the outcome. Otherwise an immediate
+    // `GET /state` after `POST /commands/flags.set` would return pre-command
+    // state. Write it to the store too, so the next check-in sees no change.
     let after: AgentSnapshot | undefined;
     try {
       const fresh = handle.read();
@@ -314,12 +287,10 @@ export function createAgentReporter(
       unsent = null;
       after = fresh;
     } catch {
-      // Unmounted between running and reporting. The outcome still goes back.
+      // The toolbar unmounted between running and reporting; still return the outcome.
     }
 
-    // Post the outcomes straight back rather than waiting for the next
-    // check-in: the caller on the other end of the HTTP request is blocked on
-    // them, and one poll interval of latency per command is one too many.
+    // Return outcomes immediately; the HTTP caller is waiting for them.
     const followUp = await send({
       protocolVersion: AGENT_PROTOCOL_VERSION,
       instanceId: handle.instanceId,
@@ -351,14 +322,12 @@ export function createAgentReporter(
 }
 
 /**
- * Starts a reporter on a timer and returns its teardown. Called from
- * `installAgentBridge` when the consumer passed `report`, and never otherwise:
- * a bridge with no `report` option opens no connection to anything.
+ * Starts a reporter and returns its teardown. A bridge without `report` opens
+ * no connection.
  *
- * The first check-in is immediate — an agent that starts the dev server and
- * curls it should not wait a poll interval for the first answer — and every
- * later one is on `pollMs`. Overlapping ticks are dropped rather than queued:
- * a slow round trip must not build a backlog of state that is already stale.
+ * The first check-in is deferred by one macrotask, so it sees the committed
+ * toolbar without waiting for `pollMs`. Later checks use `pollMs`; overlapping
+ * ticks are dropped so a slow round trip cannot build a stale backlog.
  */
 export function startAgentReporter(handle: AgentHandle, options: AgentReportOptions): () => void {
   const { pollMs = 500 } = options;

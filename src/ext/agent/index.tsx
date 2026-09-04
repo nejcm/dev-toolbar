@@ -1,67 +1,25 @@
 /**
- * `@nejcm/dev-toolbar/ext/agent`
+ * `@nejcm/dev-toolbar/ext/agent` exposes core's command and diagnostics
+ * aggregations to an in-page agent (`plans/agent-readable-toolbar.md` § Phase 0).
+ * It uses a registry because core supports multiple mounted roots; `default`
+ * throws unless there is exactly one rather than guessing.
  *
- * The bridge: the toolbar's own aggregations — commands and diagnostics —
- * reachable from `page.evaluate`, so an in-page agent can read state and (opt
- * in) act, instead of scraping the DOM and clicking pixel coordinates.
- * `plans/agent-readable-toolbar.md` § Phase 0.
+ * The chip deliberately diverges from the plan's "no `compact`, no `panel`":
+ * that shape paints a chip anyway, since `Bar.tsx` falls back to a `trigger`
+ * span for any extension with neither. A null compact slot still creates the
+ * item and its `:not(:first-child)::before` divider (`styles.css`), and
+ * `hidden` stops `start()` entirely (`DevToolbar.tsx`), taking the global with
+ * it. `priority: -1` makes the chip collapse first instead.
  *
- * ```tsx
- * import { agentBridge } from "@nejcm/dev-toolbar/ext/agent";
+ * `allowRun` defaults off because the global is reachable by any page script.
+ * Teardown removes stale handles and the global. Nothing touches a global at
+ * module evaluation, so SSR remains safe. Core's import boundary also matters:
+ * this extension imports only core types and uses `/runtime` for redaction;
+ * core may not import `/runtime`.
  *
- * // Build it ONCE, outside render. Development builds only.
- * const extensions = [agentBridge({ instanceId: "playground" })];
- * ```
- *
- * ```js
- * // …then, from Playwright, CDP, or the console:
- * window.__DEV_TOOLBAR__.instances["playground"].read();
- * window.__DEV_TOOLBAR__.default.listCommands();
- * ```
- *
- * It has no `panel` and no stylesheet, and its `compact` slot is one `<span>`:
- * the label, plus a `title` and a `data-dtb-agent-mode` attribute saying
- * whether the mounted global can only be read or can also run commands. In an
- * `allowRun: true` build that chip is the only in-bar signal that a
- * command-running global is on the page, which is worth being legible.
- *
- * `priority` is `-1`, below core's default of `0`, so it is the **first** item
- * to collapse into the `···` menu: nothing is lost when it does — the bridge
- * is not its chip — while a metrics sparkline or an environment badge is.
- *
- * Consumes only the public extension contract — no `src/core/*` value imports,
- * types only (erased at build time) — plus `redact()` from `/runtime`, which
- * is the reason this is an extension and not a core feature: **core may not
- * import `/runtime`**, so a bridge in core would publish unredacted extension
- * output on a global.
- *
- * Four properties are the design, in the order they matter:
- *
- * - **A registry, not a singleton.** Handles are keyed by `instanceId`; core
- *   supports several mounted roots, and a singleton would let the last mount
- *   silently win. `default` throws, naming the ids, when there is not exactly
- *   one.
- * - **`allowRun` defaults off.** A global is reachable by any script on the
- *   page. Reads are already-redacted extension output; `runCommand` is
- *   arbitrary effect chosen by whoever got a script in. With it off the handle
- *   carries no `runCommand` at all — not one that refuses.
- * - **The global goes when the toolbar does.** `api.signal` removes the handle
- *   and, with the last instance, the global itself. A live handle onto a dead
- *   `api` is worse than no handle.
- * - **SSR-safe.** Nothing touches a global at module evaluation, only inside
- *   `start()`.
- *
- * `hidden` is inherited, never reimplemented: everything comes from `api`, so a
- * hidden extension contributes no commands and no diagnostics through the
- * bridge, exactly as in the bar.
- *
- * One exception to "everything comes from `api`": `read().shell` — position,
- * density, colour scheme, the height variable, bar and overflow membership —
- * is read off the root element, because the shell is core and core has no
- * extension to publish it through `diagnostics()`
- * (`plans/agent-readable-toolbar.md` § Phase 1). That is the only DOM read in
- * this extension, and it never touches another extension's markup: an
- * extension that wants to be readable publishes state.
+ * `read().shell` is the one DOM read. The shell belongs to core, which has no
+ * extension to publish these facts through `diagnostics()`; changing that
+ * would be a core contract change (`plans/agent-readable-toolbar.md` § Phase 1).
  */
 import { installAgentBridge } from "./runtime";
 import type { AgentReportOptions } from "./report";
@@ -147,10 +105,6 @@ export function agentBridge(options: AgentBridgeOptions = {}): DevToolbarExtensi
     priority,
     ...(hidden === undefined ? {} : { hidden }),
 
-    /**
-     * Cheap and pure — it runs on every toolbar render. `isOverflowed` is
-     * unused: the chip reads the same in the bar and in the `···` menu.
-     */
     compact: () => (
       <span
         data-dtb-part="trigger"

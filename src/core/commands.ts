@@ -19,7 +19,7 @@ const warned = new Set<string>();
  */
 let aggregating = false;
 
-/** Only ids and runnable commands survive. A function form can return anything. */
+/** Keeps only non-empty ids with runnable commands. */
 function isCommand(value: unknown): value is AnyToolbarCommand {
   if (typeof value !== "object" || value === null) return false;
   const candidate = value as Partial<AnyToolbarCommand>;
@@ -41,9 +41,8 @@ export function resetCommandWarnings(): void {
 }
 
 /**
- * Resolves one extension's `commands`, fail-closed. The function form runs
- * consumer code during core's render, outside any error boundary, so a throw is
- * contained here instead: the extension contributes nothing and core logs it once.
+ * Resolves one extension's `commands`, fail-closed. A throwing function form
+ * contributes nothing and is logged once because it runs during render.
  */
 export function resolveExtensionCommands(
   extension: DevToolbarExtension,
@@ -78,16 +77,13 @@ export function resolveExtensionCommands(
 }
 
 /**
- * Flattens extension-declared commands, dropping later duplicates of an id.
- * Order is extension order then declaration order — the order a palette
- * renders, so this must be a pure function of the extension list. `hidden`
- * extensions contribute nothing, since a hidden extension's commands must not
- * stay runnable via `runCommand(id)` or the palette.
+ * Flattens extension commands, dropping later duplicates. Order follows the
+ * extension list and each declaration list. Hidden extensions contribute nothing
+ * because their commands must not remain runnable.
  */
 export function collectCommands(extensions: readonly DevToolbarExtension[]): AnyToolbarCommand[] {
   if (aggregating) {
-    // warnOnce, not console directly: under StrictMode a recursive commands()
-    // would otherwise log twice per render for as long as the page is open.
+    // Use warnOnce because StrictMode can encounter this more than once.
     warnOnce(
       "*:reentrant",
       "getCommands() was called from inside a commands() enumeration. The " +
@@ -118,9 +114,8 @@ export interface CommandHost {
 }
 
 /**
- * Mounted instances, most recent last — exists only so the module-level
- * `runCommand(id)` can reach a mounted toolbar. Added on mount, removed on
- * unmount, so test and multi-root isolation hold.
+ * Mounted instances, most recent last, for module-level `runCommand(id)`.
+ * Mounting adds a host; unmounting removes it.
  */
 const hosts = new Set<CommandHost>();
 
@@ -144,7 +139,7 @@ function findCommand(
 }
 
 export interface InvokeCommandOptions {
-  /** Handed to `run()` unchanged. A command with no `input` schema ignores it. */
+  /** Handed to `run()` unchanged. */
   input?: unknown;
   /**
    * Resolved at call time, not from a snapshot, since a list captured a render
@@ -162,9 +157,8 @@ export interface InvokeCommandOptions {
  * already spent position two, and `runCommand(id, input, scope)` would silently
  * reinterpret every existing two-argument call.
  *
- * If `run()` throws or returns a rejected promise, this rejects with that same
- * error — callers must catch it. Turning that into a value is `/ext/agent`'s
- * job, at the boundary where a rejection would arrive as a bare string.
+ * If `run()` throws or rejects, this rejects with the same error. `/ext/agent`
+ * converts that rejection to a value at its page boundary.
  */
 export async function invokeCommand<Out = unknown>(
   id: string,
@@ -176,18 +170,15 @@ export async function invokeCommand<Out = unknown>(
     console.warn(`[dev-toolbar] no command registered with id "${id}".`);
     return { ok: false, reason: "unknown-command" };
   }
-  // The one cast in the aggregation. A roster is erased to `AnyToolbarCommand`
-  // so commands with different `In`/`Out` share an element type; this restores
-  // the call signature the erasure gave up. `Out` is unchecked by construction
-  // — only the command itself knows what it returns.
+  // The roster erases each command's `In`/`Out`; restore the selected command's
+  // call signature once. `Out` is unchecked by construction.
   const run = command.run as (input: unknown) => Out | Promise<Out>;
   return { ok: true, result: await run(options.input) };
 }
 
 /**
  * Runs an aggregated command by id. Resolves `false` when no mounted toolbar
- * declares it. Prefer `useDevToolbar().runCommand` inside React code — this is
- * for call sites with no context (hotkeys, consoles, tests).
+ * declares it. Use this from call sites without React context.
  *
  * Kept resolving a `boolean` through the contract v2 change on purpose: it is a
  * published export, and widening it to `invokeCommand`'s object would make

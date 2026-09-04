@@ -1,20 +1,10 @@
-/**
- * The Phase 1 "done when" list (`plans/agent-readable-toolbar.md`): the seven
- * first-party extensions publish, through their existing `diagnostics()`, the
- * state the skill's `probe.js` used to scrape off the DOM — and the bridge
- * reports the shell facts nobody owns.
- *
- * The headline case is the last one the plan names: **a flag override is
- * observable without opening the flags panel.** Everything here reads through
- * `window.__DEV_TOOLBAR__` and never queries an extension's markup, which is
- * the same standard the rewritten skill is held to — if a fact needs a
- * selector, the extension publishing it is the thing to fix.
- */
+/** Phase 1 coverage: extension diagnostics and the bridge's shell facts. */
 import { afterEach, describe, expect, it } from "vitest";
 import { act, cleanup } from "@testing-library/react";
 import { renderWithToolbar } from "@nejcm/dev-toolbar/testing";
 import { agentBridge } from "../index";
 import { readShell } from "../runtime";
+import { REDACTED } from "../../../runtime";
 import { DEFAULT_GLOBAL_NAME } from "../types";
 import { commandMenu } from "../../command-menu/index";
 import { diagnostics } from "../../diagnostics/index";
@@ -23,6 +13,7 @@ import { flags } from "../../flags/index";
 import { metrics } from "../../metrics/index";
 import { overlays } from "../../overlays/index";
 import { themeEditor } from "../../theme-editor/index";
+import type { DevToolbarExtension } from "../../../core/contract";
 import type { AgentHandle, AgentRegistry } from "../types";
 import type { FlagReading, FlagValue } from "../../flags/types";
 
@@ -49,8 +40,6 @@ afterEach(() => {
   cleanup();
   delete scope[DEFAULT_GLOBAL_NAME];
 });
-
-/* -------------------------------------------------------------------------- */
 
 const CATALOGUE: FlagReading[] = [
   { key: "new-header", type: "boolean", defaultValue: false, value: true, source: "server-rule" },
@@ -112,7 +101,6 @@ describe("a flag override, without opening the flags panel", () => {
     const { applied } = mountFlags();
     const bridge = handle();
 
-    // Baseline: no panel has been opened, nothing has been clicked.
     expect(bridge.read().shell.activePanel).toBeNull();
     expect(flagRow("new-header")).toMatchObject({
       effective: true,
@@ -123,23 +111,19 @@ describe("a flag override, without opening the flags panel", () => {
       tags: [],
     });
 
-    // The override is set through the command registry — the id is stable and
-    // public — not by clicking a switch in a panel.
+    // Set the override through the public command registry, not the panel.
     const ran = await bridge.runCommand?.("flags.toggle.new-header");
     expect(ran).toEqual({ ok: true });
 
     const after = flagRow("new-header");
     expect(after.effective).toBe(false);
-    // The base value is still the app's own, which is what makes this an
-    // override rather than a changed reading.
+    // The base remains the app's value, so this is an override rather than a new reading.
     expect(after.base).toBe(true);
     expect(after.source).toBe("local-override");
     expect(after.overridden).toBe(true);
     expect(after.tags).toContain("override");
 
-    // …and it really reached the application's adapter.
     expect(applied).toEqual([["new-header", false]]);
-    // Still no panel.
     expect(handle().read().shell.activePanel).toBeNull();
   });
 
@@ -164,54 +148,73 @@ describe("a flag override, without opening the flags panel", () => {
   });
 });
 
-/* -------------------------------------------------------------------------- */
-
 describe("the roster the bridge reads", () => {
-  const mountAll = () =>
-    renderWithToolbar(undefined, {
-      instanceId: "test",
-      extensions: [
-        agentBridge({ instanceId: "test", allowRun: true }),
-        flags({ flags: CATALOGUE }),
-        metrics(),
-        environment({
-          context: { environment: "staging", userId: "u_1", apiEndpoint: "https://api.test" },
-        }),
-        overlays(),
-        commandMenu(),
-        themeEditor(),
-        diagnostics(),
-      ],
-    });
+  /**
+   * Build the roster once so the assertion derives its expectations from the
+   * mounted list instead of restating it.
+   */
+  const ALL = (): DevToolbarExtension[] => [
+    agentBridge({ instanceId: "test", allowRun: true }),
+    flags({ flags: CATALOGUE }),
+    metrics(),
+    environment({
+      context: {
+        environment: "staging",
+        userId: "u_1",
+        apiEndpoint: "https://api.test",
+        // Credential-shaped on purpose: the masking assertion below is the
+        // point of "already masked", and a fixture of benign values cannot
+        // make it.
+        extra: { apiKey: "sk-live-abcdef123456" },
+      },
+    }),
+    overlays(),
+    commandMenu(),
+    themeEditor(),
+    diagnostics(),
+  ];
+
+  const mountAll = (extensions: DevToolbarExtension[] = ALL()) =>
+    renderWithToolbar(undefined, { instanceId: "test", extensions });
 
   it("has every first-party extension publishing something", () => {
-    mountAll();
+    const extensions = ALL();
+    mountAll(extensions);
     const entries = handle().read().diagnostics;
-    for (const id of [
-      "flags",
-      "metrics",
-      "environment",
-      "overlays",
-      "command-menu",
-      "theme-editor",
-      "diagnostics",
-    ]) {
-      const entry = entries.find((candidate) => candidate.id === id);
-      expect(entry?.status, `${id} is ${entry?.status ?? "missing"}`).toBe("ok");
+
+    // Derive this from what was mounted so a new extension cannot escape the check.
+    expect(entries.map((entry) => entry.id).sort()).toEqual(
+      extensions.map((extension) => extension.id).sort(),
+    );
+
+    for (const entry of entries) {
+      // The bridge reads the roster rather than contributing to its own snapshot.
+      const expected = entry.id === "agent" ? "absent" : "ok";
+      expect(entry.status, `${entry.id} is ${entry.status}: ${entry.error ?? "(no error)"}`).toBe(
+        expected,
+      );
     }
   });
 
   it("publishes metrics as numbers with a unit and a severity", () => {
     mountAll();
-    const rows = published<{ metrics: { id: string; value: number | null; unit: string }[] }>(
-      "metrics",
-    ).metrics;
+    const rows = published<{
+      metrics: {
+        id: string;
+        value: number | null;
+        unit: string;
+        status: string;
+        severity: string;
+      }[];
+    }>("metrics").metrics;
     expect(rows.length).toBeGreaterThan(0);
     for (const row of rows) {
       expect(typeof row.id).toBe("string");
       expect(row.value === null || typeof row.value === "number").toBe(true);
       expect(typeof row.unit).toBe("string");
-      // The formatted display string is deliberately not published.
+      // Publish the severity word, not a color or an undisclosed threshold.
+      expect(["unknown", "ok", "warn", "bad"], `${row.id} severity`).toContain(row.severity);
+      expect(typeof row.status).toBe("string");
       expect(row).not.toHaveProperty("display");
     }
   });
@@ -220,14 +223,31 @@ describe("the roster the bridge reads", () => {
     mountAll();
     const data = published<{
       severity: string;
-      fields: { id: string; value: string; markers: string[]; group: string }[];
+      maskedCount: number;
+      fields: { id: string; value: string; markers: string[]; group: string; masked: boolean }[];
     }>("environment");
-    const endpoint = data.fields.find((field) => field.id === "apiEndpoint");
+    const field = (id: string) => data.fields.find((candidate) => candidate.id === id);
+
+    const endpoint = field("apiEndpoint");
     expect(endpoint?.value).toBe("https://api.test");
     expect(endpoint?.group).toBe("build");
-    const route = data.fields.find((field) => field.id === "route");
-    expect(route?.markers).toContain("detected");
+    expect(endpoint?.markers).not.toContain("masked");
+
+    expect(field("route")?.markers).toContain("detected");
     expect(data.severity).toBe("warn");
+
+    // A published bridge value must already be masked before it reaches
+    // `window` or the reporter. `apiKey` exercises the consumer `extra` bag.
+    const secret = field("extra:apiKey");
+    expect(secret, "the credential-shaped extra never reached the bridge").toBeDefined();
+    expect(secret?.value).not.toContain("sk-live-abcdef123456");
+    expect(secret?.value).toBe(REDACTED);
+    expect(secret?.masked).toBe(true);
+    expect(secret?.markers).toContain("masked");
+    expect(data.maskedCount).toBeGreaterThan(0);
+
+    // Check the whole snapshot, not just the row.
+    expect(JSON.stringify(handle().read())).not.toContain("sk-live-abcdef123456");
   });
 
   it("publishes which overlay layers are on", async () => {
@@ -255,8 +275,6 @@ describe("the roster the bridge reads", () => {
     });
   });
 });
-
-/* -------------------------------------------------------------------------- */
 
 describe("/ext/diagnostics publishes a summary, not the snapshot", () => {
   const mount = () =>
@@ -290,18 +308,14 @@ describe("/ext/diagnostics publishes a summary, not the snapshot", () => {
     expect(summary["contributionCount"]).toBeGreaterThan(0);
     expect(typeof summary["generatedAt"]).toBe("string");
 
-    // The trap the plan names: a snapshot inside the next snapshot. The
-    // summary carries no `contributions`, no `page`, no `responsiveness`.
+    // A summary must not embed the captured snapshot.
     expect(summary).not.toHaveProperty("contributions");
     expect(summary).not.toHaveProperty("page");
     expect(summary).not.toHaveProperty("app");
 
-    // And it stays small: a nested snapshot would be kilobytes.
     expect(JSON.stringify(summary).length).toBeLessThan(400);
   });
 });
-
-/* -------------------------------------------------------------------------- */
 
 describe("shell facts, which no extension owns", () => {
   it("reports position, density, colour scheme and the height variable", () => {
@@ -357,8 +371,6 @@ describe("shell facts, which no extension owns", () => {
   it("names the collapsed extensions once the ··· menu is open", () => {
     const { toolbar } = renderWithToolbar(undefined, {
       instanceId: "test",
-      // A bar too narrow for the items forces the collapse the fake layout
-      // measures; `overlays` has the lowest priority here, so it goes first.
       layout: { barWidth: 200, itemWidth: 120 },
       extensions: [
         agentBridge({ instanceId: "test" }),
@@ -380,11 +392,8 @@ describe("shell facts, which no extension owns", () => {
     const overflow = handle().read().shell.overflow;
     expect(overflow.open).toBe(true);
     expect(overflow.items.length).toBeGreaterThan(0);
-    // The ids core actually collapsed, not merely "something non-empty".
-    // Compared as sets: the menu renders in bar order (start region, then
-    // end), while `overflowedIds()` follows the extension list.
+    // Compare the ids core collapsed, accounting for the two orderings.
     expect([...overflow.items].sort()).toEqual([...toolbar.overflowedIds()].sort());
-    // And they are gone from the bar, which is the other half of the claim.
     const barIds = handle()
       .read()
       .shell.bar.map((item) => item.id);
@@ -426,9 +435,7 @@ describe("a hidden bar", () => {
       toolbar.context().setVisible(false);
     });
 
-    // Core never pauses an extension for visibility, so the handle survives —
-    // it is the *rendered* shell that goes, which is why the skill reads
-    // `visible` beside `shell.mounted` rather than either alone.
+    // Visibility does not pause the extension; the rendered shell disappears.
     const snapshot = handle().read();
     expect(snapshot.visible).toBe(false);
     expect(snapshot.shell.mounted).toBe(false);

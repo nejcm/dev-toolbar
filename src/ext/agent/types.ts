@@ -1,22 +1,10 @@
 /**
- * The pure half of `/ext/agent`: what the bridge publishes and what a caller
- * gets back. [dev-toolbar/ext/agent]
- *
- * Nothing here touches `window` — the whole module is evaluated on a server
- * during SSR, and the global is only ever installed from `start(api)`
- * (`plans/agent-readable-toolbar.md` § Phase 0, decision 5).
- *
- * Everything is plain JSON-serialisable data, because the reader on the other
- * side is usually `page.evaluate`, which structured-clones what it returns: a
- * function, a `Map` or a class instance would arrive as `undefined` or throw.
+ * The JSON-serialisable data published by `/ext/agent`. It touches no globals,
+ * so the module remains safe to evaluate during SSR.
  */
 import type { CommandInputSchema, ExtensionDiagnostics } from "../../core/contract";
 
-/**
- * One aggregated command, flattened to data. `run` is deliberately not here —
- * a handle hands back descriptions, and `runCommand(id)` is the only way to
- * invoke one (and only when `allowRun` is on).
- */
+/** One aggregated command, flattened to data. Invocation is only through `runCommand`. */
 export interface AgentCommandView {
   id: string;
   label: string;
@@ -29,15 +17,11 @@ export interface AgentCommandView {
   keywords?: readonly string[];
   /** Display-only hint, e.g. `"Mod+Shift+F"`. Core does not bind it. */
   shortcut?: string;
-  /**
-   * What to pass as `runCommand`'s second argument. Absent means the command
-   * takes nothing. These are exactly the commands `/ext/command-menu` skips,
-   * so the bridge is the only way to reach them.
-   */
+  /** What to pass as `runCommand`'s second argument. `/ext/command-menu` skips these commands. */
   input?: CommandInputSchema;
 }
 
-/** One item currently rendered in the bar's regions. */
+/** One item currently rendered in a bar region. */
 export interface AgentBarItemView {
   /** `data-dtb-ext-id`. */
   id: string;
@@ -99,7 +83,7 @@ export interface AgentOverflowView {
   items: readonly string[];
 }
 
-/** What `read()` returns: the whole agent-visible state of one mounted toolbar. */
+/** The whole agent-visible state of one mounted toolbar. */
 export interface AgentSnapshot {
   /** The `instanceId` of the `<DevToolbar>` this handle belongs to. */
   instanceId: string;
@@ -121,11 +105,7 @@ export interface AgentSnapshot {
   diagnostics: readonly ExtensionDiagnostics[];
 }
 
-/**
- * Errors are values. A rejection crossing `page.evaluate` arrives as a string
- * with no shape to branch on, so `runCommand` resolves one of these instead of
- * rejecting — including when the command itself throws.
- */
+/** Result of `runCommand`; command failures are values so an agent can branch on them. */
 export type AgentRunResult =
   /**
    * `result` is whatever `run()` returned, redacted on the way out like every
@@ -143,9 +123,7 @@ export type AgentRunResult =
  * One mounted toolbar, as an agent sees it.
  *
  * `runCommand` is **absent**, not merely refusing, when `allowRun` is off:
- * the whole point of the default is that there is no way to run anything at
- * all, and a method that always answers "no" is a bigger surface than no
- * method.
+ * there is no way to run anything at all.
  *
  * A handle someone captured before its toolbar unmounted refuses everything
  * afterwards (decision 4): `read()` and `listCommands()` **throw**, and

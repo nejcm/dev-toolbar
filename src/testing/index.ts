@@ -23,6 +23,9 @@ export type { ReactTestingLibrary } from "./reactTestingLibrary";
 export { makeCommand, makeExtension, resetExtensionIds } from "./makeExtension";
 export type { MakeCommandOptions, MakeExtensionOptions } from "./makeExtension";
 
+export { fakeExtensionApi } from "./fakeExtensionApi";
+export type { FakeExtensionApi, FakeExtensionApiOptions } from "./fakeExtensionApi";
+
 export { createMockBus } from "./mockBus";
 export type {
   CreateMockBusOptions,

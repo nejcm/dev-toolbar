@@ -13,21 +13,14 @@
  * Each `it` below fails against the code as first written.
  */
 import { afterEach, describe, expect, it } from "vitest";
+import { fakeExtensionApi } from "@nejcm/dev-toolbar/testing";
 import { OVERRIDES_KEY, createThemeEditorRuntime } from "../runtime";
 import { isPrintableSelector } from "../types";
 import { createMemoryStorage } from "../../../core/storage";
 import type { ExtensionRuntimeApi, ToolbarStorage } from "../../../core/contract";
 
-const api = (storage: ToolbarStorage = createMemoryStorage()): ExtensionRuntimeApi => ({
-  signal: new AbortController().signal,
-  isVisible: () => true,
-  subscribeVisibility: () => () => {},
-  storage,
-  getCommands: () => [],
-  runCommand: () => Promise.resolve(false),
-  invokeCommand: async () => ({ ok: false, reason: "unknown-command" }) as const,
-  getDiagnostics: () => [],
-});
+const api = (storage: ToolbarStorage = createMemoryStorage()): ExtensionRuntimeApi =>
+  fakeExtensionApi({ storage }).api;
 
 const root = () => document.documentElement;
 

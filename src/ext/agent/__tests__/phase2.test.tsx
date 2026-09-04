@@ -1,18 +1,7 @@
-/**
- * The Phase 2 "done when" list (`plans/agent-readable-toolbar.md`):
- *
- * 1. an agent sets a specific flag to a specific value **in one call**;
- * 2. `diagnostics.capture` resolves the snapshot it captured;
- * 3. the palette does not offer a command it cannot run;
- * 4. a v1 extension still works.
- *
- * (4) lives in `src/core/__tests__/contract-v2.test.tsx`, because it is a core
- * property rather than a bridge one. The rest are here: the bridge is the only
- * caller that can supply input, and the only one that reads a result back.
- */
+/** Phase 2 coverage: input commands, returned values, palette filtering, and v1 compatibility. */
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup } from "@testing-library/react";
-import { renderWithToolbar } from "@nejcm/dev-toolbar/testing";
+import { createNullStorage, fakeExtensionApi, renderWithToolbar } from "@nejcm/dev-toolbar/testing";
 import { agentBridge } from "../index";
 import { DEFAULT_GLOBAL_NAME } from "../types";
 import { commandMenu } from "../../command-menu/index";
@@ -55,10 +44,6 @@ afterEach(() => {
   delete scope[DEFAULT_GLOBAL_NAME];
   vi.restoreAllMocks();
 });
-
-/* -------------------------------------------------------------------------- */
-/* 1. One call sets a specific flag to a specific value                        */
-/* -------------------------------------------------------------------------- */
 
 const CATALOGUE: FlagReading[] = [
   { key: "new-header", type: "boolean", defaultValue: false, value: true, source: "server-rule" },
@@ -127,9 +112,7 @@ describe("an agent sets a specific flag to a specific value in one call", () => 
       overridden: true,
       source: "local-override",
     });
-    // …and it reached the application, not just the extension's own map.
     expect(applied).toEqual([["search.rank", 9]]);
-    // No panel was opened to do it.
     expect(handle().read().shell.activePanel).toBeNull();
   });
 
@@ -178,7 +161,6 @@ describe("an agent sets a specific flag to a specific value in one call", () => 
       );
       expect(flagRow(key).overridden, `${key} was written`).toBe(false);
     }
-    // Nothing reached the application on any of the three.
     expect(applied).toEqual([]);
   });
 
@@ -252,7 +234,6 @@ describe("an agent sets a specific flag to a specific value in one call", () => 
 
     expect(result).toMatchObject({ ok: false, reason: "threw" });
     expect((result as { error: string }).error).toMatch(/boolean flag/);
-    // Nothing was written, and the application was never called.
     expect(flagRow("new-header").overridden).toBe(false);
     expect(applied).toEqual([]);
   });
@@ -277,7 +258,6 @@ describe("an agent sets a specific flag to a specific value in one call", () => 
       instanceId: "test",
       extensions: [
         agentBridge({ instanceId: "test", allowRun: true }),
-        // No `onOverride`: the panel is read-only, so a command must be too.
         flags({ flags: CATALOGUE }),
       ],
     });
@@ -318,17 +298,10 @@ describe("an agent sets a specific flag to a specific value in one call", () => 
     const ids = handle()
       .listCommands()
       .map((command) => command.id);
-    // Both ship. `flags.set` is the tool call; `flags.toggle.<key>` is what a
-    // human finds by typing a flag's name into the palette, which skips every
-    // command carrying `input`.
     expect(ids).toContain("flags.set");
     expect(ids).toContain("flags.toggle.new-header");
   });
 });
-
-/* -------------------------------------------------------------------------- */
-/* theme-editor: the command that could not be expressed at all before v2      */
-/* -------------------------------------------------------------------------- */
 
 const TOKENS: DesignTokenDefinition[] = [
   { name: "--app-accent", type: "color", value: "#111111" },
@@ -377,10 +350,6 @@ describe("theme-editor.setToken", () => {
   });
 });
 
-/* -------------------------------------------------------------------------- */
-/* 2. `diagnostics.capture` resolves the snapshot it captured                  */
-/* -------------------------------------------------------------------------- */
-
 describe("diagnostics.capture resolves the snapshot it captured", () => {
   it("hands the caller the object, not just `ok`", async () => {
     renderWithToolbar(undefined, {
@@ -401,11 +370,9 @@ describe("diagnostics.capture resolves the snapshot it captured", () => {
     expect(snapshot).toBeTypeOf("object");
     expect(snapshot).toHaveProperty("generatedAt");
     expect(snapshot).toHaveProperty("toolbar");
-    // It really is a snapshot of *this* toolbar's roster.
     expect(JSON.stringify(snapshot)).toContain("flags");
 
-    // And it is the same one the extension stored, not a parallel capture: its
-    // published summary now says something was captured.
+    // The stored summary confirms this was the extension's capture.
     expect(published<{ captured: boolean }>("diagnostics").captured).toBe(true);
   });
 
@@ -434,10 +401,6 @@ describe("diagnostics.capture resolves the snapshot it captured", () => {
   });
 });
 
-/* -------------------------------------------------------------------------- */
-/* The measured cost of redacting on the way out                               */
-/* -------------------------------------------------------------------------- */
-
 /** `n` nested `{ d: … }` objects wrapping a leaf, so depth is countable. */
 const nest = (n: number): unknown => (n === 0 ? { leaf: "SENTINEL" } : { d: nest(n - 1) });
 
@@ -453,16 +416,16 @@ const nest = (n: number): unknown => (n === 0 ? { leaf: "SENTINEL" } : { d: nest
  * | B. bridge `runCommand("diagnostics.capture").result` — `redact(snapshot)` | depth 3 | 4 |
  * | C. bug-report JSON — `renderJson(capture())` | depth 0 | 7 |
  *
- * C is the **most** permissive, not the least: `/ext/diagnostics` redacts each
- * contribution at its own root inside `finish()` and never re-redacts the
- * assembled snapshot, and `renderJson` is a plain `JSON.stringify`. B is the
- * strictest because it is that already-redacted snapshot put through a
- * *second* pass by the bridge, three levels down.
+ * C is the **most** permissive: `/ext/diagnostics` redacts each contribution
+ * at its own root and `renderJson` does not re-redact the assembled snapshot.
+ * B is strictest because the bridge applies a second pass three levels down.
  *
- * All three numbers are quoted in `README.md` and `src/ext/agent/runtime.ts`,
- * so all three are pinned here. Prose with no test behind it is what produced
- * the `nullable` bug in `flags.set`'s schema, and an earlier version of this
- * very block measured B correctly while calling it C.
+ * All three are pinned because an earlier version of this block measured B
+ * correctly and called it C, so the assertions passed while the name above them
+ * was false. Naming the surface each test reads is the point.
+ *
+ * `README.md` and `src/ext/agent/runtime.ts` quote all three numbers; this
+ * test pins them here too.
  */
 describe("re-redaction truncates deep contributions, at three pinned depths", () => {
   it("path A — the bridge's roster read keeps five levels and drops the sixth", () => {
@@ -513,9 +476,8 @@ describe("re-redaction truncates deep contributions, at three pinned depths", ()
       const data = (id: string): string =>
         JSON.stringify(entries.find((entry) => entry.id === id)?.data ?? null);
       expect(data("deep4")).toContain("SENTINEL");
-      // The same contribution the roster read above kept: this surface is a
-      // *second* redaction pass over an already-redacted snapshot, applied
-      // three levels down instead of two, so it loses one more level.
+      // This surface applies the second pass three levels down, one deeper than
+      // the roster read.
       expect(data("deep5")).not.toContain("SENTINEL");
       expect(data("deep5")).toContain("[truncated]");
     });
@@ -529,22 +491,19 @@ describe("re-redaction truncates deep contributions, at three pinned depths", ()
     // contribution at its own root (depth 0), which is why seven survive.
     const controller = new AbortController();
     const runtime = createDiagnosticsRuntime({ id: "diagnostics" });
-    runtime.start({
-      signal: controller.signal,
-      isVisible: () => true,
-      subscribeVisibility: () => () => {},
-      storage: { getItem: () => null, setItem: () => {}, removeItem: () => {} },
-      getCommands: () => [],
-      runCommand: async () => false,
-      invokeCommand: async () => ({ ok: false, reason: "unknown-command" }) as const,
-      getDiagnostics: () =>
-        [5, 7, 8].map((n) => ({
-          id: `deep${n}`,
-          label: `deep ${n}`,
-          status: "ok" as const,
-          data: nest(n),
-        })),
-    });
+    runtime.start(
+      fakeExtensionApi({
+        signal: controller.signal,
+        storage: createNullStorage(),
+        getDiagnostics: () =>
+          [5, 7, 8].map((n) => ({
+            id: `deep${n}`,
+            label: `deep ${n}`,
+            status: "ok" as const,
+            data: nest(n),
+          })),
+      }).api,
+    );
 
     const parsed = JSON.parse(renderJson(runtime.capture())) as {
       contributions?: { id: string; data?: unknown }[];
@@ -552,7 +511,6 @@ describe("re-redaction truncates deep contributions, at three pinned depths", ()
     const data = (id: string): string =>
       JSON.stringify(parsed.contributions?.find((entry) => entry.id === id)?.data ?? null);
 
-    // Five — which the bridge's capture result (path B) has already lost.
     expect(data("deep5")).toContain("SENTINEL");
     expect(data("deep7")).toContain("SENTINEL");
     expect(data("deep8")).not.toContain("SENTINEL");
@@ -561,10 +519,6 @@ describe("re-redaction truncates deep contributions, at three pinned depths", ()
     controller.abort();
   });
 });
-
-/* -------------------------------------------------------------------------- */
-/* 3. The palette does not offer a command it cannot run                       */
-/* -------------------------------------------------------------------------- */
 
 describe("the palette does not offer a command it cannot run", () => {
   it("skips every command that declares `input`, while the bridge keeps them", async () => {
@@ -580,8 +534,6 @@ describe("the palette does not offer a command it cannot run", () => {
       ],
     });
 
-    // The palette enumerates on open, so open it. It publishes nothing until
-    // it has.
     await act(async () => {
       window.dispatchEvent(new KeyboardEvent("keydown", { key: "k", ctrlKey: true }));
     });
@@ -593,8 +545,7 @@ describe("the palette does not offer a command it cannot run", () => {
     expect(bridgeIds).toContain("theme-editor.setToken");
 
     const palette = published<{ commandCount: number }>("command-menu");
-    // The palette's own count is what it could run, and it is short by exactly
-    // the two input-carrying commands.
+    // The palette excludes the two input-carrying commands.
     expect(palette.commandCount).toBe(bridgeIds.length - 2);
   });
 
@@ -608,16 +559,14 @@ describe("the palette does not offer a command it cannot run", () => {
       run: () => {},
     };
     const plain = { id: "plain.run", label: "Plain", run: () => {} };
-    const stop = runtime.start({
-      signal: controller.signal,
-      isVisible: () => true,
-      subscribeVisibility: () => () => {},
-      storage: { getItem: () => null, setItem: () => {}, removeItem: () => {} },
-      getCommands: () => [withInput, plain],
-      runCommand: async () => true,
-      invokeCommand: async () => ({ ok: false, reason: "unknown-command" }) as const,
-      getDiagnostics: () => [],
-    });
+    const stop = runtime.start(
+      fakeExtensionApi({
+        signal: controller.signal,
+        storage: createNullStorage(),
+        getCommands: () => [withInput, plain],
+        runCommand: async () => true,
+      }).api,
+    );
 
     runtime.open();
     const snapshot = runtime.store.peek();

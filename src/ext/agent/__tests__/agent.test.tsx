@@ -1,9 +1,4 @@
-/**
- * The Phase 0 "done when" list, one `describe` at a time: a second mounted
- * toolbar does not clobber the first, the global is gone after unmount, an
- * `access_token` URL comes back masked, and `allowRun: false` exposes no way
- * to run anything at all.
- */
+/** Phase 0 coverage: registry isolation, teardown, redaction, and `allowRun`. */
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup } from "@testing-library/react";
 import { makeExtension, renderWithToolbar } from "@nejcm/dev-toolbar/testing";
@@ -32,8 +27,7 @@ afterEach(() => {
 
 describe("installation", () => {
   it("touches no global until the toolbar mounts", () => {
-    // Decision 5, SSR: the factory runs at module scope in a consumer's app,
-    // which on a server is a module evaluation with no client in sight.
+    // The factory may run during SSR, before any client global exists (decision 5).
     const extension = agentBridge();
     expect(scope[DEFAULT_GLOBAL_NAME]).toBeUndefined();
     expect(typeof extension.start).toBe("function");
@@ -105,7 +99,6 @@ describe("a second mounted toolbar", () => {
     expect(ids("second")).toContain("only-in-second");
 
     first.unmount();
-    // The survivor is untouched, and is now the default.
     expect(Object.keys(registry().instances)).toEqual(["second"]);
     expect(registry().default.instanceId).toBe("second");
   });
@@ -300,9 +293,7 @@ describe("allowRun", () => {
     expect(handle.allowRun).toBe(false);
     expect(handle.runCommand).toBeUndefined();
     expect("runCommand" in handle).toBe(false);
-    // Not just the one method: nothing reachable from the registry invokes a
-    // command. Every own function on the handle is called, and the counter
-    // must still be zero.
+    // Check every own function, not only `runCommand`, for an accidental run path.
     for (const value of Object.values(handle as unknown as Record<string, unknown>)) {
       if (typeof value === "function") (value as () => unknown)();
     }
@@ -330,8 +321,7 @@ describe("allowRun", () => {
   it("resolves unknown-command rather than rejecting", async () => {
     renderWithToolbar(undefined, { extensions: [agentBridge({ allowRun: true }), runnable()] });
 
-    // A rejection crossing `page.evaluate` arrives as a string with no shape
-    // to branch on, so every failure is a value.
+    // A rejection crossing `page.evaluate` has no useful shape to branch on.
     await expect(registry().default.runCommand?.("nope.nothing")).resolves.toEqual({
       ok: false,
       reason: "unknown-command",
@@ -383,7 +373,6 @@ describe("the chip", () => {
 
     expect(toolbar.overflowedIds()).toEqual([]);
 
-    // Room for one item plus the ⋮ button, not two.
     toolbar.resize(200);
     expect(toolbar.overflowedIds()).toEqual(["agent"]);
     expect(toolbar.isOverflowed("ordinary")).toBe(false);
@@ -395,7 +384,6 @@ describe("a captured handle", () => {
     const { unmount } = renderWithToolbar(undefined, {
       extensions: [agentBridge({ allowRun: true }), makeExtension({ id: "jobs" })],
     });
-    // Grabbed while live, the way a test script holds one across a navigation.
     const handle = registry().default;
 
     unmount();
@@ -404,7 +392,7 @@ describe("a captured handle", () => {
     // the mount, so the handle has to refuse for itself.
     expect(() => handle.read()).toThrow(/after its toolbar unmounted/);
     expect(() => handle.listCommands()).toThrow(/after its toolbar unmounted/);
-    // The run path keeps the errors-are-values rule instead of throwing.
+    // Runs keep the errors-as-values rule instead of throwing.
     await expect(handle.runCommand?.("jobs.anything")).resolves.toEqual({
       ok: false,
       reason: "torn-down",

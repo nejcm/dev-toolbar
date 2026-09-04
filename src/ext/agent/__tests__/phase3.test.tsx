@@ -1,16 +1,4 @@
-/**
- * Phase 3 (`plans/agent-readable-toolbar.md`): the snapshot leaves the page.
- *
- * The receiving half is a dev-server middleware and lives in the playground,
- * not in this package — so what is testable here is the *page* half: that the
- * check-in carries what a receiver needs, that the snapshot is coalesced
- * rather than streamed, that a queued command comes back with its token and a
- * fresh snapshot, that `allowRun: false` refuses to run one, and that nothing
- * keeps posting after the toolbar unmounts.
- *
- * The transport is driven through injected `fetch` and clocks: a test that
- * needed a real server would be testing the playground's plugin.
- */
+/** Phase 3 page-side coverage; the receiving middleware is tested in the playground. */
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup } from "@testing-library/react";
 import { renderWithToolbar } from "@nejcm/dev-toolbar/testing";
@@ -27,10 +15,6 @@ afterEach(() => {
   delete scope[DEFAULT_GLOBAL_NAME];
   vi.restoreAllMocks();
 });
-
-/* -------------------------------------------------------------------------- */
-/* A handle under the test's control                                          */
-/* -------------------------------------------------------------------------- */
 
 const snapshotWith = (visible: boolean): AgentSnapshot => ({
   instanceId: "test",
@@ -128,10 +112,6 @@ const noSchedule = () => () => {};
 
 /** Lets an in-flight check-in finish. `startAgentReporter` drops an overlapping pump. */
 const settled = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 0));
-
-/* -------------------------------------------------------------------------- */
-/* The check-in body                                                          */
-/* -------------------------------------------------------------------------- */
 
 describe("the check-in", () => {
   it("carries the snapshot, the instance and the protocol version", async () => {
@@ -244,7 +224,6 @@ describe("the check-in", () => {
       schedule: noSchedule,
     });
 
-    // Four check-ins inside one interval, each seeing different state.
     for (const visible of [true, false, true, false]) {
       fake.setVisible(visible);
       await reporter.tick();
@@ -255,10 +234,6 @@ describe("the check-in", () => {
     expect(reporter.snapshotPosts).toBe(1);
   });
 });
-
-/* -------------------------------------------------------------------------- */
-/* Commands, both ways                                                        */
-/* -------------------------------------------------------------------------- */
 
 describe("a queued command", () => {
   it("runs, comes back with its token, and brings a fresh snapshot with it", async () => {
@@ -341,10 +316,6 @@ describe("a queued command", () => {
     expect(String(warn.mock.calls[0]?.[0])).toContain("could not reach the reporter endpoint");
   });
 });
-
-/* -------------------------------------------------------------------------- */
-/* Lifecycle                                                                  */
-/* -------------------------------------------------------------------------- */
 
 describe("the reporter's lifetime", () => {
   it("stops itself when the toolbar it reports on has unmounted", async () => {
@@ -492,15 +463,8 @@ describe("the reporter's lifetime", () => {
     await vi.waitFor(() => {
       expect(net.bodies).toHaveLength(1);
     });
-    // The body is recorded inside `fetch`, so it is observable while the first
-    // check-in is still unwinding — and an overlapping pump would be dropped.
     await settled();
     expect(net.bodies[0]?.instanceId).toBe("test");
-    // The **first** check-in already sees the mounted bar. `start(api)` runs
-    // while core is still committing, so an inline first tick would report
-    // `shell.mounted: false` for about a second — the one field a reader uses
-    // to decide the toolbar is there. Deferring that first pump by a
-    // macrotask costs nothing and makes the first answer the settled one.
     expect(net.bodies[0]?.snapshot?.shell.mounted).toBe(true);
     expect(net.bodies[0]?.snapshot?.shell.bar.map((item) => item.id)).toEqual(["agent"]);
 

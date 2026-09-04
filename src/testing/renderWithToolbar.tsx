@@ -13,9 +13,9 @@ import { DEFAULT_INSTANCE_ID, instanceHeightVariable } from "./heightVariable";
 import type { DevToolbarProps } from "../core/DevToolbar";
 import type { DevToolbarContextValue } from "../core/context";
 import type {
+  AnyToolbarCommand,
   CommandInvocation,
   DevToolbarExtension,
-  ToolbarCommand,
   ToolbarPosition,
 } from "../core/contract";
 import { installToolbarLayout, reinstallToolbarLayout } from "./layout";
@@ -114,8 +114,13 @@ export interface ToolbarHandle {
   runCommand(id: string, input?: unknown): Promise<boolean>;
   /** `runCommand` that resolves what the command returned (contract v2). */
   invokeCommand<Out = unknown>(id: string, input?: unknown): Promise<CommandInvocation<Out>>;
-  /** Re-enumerates every extension's commands, the way a palette does on open. */
-  getCommands(): readonly ToolbarCommand[];
+  /**
+   * Re-enumerates every extension's commands, the way a palette does on open.
+   * `AnyToolbarCommand`, matching `DevToolbarContextValue.getCommands()` — a
+   * roster is heterogeneous in `In`/`Out`, and typing it `ToolbarCommand` here
+   * would hide `input` from a test that wants to assert on it.
+   */
+  getCommands(): readonly AnyToolbarCommand[];
 }
 
 export interface RenderWithToolbarResult extends RenderResult {

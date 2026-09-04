@@ -176,13 +176,9 @@ export function createMetricsRuntime(options: MetricsRuntimeOptions): MetricsRun
         // callback), and this is headed for a clipboard.
         url: typeof location === "undefined" ? null : redactUrl(location.href),
         /**
-         * The numbers, not the chips' formatted text
-         * (`plans/agent-readable-toolbar.md` § Phase 1). `display` is a
-         * rendering decision — `"58 fps"`, `"1.2 MB"` — and a reader that has
-         * to parse it back cannot tell a unit change from a regression.
-         *
-         * Read off the last published snapshot rather than re-aggregating:
-         * `diagnostics()` is called on every roster read and must stay cheap.
+         * Numeric values, not formatted chip text (`plans/agent-readable-toolbar.md`
+         * § Phase 1). Read from the last published snapshot because diagnostics
+         * runs on every roster read.
          */
         metrics: latest.order.map((id) => {
           const view = latest.views[id];
@@ -190,9 +186,7 @@ export function createMetricsRuntime(options: MetricsRuntimeOptions): MetricsRun
             id,
             status: view.status,
             severity: view.severity,
-            // `null`, not `NaN`: `JSON.stringify(NaN)` is `null` anyway, and
-            // saying so here keeps the in-memory object and the serialised one
-            // the same shape.
+            // Keep the in-memory and JSON shapes aligned.
             value: Number.isFinite(view.value) ? view.value : null,
             unit: view.unit,
           };
@@ -201,7 +195,7 @@ export function createMetricsRuntime(options: MetricsRuntimeOptions): MetricsRun
       for (const collector of collectors) {
         payload[collector.id] = collector.diagnostics(at);
       }
-      // Second redact() pass catches credential-shaped values anywhere else.
+      // Catch credential-shaped values added to the payload above.
       return redact(payload);
     },
     flush() {

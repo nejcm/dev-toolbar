@@ -159,15 +159,41 @@ function CommandsPanel() {
       >
         Re-enumerate{live === null ? "" : ` — ${live} right now`}
       </button>
+      <p style={{ margin: 0, color: "var(--dtb-muted)" }}>
+        A command that declares <code>input</code> (contract v2) needs a form
+        this panel does not have, so it is listed and disabled rather than
+        offered — pressing it with no input is a guaranteed throw, and{" "}
+        <code>void command.run()</code> would swallow that into an unhandled
+        rejection. <code>/ext/command-menu</code> skips these for the same
+        reason; <code>/ext/agent</code> is the one that can supply input.
+      </p>
       <ul style={{ margin: 0, paddingLeft: 18 }}>
         {commandList.map((command) => (
           <li key={command.id}>
             <button
               type="button"
               data-dtb-part="trigger"
-              onClick={() => void command.run()}
+              disabled={command.input !== undefined}
+              title={
+                command.input === undefined
+                  ? command.description
+                  : `Takes input (${Object.keys(command.input.fields).join(", ")}) — run it through /ext/agent`
+              }
+              onClick={() => {
+                // `Promise.resolve(...)` inside the `try`, so a synchronous
+                // throw and a rejection both land in the same place. A bare
+                // `void command.run()` reports neither.
+                try {
+                  Promise.resolve(command.run()).catch((error: unknown) => {
+                    console.error(`[playground] ${command.id} rejected`, error);
+                  });
+                } catch (error) {
+                  console.error(`[playground] ${command.id} threw`, error);
+                }
+              }}
             >
               {command.label}
+              {command.input === undefined ? "" : " (needs input)"}
             </button>
           </li>
         ))}

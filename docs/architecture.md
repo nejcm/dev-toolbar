@@ -5,7 +5,7 @@ boundaries are and why they sit there, the full styling surface, and how to writ
 extension against it. The README documents the package for consumers; this document
 is the *why*, and is the thing to read before changing the contract.
 
-- Contract version: **1** (`CONTRACT_VERSION`, in `src/core/contract.ts`)
+- Contract version: **2** (`CONTRACT_VERSION`, in `src/core/contract.ts`)
 - Entries: `@nejcm/dev-toolbar` (root), `/runtime`, `/ext/metrics`,
   `/ext/environment`, `/ext/flags`, `/ext/command-menu`, `/ext/overlays`,
   `/ext/diagnostics`, `/ext/theme-editor`, `/ext/agent`, `/testing`,
@@ -784,7 +784,9 @@ toolbar rather than replacing it — it overrides Testing Library's own `rerende
 which has no `wrapper` here to spare the toolbar from being torn out.
 
 `makeExtension()` builds throwaway extensions (including deliberately broken ones, via
-`throwInCompact` / `throwInPanel` / `throwInStart`), and `createMockBus()` gives a
+`throwInCompact` / `throwInPanel` / `throwInStart`), `fakeExtensionApi()` builds the
+`ExtensionRuntimeApi` core would hand to `start()` for a test that drives a `runtime.ts`
+without mounting anything, and `createMockBus()` gives a
 recording pub/sub bus whose `MockClock` stamps `event.at` and offers hand-cranked
 `setTimeout`/`setInterval`. `BusLike` itself carries no clock — a collector that wants
 one takes an injected *time reader* instead (`CollectorContext.now()` in

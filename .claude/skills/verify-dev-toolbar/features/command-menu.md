@@ -10,8 +10,11 @@ throws is caught and shown in the palette rather than reaching the app.
 ## Sub-features
 
 - `cmd-open` opens from the bar chip and from `Mod+K`.
-- `cmd-enumerate` lists every command every visible extension contributes,
-  grouped by extension.
+- `cmd-enumerate` lists every command every visible extension contributes
+  **except those that declare `input`**, grouped by extension. Contract v2 gave
+  commands an optional input schema; the palette has no form for one, so it
+  drops them and leaves them to `/ext/agent`. `read().commands` is the
+  unfiltered roster.
 - `cmd-filter` narrows the list as you type and shows an empty state.
 - `cmd-run` runs the selected command and closes.
 - `cmd-keys` moves with `↑`/`↓`/`Home`/`End` and dismisses with `Escape`.

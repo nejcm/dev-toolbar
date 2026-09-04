@@ -3,6 +3,7 @@
  * and the one thing this extension writes to a document it does not own.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { fakeExtensionApi } from "@nejcm/dev-toolbar/testing";
 import { fireEvent } from "@testing-library/react";
 import {
   BOXES_REFS_ATTRIBUTE,
@@ -28,7 +29,6 @@ import {
   DEFAULT_GRID,
 } from "../types";
 import type { OverlaysSnapshot } from "../types";
-import { createMemoryStorage } from "../../../core/storage";
 import type { ExtensionRuntimeApi } from "../../../core/contract";
 
 const html = (markup: string): HTMLElement => {
@@ -70,43 +70,12 @@ const withRect = (
     }) as DOMRect;
 };
 
-function fakeApi(): ExtensionRuntimeApi {
-  const controller = new AbortController();
-  const listeners = new Set<(visible: boolean) => void>();
-  return {
-    signal: controller.signal,
-    isVisible: () => true,
-    subscribeVisibility(callback) {
-      listeners.add(callback);
-      return () => listeners.delete(callback);
-    },
-    getCommands: () => [],
-    getDiagnostics: () => [],
-    runCommand: async () => false,
-    invokeCommand: async () => ({ ok: false, reason: "unknown-command" }) as const,
-    storage: createMemoryStorage(),
-  };
-}
+const fakeApi = (): ExtensionRuntimeApi => fakeExtensionApi().api;
 
 /** `fakeApi`, plus the handle needed to drive the bar's visibility. */
 function visibleApi(): { api: ExtensionRuntimeApi; set: (visible: boolean) => void } {
-  const listeners = new Set<(visible: boolean) => void>();
-  let visible = true;
-  const api: ExtensionRuntimeApi = {
-    ...fakeApi(),
-    isVisible: () => visible,
-    subscribeVisibility(callback) {
-      listeners.add(callback);
-      return () => listeners.delete(callback);
-    },
-  };
-  return {
-    api,
-    set(next) {
-      visible = next;
-      for (const listener of listeners) listener(next);
-    },
-  };
+  const fake = fakeExtensionApi();
+  return { api: fake.api, set: fake.setVisible };
 }
 
 /**

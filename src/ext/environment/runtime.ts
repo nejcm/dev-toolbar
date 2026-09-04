@@ -533,14 +533,7 @@ export function createEnvironmentRuntime(
         supplied: snapshot.supplied,
         impersonating: snapshot.impersonating,
         maskedCount: snapshot.maskedCount,
-        /**
-         * The panel's rows, as key/value/markers with the masking already
-         * applied (`plans/agent-readable-toolbar.md` § Phase 1). `markers`
-         * carries the panel's own `data-dtb-tag` vocabulary, plus `alarming`,
-         * which the panel spells as a colour rather than a tag — so a reader
-         * of this and a reader of the rendered row describe the same row the
-         * same way.
-         */
+        /** Panel rows with masking applied and the panel's `data-dtb-tag` vocabulary. */
         fields: snapshot.fields
           .filter((field) => field.source !== "missing")
           .map((field) => ({
@@ -557,7 +550,7 @@ export function createEnvironmentRuntime(
             value: field.value,
           })),
       };
-      // Belt-and-braces: cheap second redact pass in case a field is added above and forgotten here.
+      // A second pass protects fields added here without a matching redaction.
       return redact(payload, options.redactOptions);
     },
   };

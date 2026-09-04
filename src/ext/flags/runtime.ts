@@ -547,9 +547,8 @@ export function createFlagsRuntime(options: FlagsRuntimeOptions = {}): FlagsRunt
     equals: (a, b) => signature(a) === signature(b),
   });
 
-  // `revision` advances on publish, not on build: `recipeText()` and
-  // `diagnostics()` build without publishing, and bumping there would make
-  // revision a count of reads instead of writes.
+  // `revision` advances on publish, not on build; recipe and diagnostics reads
+  // must not turn it into a read count.
   const publish = () => {
     revision += 1;
     store.set(build());
@@ -783,13 +782,7 @@ export function createFlagsRuntime(options: FlagsRuntimeOptions = {}): FlagsRunt
         maskedCount: snapshot.maskedCount,
         reloadPending: snapshot.reloadPending,
         readError: snapshot.readError,
-        /**
-         * Every catalogued row, not only the overridden ones
-         * (`plans/agent-readable-toolbar.md` § Phase 1). An override is a
-         * difference between two values, and a reader handed only the changed
-         * ones cannot see the difference — which is the whole point of asking
-         * whether an override is applied.
-         */
+        /** Every catalogued row, so a reader can compare base and effective values. */
         flags: snapshot.flags.map((view) => ({
           key: view.key,
           type: view.type,
@@ -797,11 +790,8 @@ export function createFlagsRuntime(options: FlagsRuntimeOptions = {}): FlagsRunt
           overridden: view.overridden,
           masked: view.masked,
           reloadBehavior: view.reloadBehavior,
-          // Typed values, so a reader compares `false` to `false` rather than
-          // parsing `"false"` — but only while the row is unmasked. A masked
-          // row publishes the same redacted display string the panel shows:
-          // there is no unmasked path to the screen and there is none here
-          // either.
+          // Preserve typed values while unmasked. Masked rows use the same
+          // redacted display strings as the panel.
           effective: view.masked ? view.effectiveText : view.effective,
           base: view.masked ? view.baseText : view.base,
           default: view.masked ? view.defaultText : view.defaultValue,
@@ -811,16 +801,14 @@ export function createFlagsRuntime(options: FlagsRuntimeOptions = {}): FlagsRunt
           .filter((view) => view.overridden)
           .map((view) => ({
             key: view.key,
-            // Redacted display strings, never raw values — a command must not
-            // be able to fetch what the panel wouldn't show.
+            // Never expose raw values that the panel would not show.
             value: view.effectiveText,
             was: view.baseText,
             masked: view.masked,
             reloadBehavior: view.reloadBehavior,
           })),
       };
-      // Values are already redacted; this second pass costs nothing and keeps
-      // the dump safe if a field is added above and this call is forgotten.
+      // Keep a second pass in case a field is added above without redaction.
       return redact(payload, redactOptions);
     },
   };

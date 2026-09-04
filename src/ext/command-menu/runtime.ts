@@ -501,12 +501,7 @@ export function createCommandMenuRuntime(
 
     run,
 
-    /**
-     * Counts, not the lists. The command roster is already reachable through
-     * `getCommands()` (and through the agent bridge's `listCommands()`), so
-     * repeating it here would duplicate the largest thing in a bug-report
-     * snapshot inside one of its own contributions.
-     */
+    /** Counts only; the command roster already comes from `getCommands()`. */
     diagnostics() {
       const latest = store.peek();
       return {
@@ -515,8 +510,7 @@ export function createCommandMenuRuntime(
         ready: latest.ready,
         activeIndex: latest.activeIndex,
         activeId: latest.results[latest.activeIndex]?.command.id ?? null,
-        // What the palette can run, i.e. after `input`-carrying commands are
-        // dropped. `listCommands()` on the agent bridge is the unfiltered count.
+        // Input-carrying commands are excluded from the palette.
         commandCount: latest.commands.length,
         resultCount: latest.results.length,
         running: latest.running,

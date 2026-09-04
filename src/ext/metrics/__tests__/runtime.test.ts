@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { fakeExtensionApi } from "@nejcm/dev-toolbar/testing";
 import { createMetricsRuntime } from "../runtime";
 import { createMemoryCollector } from "../collectors/memory";
 import { createNetworkCollector } from "../collectors/network";
@@ -11,35 +12,15 @@ function api(): {
   setVisible: (visible: boolean) => void;
   store: Map<string, string>;
 } {
-  const controller = new AbortController();
   const store = new Map<string, string>();
-  let visible = true;
-  const listeners = new Set<(value: boolean) => void>();
-  return {
-    controller,
-    store,
-    setVisible(next) {
-      visible = next;
-      for (const listener of listeners) listener(next);
+  const fake = fakeExtensionApi({
+    storage: {
+      getItem: (key) => store.get(key) ?? null,
+      setItem: (key, value) => void store.set(key, value),
+      removeItem: (key) => void store.delete(key),
     },
-    api: {
-      signal: controller.signal,
-      isVisible: () => visible,
-      subscribeVisibility(callback) {
-        listeners.add(callback);
-        return () => listeners.delete(callback);
-      },
-      getCommands: () => [],
-      getDiagnostics: () => [],
-      runCommand: async () => false,
-      invokeCommand: async () => ({ ok: false, reason: "unknown-command" }) as const,
-      storage: {
-        getItem: (key) => store.get(key) ?? null,
-        setItem: (key, value) => void store.set(key, value),
-        removeItem: (key) => void store.delete(key),
-      },
-    },
-  };
+  });
+  return { controller: fake.controller, store, setVisible: fake.setVisible, api: fake.api };
 }
 
 const memory = () =>
