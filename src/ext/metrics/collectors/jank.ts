@@ -1,14 +1,15 @@
 /**
  * Dropped frames. [dev-toolbar/ext/metrics]
  *
- * A rAF loop plus the exclusions §3D asks for: a backgrounded tab, a
- * minimised window, sleep/wake and browser throttling all produce enormous
- * frame deltas that are *not* jank, so anything longer than `idleGapMs` is
- * discarded rather than counted as dropped frames.
+ * Core reports visibility but never pauses extensions, so this loop keeps
+ * running through hidden tabs, minimised windows, sleep/wake and throttling,
+ * and discards the deltas those produce itself to keep the rolling window valid.
  *
- * Core reports visibility but never pauses an extension, so counting uses a
- * rolling window rather than a cumulative total — stopping the loop while the
- * bar is hidden can't corrupt it.
+ * Deltas over `idleGapMs` with no spanning visibility change are main-thread
+ * stalls. They stay out of the dropped/expected ratio and `worstFrame`, so a
+ * 3 s debugger pause cannot add ~180 expected frames and mask later jank.
+ * Visible gaps over `stallCeilingMs` are treated as absent. A frontmost display
+ * sleep can still look like a stall, which is safer than silently dropping it.
  */
 import { createRingBuffer, createTimeSeries } from "../../../runtime";
 import { formatMs, formatPercent, NOT_AVAILABLE } from "../format";
@@ -26,19 +27,27 @@ export interface JankCollectorOptions {
   /** Rolling active window. Default `5000` ms, per §3D. */
   windowMs?: number;
   /**
-   * Target frame budget override. Without one, the collector calibrates once
-   * from its first 120 active frame intervals; only `reset()` recalibrates it.
-   * Set this explicitly on displays whose refresh rate switches at runtime.
-   * Calibration intervals are not recorded as jank, so `worstFrame` also
-   * excludes startup stalls from those first 120 intervals.
+   * Target frame budget override. Without one, calibration uses the first 120 active intervals;
+   * only `reset()` recalibrates. Set it when the refresh rate can switch. Calibration intervals
+   * stay out of `worstFrame`; stall detection runs first and still reports in `stalls`/
+   * `longestStall`.
    */
   frameMs?: number;
   /**
-   * Deltas longer than this are treated as "the page was not animating" and
-   * discarded instead of counted. Default `1000` ms.
+   * Deltas over this threshold are not frame pacing. If a visibility change spans the gap, discard
+   * it; otherwise record a stall outside the dropped-frame ratio. Default `1000` ms.
    */
   idleGapMs?: number;
-  /** Frames retained. Default `360` — six seconds at 60 Hz. */
+  /**
+   * Visible gaps over this threshold are treated as absent. Debugger pauses, modal dialogs, and
+   * synchronous XHR emit no `visibilitychange`, but longer gaps are unlikely page work. Default
+   * `30_000` ms.
+   */
+  stallCeilingMs?: number;
+  /**
+   * Frames retained. Defaults to enough for `windowMs` at `frameMs` when given, else 4 ms
+   * (~240 Hz), plus 250 slots of slack. Override for unusual refresh rates or memory limits.
+   */
   historySize?: number;
   /** Fractions, not percentages. Default `{ warn: 0.02, bad: 0.05 }`. */
   thresholds?: Thresholds;
@@ -48,10 +57,13 @@ export function createJankCollector(options: JankCollectorOptions = {}): Collect
   const {
     windowMs = 5000,
     idleGapMs = 1000,
-    historySize = 360,
+    stallCeilingMs = 30_000,
     thresholds = { warn: 0.02, bad: 0.05 },
   } = options;
   const frameMsOverride = options.frameMs;
+  // Covers the requested window plus one second of slack.
+  const historySize =
+    options.historySize ?? Math.ceil(windowMs / (frameMsOverride ?? 4)) + Math.ceil(1000 / 4);
 
   const frames = createRingBuffer<Frame>(historySize);
   const series = createTimeSeries(120);
@@ -59,17 +71,22 @@ export function createJankCollector(options: JankCollectorOptions = {}): Collect
   const supported =
     typeof requestAnimationFrame === "function" && typeof cancelAnimationFrame === "function";
   let worstFrame = 0;
+  let longestStall = 0;
   let discarded = 0;
+  let stalls = 0;
   let calibratedFrameMs = frameMsOverride ?? null;
+
+  const formatSeconds = (ms: number): string => `${Number((ms / 1000).toFixed(1))} s`;
+  const gapText = idleGapMs >= 1000 ? formatSeconds(idleGapMs) : `${Math.round(idleGapMs)} ms`;
+  const stallLabel = `Stalls >${gapText} (session)`;
 
   const percentile = (sorted: readonly number[], fraction: number): number =>
     sorted[Math.floor((sorted.length - 1) * fraction)] as number;
 
   const calibrate = (): number => {
     const sorted = [...calibrationSamples].sort((left, right) => left - right);
-    // p20 already ignores a right tail of startup stalls. The removed IQR
-    // fence did not improve those cases; mixed refresh-rate clusters need an
-    // explicit `frameMs` until a mode-based estimator can distinguish them.
+    // p20 ignores startup stalls; mixed refresh-rate clusters need explicit `frameMs` until a
+    // mode-based estimator can distinguish them.
     return percentile(sorted, 0.2);
   };
 
@@ -79,6 +96,8 @@ export function createJankCollector(options: JankCollectorOptions = {}): Collect
     let dropped = 0;
     let count = 0;
     let slowest = 0;
+    // Use the interval start: N 16 ms frames span N intervals; `now - oldest.at` loses one.
+    let earliestStart = Number.POSITIVE_INFINITY;
     for (let index = 0; index < frames.size; index += 1) {
       const frame = frames.at(index);
       if (frame === undefined || frame.at < since) continue;
@@ -86,12 +105,16 @@ export function createJankCollector(options: JankCollectorOptions = {}): Collect
       dropped += frame.dropped;
       count += 1;
       if (frame.delta > slowest) slowest = frame.delta;
+      if (frame.at - frame.delta < earliestStart) earliestStart = frame.at - frame.delta;
     }
+    // A young or undersized ring can cover less than `windowMs`; report the retained span.
+    const retainedMs = count > 0 ? now - earliestStart : windowMs;
     return {
       count,
       expected,
       dropped,
       slowest,
+      effectiveWindowMs: Math.min(windowMs, retainedMs),
       ratio: expected > 0 ? dropped / expected : Number.NaN,
     };
   };
@@ -111,16 +134,41 @@ export function createJankCollector(options: JankCollectorOptions = {}): Collect
       let handle = 0;
       let stopped = false;
       let sinceSample = 0;
+      // Record visibility-change times because rAF stops while hidden and its callback runs after
+      // return. rAF timestamps and `performance.now()` share an origin.
+      const changedAt: number[] = [];
+      const doc = typeof document === "undefined" ? null : document;
+      const onVisibilityChange = () => {
+        changedAt.push(
+          typeof performance !== "undefined" && typeof performance.now === "function"
+            ? performance.now()
+            : context.now(),
+        );
+      };
+      doc?.addEventListener("visibilitychange", onVisibilityChange);
 
       const loop = (timestamp: number) => {
         if (stopped) return;
         handle = requestAnimationFrame(loop);
         if (previous !== 0) {
           const delta = timestamp - previous;
-          // Backgrounded tab, sleep, or throttling: not a dropped frame, an absent one.
-          const hidden = typeof document !== "undefined" && document.visibilityState === "hidden";
-          if (delta > idleGapMs || hidden) {
+          // Drain all markers delivered before this callback. rAF timestamps are stamped before
+          // the callback, so a `timestamp` bound can miss a visibility IPC handled after that
+          // stamp. Only markers after `previous` belong to this delta.
+          let wentAway = false;
+          while (changedAt.length > 0) {
+            if ((changedAt.shift() as number) > previous) wentAway = true;
+          }
+          // `hidden` confirms an ongoing background interval; `visible` cannot rule out a completed
+          // one because the callback runs after return.
+          if (wentAway || doc?.visibilityState === "hidden" || delta > stallCeilingMs) {
+            // Hidden gaps and visible gaps past the ceiling are absent, not dropped frames.
             discarded += 1;
+          } else if (delta > idleGapMs) {
+            // Visible gaps over `idleGapMs` are stalls, kept out of the ratio and `worstFrame`.
+            stalls += 1;
+            if (delta > longestStall) longestStall = delta;
+            context.invalidate();
           } else if (calibratedFrameMs === null) {
             if (Number.isFinite(delta) && delta > 0) calibrationSamples.push(delta);
             if (calibrationSamples.length >= 120) {
@@ -154,6 +202,7 @@ export function createJankCollector(options: JankCollectorOptions = {}): Collect
         () => {
           stopped = true;
           cancelAnimationFrame(handle);
+          doc?.removeEventListener("visibilitychange", onVisibilityChange);
         },
         { once: true },
       );
@@ -190,12 +239,21 @@ export function createJankCollector(options: JankCollectorOptions = {}): Collect
           hint: calibrating
             ? `Calibrating the display cadence: ${calibrationSamples.length} of 120 active frame intervals measured.`
             : "Idle: no frames were produced in the rolling window, which is not the same as no jank.",
-          detail: calibrating
-            ? [
-                ["Calibration intervals", `${calibrationSamples.length} / 120`],
-                ["Frames discarded as idle", String(discarded)],
-              ]
-            : [["Frames discarded as idle", String(discarded)]],
+          detail: [
+            ...(calibrating
+              ? ([["Calibration intervals", `${calibrationSamples.length} / 120`]] as [
+                  string,
+                  string,
+                ][])
+              : []),
+            ["Frames discarded as idle", String(discarded)],
+            ...(stalls > 0
+              ? ([
+                  [stallLabel, String(stalls)],
+                  ["Longest stall (session)", formatMs(longestStall, 1)],
+                ] as [string, string][])
+              : []),
+          ],
         };
       }
 
@@ -206,8 +264,12 @@ export function createJankCollector(options: JankCollectorOptions = {}): Collect
         ["Slowest frame", formatMs(window.slowest, 1)],
         ["Worst frame (session)", formatMs(worstFrame, 1)],
         ["Frames discarded as idle", String(discarded)],
+        [stallLabel, String(stalls)],
+      );
+      if (stalls > 0) detail.push(["Longest stall (session)", formatMs(longestStall, 1)]);
+      detail.push(
         ["Frame budget", formatMs(calibratedFrameMs ?? Number.NaN, 2)],
-        ["Window", `${Math.round(windowMs / 1000)} s`],
+        ["Window", formatSeconds(window.effectiveWindowMs)],
       );
 
       return {
@@ -219,7 +281,7 @@ export function createJankCollector(options: JankCollectorOptions = {}): Collect
         display: formatPercent(window.ratio),
         value: window.ratio,
         unit: "%",
-        hint: `Dropped frames over expected frames, across the last ${Math.round(windowMs / 1000)} s of active frames.`,
+        hint: `Dropped frames over expected frames, across the last ${formatSeconds(window.effectiveWindowMs)} of active frames. Stalls longer than ${gapText} are counted separately, not in this ratio — and a debugger paused on a breakpoint or a modal dialog counts as one.`,
         detail,
       };
     },
@@ -227,7 +289,9 @@ export function createJankCollector(options: JankCollectorOptions = {}): Collect
       frames.clear();
       series.clear();
       worstFrame = 0;
+      longestStall = 0;
       discarded = 0;
+      stalls = 0;
       calibrationSamples.length = 0;
       calibratedFrameMs = frameMsOverride ?? null;
     },
@@ -236,8 +300,11 @@ export function createJankCollector(options: JankCollectorOptions = {}): Collect
         supported,
         ...summarise(now),
         worstFrame,
+        longestStall,
         discarded,
+        stalls,
         frameMs: calibratedFrameMs,
+        historySize,
         calibrationSamples: calibrationSamples.length,
       };
     },

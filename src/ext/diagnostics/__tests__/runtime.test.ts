@@ -868,10 +868,39 @@ describe("output", () => {
     const { runtime, stop } = started();
     const markdown = renderMarkdown(runtime.capture());
 
-    expect(markdown).toContain("- **Interactions:** 0");
+    expect(markdown).toContain("- **Interactions:** 0 (0 event entries)");
     expect(markdown).toContain("- **Long tasks:** 0");
     expect(markdown).toContain("- **Layout shifts:** 0");
     expect(markdown).not.toMatch(/\bnull\b/);
+    stop();
+  });
+
+  it("prints the raw entry count beside grouped interactions, singular when one", () => {
+    // A hover entry carries interactionId 0: it is an event entry but not an
+    // interaction, so the row must read "0 (1 event entry)", not "1".
+    let emit: ((entries: unknown[]) => void) | null = null;
+    class Fake {
+      static supportedEntryTypes = ["longtask", "event", "layout-shift"];
+      #callback: (list: { getEntries(): unknown[] }) => void;
+      constructor(callback: (list: { getEntries(): unknown[] }) => void) {
+        this.#callback = callback;
+      }
+      observe({ type }: { type: string }) {
+        if (type !== "event") return;
+        emit = (entries) => this.#callback({ getEntries: () => entries });
+      }
+      disconnect() {}
+    }
+    vi.stubGlobal("PerformanceObserver", Fake);
+
+    const { runtime, stop } = started({ windowMs: 1_000_000 });
+    (emit as unknown as (entries: unknown[]) => void)([
+      { entryType: "event", name: "mouseover", startTime: 1, duration: 120, interactionId: 0 },
+    ]);
+    const markdown = renderMarkdown(runtime.capture());
+
+    expect(markdown).toContain("- **Interactions:** 0 (1 event entry)");
+    expect(markdown).not.toContain("event entries)");
     stop();
   });
 

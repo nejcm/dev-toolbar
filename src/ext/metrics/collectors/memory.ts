@@ -1,9 +1,13 @@
 /**
  * JS heap usage. [dev-toolbar/ext/metrics]
  *
- * `performance.memory` is a non-standard Chromium extension; elsewhere this
- * reports `unsupported` (never implying the number is missing because the
- * page is healthy). It's also *not* process memory — the panel says so.
+ * `performance.memory` is a non-standard Chromium API. Other browsers return
+ * `unsupported`; it reports JS heap, not process memory.
+ *
+ * A site-isolated desktop renderer gets precise live values. Otherwise, including
+ * most Android sites or disabled site isolation, values are quantized and cached
+ * for up to 20 minutes. Since the mode is not exposed, a long run of identical
+ * readings marks the source rate-limited instead of presenting stale values as live.
  */
 import { createTimeSeries } from "../../../runtime";
 import { formatBytes, formatBytesDelta, formatPercent, NOT_AVAILABLE } from "../format";
@@ -49,6 +53,20 @@ export interface MemoryCollectorOptions {
 const GROWTH_MIN_SAMPLES = 5;
 const GROWTH_MIN_DELTA_BYTES = 1024 * 1024;
 const GROWTH_MIN_DELTA_RATIO = 0.01;
+/** Sub-windows the growth window is split into to read the heap's floor. */
+const GROWTH_BUCKETS = 4;
+
+/** A byte-identical run this long indicates a rate-limited source. */
+const FROZEN_MIN_SAMPLES = 30;
+const FROZEN_MIN_MS = 60_000;
+
+/** Formats a duration for labels that state the span actually covered. */
+function formatSpan(ms: number): string {
+  if (ms < 60_000) return `${Math.round(ms / 1000)} s`;
+  const minutes = ms / 60_000;
+  if (minutes < 1.5) return "minute";
+  return `${Math.round(minutes)} min`;
+}
 
 export function createMemoryCollector(options: MemoryCollectorOptions = {}): Collector {
   const {
@@ -62,31 +80,78 @@ export function createMemoryCollector(options: MemoryCollectorOptions = {}): Col
   const series = createTimeSeries(historySize);
   const supported = read() !== null;
   let latest: PerformanceMemory | null = null;
+  /** Length of the current run of identical `usedJSHeapSize` readings. */
+  let identicalRun = 0;
+  /** Timestamp the current identical run started at. */
+  let identicalSince = Number.NaN;
+  /**
+   * Sticky once a run indicates browser rate limiting: the 20-minute cache
+   * turning over yields one changed value, which must not flip the panel back
+   * to "live" and re-enable growth detection over quantized numbers.
+   */
+  let rateLimited = false;
 
   const sample = (now: number) => {
     const memory = read();
     if (!memory) return;
+    if (latest && memory.usedJSHeapSize === latest.usedJSHeapSize) {
+      identicalRun += 1;
+    } else {
+      identicalRun = 1;
+      identicalSince = now;
+    }
+    if (identicalRun >= FROZEN_MIN_SAMPLES && now - identicalSince >= FROZEN_MIN_MS) {
+      rateLimited = true;
+    }
     latest = memory;
     series.push(now, memory.usedJSHeapSize);
   };
 
-  /** A non-decreasing, material climb across most samples is the leak signal. */
+  /** Index of the oldest retained sample at or after `since`, or `-1`. */
+  const firstIndexSince = (since: number): number => {
+    for (let index = 0; index < series.size; index += 1) {
+      if (series.times.at(index) >= since) return index;
+    }
+    return -1;
+  };
+
+  /**
+   * Detect a rising *floor* rather than a monotonic series: minor GCs make leaks
+   * sawtooth. Compare each bucket's minimum; require non-decreasing floors, rises
+   * in most buckets, and a material net gain.
+   */
   const sustainedGrowth = (now: number): boolean => {
+    // A rate-limited source repeats one cached number; growth is undetectable.
+    if (rateLimited) return false;
     const since = now - growthWindowMs;
     const count = series.countSince(since);
     if (count < GROWTH_MIN_SAMPLES) return false;
     const first = series.size - count;
-    const firstValue = series.values.at(first);
+
+    const floors: number[] = [];
+    for (let bucket = 0; bucket < GROWTH_BUCKETS; bucket += 1) {
+      const start = first + Math.floor((bucket * count) / GROWTH_BUCKETS);
+      const end = first + Math.floor(((bucket + 1) * count) / GROWTH_BUCKETS);
+      let min = Number.POSITIVE_INFINITY;
+      for (let index = start; index < end; index += 1) {
+        const value = series.values.at(index);
+        if (value < min) min = value;
+      }
+      if (!Number.isFinite(min)) return false;
+      floors.push(min);
+    }
+
     let rising = 0;
-    for (let index = first + 1; index < series.size; index += 1) {
-      const previous = series.values.at(index - 1);
-      const current = series.values.at(index);
+    for (let bucket = 1; bucket < floors.length; bucket += 1) {
+      const previous = floors[bucket - 1] as number;
+      const current = floors[bucket] as number;
       if (current < previous) return false;
       if (current > previous) rising += 1;
     }
-    const net = series.values.last() - firstValue;
-    const material = Math.max(GROWTH_MIN_DELTA_BYTES, firstValue * GROWTH_MIN_DELTA_RATIO);
-    return net >= material && rising > (count - 1) / 2;
+    const firstFloor = floors[0] as number;
+    const net = (floors[floors.length - 1] as number) - firstFloor;
+    const material = Math.max(GROWTH_MIN_DELTA_BYTES, firstFloor * GROWTH_MIN_DELTA_RATIO);
+    return net >= material && rising > (floors.length - 1) / 2;
   };
 
   return {
@@ -143,19 +208,33 @@ export function createMemoryCollector(options: MemoryCollectorOptions = {}): Col
 
       const ratio = latest.usedJSHeapSize / latest.jsHeapSizeLimit;
       const growing = sustainedGrowth(now);
-      const baseline = series.valueAt(now - growthWindowMs);
+
+      // Use the oldest retained sample to label the covered span; a young window has no sample at
+      // `now - growthWindowMs`.
+      const baselineIndex = firstIndexSince(now - growthWindowMs);
+      const baseline = baselineIndex < 0 ? Number.NaN : series.values.at(baselineIndex);
+      const spanMs = baselineIndex < 0 ? Number.NaN : now - series.times.at(baselineIndex);
       const change = Number.isFinite(baseline) ? latest.usedJSHeapSize - baseline : Number.NaN;
+      const spanLabel = formatSpan(
+        Number.isFinite(spanMs) && spanMs < growthWindowMs - sampleMs ? spanMs : growthWindowMs,
+      );
 
       detail.push(
         ["Used JS heap", formatBytes(latest.usedJSHeapSize, 1)],
         ["Total allocated", formatBytes(latest.totalJSHeapSize, 1)],
         ["Heap limit", formatBytes(latest.jsHeapSizeLimit, 1)],
         ["Share of limit", formatPercent(ratio)],
-        ["Change (last minute)", formatBytesDelta(change)],
-        ["Sustained growth", growing ? "yes" : "no"],
+        [`Change (last ${spanLabel})`, rateLimited ? NOT_AVAILABLE : formatBytesDelta(change)],
+        ["Sustained growth", rateLimited ? "unknown" : growing ? "yes" : "no"],
+        ["Sampling", rateLimited ? "rate-limited" : "live"],
       );
 
       const base = severityFor(ratio, thresholds);
+      const hint = rateLimited
+        ? "This browser rate-limits performance.memory: the reading is rounded and can be up to 20 minutes old, so change and growth cannot be read from it."
+        : growing
+          ? "The used JS heap's floor rose across the window without falling back, by a material amount."
+          : "Used JS heap, as a share of the browser's heap limit. Not process memory.";
       return {
         id: "memory",
         label: "mem",
@@ -165,22 +244,25 @@ export function createMemoryCollector(options: MemoryCollectorOptions = {}): Col
         display: formatBytes(latest.usedJSHeapSize),
         value: latest.usedJSHeapSize,
         unit: "bytes",
-        hint: growing
-          ? "Used JS heap rose on most samples without falling, with a material net increase."
-          : "Used JS heap, as a share of the browser's heap limit. Not process memory.",
+        hint,
         detail,
       };
     },
     reset() {
       series.clear();
       latest = null;
+      identicalRun = 0;
+      identicalSince = Number.NaN;
+      rateLimited = false;
     },
     diagnostics(now: number) {
       return {
         supported,
         latest,
         ratio: latest ? latest.usedJSHeapSize / latest.jsHeapSizeLimit : null,
-        sustainedGrowth: supported ? sustainedGrowth(now) : null,
+        sustainedGrowth: supported && !rateLimited ? sustainedGrowth(now) : null,
+        sampling: supported ? (rateLimited ? "rate-limited" : "live") : null,
+        identicalRun,
         samples: series.size,
       };
     },

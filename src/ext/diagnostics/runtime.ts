@@ -554,6 +554,7 @@ export function createDiagnosticsRuntime(
           support: "failed",
           count: null,
           slowCount: null,
+          eventCount: null,
           worstDurationMs: null,
           worstType: null,
           note: "the responsiveness monitor could not be read.",
@@ -907,6 +908,11 @@ export function renderMarkdown(snapshot: DiagnosticSnapshot, mask: string = REDA
   const events = responsiveness.interactions;
   lines.push(
     `- **Interactions:** ${events.count === null ? "_unknown_" : events.count}` +
+      // Grouped by `interactionId`, so the raw entry count is printed beside
+      // it: the two differing is the normal case, not a discrepancy.
+      (events.eventCount === null
+        ? ""
+        : ` (${events.eventCount} event ${events.eventCount === 1 ? "entry" : "entries"})`) +
       // Avoids printing a stray `worst null ms (null)` for an empty window,
       // which would read as a tool bug rather than an empty window.
       (events.count === null || events.worstDurationMs === null
