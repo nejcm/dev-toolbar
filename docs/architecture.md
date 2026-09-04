@@ -279,7 +279,7 @@ joined into the key as-is, so one containing `:` can alias another instance's
 or extension's scope (`instanceId: "a:ext:b"` reads and writes the same keys
 as `instanceId: "a"` with extension id `"b"`). ADR-001 already treats `id`
 collisions as the consumer's responsibility; the same applies here. Keep both
-ids to `[A-Za-z0-9_-]` — the set `instanceHeightVariable` (`DevToolbar.tsx`)
+ids to `[A-Za-z0-9_-]` — the set `instanceHeightVariable` (`useHeightVariables.ts`)
 already folds non-conforming `instanceId`s down to.
 
 The adapter is a synchronous three-method interface (`getItem`/`setItem`/`removeItem`),
