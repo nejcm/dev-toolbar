@@ -35,12 +35,17 @@ const CATALOGUE: FlagReading[] = [
 let written: string[] = [];
 let applied: [string, FlagValue | undefined][] = [];
 
-const mount = (options: FlagsOptions = {}, storage?: ToolbarStorage | null) => {
+const mount = (
+  options: FlagsOptions = {},
+  storage?: ToolbarStorage | null,
+  styleNonce?: string,
+) => {
   const extension = flags({ flags: CATALOGUE, ...options });
   const result = mountToolbar(null, {
     extensions: [extension],
     instanceId: "test",
     ...(storage === undefined ? {} : { storage }),
+    ...(styleNonce === undefined ? {} : { styleNonce }),
     layout: { barWidth: 1200, itemWidth: 120 },
   });
   return { extension, ...result };
@@ -671,5 +676,35 @@ describe("accessibility", () => {
     const wrapper = toolbar.overflowMenu()?.querySelector('[data-dtb-part="flag-overflow"]');
     expect(wrapper).not.toBeNull();
     expect(wrapper?.getAttribute("aria-label")).toBeNull();
+  });
+});
+
+const flagsStyle = () =>
+  document.head.querySelector<HTMLStyleElement>('style[data-dev-toolbar-styles="ext-flags"]');
+
+describe("styleNonce", () => {
+  it("stamps the factory option on the injected sheet", () => {
+    mount({ styleNonce: "from-option" });
+    expect(flagsStyle()?.nonce).toBe("from-option");
+  });
+
+  it("stamps the slot prop when the option is omitted", () => {
+    mount({}, undefined, "from-slot");
+    expect(flagsStyle()?.nonce).toBe("from-slot");
+  });
+
+  it("lets the factory option win over the slot prop", () => {
+    mount({ styleNonce: "from-option" }, undefined, "from-slot");
+    expect(flagsStyle()?.nonce).toBe("from-option");
+  });
+
+  it("an empty factory option defers to the slot prop", () => {
+    mount({ styleNonce: "" }, undefined, "from-slot");
+    expect(flagsStyle()?.nonce).toBe("from-slot");
+  });
+
+  it("does not inject when injectStyles is false, even with a nonce", () => {
+    mount({ injectStyles: false, styleNonce: "from-option" }, undefined, "from-slot");
+    expect(flagsStyle()).toBeNull();
   });
 });

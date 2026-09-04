@@ -35,6 +35,7 @@ interface CompactSlotProps {
   openPanel(): void;
   closePanel(): void;
   togglePanel(): void;           // the one every trigger actually wants
+  styleNonce?: string;           // CSP nonce for a stylesheet this slot injects
 }
 
 interface PanelSlotProps {
@@ -42,11 +43,13 @@ interface PanelSlotProps {
   density: "compact" | "comfortable";
   height: number;
   close(): void;
+  styleNonce?: string;
 }
 
 interface OverlaySlotProps {
   density: "compact" | "comfortable";
   position: "bottom" | "top";
+  styleNonce?: string;
 }
 ```
 

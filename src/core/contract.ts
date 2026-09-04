@@ -208,6 +208,8 @@ export interface CompactSlotProps {
   closePanel(): void;
   /** Open this extension's panel when closed, close it when open. */
   togglePanel(): void;
+  /** CSP nonce for a stylesheet this slot injects. Supplied by core. */
+  styleNonce?: string;
 }
 
 export interface PanelSlotProps {
@@ -217,6 +219,8 @@ export interface PanelSlotProps {
   /** Current panel height in pixels. */
   height: number;
   close(): void;
+  /** CSP nonce for a stylesheet this slot injects. Supplied by core. */
+  styleNonce?: string;
 }
 
 /**
@@ -227,6 +231,8 @@ export interface PanelSlotProps {
 export interface OverlaySlotProps {
   density: ToolbarDensity;
   position: ToolbarPosition;
+  /** CSP nonce for a stylesheet this slot injects. Supplied by core. */
+  styleNonce?: string;
 }
 
 /** Handed to `start(api)` once per mount. */

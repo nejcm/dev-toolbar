@@ -16,7 +16,7 @@ type it publishes. Start at the [README](../README.md) if you just want it mount
 | `defaultVisible` / `defaultPosition` / `defaultPanelHeight` | — | Used only when nothing is persisted yet |
 | `shortcut` | `"Mod+Shift+."` | `null` disables it |
 | `injectStyles` | `true` | `false` → import `@nejcm/dev-toolbar/styles.css` yourself |
-| `styleNonce` | — | CSP nonce for the injected core stylesheet |
+| `styleNonce` | — | CSP nonce for injected stylesheets (core's, and forwarded to every slot) |
 | `onExtensionError` | — | Called after core logs a slot failure; receives the normalized `Error` and slot metadata |
 | `classNames` | — | Per-part class map |
 | `container` | `document.body` | Portal target |
@@ -33,10 +33,14 @@ memoisation of the context value or of the overlay host.
 
 Under a `style-src 'self' 'nonce-…'` CSP an un-nonced `<style>` is dropped silently —
 the bar renders unstyled, with nothing in the console but a CSP report — so pass
-`styleNonce`. It covers **core's** sheet only, and only the injection that creates it
-(first-writer-wins, so a later nonce does not restyle an existing element).
-First-party extensions inject their own sheets and are not covered; with
-`injectStyles={false}` the prop does nothing, because nothing is injected.
+`styleNonce`. Core stamps it on its own sheet and forwards it to every slot as
+`styleNonce`, which is how first-party extensions pick it up without reading this
+prop. A factory `styleNonce` option, where present, wins over the slot prop — for a
+host whose extension sheets need a different nonce, or an extension that injects
+outside a slot. Applied only when a sheet is created (first-writer-wins, so a later
+nonce does not restyle an existing element). With `injectStyles={false}` the prop
+does nothing for core's sheet, because nothing is injected; each extension has its
+own `injectStyles` switch.
 
 ## Insetting your layout
 

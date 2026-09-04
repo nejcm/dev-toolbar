@@ -137,7 +137,8 @@ yours that is not a secret.
 
 Options: `tokens`, `onApply`, `surfaces`, `presets`, `mode`, `pollMs`, `redactOptions`,
 `themeParam`, `persist`, `now`, `document`, `createdBy`, plus the usual `id` / `label` /
-`align` / `order` / `priority` / `hidden` / `keepMounted` / `injectStyles`.
+`align` / `order` / `priority` / `hidden` / `keepMounted` / `injectStyles` /
+`styleNonce`.
 
 Commands: `theme-editor.preset.<name>` (one per preset, enumerated live),
 `theme-editor.reset`, `theme-editor.togglePreview`, `theme-editor.copyCss`,

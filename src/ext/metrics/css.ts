@@ -289,6 +289,6 @@ const METRICS_STYLE_ENTRY = "ext-metrics";
  * (not core's, so this bundle doesn't pull in core's stylesheet). Dedup key
  * is a DOM attribute, so two bundled copies still inject once.
  */
-export function ensureMetricsStyles(doc?: Document): HTMLStyleElement | null {
-  return ensureStyleSheet(METRICS_STYLE_ENTRY, METRICS_CSS, doc);
+export function ensureMetricsStyles(doc?: Document, nonce?: string): HTMLStyleElement | null {
+  return ensureStyleSheet(METRICS_STYLE_ENTRY, METRICS_CSS, doc, nonce);
 }

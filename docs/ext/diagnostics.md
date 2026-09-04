@@ -76,7 +76,8 @@ diagnostics({
 
 Options: `app` (object or getter), `sources`, `windowMs`, `slowInteractionMs`,
 `historySize`, `recentSize`, `now`, `redactOptions`, plus the usual `id` / `label` /
-`align` / `order` / `priority` / `hidden` / `keepMounted` / `injectStyles`.
+`align` / `order` / `priority` / `hidden` / `keepMounted` / `injectStyles` /
+`styleNonce`.
 
 Commands: `diagnostics.capture` (capture only — it deliberately does not copy),
 `diagnostics.copy`, `diagnostics.copyJson`, `diagnostics.download`.

@@ -82,6 +82,8 @@ Commands aggregated into `useToolbarCommands()`: `environment.copy`,
 `environment.copyJson`, `environment.refresh`. Like `/ext/metrics`, it ships its own
 stylesheet — pair `injectStyles={false}` on `<DevToolbar>` with
 `environment({ injectStyles: false })` and deliver `ENVIRONMENT_CSS` yourself.
+`styleNonce` on `<DevToolbar>` is forwarded to the sheet via the slot;
+`environment({ styleNonce })` overrides it.
 
 ---
 

@@ -84,6 +84,11 @@ export interface DiagnosticsOptions extends Omit<DiagnosticsRuntimeOptions, "id"
    * turn this off too and ship `DIAGNOSTICS_CSS` yourself.
    */
   injectStyles?: boolean;
+  /**
+   * CSP nonce for this extension's stylesheet. Wins over the `styleNonce`
+   * slot prop core forwards from `<DevToolbar>`.
+   */
+  styleNonce?: string;
 }
 
 /**
@@ -100,6 +105,7 @@ export function diagnostics(options: DiagnosticsOptions = {}): DevToolbarExtensi
     hidden,
     keepMounted = false,
     injectStyles = true,
+    styleNonce: optionNonce,
     ...runtimeOptions
   } = options;
 
@@ -121,18 +127,26 @@ export function diagnostics(options: DiagnosticsOptions = {}): DevToolbarExtensi
       return runtime.start(api);
     },
 
-    compact: ({ isOverflowed, isPanelOpen, togglePanel }) => (
+    compact: ({ isOverflowed, isPanelOpen, togglePanel, styleNonce }) => (
       <DiagnosticsChip
         runtime={runtime}
         label={label}
         isOverflowed={isOverflowed}
         isPanelOpen={isPanelOpen}
         injectStyles={injectStyles}
+        styleNonce={optionNonce || styleNonce}
         onToggle={togglePanel}
       />
     ),
 
-    panel: () => <DiagnosticsPanel runtime={runtime} label={label} injectStyles={injectStyles} />,
+    panel: ({ styleNonce }) => (
+      <DiagnosticsPanel
+        runtime={runtime}
+        label={label}
+        injectStyles={injectStyles}
+        styleNonce={optionNonce || styleNonce}
+      />
+    ),
 
     /**
      * A **summary** of the last capture — `capturedAt`, `revision`, how many

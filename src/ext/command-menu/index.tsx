@@ -61,6 +61,11 @@ export interface CommandMenuOptions extends CommandMenuRuntimeOptions {
    * too and ship `COMMAND_MENU_CSS` yourself.
    */
   injectStyles?: boolean;
+  /**
+   * CSP nonce for this extension's stylesheet. Wins over the `styleNonce`
+   * slot prop core forwards from `<DevToolbar>`.
+   */
+  styleNonce?: string;
 }
 
 /** Builds the extension. Call once — the result owns the palette's state and, once started, the key binding. */
@@ -75,6 +80,7 @@ export function commandMenu(options: CommandMenuOptions = {}): DevToolbarExtensi
     placeholder = "Search commands…",
     emptyMessage = "No matching command.",
     injectStyles = true,
+    styleNonce: optionNonce,
     shortcut,
     apple = isApplePlatform(),
     rememberRecent,
@@ -106,23 +112,25 @@ export function commandMenu(options: CommandMenuOptions = {}): DevToolbarExtensi
      */
     diagnostics: () => runtime.diagnostics(),
 
-    compact: ({ isOverflowed }) => (
+    compact: ({ isOverflowed, styleNonce }) => (
       <CommandMenuTrigger
         runtime={runtime}
         label={label}
         isOverflowed={isOverflowed}
         injectStyles={injectStyles}
+        styleNonce={optionNonce || styleNonce}
         apple={apple}
       />
     ),
 
-    overlay: () => (
+    overlay: ({ styleNonce }) => (
       <CommandMenuOverlay
         runtime={runtime}
         label={label}
         placeholder={placeholder}
         emptyMessage={emptyMessage}
         injectStyles={injectStyles}
+        styleNonce={optionNonce || styleNonce}
       />
     ),
   };

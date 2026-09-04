@@ -116,6 +116,9 @@ class GeometryResizeObserver implements ResizeObserver {
 
 afterEach(() => {
   document.body.innerHTML = "";
+  document.head
+    .querySelectorAll(`style[data-dev-toolbar-styles="${BOXES_STYLE_ENTRY}"]`)
+    .forEach((node) => node.remove());
   GeometryResizeObserver.instances = [];
   vi.restoreAllMocks();
 });
@@ -310,6 +313,11 @@ describe("the host stylesheet", () => {
     // is describing would be worse than no overlay.
     expect(css).not.toMatch(/\bborder\b|\bpadding\b|\bmargin\b/);
   });
+
+  it("stamps the nonce on the sheet it creates", () => {
+    setHostOutlines(true, document, "abc");
+    expect((sheets()[0] as HTMLStyleElement).nonce).toBe("abc");
+  });
 });
 
 describe("the runtime on its own", () => {
@@ -335,6 +343,41 @@ describe("the runtime on its own", () => {
     expect(
       document.head.querySelectorAll(`style[data-dev-toolbar-styles="${BOXES_STYLE_ENTRY}"]`),
     ).toHaveLength(0);
+  });
+
+  it("inserts the boxes sheet at start() — a headless runtime does not wait for a nonce", () => {
+    const runtime = createOverlaysRuntime({ defaults: { boxes: true } });
+    const stop = runtime.start(fakeApi());
+    expect(
+      document.head.querySelectorAll(`style[data-dev-toolbar-styles="${BOXES_STYLE_ENTRY}"]`),
+    ).toHaveLength(1);
+    stop();
+  });
+
+  it("holds the boxes sheet until a nonce is known when the wait is armed", () => {
+    const runtime = createOverlaysRuntime({ defaults: { boxes: true } });
+    runtime.awaitStyleNonce();
+    const stop = runtime.start(fakeApi());
+    expect(
+      document.head.querySelectorAll(`style[data-dev-toolbar-styles="${BOXES_STYLE_ENTRY}"]`),
+    ).toHaveLength(0);
+    runtime.setStyleNonce("abc");
+    const sheet = document.head.querySelector<HTMLStyleElement>(
+      `style[data-dev-toolbar-styles="${BOXES_STYLE_ENTRY}"]`,
+    );
+    expect(sheet?.nonce).toBe("abc");
+    stop();
+  });
+
+  it("inserts at start when a nonce was already supplied", () => {
+    const runtime = createOverlaysRuntime({ defaults: { boxes: true } });
+    runtime.setStyleNonce("abc");
+    const stop = runtime.start(fakeApi());
+    const sheet = document.head.querySelector<HTMLStyleElement>(
+      `style[data-dev-toolbar-styles="${BOXES_STYLE_ENTRY}"]`,
+    );
+    expect(sheet?.nonce).toBe("abc");
+    stop();
   });
 });
 

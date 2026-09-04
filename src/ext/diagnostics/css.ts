@@ -138,6 +138,6 @@ export const DIAGNOSTICS_CSS = String.raw`@layer dev-toolbar {
 }
 `;
 
-export function ensureDiagnosticsStyles(doc?: Document): HTMLStyleElement | null {
-  return ensureStyleSheet("ext-diagnostics", DIAGNOSTICS_CSS, doc);
+export function ensureDiagnosticsStyles(doc?: Document, nonce?: string): HTMLStyleElement | null {
+  return ensureStyleSheet("ext-diagnostics", DIAGNOSTICS_CSS, doc, nonce);
 }

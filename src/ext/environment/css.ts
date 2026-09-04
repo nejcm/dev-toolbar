@@ -221,6 +221,6 @@ const ENVIRONMENT_STYLE_ENTRY = "ext-environment";
  * has its own switch — `environment({ injectStyles: false })` — and exports
  * `ENVIRONMENT_CSS` for consumers who ship CSS themselves.
  */
-export function ensureEnvironmentStyles(doc?: Document): HTMLStyleElement | null {
-  return ensureStyleSheet(ENVIRONMENT_STYLE_ENTRY, ENVIRONMENT_CSS, doc);
+export function ensureEnvironmentStyles(doc?: Document, nonce?: string): HTMLStyleElement | null {
+  return ensureStyleSheet(ENVIRONMENT_STYLE_ENTRY, ENVIRONMENT_CSS, doc, nonce);
 }

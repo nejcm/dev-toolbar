@@ -57,6 +57,13 @@ describe("useExtensionSurface", () => {
     expect(ensureStyles).not.toHaveBeenCalled();
   });
 
+  it("does not inject when inject is false, even with a nonce", () => {
+    const ensureStyles = vi.fn();
+    const throttled = store("first");
+    renderHook(() => useExtensionSurface(throttled, false, ensureStyles, "n0nce"));
+    expect(ensureStyles).not.toHaveBeenCalled();
+  });
+
   it("injects when inject flips from false to true", () => {
     const ensureStyles = vi.fn();
     const throttled = store("first");
@@ -80,5 +87,20 @@ describe("useExtensionSurface", () => {
     expect(subscribe).toHaveBeenCalled();
     unmount();
     expect(unsubscribe).toHaveBeenCalled();
+  });
+
+  it("passes the nonce to ensureStyles and re-runs when it changes", () => {
+    const ensureStyles = vi.fn();
+    const throttled = store("first");
+    const { rerender } = renderHook(
+      ({ nonce }: { nonce?: string }) => useExtensionSurface(throttled, true, ensureStyles, nonce),
+      { initialProps: { nonce: "a" } },
+    );
+    expect(ensureStyles).toHaveBeenCalledTimes(1);
+    expect(ensureStyles).toHaveBeenCalledWith(undefined, "a");
+
+    rerender({ nonce: "b" });
+    expect(ensureStyles).toHaveBeenCalledTimes(2);
+    expect(ensureStyles).toHaveBeenLastCalledWith(undefined, "b");
   });
 });

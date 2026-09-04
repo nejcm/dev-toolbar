@@ -90,16 +90,17 @@ export interface DevToolbarProps {
   /** Called after core logs a slot failure. */
   onExtensionError?: (error: Error, info: ExtensionErrorInfo) => void;
   /**
-   * CSP nonce for the injected core stylesheet. Required under a
+   * CSP nonce for injected stylesheets. Required under a
    * `style-src 'self' 'nonce-…'` policy, where an un-nonced `<style>` is
    * dropped silently — the bar renders unstyled with nothing in the console
    * but a CSP report.
    *
-   * Applies to **core's** sheet only, and only to the injection that creates
-   * it: first-writer-wins, so changing the nonce later does not restyle an
-   * existing element. First-party extensions inject their own sheets through
-   * `useExtensionSurface` (`src/ext/shared/hooks.ts`), which is where a nonce
-   * would have to be threaded for them; it is not, yet.
+   * Stamped on core's sheet and forwarded to every slot as `styleNonce`, so
+   * first-party extensions pick it up without reading this prop. Applied only
+   * when a sheet is created: first-writer-wins, so changing the nonce later
+   * does not restyle an existing element. A factory `styleNonce` option, where
+   * present, wins over this prop. With `injectStyles={false}` the prop does
+   * nothing for core's sheet, because nothing is injected.
    */
   styleNonce?: string;
   /**
@@ -591,12 +592,14 @@ function DevToolbarRoot({
                 closePanel={store.closePanel}
                 togglePanel={store.togglePanel}
                 classNames={classNames}
+                styleNonce={styleNonce}
               />
               <OverlayHost
                 extensions={extensions}
                 density={density}
                 position={state.position}
                 classNames={classNames}
+                styleNonce={styleNonce}
               />
               <PanelHost
                 extensions={extensions}
@@ -607,6 +610,7 @@ function DevToolbarRoot({
                 setPanelHeight={store.setPanelHeight}
                 closePanel={store.closePanel}
                 classNames={classNames}
+                styleNonce={styleNonce}
               />
             </div>,
             target,

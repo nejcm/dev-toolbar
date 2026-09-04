@@ -33,6 +33,7 @@ export interface ChipProps {
   isOverflowed: boolean;
   isPanelOpen: boolean;
   injectStyles: boolean;
+  styleNonce?: string;
   onToggle(): void;
 }
 
@@ -42,9 +43,15 @@ export function ThemeChip({
   isOverflowed,
   isPanelOpen,
   injectStyles,
+  styleNonce,
   onToggle,
 }: ChipProps): ReactNode {
-  const snapshot = useExtensionSurface(runtime.store, injectStyles, ensureThemeEditorStyles);
+  const snapshot = useExtensionSurface(
+    runtime.store,
+    injectStyles,
+    ensureThemeEditorStyles,
+    styleNonce,
+  );
 
   const edited = snapshot.overriddenCount > 0;
   const summary = !snapshot.preview
@@ -342,10 +349,16 @@ export interface PanelProps {
   runtime: ThemeEditorRuntime;
   label: string;
   injectStyles: boolean;
+  styleNonce?: string;
 }
 
-export function ThemePanel({ runtime, label, injectStyles }: PanelProps): ReactNode {
-  const snapshot = useExtensionSurface(runtime.store, injectStyles, ensureThemeEditorStyles);
+export function ThemePanel({ runtime, label, injectStyles, styleNonce }: PanelProps): ReactNode {
+  const snapshot = useExtensionSurface(
+    runtime.store,
+    injectStyles,
+    ensureThemeEditorStyles,
+    styleNonce,
+  );
   const [query, setQuery] = useState("");
   const [format, setFormat] = useState<ExportFormat>("css");
   const [copied, setCopied] = useState<"idle" | "ok" | "failed">("idle");

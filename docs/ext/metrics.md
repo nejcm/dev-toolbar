@@ -74,7 +74,8 @@ are never read at all. "Copy diagnostic data" passes the whole dump through
 The extension ships its own stylesheet, injected once per document. If you set
 `injectStyles={false}` on `<DevToolbar>`, set `metrics({ injectStyles: false })` too
 and deliver `METRICS_CSS` yourself — core's flag is a prop, and extensions cannot see
-props.
+props. `styleNonce` on `<DevToolbar>` is forwarded to the sheet via the slot;
+`metrics({ styleNonce })` overrides it.
 
 ---
 

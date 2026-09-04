@@ -16,6 +16,7 @@ export interface OverlayHostProps {
   density: ToolbarDensity;
   position: ToolbarPosition;
   classNames?: DevToolbarClassNames | undefined;
+  styleNonce?: string | undefined;
 }
 
 /**
@@ -27,21 +28,28 @@ export interface OverlayHostProps {
  * `position: fixed` overlay covers the viewport rather than just the bar.
  * `hidden` extensions render nothing, as elsewhere.
  *
- * Memoized on its four props so an overlay slot doesn't re-invoke on every
+ * Memoized on its props so an overlay slot doesn't re-invoke on every
  * panel-height drag frame or active-panel change, which none of them care about.
+ * `styleNonce` is a stable string, so it costs nothing, but it is a prop and
+ * belongs in the comparison.
  */
 function OverlayHostImpl({
   extensions,
   density,
   position,
   classNames,
+  styleNonce,
 }: OverlayHostProps): ReactNode {
   const hosted = extensions.filter(
     (extension) => extension.hidden !== true && typeof extension.overlay === "function",
   );
   if (hosted.length === 0) return null;
 
-  const props: OverlaySlotProps = { density, position };
+  const props: OverlaySlotProps = {
+    density,
+    position,
+    ...(styleNonce ? { styleNonce } : {}),
+  };
 
   return (
     <>

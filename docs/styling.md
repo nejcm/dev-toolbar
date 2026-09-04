@@ -37,6 +37,17 @@ Because the bar is light DOM, an extension can also just use Tailwind, styled
 components, or your design system, and it renders the way it does everywhere else.
 [docs/architecture.md](./architecture.md#4-style-api).
 
+## CSP
+
+Under `style-src 'self' 'nonce-…'`, an un-nonced `<style>` is dropped silently — the
+bar renders, unstyled, with nothing in the console but a CSP report. Pass the nonce
+as `styleNonce` on `<DevToolbar>`. Core stamps it on its own sheet and forwards it to
+every slot, so first-party extensions pick it up automatically.
+
+A per-factory `styleNonce` option overrides the slot prop when a host's extension
+sheets need a different nonce, or when an extension injects outside a slot. The nonce
+is applied only when a sheet is created (first-writer-wins). `injectStyles={false}`
+skips core's injection; each extension has its own `injectStyles` switch.
 
 ---
 

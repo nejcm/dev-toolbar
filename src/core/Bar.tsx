@@ -45,6 +45,7 @@ export interface BarProps {
   closePanel: (id?: string) => void;
   togglePanel: (id: string) => void;
   classNames?: DevToolbarClassNames | undefined;
+  styleNonce?: string | undefined;
 }
 
 export function Bar({
@@ -55,6 +56,7 @@ export function Bar({
   closePanel,
   togglePanel,
   classNames,
+  styleNonce,
 }: BarProps): ReactNode {
   const { start, end } = sortExtensions(extensions);
 
@@ -71,6 +73,7 @@ export function Bar({
       openPanel: () => openPanel(extension.id),
       closePanel: () => closePanel(extension.id),
       togglePanel: () => togglePanel(extension.id),
+      ...(styleNonce ? { styleNonce } : {}),
     };
 
     return (

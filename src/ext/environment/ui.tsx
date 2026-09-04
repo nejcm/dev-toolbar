@@ -25,6 +25,7 @@ export interface ChipProps {
   isOverflowed: boolean;
   isPanelOpen: boolean;
   injectStyles: boolean;
+  styleNonce?: string;
   onToggle(): void;
 }
 
@@ -34,9 +35,15 @@ export function EnvironmentChip({
   isOverflowed,
   isPanelOpen,
   injectStyles,
+  styleNonce,
   onToggle,
 }: ChipProps): ReactNode {
-  const snapshot = useExtensionSurface(runtime.store, injectStyles, ensureEnvironmentStyles);
+  const snapshot = useExtensionSurface(
+    runtime.store,
+    injectStyles,
+    ensureEnvironmentStyles,
+    styleNonce,
+  );
   const kind = kindLabel(snapshot);
   const title = snapshot.supplied
     ? `${label}: ${kind} — click for the full context`
@@ -77,10 +84,16 @@ export function EnvironmentChip({
 export interface PanelProps {
   runtime: EnvironmentRuntime;
   injectStyles: boolean;
+  styleNonce?: string;
 }
 
-export function EnvironmentPanel({ runtime, injectStyles }: PanelProps): ReactNode {
-  const snapshot = useExtensionSurface(runtime.store, injectStyles, ensureEnvironmentStyles);
+export function EnvironmentPanel({ runtime, injectStyles, styleNonce }: PanelProps): ReactNode {
+  const snapshot = useExtensionSurface(
+    runtime.store,
+    injectStyles,
+    ensureEnvironmentStyles,
+    styleNonce,
+  );
   const [copied, setCopied] = useState<"idle" | "ok" | "failed">("idle");
 
   // `/runtime`'s shared writer, not a hand-rolled one: a missing clipboard API

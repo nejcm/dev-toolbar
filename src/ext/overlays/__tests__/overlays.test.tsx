@@ -33,12 +33,13 @@ const app = (
   </main>
 );
 
-const mount = (options: OverlaysOptions = {}, storage?: ToolbarStorage) => {
+const mount = (options: OverlaysOptions = {}, storage?: ToolbarStorage, styleNonce?: string) => {
   const extension = overlays(options);
   const result = mountToolbar(app, {
     extensions: [extension],
     instanceId: "test",
     ...(storage === undefined ? {} : { storage }),
+    ...(styleNonce === undefined ? {} : { styleNonce }),
   });
   return { extension, ...result };
 };
@@ -813,5 +814,22 @@ describe("failing closed", () => {
     toggleRow("grid");
     expect(storage.getItem(STORAGE_KEY)).toBeNull();
     expect(document.querySelector('[data-dtb-part="ovl-grid"]')).not.toBeNull();
+  });
+});
+
+describe("styleNonce", () => {
+  const sheet = () =>
+    document.head.querySelector<HTMLStyleElement>(
+      `style[data-dev-toolbar-styles="${BOXES_STYLE_ENTRY}"]`,
+    );
+
+  it("stamps the factory option on the boxes sheet", () => {
+    mount({ styleNonce: "from-option", defaults: { boxes: true } });
+    expect(sheet()?.nonce).toBe("from-option");
+  });
+
+  it("stamps the slot prop on the boxes sheet", () => {
+    mount({ defaults: { boxes: true } }, undefined, "from-slot");
+    expect(sheet()?.nonce).toBe("from-slot");
   });
 });

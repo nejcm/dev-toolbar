@@ -73,6 +73,12 @@ export interface OverlaysOptions extends OverlaysRuntimeOptions {
    * added/removed with its toggle regardless.
    */
   injectStyles?: boolean;
+  /**
+   * CSP nonce for this extension's stylesheets — the panel/chip sheet and the
+   * layout-boxes sheet. Wins over the `styleNonce` slot prop core forwards
+   * from `<DevToolbar>`.
+   */
+  styleNonce?: string;
 }
 
 /**
@@ -89,12 +95,15 @@ export function overlays(options: OverlaysOptions = {}): DevToolbarExtension {
     hidden,
     keepMounted = false,
     injectStyles = true,
+    styleNonce: optionNonce,
     ...runtimeOptions
   } = options;
 
   // Built here, not in start(api): slot functions run during the toolbar's
   // first render, which is before any effect fires.
   const runtime = createOverlaysRuntime(runtimeOptions);
+  runtime.awaitStyleNonce();
+  if (optionNonce) runtime.setStyleNonce(optionNonce);
 
   /**
    * Function form of `commands` (§13.1), rebuilt each aggregation pass so the
@@ -131,25 +140,39 @@ export function overlays(options: OverlaysOptions = {}): DevToolbarExtension {
     /** Which layers are on. `plans/agent-readable-toolbar.md` § Phase 1. */
     diagnostics: () => runtime.diagnostics(),
 
-    compact: ({ isOverflowed, isPanelOpen, togglePanel }) => (
+    compact: ({ isOverflowed, isPanelOpen, togglePanel, styleNonce }) => (
       <OverlaysChip
         runtime={runtime}
         label={label}
         isOverflowed={isOverflowed}
         isPanelOpen={isPanelOpen}
         injectStyles={injectStyles}
+        styleNonce={optionNonce || styleNonce}
         onToggle={togglePanel}
       />
     ),
 
-    panel: () => <OverlaysPanel runtime={runtime} label={label} injectStyles={injectStyles} />,
+    panel: ({ styleNonce }) => (
+      <OverlaysPanel
+        runtime={runtime}
+        label={label}
+        injectStyles={injectStyles}
+        styleNonce={optionNonce || styleNonce}
+      />
+    ),
 
     /**
      * Surface goes in `overlay`, not `panel`/`compact` (§13.2): a collapsed
      * `compact` isn't in the DOM, so overlays would vanish on narrow windows,
      * and `panel` is a bar-pinned drawer rather than a viewport-sized layer.
      */
-    overlay: () => <OverlaysSurface runtime={runtime} injectStyles={injectStyles} />,
+    overlay: ({ styleNonce }) => (
+      <OverlaysSurface
+        runtime={runtime}
+        injectStyles={injectStyles}
+        styleNonce={optionNonce || styleNonce}
+      />
+    ),
 
     commands: () => [
       ...toggles(),

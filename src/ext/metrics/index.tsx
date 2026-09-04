@@ -49,6 +49,11 @@ export interface MetricsOptions {
    * off too and ship `METRICS_CSS` yourself.
    */
   injectStyles?: boolean;
+  /**
+   * CSP nonce for this extension's stylesheet. Wins over the `styleNonce`
+   * slot prop core forwards from `<DevToolbar>`.
+   */
+  styleNonce?: string;
   /** `false` switches a metric off entirely; an object configures it. */
   memory?: boolean | MemoryCollectorOptions;
   delay?: boolean | DelayCollectorOptions;
@@ -74,6 +79,7 @@ export function metrics(options: MetricsOptions = {}): DevToolbarExtension {
     only = METRIC_IDS,
     updateHz = 2,
     injectStyles = true,
+    styleNonce: optionNonce,
   } = options;
 
   const build: Record<MetricId, () => Collector | null> = {
@@ -117,12 +123,13 @@ export function metrics(options: MetricsOptions = {}): DevToolbarExtension {
       return runtime.start(api);
     },
 
-    compact: ({ isOverflowed, isPanelOpen, togglePanel }) => (
+    compact: ({ isOverflowed, isPanelOpen, togglePanel, styleNonce }) => (
       <MetricsChips
         runtime={runtime}
         isOverflowed={isOverflowed}
         isPanelOpen={isPanelOpen}
         injectStyles={injectStyles}
+        styleNonce={optionNonce || styleNonce}
         onToggle={togglePanel}
       />
     ),
@@ -130,7 +137,13 @@ export function metrics(options: MetricsOptions = {}): DevToolbarExtension {
     /** The redacted collector dump, for `/ext/diagnostics`. Same builder `metrics.copy` uses. */
     diagnostics: () => runtime.diagnostics(),
 
-    panel: () => <MetricsPanel runtime={runtime} injectStyles={injectStyles} />,
+    panel: ({ styleNonce }) => (
+      <MetricsPanel
+        runtime={runtime}
+        injectStyles={injectStyles}
+        styleNonce={optionNonce || styleNonce}
+      />
+    ),
 
     commands: [
       {

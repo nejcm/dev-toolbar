@@ -49,4 +49,12 @@ describe("ensureStyleSheet", () => {
     expect(el?.nonce).toBe("abc");
     el?.remove();
   });
+
+  it("leaves an existing sheet's nonce alone — first writer wins", () => {
+    const first = ensureStyleSheet("test-entry", ".a{}", document, "first");
+    const second = ensureStyleSheet("test-entry", ".a{}", document, "second");
+    expect(second).toBe(first);
+    expect(second?.nonce).toBe("first");
+    first?.remove();
+  });
 });

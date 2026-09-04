@@ -24,6 +24,7 @@ export interface TriggerProps {
   label: string;
   isOverflowed: boolean;
   injectStyles: boolean;
+  styleNonce?: string;
   apple: boolean;
 }
 
@@ -37,9 +38,15 @@ export function CommandMenuTrigger({
   label,
   isOverflowed,
   injectStyles,
+  styleNonce,
   apple,
 }: TriggerProps): ReactNode {
-  const snapshot = useExtensionSurface(runtime.store, injectStyles, ensureCommandMenuStyles);
+  const snapshot = useExtensionSurface(
+    runtime.store,
+    injectStyles,
+    ensureCommandMenuStyles,
+    styleNonce,
+  );
   const hint = describeHotkey(runtime.shortcut, apple);
   const keyshortcuts = ariaKeyshortcuts(runtime.shortcut, apple);
 
@@ -76,6 +83,7 @@ export interface OverlayProps {
   placeholder: string;
   emptyMessage: string;
   injectStyles: boolean;
+  styleNonce?: string;
 }
 
 /** Rendered by the `overlay` slot on every toolbar render; `null` while closed. */
@@ -84,6 +92,7 @@ export function CommandMenuOverlay(props: OverlayProps): ReactNode {
     props.runtime.store,
     props.injectStyles,
     ensureCommandMenuStyles,
+    props.styleNonce,
   );
   if (!snapshot.open) return null;
   return <Dialog {...props} snapshot={snapshot} />;

@@ -77,6 +77,7 @@ export interface ChipProps {
   isOverflowed: boolean;
   isPanelOpen: boolean;
   injectStyles: boolean;
+  styleNonce?: string;
   onToggle(): void;
   onOpen(): void;
 }
@@ -87,10 +88,11 @@ export function FlagsChip({
   isOverflowed,
   isPanelOpen,
   injectStyles,
+  styleNonce,
   onToggle,
   onOpen,
 }: ChipProps): ReactNode {
-  const snapshot = useExtensionSurface(runtime.store, injectStyles, ensureFlagsStyles);
+  const snapshot = useExtensionSurface(runtime.store, injectStyles, ensureFlagsStyles, styleNonce);
 
   const count = snapshot.supplied ? snapshot.flags.length : 0;
   const summary =
@@ -421,10 +423,11 @@ export interface PanelProps {
   runtime: FlagsRuntime;
   label: string;
   injectStyles: boolean;
+  styleNonce?: string;
 }
 
-export function FlagsPanel({ runtime, label, injectStyles }: PanelProps): ReactNode {
-  const snapshot = useExtensionSurface(runtime.store, injectStyles, ensureFlagsStyles);
+export function FlagsPanel({ runtime, label, injectStyles, styleNonce }: PanelProps): ReactNode {
+  const snapshot = useExtensionSurface(runtime.store, injectStyles, ensureFlagsStyles, styleNonce);
   const [query, setQuery] = useState("");
   const [copied, setCopied] = useState<"idle" | "ok" | "failed">("idle");
 

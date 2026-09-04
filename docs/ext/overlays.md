@@ -23,7 +23,8 @@ leave on while profiling should tell you what it is charging you.
 Options: `defaults` (which overlays start on), `grid` (`columns` / `gutter` /
 `maxWidth` / `baseline`), `focusLimit`, `mutationDebounceMs`, `persist`, plus the
 usual `id` / `label` / `align` / `order` / `priority` / `hidden` / `keepMounted` /
-`injectStyles`.
+`injectStyles` / `styleNonce`. `styleNonce` also stamps the layout-boxes sheet,
+which is not gated on `injectStyles`.
 
 Because it draws over *your* application, what it refuses to do matters more than
 what it draws:

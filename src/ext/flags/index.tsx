@@ -104,6 +104,11 @@ export interface FlagsOptions extends Pick<
    * turn this off too and ship `FLAGS_CSS` yourself.
    */
   injectStyles?: boolean;
+  /**
+   * CSP nonce for this extension's stylesheet. Wins over the `styleNonce`
+   * slot prop core forwards from `<DevToolbar>`.
+   */
+  styleNonce?: string;
 }
 
 /**
@@ -120,6 +125,7 @@ export function flags(options: FlagsOptions = {}): DevToolbarExtension {
     hidden,
     keepMounted = true,
     injectStyles = true,
+    styleNonce: optionNonce,
     ...runtimeOptions
   } = options;
 
@@ -230,13 +236,14 @@ export function flags(options: FlagsOptions = {}): DevToolbarExtension {
       return runtime.start(api);
     },
 
-    compact: ({ isOverflowed, isPanelOpen, togglePanel, openPanel }) => (
+    compact: ({ isOverflowed, isPanelOpen, togglePanel, openPanel, styleNonce }) => (
       <FlagsChip
         runtime={runtime}
         label={label}
         isOverflowed={isOverflowed}
         isPanelOpen={isPanelOpen}
         injectStyles={injectStyles}
+        styleNonce={optionNonce || styleNonce}
         onToggle={togglePanel}
         onOpen={openPanel}
       />
@@ -245,7 +252,14 @@ export function flags(options: FlagsOptions = {}): DevToolbarExtension {
     /** The redacted override list, for `/ext/diagnostics`. Display strings only, never raw values. */
     diagnostics: () => runtime.diagnostics(),
 
-    panel: () => <FlagsPanel runtime={runtime} label={label} injectStyles={injectStyles} />,
+    panel: ({ styleNonce }) => (
+      <FlagsPanel
+        runtime={runtime}
+        label={label}
+        injectStyles={injectStyles}
+        styleNonce={optionNonce || styleNonce}
+      />
+    ),
 
     commands: () => [
       setCommand,

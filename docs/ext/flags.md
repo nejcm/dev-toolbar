@@ -119,6 +119,8 @@ enumeration is the palette's affordance, `flags.set` is the tool call, and only
 Like the other extensions it ships its own
 stylesheet — pair `injectStyles={false}` on `<DevToolbar>` with
 `flags({ injectStyles: false })` and deliver `FLAGS_CSS` yourself.
+`styleNonce` on `<DevToolbar>` is forwarded to the sheet via the slot;
+`flags({ styleNonce })` overrides it.
 
 ---
 

@@ -65,6 +65,11 @@ export interface EnvironmentOptions extends Pick<
    * `injectStyles` prop — turn both off and ship `ENVIRONMENT_CSS` yourself.
    */
   injectStyles?: boolean;
+  /**
+   * CSP nonce for this extension's stylesheet. Wins over the `styleNonce`
+   * slot prop core forwards from `<DevToolbar>`.
+   */
+  styleNonce?: string;
 }
 
 /**
@@ -80,6 +85,7 @@ export function environment(options: EnvironmentOptions = {}): DevToolbarExtensi
     priority = 0,
     hidden,
     injectStyles = true,
+    styleNonce: optionNonce,
     context,
     pollMs,
     fields,
@@ -111,13 +117,14 @@ export function environment(options: EnvironmentOptions = {}): DevToolbarExtensi
       return runtime.start(api);
     },
 
-    compact: ({ isOverflowed, isPanelOpen, togglePanel }) => (
+    compact: ({ isOverflowed, isPanelOpen, togglePanel, styleNonce }) => (
       <EnvironmentChip
         runtime={runtime}
         label={label}
         isOverflowed={isOverflowed}
         isPanelOpen={isPanelOpen}
         injectStyles={injectStyles}
+        styleNonce={optionNonce || styleNonce}
         onToggle={togglePanel}
       />
     ),
@@ -129,7 +136,13 @@ export function environment(options: EnvironmentOptions = {}): DevToolbarExtensi
      */
     diagnostics: () => runtime.diagnostics(),
 
-    panel: () => <EnvironmentPanel runtime={runtime} injectStyles={injectStyles} />,
+    panel: ({ styleNonce }) => (
+      <EnvironmentPanel
+        runtime={runtime}
+        injectStyles={injectStyles}
+        styleNonce={optionNonce || styleNonce}
+      />
+    ),
 
     commands: [
       {

@@ -357,6 +357,6 @@ export const FLAGS_CSS = String.raw`@layer dev-toolbar {
 const FLAGS_STYLE_ENTRY = "ext-flags";
 
 /** Injects the stylesheet once per document, via `/runtime`'s shared injector. */
-export function ensureFlagsStyles(doc?: Document): HTMLStyleElement | null {
-  return ensureStyleSheet(FLAGS_STYLE_ENTRY, FLAGS_CSS, doc);
+export function ensureFlagsStyles(doc?: Document, nonce?: string): HTMLStyleElement | null {
+  return ensureStyleSheet(FLAGS_STYLE_ENTRY, FLAGS_CSS, doc, nonce);
 }

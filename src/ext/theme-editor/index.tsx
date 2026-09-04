@@ -81,6 +81,11 @@ export interface ThemeEditorOptions extends ThemeEditorRuntimeOptions {
    * writes onto your application are applied either way.
    */
   injectStyles?: boolean;
+  /**
+   * CSP nonce for this extension's stylesheet. Wins over the `styleNonce`
+   * slot prop core forwards from `<DevToolbar>`.
+   */
+  styleNonce?: string;
 }
 
 /**
@@ -97,6 +102,7 @@ export function themeEditor(options: ThemeEditorOptions = {}): DevToolbarExtensi
     hidden,
     keepMounted = true,
     injectStyles = true,
+    styleNonce: optionNonce,
     ...runtimeOptions
   } = options;
 
@@ -199,18 +205,26 @@ export function themeEditor(options: ThemeEditorOptions = {}): DevToolbarExtensi
       return runtime.start(api);
     },
 
-    compact: ({ isOverflowed, isPanelOpen, togglePanel }) => (
+    compact: ({ isOverflowed, isPanelOpen, togglePanel, styleNonce }) => (
       <ThemeChip
         runtime={runtime}
         label={label}
         isOverflowed={isOverflowed}
         isPanelOpen={isPanelOpen}
         injectStyles={injectStyles}
+        styleNonce={optionNonce || styleNonce}
         onToggle={togglePanel}
       />
     ),
 
-    panel: () => <ThemePanel runtime={runtime} label={label} injectStyles={injectStyles} />,
+    panel: ({ styleNonce }) => (
+      <ThemePanel
+        runtime={runtime}
+        label={label}
+        injectStyles={injectStyles}
+        styleNonce={optionNonce || styleNonce}
+      />
+    ),
 
     /** Redacted edit list for `/ext/diagnostics` — display strings, never raw token values. */
     diagnostics: () => runtime.diagnostics(),

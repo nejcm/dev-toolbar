@@ -28,6 +28,7 @@ export interface PanelHostProps {
   setPanelHeight: (height: number) => void;
   closePanel: (id?: string) => void;
   classNames?: DevToolbarClassNames | undefined;
+  styleNonce?: string | undefined;
 }
 
 const RESIZE_STEP = 16;
@@ -45,6 +46,7 @@ export function PanelHost({
   setPanelHeight,
   closePanel,
   classNames,
+  styleNonce,
 }: PanelHostProps): ReactNode {
   const openedRef = useRef(new Set<string>());
   // Live height during a drag. Persisting on every pointermove would
@@ -152,6 +154,7 @@ export function PanelHost({
           density,
           height,
           close: () => closePanel(extension.id),
+          ...(styleNonce ? { styleNonce } : {}),
         };
         return (
           <div

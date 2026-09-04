@@ -282,6 +282,6 @@ export const THEME_EDITOR_CSS = String.raw`@layer dev-toolbar {
 }
 `;
 
-export function ensureThemeEditorStyles(doc?: Document): HTMLStyleElement | null {
-  return ensureStyleSheet("ext-theme-editor", THEME_EDITOR_CSS, doc);
+export function ensureThemeEditorStyles(doc?: Document, nonce?: string): HTMLStyleElement | null {
+  return ensureStyleSheet("ext-theme-editor", THEME_EDITOR_CSS, doc, nonce);
 }

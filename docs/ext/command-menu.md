@@ -15,7 +15,7 @@ query it browses — recently run commands first, then everything else grouped b
 extension; with a query it is one flat list ordered by match quality. Options:
 `shortcut` (`null` binds no key), `placeholder`, `emptyMessage`, `rememberRecent`,
 plus the usual `id` / `label` / `align` / `order` / `priority` / `hidden` /
-`injectStyles`.
+`injectStyles` / `styleNonce`.
 
 Five things worth knowing:
 

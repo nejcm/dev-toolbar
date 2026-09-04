@@ -21,6 +21,7 @@ export interface ChipsProps {
   isOverflowed: boolean;
   isPanelOpen: boolean;
   injectStyles: boolean;
+  styleNonce?: string;
   onToggle(): void;
 }
 
@@ -29,9 +30,15 @@ export function MetricsChips({
   isOverflowed,
   isPanelOpen,
   injectStyles,
+  styleNonce,
   onToggle,
 }: ChipsProps): ReactNode {
-  const snapshot = useExtensionSurface(runtime.store, injectStyles, ensureMetricsStyles);
+  const snapshot = useExtensionSurface(
+    runtime.store,
+    injectStyles,
+    ensureMetricsStyles,
+    styleNonce,
+  );
 
   // In the ⋮ menu there's vertical room, so spell metrics out instead of shrinking them.
   if (isOverflowed) {
@@ -93,12 +100,18 @@ export function MetricsChips({
 export interface PanelProps {
   runtime: MetricsRuntime;
   injectStyles: boolean;
+  styleNonce?: string;
 }
 
 const STORAGE_TAB_KEY = "tab";
 
-export function MetricsPanel({ runtime, injectStyles }: PanelProps): ReactNode {
-  const snapshot = useExtensionSurface(runtime.store, injectStyles, ensureMetricsStyles);
+export function MetricsPanel({ runtime, injectStyles, styleNonce }: PanelProps): ReactNode {
+  const snapshot = useExtensionSurface(
+    runtime.store,
+    injectStyles,
+    ensureMetricsStyles,
+    styleNonce,
+  );
   const first = snapshot.order[0] ?? "memory";
   const idPrefix = `dtb-metrics-${useId().replace(/:/g, "")}`;
   const tabRefs = useRef<Partial<Record<MetricId, HTMLButtonElement | null>>>({});

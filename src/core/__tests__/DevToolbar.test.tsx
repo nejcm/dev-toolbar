@@ -4,7 +4,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ReactNode } from "react";
 import type { Mock } from "vitest";
 import { CONTRACT_VERSION } from "../contract";
-import type { DevToolbarExtension, ExtensionRuntimeApi } from "../contract";
+import type {
+  CompactSlotProps,
+  DevToolbarExtension,
+  ExtensionRuntimeApi,
+  OverlaySlotProps,
+  PanelSlotProps,
+} from "../contract";
 import { DevToolbar } from "../DevToolbar";
 import { DevToolbarInset } from "../DevToolbarInset";
 import { useDevToolbar, useToolbarCommands } from "../context";
@@ -1301,5 +1307,79 @@ describe("the styleNonce prop", () => {
 
     expect(coreStyle()).not.toBeNull();
     expect(coreStyle()!.nonce).toBe("");
+  });
+
+  it("forwards the nonce to every slot", () => {
+    const compact: CompactSlotProps[] = [];
+    const panel: PanelSlotProps[] = [];
+    const overlay: OverlaySlotProps[] = [];
+    const extension: DevToolbarExtension = {
+      id: "n",
+      label: "N",
+      compact: (props) => {
+        compact.push(props);
+        return (
+          <button type="button" onClick={props.openPanel}>
+            open
+          </button>
+        );
+      },
+      panel: (props) => {
+        panel.push(props);
+        return <div>panel</div>;
+      },
+      overlay: (props) => {
+        overlay.push(props);
+        return null;
+      },
+    };
+
+    render(
+      <DevToolbar instanceId="t" styleNonce="n0nce" extensions={[extension]} storage={null}>
+        <div />
+      </DevToolbar>,
+    );
+
+    expect(compact[0]?.styleNonce).toBe("n0nce");
+    expect(overlay[0]?.styleNonce).toBe("n0nce");
+    fireEvent.click(screen.getByRole("button", { name: "open" }));
+    expect(panel[0]?.styleNonce).toBe("n0nce");
+  });
+
+  it('omits the slot field when the prop is absent, so it cannot leak as nonce=""', () => {
+    const compact: CompactSlotProps[] = [];
+    const panel: PanelSlotProps[] = [];
+    const overlay: OverlaySlotProps[] = [];
+    const extension: DevToolbarExtension = {
+      id: "n",
+      label: "N",
+      compact: (props) => {
+        compact.push(props);
+        return (
+          <button type="button" onClick={props.openPanel}>
+            open
+          </button>
+        );
+      },
+      panel: (props) => {
+        panel.push(props);
+        return <div>panel</div>;
+      },
+      overlay: (props) => {
+        overlay.push(props);
+        return null;
+      },
+    };
+
+    render(
+      <DevToolbar instanceId="t" extensions={[extension]} storage={null}>
+        <div />
+      </DevToolbar>,
+    );
+
+    expect(compact[0]).not.toHaveProperty("styleNonce");
+    expect(overlay[0]).not.toHaveProperty("styleNonce");
+    fireEvent.click(screen.getByRole("button", { name: "open" }));
+    expect(panel[0]).not.toHaveProperty("styleNonce");
   });
 });

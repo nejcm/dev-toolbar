@@ -1,3 +1,4 @@
+import { useLayoutEffect } from "react";
 import type { CSSProperties, ReactNode } from "react";
 import { useExtensionSurface } from "../shared/hooks";
 import { ensureOverlaysStyles } from "./css";
@@ -32,6 +33,7 @@ export interface ChipProps {
   isOverflowed: boolean;
   isPanelOpen: boolean;
   injectStyles: boolean;
+  styleNonce?: string;
   onToggle(): void;
 }
 
@@ -41,9 +43,15 @@ export function OverlaysChip({
   isOverflowed,
   isPanelOpen,
   injectStyles,
+  styleNonce,
   onToggle,
 }: ChipProps): ReactNode {
-  const snapshot = useExtensionSurface(runtime.store, injectStyles, ensureOverlaysStyles);
+  const snapshot = useExtensionSurface(
+    runtime.store,
+    injectStyles,
+    ensureOverlaysStyles,
+    styleNonce,
+  );
   const on = snapshot.activeCount > 0;
   const names = OVERLAY_IDS.filter((id) => snapshot.enabled[id]).map(
     (id) => OVERLAY_META[id].label,
@@ -79,10 +87,16 @@ export interface PanelProps {
   runtime: OverlaysRuntime;
   label: string;
   injectStyles: boolean;
+  styleNonce?: string;
 }
 
-export function OverlaysPanel({ runtime, label, injectStyles }: PanelProps): ReactNode {
-  const snapshot = useExtensionSurface(runtime.store, injectStyles, ensureOverlaysStyles);
+export function OverlaysPanel({ runtime, label, injectStyles, styleNonce }: PanelProps): ReactNode {
+  const snapshot = useExtensionSurface(
+    runtime.store,
+    injectStyles,
+    ensureOverlaysStyles,
+    styleNonce,
+  );
 
   return (
     <div data-dtb-part="ovl-panel" aria-label={label}>
@@ -167,14 +181,23 @@ export function OverlaysPanel({ runtime, label, injectStyles }: PanelProps): Rea
 export interface SurfaceProps {
   runtime: OverlaysRuntime;
   injectStyles: boolean;
+  styleNonce?: string;
 }
 
 /**
  * Rendered by the `overlay` slot on every toolbar render; `null` whenever no
  * overlay is on, which is the common case.
  */
-export function OverlaysSurface({ runtime, injectStyles }: SurfaceProps): ReactNode {
-  const snapshot = useExtensionSurface(runtime.store, injectStyles, ensureOverlaysStyles);
+export function OverlaysSurface({ runtime, injectStyles, styleNonce }: SurfaceProps): ReactNode {
+  const snapshot = useExtensionSurface(
+    runtime.store,
+    injectStyles,
+    ensureOverlaysStyles,
+    styleNonce,
+  );
+  useLayoutEffect(() => {
+    runtime.setStyleNonce(styleNonce);
+  }, [runtime, styleNonce]);
   if (snapshot.activeCount === 0) return null;
 
   const drawsSomething =

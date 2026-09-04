@@ -31,6 +31,7 @@ export interface ChipProps {
   isOverflowed: boolean;
   isPanelOpen: boolean;
   injectStyles: boolean;
+  styleNonce?: string;
   onToggle(): void;
 }
 
@@ -46,9 +47,15 @@ export function DiagnosticsChip({
   isOverflowed,
   isPanelOpen,
   injectStyles,
+  styleNonce,
   onToggle,
 }: ChipProps): ReactNode {
-  const state = useExtensionSurface(runtime.store, injectStyles, ensureDiagnosticsStyles);
+  const state = useExtensionSurface(
+    runtime.store,
+    injectStyles,
+    ensureDiagnosticsStyles,
+    styleNonce,
+  );
   const omissions = state.snapshot?.omissions.length ?? 0;
   const captured = state.snapshot !== null;
   const accessibleLabel = omissions > 0 ? `${label}, ${omissions} missing` : label;
@@ -85,10 +92,21 @@ export interface PanelProps {
   runtime: DiagnosticsRuntime;
   label: string;
   injectStyles: boolean;
+  styleNonce?: string;
 }
 
-export function DiagnosticsPanel({ runtime, label, injectStyles }: PanelProps): ReactNode {
-  const state = useExtensionSurface(runtime.store, injectStyles, ensureDiagnosticsStyles);
+export function DiagnosticsPanel({
+  runtime,
+  label,
+  injectStyles,
+  styleNonce,
+}: PanelProps): ReactNode {
+  const state = useExtensionSurface(
+    runtime.store,
+    injectStyles,
+    ensureDiagnosticsStyles,
+    styleNonce,
+  );
   const [format, setFormat] = useState<SnapshotFormat>(() => runtime.readFormat());
   const [status, setStatus] = useState<string | null>(null);
 

@@ -158,6 +158,6 @@ export const COMMAND_MENU_CSS = String.raw`@layer dev-toolbar {
 }
 `;
 
-export function ensureCommandMenuStyles(doc?: Document): HTMLStyleElement | null {
-  return ensureStyleSheet("ext-command-menu", COMMAND_MENU_CSS, doc);
+export function ensureCommandMenuStyles(doc?: Document, nonce?: string): HTMLStyleElement | null {
+  return ensureStyleSheet("ext-command-menu", COMMAND_MENU_CSS, doc, nonce);
 }

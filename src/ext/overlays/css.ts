@@ -279,6 +279,6 @@ export const OVERLAYS_CSS = String.raw`@layer dev-toolbar {
 }
 `;
 
-export function ensureOverlaysStyles(doc?: Document): HTMLStyleElement | null {
-  return ensureStyleSheet("ext-overlays", OVERLAYS_CSS, doc);
+export function ensureOverlaysStyles(doc?: Document, nonce?: string): HTMLStyleElement | null {
+  return ensureStyleSheet("ext-overlays", OVERLAYS_CSS, doc, nonce);
 }

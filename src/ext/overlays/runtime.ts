@@ -103,6 +103,20 @@ export interface OverlaysRuntime {
   toggle(id: OverlayId): void;
   /** Turns everything off. The escape hatch the panel and a command both use. */
   disableAll(): void;
+  /**
+   * CSP nonce for the layout-boxes sheet. A truthy factory option is applied
+   * before `start()`; the overlay surface writes the resolved slot nonce once
+   * it mounts. Turning boxes on waits for the first call only after
+   * `awaitStyleNonce()` — `overlays()` arms that wait; a headless
+   * `createOverlaysRuntime()` does not.
+   */
+  setStyleNonce(nonce?: string): void;
+  /**
+   * Hold the layout-boxes insert until `setStyleNonce`. `overlays()` calls
+   * this so `<DevToolbar styleNonce>` is present at first write; a headless
+   * runtime never does, and inserts at `start()` as it always has.
+   */
+  awaitStyleNonce(): void;
   start(api: ExtensionRuntimeApi): () => void;
   /**
    * Which layers are on, plus the scan's own health. Pure and cheap — it reads
@@ -126,7 +140,7 @@ export const BOXES_REFS_ATTRIBUTE = "data-dtb-refs";
  * Release queries the document for the attribute rather than holding the
  * node, so a runtime that lost its reference cannot leave a sheet behind.
  */
-export function setHostOutlines(on: boolean, doc?: Document): void {
+export function setHostOutlines(on: boolean, doc?: Document, nonce?: string): void {
   const target = doc ?? (typeof document === "undefined" ? null : document);
   if (!target?.head) return;
 
@@ -143,7 +157,7 @@ export function setHostOutlines(on: boolean, doc?: Document): void {
   };
 
   if (on) {
-    const sheet = ensureStyleSheet(BOXES_STYLE_ENTRY, BOXES_CSS, target);
+    const sheet = ensureStyleSheet(BOXES_STYLE_ENTRY, BOXES_CSS, target, nonce);
     if (!sheet) return;
     const existed = sheets.includes(sheet as unknown as HTMLElement);
     sheet.setAttribute(
@@ -740,10 +754,32 @@ export function createOverlaysRuntime(options: OverlaysRuntimeOptions = {}): Ove
     observedTargets.clear();
   };
 
+  let styleNonce: string | undefined;
+  let nonceKnown = true;
+  let outlinesWanted = false;
+
+  const flushOutlines = () => {
+    // Insert waits for a nonce source so `<DevToolbar styleNonce>` is present
+    // at first write. Teardown never waits — a sheet must not outlive us.
+    if (outlinesWanted && !nonceKnown) return;
+    if (outlinesWanted === outlinesOn) return;
+    outlinesOn = outlinesWanted;
+    setHostOutlines(outlinesOn, undefined, styleNonce);
+  };
+
   const setOutlines = (on: boolean) => {
-    if (on === outlinesOn) return;
-    outlinesOn = on;
-    setHostOutlines(on);
+    outlinesWanted = on;
+    flushOutlines();
+  };
+
+  const setStyleNonce = (nonce?: string) => {
+    if (nonce) styleNonce = nonce;
+    nonceKnown = true;
+    flushOutlines();
+  };
+
+  const awaitStyleNonce = () => {
+    nonceKnown = false;
   };
 
   /**
@@ -820,6 +856,9 @@ export function createOverlaysRuntime(options: OverlaysRuntimeOptions = {}): Ove
       if (countEnabled(flags) === 0) return;
       write({ ...NO_OVERLAYS });
     },
+
+    setStyleNonce,
+    awaitStyleNonce,
 
     /**
      * No geometry: `focusItems` and `hover` are per-frame measurements of the
