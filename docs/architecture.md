@@ -231,9 +231,9 @@ Concretely, a hidden extension:
 | | Enforced in |
 | --- | --- |
 | does not render in the bar or the `⋮` menu | `Bar.tsx` / `sortExtensions` |
-| is never `start()`ed, and is torn down if it becomes hidden while running | `DevToolbar.tsx` |
+| is never `start()`ed, and is torn down if it becomes hidden while running | `useExtensionLifecycle.ts` |
 | has no panel mounted, `keepMounted` included | `PanelHost.tsx` |
-| has its `activePanelId` cleared on the transition | `DevToolbar.tsx` |
+| has its `activePanelId` cleared on the transition | `useExtensionLifecycle.ts` |
 | contributes no commands and no diagnostics to the aggregations | `commands.ts` / `diagnostics.ts` |
 
 Getting only the first two right is worse than getting none, because it *looks*

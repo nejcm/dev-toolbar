@@ -6,7 +6,6 @@ import {
   type DevToolbarClassNames,
   type DevToolbarExtension,
   type ExtensionErrorInfo,
-  type ExtensionRuntimeApi,
   type ToolbarColorScheme,
   type ToolbarDensity,
   type ToolbarPosition,
@@ -25,13 +24,14 @@ import {
   warnShortcutYieldsToToggle,
 } from "./commands";
 import { collectDiagnostics } from "./diagnostics";
-import { createExtensionStorage, createInstanceStorage, resolveStorage } from "./storage";
+import { createInstanceStorage, resolveStorage } from "./storage";
 import { createToolbarStore } from "./store";
 import { DEFAULT_SHORTCUT, matchesShortcut, parseShortcut } from "./shortcut";
 import { ensureStyles } from "./styles";
 import { useStableClassNames } from "./classNames";
 import { useLatestRef } from "./latest";
 import { useControlledToolbarState } from "./useControlledToolbarState";
+import { useExtensionLifecycle } from "./useExtensionLifecycle";
 
 /**
  * CSS custom property published on `document.documentElement` while the bar is
@@ -288,6 +288,8 @@ function DevToolbarRoot({
     [getCommands],
   );
 
+  const getDiagnostics = useCallback(() => collectDiagnostics(extensionsRef.current), []);
+
   // Contract version check, deduped by id (not object): an `extensions` array
   // rebuilt inside render re-runs this effect every render, which without the
   // ref would flood the console in exactly the case the warning is for.
@@ -311,145 +313,20 @@ function DevToolbarRoot({
     }
   }, [extensions, enabled]);
 
-  // A panel open when its extension becomes hidden must close, not just stop
-  // painting: `activePanelId` is persisted, so leaving it set would reopen the
-  // panel next reload. Only a *present and hidden* extension closes — an
-  // absent id is left alone, so a persisted panel survives until its
-  // extension registers.
-  useEffect(() => {
-    if (!enabled) return;
-    const active = state.activePanelId;
-    if (active === null) return;
-    const match = extensions.find((extension) => extension.id === active);
-    if (match?.hidden === true) store.closePanel(active);
-  }, [enabled, extensions, state.activePanelId, store]);
-
-  // start(api): once per extension id while it is present *and not hidden*.
-  // Core reports visibility and never pauses an extension on its behalf.
-  const runningRef = useRef(
-    new Map<string, { controller: AbortController; dispose?: () => void; start: unknown }>(),
-  );
-  const identityWarnedRef = useRef(new Set<string>());
-  useEffect(() => {
-    const running = runningRef.current;
-
-    // Disabling at runtime is a real teardown: abort every signal and run
-    // every dispose, rather than leaving timers alive until unmount.
-    if (!enabled) {
-      for (const [id, entry] of Array.from(running)) stopExtension(id, entry);
-      running.clear();
-      return;
-    }
-
-    // `hidden` means this extension does not exist for this actor. Running
-    // its collectors anyway would be exactly the leak `hidden` exists to
-    // prevent, so a hidden extension is stopped, not merely unpainted.
-    const present = new Set(
-      extensions.filter((extension) => extension.hidden !== true).map((extension) => extension.id),
-    );
-
-    // Copied: the loop deletes from `running`.
-    for (const [id, entry] of Array.from(running)) {
-      if (present.has(id)) continue;
-      stopExtension(id, entry);
-      running.delete(id);
-    }
-
-    for (const extension of extensions) {
-      if (extension.hidden === true || typeof extension.start !== "function") {
-        continue;
-      }
-      const existing = running.get(extension.id);
-      if (existing) {
-        // The running lifecycle belongs to the object that was started. If the
-        // consumer rebuilt the extension inside render, its state is silently
-        // lost. `{...ext, hidden}` keeps the same `start` reference, so this
-        // does not fire for that legitimate pattern.
-        if (existing.start !== extension.start && !identityWarnedRef.current.has(extension.id)) {
-          identityWarnedRef.current.add(extension.id);
-          // eslint-disable-next-line no-console
-          console.warn(
-            `[dev-toolbar] extension "${extension.id}" was rebuilt after it started. ` +
-              "Its start() lifecycle still belongs to the first object, so whatever " +
-              "that object owns is unreachable from what the bar now renders. Build " +
-              "extensions once, at module scope, not inside render.",
-          );
-        }
-        continue;
-      }
-      const controller = new AbortController();
-      const api: ExtensionRuntimeApi = {
-        signal: controller.signal,
-        isVisible: () => visibleRef.current,
-        subscribeVisibility: (callback) => {
-          // The signal is documented as aborted on teardown, and this is the
-          // subscription abort must release, so an extension keeping only the
-          // signal is a legal reading of the contract. Already aborted at call
-          // time: subscribe to nothing rather than leak an unreleasable listener.
-          if (controller.signal.aborted) return () => {};
-
-          const subscriber = (next: boolean) => {
-            try {
-              callback(next);
-            } catch (error) {
-              // eslint-disable-next-line no-console
-              console.error(
-                `[dev-toolbar] extension "${extension.id}" threw from its ` +
-                  "subscribeVisibility() callback.",
-                error,
-              );
-            }
-          };
-          const unsubscribeVisibility = subscribeVisibility(subscriber);
-
-          // Idempotent and removes the abort listener too, so nothing leaks
-          // regardless of whether the extension unsubscribes or the signal
-          // aborts first.
-          let released = false;
-          const unsubscribe = () => {
-            if (released) return;
-            released = true;
-            unsubscribeVisibility();
-            controller.signal.removeEventListener("abort", unsubscribe);
-          };
-          controller.signal.addEventListener("abort", unsubscribe, { once: true });
-          return unsubscribe;
-        },
-        storage: createExtensionStorage(rawStorage, instanceId, extension.id),
-        getCommands: () => collectCommands(extensionsRef.current),
-        runCommand: (id: string, input?: unknown) =>
-          invokeCommand(id, { input, scope: collectCommands(extensionsRef.current) }).then(
-            (outcome) => outcome.ok,
-          ),
-        invokeCommand: <Out,>(id: string, input?: unknown) =>
-          invokeCommand<Out>(id, { input, scope: collectCommands(extensionsRef.current) }),
-        // Reads through the ref, like `getCommands`, so a snapshot taken now
-        // reflects the extension list now.
-        getDiagnostics: () => collectDiagnostics(extensionsRef.current),
-      };
-      const entry: {
-        controller: AbortController;
-        dispose?: () => void;
-        start: unknown;
-      } = { controller, start: extension.start };
-      running.set(extension.id, entry);
-      try {
-        const dispose = extension.start(api);
-        if (typeof dispose === "function") entry.dispose = dispose;
-      } catch (error) {
-        // eslint-disable-next-line no-console
-        console.error(`[dev-toolbar] extension "${extension.id}" threw from start().`, error);
-      }
-    }
-  }, [visibleRef, subscribeVisibility, extensions, enabled, store, rawStorage, instanceId]);
-
-  useEffect(() => {
-    const running = runningRef.current;
-    return () => {
-      for (const [id, entry] of Array.from(running)) stopExtension(id, entry);
-      running.clear();
-    };
-  }, []);
+  useExtensionLifecycle({
+    enabled,
+    extensions,
+    activePanelId: state.activePanelId,
+    store,
+    rawStorage,
+    instanceId,
+    visibleRef,
+    subscribeVisibility,
+    getCommands,
+    runCommand: scopedRunCommand,
+    invokeCommand: scopedInvokeCommand,
+    getDiagnostics,
+  });
 
   // Style injection. `styleNonce` is in the deps because a host that resolves
   // its nonce asynchronously would otherwise inject before it arrives; the
@@ -697,21 +574,4 @@ function isIgnoredShortcutEvent(event: KeyboardEvent): boolean {
 function reportShortcutCommandError(id: string, error: unknown): void {
   // eslint-disable-next-line no-console
   console.error(`[dev-toolbar] command "${id}" failed from its shortcut.`, error);
-}
-
-function stopExtension(
-  id: string,
-  entry: { controller: AbortController; dispose?: () => void },
-): void {
-  try {
-    entry.controller.abort();
-  } catch {
-    /* ignore */
-  }
-  try {
-    entry.dispose?.();
-  } catch (error) {
-    // eslint-disable-next-line no-console
-    console.error(`[dev-toolbar] extension "${id}" threw from its start() cleanup.`, error);
-  }
 }
