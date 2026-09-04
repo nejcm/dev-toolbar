@@ -233,6 +233,137 @@ describe("panel resize", () => {
 });
 
 describe("error containment", () => {
+  it("reports a compact slot failure with its extension metadata", () => {
+    const thrown = new Error("compact exploded");
+    const onExtensionError = vi.fn();
+    const boom: DevToolbarExtension = {
+      id: "boom",
+      label: "Boom",
+      compact: () => {
+        throw thrown;
+      },
+    };
+
+    render(
+      <DevToolbar instanceId="t" extensions={[boom]} onExtensionError={onExtensionError}>
+        <div />
+      </DevToolbar>,
+    );
+
+    expect(onExtensionError).toHaveBeenCalledTimes(1);
+    expect(onExtensionError).toHaveBeenCalledWith(
+      thrown,
+      expect.objectContaining({
+        extensionId: "boom",
+        label: "Boom",
+        slot: "compact",
+        componentStack: expect.any(String),
+      }),
+    );
+  });
+
+  it("reports an overlay slot failure with overlay metadata", () => {
+    const onExtensionError = vi.fn();
+    const boom: DevToolbarExtension = {
+      id: "boom",
+      label: "Boom",
+      overlay: () => {
+        throw new Error("overlay exploded");
+      },
+    };
+
+    render(
+      <DevToolbar instanceId="t" extensions={[boom]} onExtensionError={onExtensionError}>
+        <div />
+      </DevToolbar>,
+    );
+
+    expect(onExtensionError).toHaveBeenCalledTimes(1);
+    expect(onExtensionError).toHaveBeenCalledWith(
+      expect.any(Error),
+      expect.objectContaining({
+        extensionId: "boom",
+        label: "Boom",
+        slot: "overlay",
+        componentStack: expect.any(String),
+      }),
+    );
+  });
+
+  it("normalizes a non-Error throw before reporting it", () => {
+    const onExtensionError = vi.fn();
+    const boom: DevToolbarExtension = {
+      id: "boom",
+      label: "Boom",
+      compact: () => {
+        // oxlint-disable-next-line no-throw-literal
+        throw "just a string";
+      },
+    };
+
+    render(
+      <DevToolbar instanceId="t" extensions={[boom]} onExtensionError={onExtensionError}>
+        <div />
+      </DevToolbar>,
+    );
+
+    const [reportedError] = onExtensionError.mock.calls[0] ?? [];
+    expect(reportedError).toBeInstanceOf(Error);
+    expect(reportedError).toMatchObject({ message: "just a string" });
+  });
+
+  it("contains a throwing handler and keeps the chip while logging the handler failure", () => {
+    const handlerError = new Error("reporting failed");
+    const onExtensionError = vi.fn(() => {
+      throw handlerError;
+    });
+    const boom: DevToolbarExtension = {
+      id: "boom",
+      label: "Boom",
+      compact: () => {
+        throw new Error("compact exploded");
+      },
+    };
+
+    render(
+      <DevToolbar instanceId="t" extensions={[boom]} onExtensionError={onExtensionError}>
+        <div />
+      </DevToolbar>,
+    );
+
+    expect(
+      document.querySelector('[data-dtb-part="error-chip"][data-dtb-ext-id="boom"]'),
+    ).not.toBeNull();
+    expect(error.mock.calls).toContainEqual([
+      '[dev-toolbar] onExtensionError handler threw for extension "boom".',
+      handlerError,
+    ]);
+  });
+
+  it("keeps the core console error when a handler is supplied", () => {
+    const thrown = new Error("compact exploded");
+    const onExtensionError = vi.fn();
+    const boom: DevToolbarExtension = {
+      id: "boom",
+      label: "Boom",
+      compact: () => {
+        throw thrown;
+      },
+    };
+
+    render(
+      <DevToolbar instanceId="t" extensions={[boom]} onExtensionError={onExtensionError}>
+        <div />
+      </DevToolbar>,
+    );
+
+    expect(error).toHaveBeenCalledWith(
+      '[dev-toolbar] extension "boom" crashed in its compact slot.',
+      thrown,
+      expect.any(String),
+    );
+  });
+
   it("degrades a throwing compact slot to an error chip and keeps the bar", () => {
     const boom: DevToolbarExtension = {
       id: "boom",
@@ -284,6 +415,7 @@ describe("error containment", () => {
 
   it("re-renders the slot when the error chip's retry is clicked", () => {
     let shouldThrow = true;
+    const onExtensionError = vi.fn();
     const flaky: DevToolbarExtension = {
       id: "flaky",
       label: "Flaky",
@@ -294,7 +426,7 @@ describe("error containment", () => {
     };
 
     render(
-      <DevToolbar instanceId="t" extensions={[flaky]}>
+      <DevToolbar instanceId="t" extensions={[flaky]} onExtensionError={onExtensionError}>
         <div />
       </DevToolbar>,
     );
@@ -302,6 +434,7 @@ describe("error containment", () => {
     const chip = () =>
       document.querySelector('[data-dtb-part="error-chip"][data-dtb-ext-id="flaky"]');
     expect(chip()).not.toBeNull();
+    expect(onExtensionError).toHaveBeenCalledTimes(1);
     // The label is still what the chip reads out; the retry is the chip itself.
     expect(chip()!.textContent).toBe("Flaky: error");
 
@@ -310,6 +443,7 @@ describe("error containment", () => {
 
     expect(chip()).toBeNull();
     expect(screen.getByTestId("flaky-recovered")).toBeTruthy();
+    expect(onExtensionError).toHaveBeenCalledTimes(1);
   });
 
   it("leaves an overlay chip inert — there is nothing sensible to click", () => {

@@ -17,6 +17,7 @@ type it publishes. Start at the [README](../README.md) if you just want it mount
 | `shortcut` | `"Mod+Shift+."` | `null` disables it |
 | `injectStyles` | `true` | `false` → import `@nejcm/dev-toolbar/styles.css` yourself |
 | `styleNonce` | — | CSP nonce for the injected core stylesheet |
+| `onExtensionError` | — | Called after core logs a slot failure; receives the normalized `Error` and slot metadata |
 | `classNames` | — | Per-part class map |
 | `container` | `document.body` | Portal target |
 | `className` / `style` | — | On the toolbar root |
@@ -116,6 +117,7 @@ Every type the root entry exports. The slot props, `DevToolbarExtension`,
 | `ExtensionRuntimeApi` | What `start(api)` receives. |
 | `CompactSlotProps` / `PanelSlotProps` / `OverlaySlotProps` | What each slot renders with. |
 | `ExtensionDiagnostics` / `DiagnosticStatus` | One entry in the diagnostics roster, and its `"ok" \| "absent" \| "failed"` status. |
+| `ExtensionErrorInfo` | Metadata passed to `onExtensionError` for a failed slot. |
 | `ToolbarStorage` | The three-method storage adapter. |
 | `ToolbarAlign` / `ToolbarPosition` / `ToolbarDensity` / `ToolbarColorScheme` | `"start" \| "end"`, `"bottom" \| "top"`, `"compact" \| "comfortable"`, `"light" \| "dark" \| "system"`. |
 | `DevToolbarClassNames` | The per-part class map the `classNames` prop takes. |

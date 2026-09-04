@@ -190,6 +190,15 @@ export interface ExtensionDiagnostics {
   errorName?: string;
 }
 
+/** Metadata handed to `onExtensionError` after an extension slot fails. */
+export interface ExtensionErrorInfo {
+  extensionId: string;
+  label: string;
+  slot: "compact" | "panel" | "overlay";
+  /** React's component stack, or `null` when React supplies none. */
+  componentStack: string | null;
+}
+
 export interface CompactSlotProps {
   /** True when this item is rendered inside the overflow menu rather than the bar. */
   isOverflowed: boolean;

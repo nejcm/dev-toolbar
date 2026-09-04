@@ -13,6 +13,7 @@ export type {
   DevToolbarExtension,
   DiagnosticStatus,
   ExtensionDiagnostics,
+  ExtensionErrorInfo,
   ExtensionRuntimeApi,
   OverlaySlotProps,
   PanelSlotProps,

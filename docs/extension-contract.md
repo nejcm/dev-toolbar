@@ -136,7 +136,9 @@ and leak between tests.
 
 A slot that throws degrades to an error chip. The bar and every other extension keep
 working. In the `compact` and `panel` slots the chip is itself a retry button, so a slot
-that threw on transient state can be brought back without reloading.
+that threw on transient state can be brought back without reloading. The optional
+`onExtensionError` callback receives the normalized error and slot metadata while the
+local failure is still logged to the console.
 [docs/architecture.md](./architecture.md#7-writing-an-extension).
 
 ## Contract v2 — commands with input and a result

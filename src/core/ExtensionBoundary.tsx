@@ -1,7 +1,7 @@
 import { Component } from "react";
 import type { ErrorInfo, ReactNode } from "react";
 import type { DevToolbarClassNames } from "./contract";
-import { cx } from "./context";
+import { DevToolbarContext, cx, type DevToolbarContextValue } from "./context";
 
 export interface ExtensionBoundaryProps {
   extensionId: string;
@@ -22,6 +22,10 @@ interface ExtensionBoundaryState {
  * overlay has no reliable visible surface to click.
  */
 export class ExtensionBoundary extends Component<ExtensionBoundaryProps, ExtensionBoundaryState> {
+  static override contextType = DevToolbarContext;
+
+  declare context: DevToolbarContextValue | null;
+
   override state: ExtensionBoundaryState = { error: null };
 
   /**
@@ -46,6 +50,25 @@ export class ExtensionBoundary extends Component<ExtensionBoundaryProps, Extensi
       error,
       info.componentStack,
     );
+
+    const onExtensionError = this.context?.onExtensionError;
+    const normalizedError = this.state.error;
+    if (!onExtensionError || !normalizedError) return;
+
+    try {
+      onExtensionError(normalizedError, {
+        extensionId: this.props.extensionId,
+        label: this.props.label,
+        slot: this.props.slot,
+        componentStack: info.componentStack ?? null,
+      });
+    } catch (handlerError) {
+      // eslint-disable-next-line no-console
+      console.error(
+        `[dev-toolbar] onExtensionError handler threw for extension "${this.props.extensionId}".`,
+        handlerError,
+      );
+    }
   }
 
   private readonly retry = (): void => {

@@ -4,6 +4,7 @@ import type {
   CommandInvocation,
   DevToolbarClassNames,
   DevToolbarExtension,
+  ExtensionErrorInfo,
   ToolbarDensity,
   ToolbarPosition,
   ToolbarStorage,
@@ -37,6 +38,7 @@ export interface DevToolbarContextValue {
   invokeCommand<Out = unknown>(id: string, input?: unknown): Promise<CommandInvocation<Out>>;
   density: ToolbarDensity;
   classNames: DevToolbarClassNames;
+  onExtensionError?: (error: Error, info: ExtensionErrorInfo) => void;
   storage: ToolbarStorage;
   visible: boolean;
   position: ToolbarPosition;

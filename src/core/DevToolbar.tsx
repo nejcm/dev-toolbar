@@ -5,6 +5,7 @@ import {
   CONTRACT_VERSION,
   type DevToolbarClassNames,
   type DevToolbarExtension,
+  type ExtensionErrorInfo,
   type ExtensionRuntimeApi,
   type ToolbarColorScheme,
   type ToolbarDensity,
@@ -86,6 +87,8 @@ export interface DevToolbarProps {
   storage?: ToolbarStorage | null;
   /** `false` skips runtime CSS injection; import `./styles.css` instead. */
   injectStyles?: boolean;
+  /** Called after core logs a slot failure. */
+  onExtensionError?: (error: Error, info: ExtensionErrorInfo) => void;
   /**
    * CSP nonce for the injected core stylesheet. Required under a
    * `style-src 'self' 'nonce-…'` policy, where an un-nonced `<style>` is
@@ -178,6 +181,7 @@ function DevToolbarRoot({
   defaultPanelHeight,
   storage: storageProp,
   injectStyles = true,
+  onExtensionError,
   styleNonce,
   classNames: classNamesProp,
   shortcut = DEFAULT_SHORTCUT,
@@ -186,6 +190,13 @@ function DevToolbarRoot({
   style,
 }: DevToolbarProps): ReactNode {
   const classNames = useStableClassNames(classNamesProp);
+  const onExtensionErrorRef = useRef(onExtensionError);
+  /* oxlint-disable react/refs -- render-phase prop ref, as in useStableClassNames above. */
+  onExtensionErrorRef.current = onExtensionError;
+  /* oxlint-enable react/refs */
+  const reportExtensionError = useCallback((error: Error, info: ExtensionErrorInfo): void => {
+    onExtensionErrorRef.current?.(error, info);
+  }, []);
 
   // Captured once, on mount, so the store and everything derived from it
   // can never disagree about where preferences live. See prop docs above.
@@ -506,6 +517,7 @@ function DevToolbarRoot({
     state.activePanelId,
   ]);
 
+  /* oxlint-disable react/use-memo, react-hooks/exhaustive-deps -- reporter is stable; handler presence is the only context dependency. */
   const contextValue = useMemo<DevToolbarContextValue>(
     () => ({
       instanceId,
@@ -519,6 +531,7 @@ function DevToolbarRoot({
       invokeCommand: scopedInvokeCommand,
       density,
       classNames,
+      onExtensionError: onExtensionError ? reportExtensionError : undefined,
       storage: baseStorage,
       visible: state.visible,
       position: state.position,
@@ -545,10 +558,12 @@ function DevToolbarRoot({
       scopedInvokeCommand,
       density,
       classNames,
+      onExtensionError !== undefined,
       baseStorage,
       state,
     ],
   );
+  /* oxlint-enable react/use-memo, react-hooks/exhaustive-deps */
 
   const target = container ?? (typeof document === "undefined" ? null : document.body);
 
