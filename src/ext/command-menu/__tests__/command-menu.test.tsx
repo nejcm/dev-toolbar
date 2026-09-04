@@ -519,3 +519,50 @@ describe("accessibility", () => {
     ).toHaveLength(1);
   });
 });
+
+describe("a chord a host command and this palette both claim", () => {
+  it("gives the palette the chord: its listener is registered first and preventDefault stops core's", () => {
+    const menu = commandMenu({ apple: false, shortcut: "Mod+K" });
+    mountToolbar(<div />, {
+      instanceId: "test",
+      bindCommandShortcuts: true,
+      extensions: [
+        menu,
+        makeExtension({
+          id: "host",
+          commands: [{ ...command("host.open", "Open the host thing"), shortcut: "Mod+K" }],
+        }),
+      ],
+      layout: { barWidth: 1200, itemWidth: 120 },
+    });
+
+    hotkey();
+
+    // The palette opened, and the command core would otherwise have bound
+    // did not run: one chord, one handler.
+    expect(dialog()).not.toBeNull();
+    expect(ran).toEqual([]);
+  });
+
+  it("lets core's binding have the chord while the bar is hidden, since the palette declines it", () => {
+    const menu = commandMenu({ apple: false, shortcut: "Mod+K" });
+    mountToolbar(<div />, {
+      instanceId: "test",
+      bindCommandShortcuts: true,
+      defaultVisible: false,
+      extensions: [
+        menu,
+        makeExtension({
+          id: "host",
+          commands: [{ ...command("host.open", "Open the host thing"), shortcut: "Mod+K" }],
+        }),
+      ],
+      layout: { barWidth: 1200, itemWidth: 120 },
+    });
+
+    hotkey();
+
+    expect(dialog()).toBeNull();
+    expect(ran).toEqual(["host.open"]);
+  });
+});

@@ -49,6 +49,7 @@
  */
 import { createDiagnosticsRuntime } from "./runtime";
 import { DiagnosticsChip, DiagnosticsPanel } from "./ui";
+import { resolveStyleNonce } from "../shared/nonce";
 import type { DiagnosticsRuntimeOptions } from "./runtime";
 import type {
   DevToolbarExtension,
@@ -134,7 +135,7 @@ export function diagnostics(options: DiagnosticsOptions = {}): DevToolbarExtensi
         isOverflowed={isOverflowed}
         isPanelOpen={isPanelOpen}
         injectStyles={injectStyles}
-        styleNonce={optionNonce || styleNonce}
+        styleNonce={resolveStyleNonce(optionNonce, styleNonce)}
         onToggle={togglePanel}
       />
     ),
@@ -144,7 +145,7 @@ export function diagnostics(options: DiagnosticsOptions = {}): DevToolbarExtensi
         runtime={runtime}
         label={label}
         injectStyles={injectStyles}
-        styleNonce={optionNonce || styleNonce}
+        styleNonce={resolveStyleNonce(optionNonce, styleNonce)}
       />
     ),
 

@@ -91,6 +91,20 @@ export interface OverlaysRuntimeOptions {
   mutationDebounceMs?: number;
   /** Persist the toggles through `api.storage`. Default `true`. */
   persist?: boolean;
+  /**
+   * Hold the layout-boxes insert until `setStyleNonce()` has been called once,
+   * so `<DevToolbar styleNonce>` is present at first write and first-writer-wins
+   * cannot make an un-nonced sheet permanent. Default `false`: turning boxes on
+   * inserts immediately, which is what a headless runtime with no React surface
+   * to learn a nonce from wants.
+   *
+   * `overlays()` sets it — the overlay surface is what learns the slot nonce,
+   * so with it set the boxes sheet appears only once that surface has mounted
+   * (or a factory `styleNonce` supplied the nonce up front). Safe because a
+   * hidden toolbar renders no overlay surface and `sync()` already keeps
+   * outlines off while hidden.
+   */
+  deferOutlinesUntilStyleNonce?: boolean;
 }
 
 export interface OverlaysRuntime {
@@ -106,17 +120,11 @@ export interface OverlaysRuntime {
   /**
    * CSP nonce for the layout-boxes sheet. A truthy factory option is applied
    * before `start()`; the overlay surface writes the resolved slot nonce once
-   * it mounts. Turning boxes on waits for the first call only after
-   * `awaitStyleNonce()` — `overlays()` arms that wait; a headless
-   * `createOverlaysRuntime()` does not.
+   * it mounts — including `undefined`, which means "no nonce, insert un-nonced".
+   * Only matters ahead of the first insert: the sheet is first-writer-wins.
+   * Under `deferOutlinesUntilStyleNonce` the insert waits for the first call.
    */
   setStyleNonce(nonce?: string): void;
-  /**
-   * Hold the layout-boxes insert until `setStyleNonce`. `overlays()` calls
-   * this so `<DevToolbar styleNonce>` is present at first write; a headless
-   * runtime never does, and inserts at `start()` as it always has.
-   */
-  awaitStyleNonce(): void;
   start(api: ExtensionRuntimeApi): () => void;
   /**
    * Which layers are on, plus the scan's own health. Pure and cheap — it reads
@@ -234,6 +242,7 @@ export function createOverlaysRuntime(options: OverlaysRuntimeOptions = {}): Ove
     focusLimit = DEFAULT_FOCUS_LIMIT,
     mutationDebounceMs = 250,
     persist = true,
+    deferOutlinesUntilStyleNonce = false,
   } = options;
 
   const grid = normalizeGrid(gridInput);
@@ -755,7 +764,7 @@ export function createOverlaysRuntime(options: OverlaysRuntimeOptions = {}): Ove
   };
 
   let styleNonce: string | undefined;
-  let nonceKnown = true;
+  let nonceKnown = !deferOutlinesUntilStyleNonce;
   let outlinesWanted = false;
 
   const flushOutlines = () => {
@@ -773,13 +782,15 @@ export function createOverlaysRuntime(options: OverlaysRuntimeOptions = {}): Ove
   };
 
   const setStyleNonce = (nonce?: string) => {
-    if (nonce) styleNonce = nonce;
+    // Unconditional, including `undefined`: the sheet is recreated every time
+    // the bar comes back, so a remembered nonce would outlive the host's
+    // rotation and stamp a stale one on the new sheet. A factory `styleNonce`
+    // cannot be blanked this way — the surface calls
+    // `resolveStyleNonce(option, slot)`, so `undefined` only ever arrives when
+    // there is no factory option to lose.
+    styleNonce = nonce;
     nonceKnown = true;
     flushOutlines();
-  };
-
-  const awaitStyleNonce = () => {
-    nonceKnown = false;
   };
 
   /**
@@ -858,7 +869,6 @@ export function createOverlaysRuntime(options: OverlaysRuntimeOptions = {}): Ove
     },
 
     setStyleNonce,
-    awaitStyleNonce,
 
     /**
      * No geometry: `focusItems` and `hover` are per-frame measurements of the

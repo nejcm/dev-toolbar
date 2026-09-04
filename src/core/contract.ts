@@ -245,9 +245,19 @@ export interface OverlaySlotProps {
 export interface ExtensionRuntimeApi {
   /** Aborted when the extension is unregistered or the toolbar unmounts. */
   signal: AbortSignal;
-  /** Core reports visibility; it never pauses an extension on its behalf. */
+  /**
+   * The *effective* visibility — a controlled `visible` prop where the host
+   * passes one, the persisted store value otherwise. Core reports visibility;
+   * it never pauses an extension on its behalf.
+   */
   isVisible(): boolean;
   /**
+   * Reports the same effective visibility as {@link isVisible}, from a
+   * post-commit effect: the callback runs after React has committed the
+   * change, not synchronously inside the update that caused it, and never on
+   * subscribe — call `isVisible()` for the current value. Flips that cancel
+   * out within one batch (hide then show) are coalesced and deliver nothing.
+   *
    * Also released automatically when `signal` aborts. The returned unsubscribe
    * function is for releasing it earlier; calling it more than once, or after
    * `signal` has aborted, is a no-op.

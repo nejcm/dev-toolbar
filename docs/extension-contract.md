@@ -95,6 +95,13 @@ if its `run()` throws or rejects, instead of swallowing it — catch it at the c
 Core **reports** visibility and never pauses you on your own behalf — a cumulative
 counter that silently stops counting is worse than one that keeps going.
 
+Both `isVisible()` and `subscribeVisibility()` report the *effective* visibility: the
+controlled `visible` prop where the host passes one, the persisted store value
+otherwise. The callback fires from a post-commit effect — after React has committed
+the change, not synchronously inside the update that caused it — and not on subscribe,
+so read `isVisible()` for the current value. Flips that cancel out inside one batch (a
+hide then a show) are coalesced and deliver nothing.
+
 Two lifecycle rules the metrics extension paid for, so you do not have to:
 
 - **`hidden` is not "unpainted", it is "does not exist here".** A hidden extension is

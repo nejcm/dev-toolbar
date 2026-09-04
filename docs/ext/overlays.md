@@ -26,6 +26,11 @@ usual `id` / `label` / `align` / `order` / `priority` / `hidden` / `keepMounted`
 `injectStyles` / `styleNonce`. `styleNonce` also stamps the layout-boxes sheet,
 which is not gated on `injectStyles`.
 
+The layout-boxes sheet is first-writer-wins, so unless the factory `styleNonce`
+option is set it is inserted only once the overlay surface has mounted — that is
+what tells the extension the `styleNonce` on `<DevToolbar>`. The surface mounts
+with the bar, which is also the only time boxes draw, so nothing is lost.
+
 Because it draws over *your* application, what it refuses to do matters more than
 what it draws:
 

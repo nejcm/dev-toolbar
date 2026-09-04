@@ -832,4 +832,37 @@ describe("styleNonce", () => {
     mount({ defaults: { boxes: true } }, undefined, "from-slot");
     expect(sheet()?.nonce).toBe("from-slot");
   });
+
+  it("stamps the slot prop when boxes are switched on after mount", async () => {
+    const { toolbar } = mount({}, undefined, "abc");
+    expect(boxesSheets()).toHaveLength(0);
+    act(() => toolbar.openPanel("overlays"));
+    toggleRow("boxes");
+    expect(sheet()?.nonce).toBe("abc");
+    // Same through a command, which is the path with no panel in the DOM.
+    toggleRow("boxes");
+    expect(boxesSheets()).toHaveLength(0);
+    await act(async () => {
+      await toolbar.runCommand("overlays.toggle.boxes");
+    });
+    expect(sheet()?.nonce).toBe("abc");
+  });
+
+  it("inserts no un-nonced sheet before the overlay surface has mounted", () => {
+    // A hidden bar renders no overlay surface, so nothing has told the runtime
+    // the nonce yet — and the sheet must not be written un-nonced, since it is
+    // first-writer-wins. Making the bar visible mounts the surface and the
+    // sheet appears stamped.
+    const extension = overlays({ defaults: { boxes: true } });
+    const { toolbar } = mountToolbar(app, {
+      extensions: [extension],
+      instanceId: "test",
+      styleNonce: "abc",
+      defaultVisible: false,
+    });
+    expect(boxesSheets()).toHaveLength(0);
+    act(() => toolbar.setVisible(true));
+    expect(boxesSheets()).toHaveLength(1);
+    expect(sheet()?.nonce).toBe("abc");
+  });
 });

@@ -32,6 +32,7 @@
  */
 import { createCommandMenuRuntime, isApplePlatform } from "./runtime";
 import { CommandMenuOverlay, CommandMenuTrigger } from "./ui";
+import { resolveStyleNonce } from "../shared/nonce";
 import type { CommandMenuRuntimeOptions } from "./runtime";
 import type { DevToolbarExtension, ExtensionRuntimeApi, ToolbarAlign } from "../../core/contract";
 
@@ -118,7 +119,7 @@ export function commandMenu(options: CommandMenuOptions = {}): DevToolbarExtensi
         label={label}
         isOverflowed={isOverflowed}
         injectStyles={injectStyles}
-        styleNonce={optionNonce || styleNonce}
+        styleNonce={resolveStyleNonce(optionNonce, styleNonce)}
         apple={apple}
       />
     ),
@@ -130,7 +131,7 @@ export function commandMenu(options: CommandMenuOptions = {}): DevToolbarExtensi
         placeholder={placeholder}
         emptyMessage={emptyMessage}
         injectStyles={injectStyles}
-        styleNonce={optionNonce || styleNonce}
+        styleNonce={resolveStyleNonce(optionNonce, styleNonce)}
       />
     ),
   };

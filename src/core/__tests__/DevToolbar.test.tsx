@@ -1,5 +1,5 @@
 import { act, fireEvent, render, screen } from "@testing-library/react";
-import { useEffect, useState } from "react";
+import { Suspense, startTransition, useEffect, useState } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ReactNode } from "react";
 import type { Mock } from "vitest";
@@ -752,6 +752,75 @@ describe("controlled props and change callbacks", () => {
     expect(
       messages.filter((message) => message.includes('controlled "position" needs')).length,
     ).toBe(1);
+  });
+
+  it("reports a mutation a descendant makes in its own mount effect", () => {
+    const onVisibleChange = vi.fn();
+    const onPositionChange = vi.fn();
+    const onPanelChange = vi.fn();
+    const MutateOnMount = () => {
+      const { setVisible, setPosition, openPanel } = useDevToolbar();
+      useEffect(() => {
+        setVisible(false);
+        setPosition("top");
+        openPanel("panel");
+        // Mount-only on purpose: the point is that this runs before the
+        // parent's effects.
+        // oxlint-disable-next-line react-hooks/exhaustive-deps
+      }, []);
+      return null;
+    };
+
+    render(
+      <DevToolbar
+        instanceId="descendant-mount-mutation"
+        onVisibleChange={onVisibleChange}
+        onPositionChange={onPositionChange}
+        onPanelChange={onPanelChange}
+        extensions={[panelExtension("panel")]}
+      >
+        <MutateOnMount />
+      </DevToolbar>,
+    );
+
+    expect(onVisibleChange.mock.calls.map(([value]) => value)).toEqual([false]);
+    expect(onPositionChange.mock.calls.map(([value]) => value)).toEqual(["top"]);
+    expect(onPanelChange.mock.calls.map(([value]) => value)).toEqual(["panel"]);
+  });
+
+  it("does not call change handlers on mount for persisted state a descendant leaves alone", () => {
+    const storage = createMemoryStorage({
+      "dtb:v1:descendant-quiet:visible": "false",
+      "dtb:v1:descendant-quiet:position": '"top"',
+      "dtb:v1:descendant-quiet:activePanel": '"panel"',
+    });
+    const onVisibleChange = vi.fn();
+    const onPositionChange = vi.fn();
+    const onPanelChange = vi.fn();
+    const ReadOnMount = () => {
+      const { visible } = useDevToolbar();
+      useEffect(() => {
+        void visible;
+      }, [visible]);
+      return null;
+    };
+
+    render(
+      <DevToolbar
+        instanceId="descendant-quiet"
+        storage={storage}
+        onVisibleChange={onVisibleChange}
+        onPositionChange={onPositionChange}
+        onPanelChange={onPanelChange}
+        extensions={[panelExtension("panel")]}
+      >
+        <ReadOnMount />
+      </DevToolbar>,
+    );
+
+    expect(onVisibleChange).not.toHaveBeenCalled();
+    expect(onPositionChange).not.toHaveBeenCalled();
+    expect(onPanelChange).not.toHaveBeenCalled();
   });
 
   it("does not call change handlers on mount, reports store changes once, and catches throws", () => {
@@ -1665,5 +1734,58 @@ describe("the styleNonce prop", () => {
     expect(overlay[0]).not.toHaveProperty("styleNonce");
     fireEvent.click(screen.getByRole("button", { name: "open" }));
     expect(panel[0]).not.toHaveProperty("styleNonce");
+  });
+});
+
+describe("a controlled visibility change whose render never commits", () => {
+  it("keeps the toggle reading the committed prop, not the abandoned render", () => {
+    // A transition that suspends is rendered and then thrown away: nothing
+    // commits, so `visible` is still `true` for anything that ran. A shortcut
+    // press in that window has to toggle from the committed value.
+    const forever = new Promise<never>(() => {});
+    const Suspending = ({ pending }: { pending: boolean }) => {
+      if (pending) throw forever;
+      return null;
+    };
+    const onVisibleChange = vi.fn();
+    const Host = () => {
+      const [visible, setVisible] = useState(true);
+      const [pending, setPending] = useState(false);
+      return (
+        <>
+          <button
+            type="button"
+            onClick={() =>
+              startTransition(() => {
+                setVisible(false);
+                setPending(true);
+              })
+            }
+          >
+            hide
+          </button>
+          <DevToolbar
+            instanceId="abandoned-render"
+            visible={visible}
+            onVisibleChange={onVisibleChange}
+            extensions={[]}
+          >
+            <Suspense fallback={<span>loading</span>}>
+              <Suspending pending={pending} />
+            </Suspense>
+          </DevToolbar>
+        </>
+      );
+    };
+
+    render(<Host />);
+    act(() => {
+      fireEvent.click(screen.getByRole("button", { name: "hide" }));
+    });
+    // The transition is still in flight: the bar is the one that was committed.
+    expect(document.querySelector("[data-dev-toolbar]")).not.toBeNull();
+
+    fireToggleShortcut();
+    expect(onVisibleChange.mock.calls.map(([value]) => value)).toEqual([false]);
   });
 });

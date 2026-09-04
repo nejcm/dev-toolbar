@@ -109,7 +109,12 @@ When on:
   the command id and does not kill the listener.
 
 `/ext/command-menu`'s own `shortcut` option is a separate binding in `start()`. This
-prop does not double-bind the palette — that extension contributes no commands.
+prop does not double-bind the palette — that extension contributes no commands. But
+the two listeners are not independent: whichever went up first wins the chord, and
+its `preventDefault()` stops the other. Extension `start()` runs in an earlier effect
+than this listener, so a command bound to the palette's chord loses to the palette
+while the bar is visible and wins while it is hidden (the palette ignores the chord
+then). Do not bind a command to a chord an extension already owns.
 
 ## The `⋮` menu
 

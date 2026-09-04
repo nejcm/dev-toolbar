@@ -43,6 +43,7 @@
 import { createOverlaysRuntime } from "./runtime";
 import { OverlaysChip, OverlaysPanel, OverlaysSurface } from "./ui";
 import { OVERLAY_IDS, OVERLAY_META } from "./types";
+import { resolveStyleNonce } from "../shared/nonce";
 import type { OverlaysRuntimeOptions } from "./runtime";
 import type {
   DevToolbarExtension,
@@ -51,7 +52,15 @@ import type {
   ToolbarCommand,
 } from "../../core/contract";
 
-export interface OverlaysOptions extends OverlaysRuntimeOptions {
+/**
+ * `deferOutlinesUntilStyleNonce` is omitted on purpose: it is how `overlays()`
+ * itself wires the boxes sheet to the overlay surface's nonce, not a knob a
+ * consumer of the extension has any use for.
+ */
+export interface OverlaysOptions extends Omit<
+  OverlaysRuntimeOptions,
+  "deferOutlinesUntilStyleNonce"
+> {
   /** Extension id. Default `"overlays"`. */
   id?: string;
   /** Bar label, used by the error chip and the panel's accessible name. Default `"Overlays"`. */
@@ -101,8 +110,13 @@ export function overlays(options: OverlaysOptions = {}): DevToolbarExtension {
 
   // Built here, not in start(api): slot functions run during the toolbar's
   // first render, which is before any effect fires.
-  const runtime = createOverlaysRuntime(runtimeOptions);
-  runtime.awaitStyleNonce();
+  // `deferOutlinesUntilStyleNonce`: the boxes sheet is first-writer-wins, and
+  // the overlay surface is what learns `<DevToolbar styleNonce>`, so the insert
+  // waits for it. A factory nonce releases the wait here and now.
+  const runtime = createOverlaysRuntime({
+    ...runtimeOptions,
+    deferOutlinesUntilStyleNonce: true,
+  });
   if (optionNonce) runtime.setStyleNonce(optionNonce);
 
   /**
@@ -147,7 +161,7 @@ export function overlays(options: OverlaysOptions = {}): DevToolbarExtension {
         isOverflowed={isOverflowed}
         isPanelOpen={isPanelOpen}
         injectStyles={injectStyles}
-        styleNonce={optionNonce || styleNonce}
+        styleNonce={resolveStyleNonce(optionNonce, styleNonce)}
         onToggle={togglePanel}
       />
     ),
@@ -157,7 +171,7 @@ export function overlays(options: OverlaysOptions = {}): DevToolbarExtension {
         runtime={runtime}
         label={label}
         injectStyles={injectStyles}
-        styleNonce={optionNonce || styleNonce}
+        styleNonce={resolveStyleNonce(optionNonce, styleNonce)}
       />
     ),
 
@@ -170,7 +184,7 @@ export function overlays(options: OverlaysOptions = {}): DevToolbarExtension {
       <OverlaysSurface
         runtime={runtime}
         injectStyles={injectStyles}
-        styleNonce={optionNonce || styleNonce}
+        styleNonce={resolveStyleNonce(optionNonce, styleNonce)}
       />
     ),
 

@@ -354,9 +354,11 @@ describe("the runtime on its own", () => {
     stop();
   });
 
-  it("holds the boxes sheet until a nonce is known when the wait is armed", () => {
-    const runtime = createOverlaysRuntime({ defaults: { boxes: true } });
-    runtime.awaitStyleNonce();
+  it("holds the boxes sheet until a nonce is known under deferOutlinesUntilStyleNonce", () => {
+    const runtime = createOverlaysRuntime({
+      defaults: { boxes: true },
+      deferOutlinesUntilStyleNonce: true,
+    });
     const stop = runtime.start(fakeApi());
     expect(
       document.head.querySelectorAll(`style[data-dev-toolbar-styles="${BOXES_STYLE_ENTRY}"]`),
@@ -370,7 +372,10 @@ describe("the runtime on its own", () => {
   });
 
   it("inserts at start when a nonce was already supplied", () => {
-    const runtime = createOverlaysRuntime({ defaults: { boxes: true } });
+    const runtime = createOverlaysRuntime({
+      defaults: { boxes: true },
+      deferOutlinesUntilStyleNonce: true,
+    });
     runtime.setStyleNonce("abc");
     const stop = runtime.start(fakeApi());
     const sheet = document.head.querySelector<HTMLStyleElement>(
@@ -378,6 +383,68 @@ describe("the runtime on its own", () => {
     );
     expect(sheet?.nonce).toBe("abc");
     stop();
+  });
+
+  it("releases the wait on setStyleNonce(undefined) — no nonce means insert un-nonced", () => {
+    const runtime = createOverlaysRuntime({
+      defaults: { boxes: true },
+      deferOutlinesUntilStyleNonce: true,
+    });
+    const stop = runtime.start(fakeApi());
+    runtime.setStyleNonce(undefined);
+    const sheet = document.head.querySelector<HTMLStyleElement>(
+      `style[data-dev-toolbar-styles="${BOXES_STYLE_ENTRY}"]`,
+    );
+    expect(sheet).not.toBeNull();
+    expect(sheet?.nonce).toBe("");
+    stop();
+  });
+
+  it("rotates the nonce a recreated sheet is stamped with, including back to none", () => {
+    const boxesSheet = () =>
+      document.head.querySelector<HTMLStyleElement>(
+        `style[data-dev-toolbar-styles="${BOXES_STYLE_ENTRY}"]`,
+      );
+    const runtime = createOverlaysRuntime({
+      defaults: { boxes: true },
+      deferOutlinesUntilStyleNonce: true,
+    });
+    const visible = visibleApi();
+    const stop = runtime.start(visible.api);
+    runtime.setStyleNonce("old");
+    expect(boxesSheet()?.nonce).toBe("old");
+
+    // Hiding the bar takes the sheet off; the host then rotates its nonce.
+    visible.set(false);
+    expect(boxesSheet()).toBeNull();
+    runtime.setStyleNonce("new");
+    visible.set(true);
+    expect(boxesSheet()?.nonce).toBe("new");
+
+    // ... and rotating to *no* nonce must not leave the old one stamped on.
+    visible.set(false);
+    expect(boxesSheet()).toBeNull();
+    runtime.setStyleNonce(undefined);
+    visible.set(true);
+    expect(boxesSheet()).not.toBeNull();
+    expect(boxesSheet()?.nonce).toBe("");
+    stop();
+  });
+
+  it("never waits on teardown — the deferred sheet comes off with the runtime", () => {
+    const runtime = createOverlaysRuntime({
+      defaults: { boxes: true },
+      deferOutlinesUntilStyleNonce: true,
+    });
+    const stop = runtime.start(fakeApi());
+    runtime.setStyleNonce("abc");
+    expect(
+      document.head.querySelectorAll(`style[data-dev-toolbar-styles="${BOXES_STYLE_ENTRY}"]`),
+    ).toHaveLength(1);
+    stop();
+    expect(
+      document.head.querySelectorAll(`style[data-dev-toolbar-styles="${BOXES_STYLE_ENTRY}"]`),
+    ).toHaveLength(0);
   });
 });
 

@@ -23,6 +23,7 @@ import { writeClipboardTextOrThrow } from "../../runtime";
 import { createMetricsRuntime } from "./runtime";
 import { MetricsChips, MetricsPanel } from "./ui";
 import { METRIC_IDS } from "./types";
+import { resolveStyleNonce } from "../shared/nonce";
 import type { Collector, MetricId } from "./types";
 import type { MemoryCollectorOptions } from "./collectors/memory";
 import type { DelayCollectorOptions } from "./collectors/delay";
@@ -129,7 +130,7 @@ export function metrics(options: MetricsOptions = {}): DevToolbarExtension {
         isOverflowed={isOverflowed}
         isPanelOpen={isPanelOpen}
         injectStyles={injectStyles}
-        styleNonce={optionNonce || styleNonce}
+        styleNonce={resolveStyleNonce(optionNonce, styleNonce)}
         onToggle={togglePanel}
       />
     ),
@@ -141,7 +142,7 @@ export function metrics(options: MetricsOptions = {}): DevToolbarExtension {
       <MetricsPanel
         runtime={runtime}
         injectStyles={injectStyles}
-        styleNonce={optionNonce || styleNonce}
+        styleNonce={resolveStyleNonce(optionNonce, styleNonce)}
       />
     ),
 

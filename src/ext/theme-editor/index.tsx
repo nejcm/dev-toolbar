@@ -47,6 +47,7 @@ import { createThemeEditorRuntime } from "./runtime";
 import { writeClipboardTextOrThrow } from "../../runtime";
 import { describeValueRefusal } from "./types";
 import { ThemeChip, ThemePanel } from "./ui";
+import { resolveStyleNonce } from "../shared/nonce";
 import type { ThemeEditorRuntimeOptions } from "./runtime";
 import type {
   DevToolbarExtension,
@@ -212,7 +213,7 @@ export function themeEditor(options: ThemeEditorOptions = {}): DevToolbarExtensi
         isOverflowed={isOverflowed}
         isPanelOpen={isPanelOpen}
         injectStyles={injectStyles}
-        styleNonce={optionNonce || styleNonce}
+        styleNonce={resolveStyleNonce(optionNonce, styleNonce)}
         onToggle={togglePanel}
       />
     ),
@@ -222,7 +223,7 @@ export function themeEditor(options: ThemeEditorOptions = {}): DevToolbarExtensi
         runtime={runtime}
         label={label}
         injectStyles={injectStyles}
-        styleNonce={optionNonce || styleNonce}
+        styleNonce={resolveStyleNonce(optionNonce, styleNonce)}
       />
     ),
 

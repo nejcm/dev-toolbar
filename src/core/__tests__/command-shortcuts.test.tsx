@@ -183,7 +183,38 @@ describe("bindCommandShortcuts", () => {
       </DevToolbar>,
     );
 
+    // Once, deliberately: a second press only papered over the ordering bug,
+    // where the toggle listener's `preventDefault()` made the command
+    // listener bail before it could warn, until a visibility flip happened to
+    // re-register the two in the other order.
     fireToggleShortcut();
+
+    expect(run).not.toHaveBeenCalled();
+    const messages = warn.mock.calls.map((call) => String(call[0]));
+    const shadows = messages.filter((message) => message.includes("toolbar toggle"));
+    expect(shadows).toHaveLength(1);
+    expect(shadows[0]).toContain("hotkeys.toggle");
+  });
+
+  it("warns on the first press even when visibility is controlled and inert", () => {
+    const run = vi.fn();
+    render(
+      // Controlled `visible` with no `onVisibleChange`: visibility never
+      // flips, so nothing ever re-registers the listeners. The warning has to
+      // come from the first press or never.
+      <DevToolbar
+        instanceId="bind-toggle-warn-controlled"
+        storage={null}
+        bindCommandShortcuts
+        visible={false}
+        extensions={[
+          extensionWith([command("hotkeys.toggle", run, { shortcut: DEFAULT_SHORTCUT })]),
+        ]}
+      >
+        <div />
+      </DevToolbar>,
+    );
+
     fireToggleShortcut();
 
     expect(run).not.toHaveBeenCalled();
@@ -302,7 +333,7 @@ describe("bindCommandShortcuts", () => {
       await Promise.resolve();
     });
     expect(error).toHaveBeenCalledWith(
-      '[dev-toolbar] command "hotkeys.run" rejected from its shortcut.',
+      '[dev-toolbar] command "hotkeys.run" failed from its shortcut.',
       boom,
     );
 
@@ -331,7 +362,7 @@ describe("bindCommandShortcuts", () => {
 
     expect(() => fireModK()).not.toThrow();
     expect(error).toHaveBeenCalledWith(
-      '[dev-toolbar] command "hotkeys.run" rejected from its shortcut.',
+      '[dev-toolbar] command "hotkeys.run" failed from its shortcut.',
       boom,
     );
 

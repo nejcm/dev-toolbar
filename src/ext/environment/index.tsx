@@ -40,6 +40,7 @@
 import { writeClipboardTextOrThrow } from "../../runtime";
 import { createEnvironmentRuntime } from "./runtime";
 import { EnvironmentChip, EnvironmentPanel } from "./ui";
+import { resolveStyleNonce } from "../shared/nonce";
 import type { EnvironmentContextInput, EnvironmentRuntimeOptions } from "./runtime";
 import type { DevToolbarExtension, ExtensionRuntimeApi, ToolbarAlign } from "../../core/contract";
 
@@ -124,7 +125,7 @@ export function environment(options: EnvironmentOptions = {}): DevToolbarExtensi
         isOverflowed={isOverflowed}
         isPanelOpen={isPanelOpen}
         injectStyles={injectStyles}
-        styleNonce={optionNonce || styleNonce}
+        styleNonce={resolveStyleNonce(optionNonce, styleNonce)}
         onToggle={togglePanel}
       />
     ),
@@ -140,7 +141,7 @@ export function environment(options: EnvironmentOptions = {}): DevToolbarExtensi
       <EnvironmentPanel
         runtime={runtime}
         injectStyles={injectStyles}
-        styleNonce={optionNonce || styleNonce}
+        styleNonce={resolveStyleNonce(optionNonce, styleNonce)}
       />
     ),
 

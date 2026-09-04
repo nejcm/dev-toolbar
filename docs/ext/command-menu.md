@@ -41,9 +41,16 @@ Six things worth knowing:
 - **Its `shortcut` option is unaffected by `<DevToolbar bindCommandShortcuts>`.**
   That prop binds aggregated *commands*; this extension contributes none, so
   turning it on does not double-bind the palette. Leave this option as it is.
-  A host command declaring `Mod+K` collides with this palette's default and both
-  fire: core's `preventDefault()` cannot suppress a listener an extension
-  registered in `start()`.
+- **A host command declaring `Mod+K` collides with this palette's default, and
+  only one of them fires.** Both listeners sit on `window` and both bail on
+  `defaultPrevented`, so the one registered first wins and its
+  `preventDefault()` suppresses the other. This extension's listener goes up in
+  `start()`, which core runs in an effect *before* the effect that installs its
+  own shortcut listener — so the palette takes the chord and the command core
+  bound never runs. The one exception is the case the palette declines: while
+  the bar is hidden it ignores the chord entirely, and core's binding runs the
+  command instead. Do not bind a command to a chord the palette owns; give one
+  of them a different chord.
 
 Replacing it with your team's own `cmdk` is one line: leave it out and write your own
 over `useToolbarCommands()` (stable snapshot) or `useDevToolbar().getCommands()`

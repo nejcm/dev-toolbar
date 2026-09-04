@@ -62,6 +62,7 @@ import {
 } from "./runtime";
 import { writeClipboardTextOrThrow } from "../../runtime";
 import { FlagsChip, FlagsPanel } from "./ui";
+import { resolveStyleNonce } from "../shared/nonce";
 import type { FlagsRuntimeOptions } from "./runtime";
 import type { FlagValue } from "./types";
 import type {
@@ -243,7 +244,7 @@ export function flags(options: FlagsOptions = {}): DevToolbarExtension {
         isOverflowed={isOverflowed}
         isPanelOpen={isPanelOpen}
         injectStyles={injectStyles}
-        styleNonce={optionNonce || styleNonce}
+        styleNonce={resolveStyleNonce(optionNonce, styleNonce)}
         onToggle={togglePanel}
         onOpen={openPanel}
       />
@@ -257,7 +258,7 @@ export function flags(options: FlagsOptions = {}): DevToolbarExtension {
         runtime={runtime}
         label={label}
         injectStyles={injectStyles}
-        styleNonce={optionNonce || styleNonce}
+        styleNonce={resolveStyleNonce(optionNonce, styleNonce)}
       />
     ),
 

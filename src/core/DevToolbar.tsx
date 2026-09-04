@@ -1,4 +1,12 @@
-import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react";
 import type { CSSProperties, ReactNode } from "react";
 import { createPortal } from "react-dom";
 import {
@@ -194,6 +202,14 @@ export function DevToolbar(props: DevToolbarProps): ReactNode {
   );
 }
 
+/**
+ * `useLayoutEffect` in a browser, `useEffect` where there is no window, so the
+ * commit-time ref writes in `DevToolbarRoot` do not trip React's
+ * "useLayoutEffect does nothing on the server" warning during SSR. Resolved
+ * once, at module load, so the hook order can never change between renders.
+ */
+const useIsomorphicLayoutEffect = typeof window === "undefined" ? useEffect : useLayoutEffect;
+
 function DevToolbarRoot({
   children,
   extensions: extensionsProp = EMPTY_EXTENSIONS,
@@ -225,7 +241,6 @@ function DevToolbarRoot({
   const onVisibleChangeRef = useRef(onVisibleChange);
   const onPositionChangeRef = useRef(onPositionChange);
   const onPanelChangeRef = useRef(onPanelChange);
-  const effectiveVisibleRef = useRef(true);
 
   // Captured once, on mount, so the store and everything derived from it
   // can never disagree about where preferences live. See prop docs above.
@@ -258,13 +273,26 @@ function DevToolbarRoot({
   const effectivePosition = positionProp ?? state.position;
   const visibilitySubscribersRef = useRef(new Set<(visible: boolean) => void>());
   const lastNotifiedVisibleRef = useRef(effectiveVisible);
-  /* oxlint-disable react/refs -- render-phase prop refs keep handlers and the effective visibility current. */
-  onExtensionErrorRef.current = onExtensionError;
-  onVisibleChangeRef.current = onVisibleChange;
-  onPositionChangeRef.current = onPositionChange;
-  onPanelChangeRef.current = onPanelChange;
-  effectiveVisibleRef.current = effectiveVisible;
-  /* oxlint-enable react/refs */
+  // Seeded from the first render, then maintained at commit time below.
+  const effectiveVisibleRef = useRef(effectiveVisible);
+  // Written at commit, never during render. A render React abandons — a
+  // suspended transition over a controlled `visible`, say — would otherwise
+  // leave these refs describing a state nothing committed: the window
+  // shortcut listener would read a visibility no handler agrees with and
+  // toggle to the value that is already live, doing nothing at all.
+  //
+  // Everything that reads them runs later than this: the listeners are
+  // installed in passive effects, `api.isVisible()` is called by extension
+  // code that `start()` reaches from a passive effect, and passive effects
+  // run after every layout effect in the same commit. No dependency array —
+  // "latest value after every commit" is the whole contract.
+  useIsomorphicLayoutEffect(() => {
+    onExtensionErrorRef.current = onExtensionError;
+    onVisibleChangeRef.current = onVisibleChange;
+    onPositionChangeRef.current = onPositionChange;
+    onPanelChangeRef.current = onPanelChange;
+    effectiveVisibleRef.current = effectiveVisible;
+  });
   const reportExtensionError = useCallback((error: Error, info: ExtensionErrorInfo): void => {
     onExtensionErrorRef.current?.(error, info);
   }, []);
@@ -301,18 +329,30 @@ function DevToolbarRoot({
     }
   }, [effectiveVisible]);
 
+  // The baseline is the snapshot the *first render* saw, not the one that
+  // exists when the observer subscribes: React runs a descendant's effects
+  // before the parent's, so a child calling `setVisible`/`setPosition`/
+  // `openPanel` in its own mount effect has already mutated the store by the
+  // time this effect runs. Baselining here would swallow exactly that change.
+  // Reading through the store rather than the rendered `state` keeps
+  // hydration honest too — `state` is the *server* snapshot on the first
+  // client render, so it would make every persisted preference look like a
+  // change and fire the callbacks on mount.
+  const observedStateRef = useRef(store.getSnapshot());
   useEffect(() => {
-    let previous = store.getSnapshot();
-    return store.subscribe(() => {
+    const observe = () => {
+      const previous = observedStateRef.current;
       const next = store.getSnapshot();
-      const visibleChanged = next.visible !== previous.visible;
-      const positionChanged = next.position !== previous.position;
-      const panelChanged = next.activePanelId !== previous.activePanelId;
-      previous = next;
-      if (visibleChanged) reportVisibleChange(next.visible);
-      if (positionChanged) reportPositionChange(next.position);
-      if (panelChanged) reportPanelChange(next.activePanelId);
-    });
+      if (next === previous) return;
+      observedStateRef.current = next;
+      if (next.visible !== previous.visible) reportVisibleChange(next.visible);
+      if (next.position !== previous.position) reportPositionChange(next.position);
+      if (next.activePanelId !== previous.activePanelId) reportPanelChange(next.activePanelId);
+    };
+    // Reconcile before subscribing, so a mutation that landed between the
+    // first render and this line is reported rather than lost.
+    observe();
+    return store.subscribe(observe);
   }, [store, reportVisibleChange, reportPositionChange, reportPanelChange]);
 
   const controlWarningsRef = useRef(new Set<string>());
@@ -382,10 +422,12 @@ function DevToolbarRoot({
     },
     [reportVisibleChange, store, visibleControlled, visibleProp],
   );
-  const toggleVisible = useCallback(
-    () => setVisible(!effectiveVisible),
-    [effectiveVisible, setVisible],
-  );
+  // Reads the current effective visibility from the ref rather than closing
+  // over it, so the identity does not change on every visibility flip. That
+  // is not just churn: the keydown effect below depends on this callback, and
+  // a flip used to tear its listener down and add it back — silently changing
+  // the `window` listener order the two shortcut paths once relied on.
+  const toggleVisible = useCallback(() => setVisible(!effectiveVisibleRef.current), [setVisible]);
   const setPosition = useCallback(
     (next: ToolbarPosition) => {
       if (positionControlled) {
@@ -632,35 +674,51 @@ function DevToolbarRoot({
           ),
     [shortcut],
   );
+  // One listener for both shortcut paths — the toggle chord and the opt-in
+  // command bindings. Two listeners meant the toggle's `preventDefault()` made
+  // the command listener bail on `defaultPrevented` before it could warn about
+  // a command shadowed by the toggle, so precedence depended on which effect
+  // registered first. Here the toggle wins by construction: the chord is
+  // tested before the aggregation is consulted, and the guards run once.
+  //
+  // Order against extensions matters and is deliberate: this effect is
+  // declared *after* the `start(api)` effect, so a listener an extension put
+  // up in `start()` is registered first and wins a chord both claim — its
+  // `preventDefault()` makes this one bail on `defaultPrevented`. That is why
+  // `/ext/command-menu`'s `Mod+K` beats a command bound to `Mod+K`, and why
+  // core's binding gets the chord only in the case the palette declines it
+  // (while the bar is hidden). Keep the declaration order. Core cannot warn
+  // about the collision: it does not know which chords extension listeners
+  // claim, and it may not import `ext/` to find out.
+  //
+  // Command bindings are opt-in because existing `shortcut` strings are often
+  // hints describing a host's own binding. They do not read visibility —
+  // hidden extensions already contribute no commands, and a visible-only rule
+  // would make the binding depend on UI state the command has nothing to do
+  // with. Effective vs store visibility (phase 3) is therefore irrelevant here.
   useEffect(() => {
-    if (!enabled || !parsedShortcut || typeof window === "undefined") return;
+    if (!enabled || typeof window === "undefined") return;
+    if (!parsedShortcut && !bindCommandShortcuts) return;
     const onKeyDown = (event: KeyboardEvent) => {
       if (isIgnoredShortcutEvent(event)) return;
-      if (!matchesShortcut(event, parsedShortcut)) return;
-      event.preventDefault();
-      toggleVisible();
-    };
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [enabled, parsedShortcut, toggleVisible]);
-
-  // Command shortcuts. Opt-in: existing `shortcut` strings are often hints
-  // describing a host's own binding. Does not read visibility — hidden
-  // extensions already contribute no commands, and a visible-only rule would
-  // make the binding depend on UI state the command has nothing to do with.
-  // Effective vs store visibility (phase 3) is therefore irrelevant here.
-  useEffect(() => {
-    if (!enabled || !bindCommandShortcuts || typeof window === "undefined") return;
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (isIgnoredShortcutEvent(event)) return;
-      // Toggle wins unconditionally, independent of listener registration order.
-      // Still enumerate: a command that declared this chord is otherwise
-      // silently unbound, which is the failure mode rule 3 exists to surface.
       if (parsedShortcut !== null && matchesShortcut(event, parsedShortcut)) {
-        const shadowed = findShortcutCommand(event, getCommands());
-        if (shadowed !== undefined) warnShortcutYieldsToToggle(shadowed.id);
+        // Still enumerate: a command that declared this chord is otherwise
+        // silently unbound, which is the failure mode rule 3 exists to
+        // surface. Warn before toggling, so the report does not depend on
+        // what the visibility change does.
+        if (bindCommandShortcuts) {
+          const shadowed = findShortcutCommand(event, getCommands());
+          if (shadowed !== undefined) warnShortcutYieldsToToggle(shadowed.id);
+        }
+        event.preventDefault();
+        toggleVisible();
         return;
       }
+      // `parsedShortcut === null` (or unparseable) disables the toggle only;
+      // command bindings stay live.
+      if (!bindCommandShortcuts) return;
+      // Re-enumerated per keypress, so a shortcut a function-form `commands`
+      // starts declaring after mount binds without a re-render.
       const command = findShortcutCommand(event, getCommands());
       if (command === undefined) return;
       event.preventDefault();
@@ -674,7 +732,7 @@ function DevToolbarRoot({
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [bindCommandShortcuts, enabled, getCommands, parsedShortcut]);
+  }, [bindCommandShortcuts, enabled, getCommands, parsedShortcut, toggleVisible]);
 
   // Publish the height variables on the document element.
   const rootRef = useRef<HTMLDivElement | null>(null);
@@ -831,16 +889,17 @@ function DevToolbarRoot({
 /**
  * Listener is on `window`, so `document` handlers ran first: `defaultPrevented`
  * is how a host claims the chord. `isComposing` keeps IME out; `repeat` keeps a
- * held chord from auto-firing. Shared by the toggle and command-shortcut
- * listeners; the focused element is deliberately not consulted.
+ * held chord from auto-firing. Checked once, for both the toggle and the
+ * command bindings; the focused element is deliberately not consulted.
  */
 function isIgnoredShortcutEvent(event: KeyboardEvent): boolean {
   return event.defaultPrevented || event.isComposing || event.repeat;
 }
 
+/** Covers both a synchronous throw from `run()` and a rejected promise. */
 function reportShortcutCommandError(id: string, error: unknown): void {
   // eslint-disable-next-line no-console
-  console.error(`[dev-toolbar] command "${id}" rejected from its shortcut.`, error);
+  console.error(`[dev-toolbar] command "${id}" failed from its shortcut.`, error);
 }
 
 function stopExtension(
