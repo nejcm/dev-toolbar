@@ -29,14 +29,15 @@ export class ExtensionBoundary extends Component<ExtensionBoundaryProps, Extensi
   override state: ExtensionBoundaryState = { error: null };
 
   /**
-   * `String(error)` is a call into the thrown value: a hostile or merely broken
-   * `toString` throws from here, and a throw inside `getDerivedStateFromError`
-   * takes the whole React tree down instead of degrading one slot. Same guard,
-   * and same fallback wording, as `describe()` in `diagnostics.ts`.
+   * `instanceof` and `String(error)` both call into the thrown value: a hostile
+   * `getPrototypeOf` trap or `toString` can throw from here. A throw inside
+   * `getDerivedStateFromError` takes the whole React tree down instead of
+   * degrading one slot. Same guard and fallback wording as `describe()` in
+   * `diagnostics.ts`.
    */
   static getDerivedStateFromError(error: unknown): ExtensionBoundaryState {
-    if (error instanceof Error) return { error };
     try {
+      if (error instanceof Error) return { error };
       return { error: new Error(String(error)) };
     } catch {
       return { error: new Error("threw a value that could not be described") };
@@ -81,6 +82,12 @@ export class ExtensionBoundary extends Component<ExtensionBoundaryProps, Extensi
 
     const { extensionId, label, slot, classNames } = this.props;
     const text = `${label}: error`;
+    let message: string;
+    try {
+      message = String(error.message);
+    } catch {
+      message = "threw a value that could not be described";
+    }
 
     return (
       <span
@@ -88,7 +95,7 @@ export class ExtensionBoundary extends Component<ExtensionBoundaryProps, Extensi
         data-dtb-ext-id={extensionId}
         data-dtb-slot={slot}
         className={cx(classNames?.errorChip)}
-        title={error.message}
+        title={message}
         role="status"
       >
         {slot === "overlay" ? (

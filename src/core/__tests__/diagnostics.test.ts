@@ -65,6 +65,37 @@ describe("collectDiagnostics", () => {
     expect(entries[1]?.status).toBe("ok");
   });
 
+  it.each(["message", "name"])("contains an Error with a throwing %s getter", (property) => {
+    class HostileError extends Error {
+      constructor() {
+        super();
+        Object.defineProperty(this, property, {
+          get() {
+            throw new Error(`${property} getter failed`);
+          },
+        });
+      }
+    }
+
+    const entries = collectDiagnostics([
+      ext("boom", {
+        diagnostics: () => {
+          throw new HostileError();
+        },
+      }),
+      ext("after", { diagnostics: () => 1 }),
+    ]);
+    expect(entries).toEqual([
+      {
+        id: "boom",
+        label: "BOOM",
+        status: "failed",
+        error: "threw a value that could not be described",
+      },
+      { id: "after", label: "AFTER", status: "ok", data: 1 },
+    ]);
+  });
+
   it("hands over the message and the name unjoined, so a reader can redact", () => {
     // The reason this is a split and not a string. `redact()` matches value
     // shapes anchored to the whole string, so a message that *is* a

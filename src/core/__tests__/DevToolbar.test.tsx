@@ -1499,6 +1499,73 @@ describe("an extension list with nothing visible in it", () => {
  * boundary exists to protect.
  */
 describe("a thrown value that cannot be described", () => {
+  it("contains an Error with a throwing message getter", () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    class HostileError extends Error {
+      constructor() {
+        super();
+        Object.defineProperty(this, "message", {
+          get() {
+            throw new Error("message getter failed");
+          },
+        });
+      }
+    }
+    const hostile = new HostileError();
+    const onExtensionError = vi.fn();
+    const boom = panelExtension("boom", {
+      compact: () => {
+        throw hostile;
+      },
+    });
+
+    render(
+      <DevToolbar
+        instanceId="t"
+        extensions={[boom, panelExtension("ok")]}
+        onExtensionError={onExtensionError}
+      >
+        <div data-testid="app">App</div>
+      </DevToolbar>,
+    );
+
+    const chip = document.querySelector('[data-dtb-part="error-chip"][data-dtb-ext-id="boom"]');
+    expect(chip?.getAttribute("title")).toBe("threw a value that could not be described");
+    expect(screen.getByRole("button", { name: "ok" })).toBeTruthy();
+    expect(screen.getByTestId("app")).toBeTruthy();
+    expect(onExtensionError.mock.calls[0]?.[0]).toBe(hostile);
+    error.mockRestore();
+  });
+
+  it("contains a Proxy with a throwing getPrototypeOf trap", () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    const hostile = new Proxy(
+      {},
+      {
+        getPrototypeOf() {
+          throw new Error("getPrototypeOf trap failed");
+        },
+      },
+    );
+    const boom = panelExtension("boom", {
+      compact: () => {
+        throw hostile;
+      },
+    });
+
+    render(
+      <DevToolbar instanceId="t" extensions={[boom, panelExtension("ok")]}>
+        <div data-testid="app">App</div>
+      </DevToolbar>,
+    );
+
+    const chip = document.querySelector('[data-dtb-part="error-chip"][data-dtb-ext-id="boom"]');
+    expect(chip?.getAttribute("title")).toBe("threw a value that could not be described");
+    expect(screen.getByRole("button", { name: "ok" })).toBeTruthy();
+    expect(screen.getByTestId("app")).toBeTruthy();
+    error.mockRestore();
+  });
+
   it("degrades to an error chip rather than emptying the tree", () => {
     const error = vi.spyOn(console, "error").mockImplementation(() => {});
     const hostile = {
