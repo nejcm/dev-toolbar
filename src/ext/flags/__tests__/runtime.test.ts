@@ -718,6 +718,51 @@ describe("promotion", () => {
 });
 
 describe("the flag list signature", () => {
+  /* Regression: variants alone was omitted from FlagView's signature, hiding list changes while effectiveText stayed put. */
+  it.each([
+    { before: ["a", "b"], after: ["a", "c"] },
+    { before: ["a,b"], after: ["a", "b"] },
+  ])("republishes once when only variants change from $before to $after", ({ before, after }) => {
+    let variants = before;
+    const runtime = createFlagsRuntime({
+      flags: () => [{ key: "choice", type: "variant", value: "a", variants }],
+    });
+    const notify = vi.fn();
+    const unsubscribe = runtime.store.subscribe(notify);
+    expect(runtime.store.getSnapshot().flags[0]?.variants).toEqual(before);
+
+    variants = after;
+    runtime.refresh();
+    runtime.store.flush();
+
+    expect(runtime.store.getSnapshot().flags[0]?.variants).toEqual(after);
+    expect(notify).toHaveBeenCalledTimes(1);
+    unsubscribe();
+  });
+
+  /* Regression: fixing the omitted variants field must preserve snapshot identity when effectiveText and variants stay put. */
+  it("does not notify for unchanged variants and reordered unrelated flag fields", () => {
+    let unrelated: FlagReading = { key: "other", type: "boolean", value: false };
+    const runtime = createFlagsRuntime({
+      flags: () => [
+        { key: "choice", type: "variant", value: "a", variants: ["a", "b"] },
+        unrelated,
+      ],
+    });
+    const before = runtime.store.getSnapshot();
+    const notify = vi.fn();
+    const unsubscribe = runtime.store.subscribe(notify);
+
+    unrelated = { value: false, type: "boolean", key: "other" };
+    runtime.refresh();
+    runtime.store.flush();
+
+    // Fresh variants and advancing at test equality; field order is lost when FlagView is rebuilt.
+    expect(runtime.store.getSnapshot()).toBe(before);
+    expect(notify).not.toHaveBeenCalled();
+    unsubscribe();
+  });
+
   /*
    * Regression: duplicate catalogue keys produced two rows under one React key.
    */

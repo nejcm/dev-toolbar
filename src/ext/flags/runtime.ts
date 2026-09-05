@@ -524,7 +524,7 @@ export function createFlagsRuntime(options: FlagsRuntimeOptions = {}): FlagsRunt
           `${view.projectUrl ?? ""}:${view.expiresAt ?? ""}:${view.masked ? 1 : 0}:` +
           `${view.effectiveText}:${view.baseText}:${view.defaultText}:${view.source}:` +
           `${view.overridden ? 1 : 0}:${view.promoted ? 1 : 0}:${view.orphaned ? 1 : 0}:` +
-          `${view.applyError ?? ""}`,
+          `${view.applyError ?? ""}:${view.variants === undefined ? "" : JSON.stringify(view.variants.map(formatValue))}`,
       )
       .join("|");
 
