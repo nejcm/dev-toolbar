@@ -1216,3 +1216,160 @@ describe("countOccurrences", () => {
     expect(countOccurrences("abc", "")).toBe(0);
   });
 });
+
+describe("publication guarantees", () => {
+  it.each([
+    ["id", "renamed"],
+    ["label", "Renamed"],
+    ["data", { count: 2 }],
+  ] as const)("captures an isolated contribution.%s change exactly once", (field, value) => {
+    vi.useFakeTimers();
+    vi.spyOn(performance, "now").mockReturnValue(10);
+    let entry: ExtensionDiagnostics = { id: "app", label: "App", status: "ok", data: { count: 1 } };
+    const { runtime, stop } = started({}, () => [entry]);
+    try {
+      const before = runtime.capture();
+      const listener = vi.fn();
+      runtime.store.subscribe(listener);
+      entry = { ...entry, [field]: value };
+      const next = runtime.capture();
+      expect(next).toEqual({
+        ...before,
+        contributions: [{ ...before.contributions[0], [field]: value }],
+      });
+      expect(runtime.store.getSnapshot().snapshot).toBe(next);
+      expect(runtime.store.getSnapshot()).toBe(runtime.store.peek());
+      expect(listener).toHaveBeenCalledTimes(1);
+    } finally {
+      stop();
+      runtime.store.destroy();
+      vi.useRealTimers();
+    }
+  });
+
+  it.each(["id", "label", "reason"] as const)(
+    "captures omission.%s and its contribution source exactly once",
+    (field) => {
+      vi.useFakeTimers();
+      vi.spyOn(performance, "now").mockReturnValue(10);
+      let entry: ExtensionDiagnostics = {
+        id: "app",
+        label: "App",
+        status: "failed",
+        error: "first",
+      };
+      const { runtime, stop } = started({}, () => [entry]);
+      try {
+        const before = runtime.capture();
+        const listener = vi.fn();
+        runtime.store.subscribe(listener);
+        entry =
+          field === "reason" ? { ...entry, error: "second" } : { ...entry, [field]: "Changed" };
+        const next = runtime.capture();
+        const omission = next.omissions.find(
+          (item) => item.id === (field === "id" ? "Changed" : "app"),
+        );
+        const previous = before.omissions.find((item) => item.id === "app");
+        expect(omission).toEqual({
+          ...previous,
+          [field]: field === "reason" ? expect.stringContaining("second") : "Changed",
+        });
+        expect(listener).toHaveBeenCalledTimes(1);
+        expect(runtime.store.getSnapshot()).toBe(runtime.store.peek());
+      } finally {
+        stop();
+        runtime.store.destroy();
+        vi.useRealTimers();
+      }
+    },
+  );
+
+  it("publishes contribution status and the dependent omissions list", () => {
+    let entry: ExtensionDiagnostics = { id: "app", label: "App", status: "absent" };
+    const { runtime, stop } = started({}, () => [entry]);
+    try {
+      runtime.capture();
+      const listener = vi.fn();
+      runtime.store.subscribe(listener);
+      entry = { id: "app", label: "App", status: "ok", data: { count: 1 } };
+      runtime.capture();
+      expect(runtime.store.getSnapshot().snapshot?.contributions).toEqual([entry]);
+      expect(
+        runtime.store.getSnapshot().snapshot?.omissions.some((item) => item.id === "app"),
+      ).toBe(false);
+      expect(listener).toHaveBeenCalledTimes(1);
+    } finally {
+      stop();
+      runtime.store.destroy();
+    }
+  });
+
+  it("captures app changes only on demand; flush, microtasks and time never rebuild", async () => {
+    vi.useFakeTimers();
+    let app = { screen: "first" };
+    const { runtime, stop } = started({ app: () => app });
+    try {
+      const listener = vi.fn();
+      runtime.store.subscribe(listener);
+      expect(runtime.latest()).toBeNull();
+      expect(runtime.store.getSnapshot()).toBe(runtime.store.peek());
+      const first = runtime.ensure();
+      expect(listener).toHaveBeenCalledTimes(1);
+      const state = runtime.store.getSnapshot();
+      app = { screen: "second" };
+      runtime.store.flush();
+      await Promise.resolve();
+      vi.advanceTimersByTime(1000);
+      expect(runtime.latest()).toBe(first);
+      expect(runtime.ensure()).toBe(first);
+      expect(runtime.render("json")).toContain('"first"');
+      runtime.summary();
+      runtime.maskedCount();
+      runtime.filename("json");
+      expect(runtime.store.peek()).toBe(state);
+      expect(listener).toHaveBeenCalledTimes(1);
+      const second = runtime.capture();
+      expect(second.app).toEqual(app);
+      expect(runtime.store.getSnapshot()).toBe(runtime.store.peek());
+      expect(runtime.store.getSnapshot()).toMatchObject({
+        revision: state.revision + 1,
+        capturedAt: expect.any(Number),
+        snapshot: second,
+      });
+      expect(listener).toHaveBeenCalledTimes(2);
+    } finally {
+      stop();
+      runtime.store.destroy();
+      vi.useRealTimers();
+    }
+  });
+
+  it("an unchanged explicit capture still publishes; cached reads stay idle", () => {
+    vi.useFakeTimers();
+    vi.spyOn(performance, "now").mockReturnValue(10);
+    const { runtime, stop } = started({ app: { screen: "same" } });
+    try {
+      const first = runtime.capture();
+      const before = runtime.store.getSnapshot();
+      const listener = vi.fn();
+      runtime.store.subscribe(listener);
+      expect(runtime.capture()).toEqual(first);
+      expect(runtime.store.getSnapshot()).toEqual({ ...before, revision: before.revision + 1 });
+      expect(runtime.store.getSnapshot()).not.toBe(before);
+      expect(listener).toHaveBeenCalledTimes(1);
+      const current = runtime.store.getSnapshot();
+      runtime.ensure();
+      runtime.render("json");
+      runtime.render("markdown");
+      runtime.summary();
+      runtime.store.flush();
+      expect(runtime.store.getSnapshot()).toBe(current);
+      expect(runtime.store.peek()).toBe(current);
+      expect(listener).toHaveBeenCalledTimes(1);
+    } finally {
+      stop();
+      runtime.store.destroy();
+      vi.useRealTimers();
+    }
+  });
+});

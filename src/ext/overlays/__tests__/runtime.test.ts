@@ -121,6 +121,7 @@ afterEach(() => {
     .forEach((node) => node.remove());
   GeometryResizeObserver.instances = [];
   vi.restoreAllMocks();
+  vi.unstubAllGlobals();
 });
 
 describe("the catalogue", () => {
@@ -856,5 +857,338 @@ describe("hover names without a MutationObserver", () => {
     expect(runtime.store.peek().hover?.name).toBe("Renamed");
 
     stop();
+  });
+});
+
+describe("publication guarantees", () => {
+  const settle = async () => {
+    await vi.advanceTimersByTimeAsync(50);
+  };
+
+  it.each([
+    "description",
+    "name",
+    "role",
+    "pinned",
+    "rect.x",
+    "rect.y",
+    "rect.width",
+    "rect.height",
+    "margin.top",
+    "margin.right",
+    "margin.bottom",
+    "margin.left",
+    "padding.top",
+    "padding.right",
+    "padding.bottom",
+    "padding.left",
+  ])("publishes hover.%s exactly once after a measurement frame", async (field) => {
+    vi.useFakeTimers();
+    const button = document.createElement("button");
+    button.setAttribute("aria-label", "First");
+    document.body.append(button);
+    let rect = { x: 10, y: 20, width: 100, height: 40 };
+    withRect(button, rect);
+    const original = Object.getOwnPropertyDescriptor(document, "elementFromPoint");
+    Object.defineProperty(document, "elementFromPoint", {
+      configurable: true,
+      value: () => button,
+    });
+    const runtime = createOverlaysRuntime({ defaults: { inspect: true }, mutationDebounceMs: 1 });
+    const stop = runtime.start(fakeApi());
+    try {
+      fireEvent.pointerMove(window, { clientX: 12, clientY: 22 });
+      await settle();
+      const before = runtime.store.getSnapshot();
+      expect(before.hover).not.toBeNull();
+      const listener = vi.fn();
+      runtime.store.subscribe(listener);
+      const [part, component] = field.split(".");
+      let delta = {};
+      if (part === "rect") {
+        rect = { ...rect, [component!]: rect[component as keyof typeof rect] + 10 };
+        withRect(button, rect);
+        delta = {
+          rect,
+          ...(component === "width" || component === "height"
+            ? { size: `${rect.width} × ${rect.height}` }
+            : {}),
+        };
+      } else if (part === "margin" || part === "padding") {
+        button.style.setProperty(`${part}-${component}`, "10px");
+        delta = { [part]: { ...before.hover![part], [component!]: 10 } };
+      } else if (part === "description") {
+        button.id = "changed";
+        delta = { description: "button#changed" };
+      } else if (part === "name") {
+        button.setAttribute("aria-label", "Second");
+        delta = { name: "Second" };
+      } else if (part === "role") {
+        button.setAttribute("role", "switch");
+        delta = { role: "switch" };
+      } else {
+        button.style.position = "fixed";
+        delta = { pinned: true };
+      }
+      fireEvent.pointerMove(window, { clientX: 12, clientY: 22 });
+      runtime.store.flush();
+      expect(runtime.store.peek()).toBe(before);
+      expect(listener).not.toHaveBeenCalled();
+      await settle();
+      expect(runtime.store.getSnapshot()).toEqual({
+        ...before,
+        hover: { ...before.hover, ...delta },
+      });
+      expect(runtime.store.getSnapshot()).toBe(runtime.store.peek());
+      expect(listener).toHaveBeenCalledTimes(1);
+      const stable = runtime.store.getSnapshot();
+      fireEvent.pointerMove(window, { clientX: 13, clientY: 23 });
+      await settle();
+      expect(runtime.store.getSnapshot()).toBe(stable);
+      expect(listener).toHaveBeenCalledTimes(1);
+    } finally {
+      stop();
+      runtime.store.destroy();
+      vi.useRealTimers();
+      if (original) Object.defineProperty(document, "elementFromPoint", original);
+      else Reflect.deleteProperty(document, "elementFromPoint");
+    }
+  });
+
+  const assertFocusPublication = async (field: string) => {
+    vi.useFakeTimers();
+    const button = document.createElement("button");
+    button.setAttribute("aria-label", "First");
+    button.tabIndex = 1;
+    document.body.append(button);
+    let rect = { x: 10, y: 20, width: 100, height: 40 };
+    withRect(button, rect);
+    const runtime = createOverlaysRuntime({ defaults: { focus: true }, mutationDebounceMs: 1 });
+    const stop = runtime.start(fakeApi());
+    try {
+      await settle();
+      const before = runtime.store.getSnapshot();
+      expect(before.focusItems).toHaveLength(1);
+      const listener = vi.fn();
+      runtime.store.subscribe(listener);
+      const [part, component] = field.split(".");
+      let delta = {};
+      if (part === "rect") {
+        rect = { ...rect, [component!]: rect[component as keyof typeof rect] + 10 };
+        withRect(button, rect);
+        delta = { rect };
+      } else if (part === "name") {
+        button.setAttribute("aria-label", "Second");
+        delta = { name: "Second" };
+      } else if (part === "ariaHidden") {
+        button.setAttribute("aria-hidden", "true");
+        delta = { ariaHidden: true };
+      } else {
+        button.tabIndex = 2;
+        delta = { tabIndex: 2 };
+      }
+      fireEvent.scroll(window);
+      await settle();
+      expect(runtime.store.peek().focusItems).toEqual([{ ...before.focusItems[0], ...delta }]);
+      const count = field === "tabIndex" ? 0 : 1;
+      expect(listener).toHaveBeenCalledTimes(count);
+      expect(runtime.store.getSnapshot()).toBe(count ? runtime.store.peek() : before);
+      const stable = runtime.store.getSnapshot();
+      fireEvent.scroll(window);
+      await settle();
+      expect(runtime.store.getSnapshot()).toBe(stable);
+      expect(listener).toHaveBeenCalledTimes(count);
+    } finally {
+      stop();
+      runtime.store.destroy();
+      vi.useRealTimers();
+    }
+  };
+
+  it.each(["name", "ariaHidden", "rect.x", "rect.y", "rect.width", "rect.height"])(
+    "focus.%s publishes once",
+    assertFocusPublication,
+  );
+
+  // Pins missing focusItems.tabIndex in sameSnapshot() (types.ts:463), the equality
+  // used at runtime.ts:318; ui.tsx:338 keeps the old tabindex badge when order stays equal.
+  // When covered, change the tabIndex count to 1 in both notification assertions and
+  // getSnapshot() toBe(peek()); the other rows already require one notification.
+  it("BUG: focus.tabIndex changes without publishing", () => assertFocusPublication("tabIndex"));
+
+  it.each(OVERLAY_IDS)("publishes enabled.%s and activeCount synchronously", (id) => {
+    const runtime = createOverlaysRuntime();
+    const before = runtime.store.getSnapshot();
+    const listener = vi.fn();
+    runtime.store.subscribe(listener);
+    runtime.set(id, true);
+    expect(runtime.store.getSnapshot()).toEqual({
+      ...before,
+      enabled: { ...before.enabled, [id]: true },
+      activeCount: 1,
+    });
+    expect(runtime.store.getSnapshot()).toBe(runtime.store.peek());
+    expect(listener).toHaveBeenCalledTimes(1);
+    runtime.set(id, true);
+    runtime.store.flush();
+    expect(listener).toHaveBeenCalledTimes(1);
+    runtime.disableAll();
+    runtime.store.destroy();
+  });
+
+  it("publishes ready and active lifecycle transitions without a revision counter", () => {
+    const runtime = createOverlaysRuntime();
+    const harness = fakeExtensionApi();
+    harness.setVisible(false);
+    const before = runtime.store.getSnapshot();
+    const listener = vi.fn();
+    runtime.store.subscribe(listener);
+    const stop = runtime.start(harness.api);
+    expect(runtime.store.getSnapshot()).toEqual({ ...before, ready: true, active: false });
+    expect(listener).toHaveBeenCalledTimes(1);
+    harness.setVisible(true);
+    expect(runtime.store.getSnapshot()).toEqual({ ...before, ready: true, active: true });
+    expect(listener).toHaveBeenCalledTimes(2);
+    expect(runtime.store.getSnapshot()).not.toHaveProperty("revision");
+    stop();
+    expect(listener).toHaveBeenCalledTimes(3);
+    runtime.store.destroy();
+  });
+});
+
+describe("publication of dependent overlay fields", () => {
+  it("publishes focus key/index/tag through rescans and updates unnamedCount", async () => {
+    vi.useFakeTimers();
+    const button = document.createElement("button");
+    document.body.append(button);
+    const rect = { x: 10, y: 20, width: 100, height: 40 };
+    withRect(button, rect);
+    const runtime = createOverlaysRuntime({ defaults: { focus: true }, mutationDebounceMs: 1 });
+    const stop = runtime.start(fakeApi());
+    try {
+      await vi.advanceTimersByTimeAsync(50);
+      const before = runtime.store.getSnapshot();
+      const listener = vi.fn();
+      runtime.store.subscribe(listener);
+      const input = document.createElement("input");
+      withRect(input, rect);
+      button.replaceWith(input);
+      await vi.advanceTimersByTimeAsync(50);
+      expect(runtime.store.getSnapshot().focusItems).toEqual([
+        { ...before.focusItems[0], key: "1:INPUT", tag: "input" },
+      ]);
+      expect(listener).toHaveBeenCalledTimes(1);
+      const second = runtime.store.getSnapshot();
+      const offscreen = document.createElement("button");
+      offscreen.setAttribute("aria-label", "Offscreen");
+      withRect(offscreen, { ...rect, x: -1000 });
+      input.before(offscreen);
+      await vi.advanceTimersByTimeAsync(50);
+      expect(runtime.store.getSnapshot().focusItems).toEqual([
+        { ...second.focusItems[0], key: "2:INPUT", index: 2 },
+      ]);
+      expect(listener).toHaveBeenCalledTimes(2);
+      input.setAttribute("aria-label", "Named");
+      await vi.advanceTimersByTimeAsync(50);
+      expect(runtime.store.getSnapshot().unnamedCount).toBe(0);
+      expect(runtime.store.getSnapshot().focusItems[0]?.name).toBe("Named");
+      expect(listener).toHaveBeenCalledTimes(3);
+    } finally {
+      stop();
+      runtime.store.destroy();
+      vi.useRealTimers();
+    }
+  });
+
+  it("publishes focusTruncated alone when an offscreen named candidate reaches the cap", async () => {
+    vi.useFakeTimers();
+    const button = document.createElement("button");
+    button.setAttribute("aria-label", "First");
+    document.body.append(button);
+    withRect(button, { x: 10, y: 20, width: 100, height: 40 });
+    const runtime = createOverlaysRuntime({
+      defaults: { focus: true },
+      focusLimit: 2,
+      mutationDebounceMs: 1,
+    });
+    const stop = runtime.start(fakeApi());
+    try {
+      await vi.advanceTimersByTimeAsync(50);
+      const before = runtime.store.getSnapshot();
+      const listener = vi.fn();
+      runtime.store.subscribe(listener);
+      const second = document.createElement("button");
+      second.setAttribute("aria-label", "Offscreen");
+      withRect(second, { x: -1000, y: 20, width: 100, height: 40 });
+      document.body.append(second);
+      await vi.advanceTimersByTimeAsync(50);
+      expect(runtime.store.getSnapshot()).toEqual({ ...before, focusTruncated: true });
+      expect(listener).toHaveBeenCalledTimes(1);
+    } finally {
+      stop();
+      runtime.store.destroy();
+      vi.useRealTimers();
+    }
+  });
+
+  it("publishes measurement failure and the dependent disabled state once", async () => {
+    vi.useFakeTimers();
+    const log = vi.spyOn(console, "error").mockImplementation(() => {});
+    const button = document.createElement("button");
+    document.body.append(button);
+    withRect(button, { x: 10, y: 20, width: 100, height: 40 });
+    const runtime = createOverlaysRuntime({ defaults: { focus: true }, mutationDebounceMs: 1 });
+    const stop = runtime.start(fakeApi());
+    try {
+      await vi.advanceTimersByTimeAsync(50);
+      const listener = vi.fn();
+      runtime.store.subscribe(listener);
+      button.getBoundingClientRect = () => {
+        throw new Error("measurement failed");
+      };
+      fireEvent.scroll(window);
+      await vi.advanceTimersByTimeAsync(50);
+      expect(runtime.store.getSnapshot()).toMatchObject({
+        activeCount: 0,
+        focusItems: [],
+        error: expect.stringContaining("measurement failed"),
+      });
+      expect(runtime.store.getSnapshot().enabled).toEqual(NO_OVERLAYS);
+      expect(runtime.store.getSnapshot()).toBe(runtime.store.peek());
+      expect(listener).toHaveBeenCalledTimes(1);
+    } finally {
+      stop();
+      runtime.store.destroy();
+      log.mockRestore();
+      vi.useRealTimers();
+    }
+  });
+});
+
+describe("isolated overlay count publication", () => {
+  it("publishes unnamedCount alone for an offscreen unnamed candidate", async () => {
+    vi.useFakeTimers();
+    const button = document.createElement("button");
+    button.setAttribute("aria-label", "First");
+    document.body.append(button);
+    withRect(button, { x: 10, y: 20, width: 100, height: 40 });
+    const runtime = createOverlaysRuntime({ defaults: { focus: true }, mutationDebounceMs: 1 });
+    const stop = runtime.start(fakeApi());
+    try {
+      await vi.advanceTimersByTimeAsync(50);
+      const before = runtime.store.getSnapshot();
+      const listener = vi.fn();
+      runtime.store.subscribe(listener);
+      const second = document.createElement("button");
+      withRect(second, { x: -1000, y: 20, width: 100, height: 40 });
+      document.body.append(second);
+      await vi.advanceTimersByTimeAsync(50);
+      expect(runtime.store.getSnapshot()).toEqual({ ...before, unnamedCount: 1 });
+      expect(listener).toHaveBeenCalledTimes(1);
+    } finally {
+      stop();
+      runtime.store.destroy();
+      vi.useRealTimers();
+    }
   });
 });

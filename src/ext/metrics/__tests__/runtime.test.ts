@@ -3,7 +3,9 @@ import { fakeExtensionApi } from "@nejcm/dev-toolbar/testing";
 import { createMetricsRuntime } from "../runtime";
 import { createMemoryCollector } from "../collectors/memory";
 import { createNetworkCollector } from "../collectors/network";
-import { REDACTED } from "../../../runtime";
+import type { Collector, CollectorContext, MetricView, NetworkEntryView } from "../types";
+import { createEventBus, createTimeSeries, REDACTED } from "../../../runtime";
+import type { ToolbarEventMap } from "../../../runtime";
 import type { ExtensionRuntimeApi } from "../../../core/contract";
 
 function api(): {
@@ -242,6 +244,297 @@ describe("metrics runtime", () => {
       expect(runtime.store.getSnapshot().views.memory.status).toBe("pending");
       harness.controller.abort();
     } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
+describe("publication guarantees", () => {
+  const initialView: MetricView = {
+    id: "network",
+    label: "net",
+    title: "Network",
+    status: "ok",
+    severity: "ok",
+    display: "1 req",
+    value: 1,
+    unit: "req",
+    hint: "Requests",
+    detail: [["Active", "1"]],
+  };
+  const initialRequest: NetworkEntryView = {
+    id: "first",
+    method: "GET",
+    url: "/first",
+    startedAt: 0,
+    duration: 10,
+    status: undefined,
+    state: "active",
+    bytes: undefined,
+    error: undefined,
+  };
+  const setup = () => {
+    let view = { ...initialView };
+    let requests = [{ ...initialRequest }, { ...initialRequest, id: "second" }];
+    let context: CollectorContext | undefined;
+    const collector: Collector = {
+      id: "network",
+      estimatedCost: "minimal",
+      supported: true,
+      series: createTimeSeries(8),
+      start: (next) => {
+        context = next;
+      },
+      read: () => view,
+      entries: () => requests,
+      reset: () => {},
+      diagnostics: () => ({}),
+    };
+    const runtime = createMetricsRuntime({ collectors: [collector] });
+    return {
+      runtime,
+      collector,
+      appendRequest: () => {
+        requests = [...requests, { ...initialRequest, id: "third" }];
+      },
+      changeView: (patch: Partial<MetricView>) => {
+        view = { ...view, ...patch };
+      },
+      changeRequest: (index: number, patch: Partial<NetworkEntryView>) => {
+        requests = requests.map((request, at) =>
+          at === index ? { ...request, ...patch } : request,
+        );
+      },
+      invalidate: () => {
+        expect(context).toBeDefined();
+        context?.invalidate();
+      },
+    };
+  };
+
+  const assertViewPublication = (field: string, value: unknown, count: 0 | 1) => {
+    const { runtime, changeView } = setup();
+    const before = runtime.store.getSnapshot();
+    const listener = vi.fn();
+    runtime.store.subscribe(listener);
+    changeView({ [field]: value });
+    runtime.flush();
+    expect(runtime.store.peek().views.network).toEqual({ ...before.views.network, [field]: value });
+    expect(listener).toHaveBeenCalledTimes(count);
+    expect(runtime.store.getSnapshot()).toBe(count === 0 ? before : runtime.store.peek());
+    runtime.store.destroy();
+  };
+
+  it.each([
+    ["status", "pending", 1],
+    ["severity", "warn", 1],
+    ["display", "2 req", 1],
+  ] as const)("view.%s publishes once", assertViewPublication);
+
+  // Pins omissions in signature() (runtime.ts:60): id/label/title/unit/hint/detail.
+  // UI reads them at ui.tsx:64/67/101/149/226/243; built-in identity metadata is fixed.
+  // When covered, change the affected zero count to 1 and getSnapshot() toBe(peek()).
+  it.each([
+    ["id", "memory", 0],
+    ["label", "requests", 0],
+    ["title", "Traffic", 0],
+    ["unit", "requests", 0],
+    ["hint", "Requests in the last minute", 0],
+    ["detail", [["Active", "2"]], 0],
+  ] as const)("BUG: view.%s changes without publishing", assertViewPublication);
+
+  const assertRequestPublication = (
+    field: keyof NetworkEntryView,
+    index: number,
+    value: string | number,
+    count: 0 | 1,
+  ) => {
+    const { runtime, changeRequest } = setup();
+    const before = runtime.store.getSnapshot();
+    const listener = vi.fn();
+    runtime.store.subscribe(listener);
+    changeRequest(index, { [field]: value });
+    runtime.flush();
+    expect(runtime.store.peek().requests).toEqual(
+      before.requests.map((request, at) =>
+        at === index ? { ...request, [field]: value } : request,
+      ),
+    );
+    expect(listener, `${index}.${field}`).toHaveBeenCalledTimes(count);
+    expect(runtime.store.getSnapshot()).toBe(count === 0 ? before : runtime.store.peek());
+    runtime.store.destroy();
+  };
+
+  it.each([
+    ["id", 0, "replacement", 1],
+    ["state", 0, "failed", 1],
+  ] as const)("request.%s at index %i publishes once", assertRequestPublication);
+
+  // Pins omissions in signature() (runtime.ts:60): method/status/duration/bytes/url
+  // at either index, and non-first id/state; ui.tsx:301-306 keeps stale request rows.
+  // When covered, change each affected count to 1 and getSnapshot() toBe(peek()).
+  it.each([
+    ["method", 0, "POST", 0],
+    ["status", 0, 201, 0],
+    ["duration", 0, 20, 0],
+    ["bytes", 0, 1024, 0],
+    ["url", 0, "/changed", 0],
+    ["id", 1, "replacement", 0],
+    ["state", 1, "failed", 0],
+    ["method", 1, "POST", 0],
+    ["status", 1, 201, 0],
+    ["duration", 1, 20, 0],
+    ["bytes", 1, 1024, 0],
+    ["url", 1, "/changed", 0],
+  ] as const)("BUG: request.%s at index %i changes without publishing", assertRequestPublication);
+
+  it("publishes request count alone without changing existing rows", () => {
+    const { runtime, appendRequest } = setup();
+    const before = runtime.store.getSnapshot();
+    const listener = vi.fn();
+    runtime.store.subscribe(listener);
+    appendRequest();
+    runtime.flush();
+    expect(runtime.store.getSnapshot().requests).toEqual([
+      ...before.requests,
+      { ...initialRequest, id: "third" },
+    ]);
+    expect(runtime.store.getSnapshot().views).toEqual(before.views);
+    expect(listener).toHaveBeenCalledTimes(1);
+    runtime.store.destroy();
+  });
+
+  it("series writes publish unchanged views for sparklines; idle rebuilds only advance pending revision", () => {
+    const { runtime, collector } = setup();
+    const before = runtime.store.getSnapshot();
+    const listener = vi.fn();
+    runtime.store.subscribe(listener);
+    runtime.flush();
+    expect(runtime.store.getSnapshot()).toBe(before);
+    expect(runtime.store.peek().revision).toBe(before.revision + 1);
+    expect(listener).not.toHaveBeenCalled();
+    collector.series.push(1, 1);
+    runtime.flush();
+    expect(runtime.store.getSnapshot().views).toEqual(before.views);
+    expect(runtime.store.getSnapshot().seriesWritten).toBe(1);
+    expect(runtime.store.getSnapshot().revision).toBe(before.revision + 2);
+    expect(listener).toHaveBeenCalledTimes(1);
+    runtime.store.destroy();
+  });
+
+  it("folds invalidations before peek, then throttles publication; store.flush does not rebuild", async () => {
+    vi.useFakeTimers();
+    const { runtime, changeView, invalidate } = setup();
+    const harness = api();
+    try {
+      runtime.start(harness.api);
+      const before = runtime.store.getSnapshot();
+      const pending = runtime.store.peek();
+      const listener = vi.fn();
+      runtime.store.subscribe(listener);
+      changeView({ display: "2 req" });
+      invalidate();
+      invalidate();
+      runtime.store.flush();
+      expect(runtime.store.peek()).toBe(pending);
+      expect(runtime.store.getSnapshot()).toBe(before);
+      await Promise.resolve();
+      expect(runtime.store.peek().views.network.display).toBe("2 req");
+      expect(runtime.store.peek().revision).toBe(pending.revision + 1);
+      expect(runtime.store.getSnapshot()).toBe(before);
+      vi.advanceTimersByTime(499);
+      expect(listener).not.toHaveBeenCalled();
+      vi.advanceTimersByTime(1);
+      expect(listener).toHaveBeenCalledTimes(1);
+      expect(runtime.store.getSnapshot().views.network.display).toBe("2 req");
+      changeView({ display: "3 req" });
+      runtime.flush();
+      expect(runtime.store.getSnapshot()).toBe(runtime.store.peek());
+      expect(runtime.store.getSnapshot().views.network.display).toBe("3 req");
+      expect(listener).toHaveBeenCalledTimes(2);
+    } finally {
+      harness.controller.abort();
+      runtime.store.destroy();
+      vi.useRealTimers();
+    }
+  });
+});
+
+describe("built-in network publication omissions", () => {
+  // Pins missing request.duration in signature() (runtime.ts:60); ui.tsx:304 stays stale.
+  // When covered, invert to toHaveBeenCalledTimes(1) and getSnapshot() toBe(peek()).
+  it("BUG: an active request duration grows without publishing", async () => {
+    vi.useFakeTimers();
+    let now = 0;
+    const clock = vi.spyOn(performance, "now").mockImplementation(() => now);
+    const bus = createEventBus<ToolbarEventMap>();
+    const runtime = createMetricsRuntime({ collectors: [createNetworkCollector({ bus })] });
+    const harness = api();
+    try {
+      runtime.start(harness.api);
+      bus.emit("network-start", { requestId: "request", method: "GET", url: "/wait" });
+      await Promise.resolve();
+      runtime.flush();
+      const before = runtime.store.getSnapshot();
+      expect(before.requests[0]?.state).toBe("active");
+      const listener = vi.fn();
+      runtime.store.subscribe(listener);
+      now = 100;
+      runtime.flush();
+      expect(runtime.store.peek().requests).toEqual([{ ...before.requests[0], duration: 100 }]);
+      expect(runtime.store.peek().views).toEqual(before.views);
+      expect(runtime.store.peek().seriesWritten).toBe(before.seriesWritten);
+      expect(listener).not.toHaveBeenCalled();
+      expect(runtime.store.getSnapshot()).toBe(before);
+    } finally {
+      harness.controller.abort();
+      runtime.store.destroy();
+      clock.mockRestore();
+      vi.useRealTimers();
+    }
+  });
+
+  // Pins missing view.detail in signature() (runtime.ts:60); ui.tsx:243 keeps old window counts.
+  // When covered, invert to toHaveBeenCalledTimes(1) and getSnapshot() toBe(peek()).
+  it("BUG: rolling failure detail changes without a new sample or severity change", async () => {
+    vi.useFakeTimers();
+    let now = 0;
+    const clock = vi.spyOn(performance, "now").mockImplementation(() => now);
+    const bus = createEventBus<ToolbarEventMap>();
+    const runtime = createMetricsRuntime({
+      collectors: [createNetworkCollector({ bus, windowMs: 1000 })],
+    });
+    const harness = api();
+    try {
+      runtime.start(harness.api);
+      for (const at of [100, 200]) {
+        now = at;
+        bus.emit("network-start", { requestId: String(at), method: "GET", url: "/failed" });
+        bus.emit("network-end", { requestId: String(at), ok: false, status: 500, duration: 0 });
+      }
+      await Promise.resolve();
+      runtime.flush();
+      const before = runtime.store.getSnapshot();
+      expect(before.views.network.detail).toContainEqual(["Failed (last 1 s)", "2"]);
+      const listener = vi.fn();
+      runtime.store.subscribe(listener);
+      now = 1150;
+      runtime.flush();
+      expect(runtime.store.peek().views.network).toEqual({
+        ...before.views.network,
+        detail: before.views.network.detail.map(([label, value]) => [
+          label,
+          label === "Failed (last 1 s)" ? "1" : value,
+        ]),
+      });
+      expect(runtime.store.peek().requests).toEqual(before.requests);
+      expect(runtime.store.peek().seriesWritten).toBe(before.seriesWritten);
+      expect(listener).not.toHaveBeenCalled();
+      expect(runtime.store.getSnapshot()).toBe(before);
+    } finally {
+      harness.controller.abort();
+      runtime.store.destroy();
+      clock.mockRestore();
       vi.useRealTimers();
     }
   });
