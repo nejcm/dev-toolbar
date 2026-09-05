@@ -7,12 +7,21 @@
  * that `package.json#exports` publishes, so a missing or misnamed export shows
  * up here as a resolution failure.
  */
-import { describe, expect, it, vi } from "vitest";
+import { act } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { CONTRACT_VERSION, DevToolbarInset } from "@nejcm/dev-toolbar";
 import type { DevToolbarExtension } from "@nejcm/dev-toolbar";
-import { createMockBus, makeExtension, renderWithToolbar } from "@nejcm/dev-toolbar/testing";
+import {
+  cleanupToolbar,
+  createMockBus,
+  installToolbarLayout,
+  makeExtension,
+  mountToolbar,
+  renderWithToolbar,
+} from "@nejcm/dev-toolbar/testing";
 
 describe("@nejcm/dev-toolbar/testing", () => {
+  afterEach(cleanupToolbar);
   it("renders an extension the way its author would test it", () => {
     const counter: DevToolbarExtension = makeExtension({
       id: "counter",
@@ -135,6 +144,104 @@ describe("@nejcm/dev-toolbar/testing", () => {
     toolbar.resize(1000);
     expect(toolbar.barIds()).toEqual(["high", "mid", "low"]);
     unmount();
+  });
+
+  it("accounts for padding and gap when collapsing a mounted toolbar", () => {
+    const { toolbar } = mountToolbar(null, {
+      extensions: [
+        makeExtension({ id: "high", label: "high", priority: 100 }),
+        makeExtension({ id: "mid", label: "mid", priority: 50 }),
+        makeExtension({ id: "low", label: "low", priority: 1 }),
+      ],
+      layout: { barWidth: 220, itemWidth: 60, paddingX: 12, gap: 8 },
+    });
+
+    expect(toolbar.barIds()).toEqual(["high", "mid"]);
+    expect(toolbar.overflowedIds()).toEqual(["low"]);
+    toolbar.resize(228);
+    expect(toolbar.barIds()).toEqual(["high", "mid", "low"]);
+    expect(toolbar.overflowButton()).toBeNull();
+  });
+
+  it.each([
+    { gap: undefined, collapsed: ["low"] },
+    { gap: 0, collapsed: [] },
+  ])("preserves the default collapse threshold with gap=$gap", ({ gap, collapsed }) => {
+    const geometry = { barWidth: 160, itemWidth: 80 };
+    const { toolbar } = mountToolbar(null, {
+      extensions: [
+        makeExtension({ id: "high", priority: 100 }),
+        makeExtension({ id: "low", priority: 1 }),
+      ],
+      layout: gap === undefined ? geometry : { ...geometry, gap },
+    });
+    expect(toolbar.overflowedIds()).toEqual(collapsed);
+  });
+
+  it("drives item-only growth through the flip latch and reopens it with a bar resize", () => {
+    const layout = installToolbarLayout({ barWidth: 1000, itemWidth: 60, paddingX: 0, gap: 2 });
+    const { toolbar } = mountToolbar(null, {
+      extensions: [
+        makeExtension({ id: "a", priority: 3 }),
+        makeExtension({ id: "b", priority: 1 }),
+        makeExtension({ id: "c", priority: 2 }),
+      ],
+    });
+    const observers = layout.getObservers();
+    const items = observers.find((observer) => observer.getTargets().includes(toolbar.item("a")!))!;
+    const bar = observers.find((observer) => observer.getTargets().includes(toolbar.bar()!))!;
+    const flip = (width: number) => {
+      layout.setItemWidth("a", width, false);
+      act(() => items.flush());
+      return toolbar.barIds();
+    };
+
+    expect(flip(900)).toEqual(["a", "c"]);
+    expect(flip(60)).toEqual(["a", "b", "c"]);
+    expect(flip(900)).toEqual(["a", "c"]);
+    expect(flip(60)).toEqual(["a", "b", "c"]);
+    expect(flip(900)).toEqual(["a", "b", "c"]);
+    expect(flip(60)).toEqual(["a", "b", "c"]);
+
+    layout.setItemWidth("a", 900, false);
+    layout.resize(999, false);
+    act(() => bar.flush());
+    expect(toolbar.barIds()).toEqual(["a", "c"]);
+  });
+
+  it("inspects actual item hosts as they collapse, return and disconnect", () => {
+    const layout = installToolbarLayout({ barWidth: 1000, itemWidth: 60, paddingX: 0, gap: 2 });
+    const { toolbar, unmount } = mountToolbar(null, {
+      extensions: [
+        makeExtension({ id: "a", priority: 3 }),
+        makeExtension({ id: "b", priority: 1 }),
+        makeExtension({ id: "c", priority: 2 }),
+      ],
+    });
+    const observers = layout.getObservers();
+    const items = observers.find((observer) => observer.getTargets().includes(toolbar.item("a")!))!;
+    const bar = observers.find((observer) => observer.getTargets().includes(toolbar.bar()!))!;
+    const hosts = () =>
+      Array.from(
+        toolbar.bar()!.querySelectorAll('[data-dtb-part="region"] > [data-dtb-part="item"]'),
+      );
+    expect(items.getTargets()).toEqual(hosts());
+    expect(items.getTargets()).toHaveLength(3);
+    expect(bar.getTargets()).toEqual([toolbar.bar()]);
+
+    layout.resize(100, false);
+    act(() => bar.flush());
+    expect(items.getTargets()).toEqual([toolbar.item("a")]);
+    expect(items.getTargets()).toEqual(hosts());
+    layout.resize(1000, false);
+    act(() => bar.flush());
+    expect(items.getTargets()).toEqual(hosts());
+    expect(items.getTargets()).toHaveLength(3);
+
+    unmount();
+    expect(items.getTargets()).toEqual([]);
+    expect(bar.getTargets()).toEqual([]);
+    expect(layout.getObservers()).toEqual(observers);
   });
 
   it("publishes --dev-toolbar-height and drives DevToolbarInset", () => {

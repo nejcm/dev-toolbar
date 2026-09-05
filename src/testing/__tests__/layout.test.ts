@@ -1,6 +1,5 @@
 /**
- * The fake layout's *install lifetime*, not its measurements — those are
- * exercised all over `src/core/__tests__` and every extension suite.
+ * The fake layout's measurements, observer delivery and install lifetime.
  *
  * The patches are on shared objects (`HTMLElement.prototype`, `globalThis`), so
  * the only thing that makes them safe is that installing and restoring is
@@ -8,8 +7,8 @@
  * install that captured a *previous* value which was itself a fake, and then
  * put it back.
  */
-import { describe, expect, it, vi } from "vitest";
-import { installToolbarLayout } from "../layout";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { installToolbarLayout, restoreToolbarLayouts } from "../layout";
 
 // Captured before this file installs anything, so "restored" means restored to
 // jsdom's own implementations rather than to some earlier fake. Descriptors are
@@ -22,6 +21,7 @@ const nativeClientWidth = Object.getOwnPropertyDescriptor(
   HTMLElement.prototype,
   "clientWidth",
 )?.get;
+const nativeGetComputedStyle = globalThis.getComputedStyle;
 const nativeRect = HTMLElement.prototype.getBoundingClientRect;
 const hadResizeObserver = "ResizeObserver" in globalThis;
 
@@ -51,9 +51,11 @@ const isPristine = () =>
   Object.getOwnPropertyDescriptor(HTMLElement.prototype, "clientWidth")?.get ===
     nativeClientWidth &&
   HTMLElement.prototype.getBoundingClientRect === nativeRect &&
+  globalThis.getComputedStyle === nativeGetComputedStyle &&
   "ResizeObserver" in globalThis === hadResizeObserver;
 
 describe("installToolbarLayout", () => {
+  afterEach(restoreToolbarLayouts);
   it("keeps observing remaining targets after unobserve()", () => {
     const handle = installToolbarLayout();
     const callback = vi.fn<ResizeObserverCallback>();
@@ -64,12 +66,14 @@ describe("installToolbarLayout", () => {
     observer.observe(a);
     observer.observe(b);
     handle.flush();
-    expect(callback).toHaveBeenCalledExactlyOnceWith([], observer);
+    expect(callback).toHaveBeenCalledTimes(1);
+    expect(callback.mock.calls[0]?.[0].map((entry) => entry.target)).toEqual([a, b]);
+    expect(callback.mock.calls[0]?.[1]).toBe(observer);
 
     observer.unobserve(a);
     handle.flush();
     expect(callback).toHaveBeenCalledTimes(2);
-    expect(callback).toHaveBeenLastCalledWith([], observer);
+    expect(callback.mock.lastCall?.[0].map((entry) => entry.target)).toEqual([b]);
 
     observer.unobserve(b);
     handle.flush();
@@ -79,6 +83,7 @@ describe("installToolbarLayout", () => {
     observer.observe(a);
     handle.flush();
     expect(callback).toHaveBeenCalledTimes(3);
+    expect(callback.mock.lastCall?.[0].map((entry) => entry.target)).toEqual([a]);
 
     observer.disconnect();
     handle.flush();
@@ -91,6 +96,231 @@ describe("installToolbarLayout", () => {
     handle.flush();
     expect(callback).toHaveBeenCalledTimes(4);
     handle.restore();
+  });
+
+  it("reports explicit zero padding and gap", () => {
+    installToolbarLayout({ paddingX: 0, gap: 0 });
+    expect(getComputedStyle(bar())).toMatchObject({
+      paddingLeft: "0px",
+      paddingRight: "0px",
+      columnGap: "0px",
+      gap: "0px",
+    });
+  });
+
+  it("preserves computed styles when padding and gap are omitted", () => {
+    const target = bar();
+    target.style.cssText = "padding: 3px 5px; gap: 7px; column-gap: 9px";
+    const nativeStyle = getComputedStyle(target);
+    const handle = installToolbarLayout();
+    expect(getComputedStyle(target)).toMatchObject({
+      paddingLeft: nativeStyle.paddingLeft,
+      paddingRight: nativeStyle.paddingRight,
+      gap: nativeStyle.gap,
+      columnGap: nativeStyle.columnGap,
+    });
+    handle.setGap(0);
+    expect(getComputedStyle(target)).toMatchObject({
+      gap: "0px",
+      columnGap: "0px",
+      paddingLeft: "5px",
+    });
+    handle.setPaddingX(0);
+    expect(getComputedStyle(target).paddingLeft).toBe("0px");
+  });
+
+  it("does not inherit an outer install's style overrides when options are omitted", () => {
+    const target = bar();
+    const nativeStyle = getComputedStyle(target);
+    installToolbarLayout({ paddingX: 12, gap: 8 });
+    const inner = installToolbarLayout();
+    expect(getComputedStyle(target)).toMatchObject({
+      paddingLeft: nativeStyle.paddingLeft,
+      gap: nativeStyle.gap,
+    });
+    inner.restore();
+    expect(getComputedStyle(target)).toMatchObject({ paddingLeft: "12px", gap: "8px" });
+  });
+
+  it("sets padding and gap and notifies observers with the updated style", () => {
+    const handle = installToolbarLayout({ paddingX: 12, gap: 8 });
+    const target = bar();
+    const seen: string[][] = [];
+    const observer = new ResizeObserver(() => {
+      const style = getComputedStyle(target);
+      seen.push([style.paddingLeft, style.paddingRight, style.columnGap, style.gap]);
+    });
+    observer.observe(target);
+
+    handle.flush();
+    handle.setPaddingX(6);
+    handle.setGap(2);
+    expect(seen).toEqual([
+      ["12px", "12px", "8px", "8px"],
+      ["6px", "6px", "8px", "8px"],
+      ["6px", "6px", "2px", "2px"],
+    ]);
+  });
+
+  it("leaves unrelated computed styles untouched and restores toolbar styles", () => {
+    const unrelated = document.createElement("div");
+    const target = bar();
+    for (const element of [unrelated, target]) {
+      element.style.cssText = "padding: 3px 5px; gap: 7px; column-gap: 9px; color: red";
+      document.body.append(element);
+    }
+    try {
+      const before = getComputedStyle(unrelated).cssText;
+      const handle = installToolbarLayout({ paddingX: 12, gap: 8 });
+      expect(getComputedStyle(unrelated).cssText).toBe(before);
+      expect(getComputedStyle(unrelated)).toMatchObject({
+        paddingLeft: "5px",
+        paddingRight: "5px",
+        columnGap: "9px",
+        gap: "7px",
+      });
+      expect(getComputedStyle(target)).toMatchObject({
+        paddingLeft: "12px",
+        paddingRight: "12px",
+        columnGap: "8px",
+        gap: "8px",
+        paddingTop: "3px",
+      });
+      expect(getComputedStyle(target).getPropertyValue("color")).toBe("rgb(255, 0, 0)");
+      handle.restore();
+      expect(globalThis.getComputedStyle).toBe(nativeGetComputedStyle);
+      expect(getComputedStyle(target).cssText).toBe(before);
+      expect(getComputedStyle(target).paddingLeft).toBe("5px");
+      expect(getComputedStyle(target).gap).toBe("7px");
+      expect(getComputedStyle(unrelated).cssText).toBe(before);
+    } finally {
+      unrelated.remove();
+      target.remove();
+    }
+  });
+
+  it.each(["inner", "outer", "all"])("restores stacked styles via %s", (first) => {
+    const outer = installToolbarLayout({ paddingX: 6, gap: 2 });
+    const inner = installToolbarLayout({ paddingX: 12, gap: 8 });
+    expect(getComputedStyle(bar())).toMatchObject({ paddingLeft: "12px", gap: "8px" });
+    if (first === "inner") {
+      inner.restore();
+      expect(getComputedStyle(bar())).toMatchObject({ paddingLeft: "6px", gap: "2px" });
+      outer.restore();
+    } else if (first === "outer") {
+      outer.restore();
+      expect(getComputedStyle(bar())).toMatchObject({ paddingLeft: "12px", gap: "8px" });
+      inner.restore();
+    } else {
+      restoreToolbarLayouts();
+    }
+    expect(isPristine()).toBe(true);
+  });
+
+  it("delivers measured rectangles for every target and updates them on setters", () => {
+    const handle = installToolbarLayout({ barWidth: 500, itemWidths: { a: 123 }, rootHeight: 42 });
+    const targets = [bar(), item("a"), root(), document.createElement("div")];
+    const callback = vi.fn<ResizeObserverCallback>();
+    const observer = new ResizeObserver(callback);
+    for (const target of targets) observer.observe(target);
+    handle.flush();
+    const entries = callback.mock.lastCall![0];
+    expect(entries.map((entry) => entry.target)).toEqual(targets);
+    expect(entries.map((entry) => [entry.contentRect.width, entry.contentRect.height])).toEqual([
+      [500, 0],
+      [123, 0],
+      [500, 42],
+      [0, 0],
+    ]);
+    expect(entries[1]?.contentRect.toJSON()).toMatchObject({ x: 0, y: 0, right: 123, bottom: 0 });
+    handle.setItemWidth("a", 150);
+    expect(callback.mock.lastCall?.[0][1]?.contentRect.width).toBe(150);
+    handle.resize(600);
+    expect(callback.mock.lastCall?.[0][0]?.contentRect.width).toBe(600);
+    handle.setRootHeight(64);
+    expect(callback.mock.lastCall?.[0][2]?.contentRect.height).toBe(64);
+    expect(entries[1]?.contentRect.width).toBe(123);
+  });
+
+  it("defers width notifications and lets a selected observer deliver its own entries", () => {
+    const handle = installToolbarLayout();
+    const barCallback = vi.fn<ResizeObserverCallback>();
+    const itemCallback = vi.fn<ResizeObserverCallback>();
+    const barObserver = new ResizeObserver(barCallback);
+    const itemObserver = new ResizeObserver(itemCallback);
+    const barTarget = bar();
+    const itemTarget = item("a");
+    barObserver.observe(barTarget);
+    itemObserver.observe(itemTarget);
+    const observers = handle.getObservers();
+    const barHandle = observers.find((observer) => observer.getTargets().includes(barTarget))!;
+    const itemHandle = observers.find((observer) => observer.getTargets().includes(itemTarget))!;
+
+    handle.setItemWidth("a", 900, false);
+    handle.resize(999, false);
+    expect(itemTarget.offsetWidth).toBe(900);
+    expect(barTarget.clientWidth).toBe(999);
+    expect(barCallback).not.toHaveBeenCalled();
+    expect(itemCallback).not.toHaveBeenCalled();
+    itemHandle.flush();
+    expect(barCallback).not.toHaveBeenCalled();
+    expect(itemCallback).toHaveBeenCalledTimes(1);
+    expect(itemCallback.mock.lastCall?.[0][0]?.contentRect.width).toBe(900);
+    barHandle.flush();
+    expect(barCallback).toHaveBeenCalledTimes(1);
+    expect(itemCallback).toHaveBeenCalledTimes(1);
+    expect(barCallback.mock.lastCall?.[0][0]?.contentRect.width).toBe(999);
+
+    itemObserver.disconnect();
+    itemHandle.flush();
+    expect(itemCallback).toHaveBeenCalledTimes(1);
+    handle.restore();
+    barHandle.flush();
+    expect(barCallback).toHaveBeenCalledTimes(1);
+  });
+
+  it("inspects target snapshots through observation changes and disconnect", () => {
+    const handle = installToolbarLayout();
+    expect(handle.getObservers()).toEqual([]);
+    const observer = new ResizeObserver(() => {});
+    const handles = handle.getObservers();
+    const observed = handles[0]!;
+    expect(observed.getTargets()).toEqual([]);
+    const a = item("a");
+    const b = item("b");
+    observer.observe(a);
+    observer.observe(b);
+    observer.observe(a);
+    const before = observed.getTargets();
+    expect(before).toEqual([a, b]);
+    observer.unobserve(a);
+    expect(observed.getTargets()).toEqual([b]);
+    expect(before).toEqual([a, b]);
+    observer.disconnect();
+    expect(observed.getTargets()).toEqual([]);
+    expect(handle.getObservers()).toEqual(handles);
+    observer.observe(a);
+    expect(observed.getTargets()).toEqual([a]);
+    new ResizeObserver(() => {});
+    expect(handles).toHaveLength(1);
+    expect(handle.getObservers()).toHaveLength(2);
+  });
+
+  it("keeps observer inspection and selective delivery owned by their install", () => {
+    const outer = installToolbarLayout();
+    const callback = vi.fn<ResizeObserverCallback>();
+    const observer = new ResizeObserver(callback);
+    observer.observe(bar());
+    const outerObserver = outer.getObservers()[0]!;
+    const inner = installToolbarLayout({ barWidth: 222 });
+    expect(inner.getObservers()).toEqual([]);
+    outerObserver.flush();
+    expect(callback.mock.lastCall?.[0][0]?.contentRect.width).toBe(222);
+    outer.restore();
+    outerObserver.flush();
+    expect(callback).toHaveBeenCalledTimes(1);
+    expect(outer.getObservers()).toEqual([]);
+    inner.restore();
   });
 
   it("starts from, and returns to, jsdom's own implementations", () => {

@@ -197,14 +197,60 @@ rescheduling itself faster than time is advancing rather than a legitimate test.
 the first firing and every recurring one after it, and leaves an `Infinity` delay
 alone as a legitimate "never fires" interval rather than treating it as a runaway.
 
-One caveat on the fake layout: it patches `HTMLElement.prototype.offsetWidth` and
-`clientWidth` globally for the duration of the test, so it will fight a test that
-stubs those for its own components.
+One caveat on the fake layout: it patches `HTMLElement.prototype.offsetWidth`,
+`clientWidth`, `getComputedStyle` and `ResizeObserver` for as long as any install
+is live, so it will fight a test that stubs those for its own components.
+`getComputedStyle` is wrapped even when padding and gap are omitted; restoring the
+last live install replaces any stub installed after the fake with the original
+implementation.
 
-Another: its `ResizeObserver` fires every callback with an **empty entry array**, so
-code under test has to re-read `offsetWidth` / `getBoundingClientRect()` from the
-element rather than `entries[0].contentRect` — core does exactly that. Code that
-trusts the entries sees nothing change here.
+`layout: { paddingX: 12, gap: 8 }` reports 12px of padding on **each** horizontal
+side and an 8px gap between items and regions. Omitted options leave the original
+computed styles unchanged, preserving core's fallback when jsdom cannot resolve
+them. Explicit `0` reports `0px`. These options also work with
+`installToolbarLayout()`, whose `setPaddingX(padding)` and `setGap(gap)` setters
+update the measurement and notify every observer. Wrap direct setter calls in
+`act()`, as with `resize()`. Computed-style overrides apply only to elements with
+`data-dtb-part`; other elements retain their original computed style.
+Only the camelCase accessors `paddingLeft`, `paddingRight`, `columnGap` and `gap`
+are intercepted; calls such as `getPropertyValue("padding-left")` still return the
+original computed value.
+
+The fake `ResizeObserver` delivers one entry per observed target on `flush()` and
+notifying setter calls. Unlike a real `ResizeObserver`, `observe()` does not deliver
+an initial entry. `contentRect` uses the fake width and, for the root, `rootHeight`;
+other heights are zero. These are synthetic measurements, without CSS box-model
+calculation. Box-size arrays are empty. Unobserved and disconnected targets receive
+no entries. Nested installs report the topmost install's measurements, matching DOM
+reads.
+
+`resize(width, notify = true)` and `setItemWidth(id, width, notify = true)` accept
+`false` to change a measurement without firing any observer. To deliver only an
+item resize, select its observer from `getObservers()` and call that observer's
+`flush()`:
+
+```tsx
+const layout = installToolbarLayout({ barWidth: 1000, itemWidth: 60, gap: 2 });
+const { toolbar, unmount } = mountToolbar(null, { extensions });
+const items = layout.getObservers().find((observer) =>
+  observer.getTargets().includes(toolbar.item("a")!),
+)!;
+layout.setItemWidth("a", 900, false);
+act(() => items.flush());
+unmount();
+expect(items.getTargets()).toEqual([]);
+layout.restore();
+```
+
+`getObservers()` returns a snapshot of `ToolbarLayoutObserver` handles owned by
+that install, in construction order, including observers with no current targets.
+Each handle exposes only `getTargets()` and `flush()`. `getTargets()` returns a
+fresh readonly snapshot of the actual observed elements, so later calls reflect
+`observe()`, `unobserve()` and `disconnect()`. Neither snapshot exposes the fake's
+mutable collections or callbacks. Save a handle before unmounting to inspect its
+targets afterward. `flush()` does nothing without targets or after the install is
+restored. Restoring clears the install's observer list; saved handles remain
+inspectable.
 
 Its teardown is tied to the rendered tree, so `unmount()`, Testing Library's
 `cleanup()` and RTL's auto-cleanup all restore the real prototypes — a test that

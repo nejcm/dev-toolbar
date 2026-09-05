@@ -604,10 +604,9 @@ Escape must call `stopPropagation()` — `/ext/command-menu` does.
 
 Where there is no `ResizeObserver` (SSR, a bare jsdom), nothing collapses — the bar
 renders everything rather than guessing. `@nejcm/dev-toolbar/testing` ships
-`installToolbarLayout()` to make the collapse testable under jsdom; its fake
-`ResizeObserver` hands every callback an empty entry array, so it only works for code
-that re-measures from the element (`offsetWidth`, `getBoundingClientRect()`) rather
-than reading `entries[0].contentRect` — which is what core itself does.
+`installToolbarLayout()` to make the collapse testable under jsdom. Its fake
+`ResizeObserver` delivers one entry per observed target with a synthetic
+`contentRect`, while core re-measures from the DOM regardless.
 
 The `overlay` slot is exempt from all of this. It renders once, uncollapsed, for as
 long as the extension is present, not hidden and the bar is visible — because a compact
@@ -784,8 +783,9 @@ Testing it: [`@nejcm/dev-toolbar/testing`](./testing.md) is the whole surface �
 That page is the reference; three things about it are architecture rather than API.
 
 **The fake layout is global state, made safe twice over.** It patches
-`HTMLElement.prototype` and `globalThis.ResizeObserver`, which the whole file
-shares. `installToolbarLayout()` therefore keeps a module-level *stack* of live
+`HTMLElement.prototype`, `globalThis.ResizeObserver` and
+`globalThis.getComputedStyle`, which the whole file shares.
+`installToolbarLayout()` therefore keeps a module-level *stack* of live
 installs rather than each install remembering "the previous value" — the newest
 install measures, the prototype is patched once when the stack fills and
 unpatched once when it empties, so `restore()` is idempotent and

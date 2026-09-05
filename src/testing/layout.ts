@@ -19,21 +19,36 @@ export interface InstallToolbarLayoutOptions {
   itemWidths?: Record<string, number>;
   /** Width reported for the `⋮` button. Default `28`. */
   overflowButtonWidth?: number;
+  /** Padding on each horizontal side of toolbar parts. Omitted leaves computed styles unchanged. */
+  paddingX?: number;
+  /** Gap between toolbar items and regions. Omitted leaves computed styles unchanged. */
+  gap?: number;
   /** Height reported for the toolbar root, i.e. `--dev-toolbar-height`. Default `30`. */
   rootHeight?: number;
 }
 
+export interface ToolbarLayoutObserver {
+  /** Returns a snapshot of this observer's current targets, empty after disconnect. */
+  getTargets(): readonly Element[];
+  /** Fires only this observer with its current targets. Wrap in `act()` yourself. */
+  flush(): void;
+}
+
+/** Only width setters can defer delivery, to isolate bar and item observer callbacks in tests. */
 export interface ToolbarLayoutHandle {
-  /** Sets the bar width and notifies every observer. Wrap in `act()` yourself. */
-  resize(width: number): void;
-  /** Overrides one item's measured width. */
-  setItemWidth(extensionId: string, width: number): void;
+  /** Sets the bar width; pass `false` to defer notification. Wrap in `act()` yourself. */
+  resize(width: number, notify?: boolean): void;
+  /** Overrides one item's measured width; pass `false` to defer notification. */
+  setItemWidth(extensionId: string, width: number, notify?: boolean): void;
   /** Sets the reported root height (drives `--dev-toolbar-height`). */
   setRootHeight(height: number): void;
-  /**
-   * Fires every observer without changing anything. Callbacks receive an empty
-   * entry array, so they must re-read the DOM to see a size.
-   */
+  /** Sets horizontal padding and notifies every observer. Wrap in `act()` yourself. */
+  setPaddingX(padding: number): void;
+  /** Sets the gap and notifies every observer. Wrap in `act()` yourself. */
+  setGap(gap: number): void;
+  /** Returns observer handles in construction order, including disconnected observers. */
+  getObservers(): readonly ToolbarLayoutObserver[];
+  /** Fires every observer with one measured entry per observed target. */
   flush(): void;
   /**
    * Retires this install.
@@ -47,15 +62,22 @@ export interface ToolbarLayoutHandle {
   restore(): void;
 }
 
-type Observer = { callback: ResizeObserverCallback; instance: ResizeObserver };
+type Observer = {
+  callback: ResizeObserverCallback;
+  instance: ResizeObserver;
+  targets: Set<Element>;
+};
 
 interface Install {
+  paddingX: number | undefined;
+  gap: number | undefined;
   barWidth: number;
   rootHeight: number;
   defaultItemWidth: number;
   overflowButtonWidth: number;
   itemWidths: Map<string, number>;
   observers: Set<Observer>;
+  observerHandles: ToolbarLayoutObserver[];
   live: boolean;
 }
 
@@ -66,6 +88,7 @@ interface Baseline {
   rect: () => DOMRect;
   resizeObserver: typeof ResizeObserver | undefined;
   hadResizeObserver: boolean;
+  getComputedStyle: typeof getComputedStyle;
 }
 
 /** Live installs, most recent last. The topmost one answers every measurement. */
@@ -86,8 +109,14 @@ class FakeResizeObserver implements ResizeObserver {
   private readonly owner: Install | undefined;
   private readonly targets = new Set<Element>();
   constructor(callback: ResizeObserverCallback) {
-    this.entry = { callback, instance: this };
+    this.entry = { callback, instance: this, targets: this.targets };
     this.owner = current();
+    this.owner?.observerHandles.push({
+      getTargets: () => Array.from(this.targets),
+      flush: () => {
+        if (this.owner?.live && this.owner.observers.has(this.entry)) deliver(this.entry);
+      },
+    });
   }
   observe(target: Element): void {
     this.targets.add(target);
@@ -103,18 +132,34 @@ class FakeResizeObserver implements ResizeObserver {
   }
 }
 
-const widthOf = (element: HTMLElement): number => {
+const widthOf = (element: Element): number => {
   const install = current();
   if (!install) return 0;
-  const part = element.dataset["dtbPart"];
+  const part = element.getAttribute("data-dtb-part");
   if (part === "bar" || part === "root") return install.barWidth;
   if (part === "overflow-button") return install.overflowButtonWidth;
-  const id = element.dataset["dtbExtId"];
+  const id = element.getAttribute("data-dtb-ext-id");
   if (part === "item" && id) {
     return install.itemWidths.get(id) ?? install.defaultItemWidth;
   }
   return 0;
 };
+
+function deliver(observer: Observer): void {
+  const entries = Array.from(observer.targets, (target): ResizeObserverEntry => ({
+    target,
+    contentRect: new DOMRectReadOnly(
+      0,
+      0,
+      widthOf(target),
+      target.getAttribute("data-dtb-part") === "root" ? (current()?.rootHeight ?? 0) : 0,
+    ),
+    borderBoxSize: [],
+    contentBoxSize: [],
+    devicePixelContentBoxSize: [],
+  }));
+  if (entries.length > 0) observer.callback(entries, observer.instance);
+}
 
 function patch(): void {
   const proto = HTMLElement.prototype as HTMLElement & Record<string, unknown>;
@@ -125,9 +170,37 @@ function patch(): void {
     rect: proto.getBoundingClientRect,
     resizeObserver: globals.ResizeObserver,
     hadResizeObserver: "ResizeObserver" in globals,
+    getComputedStyle: globalThis.getComputedStyle,
   };
 
   globals.ResizeObserver = FakeResizeObserver as unknown as typeof ResizeObserver;
+
+  const previousStyle = baseline.getComputedStyle;
+  globalThis.getComputedStyle = (element, pseudo) => {
+    const style = previousStyle.call(globalThis, element, pseudo);
+    const install = current();
+    if (
+      !install ||
+      !element.hasAttribute("data-dtb-part") ||
+      (install.paddingX === undefined && install.gap === undefined)
+    )
+      return style;
+    return new Proxy(style, {
+      get(target, property, receiver) {
+        if (
+          install.paddingX !== undefined &&
+          (property === "paddingLeft" || property === "paddingRight")
+        ) {
+          return `${install.paddingX}px`;
+        }
+        if (install.gap !== undefined && (property === "columnGap" || property === "gap")) {
+          return `${install.gap}px`;
+        }
+        const value = Reflect.get(target, property, receiver);
+        return typeof value === "function" ? value.bind(target) : value;
+      },
+    });
+  };
 
   for (const name of ["offsetWidth", "clientWidth"] as const) {
     Object.defineProperty(proto, name, {
@@ -163,6 +236,7 @@ function patch(): void {
 function unpatch(): void {
   if (!baseline) return;
   const { proto, offsetWidth, clientWidth, rect, resizeObserver, hadResizeObserver } = baseline;
+  globalThis.getComputedStyle = baseline.getComputedStyle;
   baseline = null;
 
   if (hadResizeObserver) {
@@ -194,6 +268,7 @@ function deactivate(install: Install): void {
   if (!install.live) return;
   install.live = false;
   install.observers.clear();
+  install.observerHandles.length = 0;
   const at = stack.indexOf(install);
   if (at !== -1) stack.splice(at, 1);
   if (stack.length === 0) unpatch();
@@ -212,10 +287,8 @@ const installs = new WeakMap<ToolbarLayoutHandle, Install>();
  * it hands measurement back to the one underneath. `restore()` is idempotent
  * and order-independent.
  *
- * The fake `ResizeObserver` invokes callbacks with an **empty entry array**, so
- * code under test must re-read the DOM (`offsetWidth`, `getBoundingClientRect()`)
- * rather than `entries[0].contentRect` — core does exactly that. An extension
- * that trusts the entries needs its own fake.
+ * The fake `ResizeObserver` reports each target with its fake width and root
+ * height (zero height for other targets). Box-size arrays are empty.
  */
 export function installToolbarLayout(
   options: InstallToolbarLayoutOptions = {},
@@ -225,34 +298,48 @@ export function installToolbarLayout(
   }
 
   const install: Install = {
+    paddingX: options.paddingX,
+    gap: options.gap,
     barWidth: options.barWidth ?? 800,
     rootHeight: options.rootHeight ?? 30,
     defaultItemWidth: options.itemWidth ?? 80,
     overflowButtonWidth: options.overflowButtonWidth ?? 28,
     itemWidths: new Map(Object.entries(options.itemWidths ?? {})),
     observers: new Set<Observer>(),
+    observerHandles: [],
     live: false,
   };
 
   const flush = () => {
     // Copied: a callback may disconnect its observer mid-flush.
     for (const observer of Array.from(install.observers)) {
-      observer.callback([], observer.instance);
+      deliver(observer);
     }
   };
 
   const handle: ToolbarLayoutHandle = {
-    resize(width) {
+    resize(width, notify = true) {
       install.barWidth = width;
-      flush();
+      if (notify) flush();
     },
-    setItemWidth(extensionId, width) {
+    setItemWidth(extensionId, width, notify = true) {
       install.itemWidths.set(extensionId, width);
-      flush();
+      if (notify) flush();
     },
     setRootHeight(height) {
       install.rootHeight = height;
       flush();
+    },
+    setPaddingX(padding) {
+      install.paddingX = padding;
+      flush();
+    },
+    setGap(gap) {
+      install.gap = gap;
+      flush();
+    },
+    getObservers() {
+      return [...install.observerHandles];
     },
     flush,
     restore() {

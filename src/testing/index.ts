@@ -37,7 +37,11 @@ export type {
 } from "./mockBus";
 
 export { installToolbarLayout } from "./layout";
-export type { InstallToolbarLayoutOptions, ToolbarLayoutHandle } from "./layout";
+export type {
+  InstallToolbarLayoutOptions,
+  ToolbarLayoutHandle,
+  ToolbarLayoutObserver,
+} from "./layout";
 
 export { installClipboard } from "./clipboard";
 export type { ClipboardStub, ClipboardWrite } from "./clipboard";
