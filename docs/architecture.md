@@ -607,6 +607,8 @@ renders everything rather than guessing. `@nejcm/dev-toolbar/testing` ships
 `installToolbarLayout()` to make the collapse testable under jsdom. Its fake
 `ResizeObserver` delivers one entry per observed target with a synthetic
 `contentRect`, while core re-measures from the DOM regardless.
+Core's own overflow tests use the published fake, so consumers and core test the
+same measurement seam.
 
 The `overlay` slot is exempt from all of this. It renders once, uncollapsed, for as
 long as the extension is present, not hidden and the bar is visible — because a compact

@@ -197,6 +197,9 @@ rescheduling itself faster than time is advancing rather than a legitimate test.
 the first firing and every recurring one after it, and leaves an `Infinity` delay
 alone as a legitimate "never fires" interval rather than treating it as a runaway.
 
+Core's own overflow tests use the published fake layout, so consumers and core test
+the same measurement seam.
+
 One caveat on the fake layout: it patches `HTMLElement.prototype.offsetWidth`,
 `clientWidth`, `getComputedStyle` and `ResizeObserver` for as long as any install
 is live, so it will fight a test that stubs those for its own components.
