@@ -8,7 +8,7 @@
  * install that captured a *previous* value which was itself a fake, and then
  * put it back.
  */
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { installToolbarLayout } from "../layout";
 
 // Captured before this file installs anything, so "restored" means restored to
@@ -54,6 +54,45 @@ const isPristine = () =>
   "ResizeObserver" in globalThis === hadResizeObserver;
 
 describe("installToolbarLayout", () => {
+  it("keeps observing remaining targets after unobserve()", () => {
+    const handle = installToolbarLayout();
+    const callback = vi.fn<ResizeObserverCallback>();
+    const observer = new ResizeObserver(callback);
+    const a = item("a");
+    const b = item("b");
+
+    observer.observe(a);
+    observer.observe(b);
+    handle.flush();
+    expect(callback).toHaveBeenCalledExactlyOnceWith([], observer);
+
+    observer.unobserve(a);
+    handle.flush();
+    expect(callback).toHaveBeenCalledTimes(2);
+    expect(callback).toHaveBeenLastCalledWith([], observer);
+
+    observer.unobserve(b);
+    handle.flush();
+    expect(callback).toHaveBeenCalledTimes(2);
+
+    observer.observe(a);
+    observer.observe(a);
+    handle.flush();
+    expect(callback).toHaveBeenCalledTimes(3);
+
+    observer.disconnect();
+    handle.flush();
+    expect(callback).toHaveBeenCalledTimes(3);
+
+    observer.observe(b);
+    handle.flush();
+    expect(callback).toHaveBeenCalledTimes(4);
+    observer.unobserve(b);
+    handle.flush();
+    expect(callback).toHaveBeenCalledTimes(4);
+    handle.restore();
+  });
+
   it("starts from, and returns to, jsdom's own implementations", () => {
     expect(isPristine()).toBe(true);
     const handle = installToolbarLayout({ barWidth: 123 });

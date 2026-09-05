@@ -13,9 +13,10 @@ import type { EnvironmentOptions } from "../index";
 let written: readonly string[] = [];
 let clipboard: ClipboardStub;
 
-const mount = (options: EnvironmentOptions = {}) => {
+const mount = (options: EnvironmentOptions = {}, instanceId = "test") => {
   const extension = environment(options);
   const result = mountToolbar(null, {
+    instanceId,
     extensions: [extension],
     layout: { barWidth: 900, itemWidth: 200 },
   });
@@ -59,7 +60,7 @@ describe("the compact chip", () => {
   });
 
   it("grades staging as warn and local as ok", () => {
-    const staging = mount({ context: { environment: "staging" } });
+    const staging = mount({ context: { environment: "staging" } }, "staging");
     expect(
       staging.toolbar
         .item("environment")
@@ -67,10 +68,13 @@ describe("the compact chip", () => {
         ?.getAttribute("data-dtb-severity"),
     ).toBe("warn");
 
-    const local = mount({
-      id: "environment-2",
-      context: { environment: "local" },
-    });
+    const local = mount(
+      {
+        id: "environment-2",
+        context: { environment: "local" },
+      },
+      "local",
+    );
     expect(
       local.toolbar
         .item("environment-2")

@@ -49,11 +49,22 @@ export interface ToolbarHandle {
    * yourself when a test needs the throw.
    */
   context(): DevToolbarContextValue;
-  /** `null` when the toolbar is hidden or disabled — it is not in the DOM then. */
+  /**
+   * The mounted toolbar's root, or `null` when hidden or disabled. Two toolbars
+   * sharing an `instanceId` in the same container resolve to the first, and share
+   * its storage namespace and height variable.
+   */
   root(): HTMLElement | null;
   bar(): HTMLElement | null;
-  /** First element with the given `data-dtb-part`. */
+  /**
+   * First element with the given `data-dtb-part` inside this toolbar's root.
+   * Consumer UI rendered as `children` is outside the root and is not reachable.
+   */
   part(part: string): HTMLElement | null;
+  /**
+   * All elements with the given `data-dtb-part` inside this toolbar's root.
+   * Consumer UI rendered as `children` is outside the root and is not reachable.
+   */
   parts(part: string): HTMLElement[];
   /**
    * The bar item for an extension. Collapsed items aren't rendered while the
@@ -241,12 +252,20 @@ export function renderWithToolbar(
             : `\\${(char.codePointAt(0) ?? 0).toString(16)} `,
         );
 
-  const root = () => document.querySelector<HTMLElement>('[data-dtb-part="root"]');
+  const target = props.container ?? document.body;
+  const rootSelector = `[data-dtb-part="root"][data-dtb-instance="${escape(props.instanceId ?? DEFAULT_INSTANCE_ID)}"]`;
+  const root = () => target.querySelector<HTMLElement>(rootSelector);
+  const query = <T extends HTMLElement = HTMLElement>(selector: string): T | null =>
+    root()?.querySelector<T>(selector) ?? null;
   const part = (name: string) =>
-    document.querySelector<HTMLElement>(`[data-dtb-part="${escape(name)}"]`);
-  const parts = (name: string) => [
-    ...document.querySelectorAll<HTMLElement>(`[data-dtb-part="${escape(name)}"]`),
-  ];
+    name === "root" ? root() : query(`[data-dtb-part="${escape(name)}"]`);
+  const parts = (name: string) => {
+    const element = root();
+    if (!element) return [];
+    return name === "root"
+      ? [element]
+      : [...element.querySelectorAll<HTMLElement>(`[data-dtb-part="${escape(name)}"]`)];
+  };
   const idsOf = (nodes: HTMLElement[]) =>
     nodes
       .map((node) => node.dataset["dtbExtId"])
@@ -264,26 +283,16 @@ export function renderWithToolbar(
     bar: () => part("bar"),
     part,
     parts,
-    item: (id) =>
-      document.querySelector<HTMLElement>(
-        `[data-dtb-part="item"][data-dtb-ext-id="${escape(id)}"]`,
-      ),
-    panel: (id) =>
-      document.querySelector<HTMLElement>(
-        `[data-dtb-part="panel"][data-dtb-ext-id="${escape(id)}"]`,
-      ),
-    overlay: (id) =>
-      document.querySelector<HTMLElement>(
-        `[data-dtb-part="overlay"][data-dtb-ext-id="${escape(id)}"]`,
-      ),
+    item: (id) => query(`[data-dtb-part="item"][data-dtb-ext-id="${escape(id)}"]`),
+    panel: (id) => query(`[data-dtb-part="panel"][data-dtb-ext-id="${escape(id)}"]`),
+    overlay: (id) => query(`[data-dtb-part="overlay"][data-dtb-ext-id="${escape(id)}"]`),
     errorChip: (id) =>
-      document.querySelector<HTMLElement>(
+      query(
         id === undefined
           ? '[data-dtb-part="error-chip"]'
           : `[data-dtb-part="error-chip"][data-dtb-ext-id="${escape(id)}"]`,
       ),
-    overflowButton: () =>
-      document.querySelector<HTMLButtonElement>('[data-dtb-part="overflow-button"]'),
+    overflowButton: () => query<HTMLButtonElement>('[data-dtb-part="overflow-button"]'),
     overflowMenu: () => part("overflow-menu"),
     overflowedIds() {
       // Not read from the menu: its items only exist while open. Everything
@@ -298,9 +307,9 @@ export function renderWithToolbar(
     isOverflowed: (id) => toolbar.overflowedIds().includes(id),
     barIds: () =>
       idsOf([
-        ...document.querySelectorAll<HTMLElement>(
+        ...(root()?.querySelectorAll<HTMLElement>(
           '[data-dtb-part="region"] > [data-dtb-part="item"]',
-        ),
+        ) ?? []),
       ]),
     openOverflow() {
       const button = toolbar.overflowButton();
