@@ -25,7 +25,7 @@
  * override is a state the developer chose, not a drawing — repainting the
  * application every time you press the hide shortcut would be unusable.
  */
-import { createThrottledStore, redact } from "../../runtime";
+import { createDerivedStore, redact } from "../../runtime";
 import { createPoller, parseRecord } from "@nejcm/dev-toolbar/kit";
 import type { RedactOptions, ThrottledStore } from "../../runtime";
 import type { ExtensionRuntimeApi, ToolbarStorage } from "../../core/contract";
@@ -397,7 +397,6 @@ export function createThemeEditorRuntime(
 
   const maskText = redactOptions?.mask ?? MASK_SENTINEL;
 
-  let revision = 0;
   let storage: ToolbarStorage | null = null;
   let overrides = emptyMap();
   let surface: ThemeSurface = surfaces[0] as ThemeSurface;
@@ -754,7 +753,7 @@ export function createThemeEditorRuntime(
     return read;
   };
 
-  const buildSnapshot = (): ThemeSnapshot => {
+  const buildSnapshot = (revision: number): ThemeSnapshot => {
     const definitions = readTokens();
     const views: TokenView[] = [];
     const seen = new Set<string>();
@@ -881,9 +880,9 @@ export function createThemeEditorRuntime(
    * application's render instead of degrading to an error chip. Later calls
    * run inside a `setInterval`, where nothing could catch them anyway.
    */
-  const build = (): ThemeSnapshot => {
+  const build = (revision: number): ThemeSnapshot => {
     try {
-      return buildSnapshot();
+      return buildSnapshot(revision);
     } catch (error) {
       // eslint-disable-next-line no-console
       console.error(
@@ -926,19 +925,16 @@ export function createThemeEditorRuntime(
       )
       .join("|");
 
-  const store = createThrottledStore<ThemeSnapshot>(build(), {
+  const store = createDerivedStore<ThemeSnapshot>(build, {
     intervalMs: 250,
-    equals: (a, b) => signature(a) === signature(b),
+    signature,
   });
 
-  // `revision` advances on *publish*, not on build: the export helpers build
-  // without publishing, and bumping there would make revision a count of reads.
   const publish = () => {
     // Before the revision bump, so the snapshot this publishes already
     // describes the surface the edits are actually on.
     reconcileSurface();
-    revision += 1;
-    store.set(build());
+    store.rebuild();
     store.flush();
   };
 
@@ -1112,7 +1108,7 @@ export function createThemeEditorRuntime(
       : `${count} value${count === 1 ? " was" : "s were"} masked before this left the panel`;
 
   const cssText = (): string => {
-    const snapshot = build();
+    const snapshot = store.read();
     const rows = exportable(snapshot);
     if (rows.length === 0) {
       return `/* No theme overrides are active. */\n`;
@@ -1156,7 +1152,7 @@ export function createThemeEditorRuntime(
     recipe: ThemeRecipe;
     omitted: number;
   } => {
-    const snapshot = build();
+    const snapshot = store.read();
     const overridesOut: Record<string, string> = {};
     let omitted = 0;
     for (const view of exportable(snapshot)) {
@@ -1245,7 +1241,7 @@ export function createThemeEditorRuntime(
    * this deterministic, versioned, validated half.
    */
   const figmaText = (): string => {
-    const snapshot = build();
+    const snapshot = store.read();
     const rows = exportable(snapshot);
     const out: Record<string, Record<string, unknown>> = {};
     for (const view of rows) {
@@ -1421,7 +1417,7 @@ export function createThemeEditorRuntime(
     shareLink,
 
     diagnostics() {
-      const snapshot = build();
+      const snapshot = store.read();
       const payload = {
         generatedAt: nowIso(now()),
         surface: snapshot.surface.id,

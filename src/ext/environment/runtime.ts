@@ -9,7 +9,7 @@
  * **every value goes through `redact()` once, on the way in** — the panel and
  * clipboard read the same redacted snapshot, and the raw bag is never stored.
  */
-import { createThrottledStore, redact, redactUrl } from "../../runtime";
+import { createDerivedStore, redact, redactUrl } from "../../runtime";
 import { createPoller } from "@nejcm/dev-toolbar/kit";
 import type { RedactOptions, ThrottledStore } from "../../runtime";
 import type { ExtensionRuntimeApi, ToolbarStorage } from "../../core/contract";
@@ -288,7 +288,6 @@ export function createEnvironmentRuntime(
   const { context, pollMs = DEFAULT_POLL_MS, fields, detect = true } = options;
   const allowed = fields === undefined ? null : new Set<string>(fields);
 
-  let revision = 0;
   let storage: ToolbarStorage | null = null;
 
   const readContext = (): EnvironmentContext => {
@@ -306,7 +305,7 @@ export function createEnvironmentRuntime(
     return context ?? {};
   };
 
-  const buildSnapshot = (): EnvironmentSnapshot => {
+  const buildSnapshot = (revision: number): EnvironmentSnapshot => {
     const ctx = readContext();
     const impersonation = formatImpersonation(ctx.impersonating);
 
@@ -404,9 +403,9 @@ export function createEnvironmentRuntime(
    * calls run inside a `setInterval`, where a throw is uncatchable by anybody.
    * So: log once and degrade to a snapshot describing what happened.
    */
-  const build = (): EnvironmentSnapshot => {
+  const build = (revision: number): EnvironmentSnapshot => {
     try {
-      return buildSnapshot();
+      return buildSnapshot(revision);
     } catch (error) {
       // eslint-disable-next-line no-console
       console.error(
@@ -415,12 +414,12 @@ export function createEnvironmentRuntime(
           "`extra` is the usual cause.",
         error,
       );
-      return failedSnapshot();
+      return failedSnapshot(revision);
     }
   };
 
   /** What the panel shows when the context could not be read at all. */
-  const failedSnapshot = (): EnvironmentSnapshot => {
+  const failedSnapshot = (revision: number): EnvironmentSnapshot => {
     return {
       revision,
       at: now(),
@@ -455,15 +454,12 @@ export function createEnvironmentRuntime(
   const signature = (snapshot: EnvironmentSnapshot): string =>
     snapshot.fields.map((field) => `${field.id}=${field.value}`).join("|");
 
-  const store = createThrottledStore<EnvironmentSnapshot>(build(), {
+  const store = createDerivedStore<EnvironmentSnapshot>(build, {
     intervalMs: 250,
-    equals: (a, b) => signature(a) === signature(b),
+    signature,
   });
 
-  const publish = () => {
-    revision += 1;
-    store.set(build());
-  };
+  const publish = store.rebuild;
 
   return {
     store,
@@ -514,7 +510,7 @@ export function createEnvironmentRuntime(
     },
 
     snapshotText() {
-      const snapshot = build();
+      const snapshot = store.read();
       const lines: string[] = [];
       for (const field of snapshot.fields) {
         if (field.source === "missing") continue;
@@ -532,7 +528,7 @@ export function createEnvironmentRuntime(
     },
 
     diagnostics() {
-      const snapshot = build();
+      const snapshot = store.read();
       const payload: Record<string, unknown> = {
         generatedAt: new Date().toISOString(),
         environment: snapshot.kind,
