@@ -13,6 +13,14 @@
 /** At-rules whose block holds further rules, and is therefore descended into. */
 const NESTING_AT_RULES = new Set(["layer", "media", "supports", "container", "scope"]);
 
+/**
+ * Semicolon-terminated at-rules that carry no rules of their own, and are the
+ * only statement forms this scanner will pass over. Everything else — `@import`
+ * above all, which can pull in a whole unscanned sheet — throws, so the audit
+ * cannot be emptied out by a statement it never looks at.
+ */
+const STATEMENT_AT_RULES = new Set(["charset", "layer"]);
+
 /** At-rules whose block holds no style rules, and is therefore skipped whole. */
 const OPAQUE_AT_RULES = new Set([
   "keyframes",
@@ -107,6 +115,10 @@ export function styleRules(css: string): StyleRule[] {
       if (!text.startsWith("@")) {
         throw new Error(`css-rules: declaration outside a rule ("${text}")`);
       }
+      const name = /^@([\w-]+)/.exec(text)?.[1] ?? "";
+      if (!STATEMENT_AT_RULES.has(name)) {
+        throw new Error(`css-rules: unrecognised at-rule statement "${text}"; refusing to scan`);
+      }
       i += 1;
       continue;
     }
@@ -153,22 +165,239 @@ function splitTopLevel(text: string, separator: string): string[] {
  */
 function subjectCompound(selector: string): string {
   let depth = 0;
-  let quote = "";
   let start = 0;
   for (let i = 0; i < selector.length; i += 1) {
     const char = selector[i] as string;
-    if (quote !== "") {
-      if (char === quote) quote = "";
-      continue;
-    }
-    if (char === '"' || char === "'") quote = char;
-    else if (char === "(" || char === "[") depth += 1;
+    if (char === "(" || char === "[") depth += 1;
     else if (char === ")" || char === "]") depth -= 1;
     else if (depth === 0 && (char === " " || char === ">" || char === "+" || char === "~")) {
       start = i + 1;
     }
   }
   return selector.slice(start);
+}
+
+/**
+ * Functional pseudo-classes taking a selector list, where the subject matches
+ * *some* branch: a condition holds on the subject only if every branch imposes
+ * it.
+ */
+const SELECTOR_LIST_PSEUDOS = new Set(["is", "where", "matches", "any"]);
+
+/**
+ * Pseudo-classes whose argument is a selector the subject must *not* match.
+ * A token inside one is never a positive condition on the subject: it says
+ * what the element is not. The argument is still parsed, so syntax this
+ * scanner does not model throws rather than being waved through.
+ */
+const NEGATION_PSEUDOS = new Set(["not"]);
+
+/**
+ * Pseudo-classes and pseudo-elements that are recognised but say nothing about
+ * whether the subject is toolbar-owned: state, structure, and anything whose
+ * argument constrains descendants rather than the subject. Their arguments are
+ * not parsed. Anything absent from all three sets throws.
+ */
+const NEUTRAL_PSEUDOS = new Set([
+  "active",
+  "after",
+  "any-link",
+  "autofill",
+  "backdrop",
+  "before",
+  "checked",
+  "default",
+  "defined",
+  "dir",
+  "disabled",
+  "empty",
+  "enabled",
+  "file-selector-button",
+  "first-child",
+  "first-letter",
+  "first-line",
+  "first-of-type",
+  "focus",
+  "focus-visible",
+  "focus-within",
+  "fullscreen",
+  "has",
+  "hover",
+  "in-range",
+  "indeterminate",
+  "invalid",
+  "lang",
+  "last-child",
+  "last-of-type",
+  "link",
+  "marker",
+  "modal",
+  "nth-child",
+  "nth-last-child",
+  "nth-last-of-type",
+  "nth-of-type",
+  "only-child",
+  "only-of-type",
+  "open",
+  "optional",
+  "out-of-range",
+  "placeholder",
+  "placeholder-shown",
+  "popover-open",
+  "read-only",
+  "read-write",
+  "required",
+  "root",
+  "selection",
+  "target",
+  "user-invalid",
+  "user-valid",
+  "valid",
+  "visited",
+]);
+
+/** Index just past the `close` matching the `open` character at `from`. */
+function matchingIndex(text: string, from: number, open: string, close: string): number {
+  let depth = 0;
+  for (let i = from; i < text.length; i += 1) {
+    const char = text[i];
+    if (char === open) depth += 1;
+    else if (char === close) {
+      depth -= 1;
+      if (depth === 0) return i + 1;
+    }
+  }
+  throw new Error(`css-rules: unbalanced "${open}" in "${text}"; refusing to classify`);
+}
+
+/**
+ * Attribute values are compared as text, so a `[data-dtb-*]` token inside one
+ * is a string and not a condition. Strip every quoted value before anything
+ * looks for tokens; an unterminated quote — or an escape, which this scanner
+ * does not model — throws.
+ */
+function stripStrings(selector: string): string {
+  if (selector.includes("\\")) {
+    throw new Error(`css-rules: escape in "${selector}"; refusing to classify`);
+  }
+  const stripped = selector.replace(/"[^"]*"|'[^']*'/g, "");
+  if (stripped.includes('"') || stripped.includes("'")) {
+    throw new Error(`css-rules: unbalanced quote in "${selector}"; refusing to classify`);
+  }
+  return stripped;
+}
+
+/**
+ * A compound selector split into the simple selectors it ANDs together: an
+ * element matches the compound only if it matches every piece. Throws on any
+ * syntax this scanner does not model, rather than skipping it.
+ */
+function compoundPieces(compound: string): string[] {
+  const pieces: string[] = [];
+  let current = "";
+  let i = 0;
+  const flush = (): void => {
+    if (current !== "") pieces.push(current);
+    current = "";
+  };
+  while (i < compound.length) {
+    const char = compound[i] as string;
+    if (char === "[") {
+      flush();
+      const end = matchingIndex(compound, i, "[", "]");
+      pieces.push(compound.slice(i, end));
+      i = end;
+      continue;
+    }
+    if (char === ":") {
+      flush();
+      let j = i + 1;
+      if (compound[j] === ":") j += 1;
+      while (j < compound.length && /[\w-]/.test(compound[j] as string)) j += 1;
+      if (compound[j] === "(") j = matchingIndex(compound, j, "(", ")");
+      pieces.push(compound.slice(i, j));
+      i = j;
+      continue;
+    }
+    if (char === "." || char === "#") {
+      flush();
+      current = char;
+      i += 1;
+      continue;
+    }
+    if (/[\w\-*|]/.test(char)) {
+      current += char;
+      i += 1;
+      continue;
+    }
+    throw new Error(
+      `css-rules: unsupported selector syntax in "${compound}"; refusing to classify`,
+    );
+  }
+  flush();
+  return pieces;
+}
+
+interface Pseudo {
+  readonly name: string;
+  readonly args: string;
+}
+
+/** The name and argument of a `:pseudo(...)` piece, rejecting unknown names. */
+function parsePseudo(piece: string): Pseudo {
+  const match = /^::?([\w-]+)(?:\((.*)\))?$/s.exec(piece);
+  if (match === null) {
+    throw new Error(`css-rules: unreadable pseudo "${piece}"; refusing to classify`);
+  }
+  const name = match[1] as string;
+  const args = match[2] ?? "";
+  if (
+    !SELECTOR_LIST_PSEUDOS.has(name) &&
+    !NEGATION_PSEUDOS.has(name) &&
+    !NEUTRAL_PSEUDOS.has(name)
+  ) {
+    throw new Error(`css-rules: unrecognised pseudo "${piece}"; refusing to classify`);
+  }
+  return { name, args };
+}
+
+/**
+ * Does *every* element matching `compound` necessarily carry an attribute
+ * `test` accepts? Mandatory and positive, both load-bearing: a token inside
+ * `:not()` is not a condition the subject meets, and a token in one branch of
+ * `:is()`/`:where()` is not one every matching element meets.
+ */
+function requiresAttribute(compound: string, test: (name: string) => boolean): boolean {
+  let required = false;
+  for (const piece of compoundPieces(compound)) {
+    if (piece.startsWith("[")) {
+      const name = /^\[\s*([\w-]+)/.exec(piece)?.[1];
+      if (name === undefined) {
+        throw new Error(`css-rules: unreadable attribute "${piece}"; refusing to classify`);
+      }
+      if (test(name)) required = true;
+      continue;
+    }
+    if (!piece.startsWith(":")) continue;
+    const { name, args } = parsePseudo(piece);
+    if (SELECTOR_LIST_PSEUDOS.has(name)) {
+      const branches = splitTopLevel(args, ",");
+      if (branches.length === 0) {
+        throw new Error(`css-rules: empty selector list in "${piece}"; refusing to classify`);
+      }
+      // Every branch, evaluated on the branch's own subject: `:is(A B)` puts
+      // its condition on B, the element `:is()` selects, not on A.
+      if (branches.every((branch) => requiresAttribute(subjectCompound(branch), test))) {
+        required = true;
+      }
+      continue;
+    }
+    if (NEGATION_PSEUDOS.has(name)) {
+      // Parsed for its syntax only. Never a positive condition.
+      for (const branch of splitTopLevel(args, ",")) compoundPieces(subjectCompound(branch));
+    }
+  }
+  return required;
 }
 
 /** The zero-specificity opt-out core writes on every element-level default. */
@@ -189,43 +418,52 @@ export interface EmbedGuardAudit {
  * Sort every selector in `css` by whether it can reach into a `data-dtb-embed`
  * subtree, working from the selector text alone — no fixture, no element list.
  *
- * The subject compound (the elements a rule actually styles) decides it:
+ * The subject compound (the elements a rule actually styles) decides it, and
+ * every test on it is *mandatory and positive*: the condition must hold for
+ * every element the selector matches. A token inside `:not()`, a token in only
+ * some branch of `:is()`/`:where()`, and a token inside a quoted attribute
+ * value are all worth nothing.
  *
- * - it contains `[data-dev-toolbar]` → the toolbar root, which an embedded
- *   subtree never is → `root`;
- * - it contains a `[data-dtb-*]` attribute → a toolbar-owned part, kind or
- *   opt-in, which nothing inside an embed frame carries → `keyed`;
+ * - the subject must carry `[data-dev-toolbar]` → the toolbar root, which an
+ *   embedded subtree never is → `root`;
+ * - the subject must carry a `[data-dtb-*]` attribute → a toolbar-owned part,
+ *   kind or opt-in, which nothing inside an embed frame carries → `keyed`;
  * - otherwise the rule styles descendants by element, attribute or state, so
- *   it lands on a vendor's DOM unless it carries {@link EMBED_GUARD} →
- *   `guarded` or `unguarded`.
+ *   it lands on a vendor's DOM unless {@link EMBED_GUARD} is one of the
+ *   subject's own pieces → `guarded` or `unguarded`. A guard reached only
+ *   through an `:is()` branch is not mandatory, and does not count.
  *
  * It fails closed: a selector that is not scoped by `[data-dev-toolbar]` at
- * all throws rather than being sorted, as does any sheet {@link styleRules}
- * cannot scan. The `keyed` exemption is why this is core's invariant and not
- * every sheet's: it holds because every `[data-dtb-*]` element in a core
- * selector's *context* is either the root or an ancestor of the embed frame,
- * so requiring one on the subject is what rules a vendor element out.
+ * all throws rather than being sorted, as does any selector syntax this
+ * scanner does not model and any sheet {@link styleRules} cannot scan.
+ *
+ * The `keyed` exemption is why this is core's invariant and not every sheet's.
+ * What makes it sound is not where the attribute sits in the selector's
+ * context — `[data-dtb-part="region"]` contexts belong to the bar, and the bar
+ * is the panel host's sibling, not the embed frame's ancestor — but that the
+ * *selected* element must itself carry a toolbar-owned attribute. The embed
+ * frame is the boundary the toolbar stops writing those below.
  */
 export function auditEmbedGuards(css: string): EmbedGuardAudit {
   const audit: EmbedGuardAudit = { root: [], keyed: [], guarded: [], unguarded: [] };
   for (const rule of styleRules(css)) {
     for (const selector of splitTopLevel(rule.prelude, ",")) {
-      if (!selector.includes("[data-dev-toolbar]")) {
+      const scrubbed = stripStrings(selector);
+      if (!scrubbed.includes("[data-dev-toolbar]")) {
         throw new Error(`css-rules: "${selector}" is not scoped by [data-dev-toolbar]`);
       }
-      // A pseudo-element decorates the element its compound selects; the
-      // compound is what decides whose DOM the rule reaches.
-      const subject = subjectCompound(selector).replace(/::[a-z-]+(\([^)]*\))?/g, "");
-      if (subject.includes("[data-dev-toolbar]")) {
+      const subject = subjectCompound(scrubbed);
+      const pieces = compoundPieces(subject);
+      if (requiresAttribute(subject, (name) => name === "data-dev-toolbar")) {
         audit.root.push(selector);
         continue;
       }
-      const withoutGuard = subject.split(EMBED_GUARD).join("");
-      if (withoutGuard.includes("[data-dtb-")) {
+      if (requiresAttribute(subject, (name) => name.startsWith("data-dtb-"))) {
         audit.keyed.push(selector);
         continue;
       }
-      (withoutGuard === subject ? audit.unguarded : audit.guarded).push(selector);
+      const guarded = pieces.some((piece) => piece.replace(/\s+/g, " ") === EMBED_GUARD);
+      (guarded ? audit.guarded : audit.unguarded).push(selector);
     }
   }
   return audit;

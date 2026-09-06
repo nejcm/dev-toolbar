@@ -97,8 +97,10 @@ halves of it:
   contain would pass it.
 - **The guard is applied everywhere.** `src/core/__tests__/css.test.ts` reads core's
   stylesheet itself, with no fixture and no element list, and rejects any rule that
-  styles a descendant of the root by element rather than by a `data-dtb-*` attribute
-  unless it carries the guard, naming the selector. Adding one — a bare
+  styles a descendant of the root by element rather than by a `data-dtb-*` attribute the
+  *selected* element must itself carry, unless it carries the guard, naming the selector.
+  Mandatory and positive: a `data-dtb-*` token inside a `:not()`, in only one branch of
+  an `:is()`, or inside a quoted attribute value does not exempt a rule. Adding one — a bare
   `[data-dev-toolbar] :where(table)`, or a `p` under a part — fails it.
 
 What the attribute does **not** stop is inheritance, and it should not: the frame sits

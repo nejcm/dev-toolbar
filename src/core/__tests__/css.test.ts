@@ -48,24 +48,81 @@ describe("core stylesheet", () => {
 
     /**
      * Mutation test: the invariant above is only worth having if it fails.
-     * Each probe is a shape a future core rule could plausibly take — a bare
-     * element default, and one nested under a part that *is* an ancestor of
-     * the embed frame — and each must be named in the failure.
+     * Each probe is a shape a future core rule could plausibly take, and each
+     * must land in `unguarded` and be named. The second half of the list is
+     * the set an earlier, substring-matching classifier waved through: a
+     * `[data-dtb-*]` token inside a negation, inside one branch of a selector
+     * list, or inside a quoted attribute value is not a condition the selected
+     * element meets, and every one of these still matches a vendor element
+     * beneath `[data-dtb-embed]`.
      */
     it.each([
-      ["a bare element default", "[data-dev-toolbar] :where(table) { margin: 0; }"],
+      [
+        "a bare element default",
+        "[data-dev-toolbar] :where(table) { margin: 0; }",
+        "[data-dev-toolbar] :where(table)",
+      ],
       [
         "an element default under a part",
         '[data-dev-toolbar] [data-dtb-part="panel-body"] > p { margin-top: 4px; }',
+        '[data-dev-toolbar] [data-dtb-part="panel-body"] > p',
       ],
-      ["a state rule on an element", "[data-dev-toolbar] summary:hover { color: red; }"],
-    ])("flags %s", (_name, rule) => {
+      [
+        "a state rule on an element",
+        "[data-dev-toolbar] summary:hover { color: red; }",
+        "[data-dev-toolbar] summary:hover",
+      ],
+      [
+        "an attribute-only subject",
+        "[data-dev-toolbar] [aria-label] { color: red; }",
+        "[data-dev-toolbar] [aria-label]",
+      ],
+      [
+        "a pseudo-element nested under @media",
+        '@media (min-width: 1px) { [data-dev-toolbar] table::after { content: ""; } }',
+        "[data-dev-toolbar] table::after",
+      ],
+      [
+        "the unguarded branch of a selector list",
+        "[data-dev-toolbar] :where(p):where(:not([data-dtb-embed] *)), [data-dev-toolbar] table { margin: 0; }",
+        "[data-dev-toolbar] table",
+      ],
+      [
+        "a data-dtb-* token inside :not()",
+        "[data-dev-toolbar] table:not([data-dtb-kind]) { margin: 0; }",
+        "[data-dev-toolbar] table:not([data-dtb-kind])",
+      ],
+      [
+        "a data-dtb-* token in only one :is() branch",
+        '[data-dev-toolbar] :is([data-dtb-kind="rows"], table) { margin: 0; }',
+        '[data-dev-toolbar] :is([data-dtb-kind="rows"], table)',
+      ],
+      [
+        "a [data-dev-toolbar] token inside :not()",
+        "[data-dev-toolbar] table:not([data-dev-toolbar]) { margin: 0; }",
+        "[data-dev-toolbar] table:not([data-dev-toolbar])",
+      ],
+      [
+        "the guard in only one :is() branch",
+        "[data-dev-toolbar] :is(:where(:not([data-dtb-embed] *)), table) { margin: 0; }",
+        "[data-dev-toolbar] :is(:where(:not([data-dtb-embed] *)), table)",
+      ],
+      [
+        "a data-dtb-* token inside a quoted attribute value",
+        '[data-dev-toolbar] table[data-label="[data-dtb-fake]"] { margin: 0; }',
+        '[data-dev-toolbar] table[data-label="[data-dtb-fake]"]',
+      ],
+    ])("flags %s", (_name, rule, flagged) => {
       const mutated = CORE_CSS.replace("@layer dev-toolbar {", `@layer dev-toolbar {\n  ${rule}\n`);
       expect(mutated).not.toBe(CORE_CSS);
 
       const audit = auditEmbedGuards(mutated);
 
-      expect(audit.unguarded).toEqual([rule.slice(0, rule.indexOf("{")).trim()]);
+      expect(audit.unguarded).toEqual([flagged]);
+      // And the probe did not disturb how the real sheet is classified.
+      const clean = auditEmbedGuards(CORE_CSS);
+      expect(audit.root).toEqual(clean.root);
+      expect(audit.keyed).toEqual(clean.keyed);
     });
 
     /** And fails closed on a sheet it cannot classify rather than passing it. */
@@ -78,6 +135,28 @@ describe("core stylesheet", () => {
       expect(() => styleRules("@unknown-at-rule x { a { color: red } }")).toThrow(
         /unrecognised at-rule/,
       );
+    });
+
+    /**
+     * A statement at-rule the scanner skipped would be a hole the size of
+     * whatever it pulls in: `@import` can add a whole sheet the audit never
+     * sees. Only the statement forms core actually writes are passed over.
+     */
+    it.each([
+      ["@import", "@import url(unguarded.css);"],
+      ["an unknown statement", "@unknown x;"],
+    ])("refuses %s", (_name, statement) => {
+      expect(() => auditEmbedGuards(`${statement}\n${CORE_CSS}`)).toThrow(
+        /unrecognised at-rule statement/,
+      );
+    });
+
+    it.each([
+      ["an unclosed selector paren", "[data-dev-toolbar] :where(table { margin: 0; }"],
+      ["a stray closing paren", "[data-dev-toolbar] table) { margin: 0; }"],
+    ])("refuses %s", (_name, rule) => {
+      const mutated = CORE_CSS.replace("@layer dev-toolbar {", `@layer dev-toolbar {\n  ${rule}\n`);
+      expect(() => auditEmbedGuards(mutated)).toThrow(/refusing to classify/);
     });
   });
 });

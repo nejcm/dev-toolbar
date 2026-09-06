@@ -285,8 +285,11 @@ describe("embed()", () => {
     expect(node?.firstElementChild?.className).toBe("vendor-devtools");
     // Not a list of the three attribute names that exist today: *no* data-dtb-*
     // attribute appears below the frame. Core's structural invariant
-    // (src/core/__tests__/css.test.ts) exempts a rule whose subject requires
-    // one, and this is why that exemption is sound.
+    // (src/core/__tests__/css.test.ts) exempts a rule whose *selected* element
+    // must carry one; this checks the helper writes none below its frame for
+    // this fixture, which is what keeps that exemption honest here. It says
+    // nothing about arbitrary vendor markup — a tool that sets a data-dtb-*
+    // attribute on its own elements would be outside the promise.
     const inside = Array.from(node?.querySelectorAll("*") ?? []);
     expect(inside.length).toBeGreaterThan(0);
     expect(
