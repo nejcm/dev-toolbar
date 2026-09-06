@@ -62,6 +62,7 @@ function signature(snapshot: MetricsSnapshot): string {
   let out = `${snapshot.seriesWritten}|`;
   for (const id of snapshot.order) {
     const view = metricView(snapshot, id);
+    // Preserve built-in notifications; custom details and raw values can change independently.
     out += isMetricId(id)
       ? `${id}:${view.status}:${view.severity}:${view.display};`
       : JSON.stringify(view);

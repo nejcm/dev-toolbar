@@ -25,7 +25,12 @@ export function createWebVitalsCollector(): Collector {
     id: "web-vitals",
     estimatedCost: "minimal",
     supported,
-    unsupportedReason: supported ? undefined : "PerformanceObserver is unavailable.",
+    get unsupportedReason() {
+      if (!supported) return "PerformanceObserver is unavailable.";
+      return available.has("largest-contentful-paint")
+        ? undefined
+        : "Largest Contentful Paint entries are unavailable.";
+    },
     series,
     start(next) {
       context = next;

@@ -107,6 +107,7 @@ it("uses three observers for LCP, CLS sessions and grouped INP; reads navigation
 it("survives StrictMode teardown before the first buffered delivery", () => {
   const fake = observers();
   const collector = createWebVitalsCollector();
+  expect(collector.unsupportedReason).toBeUndefined();
   const first = new AbortController();
   collector.start({ signal: first.signal, now: () => 1000, invalidate: vi.fn() });
   first.abort();
@@ -121,14 +122,30 @@ it("degrades absent observers and entry types independently", () => {
   vi.stubGlobal("PerformanceObserver", undefined);
   const unsupported = createWebVitalsCollector();
   expect(unsupported.supported).toBe(false);
+  expect(unsupported.unsupportedReason).toBe("PerformanceObserver is unavailable.");
   expect(unsupported.read(0).status).toBe("unsupported");
   const fake = observers(["layout-shift"]);
   const partial = createWebVitalsCollector();
+  expect(partial.unsupportedReason).toBe("Largest Contentful Paint entries are unavailable.");
   const controller = new AbortController();
   partial.start({ signal: controller.signal, now: () => 0, invalidate: vi.fn() });
   expect(fake.observe).toHaveBeenCalledOnce();
   expect(partial.read(0).status).toBe("unsupported");
   expect(partial.diagnostics(0)).toEqual({ lcp: null, cls: 0, inp: null, ttfb: 80 });
+  controller.abort();
+});
+
+it("updates the unsupported reason when LCP observation fails", () => {
+  const fake = observers();
+  fake.observe.mockImplementation(({ type }: PerformanceObserverInit) => {
+    if (type === "largest-contentful-paint") throw new Error("Unsupported entry type");
+  });
+  const collector = createWebVitalsCollector();
+  expect(collector.unsupportedReason).toBeUndefined();
+  const controller = new AbortController();
+  collector.start({ signal: controller.signal, now: () => 0, invalidate: vi.fn() });
+  expect(collector.read(0).status).toBe("unsupported");
+  expect(collector.unsupportedReason).toBe("Largest Contentful Paint entries are unavailable.");
   controller.abort();
 });
 
