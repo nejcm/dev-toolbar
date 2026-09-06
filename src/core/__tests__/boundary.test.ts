@@ -794,6 +794,7 @@ if (built || !mustBeBuilt) {
         "TextInput",
         "createPoller",
         "createStyleInjector",
+        "embed",
         "ensureKitStyles",
         "matchesQuery",
         "parseList",

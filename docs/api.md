@@ -159,6 +159,11 @@ For the metrics subpath, see [custom collectors](./ext/metrics.md#custom-collect
 built-in `views` and consumer `custom` snapshot records. These are subpath exports,
 not root exports; the extension contract version remains 2.
 
+To put a third-party devtool's panel on the bar, see [embedding.md](./embedding.md):
+the plain `{ id, label, panel }` object needs nothing from this entry but the
+`DevToolbarExtension` type, and the optional `embed()` frame helper is a
+[`/kit`](./kit.md#embed) export, not a root one.
+
 ## Types
 
 Every type the root entry exports. The slot props, `DevToolbarExtension`,

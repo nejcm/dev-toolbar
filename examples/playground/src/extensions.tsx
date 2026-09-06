@@ -14,6 +14,7 @@ import type { FlagReading, FlagValue } from "@nejcm/dev-toolbar/ext/flags";
 import { createReactProfilerCollector } from "./collectors/reactProfiler";
 import { createWebVitalsCollector } from "./collectors/webVitals";
 import { kitDemo } from "./kitDemo";
+import { tanstackQuery } from "./embedDemo";
 
 /**
  * `kit-demo` is not a first-party extension: it lives in this app and is built entirely
@@ -25,9 +26,9 @@ const runtimeKitDemo = kitDemo({ order: 40, priority: 60, pollMs: 1000 });
 /**
  * Deliberately varied `priority` so narrowing the window collapses extensions into `⋮` in order:
  * agent (-1) → boom (5) → diagnostics (10) → hydr (20) → metrics (35) → theme (45) → overlays (55)
- * → kit (60) → tw (70) → flags (80) → cmds (85) → env (90) → user (100, aligned end). The agent bridge goes first by
- * design: it is a transport, and nothing is lost when its chip collapses.
- * metrics/env/flags are the real extensions; the rest are placeholders.
+ * → kit (60) → query (65) → tw (70) → flags (80) → cmds (85) → env (90) → user (100, aligned end). The agent
+ * bridge goes first by design: it is a transport, and nothing is lost when its chip collapses.
+ * metrics/env/flags are the real extensions, `query` is a real third-party panel; the rest are placeholders.
  */
 
 function Chip({
@@ -646,6 +647,7 @@ export const playgroundExtensions: DevToolbarExtension[] = [
   runtimeThemeEditor,
   runtimeMetrics,
   runtimeKitDemo,
+  tanstackQuery,
   hydration,
   tailwind,
   broken,
