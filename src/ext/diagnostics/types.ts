@@ -222,9 +222,12 @@ export interface ConsoleTailEntry {
   /** Redacted on the way in, argument by argument, before they were joined. */
   message: string;
   /**
-   * The stack where there was one, redacted, **without its header line**: V8
-   * repeats the raw message there, where anchored value matching cannot see
-   * it, so the header is dropped and `message` carries the masked text.
+   * The stack where there was one, **whole and redacted line by line** —
+   * header included. V8 repeats the raw message above the first frame, so
+   * that line is masked like every other rather than identified and dropped;
+   * identifying it was its own leak (an `Error` named `fake@host:1` writes a
+   * header shaped exactly like a SpiderMonkey frame), and dropping by shape
+   * threw away frameless and unfamiliar stacks with it.
    */
   stack: string | null;
   /** How many times this message was seen. `1` for a message seen once. */

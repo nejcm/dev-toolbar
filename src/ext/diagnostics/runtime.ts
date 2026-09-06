@@ -661,11 +661,41 @@ export function createDiagnosticsRuntime(
     ],
   });
 
+  /**
+   * True while a publish — or the store's own report of a failed publish — is
+   * running. See `publishCounts`.
+   */
+  let publishing = false;
+
+  /** Raises the guard for one call, and puts it back where it was. */
+  const whilePublishing = (body: () => void): void => {
+    const outer = publishing;
+    publishing = true;
+    try {
+      body();
+    } finally {
+      publishing = outer;
+    }
+  };
+
   const store = createThrottledStore<DiagnosticsSnapshotState>(NO_SNAPSHOT, {
     intervalMs: 100,
     // The store's default clock is unguarded performance.now(); handing it
     // the guarded `now` keeps a failed capture's publish step fail-closed too.
     now,
+    // The store's default `onError` logs with `console.error`, which the tail
+    // captures — so a throwing subscriber turns one log into a publish that
+    // logs that provokes a publish. Guarding `store.set()` alone was not
+    // enough: the throttle's *trailing* edge notifies from a timer, long
+    // after that guard is down (measured: two logs 10 ms apart produced five
+    // notifications and seven captured errors over ~450 ms). The report is
+    // the last thing in the loop, so the guard belongs around it.
+    onError: (error) => {
+      whilePublishing(() => {
+        // eslint-disable-next-line no-console
+        console.error("[dev-toolbar/diagnostics] a store listener threw.", error);
+      });
+    },
   });
 
   /**
@@ -679,19 +709,6 @@ export function createDiagnosticsRuntime(
    * logged, and the throttle coalesces a burst into one publish anyway.
    */
   let countsPending = false;
-  /**
-   * True while the publish itself is running.
-   *
-   * The tail's synchronous re-entrancy guard covers a listener that logs; it
-   * cannot cover this, because the publish happens a microtask *later*, with
-   * the guard long since released. A store subscriber that throws makes
-   * `createThrottledStore` report it with `console.error` — which the tail
-   * captures, which schedules another publish, which notifies the same
-   * throwing subscriber: one log measured as four captured errors and three
-   * notifications inside 240ms, climbing. A publish provoked by a publish is
-   * dropped; the next real log carries the count.
-   */
-  let publishing = false;
   /** False before `start()` and after disposal — see the `write` guard. */
   let live = false;
   const publishCounts = (): void => {
@@ -703,15 +720,12 @@ export function createDiagnosticsRuntime(
       // may not publish. (Measured: `stop()` then a microtask still wrote one
       // notification.)
       if (!live) return;
-      publishing = true;
-      try {
+      whilePublishing(() => {
         const { errors, warnings } = tail.counts();
         const previous = store.peek();
         if (previous.errors === errors && previous.warnings === warnings) return;
         store.set({ ...previous, errors, warnings });
-      } finally {
-        publishing = false;
-      }
+      });
     };
     try {
       if (typeof queueMicrotask === "function") {

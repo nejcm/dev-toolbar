@@ -308,7 +308,7 @@ describe("what it captures", () => {
     expect(report.errors).toBe(4);
   });
 
-  it("keeps a stack where there is one, without its header line", () => {
+  it("keeps a stack whole, header included, with every line masked", () => {
     console.error = () => {};
     const { runtime, stop } = started();
     console.error("failed:", new Error("kaboom"));
@@ -318,8 +318,10 @@ describe("what it captures", () => {
     const entry = report.entries[0];
     expect(entry?.message).toContain("Error: kaboom");
     expect(entry?.stack).toContain("at ");
-    // The header is where V8 repeats the raw message; it is dropped, not masked.
-    expect(entry?.stack?.startsWith("Error: kaboom")).toBe(false);
+    // The header stays. Nothing here classifies a line, so nothing can
+    // misclassify one; it is safe because it went through the same masking
+    // as every frame below it.
+    expect(entry?.stack?.startsWith("Error: kaboom")).toBe(true);
   });
 
   it("separates warnings from errors", () => {
@@ -840,10 +842,12 @@ describe("credentials the masking used to let through", () => {
     expect(json).toContain(REDACTED);
   });
 
-  it("drops a stack that is only a header instead of exporting the raw message", () => {
+  it("masks the header of a stack that is only a header, and keeps it", () => {
     // `Error.stackTraceLimit = 0` (and any engine that yields no frames): the
-    // stack is the unmasked message, and the anchored matcher cannot see a
-    // credential inside `Error: Bearer …`.
+    // stack is the raw message, and `redact()`'s anchored value matching
+    // cannot see a credential inside `Error: Bearer …` — only the run pass
+    // can. Kept, because a masked header costs nothing and dropping lines by
+    // shape is what leaked in the first place.
     const { json, report } = captured(() => {
       console.error({
         name: "Error",
@@ -852,17 +856,30 @@ describe("credentials the masking used to let through", () => {
       });
     });
     expect(json).not.toContain("LEAK_SECRET_123");
-    expect(report.entries[0]?.stack).toBeNull();
+    expect(report.entries[0]?.stack).toBe(`Error: Bearer ${REDACTED}`);
     expect(report.entries[0]?.message).toContain(REDACTED);
   });
 
-  it("drops a real frameless stack from this engine too", () => {
+  it("masks a real frameless stack from this engine too", () => {
     const limit = Error.stackTraceLimit;
     Error.stackTraceLimit = 0;
     const error = new Error("Bearer LEAK_SECRET_123");
     Error.stackTraceLimit = limit;
-    const { json } = captured(() => void console.error(error));
+    const { json, report } = captured(() => void console.error(error));
     expect(json).not.toContain("LEAK_SECRET_123");
+    expect(report.entries[0]?.stack).toContain(REDACTED);
+  });
+
+  it("does not let an `@`-shaped Error name smuggle a credential through the header", () => {
+    // The frame test that used to find the first frame was
+    // `/^\s+at\s|^\S*@\S*:\d+/`. A name of `fake@host:1` makes V8 write a
+    // header that matches the SpiderMonkey/JSC half of it, so the header was
+    // taken for a frame and kept verbatim, credential and all.
+    const error = new Error("Bearer LEAK_SECRET_123");
+    error.name = "fake@host:1";
+    const { json, report } = captured(() => void console.error(error));
+    expect(json).not.toContain("LEAK_SECRET_123");
+    expect(report.entries[0]?.stack).toContain(`Bearer ${REDACTED}`);
   });
 
   it("still keeps the frames of a SpiderMonkey/JSC stack, which has no header", () => {
@@ -874,6 +891,41 @@ describe("credentials the masking used to let through", () => {
       });
     });
     expect(report.entries[0]?.stack).toContain("load@https://cdn.test/app.js:1:1");
+  });
+
+  it("keeps a stack from an engine whose frame shape it has never seen", () => {
+    // Dropping everything above the first *recognised* frame threw away a
+    // whole stack from any engine this module had not been taught. Nothing is
+    // recognised now, so nothing is thrown away.
+    const { report } = captured(() => {
+      console.error({
+        name: "Error",
+        message: "chunk failed",
+        stack: "frame#1 in loadChunk <builtin>\nframe#2 in main <builtin>",
+      });
+    });
+    expect(report.entries[0]?.stack).toBe(
+      "frame#1 in loadChunk <builtin>\nframe#2 in main <builtin>",
+    );
+  });
+
+  it("masks a credential-shaped Error name nested deeper than the leaf walk goes", () => {
+    // `redactOptions.maxDepth: 24` keeps the object; the leaf walk stops at 8
+    // and used to hand back the rest of the branch untouched, so `name` went
+    // into the JSON verbatim. An unwalked branch is `[truncated]` now.
+    const error = new Error("boom");
+    error.name = "Bearer LEAK_SECRET_123";
+    let nested: unknown = error;
+    for (let level = 0; level < 8; level += 1) nested = { e: nested };
+
+    console.error = () => {};
+    const { runtime, stop } = started({ redactOptions: { maxDepth: 24 } });
+    console.error(nested);
+    const json = JSON.stringify(runtime.tail());
+    stop();
+
+    expect(json).not.toContain("LEAK_SECRET_123");
+    expect(json).toContain("[truncated]");
   });
 
   it("masks a credential-shaped Error name reached through a logged object", () => {
@@ -989,43 +1041,46 @@ describe("installing over a hostile console", () => {
     expect(report.status).toBe("unavailable");
   });
 
-  it("lets a second copy of this module share the wrapper instead of stacking one", async () => {
-    // The dual-package hazard, executed: two module instances, the same global
-    // `console`. Stacked wrappers cannot be unwound inner-first (rule 2), so
-    // each cycle used to strand another forwarder — 5,000 cycles measured as
-    // `RangeError: Maximum call stack size exceeded` on both methods, i.e. the
-    // app's own logging lost entirely.
-    vi.resetModules();
-    const second = await import("../console");
-    expect(second.createConsoleTail).not.toBe(createConsoleTail);
+  it("keeps the teardown for a patch it cannot read back", () => {
+    // A setter that stores the wrapper while the getter throws once, during
+    // read-back, and then recovers. The patch is real; we simply cannot see
+    // it. Reporting `unavailable` is right — discarding the handle was not,
+    // because `stop()` then left our wrapper on `console` for good.
+    const original = console.error;
+    let stored: unknown = original;
+    let thrown = false;
+    Object.defineProperty(console, "error", {
+      configurable: true,
+      get() {
+        // Fails once, on the first read *after* something was stored — the
+        // read-back, however many reads the implementation took to get there —
+        // and works from then on.
+        if (!thrown && stored !== original) {
+          thrown = true;
+          throw new Error("error getter failed");
+        }
+        return stored;
+      },
+      set(next: unknown) {
+        stored = next;
+      },
+    });
 
-    const seen: unknown[][] = [];
-    const original = (console.error = (...args: unknown[]) => void seen.push(args));
+    const tail = createConsoleTail({ warn: false, windowErrors: false, rejections: false });
+    tail.start();
+    const report = tail.report();
+    tail.stop();
+    const afterStop = stored;
+    Object.defineProperty(console, "error", {
+      configurable: true,
+      writable: true,
+      value: original,
+    });
 
-    const outer = createConsoleTail({ windowErrors: false, rejections: false });
-    const stopOuter = outer.start();
-    const patched = console.error;
-
-    for (let cycle = 0; cycle < 1000; cycle += 1) {
-      const inner = second.createConsoleTail({ windowErrors: false, rejections: false });
-      inner.start();
-      inner.stop();
-    }
-    // One wrapper, still. Not a thousand of them.
-    expect(console.error).toBe(patched);
-
-    const inner = second.createConsoleTail({ windowErrors: false, rejections: false });
-    const stopInner = inner.start();
-    console.error("shared across copies");
-    // Both copies recorded it, once each, and the original ran once.
-    expect(entriesOf(outer.report())).toEqual(["shared across copies"]);
-    expect(entriesOf(inner.report())).toEqual(["shared across copies"]);
-    expect(seen).toEqual([["shared across copies"]]);
-
-    stopInner();
-    expect(console.error).toBe(patched);
-    stopOuter();
-    expect(console.error).toBe(original);
+    expect(report.status).toBe("unavailable");
+    expect(report.watching).toEqual([]);
+    // The wrapper is gone, not stranded on the console for the page's life.
+    expect(afterStop).toBe(original);
   });
 });
 
@@ -1085,6 +1140,39 @@ describe("publishing the chip's counts", () => {
 
     expect(notifications).toBeLessThanOrEqual(1);
     expect(captured).toBeLessThanOrEqual(2);
+  });
+
+  it("does not feed itself through the throttle's trailing edge either", async () => {
+    // The guard used to sit around `store.set()` only. The throttle publishes
+    // the *trailing* edge from a timer, long after that guard is down, so the
+    // throwing subscriber's report was captured, scheduled another publish,
+    // and went round again: two logs 10 ms apart measured as five
+    // notifications and seven captured errors over ~450 ms.
+    console.error = () => {};
+    const { runtime, stop } = started();
+    let notifications = 0;
+    runtime.store.subscribe(() => {
+      notifications += 1;
+      throw new Error("listener boom");
+    });
+
+    console.error("first failure");
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    });
+    console.error("second failure");
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 450));
+    });
+    const captured = runtime.tail().errors;
+    stop();
+
+    // Two notifications, one per real log, and four captured errors: the two
+    // logs plus the store's report of each throwing notification. The reports
+    // are recorded but publish nothing, so it stops there instead of going
+    // round again.
+    expect(notifications).toBeLessThanOrEqual(2);
+    expect(captured).toBeLessThanOrEqual(4);
   });
 
   it("does not publish a queued count after disposal", async () => {

@@ -107,11 +107,14 @@ diagnostics({
   it — and the row moves back to the front when it repeats. "Newest first" and the
   `limit` on the export therefore mean *most recently seen*, not first seen, and a full
   tail evicts the message nothing has repeated. Evictions are counted in `dropped`.
-- **Stacks are kept only where there are frames, and never their header.** V8 repeats
-  the raw message above the first frame, where anchored value matching cannot see it, so
-  everything above that frame is dropped; the message is reported, masked, in `message`.
-  A stack with no frame at all is *only* a header — what `Error.stackTraceLimit = 0`
-  produces — and is dropped whole rather than exported raw.
+- **Stacks are kept whole, and every line is masked.** Header included: V8 repeats the
+  raw message above the first frame, so that line goes through the same masking as the
+  frames below it rather than being identified and dropped. Trying to identify it was
+  its own leak — a header from an `Error` whose `name` contains `@host:1` reads exactly
+  like a SpiderMonkey frame — and dropping by shape also silently threw away frameless
+  stacks (`Error.stackTraceLimit = 0`) and every stack from an engine whose frame shape
+  this package had not been taught. Nothing is classified now, so nothing is
+  misclassified.
 - **Off is one option.** `console: false` patches nothing and adds no listener, and each
   source has its own switch: `{ error, warn, windowErrors, rejections, size,
   maxMessageChars, maxStackChars }`. With capture off, the counts are `null` and the
@@ -119,20 +122,38 @@ diagnostics({
 
 What it masks, and what it cannot: every argument is redacted **before** the line is
 assembled — objects walked by `redact()` (where key-name matching works), strings
-matched by value shape, and every `scheme://…` run in a string or a stack frame put
+matched by value shape, and every `scheme://…` run in a string or a stack line put
 through `redactUrl()`, because a credential-carrying URL in the middle of a sentence is
-the shape a console message actually has and anchored matching cannot see it. What
-survives is what survives everywhere else in this extension, and each of these is
-pinned by a test rather than hoped about:
+the shape a console message actually has and anchored matching cannot see it. `Bearer …`
+in the middle of a line is caught the same way: the line is split on whitespace and each
+word — and each adjacent pair of words — is handed back to `redact()`, which is what
+masks the credential V8 repeats in a stack header. The cost is `redact()`'s own false
+positives, now reachable mid-sentence: `"the token expired"` reports as
+`"the token [redacted]"`. What survives is what survives everywhere else in this
+extension, and each of these is pinned by a test rather than hoped about:
 
 - a bare secret written into prose (`"the password is hunter2"`) is neither a matched
   key nor a matched shape;
-- a credential embedded in a stack frame's **function name** — frame matching looks for
-  URLs and whole-value shapes, not for `Bearer …` inside an identifier;
+- a credential embedded in a stack frame's **function name** — matching looks for URLs
+  and whole-value shapes, not for `Bearer …` welded into an identifier;
 - an `Error`'s `cause`, and an `AggregateError`'s `errors`, which are not read at all,
   so anything only reachable through them is absent rather than masked.
 
 That is why the panel shows you the text before you copy it.
+
+**One limit worth measuring before you ship two copies.** The console patch is module
+state, so a page that resolves both `dist/ext/diagnostics.js` and
+`dist/ext/diagnostics.cjs` gets two wrappers, one around the other. While both are up
+nothing is lost. Taking them down *inner-first* is what costs: teardown never restores
+over a later patch, so the inner wrapper stays — listener-less, still forwarding — and
+every start/stop cycle strands one more. Executed with two module copies over one
+`console`: `RangeError: Maximum call stack size exceeded` from cycle 8,801 in this
+repo's test environment, and from about cycle 5,000 on the built ESM+CJS pair under Bun
+and Node. The cycle number is whatever the engine's stack depth allows; past it the call
+throws and never reaches the original, so it is **your** app's logging that is gone, not
+only our capture. The fix is a bundler one —
+resolve the package to a single format. Nothing in this package can repair it from
+inside, and the versions of this package that tried made the failure silent instead.
 
 Options: `app` (object or getter), `sources`, `console`, `windowMs`,
 `slowInteractionMs`, `historySize`, `recentSize`, `now`, `redactOptions`, plus the usual
