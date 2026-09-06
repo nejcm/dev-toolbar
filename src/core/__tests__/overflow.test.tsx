@@ -1,8 +1,9 @@
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import type { ReactNode } from "react";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { DevToolbarExtension } from "../contract";
 import { OverflowBar, computeOverflow } from "../Overflow";
+import { installToolbarLayout, type ToolbarLayoutHandle } from "@nejcm/dev-toolbar/testing";
 
 describe("computeOverflow", () => {
   const items = [
@@ -33,107 +34,29 @@ describe("computeOverflow", () => {
   });
 });
 
-const widths: Record<string, number> = { a: 60, b: 60, c: 60, d: 60, e: 60 };
-let containerWidth = 100;
-
-const patchLayout = () => {
-  const offset = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "offsetWidth");
-  const client = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "clientWidth");
-  Object.defineProperty(HTMLElement.prototype, "offsetWidth", {
-    configurable: true,
-    get(this: HTMLElement) {
-      const id = this.dataset["dtbExtId"];
-      return id ? (widths[id] ?? 50) : 0;
-    },
-  });
-  Object.defineProperty(HTMLElement.prototype, "clientWidth", {
-    configurable: true,
-    get(this: HTMLElement) {
-      return this.dataset["dtbPart"] === "bar" ? containerWidth : 0;
-    },
-  });
-  return () => {
-    if (offset) Object.defineProperty(HTMLElement.prototype, "offsetWidth", offset);
-    if (client) Object.defineProperty(HTMLElement.prototype, "clientWidth", client);
-  };
-};
-
-/**
- * jsdom applies no stylesheet, so the bar reports no padding and no gap. This
- * stubs `getComputedStyle` with the values `src/styles.css` actually resolves
- * to, which is what makes the bar's own padding and the inter-region gap
- * observable in a test.
- */
-const patchComputedStyle = ({ paddingX, gap }: { paddingX: number; gap: number }) => {
-  const real = globalThis.getComputedStyle.bind(globalThis);
-  vi.stubGlobal("getComputedStyle", (element: Element, pseudo?: string | null) => {
-    const style = real(element, pseudo ?? undefined);
-    return new Proxy(style, {
-      get(target, property, receiver) {
-        if (property === "paddingLeft" || property === "paddingRight") return `${paddingX}px`;
-        if (property === "columnGap" || property === "gap") return `${gap}px`;
-        const value = Reflect.get(target, property, receiver);
-        return typeof value === "function" ? value.bind(target) : value;
-      },
-    });
-  });
-};
-
-class MockResizeObserver implements ResizeObserver {
-  static instances: MockResizeObserver[] = [];
-  /** What this observer is watching, so a test can tell the two apart. */
-  readonly targets = new Set<Element>();
-  constructor(private readonly callback: ResizeObserverCallback) {
-    MockResizeObserver.instances.push(this);
-  }
-  observe(target: Element): void {
-    this.targets.add(target);
-  }
-  unobserve(target: Element): void {
-    this.targets.delete(target);
-  }
-  disconnect(): void {
-    this.targets.clear();
-  }
-  trigger(): void {
-    this.callback([], this);
-  }
-}
-
 const part = (node: Element) => (node as HTMLElement).dataset["dtbPart"];
+let layout: ToolbarLayoutHandle | undefined;
 
-/** The observer watching the bar's own box. */
-const barObserver = () =>
-  MockResizeObserver.instances.find((observer) =>
-    [...observer.targets].some((target) => part(target) === "bar"),
-  );
-
-/** The observer watching the individual item hosts. */
-const itemObserver = () =>
-  MockResizeObserver.instances.find((observer) =>
-    [...observer.targets].some((target) => part(target) === "item"),
-  );
-
-let restore: (() => void) | null = null;
+// 60px items, 2px gap, no button measurement so core keeps its 28px fallback.
+const layoutOf = (barWidth: number, paddingX = 0) =>
+  installToolbarLayout({ barWidth, itemWidth: 60, overflowButtonWidth: 0, paddingX, gap: 2 });
 
 /**
- * The fixture geometry every collapse test below is written against: no bar
- * padding and a 2px inter-item gap. It used to arrive implicitly — jsdom
- * reports neither, so the component fell back to its own constants — which
- * quietly coupled this file's arithmetic to whatever `src/styles.css` happened
- * to default to. Pinning it here is the same environment, stated. A test that
- * needs different values calls `patchComputedStyle` again and wins.
+ * Select by targets so constructing an observer without observing hosts cannot pass.
+ * Item-resize tests flush only the item observer: firing the bar would let
+ * `measureWidths` in `read()` carry the test instead of the item-observer path.
  */
-beforeEach(() => {
-  patchComputedStyle({ paddingX: 0, gap: 2 });
-});
+const observerOf = (targetPart: "item" | "bar") =>
+  layout!
+    .getObservers()
+    .find((observer) => observer.getTargets().some((target) => part(target) === targetPart))!;
 
 afterEach(() => {
-  restore?.();
-  restore = null;
-  MockResizeObserver.instances = [];
+  // Unstub first: `restore()` deletes the fake ResizeObserver, and a later
+  // `unstubAllGlobals()` would put it straight back with no install behind it.
   vi.unstubAllGlobals();
-  containerWidth = 100;
+  layout?.restore();
+  layout = undefined;
 });
 
 const ext = (id: string, priority: number): DevToolbarExtension => ({
@@ -204,8 +127,7 @@ const menuIds = () =>
 
 describe("OverflowBar", () => {
   it("collapses low-priority items into the ⋮ menu when space runs out", () => {
-    restore = patchLayout();
-    vi.stubGlobal("ResizeObserver", MockResizeObserver);
+    layout = layoutOf(100);
 
     renderBar();
 
@@ -229,9 +151,7 @@ describe("OverflowBar", () => {
   });
 
   it("recomputes when the ResizeObserver fires, and re-expands when space returns", () => {
-    containerWidth = 1000;
-    restore = patchLayout();
-    vi.stubGlobal("ResizeObserver", MockResizeObserver);
+    layout = layoutOf(1000);
 
     renderBar();
 
@@ -243,10 +163,7 @@ describe("OverflowBar", () => {
     expect(idsInBar()).toEqual(["a", "b", "c"]);
 
     const resize = (width: number) => {
-      containerWidth = width;
-      act(() => {
-        for (const instance of MockResizeObserver.instances) instance.trigger();
-      });
+      act(() => layout!.resize(width));
     };
 
     // Shrink: the observer callback drives the collapse.
@@ -262,8 +179,7 @@ describe("OverflowBar", () => {
   });
 
   it("dismisses the ⋮ menu on Escape and on an outside click", () => {
-    restore = patchLayout();
-    vi.stubGlobal("ResizeObserver", MockResizeObserver);
+    layout = layoutOf(100);
 
     renderBar();
 
@@ -285,9 +201,7 @@ describe("OverflowBar", () => {
   });
 
   it("keeps everything in the bar when it fits", () => {
-    containerWidth = 1000;
-    restore = patchLayout();
-    vi.stubGlobal("ResizeObserver", MockResizeObserver);
+    layout = layoutOf(1000);
 
     renderBar();
 
@@ -310,9 +224,7 @@ describe("OverflowBar", () => {
  */
 describe("OverflowBar with a non-empty end region", () => {
   const setUp = (width: number) => {
-    containerWidth = width;
-    restore = patchLayout();
-    vi.stubGlobal("ResizeObserver", MockResizeObserver);
+    layout = layoutOf(width);
   };
 
   it("collapses across both regions by priority, ignoring which region an item is in", () => {
@@ -375,10 +287,7 @@ describe("OverflowBar with a non-empty end region", () => {
     renderRegions([ext("a", 3), ext("b", 1)], [ext("d", 5), ext("e", 2)]);
     expect(regionIds("end")).toEqual(["d"]);
 
-    containerWidth = 1000;
-    act(() => {
-      for (const instance of MockResizeObserver.instances) instance.trigger();
-    });
+    act(() => layout!.resize(1000));
 
     expect(regionIds("start")).toEqual(["a", "b"]);
     expect(regionIds("end")).toEqual(["d", "e"]);
@@ -397,10 +306,7 @@ describe("OverflowBar available width", () => {
     // 190px padding box but not the 176px it leaves for items:
     //   190 − 6 − 6 (padding) − 2 (the empty end region's gap) = 176 < 184
     //   drop b: 2×60 + 2 + 2 + 28 = 152 ≤ 176, so one item is enough
-    containerWidth = 190;
-    restore = patchLayout();
-    patchComputedStyle({ paddingX: 6, gap: 2 });
-    vi.stubGlobal("ResizeObserver", MockResizeObserver);
+    layout = layoutOf(190, 6);
 
     renderBar();
 
@@ -421,10 +327,7 @@ describe("OverflowBar available width", () => {
     //   drop b:       2×60 + 2 + 2 + 28 = 152 ≤ 153, so the first pass stops
     //   start is now empty: 153 − 2 = 151 < 152, so the next pass continues
     //   drop b and d: 60 + 2 + 28 = 90 ≤ 151
-    containerWidth = 153;
-    restore = patchLayout();
-    patchComputedStyle({ paddingX: 0, gap: 2 });
-    vi.stubGlobal("ResizeObserver", MockResizeObserver);
+    layout = layoutOf(153);
 
     renderRegions([ext("b", 1)], [ext("d", 5), ext("e", 9)]);
 
@@ -441,10 +344,7 @@ describe("OverflowBar available width", () => {
     // when both hold items. Here the empty start region takes one anyway:
     //   as rendered: 2×60 + 2 = 122 ≤ 123, but 123 − 2 = 121 < 122
     //   drop e:      60 + 2 + 28 = 90 ≤ 121
-    containerWidth = 123;
-    restore = patchLayout();
-    patchComputedStyle({ paddingX: 0, gap: 2 });
-    vi.stubGlobal("ResizeObserver", MockResizeObserver);
+    layout = layoutOf(123);
 
     renderRegions([], [ext("d", 5), ext("e", 2)]);
 
@@ -464,8 +364,7 @@ describe("OverflowBar available width", () => {
  */
 describe("OverflowBar ⋮ popup", () => {
   const setUp = () => {
-    restore = patchLayout();
-    vi.stubGlobal("ResizeObserver", MockResizeObserver);
+    layout = layoutOf(100);
   };
 
   const renderCompact = (compact: (id: string) => ReactNode) =>
@@ -597,9 +496,7 @@ describe("OverflowBar ⋮ popup", () => {
  */
 describe("OverflowBar per-item width observation", () => {
   const setUp = (width: number) => {
-    containerWidth = width;
-    restore = patchLayout();
-    vi.stubGlobal("ResizeObserver", MockResizeObserver);
+    layout = layoutOf(width);
   };
 
   const idsInBar = () =>
@@ -607,26 +504,11 @@ describe("OverflowBar per-item width observation", () => {
       (node) => (node as HTMLElement).dataset["dtbExtId"],
     );
 
-  /**
-   * Fires the observer watching the item hosts, and nothing else.
-   *
-   * `MockResizeObserver` has no geometry and `trigger()` ignores what the
-   * observer is actually watching, so firing every instance would let an
-   * implementation that *constructs* an item observer but never `observe()`s a
-   * host still pass. Selecting by recorded target closes that, and firing the
-   * bar's observer as well would hand the test to the `measureWidths` call in
-   * `read()` instead of the item-observer path.
-   */
-  const fireItems = () => act(() => itemObserver()!.trigger());
-
-  afterEach(() => {
-    widths["a"] = 60;
-  });
-
   it("collapses when a chip grows on its own tick — the bar's own box never changes, so only the item observer can see it", () => {
     // 1000px of bar, three 60px chips: nothing collapses.
     setUp(1000);
     renderBar();
+    const item = observerOf("item");
     expect(idsInBar()).toEqual(["a", "b", "c"]);
 
     // `a` re-renders wider entirely on its own — no prop change, no render of
@@ -634,13 +516,13 @@ describe("OverflowBar per-item width observation", () => {
     //   available 1000 − 2 (the empty end region's gap) = 998
     //   as rendered: 900 + 60 + 60 + 2×2 = 1024 > 998
     //   drop b:      900 + 60 + 2 + 2 + 28 = 992 ≤ 998
-    widths["a"] = 900;
+    layout!.setItemWidth("a", 900, false);
 
     // Only the item observer fires. The bar's own box is unchanged, so in a
     // browser its observer stays silent — and firing it here would let the
     // `measureWidths` call in `read()` carry the test, proving nothing about
     // the item-observer path this case is named for.
-    fireItems();
+    act(() => item.flush());
 
     expect(idsInBar()).toEqual(["a", "c"]);
     expect(document.querySelector('[data-dtb-part="overflow-button"]')).not.toBeNull();
@@ -649,28 +531,32 @@ describe("OverflowBar per-item width observation", () => {
   it("observes the item hosts rather than the regions — a flex-constrained region does not resize when a child grows", () => {
     setUp(1000);
     renderBar();
+    const item = observerOf("item");
+    const bar = observerOf("bar");
 
     const hosts = [
       ...document.querySelectorAll('[data-dtb-part="region"] > [data-dtb-part="item"]'),
     ];
     expect(hosts).toHaveLength(3);
-    expect([...itemObserver()!.targets]).toEqual(hosts);
-    expect([...itemObserver()!.targets].map(part)).toEqual(["item", "item", "item"]);
-    expect([...barObserver()!.targets].map(part)).toEqual(["bar"]);
+    expect([...item.getTargets()]).toEqual(hosts);
+    expect([...item.getTargets()].map(part)).toEqual(["item", "item", "item"]);
+    expect([...bar.getTargets()].map(part)).toEqual(["bar"]);
   });
 
   it("keeps the observed set in step with the rendered item hosts as items collapse and return", () => {
     setUp(100);
     renderBar();
+    const item = observerOf("item");
+    const bar = observerOf("bar");
 
     // b and c collapsed into the popup; only `a` is still an item host in a
     // region, and the popup copies carry a different part name.
     const observed = () =>
-      [...itemObserver()!.targets].map((node) => (node as HTMLElement).dataset["dtbExtId"]);
+      [...item.getTargets()].map((node) => (node as HTMLElement).dataset["dtbExtId"]);
     expect(observed()).toEqual(["a"]);
 
-    containerWidth = 1000;
-    act(() => barObserver()!.trigger());
+    layout!.resize(1000, false);
+    act(() => bar.flush());
 
     expect(observed()).toEqual(["a", "b", "c"]);
   });
@@ -678,14 +564,16 @@ describe("OverflowBar per-item width observation", () => {
   it("stops letting item resizes drive the collapse after four flips — a chip sized by its container must not loop", () => {
     setUp(1000);
     renderBar();
+    const item = observerOf("item");
+    const bar = observerOf("bar");
     expect(idsInBar()).toEqual(["a", "b", "c"]);
 
     // A chip whose width depends on whether it is collapsed: the pathological
     // case the latch exists for. Only the *item* observer fires, because the
     // bar's own box is unchanged throughout — which is the whole premise.
     const flip = (width: number) => {
-      widths["a"] = width;
-      act(() => itemObserver()!.trigger());
+      layout!.setItemWidth("a", width, false);
+      act(() => item.flush());
       return idsInBar();
     };
 
@@ -702,34 +590,33 @@ describe("OverflowBar per-item width observation", () => {
     // The bar's own observer reporting a *new* width reopens the latch. Its
     // `read()` re-measures, which is where the width set during the latched
     // passes is finally picked up — the latched callbacks never read it.
-    containerWidth = 999;
-    widths["a"] = 900;
-    act(() => barObserver()!.trigger());
+    layout!.resize(999, false);
+    layout!.setItemWidth("a", 900, false);
+    act(() => bar.flush());
     expect(idsInBar()).toEqual(["a", "c"]);
   });
 
   it("disconnects both observers on unmount", () => {
     setUp(1000);
     const { unmount } = renderBar();
+    const item = observerOf("item");
+    const bar = observerOf("bar");
 
-    expect(itemObserver()).toBeDefined();
-    const item = itemObserver()!;
-    const bar = barObserver()!;
+    expect(item).toBeDefined();
 
     unmount();
 
-    expect(item.targets.size).toBe(0);
-    expect(bar.targets.size).toBe(0);
+    expect(item.getTargets().length).toBe(0);
+    expect(bar.getTargets().length).toBe(0);
   });
 
   it("renders everything and observes nothing where ResizeObserver is undefined", () => {
-    containerWidth = 100;
-    restore = patchLayout();
+    layout = layoutOf(100);
     vi.stubGlobal("ResizeObserver", undefined);
 
     renderBar();
 
-    expect(MockResizeObserver.instances).toEqual([]);
+    expect(layout!.getObservers()).toEqual([]);
     // The window-resize fallback still measures, so the collapse is real; what
     // must not exist is a polling timer keeping a dead host busy.
     expect(idsInBar()).toEqual(["a"]);
