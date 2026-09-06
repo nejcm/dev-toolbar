@@ -24,7 +24,7 @@ import {
   inferType,
   parseRecipe,
 } from "../types";
-import type { DesignTokenDefinition } from "../types";
+import type { DesignTokenDefinition, ThemeSurface } from "../types";
 import { createMemoryStorage } from "../../../core/storage";
 import type { ExtensionRuntimeApi, ToolbarStorage } from "../../../core/contract";
 
@@ -1485,5 +1485,484 @@ describe("the token list signature", () => {
     runtime.store.flush();
     expect(runtime.store.getSnapshot().revision).toBeGreaterThan(before);
     expect(runtime.store.getSnapshot().tokens[0]?.group).toBe("Colors");
+  });
+});
+
+describe("publication guarantees", () => {
+  const initial: DesignTokenDefinition = {
+    name: "--publication",
+    label: "Publication",
+    description: "Description",
+    group: "Theme",
+    type: "string",
+    value: "a",
+    defaultValue: "a",
+  };
+
+  it.each([
+    ["name", "--renamed"],
+    ["label", "Renamed"],
+    ["description", "Changed"],
+    ["group", "Other"],
+    ["type", "color"],
+  ] as const)("publishes token.%s alone exactly once", (field, value) => {
+    let definition: DesignTokenDefinition = { ...initial };
+    const runtime = createThemeEditorRuntime({ tokens: () => [definition] });
+    const before = runtime.store.getSnapshot();
+    const listener = vi.fn();
+    runtime.store.subscribe(listener);
+    definition = { ...definition, [field]: value };
+    runtime.refresh();
+    expect(runtime.store.getSnapshot().tokens).toEqual([{ ...before.tokens[0], [field]: value }]);
+    expect(runtime.store.getSnapshot().groups).toEqual([
+      { name: field === "group" ? value : "Theme", tokens: runtime.store.getSnapshot().tokens },
+    ]);
+    expect(listener).toHaveBeenCalledTimes(1);
+    runtime.store.destroy();
+  });
+
+  it.each(["effectiveText", "baseText", "defaultText"] as const)(
+    "publishes %s with its raw value",
+    (field) => {
+      let definition = { ...initial };
+      const runtime = createThemeEditorRuntime({ tokens: () => [definition] });
+      runtime.setOverride("--publication", "a");
+      const before = runtime.store.getSnapshot();
+      const listener = vi.fn();
+      runtime.store.subscribe(listener);
+      if (field === "effectiveText") runtime.setOverride("--publication", "b");
+      else {
+        definition = { ...definition, [field === "baseText" ? "value" : "defaultValue"]: "b" };
+        runtime.refresh();
+      }
+      const raw =
+        field === "effectiveText"
+          ? { effective: "b", override: "b" }
+          : field === "baseText"
+            ? { base: "b" }
+            : { defaultValue: "b" };
+      expect(runtime.store.getSnapshot().tokens).toEqual([
+        { ...before.tokens[0], ...raw, [field]: "b" },
+      ]);
+      expect(listener).toHaveBeenCalledTimes(1);
+      runtime.store.destroy();
+    },
+  );
+
+  it("publishes masked alone with maskedCount", () => {
+    let sensitive = false;
+    const runtime = createThemeEditorRuntime({
+      tokens: () => [{ ...initial, value: "[redacted]", defaultValue: "[redacted]", sensitive }],
+    });
+    const before = runtime.store.getSnapshot();
+    const listener = vi.fn();
+    runtime.store.subscribe(listener);
+    sensitive = true;
+    runtime.refresh();
+    expect(runtime.store.getSnapshot().tokens).toEqual([{ ...before.tokens[0], masked: true }]);
+    expect(runtime.store.getSnapshot().maskedCount).toBe(1);
+    expect(listener).toHaveBeenCalledTimes(1);
+    runtime.store.destroy();
+  });
+
+  it("publishes metadataMasked alone when redacted metadata text stays equal", () => {
+    let description = "Bearer abcdefghijklmnop";
+    const runtime = createThemeEditorRuntime({ tokens: () => [{ ...initial, description }] });
+    const before = runtime.store.getSnapshot();
+    expect(before.tokens[0]?.metadataMasked).toBe(true);
+    const listener = vi.fn();
+    runtime.store.subscribe(listener);
+    description = before.tokens[0]?.description ?? "";
+    runtime.refresh();
+    expect(runtime.store.getSnapshot().tokens).toEqual([
+      { ...before.tokens[0], metadataMasked: false },
+    ]);
+    expect(listener).toHaveBeenCalledTimes(1);
+    runtime.store.destroy();
+  });
+
+  // Pins missing raw effective in signature() (runtime.ts:915): null and a literal em dash
+  // share effectiveText, leaving the swatch condition at ui.tsx:224 stale.
+  // When covered, invert to toHaveBeenCalledTimes(1) and getSnapshot() toBe(peek()).
+  it("BUG: null and a literal em dash hide a raw effective color change", () => {
+    let value: string | undefined;
+    const runtime = createThemeEditorRuntime({
+      tokens: () => [{ ...initial, type: "color", value }],
+    });
+    const before = runtime.store.getSnapshot();
+    expect(before.tokens[0]?.effective).toBeNull();
+    const listener = vi.fn();
+    runtime.store.subscribe(listener);
+    value = "—";
+    runtime.refresh();
+    expect(runtime.store.peek().tokens).toEqual([
+      { ...before.tokens[0], base: "—", effective: "—" },
+    ]);
+    expect(listener).not.toHaveBeenCalled();
+    expect(runtime.store.getSnapshot()).toBe(before);
+    runtime.store.destroy();
+  });
+
+  // Pins missing modeWritable in signature() (runtime.ts:915); ui.tsx:476 keeps the button disabled.
+  // When covered, invert to toHaveBeenCalledTimes(1) and getSnapshot() toBe(peek()).
+  it("BUG: changing only the mode setter leaves modeWritable stale", () => {
+    const mode: { read(): "light"; set?: (value: "light" | "dark") => void } = {
+      read: () => "light",
+    };
+    const runtime = createThemeEditorRuntime({ tokens: [initial], mode });
+    const before = runtime.store.getSnapshot();
+    const listener = vi.fn();
+    runtime.store.subscribe(listener);
+    mode.set = () => {};
+    runtime.refresh();
+    expect(runtime.store.peek()).toEqual({
+      ...before,
+      modeWritable: true,
+      revision: before.revision + 1,
+    });
+    expect(listener).not.toHaveBeenCalled();
+    expect(runtime.store.getSnapshot()).toBe(before);
+    runtime.store.destroy();
+  });
+
+  // Pins surface aliasing: signature() (runtime.ts:915) omits label/selector and reads
+  // the already-mutated id from both snapshots; ui.tsx:439/442/504 changes without notification.
+  // After snapshot isolation and comparison are fixed, keep the old field before refresh;
+  // after refresh expect toHaveBeenCalledTimes(1) and getSnapshot() toBe(peek()), not before.
+  it.each(["label", "selector", "id"] as const)(
+    "BUG: aliased surface %s mutates the published snapshot without notifying",
+    (field) => {
+      const surfaces: ThemeSurface[] = [{ id: "one", label: "One", selector: ":root" }];
+      const runtime = createThemeEditorRuntime({ surfaces, tokens: [initial] });
+      const before = runtime.store.getSnapshot();
+      const listener = vi.fn();
+      runtime.store.subscribe(listener);
+      const value = field === "selector" ? "html" : "Changed";
+      surfaces[0]![field] = value;
+      expect(runtime.store.getSnapshot()).toBe(before);
+      expect(runtime.store.getSnapshot().surface[field]).toBe(value);
+      runtime.refresh();
+      expect(runtime.store.peek().surface[field]).toBe(value);
+      expect(runtime.store.getSnapshot()).toBe(before);
+      expect(listener).not.toHaveBeenCalled();
+      runtime.store.destroy();
+    },
+  );
+
+  // Pins aliased surfaces membership, omitted by signature() (runtime.ts:915);
+  // ui.tsx:433/442 sees the published list mutate without notification.
+  // After snapshot isolation and comparison are fixed, before.surfaces must retain length 1;
+  // after refresh expect toHaveBeenCalledTimes(1) and getSnapshot() toBe(peek()), not before.
+  it("BUG: aliased surface-list membership mutates the published snapshot without notifying", () => {
+    const surfaces: ThemeSurface[] = [{ id: "one", selector: ":root" }];
+    const runtime = createThemeEditorRuntime({ surfaces });
+    const before = runtime.store.getSnapshot();
+    const listener = vi.fn();
+    runtime.store.subscribe(listener);
+    surfaces.push({ id: "two", label: "Two", selector: "body" });
+    expect(before.surfaces).toHaveLength(2);
+    runtime.refresh();
+    expect(runtime.store.getSnapshot()).toBe(before);
+    expect(listener).not.toHaveBeenCalled();
+    runtime.store.destroy();
+  });
+
+  it("publishes mode, preview, notice and writable changes synchronously", () => {
+    let mode: "light" | "dark" = "light";
+    const element = document.createElement("div");
+    element.id = "publication-target";
+    document.body.append(element);
+    const runtime = createThemeEditorRuntime({
+      tokens: [initial],
+      surfaces: [{ id: "one", selector: "#publication-target" }],
+      mode: {
+        read: () => mode,
+        set: (next) => {
+          mode = next;
+        },
+      },
+    });
+    const listener = vi.fn();
+    runtime.store.subscribe(listener);
+    runtime.setMode("dark");
+    expect(runtime.store.getSnapshot().mode).toBe("dark");
+    expect(listener).toHaveBeenCalledTimes(1);
+    runtime.setPreview(false);
+    expect(runtime.store.getSnapshot().preview).toBe(false);
+    expect(listener).toHaveBeenCalledTimes(2);
+    runtime.importRecipe("invalid");
+    expect(runtime.store.getSnapshot().notice).toContain("Import refused");
+    expect(listener).toHaveBeenCalledTimes(3);
+    element.remove();
+    runtime.refresh();
+    expect(runtime.store.getSnapshot().writable).toBe(false);
+    expect(listener).toHaveBeenCalledTimes(4);
+    runtime.store.destroy();
+  });
+
+  it("publishes override, orphan, refusal and apply-error state with their dependent fields", () => {
+    let definitions: DesignTokenDefinition[] = [{ name: "--publication", type: "string" }];
+    let fail = false;
+    const runtime = createThemeEditorRuntime({
+      tokens: () => definitions,
+      onApply: () => {
+        if (fail) throw new Error("apply failed");
+      },
+    });
+    runtime.setPreview(false);
+    const listener = vi.fn();
+    runtime.store.subscribe(listener);
+    runtime.setOverride("--publication", "a");
+    expect(runtime.store.getSnapshot()).toMatchObject({
+      overriddenCount: 1,
+      tokens: [{ overridden: true }],
+    });
+    expect(listener).toHaveBeenCalledTimes(1);
+    fail = true;
+    const log = vi.spyOn(console, "error").mockImplementation(() => {});
+    runtime.setOverride("--publication", "a");
+    expect(runtime.store.getSnapshot().tokens[0]?.applyError).toContain("apply failed");
+    expect(Object.keys(runtime.store.getSnapshot().applyErrors)).toEqual(["--publication"]);
+    expect(listener).toHaveBeenCalledTimes(2);
+    definitions = [];
+    runtime.refresh();
+    expect(runtime.store.getSnapshot()).toMatchObject({
+      supplied: false,
+      tokens: [{ orphaned: true }],
+    });
+    expect(listener).toHaveBeenCalledTimes(3);
+    definitions = [{ name: "--dtb-forbidden", type: "string" }];
+    runtime.refresh();
+    expect(runtime.store.getSnapshot().tokens[0]?.refusal).toBe("reserved");
+    expect(runtime.store.getSnapshot().refusedCount).toBe(1);
+    expect(listener).toHaveBeenCalledTimes(4);
+    log.mockRestore();
+    runtime.store.destroy();
+  });
+
+  it("reconciles DOM before notifying, flushes each refresh and consumes revisions on idle attempts", async () => {
+    vi.useFakeTimers();
+    let definition = { ...initial };
+    let element = document.createElement("div");
+    document.body.append(element);
+    const runtime = createThemeEditorRuntime({
+      tokens: () => [definition],
+      surfaces: [{ id: "one", selector: "div" }],
+    });
+    const harness = fakeExtensionApi();
+    try {
+      runtime.start(harness.api);
+      runtime.setOverride("--publication", "b");
+      const old = element;
+      element = document.createElement("div");
+      old.replaceWith(element);
+      const listener = vi.fn(() => [
+        element.style.getPropertyValue("--publication"),
+        old.style.getPropertyValue("--publication"),
+      ]);
+      runtime.store.subscribe(listener);
+      definition = { ...definition, label: "Changed" };
+      runtime.refresh();
+      expect(runtime.store.getSnapshot()).toBe(runtime.store.peek());
+      expect(listener).toHaveBeenCalledTimes(1);
+      definition = { ...definition, label: "Again" };
+      runtime.refresh();
+      expect(listener).toHaveBeenCalledTimes(2);
+      expect(listener.mock.results.map((result) => result.value)).toEqual([
+        ["b", ""],
+        ["b", ""],
+      ]);
+      const stable = runtime.store.getSnapshot();
+      runtime.cssText();
+      runtime.recipeText();
+      runtime.figmaText();
+      runtime.diagnostics();
+      expect(runtime.store.peek()).toBe(stable);
+      runtime.refresh();
+      expect(runtime.store.peek().revision).toBe(stable.revision + 1);
+      expect(runtime.store.getSnapshot()).toBe(stable);
+      await Promise.resolve();
+      vi.advanceTimersByTime(250);
+      expect(listener).toHaveBeenCalledTimes(2);
+    } finally {
+      runtime.store.destroy();
+      harness.abort();
+      element.remove();
+      vi.useRealTimers();
+    }
+  });
+});
+
+describe("publication of theme status", () => {
+  it("publishes readError alone while the token list stays empty", () => {
+    const log = vi.spyOn(console, "error").mockImplementation(() => {});
+    let fail = false;
+    const runtime = createThemeEditorRuntime({
+      tokens: () => {
+        if (fail) throw new Error("unreadable");
+        return [];
+      },
+    });
+    const before = runtime.store.getSnapshot();
+    expect(before.readError).toBeNull();
+    const listener = vi.fn();
+    runtime.store.subscribe(listener);
+    fail = true;
+    runtime.refresh();
+    expect(runtime.store.getSnapshot()).toEqual({
+      ...before,
+      readError: "The token list could not be read — it threw. See the console.",
+      revision: before.revision + 1,
+    });
+    expect(listener).toHaveBeenCalledTimes(1);
+    runtime.store.destroy();
+    log.mockRestore();
+  });
+
+  it("selecting a declared surface publishes selection and notice once", () => {
+    const runtime = createThemeEditorRuntime({
+      tokens: TOKENS,
+      surfaces: [
+        { id: "one", label: "One", selector: ":root" },
+        { id: "two", label: "Two", selector: "body" },
+      ],
+    });
+    const before = runtime.store.getSnapshot();
+    const listener = vi.fn();
+    runtime.store.subscribe(listener);
+    runtime.selectSurface("two");
+    expect(runtime.store.getSnapshot()).toEqual({
+      ...before,
+      surface: before.surfaces[1],
+      notice: "Surface: Two.",
+      revision: before.revision + 1,
+    });
+    expect(listener).toHaveBeenCalledTimes(1);
+    runtime.store.destroy();
+  });
+});
+
+describe("isolated theme publication fields", () => {
+  it("publishes preview alone after an edit has cleared the notice", () => {
+    const runtime = createThemeEditorRuntime({ tokens: TOKENS });
+    runtime.setPreview(false);
+    runtime.setOverride("--scale", "1");
+    const before = runtime.store.getSnapshot();
+    expect(before.notice).toBeNull();
+    const listener = vi.fn();
+    runtime.store.subscribe(listener);
+    runtime.setPreview(true);
+    expect(runtime.store.getSnapshot()).toEqual({
+      ...before,
+      preview: true,
+      revision: before.revision + 1,
+    });
+    expect(listener).toHaveBeenCalledTimes(1);
+    runtime.store.destroy();
+  });
+
+  it("publishes orphaned alone with the rest of the catalogue and row unchanged", () => {
+    const anchor: DesignTokenDefinition = { name: "--anchor", value: "a" };
+    let definitions: DesignTokenDefinition[] = [
+      anchor,
+      { name: "--publication", label: "publication", group: "No longer declared", type: "string" },
+    ];
+    const runtime = createThemeEditorRuntime({ tokens: () => definitions });
+    runtime.setOverride("--publication", "a");
+    const before = runtime.store.getSnapshot();
+    const listener = vi.fn();
+    runtime.store.subscribe(listener);
+    definitions = [anchor];
+    runtime.refresh();
+    const tokens = before.tokens.map((token) =>
+      token.name === "--publication" ? { ...token, orphaned: true } : token,
+    );
+    expect(runtime.store.getSnapshot()).toEqual({
+      ...before,
+      tokens,
+      groups: before.groups.map((group) => ({
+        ...group,
+        tokens: tokens.filter((token) => token.group === group.name),
+      })),
+      revision: before.revision + 1,
+    });
+    expect(listener).toHaveBeenCalledTimes(1);
+    runtime.store.destroy();
+  });
+
+  it("publishes overridden alone in the UI when the edit matches the base value", () => {
+    const runtime = createThemeEditorRuntime({ tokens: [{ name: "--publication", value: "a" }] });
+    const before = runtime.store.getSnapshot();
+    const listener = vi.fn();
+    runtime.store.subscribe(listener);
+    runtime.setOverride("--publication", "a");
+    expect(runtime.store.getSnapshot().tokens).toEqual([
+      { ...before.tokens[0], override: "a", overridden: true },
+    ]);
+    expect(runtime.store.getSnapshot().overriddenCount).toBe(1);
+    expect(listener).toHaveBeenCalledTimes(1);
+    runtime.store.destroy();
+  });
+});
+
+describe("selected surface publication", () => {
+  it("publishes the selected surface ID alone when selector, label and notice stay equal", () => {
+    const runtime = createThemeEditorRuntime({
+      tokens: TOKENS,
+      surfaces: [
+        { id: "one", label: "Same", selector: ":root" },
+        { id: "two", label: "Same", selector: ":root" },
+      ],
+    });
+    runtime.selectSurface("two");
+    const before = runtime.store.getSnapshot();
+    const listener = vi.fn();
+    runtime.store.subscribe(listener);
+    runtime.selectSurface("one");
+    expect(runtime.store.getSnapshot()).toEqual({
+      ...before,
+      surface: { ...before.surface, id: "one" },
+      revision: before.revision + 1,
+    });
+    expect(listener).toHaveBeenCalledTimes(1);
+    runtime.store.destroy();
+  });
+});
+
+describe("apply-error publication without token rows", () => {
+  // Pins missing applyErrors keys in signature() (runtime.ts:915) when fallback tokens
+  // are empty; ui.tsx:412 never receives the newly failed edit key.
+  // When covered, invert to toHaveBeenCalledTimes(1) and getSnapshot() toBe(peek()).
+  it("BUG: a failed edit under an unreadable catalogue adds an invisible error key", () => {
+    const log = vi.spyOn(console, "error").mockImplementation(() => {});
+    const runtime = createThemeEditorRuntime({
+      tokens: [
+        {
+          name: "--publication",
+          type: "string",
+          get label(): string {
+            throw new Error("unreadable label");
+          },
+        },
+      ],
+      onApply: () => {
+        throw new Error("adapter failed");
+      },
+    });
+    const before = runtime.store.getSnapshot();
+    expect(before.tokens).toEqual([]);
+    expect(before.readError).not.toBeNull();
+    const listener = vi.fn();
+    runtime.store.subscribe(listener);
+    runtime.setOverride("--publication", "a");
+    expect(runtime.store.peek()).toEqual({
+      ...before,
+      applyErrors: { "--publication": expect.stringContaining("adapter failed") },
+      revision: before.revision + 1,
+    });
+    expect(listener).not.toHaveBeenCalled();
+    expect(runtime.store.getSnapshot()).toBe(before);
+    runtime.store.destroy();
+    log.mockRestore();
   });
 });

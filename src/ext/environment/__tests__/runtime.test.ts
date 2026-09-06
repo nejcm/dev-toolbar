@@ -2,6 +2,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { createNullStorage, fakeExtensionApi } from "@nejcm/dev-toolbar/testing";
 import { createEnvironmentRuntime, maskEmails } from "../runtime";
+import type { EnvironmentContext } from "../types";
 import { normaliseKind, severityForKind } from "../types";
 
 describe("maskEmails", () => {
@@ -722,5 +723,170 @@ describe("revision", () => {
     runtime.refresh();
     runtime.store.flush();
     expect(runtime.store.getSnapshot().revision).toBe(before + 1);
+  });
+});
+
+describe("publication guarantees", () => {
+  it("publishes an isolated field value once and preserves fixed metadata", () => {
+    let region = "eu";
+    const runtime = createEnvironmentRuntime({
+      detect: false,
+      fields: ["region"],
+      context: () => ({ region }),
+    });
+    const before = runtime.store.getSnapshot();
+    const listener = vi.fn();
+    runtime.store.subscribe(listener);
+    region = "us";
+    runtime.refresh();
+    runtime.store.flush();
+    expect(runtime.store.getSnapshot().fields).toEqual([{ ...before.fields[0], value: "us" }]);
+    expect(listener).toHaveBeenCalledTimes(1);
+    runtime.store.destroy();
+  });
+
+  // Pins missing kind/impersonating/supplied/severity in signature() (runtime.ts:455);
+  // ui.tsx:29/57/65/72 stays stale only when fields excludes the proxy rows used by default (P3).
+  // When covered, invert to toHaveBeenCalledTimes(1) and getSnapshot() toBe(peek()).
+  it.each([
+    ["kind", { environment: "blue" }, { environment: "green" }, { kind: "green" }],
+    [
+      "impersonating",
+      { environment: "production", impersonating: false },
+      { environment: "production", impersonating: true },
+      { impersonating: true },
+    ],
+    ["supplied", {}, { region: "eu" }, { supplied: true }],
+    [
+      "kind and dependent severity",
+      { environment: "local" },
+      { environment: "production" },
+      { kind: "production", severity: "bad" },
+    ],
+  ] as const)("BUG: ignores %s when fields are excluded", (_name, initial, next, delta) => {
+    let context: EnvironmentContext = initial;
+    const runtime = createEnvironmentRuntime({ detect: false, fields: [], context: () => context });
+    const before = runtime.store.getSnapshot();
+    const listener = vi.fn();
+    runtime.store.subscribe(listener);
+    context = next;
+    runtime.refresh();
+    runtime.store.flush();
+    expect(runtime.store.peek()).toEqual({
+      ...before,
+      ...delta,
+      revision: before.revision + 1,
+      at: expect.any(Number),
+    });
+    expect(listener).not.toHaveBeenCalled();
+    expect(runtime.store.getSnapshot()).toBe(before);
+    runtime.store.destroy();
+  });
+
+  // Pins missing field.masked/maskedCount in signature() (runtime.ts:455), leaving
+  // ui.tsx:198/207/181 stale when a literal value equals its mask text, an edge case (P3).
+  // When covered, invert to toHaveBeenCalledTimes(1) and getSnapshot() toBe(peek()).
+  it("BUG: same display text hides field.masked and maskedCount changes", () => {
+    let userId = "Bearer abcdefghijklmnop";
+    const runtime = createEnvironmentRuntime({
+      detect: false,
+      fields: ["userId"],
+      context: () => ({ userId }),
+    });
+    const before = runtime.store.getSnapshot();
+    expect(before.fields[0]?.masked).toBe(true);
+    const listener = vi.fn();
+    runtime.store.subscribe(listener);
+    userId = before.fields[0]?.value ?? "";
+    runtime.refresh();
+    runtime.store.flush();
+    expect(runtime.store.peek().fields).toEqual([{ ...before.fields[0], masked: false }]);
+    expect(runtime.store.peek().maskedCount).toBe(0);
+    expect(listener).not.toHaveBeenCalled();
+    expect(runtime.store.getSnapshot()).toBe(before);
+    runtime.store.destroy();
+  });
+
+  it("publishes source and alarming changes with their determining values", () => {
+    let context: EnvironmentContext = {};
+    const runtime = createEnvironmentRuntime({
+      detect: false,
+      fields: ["environment", "impersonation"],
+      context: () => context,
+    });
+    const listener = vi.fn();
+    runtime.store.subscribe(listener);
+    context = { environment: "production", impersonating: true };
+    runtime.refresh();
+    runtime.store.flush();
+    expect(runtime.store.getSnapshot().fields).toMatchObject([
+      { id: "environment", source: "supplied", alarming: true, value: "production" },
+      { id: "impersonation", source: "supplied", alarming: true, value: "ACTIVE" },
+    ]);
+    expect(listener).toHaveBeenCalledTimes(1);
+    runtime.store.destroy();
+  });
+
+  it("rebuilds immediately into peek; leading publication, trailing interval and explicit flush differ", async () => {
+    vi.useFakeTimers();
+    let region = "eu";
+    const runtime = createEnvironmentRuntime({ detect: false, context: () => ({ region }) });
+    try {
+      const listener = vi.fn();
+      runtime.store.subscribe(listener);
+      const initial = runtime.store.getSnapshot();
+      region = "us";
+      runtime.refresh();
+      expect(runtime.store.getSnapshot()).toBe(runtime.store.peek());
+      expect(listener).toHaveBeenCalledTimes(1);
+      const first = runtime.store.getSnapshot();
+      region = "ap";
+      runtime.refresh();
+      expect(runtime.store.peek().revision).toBe(initial.revision + 2);
+      expect(runtime.store.getSnapshot()).toBe(first);
+      await Promise.resolve();
+      expect(runtime.store.getSnapshot()).toBe(first);
+      vi.advanceTimersByTime(249);
+      expect(listener).toHaveBeenCalledTimes(1);
+      vi.advanceTimersByTime(1);
+      expect(runtime.store.getSnapshot()).toBe(runtime.store.peek());
+      expect(listener).toHaveBeenCalledTimes(2);
+      region = "ca";
+      runtime.refresh();
+      runtime.store.flush();
+      expect(listener).toHaveBeenCalledTimes(3);
+      const stable = runtime.store.getSnapshot();
+      runtime.snapshotText();
+      runtime.diagnostics();
+      expect(runtime.store.peek()).toBe(stable);
+      runtime.refresh();
+      runtime.store.flush();
+      expect(runtime.store.peek().revision).toBe(stable.revision + 1);
+      expect(runtime.store.getSnapshot()).toBe(stable);
+      expect(listener).toHaveBeenCalledTimes(3);
+    } finally {
+      runtime.store.destroy();
+      vi.useRealTimers();
+    }
+  });
+});
+
+describe("environment field identity publication", () => {
+  it("publishes an extra ID with its derived label while group remains fixed", () => {
+    let extra = { first: "same" } as Record<string, string>;
+    const runtime = createEnvironmentRuntime({ detect: false, context: () => ({ extra }) });
+    const before = runtime.store.getSnapshot();
+    const listener = vi.fn();
+    runtime.store.subscribe(listener);
+    extra = { second: "same" };
+    runtime.refresh();
+    runtime.store.flush();
+    expect(runtime.store.getSnapshot().fields).toEqual(
+      before.fields.map((field) =>
+        field.id === "extra:first" ? { ...field, id: "extra:second", label: "second" } : field,
+      ),
+    );
+    expect(listener).toHaveBeenCalledTimes(1);
+    runtime.store.destroy();
   });
 });

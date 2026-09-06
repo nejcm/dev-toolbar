@@ -14,7 +14,7 @@ import {
   vetOverrides,
 } from "../runtime";
 import { parseValue, severityFor } from "../types";
-import type { FlagReading, FlagValue, FlagView } from "../types";
+import type { FlagReading, FlagValue, FlagView, PromotedFlag } from "../types";
 import type { ExtensionRuntimeApi, ToolbarStorage } from "../../../core/contract";
 
 const CATALOGUE: FlagReading[] = [
@@ -920,5 +920,448 @@ describe("teardown", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+});
+
+describe("publication guarantees", () => {
+  const initial: FlagReading = {
+    key: "feature",
+    label: "Feature",
+    description: "Description",
+    owner: "Team A",
+    type: "variant",
+    variants: ["a", "b"],
+    value: "a",
+    defaultValue: "a",
+    source: "default",
+    reloadBehavior: "live",
+    projectUrl: "https://example.test/a",
+    expiresAt: "2030-01-01T00:00:00.000Z",
+  };
+
+  const assertViewPublication = (field: string, value: unknown, count: 0 | 1) => {
+    let reading: FlagReading = { ...initial };
+    const runtime = createFlagsRuntime({ flags: () => [reading], now: () => 0 });
+    const before = runtime.store.getSnapshot();
+    const listener = vi.fn();
+    runtime.store.subscribe(listener);
+    reading = { ...reading, [field]: value };
+    runtime.refresh();
+    runtime.store.flush();
+    expect(runtime.store.peek().flags).toEqual([{ ...before.flags[0], [field]: value }]);
+    expect(listener).toHaveBeenCalledTimes(count);
+    expect(runtime.store.getSnapshot()).toBe(count ? runtime.store.peek() : before);
+    runtime.store.destroy();
+  };
+
+  it.each([
+    ["key", "renamed", 1],
+    ["label", "Renamed", 1],
+    ["description", "Changed", 1],
+    ["type", "string", 1],
+    ["variants", ["a", "c"], 1],
+    ["source", "cohort", 1],
+    ["projectUrl", "https://example.test/b", 1],
+    ["expiresAt", "2031-01-01T00:00:00.000Z", 1],
+  ] as const)("view.%s publishes once", assertViewPublication);
+
+  // Pins missing owner/reloadBehavior/recentlyUsed in signature() (runtime.ts:517).
+  // owner/reloadBehavior leave ui.tsx:424/384 stale; when covered, change their counts
+  // to 1 and getSnapshot() toBe(peek()). recentlyUsed is NOT a UI defect: changed visible
+  // ordering republishes through ordered keys, as the published flag ordering test pins.
+  it.each([
+    ["owner", "Team B", 0],
+    ["reloadBehavior", "full-reload", 0],
+    ["recentlyUsed", true, 0],
+  ] as const)("BUG: view.%s changes without publishing", assertViewPublication);
+
+  // Pins missing expired in signature() (runtime.ts:517); ui.tsx:373 keeps the old expiry tag.
+  // When covered, invert to toHaveBeenCalledTimes(1) and getSnapshot() toBe(peek()).
+  it("BUG: crossing expiresAt changes only expired, without publishing", () => {
+    let now = Date.parse("2029-12-31T23:59:59Z");
+    const runtime = createFlagsRuntime({ flags: [initial], now: () => now });
+    const before = runtime.store.getSnapshot();
+    const listener = vi.fn();
+    runtime.store.subscribe(listener);
+    now += 2000;
+    runtime.refresh();
+    runtime.store.flush();
+    expect(runtime.store.peek().flags).toEqual([{ ...before.flags[0], expired: true }]);
+    expect(listener).not.toHaveBeenCalled();
+    expect(runtime.store.getSnapshot()).toBe(before);
+    runtime.store.destroy();
+  });
+
+  // Pins missing promotedLabel/promotedIcon in signature() (runtime.ts:517);
+  // ui.tsx:49/75 keeps the old promoted chip label/icon after configuration changes.
+  // When covered, invert to toHaveBeenCalledTimes(1) and getSnapshot() toBe(peek()).
+  it.each(["label", "icon"] as const)("BUG: promoted %s alone does not publish", (field) => {
+    const promoted: PromotedFlag = { flagKey: "feature", label: "Pinned", icon: "A" };
+    const runtime = createFlagsRuntime({ flags: [initial], promoted: [promoted] });
+    const before = runtime.store.getSnapshot();
+    const listener = vi.fn();
+    runtime.store.subscribe(listener);
+    promoted[field] = "Changed";
+    runtime.refresh();
+    runtime.store.flush();
+    const viewField = field === "label" ? "promotedLabel" : "promotedIcon";
+    expect(runtime.store.peek().flags).toEqual([{ ...before.flags[0], [viewField]: "Changed" }]);
+    expect(runtime.store.peek().promoted).toEqual(runtime.store.peek().flags);
+    expect(listener).not.toHaveBeenCalled();
+    expect(runtime.store.getSnapshot()).toBe(before);
+    runtime.store.destroy();
+  });
+
+  it("publishes promotion eligibility alone once", () => {
+    let now = 0;
+    const runtime = createFlagsRuntime({
+      flags: [initial],
+      now: () => now,
+      promoted: [{ flagKey: "feature", startAt: "1970-01-01T00:00:01Z" }],
+    });
+    const before = runtime.store.getSnapshot();
+    const listener = vi.fn();
+    runtime.store.subscribe(listener);
+    now = 2000;
+    runtime.refresh();
+    runtime.store.flush();
+    expect(runtime.store.getSnapshot().flags).toEqual([
+      { ...before.flags[0], promoted: true, promotedLabel: "Feature" },
+    ]);
+    expect(runtime.store.getSnapshot().promoted).toEqual(runtime.store.getSnapshot().flags);
+    expect(listener).toHaveBeenCalledTimes(1);
+    runtime.store.destroy();
+  });
+
+  it.each(["effectiveText", "baseText", "defaultText"] as const)(
+    "publishes %s with its raw value",
+    (field) => {
+      let reading = { ...initial };
+      const runtime = createFlagsRuntime({ flags: () => [reading], onOverride: () => {} });
+      runtime.setOverride("feature", "a");
+      const before = runtime.store.getSnapshot();
+      const listener = vi.fn();
+      runtime.store.subscribe(listener);
+      if (field === "effectiveText") runtime.setOverride("feature", "b");
+      else {
+        reading = { ...reading, [field === "baseText" ? "value" : "defaultValue"]: "b" };
+        runtime.refresh();
+        runtime.store.flush();
+      }
+      const raw =
+        field === "effectiveText"
+          ? { effective: "b", override: "b" }
+          : field === "baseText"
+            ? { base: "b" }
+            : { defaultValue: "b" };
+      expect(runtime.store.getSnapshot().flags).toEqual([
+        { ...before.flags[0], ...raw, [field]: "b" },
+      ]);
+      expect(listener).toHaveBeenCalledTimes(1);
+      runtime.store.destroy();
+    },
+  );
+
+  // Pins missing boolean effective state in signature() (runtime.ts:517): equal masked
+  // text hides its change, so ui.tsx:50/208 keeps the old on/checked state.
+  // When covered, invert to toHaveBeenCalledTimes(1) and getSnapshot() toBe(peek()).
+  it("BUG: masked boolean effective state changes without a notification", () => {
+    const runtime = createFlagsRuntime({
+      flags: [{ key: "feature", type: "boolean", value: false, sensitive: true }],
+      onOverride: () => {},
+    });
+    runtime.setOverride("feature", false);
+    const before = runtime.store.getSnapshot();
+    const listener = vi.fn();
+    runtime.store.subscribe(listener);
+    runtime.setOverride("feature", true);
+    expect(runtime.store.peek().flags).toEqual([
+      { ...before.flags[0], effective: true, override: true },
+    ]);
+    expect(listener).not.toHaveBeenCalled();
+    expect(runtime.store.getSnapshot()).toBe(before);
+    runtime.store.destroy();
+  });
+
+  it("publishes masking alone with its count", () => {
+    let sensitive = false;
+    const runtime = createFlagsRuntime({
+      flags: () => [{ key: "feature", value: "[redacted]", defaultValue: "[redacted]", sensitive }],
+    });
+    const before = runtime.store.getSnapshot();
+    const listener = vi.fn();
+    runtime.store.subscribe(listener);
+    sensitive = true;
+    runtime.refresh();
+    runtime.store.flush();
+    expect(runtime.store.getSnapshot().flags).toEqual([{ ...before.flags[0], masked: true }]);
+    expect(runtime.store.getSnapshot().maskedCount).toBe(1);
+    expect(listener).toHaveBeenCalledTimes(1);
+    runtime.store.destroy();
+  });
+
+  it("publishes override, orphan and adapter-error transitions and their aggregate UI state", () => {
+    let readings: FlagReading[] = [
+      { key: "feature", type: "string", value: null, defaultValue: null },
+    ];
+    let fail = false;
+    const runtime = createFlagsRuntime({
+      flags: () => readings,
+      onOverride: () => {
+        if (fail) throw new Error("apply failed");
+      },
+    });
+    const listener = vi.fn();
+    runtime.store.subscribe(listener);
+    runtime.setOverride("feature", null);
+    expect(runtime.store.getSnapshot()).toMatchObject({
+      overriddenCount: 1,
+      flags: [{ overridden: true, source: "local-override" }],
+    });
+    expect(listener).toHaveBeenCalledTimes(1);
+    fail = true;
+    runtime.setOverride("feature", null);
+    expect(runtime.store.getSnapshot().flags[0]?.applyError).toContain("apply failed");
+    expect(Object.keys(runtime.store.getSnapshot().adapterErrors)).toEqual(["feature"]);
+    expect(listener).toHaveBeenCalledTimes(2);
+    readings = [];
+    runtime.refresh();
+    runtime.store.flush();
+    expect(runtime.store.getSnapshot()).toMatchObject({
+      supplied: false,
+      flags: [{ orphaned: true }],
+    });
+    expect(listener).toHaveBeenCalledTimes(3);
+    runtime.store.destroy();
+  });
+
+  it("refresh updates peek immediately; writes flush synchronously; idle attempts consume revisions", async () => {
+    vi.useFakeTimers();
+    let value = "a";
+    const runtime = createFlagsRuntime({
+      flags: () => [{ key: "feature", value }],
+      onOverride: () => {},
+    });
+    try {
+      const listener = vi.fn();
+      runtime.store.subscribe(listener);
+      value = "b";
+      runtime.refresh();
+      expect(runtime.store.getSnapshot()).toBe(runtime.store.peek());
+      expect(listener).toHaveBeenCalledTimes(1);
+      const first = runtime.store.getSnapshot();
+      value = "c";
+      runtime.refresh();
+      expect(runtime.store.peek().flags[0]?.effectiveText).toBe("c");
+      expect(runtime.store.getSnapshot()).toBe(first);
+      await Promise.resolve();
+      expect(runtime.store.getSnapshot()).toBe(first);
+      vi.advanceTimersByTime(249);
+      expect(listener).toHaveBeenCalledTimes(1);
+      vi.advanceTimersByTime(1);
+      expect(listener).toHaveBeenCalledTimes(2);
+      runtime.setOverride("feature", "d");
+      expect(runtime.store.getSnapshot()).toBe(runtime.store.peek());
+      expect(listener).toHaveBeenCalledTimes(3);
+      const stable = runtime.store.getSnapshot();
+      runtime.recipeText();
+      runtime.diagnostics();
+      expect(runtime.store.peek()).toBe(stable);
+      runtime.refresh();
+      runtime.store.flush();
+      expect(runtime.store.peek().revision).toBe(stable.revision + 1);
+      expect(runtime.store.getSnapshot()).toBe(stable);
+      expect(listener).toHaveBeenCalledTimes(3);
+    } finally {
+      runtime.store.destroy();
+      vi.useRealTimers();
+    }
+  });
+});
+
+describe("publication of flag status", () => {
+  it("publishes reloadPending alone when the acknowledgement clears it", () => {
+    const runtime = createFlagsRuntime({
+      flags: [{ key: "feature", type: "boolean", value: false, reloadBehavior: "full-reload" }],
+      onOverride: () => {},
+    });
+    runtime.setOverride("feature", true);
+    const before = runtime.store.getSnapshot();
+    expect(before.reloadPending).toEqual(["feature"]);
+    const listener = vi.fn();
+    runtime.store.subscribe(listener);
+    runtime.acknowledgeReload();
+    expect(runtime.store.getSnapshot()).toEqual({
+      ...before,
+      reloadPending: [],
+      revision: before.revision + 1,
+      at: expect.any(Number),
+    });
+    expect(listener).toHaveBeenCalledTimes(1);
+    runtime.store.destroy();
+  });
+
+  it("publishes readError alone while invalid and failed readings both yield no rows", () => {
+    let fail = false;
+    const runtime = createFlagsRuntime({
+      flags: [
+        {
+          get key() {
+            if (fail) throw new Error("unreadable");
+            return "";
+          },
+        },
+      ],
+    });
+    const before = runtime.store.getSnapshot();
+    expect(before.readError).toBeNull();
+    expect(before.supplied).toBe(true);
+    const listener = vi.fn();
+    runtime.store.subscribe(listener);
+    fail = true;
+    runtime.refresh();
+    runtime.store.flush();
+    expect(runtime.store.getSnapshot()).toEqual({
+      ...before,
+      readError: "The flag list could not be read — it threw. See the console.",
+      revision: before.revision + 1,
+      at: expect.any(Number),
+    });
+    expect(listener).toHaveBeenCalledTimes(1);
+    runtime.store.destroy();
+  });
+});
+
+describe("isolated flag publication fields", () => {
+  it("publishes orphaned with unchanged UI text and supplied state", () => {
+    const anchor: FlagReading = { key: "anchor", value: "a" };
+    let readings: FlagReading[] = [
+      anchor,
+      { key: "feature", type: "string", value: "—", defaultValue: "—" },
+    ];
+    const runtime = createFlagsRuntime({ flags: () => readings, onOverride: () => {} });
+    runtime.setOverride("feature", "a");
+    const before = runtime.store.getSnapshot();
+    const listener = vi.fn();
+    runtime.store.subscribe(listener);
+    readings = [anchor];
+    runtime.refresh();
+    runtime.store.flush();
+    expect(runtime.store.getSnapshot()).toEqual({
+      ...before,
+      flags: before.flags.map((flag) =>
+        flag.key === "feature" ? { ...flag, base: null, defaultValue: null, orphaned: true } : flag,
+      ),
+      revision: before.revision + 1,
+      at: expect.any(Number),
+    });
+    expect(listener).toHaveBeenCalledTimes(1);
+    runtime.store.destroy();
+  });
+
+  it("publishes overridden alone in the UI when source and effective value already match", () => {
+    const runtime = createFlagsRuntime({
+      flags: [{ key: "feature", value: "a", source: "local-override" }],
+      onOverride: () => {},
+    });
+    const before = runtime.store.getSnapshot();
+    const listener = vi.fn();
+    runtime.store.subscribe(listener);
+    runtime.setOverride("feature", "a");
+    expect(runtime.store.getSnapshot().flags).toEqual([
+      { ...before.flags[0], override: "a", overridden: true },
+    ]);
+    expect(runtime.store.getSnapshot().overriddenCount).toBe(1);
+    expect(listener).toHaveBeenCalledTimes(1);
+    runtime.store.destroy();
+  });
+});
+
+describe("adapter-error publication without flag rows", () => {
+  // Pins missing adapterErrors keys in signature() (runtime.ts:517) when fallback rows
+  // are empty; ui.tsx:455 never receives the newly failed adapter key.
+  // When covered, invert to toHaveBeenCalledTimes(1) and getSnapshot() toBe(peek()).
+  it("BUG: a failed override under an unreadable catalogue adds an invisible error key", () => {
+    const runtime = createFlagsRuntime({
+      flags: [
+        {
+          key: "feature",
+          type: "string",
+          get label(): string {
+            throw new Error("unreadable label");
+          },
+        },
+      ],
+      onOverride: () => {
+        throw new Error("adapter failed");
+      },
+    });
+    const before = runtime.store.getSnapshot();
+    expect(before.flags).toEqual([]);
+    expect(before.readError).not.toBeNull();
+    const listener = vi.fn();
+    runtime.store.subscribe(listener);
+    runtime.setOverride("feature", "a");
+    expect(runtime.store.peek()).toEqual({
+      ...before,
+      adapterErrors: { feature: expect.stringContaining("adapter failed") },
+      revision: before.revision + 1,
+      at: expect.any(Number),
+    });
+    expect(listener).not.toHaveBeenCalled();
+    expect(runtime.store.getSnapshot()).toBe(before);
+    runtime.store.destroy();
+  });
+});
+
+describe("published flag ordering", () => {
+  it("publishes a recentlyUsed change when it changes the visible row order", () => {
+    let recentlyUsed = false;
+    const runtime = createFlagsRuntime({
+      flags: () => [
+        { key: "a", value: false },
+        { key: "b", value: false, recentlyUsed },
+      ],
+    });
+    const before = runtime.store.getSnapshot();
+    const listener = vi.fn();
+    runtime.store.subscribe(listener);
+    recentlyUsed = true;
+    runtime.refresh();
+    runtime.store.flush();
+    expect(runtime.store.getSnapshot().flags).toEqual([
+      { ...before.flags[1], recentlyUsed: true },
+      before.flags[0],
+    ]);
+    expect(listener).toHaveBeenCalledTimes(1);
+    runtime.store.destroy();
+  });
+
+  // Pins missing promoted order in signature() (runtime.ts:517); ui.tsx:144 keeps old bar order.
+  // When covered, invert to toHaveBeenCalledTimes(1) and getSnapshot() toBe(peek()).
+  it("BUG: reordering promotion configuration leaves the published bar order stale", () => {
+    const promoted = [{ flagKey: "a" }, { flagKey: "b" }];
+    const runtime = createFlagsRuntime({
+      flags: [
+        { key: "a", value: false },
+        { key: "b", value: false },
+      ],
+      promoted,
+    });
+    const before = runtime.store.getSnapshot();
+    const listener = vi.fn();
+    runtime.store.subscribe(listener);
+    promoted.reverse();
+    runtime.refresh();
+    runtime.store.flush();
+    expect(runtime.store.peek()).toEqual({
+      ...before,
+      promoted: [...before.promoted].reverse(),
+      revision: before.revision + 1,
+      at: expect.any(Number),
+    });
+    expect(listener).not.toHaveBeenCalled();
+    expect(runtime.store.getSnapshot()).toBe(before);
+    runtime.store.destroy();
   });
 });
