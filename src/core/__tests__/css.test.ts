@@ -125,6 +125,70 @@ describe("core stylesheet", () => {
       expect(audit.keyed).toEqual(clean.keyed);
     });
 
+    /**
+     * A quoted value is text, not structure. Each of these hides a plain
+     * element default between declarations whose values contain a comment
+     * opener, a closing brace or a semicolon — shapes that a scanner stripping
+     * comments by regex, or counting braces blindly, erases or mis-nests. The
+     * rule then never reaches the audit at all and the sheet reads clean while
+     * still styling a vendor `<table>` beneath `[data-dtb-embed]`. Each must
+     * be scanned, reach `unguarded`, and be named.
+     */
+    it.each([
+      [
+        "a comment opener inside a quoted value",
+        [
+          '[data-dev-toolbar] { --probe-start: "/*"; }',
+          "[data-dev-toolbar] table { color: rgb(1, 2, 3); }",
+          '[data-dev-toolbar] { --probe-end: "*/"; }',
+        ],
+        3,
+      ],
+      [
+        "a closing brace inside a quoted value",
+        ['[data-dev-toolbar] { --probe: "}"; }', "[data-dev-toolbar] table { color: red; }"],
+        2,
+      ],
+      [
+        "a semicolon inside a quoted value",
+        ['[data-dev-toolbar] { --probe: "; }"; }', "[data-dev-toolbar] table { color: red; }"],
+        2,
+      ],
+    ])("scans past %s", (_name, rules, added) => {
+      const mutated = CORE_CSS.replace(
+        "@layer dev-toolbar {",
+        `@layer dev-toolbar {\n  ${rules.join("\n  ")}\n`,
+      );
+
+      const audit = auditEmbedGuards(mutated);
+
+      expect(audit.unguarded).toEqual(["[data-dev-toolbar] table"]);
+      // Nothing was swallowed: every injected rule is still there to be seen.
+      expect(styleRules(mutated)).toHaveLength(styleRules(CORE_CSS).length + added);
+      expect(audit.keyed).toEqual(auditEmbedGuards(CORE_CSS).keyed);
+    });
+
+    /**
+     * And fails closed at that level too: an unclosed string or comment must
+     * throw rather than quietly consuming every rule after it.
+     */
+    it.each([
+      [
+        "an unterminated string",
+        '@layer dev-toolbar { [data-dev-toolbar] { --probe: "oops; } }',
+        /unterminated string/,
+      ],
+      ["an unterminated comment", "@layer dev-toolbar { /* oops }", /unterminated comment/],
+      ["an unopened comment terminator", "@layer dev-toolbar { */ }", /unbalanced comment/],
+      [
+        "an escape inside a string",
+        '@layer dev-toolbar { [data-dev-toolbar] { --probe: "a\\"b"; } }',
+        /escape inside a string/,
+      ],
+    ])("refuses %s", (_name, css, message) => {
+      expect(() => styleRules(css)).toThrow(message);
+    });
+
     /** And fails closed on a sheet it cannot classify rather than passing it. */
     it("refuses a selector it cannot place", () => {
       const mutated = CORE_CSS.replace(

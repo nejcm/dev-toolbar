@@ -39,25 +39,92 @@ export interface StyleRule {
   readonly enclosing: readonly string[];
 }
 
-function stripComments(css: string): string {
-  const stripped = css.replace(/\/\*[\s\S]*?\*\//g, " ");
-  if (stripped.includes("/*") || stripped.includes("*/")) {
-    throw new Error("css-rules: unbalanced comment; refusing to scan");
-  }
-  return stripped;
+/**
+ * A sheet with its comments removed and its string literals located.
+ *
+ * Both halves matter, and for opposite reasons. A comment opener inside a
+ * quoted value opens no comment, so a regex-based stripper can erase the
+ * rules between two such values and report a clean sheet that is simply
+ * missing them. And a `{`, `}` or `;` inside a quoted value is not structure,
+ * so a scanner that counts braces blindly loses the shape of the sheet. The
+ * strings are therefore kept verbatim — a selector is reported as written —
+ * with `quoted` saying which indices are inside one, delimiters included, so
+ * every structural test can ignore them.
+ */
+interface ScannedSource {
+  readonly source: string;
+  readonly quoted: readonly boolean[];
 }
 
-/** Index just past the `}` matching the `{` at `open`. */
-function endOfBlock(css: string, open: number): number {
+/**
+ * Strip comments and locate strings in one pass, so neither can be mistaken
+ * for the other. Fails closed: an unterminated comment or string, an unopened
+ * comment terminator, and an escape (which this scanner does not model) all
+ * throw rather than silently swallowing the rest of the sheet.
+ */
+function scanSource(css: string): ScannedSource {
+  let source = "";
+  const quoted: boolean[] = [];
+  let i = 0;
+  const emit = (text: string, inString: boolean): void => {
+    source += text;
+    for (let n = 0; n < text.length; n += 1) quoted.push(inString);
+  };
+  while (i < css.length) {
+    const char = css[i] as string;
+    if (char === "/" && css[i + 1] === "*") {
+      const end = css.indexOf("*/", i + 2);
+      if (end === -1) throw new Error("css-rules: unterminated comment; refusing to scan");
+      emit(" ", false);
+      i = end + 2;
+      continue;
+    }
+    if (char === "*" && css[i + 1] === "/") {
+      throw new Error("css-rules: unbalanced comment; refusing to scan");
+    }
+    if (char === '"' || char === "'") {
+      let j = i + 1;
+      while (j < css.length && css[j] !== char) {
+        if (css[j] === "\\") {
+          throw new Error("css-rules: escape inside a string; refusing to scan");
+        }
+        if (css[j] === "\n") break;
+        j += 1;
+      }
+      if (j >= css.length || css[j] !== char) {
+        throw new Error("css-rules: unterminated string; refusing to scan");
+      }
+      emit(css.slice(i, j + 1), true);
+      i = j + 1;
+      continue;
+    }
+    emit(char, false);
+    i += 1;
+  }
+  return { source, quoted };
+}
+
+/** Index just past the `}` matching the `{` at `open`, ignoring quoted text. */
+function endOfBlock(scanned: ScannedSource, open: number): number {
+  const { source, quoted } = scanned;
   let depth = 0;
-  for (let i = open; i < css.length; i += 1) {
-    if (css[i] === "{") depth += 1;
-    else if (css[i] === "}") {
+  for (let i = open; i < source.length; i += 1) {
+    if (quoted[i] === true) continue;
+    if (source[i] === "{") depth += 1;
+    else if (source[i] === "}") {
       depth -= 1;
       if (depth === 0) return i + 1;
     }
   }
   throw new Error("css-rules: unterminated block; refusing to scan");
+}
+
+/** Does an unquoted `char` appear in `[from, to)`? */
+function hasUnquoted(scanned: ScannedSource, char: string, from: number, to: number): boolean {
+  for (let i = from; i < to; i += 1) {
+    if (scanned.quoted[i] !== true && scanned.source[i] === char) return true;
+  }
+  return false;
 }
 
 /**
@@ -66,7 +133,8 @@ function endOfBlock(css: string, open: number): number {
  * nested style rule (this codebase writes none), a stray declaration.
  */
 export function styleRules(css: string): StyleRule[] {
-  const source = stripComments(css);
+  const scanned = scanSource(css);
+  const { source, quoted } = scanned;
   const rules: StyleRule[] = [];
   const enclosing: string[] = [];
   let prelude = "";
@@ -79,7 +147,7 @@ export function styleRules(css: string): StyleRule[] {
   };
 
   while (i < source.length) {
-    const char = source[i];
+    const char = quoted[i] === true ? "" : source[i];
     if (char === "{") {
       const text = take();
       if (text.startsWith("@")) {
@@ -90,14 +158,14 @@ export function styleRules(css: string): StyleRule[] {
           continue;
         }
         if (OPAQUE_AT_RULES.has(name)) {
-          i = endOfBlock(source, i);
+          i = endOfBlock(scanned, i);
           continue;
         }
         throw new Error(`css-rules: unrecognised at-rule "${text}"; refusing to scan`);
       }
       if (text === "") throw new Error("css-rules: block with an empty prelude");
-      const end = endOfBlock(source, i);
-      if (source.slice(i + 1, end - 1).includes("{")) {
+      const end = endOfBlock(scanned, i);
+      if (hasUnquoted(scanned, "{", i + 1, end - 1)) {
         throw new Error(`css-rules: nested rule inside "${text}"; refusing to scan`);
       }
       rules.push({ prelude: text, enclosing: [...enclosing] });
@@ -122,7 +190,7 @@ export function styleRules(css: string): StyleRule[] {
       i += 1;
       continue;
     }
-    prelude += char;
+    prelude += source[i];
     i += 1;
   }
 
@@ -431,7 +499,8 @@ export interface EmbedGuardAudit {
  * - otherwise the rule styles descendants by element, attribute or state, so
  *   it lands on a vendor's DOM unless {@link EMBED_GUARD} is one of the
  *   subject's own pieces → `guarded` or `unguarded`. A guard reached only
- *   through an `:is()` branch is not mandatory, and does not count.
+ *   through an `:is()` branch does not count: it is conservatively rejected,
+ *   which fails the audit even where every branch happens to carry it.
  *
  * It fails closed: a selector that is not scoped by `[data-dev-toolbar]` at
  * all throws rather than being sorted, as does any selector syntax this
