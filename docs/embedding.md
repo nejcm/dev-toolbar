@@ -52,11 +52,48 @@ lifecycle ([the contract](./extension-contract.md), *Two lifecycle rules*).
 An embedded tool brings its own CSS, and **the toolbar does not scope, reset or
 restyle it.** The bar renders in the light DOM ([ADR-002](./adr/ADR-002-light-dom.md)),
 so a stylesheet the tool injects into `document.head` reaches its own DOM exactly as it
-would anywhere else on your page. Core's sheet and the kit's live inside
-`@layer dev-toolbar` and are keyed on `data-dtb-part` / `data-dtb-kind` attributes the
-embedded tool never carries, so neither can reach into it. No wrapper resets fonts,
-colours or box-sizing around the embedded subtree, and none should: a tool that looks
-right on its own page will look right here, and one that does not is theirs to fix.
+would anywhere else on your page. Nothing wraps the embedded subtree with a reset of
+fonts, colours or box-sizing, and nothing should: a tool that looks right on its own
+page will look right here, and one that does not is theirs to fix.
+
+That takes one attribute to be true, and it is worth knowing why. The kit's sheet is
+keyed on `data-dtb-kind`, which the embedded tool never carries, so it cannot reach in.
+Core's sheet is mostly keyed on `data-dtb-part` — but core also states a handful of
+**element-level defaults for every descendant of the root**, so a first-party panel
+looks the same in an app with a reset and an app without: `box-sizing: border-box` on
+`*`, zero margins on headings, paragraphs and lists, a flat button face
+(`[data-dev-toolbar] :where(button) { padding: 0; border: 0; background: transparent;
+font: inherit }`), field geometry on `input`, `select` and `textarea`, and one
+focus ring. Left alone, those would land on the embedded tool's buttons and inputs
+too — overridable by the tool's own CSS, but not absent.
+
+So core owns an opt-out: **`data-dtb-embed`**. Every one of those descendant rules is
+guarded with `:where(:not([data-dtb-embed] *))`, and a subtree under an element
+carrying the attribute gets none of them — the tool arrives with the UA's defaults,
+exactly as it would anywhere else on the page. The `embed()` frame below carries it.
+The four-line recipe above does not, so add it to the root you render:
+
+```tsx
+panel: ({ close }) => (
+  <div data-dtb-embed="" style={{ height: "100%" }}>
+    <ReactQueryDevtoolsPanel client={queryClient} style={{ height: "100%" }} onClose={close} />
+  </div>
+),
+```
+
+Without it, the recipe still works and the tool's own stylesheet still wins every
+conflict — the difference is only what a vendor element *without* a rule of its own
+looks like: ours, or the browser's. `src/kit/__tests__/embed.test.tsx` walks every rule
+in core's sheet and the kit's against a vendor DOM containing one of each element those
+rules name, and fails on the first that matches — so the guard and this page cannot
+drift apart unnoticed.
+
+What the attribute does **not** stop is inheritance, and it should not: the frame sits
+inside the panel, so the panel's `font-family`, `font-size`, `line-height`, `color` and
+`color-scheme` reach the tool's root the way any parent's do. A tool that sets its own
+root typography — TanStack Query's devtools do — is unaffected; one that leans on the
+page's `body` font gets the toolbar's instead, and fixes that with one rule on its own
+root, as it would inside any styled container.
 
 Two consequences worth knowing:
 
@@ -116,8 +153,8 @@ What it does, and all it does:
   the chip entirely.
 - **`height` handed through, with a floor.** `render` receives the live
   `PanelSlotProps` — `height` in pixels, `close()`, `isActive`, `density`,
-  `styleNonce`. The frame is a bare `<div data-dtb-part="embed-frame">` with
-  `height: 100%` and `min-height: 240px` (or `minHeight`), so a tool that fills its
+  `styleNonce`. The frame is a bare `<div data-dtb-part="embed-frame" data-dtb-embed>`
+  with `height: 100%` and `min-height: 240px` (or `minHeight`), so a tool that fills its
   container (`style={{ height: "100%" }}`) tracks the resizer without measuring, and
   one that sizes itself from an auto-height parent does not collapse to nothing. When
   the panel is dragged shorter than the floor, the panel body scrolls the frame rather
@@ -128,8 +165,9 @@ What it does, and all it does:
 - **`keepMounted` as an option**, passed straight through to core.
 
 It adds no containment (core's boundary is already around the slot), no stylesheet for
-the embedded subtree, no wrapper with a class on it. The frame carries one attribute
-and two inline sizes, and the tool's root is its only child.
+the embedded subtree, no wrapper with a class on it. The frame carries two attributes —
+its part name and the `data-dtb-embed` opt-out above — and two inline sizes, and the
+tool's root is its only child.
 
 ## Loading the tool lazily too
 

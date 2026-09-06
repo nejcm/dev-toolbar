@@ -8,10 +8,15 @@
  * the four things that are fiddly rather than hard — a native-looking chip, the
  * panel `height` handed through with a floor, the embedded `render()` left
  * uncalled until the panel first opens, and `keepMounted` as an option — and it
- * deliberately does **not** scope, reset or restyle the embedded subtree: the
- * frame is a bare `<div>` carrying only a `data-dtb-part`, and the one sheet it
- * ensures is the kit's, whose rules are keyed on `data-dtb-kind` attributes the
- * embedded tool never carries. `docs/embedding.md` is the recipe.
+ * deliberately does **not** scope, reset or restyle the embedded subtree. The
+ * frame is a bare `<div>` carrying `data-dtb-part` and `data-dtb-embed`; the
+ * second is core's opt-out (`src/styles.css`), which stops every element-level
+ * default core would otherwise apply inside a panel — box-sizing, the button
+ * face, field geometry, the margin resets, the focus ring — at the frame. The
+ * one sheet the helper ensures is the kit's, whose rules are keyed on
+ * `data-dtb-kind` attributes the embedded tool never carries. What still
+ * reaches the tool is inheritance alone — font, size, colour — as from any
+ * parent. `docs/embedding.md` is the recipe.
  */
 import { useEffect } from "react";
 import type { CSSProperties, ReactNode } from "react";
@@ -27,6 +32,14 @@ import { ensureKitStyles } from "./styles";
 
 /** The frame's default `min-height`, in pixels. */
 const DEFAULT_MIN_HEIGHT = 240;
+
+/**
+ * The contract version the built extension states. A literal, not core's
+ * `CONTRACT_VERSION`: the kit never value-imports core (the boundary suite
+ * enforces it), so `src/kit/__tests__/embed.test.tsx` asserts the two are
+ * equal instead, and a core bump fails there rather than shipping stale.
+ */
+const TARGET_CONTRACT_VERSION = 2;
 
 export interface EmbedOptions {
   /** Extension id: dedupe, panel state, storage scope. */
@@ -119,7 +132,7 @@ interface EmbedFrameProps {
  */
 function EmbedFrame({ render, slot, style }: EmbedFrameProps): ReactNode {
   return (
-    <div data-dtb-part="embed-frame" style={style}>
+    <div data-dtb-part="embed-frame" data-dtb-embed="" style={style}>
       {render(slot)}
     </div>
   );
@@ -167,7 +180,7 @@ export function embed(options: EmbedOptions): DevToolbarExtension {
   return {
     id,
     label,
-    contractVersion: 2,
+    contractVersion: TARGET_CONTRACT_VERSION,
     align,
     order,
     priority,

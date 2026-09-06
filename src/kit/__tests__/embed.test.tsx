@@ -12,6 +12,7 @@ import { useState } from "react";
 import type { ReactNode } from "react";
 import { fireEvent, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { CONTRACT_VERSION } from "@nejcm/dev-toolbar";
 import { cleanupToolbar, makeExtension, mountToolbar } from "@nejcm/dev-toolbar/testing";
 import { STYLE_ATTRIBUTE } from "../../runtime/styles";
 import { embed } from "../embed";
@@ -52,6 +53,62 @@ const injectedSheets = () =>
     node.getAttribute(STYLE_ATTRIBUTE),
   );
 
+/**
+ * Every style rule's selector across the injected sheets, descending through
+ * `@layer` / `@media` / `@supports` blocks. Pseudo-elements are stripped: an
+ * `::after` rule still *selects* the element it decorates, and `matches()`
+ * rejects them.
+ */
+function injectedSelectors(): string[] {
+  const selectors: string[] = [];
+  const walk = (rules: CSSRuleList) => {
+    for (const rule of Array.from(rules)) {
+      if (rule instanceof CSSStyleRule) {
+        selectors.push(rule.selectorText.replace(/::[a-z-]+(\([^)]*\))?/g, ""));
+      } else if ("cssRules" in rule) {
+        walk((rule as CSSGroupingRule).cssRules);
+      }
+    }
+  };
+  for (const sheet of Array.from(document.head.querySelectorAll<HTMLStyleElement>("style"))) {
+    if (sheet.sheet) walk(sheet.sheet.cssRules);
+  }
+  return selectors;
+}
+
+/** The selectors in `selectors` that match at least one of `elements`. */
+const reaching = (selectors: string[], elements: Element[]): string[] =>
+  selectors.filter((selector) => elements.some((element) => element.matches(selector)));
+
+/**
+ * One of everything core states an element-level default for: box-sizing on
+ * `*`, margins on headings/paragraphs/lists, the button face, field geometry,
+ * the focus ring on anything focusable.
+ */
+function VendorKitchenSink(): ReactNode {
+  return (
+    <section className="vendor-devtools">
+      <h1>Vendor</h1>
+      <p>
+        <a href="#vendor">docs</a>
+      </p>
+      <ul>
+        <li>one</li>
+      </ul>
+      <button type="button">vendor button</button>
+      <div role="button" tabIndex={0}>
+        vendor role button
+      </div>
+      <input aria-label="vendor text" />
+      <input type="checkbox" aria-label="vendor checkbox" />
+      <select aria-label="vendor select">
+        <option>a</option>
+      </select>
+      <textarea aria-label="vendor textarea" />
+    </section>
+  );
+}
+
 describe("embed()", () => {
   it("is a plain extension object at contract v2 with the options passed through", () => {
     const extension = embed({
@@ -64,10 +121,12 @@ describe("embed()", () => {
       hidden: false,
       keepMounted: true,
     });
+    // Against the constant, not a literal: the kit cannot value-import core, so
+    // this equality is what fails when core bumps and the helper does not.
+    expect(extension.contractVersion).toBe(CONTRACT_VERSION);
     expect(extension).toMatchObject({
       id: "vendor",
       label: "Vendor",
-      contractVersion: 2,
       align: "end",
       order: 7,
       priority: 3,
@@ -216,13 +275,99 @@ describe("embed()", () => {
     toolbar.openPanel("vendor");
     expect(injectedSheets()).toEqual(["core", "kit"]);
 
-    // The frame is a bare div: no kind, no class, no wrapper between it and the tool.
+    // The frame is a bare div: no kind, no class, no wrapper between it and the
+    // tool. It carries core's opt-out attribute, and nothing inside it does.
     const node = frame();
     expect(node?.hasAttribute("data-dtb-kind")).toBe(false);
+    expect(node?.hasAttribute("data-dtb-embed")).toBe(true);
     expect(node?.className).toBe("");
     expect(node?.children).toHaveLength(1);
     expect(node?.firstElementChild?.className).toBe("vendor-devtools");
-    expect(node?.querySelector("[data-dtb-kind], [data-dtb-part]")).toBeNull();
+    expect(node?.querySelector("[data-dtb-kind], [data-dtb-part], [data-dtb-embed]")).toBeNull();
+  });
+
+  describe("the stylesheet rule: no core or kit selector reaches the embedded subtree", () => {
+    /*
+     * docs/embedding.md promises that the toolbar does not scope, reset or
+     * restyle an embedded tool. Core states element-level defaults for every
+     * descendant of the root — `[data-dev-toolbar] :where(button)`, the
+     * box-sizing `*`, field geometry — so that promise holds only because each
+     * of those rules is guarded with `:where(:not([data-dtb-embed] *))`. This
+     * walks every rule in every injected sheet against a vendor DOM containing
+     * one of each element those rules name, and fails on the first that
+     * matches — a new unguarded descendant rule in core lands here.
+     */
+    const vendorElements = (): Element[] => {
+      const root = frame()?.querySelector(".vendor-devtools");
+      expect(root).not.toBeNull();
+      return [root as Element, ...Array.from((root as Element).querySelectorAll("*"))];
+    };
+
+    it("through embed(): the frame's subtree matches no injected rule", () => {
+      const { toolbar } = mount(
+        embed({ id: "vendor", label: "Vendor", render: () => <VendorKitchenSink /> }),
+      );
+      toolbar.openPanel("vendor");
+
+      const selectors = injectedSelectors();
+      // The sheets parsed and the walk found the rules it is guarding against.
+      expect(selectors.length).toBeGreaterThan(50);
+      expect(selectors).toContainEqual(expect.stringContaining(":where(button)"));
+      expect(selectors).toContainEqual(expect.stringContaining(":where(select)"));
+
+      expect(reaching(selectors, vendorElements())).toEqual([]);
+
+      // Negative control, so a guard that stopped guarding cannot pass by
+      // accident: the same vendor button, with the frame's attribute gone,
+      // is matched by core's button reset, the box-sizing rule and the ring.
+      frame()?.removeAttribute("data-dtb-embed");
+      const unguarded = reaching(selectors, vendorElements());
+      expect(unguarded).toContainEqual(expect.stringContaining(":where(button)"));
+      expect(unguarded).toContainEqual(expect.stringContaining("[data-dev-toolbar] :where(:not("));
+      expect(unguarded).toContainEqual(expect.stringContaining(":where(select)"));
+      expect(unguarded).toContainEqual(expect.stringContaining(":where(textarea)"));
+    });
+
+    it("through the four-line recipe: any element marked data-dtb-embed gets the same exemption", () => {
+      // No kit involved: a hand-rolled extension whose panel root opts out,
+      // the way docs/embedding.md tells an embedder without embed() to.
+      const { toolbar } = mountToolbar(null, {
+        instanceId: "embed",
+        extensions: [
+          {
+            id: "vendor",
+            label: "Vendor",
+            panel: () => (
+              <div data-dtb-embed="" data-dtb-part="embed-frame">
+                <VendorKitchenSink />
+              </div>
+            ),
+          },
+        ],
+      });
+      toolbar.openPanel("vendor");
+      expect(injectedSheets()).toEqual(["core"]);
+      expect(reaching(injectedSelectors(), vendorElements())).toEqual([]);
+    });
+
+    it("and the toolbar's own controls, outside the frame, still get every default", () => {
+      // The guard exempts the embedded subtree and nothing else: the embed
+      // chip's trigger and the retry button on a first-party panel are core's
+      // to style, and the same rules that skip the vendor still match them.
+      const { toolbar } = mount(
+        embed({ id: "vendor", label: "Vendor", render: () => <VendorKitchenSink /> }),
+      );
+      toolbar.openPanel("vendor");
+      const trigger = screen.getByRole("button", { name: "Vendor" });
+      const selectors = injectedSelectors();
+      const onTrigger = reaching(selectors, [trigger]);
+      expect(onTrigger).toContainEqual(expect.stringContaining(":where(button)"));
+      expect(onTrigger).toContainEqual(expect.stringContaining("[data-dev-toolbar] :where(:not("));
+      // And the frame itself — ours, not theirs — keeps border-box.
+      expect(reaching(selectors, [frame() as Element])).toContainEqual(
+        expect.stringContaining("[data-dev-toolbar] :where(:not("),
+      );
+    });
   });
 
   it("injectStyles: false skips the kit sheet; a styleNonce option wins over the slot's", () => {
@@ -252,7 +397,7 @@ describe("embed()", () => {
       instanceId: "embed",
       onExtensionError,
       extensions: [
-        makeExtension({ id: "other", compact: "other" }),
+        makeExtension({ id: "other", compact: "other", panel: "other panel" }),
         embed({
           id: "vendor",
           label: "Vendor",
@@ -278,13 +423,19 @@ describe("embed()", () => {
       expect.objectContaining({ extensionId: "vendor", slot: "panel" }),
     );
 
-    // The bar is still usable: the other item is there, the chip is there, and
-    // the panel can be closed and reopened.
-    expect(toolbar.item("other")).not.toBeNull();
-    expect(screen.getByRole("button", { name: "Vendor" })).toBeTruthy();
-    toolbar.closePanel();
-    expect(toolbar.activePanelId()).toBeNull();
-    toolbar.openPanel("vendor");
+    // The bar is still usable — driven through its own controls, not the
+    // context: clicking the other item's trigger opens *its* panel (which
+    // closes the broken one and unmounts the chip), and clicking the vendor
+    // trigger brings the broken panel, still broken, back.
+    fireEvent.click(screen.getByRole("button", { name: "other" }));
+    expect(toolbar.activePanelId()).toBe("other");
+    expect(screen.getByTestId("dtb-panel-other").textContent).toBe("other panel");
+    expect(document.querySelector('[data-dtb-part="error-chip"]')).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "Vendor" }));
+    expect(toolbar.activePanelId()).toBe("vendor");
+    expect(screen.queryByTestId("dtb-panel-other")).toBeNull();
+    expect(document.querySelector('[data-dtb-part="error-chip"]')).not.toBeNull();
 
     // Retry — core's button — re-renders the slot once the tool stops throwing.
     broken = false;

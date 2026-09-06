@@ -74,11 +74,14 @@ of the exact kit specifier, not same-name locals:
 | Filtering | `matchesQuery`: 2 | It is the string-level predicate shared by the flags and theme-editor view wrappers. |
 | Labelled control | `Field`: 1 | It names the wrapping-label pattern that associates a control without generating or synchronising an `id`. |
 
-One helper is admitted on the "a third party asking" half of the bar rather than on
-production imports: `embed()`, below, has **zero** first-party users by construction —
-it frames somebody else's panel, and no first-party extension is somebody else's. The
-plan that added it (`plans/ecosystem-extensions.md` §0C) refused it a subpath for the
-same reason it belongs here: a helper for extension authors, not an extension.
+One helper is admitted as an explicit exception to that bar rather than on either half
+of it: `embed()`, below, has **zero** first-party users by construction — it frames
+somebody else's panel, and no first-party extension is somebody else's — and no third
+party asked for it. It was approved through Phase 0C of `plans/ecosystem-extensions.md`,
+which weighed an `/ext/embed` subpath against a helper and chose the helper: the
+containment a subpath would have offered is already core's, and what remained was a
+frame for extension authors, not an extension. The exception is this one helper; the
+rule stands for the next candidate.
 
 The current examples of things that do **not** qualify: `switch` (two sites, both
 `role="switch"` buttons in `/ext/flags` and `/ext/overlays`, so a kit `Toggle` would
@@ -272,8 +275,9 @@ monitor. It returns an ordinary extension: a `Chip`-based trigger reading `label
 `<div data-dtb-part="embed-frame">` with `height: 100%` and a `min-height` floor
 (default 240px), `keepMounted` passed through, and `render()` left uncalled until the
 panel first opens. It scopes, resets and injects **nothing** for the embedded subtree —
-an embedded tool brings its own CSS, and the only sheet the helper ensures is this kit's,
-for its own chip. The plain `{ id, label, panel }` object works without it; the helper is
+the frame carries core's `data-dtb-embed` opt-out, which keeps core's element-level
+defaults (the button face, field geometry, box-sizing) off the tool, and the only sheet
+the helper ensures is this kit's, for its own chip. The plain `{ id, label, panel }` object works without it; the helper is
 for the fiddly parts. [embedding.md](./embedding.md) is the recipe and the reference for
 `EmbedOptions`.
 
