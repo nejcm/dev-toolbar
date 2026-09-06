@@ -69,6 +69,24 @@ export interface NetworkEntryView {
   error: string | undefined;
 }
 
+/**
+ * What `network.export` returns, and what a bug report gets pasted into.
+ *
+ * `requests` is **the array the panel is rendering**, not a re-derivation of
+ * it: the runtime hands out the one it last built, so an entry an agent reads
+ * and an entry a developer sees cannot disagree about redaction, ordering or
+ * shape (`plans/ecosystem-extensions.md` § The agent surface — "divergence
+ * between the two is a bug, not a nuance").
+ */
+export interface NetworkExport {
+  generatedAt: string;
+  /** The page, redacted. `null` outside a browser. */
+  url: string | null;
+  count: number;
+  /** Newest first, already through `redactUrl()`. */
+  requests: readonly NetworkEntryView[];
+}
+
 export interface MetricsSnapshot {
   /** Bumped on every publish. Sparklines read the rings directly and key off this. */
   revision: number;

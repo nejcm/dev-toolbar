@@ -17,6 +17,8 @@ import {
   redactUrl,
   redactHeaders,
   writeClipboardText,
+  instrumentFetch,
+  instrumentXhr,
 } from "@nejcm/dev-toolbar/runtime";
 ```
 
@@ -92,6 +94,19 @@ injected sheet, and `writeClipboardTextOrThrow()`.
   permission: the first resolves `false` when the write did not happen, the
   second throws a message naming the fallback. Every first-party *Copy* button
   goes through them.
+- **`instrumentFetch(sink)` / `instrumentXhr(sink)`** — the package's one HTTP
+  interceptor. Each takes a `NetworkSink` (`begin(method, url)` returning a token,
+  `end(token, result)`) and returns an unsubscribe. **One wrapper, many sinks**: the
+  first sink installs it, every later one joins the same wrapper, and the last one
+  to leave restores `globalThis.fetch` — *by identity*, and never over somebody
+  else's later patch, so a page that patched `fetch` after you keeps its own. A sink
+  that throws is contained and logged; the host app's request is never affected by a
+  recorder's bug. `method` and `url` arrive **raw** — redaction is the sink's job,
+  because a sink filtering on the real URL cannot do it against a masked one — and
+  headers and bodies are never read. `/ext/metrics`' network collector is one sink
+  on this; it imports it through the published specifier rather than relatively, so
+  a CommonJS consumer using both gets one wrapper rather than two. Where there is no
+  `fetch` (or no `XMLHttpRequest`) attaching is a no-op returning a no-op.
 - **`ensureStyleSheet(entry, css, doc?, nonce?)`** — injects a stylesheet once per
   document, keyed on a `style[data-dev-toolbar-styles]` element rather than a module
   flag, so two bundled copies of your package still inject once. Core's

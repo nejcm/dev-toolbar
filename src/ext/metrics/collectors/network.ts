@@ -2,17 +2,30 @@
  * In-flight and recent HTTP requests. [dev-toolbar/ext/metrics]
  *
  * Two instrumentation routes: pass a `/runtime` bus and emit `network-start` /
- * `network-end` from your own HTTP client, or let this patch `fetch` and
- * `XMLHttpRequest` for you. Patches restore the originals on teardown, refuse
- * to patch over another copy of themselves, and refuse to restore over
- * somebody else's later patch.
+ * `network-end` from your own HTTP client, or let `/runtime`'s shared
+ * interceptor patch `fetch` and `XMLHttpRequest` for you. The patches live in
+ * `src/runtime/network.ts` — one wrapper feeding every sink in the package,
+ * restored on teardown by identity and never restored over somebody else's
+ * later patch. This collector is one sink among possibly several.
  *
  * Every URL goes through `redactUrl()` before retention, as do the URL-shaped
  * substrings of an error message — that text is foreign, and a rejection
  * routinely names the request it failed on. Headers and bodies are never read.
  */
 import { createRingBuffer, createTimeSeries, redactUrl } from "../../../runtime";
+/**
+ * The one stateful import in this file that goes through the **published**
+ * specifier rather than `../../../runtime`. The interceptor's patch state is
+ * module-level, and the CJS build does not code-split: a relative value import
+ * would be inlined into `dist/ext/metrics.cjs`, so a consumer using both this
+ * collector and `@nejcm/dev-toolbar/runtime`'s `instrumentFetch()` would install
+ * two wrappers. `@nejcm/dev-toolbar` is `external` in `tsup.config.ts`, so this
+ * resolves to the host's single copy in both formats — the same rule that keeps
+ * `/kit` one instance. Everything else here is stateless and stays relative.
+ */
+import { instrumentFetch, instrumentXhr } from "@nejcm/dev-toolbar/runtime";
 import type { BusLike, RedactOptions, ToolbarEventMap } from "../../../runtime";
+import type { NetworkSink } from "../../../runtime";
 import { formatCount, formatMs } from "../format";
 import type { Collector, CollectorContext, MetricView, NetworkEntryView } from "../types";
 
@@ -56,116 +69,35 @@ export interface NetworkCollectorOptions {
 }
 
 /**
- * One patch, many recorders.
+ * The network collector's own surface, on top of `Collector`.
  *
- * Patch state is module-level, so the usual dual-package hazard applies: a
- * page loading both `dist/ext/metrics.js` and `.cjs` gets two `fetchPatch`
- * copies, each installing its own wrapper. Both still record correctly (they
- * stack rather than conflict), but the app pays for two wrappers — resolve
- * the package to one format to avoid it.
- *
- * The wrapper is installed once, globally, and feeds a set of sinks. It's
- * removed when the last sink leaves, and never removed if something has
- * patched on top of it since (refusing to patch when it saw its own flag on
- * `fetch` would instead make the first of two live collectors own the
- * wrapper while every later one silently records nothing).
+ * `/ext/metrics` reaches for these when it builds the `network.*` commands;
+ * a consumer holding the collector can call them directly. Recording is what
+ * pauses — never the interceptor: unpatching and re-patching `fetch` on a
+ * toggle would hand the wrapper back to whatever patched after us, and pausing
+ * is not a reason to fight over a global.
  */
-export interface NetworkSink {
-  /** Returns an opaque token that comes back to `end`. */
-  begin(method: string, url: string): unknown;
-  end(
-    token: unknown,
-    result: {
-      status?: number | undefined;
-      bytes?: number | undefined;
-      error?: string | undefined;
-      aborted?: boolean;
-    },
-  ): void;
-}
-
-function methodOf(input: unknown, init: RequestInit | undefined): string {
-  const fromInit = init?.method;
-  if (typeof fromInit === "string") return fromInit.toUpperCase();
-  const request = input as { method?: unknown } | undefined;
-  if (typeof request?.method === "string") return request.method.toUpperCase();
-  return "GET";
-}
-
-function urlOf(input: unknown): string {
-  if (typeof input === "string") return input;
-  if (typeof URL !== "undefined" && input instanceof URL) return input.href;
-  const request = input as { url?: unknown } | undefined;
-  if (typeof request?.url === "string") return request.url;
-  return "unknown";
-}
-
-interface Installed {
-  sinks: Set<NetworkSink>;
-  uninstall(): void;
-}
-
-let fetchPatch: Installed | null = null;
-let xhrPatch: Installed | null = null;
-
-function attach(
-  slot: () => Installed | null,
-  set: (value: Installed | null) => void,
-  install: (sinks: Set<NetworkSink>) => (() => void) | null,
-  sink: NetworkSink,
-): () => void {
-  let current = slot();
-  if (!current) {
-    const sinks = new Set<NetworkSink>();
-    const uninstall = install(sinks);
-    if (!uninstall) return () => {};
-    current = { sinks, uninstall };
-    set(current);
-  }
-  const installed = current;
-  installed.sinks.add(sink);
-  return () => {
-    installed.sinks.delete(sink);
-    if (installed.sinks.size > 0) return;
-    installed.uninstall();
-    if (slot() === installed) set(null);
-  };
+export interface NetworkCollector extends Collector {
+  /** Newest first, already redacted. Required here, optional on `Collector`. */
+  entries(now: number): readonly NetworkEntryView[];
+  /** Stop or resume *recording*. Returns the state after the change. */
+  setPaused(paused: boolean): boolean;
+  isPaused(): boolean;
+  /**
+   * The `redact` options this collector was built with. Exposed so anything
+   * re-rendering a retained URL — `network.copyAsCurl`, say — masks exactly
+   * what the panel masked, including a consumer's `extraKeys`.
+   */
+  readonly redactOptions: RedactOptions | undefined;
 }
 
 /**
- * Both fan-outs swallow sink errors on purpose: these run inside the host
- * app's `fetch`/`XMLHttpRequest`, and a bug here (or in the consumer's own
- * `filter`) must never surface as a failed request in the app being measured.
+ * Re-exported from `/runtime`, where the interceptor now lives (one wrapper for
+ * every caller in the package). Kept exported here so
+ * `@nejcm/dev-toolbar/ext/metrics` keeps the names it has always published.
  */
-function fanIn(sinks: Set<NetworkSink>, method: string, url: string): [NetworkSink, unknown][] {
-  const tokens: [NetworkSink, unknown][] = [];
-  for (const sink of sinks) {
-    try {
-      tokens.push([sink, sink.begin(method, url)]);
-    } catch (error) {
-      reportSinkError(error);
-    }
-  }
-  return tokens;
-}
-
-function fanOut(tokens: [NetworkSink, unknown][], result: Parameters<NetworkSink["end"]>[1]): void {
-  for (const [sink, token] of tokens) {
-    try {
-      sink.end(token, result);
-    } catch (error) {
-      reportSinkError(error);
-    }
-  }
-}
-
-function reportSinkError(error: unknown): void {
-  // eslint-disable-next-line no-console
-  console.error(
-    "[dev-toolbar/ext/metrics] a network recorder threw; the request itself is unaffected.",
-    error,
-  );
-}
+export { instrumentFetch, instrumentXhr } from "@nejcm/dev-toolbar/runtime";
+export type { NetworkSink, NetworkSinkResult } from "../../../runtime";
 
 /**
  * An absolute-URL substring inside free text. Same scheme shape `redact()`'s
@@ -201,130 +133,7 @@ function reportSinkError(error: unknown): void {
 const URL_IN_TEXT =
   /(?<![A-Za-z0-9+.-])[A-Za-z][A-Za-z0-9+.-]*:\/\/[^\s"'`<>]*[^\s"'`<>)\].,;:!?]/g;
 
-const parseBytes = (raw: string | null | undefined): number | undefined => {
-  if (raw === null || raw === undefined) return undefined;
-  const value = Number.parseInt(raw, 10);
-  return Number.isFinite(value) ? value : undefined;
-};
-
-/** Wraps `globalThis.fetch`. Returns an unsubscribe for this sink. */
-export function instrumentFetch(sink: NetworkSink): () => void {
-  return attach(
-    () => fetchPatch,
-    (value) => {
-      fetchPatch = value;
-    },
-    (sinks) => {
-      if (typeof globalThis.fetch !== "function") return null;
-      const original = globalThis.fetch;
-      const wrapper = function patchedFetch(
-        input: RequestInfo | URL,
-        init?: RequestInit,
-      ): Promise<Response> {
-        const tokens = fanIn(sinks, methodOf(input, init), urlOf(input));
-        let promise: Promise<Response>;
-        try {
-          promise = original.call(globalThis, input, init);
-        } catch (error) {
-          fanOut(tokens, { error: String(error) });
-          throw error;
-        }
-        return promise.then(
-          (response) => {
-            fanOut(tokens, {
-              status: response.status,
-              bytes: parseBytes(response.headers?.get?.("content-length")),
-            });
-            return response;
-          },
-          (error: unknown) => {
-            fanOut(tokens, {
-              error: String((error as { message?: string } | undefined)?.message ?? error),
-              aborted: (error as { name?: string } | undefined)?.name === "AbortError",
-            });
-            throw error;
-          },
-        );
-      } as typeof globalThis.fetch;
-
-      globalThis.fetch = wrapper;
-      return () => {
-        // If something patched on top of us, leave their wrapper in place.
-        if (globalThis.fetch === wrapper) globalThis.fetch = original;
-      };
-    },
-    sink,
-  );
-}
-
-/** Wraps `XMLHttpRequest.prototype.open`/`send`. Returns an unsubscribe. */
-export function instrumentXhr(sink: NetworkSink): () => void {
-  return attach(
-    () => xhrPatch,
-    (value) => {
-      xhrPatch = value;
-    },
-    (sinks) => {
-      if (typeof XMLHttpRequest !== "function") return null;
-      const proto = XMLHttpRequest.prototype;
-      const originalOpen = proto.open;
-      const originalSend = proto.send;
-      const meta = new WeakMap<XMLHttpRequest, { method: string; url: string }>();
-
-      const open = function patchedOpen(
-        this: XMLHttpRequest,
-        method: string,
-        url: string | URL,
-        ...rest: unknown[]
-      ) {
-        meta.set(this, {
-          method: String(method).toUpperCase(),
-          url: String(url),
-        });
-        return (originalOpen as unknown as (this: XMLHttpRequest, ...args: unknown[]) => void).call(
-          this,
-          method,
-          url,
-          ...rest,
-        );
-      } as typeof proto.open;
-
-      const send = function patchedSend(
-        this: XMLHttpRequest,
-        body?: Document | XMLHttpRequestBodyInit | null,
-      ) {
-        const state = meta.get(this);
-        if (state) {
-          const tokens = fanIn(sinks, state.method, state.url);
-          let done = false;
-          const settle = (result: Parameters<NetworkSink["end"]>[1]) => {
-            if (done) return;
-            done = true;
-            fanOut(tokens, {
-              ...result,
-              bytes: parseBytes(this.getResponseHeader?.("content-length")),
-            });
-          };
-          this.addEventListener("load", () => settle({ status: this.status }));
-          this.addEventListener("error", () => settle({ error: "network error" }));
-          this.addEventListener("timeout", () => settle({ error: "timeout" }));
-          this.addEventListener("abort", () => settle({ error: "aborted", aborted: true }));
-        }
-        return originalSend.call(this, body ?? null);
-      } as typeof proto.send;
-
-      proto.open = open;
-      proto.send = send;
-      return () => {
-        if (proto.send === send) proto.send = originalSend;
-        if (proto.open === open) proto.open = originalOpen;
-      };
-    },
-    sink,
-  );
-}
-
-export function createNetworkCollector(options: NetworkCollectorOptions = {}): Collector {
+export function createNetworkCollector(options: NetworkCollectorOptions = {}): NetworkCollector {
   const { bus } = options;
   const {
     patchFetch = bus === undefined,
@@ -345,6 +154,7 @@ export function createNetworkCollector(options: NetworkCollectorOptions = {}): C
   let totals = { started: 0, completed: 0, failed: 0, aborted: 0, slow: 0 };
   let pendingDropped = 0;
   let duplicateStarts = 0;
+  let paused = false;
 
   const supported =
     (patchFetch && typeof globalThis.fetch === "function") ||
@@ -370,6 +180,11 @@ export function createNetworkCollector(options: NetworkCollectorOptions = {}): C
   const cleanErrorText = (text: string) => text.replace(URL_IN_TEXT, (url) => clean(url));
 
   const begin = (now: number, method: string, rawUrl: string, id?: string): NetworkEntry | null => {
+    // Paused records nothing new; what is already retained stays readable, and
+    // an in-flight request whose `begin` was skipped simply has no entry to
+    // finish. Redaction runs before the filter either way, so a `filter` never
+    // sees a raw credential.
+    if (paused) return null;
     const url = clean(rawUrl);
     if (filter && !filter({ method, url })) return null;
     sequence += 1;
@@ -500,6 +315,12 @@ export function createNetworkCollector(options: NetworkCollectorOptions = {}): C
     id: "network",
     estimatedCost: "minimal",
     supported,
+    redactOptions: options.redact,
+    setPaused(next: boolean) {
+      paused = next;
+      return paused;
+    },
+    isPaused: () => paused,
     ...(supported
       ? {}
       : {
@@ -587,6 +408,7 @@ export function createNetworkCollector(options: NetworkCollectorOptions = {}): C
 
       const window = summarise(now);
       detail.push(
+        ["Recording", paused ? "paused" : "on"],
         ["Active", String(window.active)],
         ["Completed (session)", formatCount(totals.completed)],
         ["Failed (session)", formatCount(totals.failed)],
@@ -607,7 +429,14 @@ export function createNetworkCollector(options: NetworkCollectorOptions = {}): C
         title: "Network",
         status: totals.started === 0 ? "pending" : "ok",
         severity: window.failed > 0 ? "bad" : window.slow > 0 ? "warn" : "ok",
-        display: String(window.active),
+        /**
+         * The chip says `paused` rather than a count that has stopped moving.
+         * It is also what makes the pause *visible*: the metrics runtime's
+         * publish signature is built from `status`, `severity` and `display`
+         * for a built-in, so a state that changed none of those would leave
+         * the panel showing "Recording: on" until the next request arrived.
+         */
+        display: paused ? "paused" : String(window.active),
         value: window.active,
         unit: "requests",
         hint: "Requests in flight now. Time is the span between bus events when a bus reports; patched fetch stops at response headers, patched XMLHttpRequest after the body. The panel masks query credentials.",
@@ -632,6 +461,7 @@ export function createNetworkCollector(options: NetworkCollectorOptions = {}): C
     diagnostics(now: number) {
       return {
         supported,
+        paused,
         totals,
         pendingDropped,
         duplicateStarts,

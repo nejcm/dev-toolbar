@@ -29,6 +29,14 @@ const CORE_PREFIX = "[dev-toolbar] ";
 
 /** Only ever present in a `src/runtime/*` or `src/ext/*` module. */
 const RUNTIME_MARKER = "[dev-toolbar/runtime]";
+
+/**
+ * The shared `fetch`/`XMLHttpRequest` interceptor's own console message. Unique
+ * to `src/runtime/network.ts`, which makes it a marker for *that module's
+ * bytes* — used below to prove `/ext/metrics` links against it rather than
+ * carrying a second copy of its patch state.
+ */
+const INTERCEPTOR_MESSAGE = "[dev-toolbar/runtime] a network recorder threw";
 const EXT_MARKERS = new Set(extensionRoster().onDisk.map((name) => `[dev-toolbar/ext/${name}]`));
 const EXT_MARKER_ORDER = [
   "[dev-toolbar/ext/metrics]",
@@ -501,6 +509,50 @@ if (!built && mustBeBuilt) {
       // /testing ever legitimately creates a context of its own.
       expect(cjs).not.toContain("createContext");
       expect(esm).not.toContain("createContext");
+    });
+
+    it("makes /ext/metrics reach the interceptor through the package, not inline it", () => {
+      /**
+       * Phase 1A moved the `fetch`/`XMLHttpRequest` interceptor into
+       * `/runtime`, where its patch state is module-level. A *relative* value
+       * import would put a second copy of that state in `/ext/metrics`, and a
+       * consumer using both the network collector and
+       * `@nejcm/dev-toolbar/runtime`'s `instrumentFetch()` would then install
+       * two wrappers over one `fetch`. Vitest aliases the published specifier
+       * onto `src/`, so no source-level test can tell the two apart — the bytes
+       * can, and the two formats fail differently, so both are checked.
+       *
+       * CJS does not code-split, so "not inlined" is assertable directly:
+       * `INTERCEPTOR_MESSAGE` is the interceptor's own console string and
+       * exists nowhere else. ESM *does* split, and `/ext/metrics` legitimately
+       * shares a chunk with `/runtime` for the stateless helpers — so there the
+       * question is not whether the bytes are nearby but where the binding
+       * comes from, which is what the import scan below answers.
+       */
+      const cjs = readFileSync(`${root}dist/ext/metrics.cjs`, "utf8");
+      expect(cjs).toContain('require("@nejcm/dev-toolbar/runtime")');
+      expect(cjs).not.toContain(INTERCEPTOR_MESSAGE);
+      // Non-vacuity: the string does exist, in the entry that owns it.
+      expect(readFileSync(`${root}dist/runtime.cjs`, "utf8")).toContain(INTERCEPTOR_MESSAGE);
+
+      const esm = readFileSync(`${root}dist/ext/metrics.js`, "utf8");
+      const sources = (name: string): string[] => {
+        const found: string[] = [];
+        for (const match of esm.matchAll(/import\s*\{([^}]*)\}\s*from\s*["']([^"']+)["']/g)) {
+          if (new RegExp(String.raw`\b${name}\b`).test(match[1] as string)) {
+            found.push(match[2] as string);
+          }
+        }
+        return found;
+      };
+      for (const name of ["instrumentFetch", "instrumentXhr"]) {
+        const from = sources(name);
+        expect(from, name).not.toEqual([]);
+        expect(new Set(from), name).toEqual(new Set(["@nejcm/dev-toolbar/runtime"]));
+      }
+      // And the scan finds something it should not attribute to the package:
+      // the stateless helpers still come from the shared chunk.
+      expect(sources("createRingBuffer").some((from) => from.startsWith("."))).toBe(true);
     });
 
     it("finds core's marker where it belongs, so the check above can fail", () => {

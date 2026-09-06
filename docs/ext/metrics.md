@@ -19,7 +19,7 @@ export function Root({ children }) {
 | `mem` | Used JS heap, and whether its *floor* rose across the last minute by a material amount — a leak is a sawtooth with a rising floor, not a monotonic climb | 50% / 75% of the heap limit |
 | `delay` | The *worst* interaction in a rolling 30 s window, not the latest. Event Timing entries are grouped by `interactionId` the way INP does, so one tap is one interaction; hover and other non-interaction entries are skipped unless `includeNonInteractions` is set | 200 ms / 500 ms, per INP guidance |
 | `jank` | Dropped frames over expected frames, across 5 s of *active* frames. The frame spanning a tab switch is discarded. A visible gap between 1 s and 30 s is a *stall*: counted and shown as "Longest stall", kept out of the ratio and out of "Worst frame", and a debugger pause or modal dialog counts as one. Gaps over 30 s (`stallCeilingMs`) are treated as absent | 2% / 5% |
-| `net` | Requests in flight; the panel lists recent ones | any slow → warn, any failed → bad |
+| `net` | Requests in flight, or `paused` when recording is off; the panel lists recent ones | any slow → warn, any failed → bad |
 
 Every one degrades on its own. `performance.memory` is Chromium-only, Event Timing is
 not everywhere, and `requestAnimationFrame` may not exist at all: each missing API
@@ -152,9 +152,62 @@ They add no factory exports or dependencies to `/ext/metrics`.
   attribution should inject their own collector.
   [INP definition](https://web.dev/articles/inp).
 
+## The network commands
+
+Four commands ride on the network collector, and only when it is running — with
+`network: false`, or a `only` list that leaves it out, they are not contributed at
+all rather than contributed and throwing. Every id is prefixed with the extension's
+own `id`, so a second metrics group gets its own set.
+
+| Command | Input | What it does |
+| --- | --- | --- |
+| `metrics.network.export` | `{ limit?, copy? }` | Returns the retained tail as JSON — `{ generatedAt, url, count, requests }` — for an agent or a bug report. `copy: true` also writes it to the clipboard. |
+| `metrics.network.copyAsCurl` | `{ id?, copy? }` | Copies one request as a `curl` line: the one whose `id` you pass, or the most recent. Returns the line; `copy: false` skips the clipboard. |
+| `metrics.network.clear` | — | Drops the retained requests and the network counters. Only this collector — `metrics.reset` clears them all. |
+| `metrics.network.pause` | `{ paused? }` | Stops recording new requests; omit `paused` to toggle. Returns `{ paused }`. |
+
+```ts
+const { result } = await api.invokeCommand("metrics.network.export", { limit: 20 });
+// result.requests[0] → { id, method, url, startedAt, duration, status, state, bytes, error }
+await api.invokeCommand("metrics.network.copyAsCurl", { id: result.requests[0].id });
+// curl -X 'POST' 'https://api.test/v1/orders?access_token=[redacted]&page=2'
+```
+
+Three of the four declare an `input` schema, so [`/ext/command-menu`](./command-menu.md)
+skips them the way it skips `flags.set` — `⌘K` lists `metrics.network.clear` and
+nothing else of this set, and the other three are reached from
+[`/ext/agent`](./agent.md), a console or a hotkey through `invokeCommand`. Every
+field of every schema is optional: each command has a sensible zero-argument
+meaning (the whole tail, the most recent request, toggle), so a caller that passes
+nothing still gets the obvious thing.
+
+`export` hands back **the same array the panel is rendering** — the runtime's own
+snapshot object, not a second mapping of the collector — so what an agent reads and
+what a developer sees cannot disagree about redaction, ordering or shape. `limit` is
+the only thing that changes it, and only by slicing the newest N off the front.
+
+`copyAsCurl` emits **method and URL, nothing else**: no headers, body or cookies are
+captured anywhere in this extension, so the line identifies a request rather than
+replaying it. The URL is the panel's own already-redacted string, run through
+`redactUrl()` again on the way out, so `user:pass@` userinfo and credential-shaped
+query parameters cannot reach the clipboard; a relative path is resolved against the
+page so the line runs, and everything interpolated is single-quoted for `sh`. The
+same `formatCurl(request, { redact })` is exported if you would rather render the
+line yourself. Where the clipboard is unavailable — an insecure origin, a denied
+permission — the command throws rather than reporting a copy that did not happen;
+the line is still its return value.
+
+`pause` stops the *recording*, never the interceptor: the `fetch`/`XMLHttpRequest`
+wrapper is shared with everything else observing requests, so dropping it would
+blind them and hand the global to whatever patched later. A paused collector says so
+— the chip reads `paused`, the panel gets a `Recording` row, and `diagnostics()`
+carries `paused: true` — because a recorder that has quietly stopped is a trap.
+Requests recorded before the pause stay readable and exportable.
+
 **Instrument your own client instead of being patched.** With no bus, the network
-collector wraps `fetch` and `XMLHttpRequest` — once globally, feeding every live
-collector, and restoring the originals when the last one leaves. If you would rather
+collector wraps `fetch` and `XMLHttpRequest` through
+[`/runtime`'s shared interceptor](../runtime.md) — once globally, feeding every live
+collector, and restoring the originals by identity when the last one leaves. If you would rather
 report from your own HTTP client, hand it a bus: that turns both patches off, so the
 same request is never recorded twice under two unrelated ids.
 
@@ -177,8 +230,11 @@ In a test, hand it `createMockBus()` from `@nejcm/dev-toolbar/testing` instead a
 drive the two events by hand — no `fetch` to stub, and a clock you control.
 
 URLs are run through `redactUrl()` before they are retained, and headers and bodies
-are never read at all. "Copy diagnostic data" passes the whole dump through
-`redact()` on the way to the clipboard.
+are never read at all — not as an option either. A `captureBodies` switch with a byte
+cap would still be a buffer full of credentials one config mistake away from a
+clipboard, and request waterfalls, initiators and replay are what DevTools is for.
+"Copy diagnostic data" passes the whole dump through `redact()` on the way to the
+clipboard.
 
 The extension ships its own stylesheet, injected once per document. If you set
 `injectStyles={false}` on `<DevToolbar>`, set `metrics({ injectStyles: false })` too
