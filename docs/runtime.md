@@ -11,6 +11,7 @@ import {
   createNumericRing,
   createTimeSeries,
   createThrottledStore,
+  createDerivedStore,
   ensureStyleSheet,
   redact,
   redactUrl,
@@ -46,6 +47,17 @@ injected sheet, and `writeClipboardTextOrThrow()`.
   `destroy({ flush: true })` to publish it first. A throwing listener is
   contained, not propagated into whatever published; pass `onError` to
   replace the default `console.error`, same as `createEventBus`.
+- **`createDerivedStore(build, { signature, intervalMs })`** — builds initially with
+  `build(0)` and returns the full `ThrottledStore` plus `read()` and `rebuild()`.
+  `rebuild()` synchronously advances revision and writes `build(revision)`, even
+  when the signatures match. `peek()` reflects that write immediately; the throttle
+  compares signatures at publication time. A field omitted from `signature` can
+  change without a notification, so cover every field the reader depends on.
+  `read()` builds at the current revision without advancing it or writing.
+  Direct `set()` and `update()` retain their throttled-store behavior and do not
+  advance revision. Polling, reconciliation and explicit `flush()` calls belong
+  to the caller. Options accept the throttle's clock, scheduler and error
+  handler; `signature` replaces `equals`.
 - **`redact(value)` / `redactUrl(url)` / `redactHeaders(headers)`** — masks
   credentials on the way to a screenshot, a clipboard or a bug report. Hygiene,
   **not a security boundary**: it matches names and shapes, so a secret under

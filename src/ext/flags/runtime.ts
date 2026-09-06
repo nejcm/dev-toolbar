@@ -19,7 +19,7 @@
  * in; the panel and the clipboard read the same redacted view. No path from a
  * raw flag value skips it.
  */
-import { createThrottledStore, redact } from "../../runtime";
+import { createDerivedStore, redact } from "../../runtime";
 import { createPoller, parseRecord } from "@nejcm/dev-toolbar/kit";
 import type { RedactOptions, ThrottledStore } from "../../runtime";
 import type { ExtensionRuntimeApi, ToolbarStorage } from "../../core/contract";
@@ -265,7 +265,6 @@ export function createFlagsRuntime(options: FlagsRuntimeOptions = {}): FlagsRunt
   const promotions = toArray(promoted);
   const writable = typeof onOverride === "function";
 
-  let revision = 0;
   let storage: ToolbarStorage | null = null;
   let overrides: Record<string, FlagValue> = emptyOverrides();
   let reloadPending = new Set<string>();
@@ -347,7 +346,7 @@ export function createFlagsRuntime(options: FlagsRuntimeOptions = {}): FlagsRunt
 
   /* Snapshot */
 
-  const buildSnapshot = (): FlagsSnapshot => {
+  const buildSnapshot = (revision: number): FlagsSnapshot => {
     const readings = readFlags();
     const at = now();
     const views: FlagView[] = [];
@@ -488,9 +487,9 @@ export function createFlagsRuntime(options: FlagsRuntimeOptions = {}): FlagsRunt
    * an error chip — it would take down the host app's render. Later calls run
    * inside a `setInterval`, where nothing could catch them at all.
    */
-  const build = (): FlagsSnapshot => {
+  const build = (revision: number): FlagsSnapshot => {
     try {
-      return buildSnapshot();
+      return buildSnapshot(revision);
     } catch (error) {
       // eslint-disable-next-line no-console
       console.error(
@@ -528,17 +527,12 @@ export function createFlagsRuntime(options: FlagsRuntimeOptions = {}): FlagsRunt
       )
       .join("|");
 
-  const store = createThrottledStore<FlagsSnapshot>(build(), {
+  const store = createDerivedStore<FlagsSnapshot>(build, {
     intervalMs: 250,
-    equals: (a, b) => signature(a) === signature(b),
+    signature,
   });
 
-  // `revision` advances on publish, not on build; recipe and diagnostics reads
-  // must not turn it into a read count.
-  const publish = () => {
-    revision += 1;
-    store.set(build());
-  };
+  const publish = store.rebuild;
 
   /* Mutation */
 
@@ -749,7 +743,7 @@ export function createFlagsRuntime(options: FlagsRuntimeOptions = {}): FlagsRunt
     },
 
     recipeText() {
-      const snapshot = build();
+      const snapshot = store.read();
       const active = snapshot.flags.filter((view) => view.overridden);
       if (active.length === 0) return "No local flag overrides are active.";
       const lines = active.map(
@@ -764,7 +758,7 @@ export function createFlagsRuntime(options: FlagsRuntimeOptions = {}): FlagsRunt
     },
 
     diagnostics() {
-      const snapshot = build();
+      const snapshot = store.read();
       const pending = new Set(snapshot.reloadPending);
       const payload = {
         generatedAt: new Date(now()).toISOString(),
