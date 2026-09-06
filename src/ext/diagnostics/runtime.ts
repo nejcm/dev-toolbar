@@ -84,7 +84,7 @@ export interface DiagnosticsRuntimeOptions extends ResponsivenessOptions {
   /**
    * The console and error tail (`plans/ecosystem-extensions.md` § 1B): window
    * errors, unhandled rejections and `console.error`/`console.warn`, grouped
-   * into a bounded ring and folded into the snapshot.
+   * into a bounded tail and folded into the snapshot.
    *
    * On by default, because a bug report that cannot say what was already on
    * fire is the reason this extension exists. `false` turns the whole thing
@@ -679,15 +679,39 @@ export function createDiagnosticsRuntime(
    * logged, and the throttle coalesces a burst into one publish anyway.
    */
   let countsPending = false;
+  /**
+   * True while the publish itself is running.
+   *
+   * The tail's synchronous re-entrancy guard covers a listener that logs; it
+   * cannot cover this, because the publish happens a microtask *later*, with
+   * the guard long since released. A store subscriber that throws makes
+   * `createThrottledStore` report it with `console.error` — which the tail
+   * captures, which schedules another publish, which notifies the same
+   * throwing subscriber: one log measured as four captured errors and three
+   * notifications inside 240ms, climbing. A publish provoked by a publish is
+   * dropped; the next real log carries the count.
+   */
+  let publishing = false;
+  /** False before `start()` and after disposal — see the `write` guard. */
+  let live = false;
   const publishCounts = (): void => {
-    if (countsPending) return;
+    if (countsPending || publishing) return;
     countsPending = true;
     const write = () => {
       countsPending = false;
-      const { errors, warnings } = tail.counts();
-      const previous = store.peek();
-      if (previous.errors === errors && previous.warnings === warnings) return;
-      store.set({ ...previous, errors, warnings });
+      // Scheduled while running, arriving after teardown: a disposed extension
+      // may not publish. (Measured: `stop()` then a microtask still wrote one
+      // notification.)
+      if (!live) return;
+      publishing = true;
+      try {
+        const { errors, warnings } = tail.counts();
+        const previous = store.peek();
+        if (previous.errors === errors && previous.warnings === warnings) return;
+        store.set({ ...previous, errors, warnings });
+      } finally {
+        publishing = false;
+      }
     };
     try {
       if (typeof queueMicrotask === "function") {
@@ -846,8 +870,13 @@ export function createDiagnosticsRuntime(
       // Same reason, and the same rule in reverse: `dispose` below restores
       // `console.error`/`console.warn` by identity.
       tail.start();
+      live = true;
 
       const dispose = () => {
+        live = false;
+        // A queued counter write is now void: it would notify subscribers of
+        // an extension that is gone.
+        countsPending = false;
         monitor.stop();
         tail.stop();
         // An un-revoked object URL is a retained Blob.

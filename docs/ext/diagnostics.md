@@ -102,12 +102,16 @@ diagnostics({
   `%f`, `%o`/`%O`/`%j`, `%%`, and `%c`, which consumes its CSS argument and emits
   nothing. React's own dev warnings are format strings, so without this the most common
   `console.error` in a React app would read as `%o` followed by its arguments.
-- **Repeats group.** The same message from the same source is one entry with a `count`,
-  so a render loop logging 4,000 times is one row with a number on it. Older *distinct*
-  messages fall out of the ring and are counted in `dropped`.
-- **Stacks are kept where there are any, without their header line.** V8 repeats the
-  raw message there, where anchored value matching cannot see it; the message is
-  reported, masked, in `message`.
+- **Repeats group, and a repeat is news.** The same message from the same source is one
+  entry with a `count`, so a render loop logging 4,000 times is one row with a number on
+  it — and the row moves back to the front when it repeats. "Newest first" and the
+  `limit` on the export therefore mean *most recently seen*, not first seen, and a full
+  tail evicts the message nothing has repeated. Evictions are counted in `dropped`.
+- **Stacks are kept only where there are frames, and never their header.** V8 repeats
+  the raw message above the first frame, where anchored value matching cannot see it, so
+  everything above that frame is dropped; the message is reported, masked, in `message`.
+  A stack with no frame at all is *only* a header — what `Error.stackTraceLimit = 0`
+  produces — and is dropped whole rather than exported raw.
 - **Off is one option.** `console: false` patches nothing and adds no listener, and each
   source has its own switch: `{ error, warn, windowErrors, rejections, size,
   maxMessageChars, maxStackChars }`. With capture off, the counts are `null` and the
@@ -118,9 +122,17 @@ assembled — objects walked by `redact()` (where key-name matching works), stri
 matched by value shape, and every `scheme://…` run in a string or a stack frame put
 through `redactUrl()`, because a credential-carrying URL in the middle of a sentence is
 the shape a console message actually has and anchored matching cannot see it. What
-survives is what survives everywhere else in this extension: a bare secret written into
-prose (`"the password is hunter2"`) is neither a matched key nor a matched shape. That
-is pinned by its own test, and it is why the panel shows you the text before you copy it.
+survives is what survives everywhere else in this extension, and each of these is
+pinned by a test rather than hoped about:
+
+- a bare secret written into prose (`"the password is hunter2"`) is neither a matched
+  key nor a matched shape;
+- a credential embedded in a stack frame's **function name** — frame matching looks for
+  URLs and whole-value shapes, not for `Bearer …` inside an identifier;
+- an `Error`'s `cause`, and an `AggregateError`'s `errors`, which are not read at all,
+  so anything only reachable through them is absent rather than masked.
+
+That is why the panel shows you the text before you copy it.
 
 Options: `app` (object or getter), `sources`, `console`, `windowMs`,
 `slowInteractionMs`, `historySize`, `recentSize`, `now`, `redactOptions`, plus the usual

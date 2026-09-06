@@ -656,6 +656,32 @@ describe("redaction on the way in", () => {
     expect(json).toContain("hunter2");
   });
 
+  it("cannot mask a credential inside a stack frame's function name — a documented limit", () => {
+    // Frame matching looks for URLs and whole-value shapes. `Bearer …` buried
+    // in an identifier is neither, and rewriting identifiers would destroy the
+    // one thing a stack is for.
+    const error = new Error("boom");
+    error.stack = ["Error: boom", "    at withBearer_frame_secret_2 (a.js:1:1)"].join("\n");
+    const { json } = capturedJson(() => void console.error(error));
+    expect(json).toContain("frame_secret_2");
+  });
+
+  it("omits an Error `cause` and an AggregateError's members entirely — a documented limit", () => {
+    const cause = new Error("caused by cause-secret-8");
+    const error = new Error("outer", { cause });
+    const aggregate = new AggregateError([new Error("member-secret-9")], "all failed");
+    const { json } = capturedJson(() => {
+      console.error(error);
+      console.error(aggregate);
+    });
+    // Absent rather than masked: nothing reads them, so nothing leaks and
+    // nothing is reported either.
+    expect(json).not.toContain("cause-secret-8");
+    expect(json).not.toContain("member-secret-9");
+    expect(json).toContain("outer");
+    expect(json).toContain("all failed");
+  });
+
   it("masks the reason of an unhandled rejection", () => {
     console.error = () => {};
     const { runtime, stop } = started();
@@ -778,6 +804,304 @@ describe("what the snapshot and the chip say", () => {
     const command = toolbar.getCommands().find((c) => c.id === "diagnostics.console.export");
     await expect(async () => command?.run({ limit: "5" })).rejects.toThrow("finite number");
     unmount();
+  });
+});
+
+/* -------------------------------------------------------------------------- */
+/* Leaks and lifecycle holes found by review — each test fails without its fix  */
+/* -------------------------------------------------------------------------- */
+
+describe("credentials the masking used to let through", () => {
+  const captured = (log: () => void) => {
+    console.error = () => {};
+    const { runtime, stop } = started();
+    log();
+    const report = runtime.tail();
+    stop();
+    return { report, json: JSON.stringify(report) };
+  };
+
+  // Every delimiter that used to end a URL run. The mask landed *before* the
+  // secret and the secret stayed: `?token=[redacted]"LEAK_SECRET_123"`, which
+  // is worse than no mask at all, because the marker says it was handled.
+  it.each([
+    ["double quote", '"'],
+    ["single quote", "'"],
+    ["backtick", "`"],
+    ["angle brackets", "<"],
+    ["backslash", "\\"],
+  ])("masks a URL credential delimited by a %s", (_name, delimiter) => {
+    const { json } = captured(() => {
+      console.error(
+        `GET https://example.test/?token=${delimiter}LEAK_SECRET_123${delimiter} failed`,
+      );
+    });
+    expect(json).not.toContain("LEAK_SECRET_123");
+    expect(json).toContain(REDACTED);
+  });
+
+  it("drops a stack that is only a header instead of exporting the raw message", () => {
+    // `Error.stackTraceLimit = 0` (and any engine that yields no frames): the
+    // stack is the unmasked message, and the anchored matcher cannot see a
+    // credential inside `Error: Bearer …`.
+    const { json, report } = captured(() => {
+      console.error({
+        name: "Error",
+        message: "Bearer LEAK_SECRET_123",
+        stack: "Error: Bearer LEAK_SECRET_123",
+      });
+    });
+    expect(json).not.toContain("LEAK_SECRET_123");
+    expect(report.entries[0]?.stack).toBeNull();
+    expect(report.entries[0]?.message).toContain(REDACTED);
+  });
+
+  it("drops a real frameless stack from this engine too", () => {
+    const limit = Error.stackTraceLimit;
+    Error.stackTraceLimit = 0;
+    const error = new Error("Bearer LEAK_SECRET_123");
+    Error.stackTraceLimit = limit;
+    const { json } = captured(() => void console.error(error));
+    expect(json).not.toContain("LEAK_SECRET_123");
+  });
+
+  it("still keeps the frames of a SpiderMonkey/JSC stack, which has no header", () => {
+    const { report } = captured(() => {
+      console.error({
+        name: "Error",
+        message: "chunk failed",
+        stack: "load@https://cdn.test/app.js:1:1\n@https://cdn.test/app.js:2:2",
+      });
+    });
+    expect(report.entries[0]?.stack).toContain("load@https://cdn.test/app.js:1:1");
+  });
+
+  it("masks a credential-shaped Error name reached through a logged object", () => {
+    // `redact()` keeps `name` verbatim — reasonably, since a name is normally
+    // `TypeError`. The string this module *builds* out of it is masked here.
+    const error = new Error("boom");
+    error.name = "Bearer LEAK_SECRET_123";
+    const { json } = captured(() => void console.error({ error }));
+    expect(json).not.toContain("LEAK_SECRET_123");
+    expect(json).toContain(REDACTED);
+  });
+
+  it("reads each property of a hostile error exactly once", () => {
+    // The classic check-then-use hole: answer with a string until the type
+    // check has passed, then with a `Date` whose `toISOString()` is the
+    // credential. One read has no second answer.
+    let reads = 0;
+    const hostile = {
+      name: "Error",
+      stack: "Error: x\n    at foo (a.js:1:1)",
+      get message() {
+        reads += 1;
+        if (reads <= 3) return "boom";
+        const date = new Date();
+        date.toISOString = () => "Bearer LEAK_SECRET_123";
+        return date as unknown as string;
+      },
+    };
+    const { json } = captured(() => void console.error(hostile));
+    expect(reads).toBe(1);
+    expect(json).not.toContain("LEAK_SECRET_123");
+  });
+
+  it("keeps the original error when its stack getter throws", () => {
+    const hostile = {
+      name: "Error",
+      message: "the readable original",
+      get stack(): string {
+        throw new Error("stack getter failed");
+      },
+    };
+    const { report } = captured(() => void console.error(hostile));
+    expect(report.entries[0]?.message).toBe("Error: the readable original");
+    expect(report.entries[0]?.stack).toBeNull();
+  });
+
+  it("keeps a rejection whose reason has a throwing stack getter", () => {
+    console.error = () => {};
+    const { runtime, stop } = started();
+    const reason = {
+      name: "Error",
+      message: "the readable rejection",
+      get stack(): string {
+        throw new Error("stack getter failed");
+      },
+    };
+    window.dispatchEvent(Object.assign(new Event("unhandledrejection"), { reason }));
+    const report = runtime.tail();
+    stop();
+    expect(report.entries[0]?.message).toContain("the readable rejection");
+  });
+});
+
+describe("installing over a hostile console", () => {
+  it("skips a method whose getter throws, without stranding the other", () => {
+    const original = { error: console.error, warn: console.warn };
+    Object.defineProperty(console, "warn", {
+      configurable: true,
+      get() {
+        throw new Error("warn getter failed");
+      },
+      set() {},
+    });
+
+    const tail = createConsoleTail({ windowErrors: false, rejections: false });
+    // It used to throw out of `start()` — after `error` was patched and before
+    // any teardown was registered for it.
+    expect(() => tail.start()).not.toThrow();
+    expect(console.error).not.toBe(original.error);
+    expect(tail.report().watching).toEqual(["console.error"]);
+
+    tail.stop();
+    expect(console.error).toBe(original.error);
+
+    Object.defineProperty(console, "warn", {
+      configurable: true,
+      writable: true,
+      value: original.warn,
+    });
+  });
+
+  it("does not claim to watch a method whose setter silently drops the patch", () => {
+    const original = console.error;
+    Object.defineProperty(console, "error", {
+      configurable: true,
+      get: () => original,
+      set() {
+        /* swallowed */
+      },
+    });
+
+    const tail = createConsoleTail({ warn: false, windowErrors: false, rejections: false });
+    tail.start();
+    const report = tail.report();
+    tail.stop();
+    Object.defineProperty(console, "error", {
+      configurable: true,
+      writable: true,
+      value: original,
+    });
+
+    expect(report.watching).toEqual([]);
+    expect(report.status).toBe("unavailable");
+  });
+
+  it("lets a second copy of this module share the wrapper instead of stacking one", async () => {
+    // The dual-package hazard, executed: two module instances, the same global
+    // `console`. Stacked wrappers cannot be unwound inner-first (rule 2), so
+    // each cycle used to strand another forwarder — 5,000 cycles measured as
+    // `RangeError: Maximum call stack size exceeded` on both methods, i.e. the
+    // app's own logging lost entirely.
+    vi.resetModules();
+    const second = await import("../console");
+    expect(second.createConsoleTail).not.toBe(createConsoleTail);
+
+    const seen: unknown[][] = [];
+    const original = (console.error = (...args: unknown[]) => void seen.push(args));
+
+    const outer = createConsoleTail({ windowErrors: false, rejections: false });
+    const stopOuter = outer.start();
+    const patched = console.error;
+
+    for (let cycle = 0; cycle < 1000; cycle += 1) {
+      const inner = second.createConsoleTail({ windowErrors: false, rejections: false });
+      inner.start();
+      inner.stop();
+    }
+    // One wrapper, still. Not a thousand of them.
+    expect(console.error).toBe(patched);
+
+    const inner = second.createConsoleTail({ windowErrors: false, rejections: false });
+    const stopInner = inner.start();
+    console.error("shared across copies");
+    // Both copies recorded it, once each, and the original ran once.
+    expect(entriesOf(outer.report())).toEqual(["shared across copies"]);
+    expect(entriesOf(inner.report())).toEqual(["shared across copies"]);
+    expect(seen).toEqual([["shared across copies"]]);
+
+    stopInner();
+    expect(console.error).toBe(patched);
+    stopOuter();
+    expect(console.error).toBe(original);
+  });
+});
+
+describe('what "newest" and "stopped" mean', () => {
+  it("orders and evicts by the most recent occurrence, not the first", () => {
+    console.error = () => {};
+    const tail = createConsoleTail({ size: 2, windowErrors: false, rejections: false });
+    tail.start();
+    console.error("old");
+    console.error("new");
+    console.error("old");
+
+    // `report(1)` promises the newest grouped entry, and "old" just happened.
+    expect(entriesOf(tail.report(1))).toEqual(["old"]);
+    console.error("third");
+    // The entry that fell off is the one nothing has repeated.
+    expect(entriesOf(tail.report())).toEqual(["third", "old"]);
+    tail.stop();
+  });
+
+  it("does not report zero errors for a run that never watched anything", () => {
+    vi.stubGlobal("window", undefined);
+    const tail = createConsoleTail({ error: false, warn: false });
+    tail.start();
+    tail.stop();
+    const report = tail.report();
+
+    // "Watched and saw none" is a different claim from "never watched".
+    expect(report.status).toBe("unavailable");
+    expect(report.errors).toBeNull();
+    expect(report.warnings).toBeNull();
+    expect(report.dropped).toBeNull();
+  });
+});
+
+describe("publishing the chip's counts", () => {
+  it("does not feed itself through the toolbar's own error logging", async () => {
+    // The asynchronous half of the re-entrancy guard. A throwing subscriber
+    // makes the store log with `console.error` — a microtask *after* the
+    // synchronous depth guard released — which the tail captures, which
+    // schedules another publish, which throws again. Measured before the fix
+    // as four captured errors and three notifications from one log, climbing.
+    console.error = () => {};
+    const { runtime, stop } = started();
+    let notifications = 0;
+    runtime.store.subscribe(() => {
+      notifications += 1;
+      throw new Error("listener boom");
+    });
+
+    console.error("one real failure");
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 250));
+    });
+    const captured = runtime.tail().errors;
+    stop();
+
+    expect(notifications).toBeLessThanOrEqual(1);
+    expect(captured).toBeLessThanOrEqual(2);
+  });
+
+  it("does not publish a queued count after disposal", async () => {
+    console.error = () => {};
+    const { runtime, stop } = started();
+    let notifications = 0;
+    runtime.store.subscribe(() => void (notifications += 1));
+
+    console.error("boom");
+    // Disposed before the queued microtask runs.
+    stop();
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    });
+
+    expect(notifications).toBe(0);
+    expect(runtime.store.peek().errors).toBe(0);
   });
 });
 
