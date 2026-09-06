@@ -41,8 +41,9 @@ export interface MetricsRuntime {
    * the flush it is the identical object `store.getSnapshot()` holds, so what
    * an agent reads and what the panel paints cannot disagree about redaction,
    * ordering or shape. Two mappings would be two chances to redact
-   * differently; there is one. `limit` slices the newest N off the front and
-   * is the only thing that breaks that identity.
+   * differently; there is one. A `limit` short enough to bite returns a slice
+   * of that array — the same entry objects, fewer of them — and `retained` and
+   * `truncated` say so.
    */
   exportRequests(limit?: number): NetworkExport;
   /** Rebuilds and publishes now. Used by tests and by the panel's Reset. */
@@ -192,10 +193,11 @@ export function createMetricsRuntime(options: MetricsRuntimeOptions): MetricsRun
       publish();
       store.flush();
       const snapshot = store.getSnapshot();
+      const keep = limit === undefined ? Infinity : Math.max(0, Math.floor(limit));
+      // A slice only when the limit actually bites, so the identity below holds
+      // for every call that asks for the whole tail.
       const requests =
-        limit === undefined
-          ? snapshot.requests
-          : snapshot.requests.slice(0, Math.max(0, Math.floor(limit)));
+        keep >= snapshot.requests.length ? snapshot.requests : snapshot.requests.slice(0, keep);
       return {
         generatedAt: new Date().toISOString(),
         // Same reasoning as `diagnostics()`: the page URL is the likeliest
@@ -203,6 +205,8 @@ export function createMetricsRuntime(options: MetricsRuntimeOptions): MetricsRun
         // clipboard or an agent.
         url: typeof location === "undefined" ? null : redactUrl(location.href),
         count: requests.length,
+        retained: snapshot.requests.length,
+        truncated: requests.length < snapshot.requests.length,
         requests,
       };
     },

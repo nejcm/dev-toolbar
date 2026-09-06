@@ -1,14 +1,9 @@
 /**
- * The shared interceptor's own tests.
- *
- * Most of these arrived with the code from
- * `src/ext/metrics/__tests__/network.test.ts` (Phase 1A moved the interceptor
- * into `/runtime`): the "one wrapper, many sinks" idempotency and the
- * refuse-to-restore-over-a-later-patch behaviour are properties of the patch,
- * not of the collector that happened to own it first, so they are asserted
- * here against `instrumentFetch`/`instrumentXhr` directly. The collector keeps
- * the tests that are about *recording* — including the one proving two live
- * collectors share this wrapper.
+ * The shared interceptor's own tests: "one wrapper, many sinks" idempotency,
+ * refusing to restore over a later patch, and the dual-package residue. These
+ * are properties of the patch rather than of any sink, so they are asserted
+ * against `instrumentFetch`/`instrumentXhr` directly; what a collector does
+ * with what it is handed is tested next to that collector.
  */
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { instrumentFetch, instrumentXhr } from "../network";
@@ -320,10 +315,9 @@ describe("the dual-package hazard, as documented", () => {
      * and `dist/runtime.cjs` holds two of it. The docblock claims they *stack*
      * — both record, the app pays for two wrappers — rather than one blinding
      * the other. This asserts that claim instead of restating it, and pins the
-     * one artefact it leaves behind: detaching inner-first strands the first
-     * wrapper on `globalThis.fetch`, sink-less and inert. It forwards every
-     * call and records nothing, which is why the fix is "resolve the package
-     * to one format", not a second mechanism here.
+     * artefact it leaves behind: detaching inner-first strands the first
+     * wrapper on `globalThis.fetch`. It records nothing, having no sinks left,
+     * but it is not inert — see the next test.
      */
     globalThis.fetch = vi.fn(async () => response(200)) as unknown as typeof fetch;
     vi.resetModules();
@@ -348,5 +342,49 @@ describe("the dual-package hazard, as documented", () => {
     const before = a.calls.length + b.calls.length;
     await globalThis.fetch("/api/y");
     expect(a.calls.length + b.calls.length).toBe(before);
+  });
+
+  it("strands one more forwarding wrapper on every inner-first teardown", async () => {
+    /**
+     * The stranded wrapper is sink-less, not free: it still chains a `.then()`
+     * onto every response and still reads `content-length` off it. One per
+     * attach/detach cycle accumulates, and a long-lived page cycling
+     * collectors pays a deeper `fetch` chain each time — deep enough, far out,
+     * to overflow the stack. Bounding it is out of scope for this module; the
+     * fix is resolving the package to one format. This pins the growth so the
+     * cost is measured rather than described.
+     */
+    let headerReads = 0;
+    const counting = () =>
+      ({
+        status: 200,
+        headers: {
+          get: () => {
+            headerReads += 1;
+            return null;
+          },
+        },
+      }) as unknown as Response;
+    const base = vi.fn(async () => counting()) as unknown as typeof fetch;
+    globalThis.fetch = base;
+
+    vi.resetModules();
+    const first = await import("../network");
+    vi.resetModules();
+    const second = await import("../network");
+
+    const cycles = 4;
+    for (let cycle = 0; cycle < cycles; cycle += 1) {
+      const detachFirst = first.instrumentFetch(recorder("a").sink);
+      const detachSecond = second.instrumentFetch(recorder("b").sink);
+      detachFirst();
+      detachSecond();
+    }
+
+    expect(globalThis.fetch).not.toBe(base);
+    headerReads = 0;
+    await globalThis.fetch("/api/z");
+    // One read per stranded wrapper, one wrapper per cycle.
+    expect(headerReads).toBe(cycles);
   });
 });

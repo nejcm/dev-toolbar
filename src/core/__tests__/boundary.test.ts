@@ -511,30 +511,25 @@ if (!built && mustBeBuilt) {
       expect(esm).not.toContain("createContext");
     });
 
-    it("makes /ext/metrics reach the interceptor through the package, not inline it", () => {
-      /**
-       * Phase 1A moved the `fetch`/`XMLHttpRequest` interceptor into
-       * `/runtime`, where its patch state is module-level. A *relative* value
-       * import would put a second copy of that state in `/ext/metrics`, and a
-       * consumer using both the network collector and
-       * `@nejcm/dev-toolbar/runtime`'s `instrumentFetch()` would then install
-       * two wrappers over one `fetch`. Vitest aliases the published specifier
-       * onto `src/`, so no source-level test can tell the two apart — the bytes
-       * can, and the two formats fail differently, so both are checked.
-       *
-       * CJS does not code-split, so "not inlined" is assertable directly:
-       * `INTERCEPTOR_MESSAGE` is the interceptor's own console string and
-       * exists nowhere else. ESM *does* split, and `/ext/metrics` legitimately
-       * shares a chunk with `/runtime` for the stateless helpers — so there the
-       * question is not whether the bytes are nearby but where the binding
-       * comes from, which is what the import scan below answers.
-       */
+    /**
+     * The interceptor's patch state is module-level, so a relative value import
+     * would give `/ext/metrics` a second copy of it and two wrappers over one
+     * `fetch`. Vitest aliases the published specifier onto `src/`, so only the
+     * built bytes can tell the two apart — and the two formats have to be
+     * checked differently, so they are two tests: a relative import fails both,
+     * independently, rather than one and six cascades.
+     */
+    it("keeps the interceptor's bytes out of dist/ext/metrics.cjs, which cannot split", () => {
       const cjs = readFileSync(`${root}dist/ext/metrics.cjs`, "utf8");
       expect(cjs).toContain('require("@nejcm/dev-toolbar/runtime")');
       expect(cjs).not.toContain(INTERCEPTOR_MESSAGE);
       // Non-vacuity: the string does exist, in the entry that owns it.
       expect(readFileSync(`${root}dist/runtime.cjs`, "utf8")).toContain(INTERCEPTOR_MESSAGE);
+    });
 
+    it("binds the interceptor from the package in dist/ext/metrics.js, which does split", () => {
+      // Sharing a chunk with `/runtime` is legitimate in ESM, so the question
+      // is not whether the bytes are nearby but where the binding comes from.
       const esm = readFileSync(`${root}dist/ext/metrics.js`, "utf8");
       const sources = (name: string): string[] => {
         const found: string[] = [];

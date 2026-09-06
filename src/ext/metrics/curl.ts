@@ -1,8 +1,8 @@
 /**
  * One retained request, rendered as a `curl` line. [dev-toolbar/ext/metrics]
  *
- * **Method and URL only.** No headers, no body, no cookies — the collector
- * never reads them, and a curl line that carried them would be a credential
+ * **Method and URL only.** No header value, no body, no cookies — the collector
+ * never records them, and a curl line that carried them would be a credential
  * buffer with a clipboard attached (`plans/ecosystem-extensions.md` § 1A,
  * explicitly out of scope). What comes out is therefore not a replay of the
  * original request; it is the request's identity, in a form you can paste into
@@ -20,6 +20,12 @@
  * single-quoted shell string allows (`'\\''`). Both the URL and the method are
  * app-controlled strings — `fetch(url, { method })` accepts far more than the
  * eight verbs — so neither is trusted into the line unquoted.
+ *
+ * Shell quoting is only half of it: curl runs its **own** glob syntax over the
+ * URL after the shell is done, so `[`, `]`, `{` and `}` are ranges and sets to
+ * it. The redaction mask is `[redacted]`, which makes an unglobbed line
+ * `curl: (3) bad range` for exactly the URLs this feature exists to hand over,
+ * so every line carries `--globoff`.
  */
 import { redactUrl } from "../../runtime";
 import type { RedactOptions } from "../../runtime";
@@ -70,8 +76,8 @@ export interface CurlOptions {
 }
 
 /**
- * `curl 'https://api.test/v1/me?token=[redacted]'`, or with `-X` for anything
- * that is not a GET.
+ * `curl --globoff 'https://api.test/v1/me?token=[redacted]'`, or with `-X` for
+ * anything that is not a GET.
  */
 export function formatCurl(
   request: Pick<NetworkEntryView, "method" | "url">,
@@ -81,5 +87,5 @@ export function formatCurl(
   const url = redactUrl(resolve ? absolute(request.url) : request.url, options.redact);
   const method = request.method.toUpperCase();
   const verb = method === "GET" || method === "" ? "" : `-X ${shellQuote(method)} `;
-  return `curl ${verb}${shellQuote(url)}`;
+  return `curl --globoff ${verb}${shellQuote(url)}`;
 }

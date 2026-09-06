@@ -72,6 +72,18 @@ export interface MetricsOptions {
   network?: boolean | NetworkCollectorOptions;
 }
 
+/**
+ * The most requests one `network.export` call returns.
+ *
+ * `/ext/agent` runs `redact()` over a command result on the way out, and
+ * `redact()` cuts an array at 200 entries and pushes a `"[+N more]"` *string*
+ * onto it. An unbounded export would therefore reach an agent as an array whose
+ * last element is not a request, under a `count` that disagrees with its
+ * length. This bound is that same 200, so the payload an agent receives is the
+ * payload this command returns.
+ */
+const EXPORT_MAX_REQUESTS = 200;
+
 function optionsFor<T extends object>(value: boolean | T | undefined): T | null {
   if (value === false) return null;
   if (value === true || value === undefined) return {} as T;
@@ -156,8 +168,8 @@ export function metrics(options: MetricsOptions = {}): DevToolbarExtension {
    * in `⌘K` and in an agent's `listCommands()`.
    *
    * All four are reads or state toggles over what the panel already shows.
-   * None of them can reach a header or a body — the collector never records
-   * one — which is the boundary this phase was written to hold.
+   * None of them can reach a header or a body: the collector never records
+   * one, so there is nothing here to leak.
    */
   const networkCommands = (network: NetworkCollector): AnyToolbarCommand[] => {
     const requestFor = (requestId: string | undefined): NetworkEntryView => {
@@ -182,10 +194,15 @@ export function metrics(options: MetricsOptions = {}): DevToolbarExtension {
         label: "Export recent requests",
         description:
           "Returns the retained request tail as JSON — method, URL, status, duration, " +
-          "size, state and error per request, newest first — exactly the entries the " +
-          "network panel lists, already through `redactUrl()`. Headers and bodies are " +
-          "never captured, so they cannot appear here. Omit `limit` for everything " +
-          "retained (100 by default); pass `copy: true` to also put the JSON on the " +
+          "size, state and error per request, newest first — drawn from the same " +
+          "entries the network panel lists, in the same order and already through " +
+          "`redactUrl()` (the panel shows the newest 30 of them). No header value " +
+          "and no body is captured — `bytes` is the count `content-length` reported " +
+          "— so neither can appear here. At most 200 requests come " +
+          "back per call: `count` is always `requests.length`, `retained` is how many " +
+          "the collector holds (100 by default), and `truncated` is true when older " +
+          "retained requests were left out — there is no paging past them. Omit " +
+          "`limit` for the newest 200; pass `copy: true` to also put the JSON on the " +
           "clipboard for a bug report, which throws if the clipboard is unavailable.",
         group: "Metrics",
         keywords: ["network", "requests", "export", "json", "har", "report"],
@@ -193,7 +210,7 @@ export function metrics(options: MetricsOptions = {}): DevToolbarExtension {
           fields: {
             limit: {
               type: "number",
-              description: "Keep only the newest N requests. Omit for the whole tail.",
+              description: "Keep only the newest N requests. Omit for the newest 200, the cap.",
             },
             copy: {
               type: "boolean",
@@ -207,7 +224,9 @@ export function metrics(options: MetricsOptions = {}): DevToolbarExtension {
           if (limit !== undefined && (typeof limit !== "number" || !Number.isFinite(limit))) {
             throw new Error("`limit` must be a finite number.");
           }
-          const payload = runtime.exportRequests(limit);
+          const payload = runtime.exportRequests(
+            limit === undefined ? EXPORT_MAX_REQUESTS : Math.min(limit, EXPORT_MAX_REQUESTS),
+          );
           if (copy === true) {
             await writeClipboardTextOrThrow(
               JSON.stringify(payload, null, 2),
@@ -224,7 +243,7 @@ export function metrics(options: MetricsOptions = {}): DevToolbarExtension {
       description:
         "Renders one retained request as a `curl` line and copies it: the request " +
         "whose `id` you pass, or the most recent one. Method and URL only — no " +
-        "headers, body or cookies are captured anywhere in this extension, so the " +
+        "header value, body or cookie is captured anywhere in this extension, so the " +
         "line identifies a request rather than replaying it. The URL is the panel's " +
         "own redacted string, masked again on the way out, so `user:pass@` userinfo " +
         "and credential-shaped query parameters cannot reach the clipboard. Returns " +

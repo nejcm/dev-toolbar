@@ -10,7 +10,10 @@
  * Method and URL are handed to the sink **raw**. Redaction is the sink's job
  * (`/ext/metrics` runs every URL through `redactUrl()` on the way into its ring
  * buffer): a sink that filters on the real URL cannot do so against a masked
- * one. Headers and bodies are never read, here or anywhere downstream.
+ * one. Request headers and bodies are never read; the one response header read
+ * is `content-length`, for the byte count a sink reports, and it is read on
+ * both paths (`response.headers.get` for `fetch`, `getResponseHeader` for XHR).
+ * No body is read, cloned or buffered anywhere.
  *
  * One patch, many recorders.
  *
@@ -18,7 +21,12 @@
  * page loading both `dist/runtime.js` and `dist/runtime.cjs` gets two
  * `fetchPatch` copies, each installing its own wrapper. Both still record
  * correctly (they stack rather than conflict), but the app pays for two
- * wrappers — resolve the package to one format to avoid it. This is also why
+ * wrappers, and detaching them inner-first strands the inner one on
+ * `globalThis.fetch`: sink-less, so it records nothing, but still forwarding
+ * every call, chaining a `.then()` and reading `content-length`. One is
+ * stranded per attach/detach cycle, so the chain deepens as long as the page
+ * cycles recorders, and deep enough overflows the stack. Resolve the package
+ * to one format to avoid all of it. This is also why
  * `/ext/metrics` value-imports this module through `@nejcm/dev-toolbar/runtime`
  * rather than relatively: the CJS build does not code-split, so a relative
  * import would inline a second copy of this state into `dist/ext/metrics.cjs`

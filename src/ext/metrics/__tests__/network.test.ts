@@ -265,12 +265,10 @@ describe("network collector — fetch present", () => {
 
   it("shares one wrapper with a direct /runtime caller", async () => {
     /**
-     * The `fetch` interceptor moved to `/runtime` in Phase 1A, and the
-     * collector imports it through the **published** specifier so both callers
-     * meet in one module instance rather than one per bundle. If that import
-     * ever went relative again — or the patch state were duplicated — the two
-     * `expect(globalThis.fetch).toBe(wrapper)` lines below would fail, because
-     * each caller would install a wrapper of its own.
+     * The collector imports `/runtime`'s interceptor through the **published**
+     * specifier, so both callers meet in one module instance rather than one
+     * per bundle. A relative import, or duplicated patch state, gives each
+     * caller a wrapper of its own and fails the two `toBe(wrapper)` lines.
      */
     const base = vi.fn(async () => response(200)) as unknown as typeof fetch;
     globalThis.fetch = base;

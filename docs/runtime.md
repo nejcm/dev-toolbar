@@ -102,10 +102,16 @@ injected sheet, and `writeClipboardTextOrThrow()`.
   else's later patch, so a page that patched `fetch` after you keeps its own. A sink
   that throws is contained and logged; the host app's request is never affected by a
   recorder's bug. `method` and `url` arrive **raw** — redaction is the sink's job,
-  because a sink filtering on the real URL cannot do it against a masked one — and
-  headers and bodies are never read. `/ext/metrics`' network collector is one sink
-  on this; it imports it through the published specifier rather than relatively, so
-  a CommonJS consumer using both gets one wrapper rather than two. Where there is no
+  because a sink filtering on the real URL cannot do it against a masked one. No
+  request header and no body is ever read, and the single response header read is
+  `content-length`, for the byte count a sink is handed. `/ext/metrics`' network
+  collector is one sink on this; it imports it through the published specifier
+  rather than relatively, so a CommonJS consumer using both gets one wrapper rather
+  than two. A page that resolves *both* formats holds two patch states: they stack
+  rather than conflict, but detaching inner-first strands the inner wrapper, and one
+  more is stranded on every attach/detach cycle. A stranded wrapper records nothing,
+  yet still forwards the call, chains a promise and reads `content-length`; enough
+  of them overflow the stack. Resolve the package to one format. Where there is no
   `fetch` (or no `XMLHttpRequest`) attaching is a no-op returning a no-op.
 - **`ensureStyleSheet(entry, css, doc?, nonce?)`** — injects a stylesheet once per
   document, keyed on a `style[data-dev-toolbar-styles]` element rather than a module

@@ -82,7 +82,12 @@ export interface NetworkExport {
   generatedAt: string;
   /** The page, redacted. `null` outside a browser. */
   url: string | null;
+  /** Entries in `requests`, which it never disagrees with. */
   count: number;
+  /** Requests the collector is holding, of which `requests` may be the newest slice. */
+  retained: number;
+  /** `count < retained`: older retained requests were not returned. */
+  truncated: boolean;
   /** Newest first, already through `redactUrl()`. */
   requests: readonly NetworkEntryView[];
 }

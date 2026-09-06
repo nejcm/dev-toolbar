@@ -161,7 +161,7 @@ own `id`, so a second metrics group gets its own set.
 
 | Command | Input | What it does |
 | --- | --- | --- |
-| `metrics.network.export` | `{ limit?, copy? }` | Returns the retained tail as JSON — `{ generatedAt, url, count, requests }` — for an agent or a bug report. `copy: true` also writes it to the clipboard. |
+| `metrics.network.export` | `{ limit?, copy? }` | Returns the retained tail as JSON — `{ generatedAt, url, count, retained, truncated, requests }`, at most 200 requests — for an agent or a bug report. `copy: true` also writes it to the clipboard. |
 | `metrics.network.copyAsCurl` | `{ id?, copy? }` | Copies one request as a `curl` line: the one whose `id` you pass, or the most recent. Returns the line; `copy: false` skips the clipboard. |
 | `metrics.network.clear` | — | Drops the retained requests and the network counters. Only this collector — `metrics.reset` clears them all. |
 | `metrics.network.pause` | `{ paused? }` | Stops recording new requests; omit `paused` to toggle. Returns `{ paused }`. |
@@ -170,7 +170,7 @@ own `id`, so a second metrics group gets its own set.
 const { result } = await api.invokeCommand("metrics.network.export", { limit: 20 });
 // result.requests[0] → { id, method, url, startedAt, duration, status, state, bytes, error }
 await api.invokeCommand("metrics.network.copyAsCurl", { id: result.requests[0].id });
-// curl -X 'POST' 'https://api.test/v1/orders?access_token=[redacted]&page=2'
+// curl --globoff -X 'POST' 'https://api.test/v1/orders?access_token=[redacted]&page=2'
 ```
 
 Three of the four declare an `input` schema, so [`/ext/command-menu`](./command-menu.md)
@@ -181,17 +181,33 @@ field of every schema is optional: each command has a sensible zero-argument
 meaning (the whole tail, the most recent request, toggle), so a caller that passes
 nothing still gets the obvious thing.
 
-`export` hands back **the same array the panel is rendering** — the runtime's own
-snapshot object, not a second mapping of the collector — so what an agent reads and
-what a developer sees cannot disagree about redaction, ordering or shape. `limit` is
-the only thing that changes it, and only by slicing the newest N off the front.
+`export` hands back **the panel's own entries** — the runtime's snapshot objects, in
+the panel's order and through the same `redactUrl()` pass, not a second mapping of
+the collector — so what an agent reads and what a developer sees cannot disagree
+about redaction, ordering or shape. They are the same entries, not the same count:
+the panel's table renders the newest 30 rows, and the export returns the newest 200.
 
-`copyAsCurl` emits **method and URL, nothing else**: no headers, body or cookies are
-captured anywhere in this extension, so the line identifies a request rather than
-replaying it. The URL is the panel's own already-redacted string, run through
+That 200 is a **bound, not a default**, and it is there because of the bridge.
+[`/ext/agent`](./agent.md) runs `redact()` over a command result on the way out, and
+`redact()` cuts an array at 200 entries and pushes a `"[+N more]"` *string* onto it —
+so an unbounded export reached an agent as an array whose last element was not a
+request, under a `count` that disagreed with its length. The command caps at the same
+200 instead, and reports what that left behind: `count` is always `requests.length`,
+`retained` is how many the collector is holding (`historySize`, 100 by default), and
+`truncated` is `true` when older retained requests were not returned. There is no
+paging past them; a `historySize` above 200 is a retention setting for the panel, not
+a bigger export. `limit` only shortens the result further, by slicing the newest N off
+the front.
+
+`copyAsCurl` emits **method and URL, nothing else**: no header value, body or cookie
+is captured anywhere in this extension — the collector reads `content-length` for a
+byte count and nothing more — so the line identifies a request rather than replaying
+it. The URL is the panel's own already-redacted string, run through
 `redactUrl()` again on the way out, so `user:pass@` userinfo and credential-shaped
 query parameters cannot reach the clipboard; a relative path is resolved against the
-page so the line runs, and everything interpolated is single-quoted for `sh`. The
+page so the line runs, and everything interpolated is single-quoted for `sh` and
+handed to curl with `--globoff` — curl runs its own glob syntax over a URL, where
+`[redacted]` is a bad range and every masked line would fail to parse. The
 same `formatCurl(request, { redact })` is exported if you would rather render the
 line yourself. Where the clipboard is unavailable — an insecure origin, a denied
 permission — the command throws rather than reporting a copy that did not happen;

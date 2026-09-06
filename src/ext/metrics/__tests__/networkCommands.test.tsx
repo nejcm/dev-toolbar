@@ -5,7 +5,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act } from "@testing-library/react";
 import { cleanupToolbar, installClipboard, mountToolbar } from "@nejcm/dev-toolbar/testing";
-import { REDACTED } from "@nejcm/dev-toolbar/runtime";
+import { REDACTED, redact } from "@nejcm/dev-toolbar/runtime";
 import { metrics } from "../index";
 import { formatBytes, formatMs, shortenUrl } from "../format";
 import { createMetricsRuntime } from "../runtime";
@@ -97,6 +97,39 @@ describe("network.export", () => {
     expect(Date.parse(payload.generatedAt)).not.toBeNaN();
   });
 
+  it("bounds the payload at what survives the agent bridge, and says so", async () => {
+    /**
+     * `/ext/agent` re-redacts a command result, and `redact()` replaces
+     * everything past the 200th array entry with a `"[+N more]"` string. An
+     * unbounded export would reach an agent as an array ending in a string,
+     * under a `count` that disagreed with its length — so the command caps at
+     * the same 200 and reports what it left behind.
+     */
+    const { toolbar } = mount({ network: { patchXhr: false, historySize: 300 } });
+    for (let index = 0; index < 250; index += 1) await request(`/api/${index}`);
+
+    const invocation = (await toolbar.invokeCommand<NetworkExport>("metrics.network.export")) as {
+      result: NetworkExport;
+    };
+    const payload = invocation.result;
+    expect(payload.retained).toBe(250);
+    expect(payload.count).toBe(200);
+    expect(payload.count).toBe(payload.requests.length);
+    expect(payload.truncated).toBe(true);
+    expect(payload.requests[0]?.url).toBe("/api/249");
+
+    // The bridge's own pass over the result, with its defaults: it must find
+    // nothing to cut, so what an agent receives is what the command returned.
+    expect(redact(payload)).toEqual(payload);
+
+    const short = (await toolbar.invokeCommand<NetworkExport>("metrics.network.export", {
+      limit: 5,
+    })) as { result: NetworkExport };
+    expect(short.result.count).toBe(5);
+    expect(short.result.retained).toBe(250);
+    expect(short.result.truncated).toBe(true);
+  });
+
   it("copies the JSON only when asked, and refuses a limit that is not a number", async () => {
     const clipboard = installClipboard();
     try {
@@ -149,7 +182,7 @@ describe("network.copyAsCurl", () => {
       const line = (invocation as { result: string }).result;
 
       expect(line).toBe(
-        `curl -X 'POST' 'http://localhost:3000/api/orders?api_key=${REDACTED}&page=3'`,
+        `curl --globoff -X 'POST' 'http://localhost:3000/api/orders?api_key=${REDACTED}&page=3'`,
       );
       expect(clipboard.writes).toEqual([line]);
       expect(line).not.toContain("hunter2");
@@ -180,7 +213,7 @@ describe("network.copyAsCurl", () => {
     // rather than raw. (The escaping itself is covered in `curl.test.ts`,
     // against a string no URL parser will normalise.)
     expect(line).toBe(
-      `curl 'https://${REDACTED}:${REDACTED}@api.test/v1?session_id=${REDACTED}&q=%27+whoami'`,
+      `curl --globoff 'https://${REDACTED}:${REDACTED}@api.test/v1?session_id=${REDACTED}&q=%27+whoami'`,
     );
 
     const panel = (() => {
@@ -210,7 +243,7 @@ describe("network.copyAsCurl", () => {
       copy: false,
     });
     expect((invocation as { result: string }).result).toBe(
-      "curl 'http://localhost:3000/api/first'",
+      "curl --globoff 'http://localhost:3000/api/first'",
     );
 
     await expect(
