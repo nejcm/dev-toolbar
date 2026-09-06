@@ -154,6 +154,11 @@ is not the merged list the toolbar renders — read the aggregation through
 `api.getCommands()` / `api.getDiagnostics()` in an extension, or
 `useToolbarCommands()` / `useDevToolbar().getCommands()` in the host.
 
+For the metrics subpath, see [custom collectors](./ext/metrics.md#custom-collectors):
+`MetricsOptions.collectors`, `CollectorId`, the collector contract, and the separate
+built-in `views` and consumer `custom` snapshot records. These are subpath exports,
+not root exports; the extension contract version remains 2.
+
 ## Types
 
 Every type the root entry exports. The slot props, `DevToolbarExtension`,

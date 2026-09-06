@@ -1,6 +1,6 @@
 # `@nejcm/dev-toolbar/ext/metrics`
 
-Memory, delay, jank and network in one extension.
+Memory, delay, jank, network and consumer-supplied collectors in one extension.
 
 ```tsx
 import { DevToolbar } from "@nejcm/dev-toolbar";
@@ -42,6 +42,115 @@ metrics({
   network: { slowMs: 400, filter: ({ url }) => !url.startsWith("/telemetry") },
 });
 ```
+
+## Custom collectors
+
+Pass `collectors?: readonly Collector[]` to append consumer-owned metrics after the
+four built-ins, in registration order. `only?: readonly CollectorId[]` selects and
+orders either kind. An explicit `only` excludes every unlisted collector; duplicate
+IDs in `only` run once. Built-in `false` options still take precedence over `only`.
+
+```ts
+import { metrics } from "@nejcm/dev-toolbar/ext/metrics";
+import type { Collector } from "@nejcm/dev-toolbar/ext/metrics";
+import { createTimeSeries } from "@nejcm/dev-toolbar/runtime";
+
+const series = createTimeSeries(120);
+const queue: Collector = {
+  id: "queue-depth",
+  supported: true,
+  estimatedCost: "minimal",
+  series,
+  start({ signal, now, invalidate }) {
+    const timer = setInterval(() => {
+      series.push(now(), readQueueDepth()); // Your application's getter.
+      invalidate();
+    }, 1000);
+    signal.addEventListener("abort", () => clearInterval(timer), { once: true });
+  },
+  read() {
+    const value = series.last();
+    return {
+      id: "queue-depth", label: "queue", title: "Queue depth",
+      status: series.size ? "ok" : "pending", severity: "unknown",
+      display: series.size ? String(value) : "NA", value, unit: "jobs",
+      hint: "Jobs waiting in the application queue.", detail: [],
+    };
+  },
+  reset() { series.clear(); },
+  diagnostics() { return { depth: Number.isFinite(series.last()) ? series.last() : null }; },
+};
+
+const extensions = [metrics({ collectors: [queue], only: ["memory", "queue-depth"] })];
+```
+
+`metrics()` throws immediately for IDs outside `/^[A-Za-z0-9_-]+$/`, duplicate
+custom registrations, a custom ID matching any built-in, or an unknown ID in
+`only`. Registration validation applies even to excluded collectors and disabled
+built-ins. IDs are case-sensitive. The same ID identifies the chip, panel tab,
+persisted selection and diagnostic row; keep it stable for the collector's lifetime.
+
+`Collector`, `CollectorContext` and `MetricView` are exported types from this
+subpath. `TimeSeries` and `createTimeSeries` come from `/runtime`.
+
+| Collector member | Contract |
+| --- | --- |
+| `id: CollectorId` | Stable identity; `read().id` must match. |
+| `supported`, `unsupportedReason?` | Report platform support without installing observers in the factory. Unsupported collectors still render, but are never started. |
+| `estimatedCost` | `"minimal"`, `"moderate"` or `"high"`, shown in the panel. |
+| `start(context): void` | Begin collection. `context.signal` aborts on teardown; detach every observer, listener and timer. Support restart with a fresh signal for StrictMode. No cleanup return value. |
+| `context.now()` | Monotonic sample clock, with a wall-clock fallback where Performance is absent. |
+| `context.invalidate()` | Request an early read, coalesced and throttled. Call after changing samples or details. |
+| `read(now): MetricView` | Cheap, side-effect-free view, including before `start()` and when unsupported. Supply label, title, status, severity, display, numeric value, unit, hint and formatted detail pairs. |
+| `series: TimeSeries` | Bounded numeric history for the sparkline. Push via `series.push(at, value)`. |
+| `reset(): void` | Clear retained samples and aggregates. Keep active subscriptions running. |
+| `diagnostics(now): unknown` | JSON-safe summary. Redact sensitive data before retaining it; the combined dump is redacted again before export. |
+| `entries?(now)` | Existing network request-table hook. Custom collectors use `detail` for panel rows and `diagnostics` for other data. |
+
+Construct collectors and the extension once, outside render. Use a separate collector
+instance for each metrics extension. `read`, `reset` and `diagnostics` must not throw;
+`start` errors are logged per collector so the others can start.
+
+`MetricId` remains exactly `"memory" | "delay" | "jank" | "network"`.
+The new `CollectorId = MetricId | (string & {})` admits consumer IDs without
+opening the built-in record. `MetricsSnapshot.views` still requires all four
+built-in keys, including switched-off placeholders. Custom views live in
+`MetricsSnapshot.custom: Readonly<Record<string, MetricView>>`; snapshot and runtime
+`order` are `readonly CollectorId[]`. `MetricView.id` and `Collector.id` also use
+`CollectorId`. Code constructing snapshots must now provide `custom`, usually `{}`.
+
+The diagnostics dump's `metrics` array includes custom numeric summaries, so
+`/ext/agent` and `/ext/diagnostics` read them automatically. Built-in detail dumps
+keep their existing top-level keys. Custom dumps live under `custom[id]`, avoiding
+collisions with `metrics`, `url` and other metadata. With no custom collectors the
+diagnostics shape is unchanged.
+
+## Playground examples
+
+Both examples live **outside the published package**, in
+[`examples/playground/src/collectors`](../../examples/playground/src/collectors).
+They add no factory exports or dependencies to `/ext/metrics`.
+
+- [`reactProfiler.ts`](../../examples/playground/src/collectors/reactProfiler.ts)
+  returns `{ collector, onRender }`. The playground registers the collector fifth
+  and wraps its app content in `<Profiler onRender={reactProfiler.onRender}>`.
+  Each commit writes `actualDuration` and `baseDuration` into paired, bounded
+  `TimeSeries` histories; the chip and sparkline use actual duration. The toolbar
+  sits outside that subtree to avoid measuring its own updates. React's ordinary
+  production build disables profiling; use a profiling build to collect there.
+  [React Profiler reference](https://react.dev/reference/react/Profiler).
+- [`webVitals.ts`](../../examples/playground/src/collectors/webVitals.ts) registers
+  sixth. Three buffered `PerformanceObserver` calls observe LCP, layout shifts
+  and events. TTFB comes from Navigation Timing. The chip shows LCP; the panel and
+  diagnostics also report CLS session maxima and an INP estimate grouped by
+  interaction ID. It retains ten slow interactions and uses `interactionCount`
+  to discard one outlier per fifty interactions; where that count is unavailable
+  it reports the worst observed interaction. This is a live page estimate, not a
+  field-reporting SDK: no attribution, iframe aggregation, visibility finalization
+  or bfcache/prerender lifecycle handling. Reset starts a new observation window
+  but retains the page's TTFB. Consumers needing full Web Vitals semantics or
+  attribution should inject their own collector.
+  [INP definition](https://web.dev/articles/inp).
 
 **Instrument your own client instead of being patched.** With no bus, the network
 collector wraps `fetch` and `XMLHttpRequest` — once globally, feeding every live

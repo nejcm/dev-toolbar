@@ -9,6 +9,8 @@ import type { TimeSeries } from "../../runtime";
 
 export type MetricId = "memory" | "delay" | "jank" | "network";
 
+export type CollectorId = MetricId | (string & {});
+
 export const METRIC_IDS: readonly MetricId[] = ["memory", "delay", "jank", "network"];
 
 /** `"unknown"` is a real state: it is what an unsupported platform API looks like. */
@@ -35,7 +37,7 @@ export function severityFor(value: number, thresholds: Thresholds): Severity {
 }
 
 export interface MetricView {
-  id: MetricId;
+  id: CollectorId;
   /** Bar chip label, e.g. `"mem"`. */
   label: string;
   /** Panel section heading, e.g. `"Memory"`. */
@@ -72,8 +74,9 @@ export interface MetricsSnapshot {
   revision: number;
   at: number;
   /** Only the metrics that are switched on, in bar order. */
-  order: readonly MetricId[];
+  order: readonly CollectorId[];
   views: Readonly<Record<MetricId, MetricView>>;
+  custom: Readonly<Record<string, MetricView>>;
   /** Newest first, already redacted. Empty unless the network collector runs. */
   requests: readonly NetworkEntryView[];
   /** Total samples ever written across every series. Drives sparkline refresh. */
@@ -89,7 +92,7 @@ export interface CollectorContext {
 }
 
 export interface Collector {
-  readonly id: MetricId;
+  readonly id: CollectorId;
   /** §5's cost annotation. Surfaced in the panel so the cost is not a secret. */
   readonly estimatedCost: "minimal" | "moderate" | "high";
   /** False when the platform API is missing. `start()` is then never called. */
@@ -109,4 +112,12 @@ export interface Collector {
   entries?(now: number): readonly NetworkEntryView[];
   /** JSON-safe, redacted dump for "Copy diagnostic data". */
   diagnostics(now: number): unknown;
+}
+
+export function isMetricId(id: CollectorId): id is MetricId {
+  return METRIC_IDS.includes(id as MetricId);
+}
+
+export function metricView(snapshot: MetricsSnapshot, id: CollectorId): MetricView {
+  return isMetricId(id) ? snapshot.views[id] : snapshot.custom[id]!;
 }

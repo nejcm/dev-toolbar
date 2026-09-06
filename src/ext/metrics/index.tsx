@@ -22,9 +22,9 @@ import { createNetworkCollector } from "./collectors/network";
 import { writeClipboardTextOrThrow } from "../../runtime";
 import { createMetricsRuntime } from "./runtime";
 import { MetricsChips, MetricsPanel } from "./ui";
-import { METRIC_IDS } from "./types";
+import { METRIC_IDS, isMetricId } from "./types";
 import { resolveStyleNonce } from "@nejcm/dev-toolbar/kit";
-import type { Collector, MetricId } from "./types";
+import type { Collector, CollectorId, MetricId } from "./types";
 import type { MemoryCollectorOptions } from "./collectors/memory";
 import type { DelayCollectorOptions } from "./collectors/delay";
 import type { JankCollectorOptions } from "./collectors/jank";
@@ -40,8 +40,10 @@ export interface MetricsOptions {
   order?: number;
   priority?: number;
   hidden?: boolean;
-  /** Which metrics to run, in bar order. Default: all four. */
-  only?: readonly MetricId[];
+  /** Which metrics to run, in bar order. Default: all four, then custom collectors. */
+  only?: readonly CollectorId[];
+  /** Consumer-owned collectors, appended in registration order unless `only` is set. */
+  collectors?: readonly Collector[];
   /** Aggregation rate. Default `2` Hz; §5 caps compact updates at 4. */
   updateHz?: number;
   /**
@@ -77,11 +79,26 @@ export function metrics(options: MetricsOptions = {}): DevToolbarExtension {
     order = 0,
     priority = 0,
     hidden,
-    only = METRIC_IDS,
+    collectors: customCollectors = [],
+    only = [...METRIC_IDS, ...customCollectors.map((collector) => collector.id)],
     updateHz = 2,
     injectStyles = true,
     styleNonce: optionNonce,
   } = options;
+
+  const custom = new Map<CollectorId, Collector>();
+  for (const collector of customCollectors) {
+    if (!/^[A-Za-z0-9_-]+$/.test(collector.id)) {
+      throw new Error(`[dev-toolbar/ext/metrics] Invalid collector id "${collector.id}".`);
+    }
+    if (isMetricId(collector.id)) {
+      throw new Error(`[dev-toolbar/ext/metrics] Collector "${collector.id}" shadows a built-in.`);
+    }
+    if (custom.has(collector.id)) {
+      throw new Error(`[dev-toolbar/ext/metrics] Duplicate collector id "${collector.id}".`);
+    }
+    custom.set(collector.id, collector);
+  }
 
   const build: Record<MetricId, () => Collector | null> = {
     memory: () => {
@@ -104,7 +121,11 @@ export function metrics(options: MetricsOptions = {}): DevToolbarExtension {
 
   const collectors: Collector[] = [];
   for (const metricId of only) {
-    const collector = build[metricId]?.();
+    if (!isMetricId(metricId) && !custom.has(metricId)) {
+      throw new Error(`[dev-toolbar/ext/metrics] Unknown collector "${metricId}" in only.`);
+    }
+    if (collectors.some((collector) => collector.id === metricId)) continue;
+    const collector = isMetricId(metricId) ? build[metricId]() : custom.get(metricId);
     if (collector) collectors.push(collector);
   }
 
@@ -183,6 +204,7 @@ export { METRIC_IDS, severityFor } from "./types";
 export type {
   Collector,
   CollectorContext,
+  CollectorId,
   MetricId,
   MetricStatus,
   MetricView,
