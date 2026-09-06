@@ -9,13 +9,25 @@
  * original request; it is the request's identity, in a form you can paste into
  * a shell, an issue or a message to a colleague.
  *
- * Redaction is applied **again** here, on a URL the collector already masked on
- * the way in. That is deliberate belt-and-braces: this function is exported, so
- * it can be handed a URL that never went through the ring buffer, and the one
- * property it must hold — a curl line cannot show a secret the panel would have
- * hidden — should not depend on its caller. `redactUrl()` masks `user:pass@`
- * userinfo as well as sensitive query and hash parameters, and running it over
- * an already-masked URL is a no-op.
+ * The line shows the **normalised, redacted** request, not the recorded string
+ * byte for byte. `fetch()` accepts a great deal a URL parser tidies up on the
+ * way to the wire — a leading space, a tab inside the host or the scheme, a
+ * backslash where a `/` belongs — and the collector retains what the app
+ * passed, not what the browser sent. curl's URL parser is stricter than a
+ * browser's and rejects those outright (`curl: (3) URL rejected`), so the URL
+ * is put through `URL` first and the line shows what the browser would
+ * actually have requested. Where that differs from the panel's string, the
+ * curl line is the one that runs.
+ *
+ * Normalising **before** redacting is what makes that safe. The mask is
+ * written after parsing, so it never round-trips through `URL` and cannot come
+ * out as `%5Bredacted%5D`; a mask the collector already wrote is re-masked
+ * back to its literal form by the same pass. Redaction is applied here at all
+ * — on a URL the collector already masked on the way in — because this
+ * function is exported, so the one property it must hold (a curl line cannot
+ * show a secret the panel would have hidden) should not depend on its caller.
+ * `redactUrl()` masks `user:pass@` userinfo as well as sensitive query and
+ * hash parameters.
  *
  * Everything interpolated is single-quoted for `sh`, with the one escape a
  * single-quoted shell string allows (`'\\''`). Both the URL and the method are
@@ -27,11 +39,6 @@
  * it. The redaction mask is `[redacted]`, which makes an unglobbed line
  * `curl: (3) bad range` for exactly the URLs this feature exists to hand over,
  * so every line carries `--globoff`.
- *
- * And curl parses the URL itself, more strictly than a browser does: a raw
- * space or control character anywhere in it is `curl: (3) URL rejected`, while
- * `fetch()` accepts the same string and percent-encodes it. Those characters
- * are therefore encoded before the line is emitted.
  */
 import { redactUrl } from "../../runtime";
 import type { RedactOptions } from "../../runtime";
@@ -39,14 +46,18 @@ import type { NetworkEntryView } from "./types";
 
 /**
  * Percent-encodes the characters curl's URL parser rejects outright: the space
- * and everything below it, plus DEL. A browser accepts them — `new Request(url)`
- * encodes a query space as `%20` — so the collector can retain a URL that curl
- * will not run, and the path that skips `absolute()` (an unparseable string, or
- * no `location` to resolve against) never gets a parser's encoding either.
+ * and everything below it, plus DEL.
  *
- * Runs last, on the already-redacted string. It can only widen an escape, never
- * undo one, so a mask survives it byte for byte: `[redacted]` contains none of
- * these characters.
+ * A normalised URL has none of them left — `URL` strips tab, CR and LF, trims
+ * leading and trailing C0-or-space, and percent-encodes the rest — so this is
+ * for the strings normalisation could not touch: a caller passing
+ * `absolute: false`, and a relative or unparseable URL with no `location` to
+ * resolve it against. On those, it is the only thing standing between a raw
+ * space and `curl: (3) URL rejected`.
+ *
+ * Runs last, on the already-redacted string. It can only widen an escape,
+ * never undo one, so a mask survives it byte for byte: `[redacted]` contains
+ * none of these characters.
  */
 function encodeUrlControls(url: string): string {
   let encoded = "";
@@ -66,22 +77,27 @@ function shellQuote(value: string): string {
 }
 
 /**
- * Absolutises a recorded URL against the page, so a relative path recorded from
- * `fetch("/api/me")` produces a curl line that actually resolves.
+ * The recorded URL as the browser would have sent it: absolutised against the
+ * page, and normalised by the same parser `fetch()` puts it through.
  *
- * Failing softly is the point: no `location` (SSR, a worker), an opaque origin,
- * or a URL that will not parse leaves the string exactly as recorded rather
- * than throwing inside a command.
+ * `new URL()` is the whole primitive. It is the WHATWG parser the platform
+ * already applies to a request URL, so it fixes exactly the shapes a browser
+ * forgives and curl does not — it removes every tab, CR and LF wherever they
+ * sit (including inside the scheme or the host, which no positional-blind
+ * escaping could reach), trims leading and trailing C0-or-space, turns a
+ * backslash into `/` under a special scheme, and percent-encodes what is left.
+ * `new Request(url).url` would give the same string by running the same
+ * parser, at the cost of constructing a request object and needing a `fetch`
+ * environment; resolving against `location.href` unconditionally would rewrite
+ * an absolute URL against the wrong base.
+ *
+ * Failing softly is the point: no `location` (SSR, a worker), an opaque
+ * origin, or a URL that will not parse leaves the string exactly as recorded
+ * rather than throwing inside a command. `encodeUrlControls()` catches those.
  */
-function absolute(url: string): string {
+function normalise(url: string): string {
   try {
-    // Already absolute: returned untouched rather than re-serialised. A
-    // round-trip through `URL` would percent-encode a mask the collector wrote
-    // literally (`[redacted]` in userinfo becomes `%5Bredacted%5D`), so the
-    // panel's string and the curl line would stop matching character for
-    // character for no gain.
-    new URL(url);
-    return url;
+    return new URL(url).href;
   } catch {
     // Not absolute — or not a URL at all.
   }
@@ -98,8 +114,9 @@ export interface CurlOptions {
   /** The collector's own `redact` options, so the mask matches the panel's. */
   redact?: RedactOptions;
   /**
-   * Resolve a relative URL against `location.href`. Default `true`. Turn it off
-   * to keep the string exactly as the panel shows it.
+   * Normalise the URL the way the browser does and resolve a relative one
+   * against `location.href`. Default `true`. Turn it off to keep the string
+   * exactly as the panel shows it — at the cost of a line curl may refuse.
    */
   absolute?: boolean;
 }
@@ -113,8 +130,10 @@ export function formatCurl(
   options: CurlOptions = {},
 ): string {
   const { absolute: resolve = true } = options;
+  // Normalise, *then* redact: the mask is written by the pass after the
+  // parser, so it reaches the line literally rather than percent-encoded.
   const url = encodeUrlControls(
-    redactUrl(resolve ? absolute(request.url) : request.url, options.redact),
+    redactUrl(resolve ? normalise(request.url) : request.url, options.redact),
   );
   const method = request.method.toUpperCase();
   const verb = method === "GET" || method === "" ? "" : `-X ${shellQuote(method)} `;

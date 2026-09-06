@@ -244,10 +244,12 @@ export function metrics(options: MetricsOptions = {}): DevToolbarExtension {
         "Renders one retained request as a `curl` line and copies it: the request " +
         "whose `id` you pass, or the most recent one. Method and URL only — no raw " +
         "header value, body or cookie is captured anywhere in this extension, so the " +
-        "line identifies a request rather than replaying it. The URL is the panel's " +
-        "own redacted string, masked again on the way out, so `user:pass@` userinfo " +
-        "and credential-shaped query parameters cannot reach the clipboard. Returns " +
-        "the line; pass `copy: false` to skip the clipboard entirely.",
+        "line identifies a request rather than replaying it. The URL is the " +
+        "normalised, redacted request — parsed the way the browser parses it, so " +
+        "the line runs where the recorded string would not, then masked again on " +
+        "the way out so `user:pass@` userinfo and credential-shaped query " +
+        "parameters cannot reach the clipboard. Returns the line; pass " +
+        "`copy: false` to skip the clipboard entirely.",
       group: "Metrics",
       keywords: ["network", "curl", "copy", "request", "clipboard", "repro"],
       input: {

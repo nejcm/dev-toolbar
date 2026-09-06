@@ -202,14 +202,27 @@ the front.
 `copyAsCurl` emits **method and URL, nothing else**: no raw header value, body or cookie
 is captured anywhere in this extension — a recorder reports a numeric byte count and
 nothing else, whether it read `content-length` off a patched response or was handed
-`bytes` over the bus — so the line identifies a request rather than replaying it. The URL is the panel's own already-redacted string, run through
-`redactUrl()` again on the way out, so `user:pass@` userinfo and credential-shaped
-query parameters cannot reach the clipboard; a relative path is resolved against the
-page so the line runs, and everything interpolated is single-quoted for `sh` and
-handed to curl with `--globoff` — curl runs its own glob syntax over a URL, where
-`[redacted]` is a bad range and every masked line would fail to parse. The
-same `formatCurl(request, { redact })` is exported if you would rather render the
-line yourself. Where the clipboard is unavailable — an insecure origin, a denied
+`bytes` over the bus — so the line identifies a request rather than replaying it.
+
+What the line shows is the **normalised, redacted** request, not the panel's string
+byte for byte. `fetch()` accepts a great deal that a URL parser tidies up on the way
+to the wire — a leading space, a tab inside the scheme or the host, a backslash where
+a `/` belongs — and the collector retains what the app passed, not what the browser
+sent; curl's URL parser is stricter than a browser's and answers those with
+`curl: (3) URL rejected`. So the URL goes through `URL` first, exactly as the platform
+would, and then through `redactUrl()`. Where the two strings differ, the curl line is
+the one that runs. Pass `absolute: false` to `formatCurl` to keep the recorded string
+instead — the panel's view, at the cost of a line curl may refuse.
+
+Normalising *before* redacting is also what keeps the mask readable: it is written
+after the parser, so `[redacted]` reaches the line literally rather than as
+`%5Bredacted%5D`. `redactUrl()` masks `user:pass@` userinfo and credential-shaped
+query and fragment parameters, so none of them can reach the clipboard; a relative
+path is resolved against the page so the line runs; and everything interpolated is
+single-quoted for `sh` and handed to curl with `--globoff` — curl runs its own glob
+syntax over a URL, where `[redacted]` is a bad range and every masked line would fail
+to parse. The same `formatCurl(request, { redact })` is exported if you would rather
+render the line yourself. Where the clipboard is unavailable — an insecure origin, a denied
 permission — the command throws rather than reporting a copy that did not happen;
 the line is still its return value.
 

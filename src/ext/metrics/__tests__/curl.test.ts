@@ -60,17 +60,38 @@ describe("formatCurl", () => {
     expect(line.split(`'\\''`).join("").split("'")).toHaveLength(3);
   });
 
-  it("percent-encodes whitespace and control characters curl would reject", () => {
+  it("normalises whitespace and control characters the way the browser does", () => {
     expect(formatCurl(entry("https://api.test/v1?q=a b"))).toBe(
       "curl --globoff 'https://api.test/v1?q=a%20b'",
     );
+    // `URL` drops tab, CR and LF outright — that is what the browser sends —
+    // and percent-encodes the other controls.
     expect(formatCurl(entry("https://api.test/v1?q=a\tb\nc\v\fd\x7f"))).toBe(
-      "curl --globoff 'https://api.test/v1?q=a%09b%0Ac%0B%0Cd%7F'",
+      "curl --globoff 'https://api.test/v1?q=abc%0B%0Cd%7F'",
     );
-    // The branch that never reaches a URL parser is encoded too.
+    // The branches no parser reaches are encoded instead, character by
+    // character: an unparseable string, and a caller that opted out.
     expect(formatCurl(entry("not a url"), { absolute: false })).toBe(
       "curl --globoff 'not%20a%20url'",
     );
+    expect(formatCurl(entry("https://api.test/v1?q=a\tb"), { absolute: false })).toBe(
+      "curl --globoff 'https://api.test/v1?q=a%09b'",
+    );
+  });
+
+  it("normalises the shapes a browser forgives and curl rejects", () => {
+    // Each of these is accepted by `fetch()` and rejected by curl's URL
+    // parser, and none can be fixed by escaping a character in place: what is
+    // wrong is *where* the character sits.
+    for (const recorded of [
+      " http://127.0.0.1:1/v1", // leading space
+      "http://127.0.0.1:\t1/v1", // tab in the port
+      "http://127.0.0.1:1\\v1", // backslash for the path separator
+      "http://127.0.0\t.1:1/v1", // tab in the host
+      "htt\tp://127.0.0.1:1/v1", // tab in the scheme
+    ]) {
+      expect(formatCurl(entry(recorded))).toBe("curl --globoff 'http://127.0.0.1:1/v1'");
+    }
   });
 
   it("encodes around the mask rather than through it", () => {
@@ -102,12 +123,41 @@ describe("formatCurl", () => {
     }
   });
 
-  it("keeps an already-absolute URL byte-for-byte, mask included", () => {
-    // A re-serialisation would percent-encode the literal `[redacted]` the
-    // collector wrote into userinfo, and the panel's string and the curl line
-    // would stop matching.
+  it("writes the mask after the parser, so it survives normalisation literally", () => {
+    // `new URL()` percent-encodes `[redacted]` in userinfo to
+    // `%5Bredacted%5D`. Normalising *first* means the mask the line carries is
+    // the one `redactUrl()` writes afterwards, over the parsed URL — and a
+    // mask the collector had already written comes back re-masked, literal.
     const masked = `https://${REDACTED}:${REDACTED}@api.test/v1`;
     expect(formatCurl(entry(masked))).toBe(`curl --globoff '${masked}'`);
+    expect(formatCurl(entry(masked))).not.toContain("%5B");
+  });
+
+  it("masks every category it masked before, on the normalised URL", () => {
+    // `redactUrl()` now sees a parsed, re-serialised string rather than the
+    // recorded one. One case per thing it masks, to prove none of them slipped.
+    const userinfo = formatCurl(entry("https://alice:s3cret@api.test/v1"));
+    expect(userinfo).toBe(`curl --globoff 'https://${REDACTED}:${REDACTED}@api.test/v1'`);
+
+    const query = formatCurl(entry("https://api.test/v1?access_token=s3cret&page=2"));
+    expect(query).toBe(`curl --globoff 'https://api.test/v1?access_token=${REDACTED}&page=2'`);
+
+    const extra = formatCurl(entry("https://api.test/v1?tenant=acme"), {
+      redact: { extraKeys: ["tenant"] },
+    });
+    expect(extra).toBe(`curl --globoff 'https://api.test/v1?tenant=${REDACTED}'`);
+
+    const fragment = formatCurl(entry("https://api.test/v1#id_token=s3cret&view=1"));
+    expect(fragment).toBe(`curl --globoff 'https://api.test/v1#id_token=${REDACTED}&view=1'`);
+
+    // …and the same four through a shape only normalisation makes parseable,
+    // so the masking is not quietly conditional on a tidy input.
+    const awkward = formatCurl(entry(" https://alice:s3cret@api.test:443\\v1?api_key=k\t#otp=9"));
+    expect(awkward).toContain(`https://${REDACTED}:${REDACTED}@api.test/v1`);
+    expect(awkward).toContain(`api_key=${REDACTED}`);
+    expect(awkward).toContain(`otp=${REDACTED}`);
+    expect(awkward).not.toContain("s3cret");
+    expect(awkward).not.toContain("alice");
   });
 });
 
@@ -174,5 +224,70 @@ describe.skipIf(!curlAvailable)("the line, handed to curl itself", () => {
       expect(stderr).toContain("URL rejected");
       expect(status).toBe(MALFORMED_URL);
     }
+  });
+
+  /**
+   * The shapes a browser normalises and curl refuses. Escaping in place cannot
+   * reach any of them — the character is wrong for its *position*, not wrong
+   * everywhere — which is why the URL is parsed before it is redacted.
+   */
+  const forgivenByTheBrowser = [
+    ["a leading space", " http://127.0.0.1:1/v1"],
+    ["a tab in the port", "http://127.0.0.1:\t1/v1"],
+    ["a backslash path separator", "http://127.0.0.1:1\\v1"],
+    ["a tab in the hostname", "http://127.0.0\t.1:1/v1"],
+  ] as const;
+
+  it.each(forgivenByTheBrowser)("parses a URL with %s", (_name, recorded) => {
+    const line = formatCurl(entry(recorded));
+    expect(line).toBe("curl --globoff 'http://127.0.0.1:1/v1'");
+    const { status, stderr } = run(line);
+    expect(stderr).not.toContain("URL rejected");
+    expect(status).toBe(CONNECT_REFUSED);
+  });
+
+  it.each(forgivenByTheBrowser)(
+    "would fail unnormalised (%s), so the above is not vacuous",
+    (_name, recorded) => {
+      // Exactly what the previous implementation emitted: redact first, then
+      // encode in place, with the recorded string otherwise preserved.
+      const { status, stderr } = run(formatCurl(entry(recorded), { absolute: false }));
+      expect(stderr).toContain("URL rejected");
+      expect(status).toBe(MALFORMED_URL);
+    },
+  );
+
+  it("parses every control character, in the path, the query and the fragment", () => {
+    // 0x01–0x20 plus DEL, in the three positions the app controls. 0x00 is
+    // excluded: an argument to `sh -c` cannot carry a NUL, so there is no line
+    // to hand over.
+    const codes = [...Array.from({ length: 0x20 }, (_, index) => index + 1), 0x7f];
+    const rejected: string[] = [];
+    for (const code of codes) {
+      const raw = String.fromCharCode(code);
+      for (const url of [
+        `http://127.0.0.1:1/p${raw}q`,
+        `http://127.0.0.1:1/v1?q=a${raw}b`,
+        `http://127.0.0.1:1/v1#f${raw}g`,
+      ]) {
+        const line = formatCurl(entry(url));
+        if (run(line).status !== CONNECT_REFUSED) rejected.push(line);
+      }
+    }
+    expect(rejected).toEqual([]);
+  });
+
+  it("runs a line carrying masks, a glob bracket, whitespace and a secret", () => {
+    const line = formatCurl(
+      entry(`https://${REDACTED}:${REDACTED}@127.0.0.1:1/items[1]?q=a b&access_token=s3cret`),
+    );
+    expect(line).toContain(`https://${REDACTED}:${REDACTED}@127.0.0.1:1`);
+    expect(line).toContain(`access_token=${REDACTED}`);
+    expect(line).not.toContain("s3cret");
+    expect(line).not.toContain("%5Bredacted%5D");
+    const { status, stderr } = run(line);
+    expect(stderr).not.toContain("bad range");
+    expect(stderr).not.toContain("URL rejected");
+    expect(status).toBe(CONNECT_REFUSED);
   });
 });
