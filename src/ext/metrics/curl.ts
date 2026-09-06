@@ -1,8 +1,9 @@
 /**
  * One retained request, rendered as a `curl` line. [dev-toolbar/ext/metrics]
  *
- * **Method and URL only.** No header value, no body, no cookies — the collector
- * never records them, and a curl line that carried them would be a credential
+ * **Method and URL only.** No raw header value, no body, no cookies — the
+ * collector records a numeric byte count and nothing else of a response, and a
+ * curl line that carried more would be a credential
  * buffer with a clipboard attached (`plans/ecosystem-extensions.md` § 1A,
  * explicitly out of scope). What comes out is therefore not a replay of the
  * original request; it is the request's identity, in a form you can paste into
@@ -26,10 +27,38 @@
  * it. The redaction mask is `[redacted]`, which makes an unglobbed line
  * `curl: (3) bad range` for exactly the URLs this feature exists to hand over,
  * so every line carries `--globoff`.
+ *
+ * And curl parses the URL itself, more strictly than a browser does: a raw
+ * space or control character anywhere in it is `curl: (3) URL rejected`, while
+ * `fetch()` accepts the same string and percent-encodes it. Those characters
+ * are therefore encoded before the line is emitted.
  */
 import { redactUrl } from "../../runtime";
 import type { RedactOptions } from "../../runtime";
 import type { NetworkEntryView } from "./types";
+
+/**
+ * Percent-encodes the characters curl's URL parser rejects outright: the space
+ * and everything below it, plus DEL. A browser accepts them — `new Request(url)`
+ * encodes a query space as `%20` — so the collector can retain a URL that curl
+ * will not run, and the path that skips `absolute()` (an unparseable string, or
+ * no `location` to resolve against) never gets a parser's encoding either.
+ *
+ * Runs last, on the already-redacted string. It can only widen an escape, never
+ * undo one, so a mask survives it byte for byte: `[redacted]` contains none of
+ * these characters.
+ */
+function encodeUrlControls(url: string): string {
+  let encoded = "";
+  for (const character of url) {
+    const code = character.charCodeAt(0);
+    encoded +=
+      code <= 0x20 || code === 0x7f
+        ? `%${code.toString(16).toUpperCase().padStart(2, "0")}`
+        : character;
+  }
+  return encoded;
+}
 
 /** POSIX single-quoting: everything is literal inside `'…'` except `'` itself. */
 function shellQuote(value: string): string {
@@ -84,7 +113,9 @@ export function formatCurl(
   options: CurlOptions = {},
 ): string {
   const { absolute: resolve = true } = options;
-  const url = redactUrl(resolve ? absolute(request.url) : request.url, options.redact);
+  const url = encodeUrlControls(
+    redactUrl(resolve ? absolute(request.url) : request.url, options.redact),
+  );
   const method = request.method.toUpperCase();
   const verb = method === "GET" || method === "" ? "" : `-X ${shellQuote(method)} `;
   return `curl --globoff ${verb}${shellQuote(url)}`;

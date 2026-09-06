@@ -51,13 +51,39 @@ describe("formatCurl", () => {
   });
 
   it("escapes a single quote rather than ending the shell string on it", () => {
-    // No URL parser will normalise this one, so the raw quote survives as far
-    // as the quoting — which is exactly the case the escaping exists for.
+    // Unparseable, so no URL parser normalises it and the raw quote reaches the
+    // quoting — the case the escaping exists for.
     const line = formatCurl(entry("htt p://api.test/'; rm -rf ~ #", "GET"), { absolute: false });
-    expect(line).toBe(`curl --globoff 'htt p://api.test/'\\''; rm -rf ~ #'`);
+    expect(line).toBe(`curl --globoff 'htt%20p://api.test/'\\'';%20rm%20-rf%20~%20#'`);
     // Every `'` in the output either delimits the argument or is part of the
     // `'\\''` escape, so nothing after it is a shell word.
     expect(line.split(`'\\''`).join("").split("'")).toHaveLength(3);
+  });
+
+  it("percent-encodes whitespace and control characters curl would reject", () => {
+    expect(formatCurl(entry("https://api.test/v1?q=a b"))).toBe(
+      "curl --globoff 'https://api.test/v1?q=a%20b'",
+    );
+    expect(formatCurl(entry("https://api.test/v1?q=a\tb\nc\v\fd\x7f"))).toBe(
+      "curl --globoff 'https://api.test/v1?q=a%09b%0Ac%0B%0Cd%7F'",
+    );
+    // The branch that never reaches a URL parser is encoded too.
+    expect(formatCurl(entry("not a url"), { absolute: false })).toBe(
+      "curl --globoff 'not%20a%20url'",
+    );
+  });
+
+  it("encodes around the mask rather than through it", () => {
+    // Encoding runs after redaction and only widens escapes, so a mask the
+    // collector already wrote comes out readable and a secret stays hidden.
+    const line = formatCurl(
+      entry(`https://${REDACTED}:${REDACTED}@api.test/v1?q=a b&access_token=s3cret`),
+    );
+    expect(line).toContain(`https://${REDACTED}:${REDACTED}@api.test`);
+    // `redactUrl` re-serialises a query it masks, which spells the space `+`.
+    expect(line).toContain("q=a+b");
+    expect(line).toContain(`access_token=${REDACTED}`);
+    expect(line).not.toContain("s3cret");
   });
 
   it("quotes an app-supplied method too — `fetch` accepts far more than the verbs", () => {
@@ -86,11 +112,11 @@ describe("formatCurl", () => {
 });
 
 /**
- * A string comparison cannot tell a runnable line from a broken one, and did
- * not: curl applies its own glob syntax to a URL, so `[redacted]` was a bad
- * range and every masked line failed to parse. These run the line as a shell
- * runs it, against a port nothing listens on — exit 7 means curl accepted the
- * URL and got as far as connecting, exit 3 means it rejected the URL.
+ * A string comparison cannot tell a runnable line from a broken one: curl's
+ * glob syntax and its URL parser both reject characters no assertion over the
+ * expected text would notice. These hand the line to a shell, against a port
+ * nothing listens on — exit 7 means curl accepted the URL and got as far as
+ * connecting, exit 3 means it rejected the URL before trying.
  */
 const curlAvailable = spawnSync("curl", ["--version"]).status === 0;
 
@@ -126,5 +152,27 @@ describe.skipIf(!curlAvailable)("the line, handed to curl itself", () => {
   it("parses a quoted method and a quote-carrying query without breaking the line apart", () => {
     const { status } = run(formatCurl(entry("http://127.0.0.1:1/v1?q=%27+whoami+%27", "POST")));
     expect(status).toBe(CONNECT_REFUSED);
+  });
+
+  it("parses a URL the app left a raw space in", () => {
+    // `fetch("…?q=a b")` is legal and `new Request(url).url` encodes the space,
+    // but the collector retains the string the app passed, spaces and all.
+    const { status, stderr } = run(formatCurl(entry("http://127.0.0.1:1/v1?q=a b")));
+    expect(stderr).not.toContain("URL rejected");
+    expect(status).toBe(CONNECT_REFUSED);
+  });
+
+  it("parses a URL carrying a raw tab and newline", () => {
+    const { status, stderr } = run(formatCurl(entry("http://127.0.0.1:1/v1?a=1\tb\n=2")));
+    expect(stderr).not.toContain("URL rejected");
+    expect(status).toBe(CONNECT_REFUSED);
+  });
+
+  it("would fail unencoded, so the two checks above are not vacuous", () => {
+    for (const raw of ["http://127.0.0.1:1/v1?q=a b", "http://127.0.0.1:1/v1?a=1\tb\n=2"]) {
+      const { status, stderr } = run(`curl --globoff '${raw}'`);
+      expect(stderr).toContain("URL rejected");
+      expect(status).toBe(MALFORMED_URL);
+    }
   });
 });

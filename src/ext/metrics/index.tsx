@@ -196,9 +196,9 @@ export function metrics(options: MetricsOptions = {}): DevToolbarExtension {
           "Returns the retained request tail as JSON — method, URL, status, duration, " +
           "size, state and error per request, newest first — drawn from the same " +
           "entries the network panel lists, in the same order and already through " +
-          "`redactUrl()` (the panel shows the newest 30 of them). No header value " +
-          "and no body is captured — `bytes` is the count `content-length` reported " +
-          "— so neither can appear here. At most 200 requests come " +
+          "`redactUrl()` (the panel shows the newest 30 of them). No raw header " +
+          "value and no body is captured — `bytes` is a number a recorder " +
+          "reported, not header text — so neither can appear here. At most 200 requests come " +
           "back per call: `count` is always `requests.length`, `retained` is how many " +
           "the collector holds (100 by default), and `truncated` is true when older " +
           "retained requests were left out — there is no paging past them. Omit " +
@@ -242,7 +242,7 @@ export function metrics(options: MetricsOptions = {}): DevToolbarExtension {
       label: "Copy request as curl",
       description:
         "Renders one retained request as a `curl` line and copies it: the request " +
-        "whose `id` you pass, or the most recent one. Method and URL only — no " +
+        "whose `id` you pass, or the most recent one. Method and URL only — no raw " +
         "header value, body or cookie is captured anywhere in this extension, so the " +
         "line identifies a request rather than replaying it. The URL is the panel's " +
         "own redacted string, masked again on the way out, so `user:pass@` userinfo " +

@@ -199,10 +199,10 @@ paging past them; a `historySize` above 200 is a retention setting for the panel
 a bigger export. `limit` only shortens the result further, by slicing the newest N off
 the front.
 
-`copyAsCurl` emits **method and URL, nothing else**: no header value, body or cookie
-is captured anywhere in this extension — the collector reads `content-length` for a
-byte count and nothing more — so the line identifies a request rather than replaying
-it. The URL is the panel's own already-redacted string, run through
+`copyAsCurl` emits **method and URL, nothing else**: no raw header value, body or cookie
+is captured anywhere in this extension — a recorder reports a numeric byte count and
+nothing else, whether it read `content-length` off a patched response or was handed
+`bytes` over the bus — so the line identifies a request rather than replaying it. The URL is the panel's own already-redacted string, run through
 `redactUrl()` again on the way out, so `user:pass@` userinfo and credential-shaped
 query parameters cannot reach the clipboard; a relative path is resolved against the
 page so the line runs, and everything interpolated is single-quoted for `sh` and

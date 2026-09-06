@@ -515,9 +515,8 @@ if (!built && mustBeBuilt) {
      * The interceptor's patch state is module-level, so a relative value import
      * would give `/ext/metrics` a second copy of it and two wrappers over one
      * `fetch`. Vitest aliases the published specifier onto `src/`, so only the
-     * built bytes can tell the two apart — and the two formats have to be
-     * checked differently, so they are two tests: a relative import fails both,
-     * independently, rather than one and six cascades.
+     * built bytes can tell the two apart, and the two formats have to be checked
+     * differently — hence two tests, each failing on its own evidence.
      */
     it("keeps the interceptor's bytes out of dist/ext/metrics.cjs, which cannot split", () => {
       const cjs = readFileSync(`${root}dist/ext/metrics.cjs`, "utf8");
