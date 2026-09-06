@@ -18,6 +18,7 @@ The contract an extension is written against is the real public API.
 | --- | --- | --- | --- |
 | `src/core/` | The shell: portal, bar, overflow, panel host, overlay host, storage, styles, aggregations | React 18/19, `useSyncExternalStore`, no deps | Nothing. **Never imports `runtime/`, `kit/` or `ext/`.** |
 | `src/runtime/` | Opt-in primitives for extensions that measure: event bus, ring buffers, throttled store, `redact()`, style injection | Framework-free TS | Nothing in this package |
+| `src/test-utils/` | Test-only repository helpers, including extension roster checks | Framework-free TS | Test suites; never a published entrypoint |
 | `src/kit/` | Shared vocabulary, helpers and controls for extension authors | React + `src/runtime`, **types only** from core | `src/runtime`, core's *types* |
 | `src/ext/<name>/` | First-party extensions, one directory each | React + `src/runtime`, **types only** from core | `src/runtime`, `src/kit`, core's *types* |
 | `src/testing/` | `renderWithToolbar`, `makeExtension`, `mockBus`, fake layout | React + optional `@testing-library/react` peer | core's *types* relatively, core's *values* through `@nejcm/dev-toolbar` |

@@ -40,13 +40,13 @@ export default defineConfig({
       // test imports it, and dropped the old `all` flag — don't reintroduce
       // `all: true`, it's now a type error, not a no-op.
       include: ["src/**/*.{ts,tsx}"],
-      // Only the tests themselves are excluded. An earlier draft also excluded
-      // index.tsx/types.ts/barrels as "just re-exports", but those files carry
-      // real logic (extension factories, runtime exports) and are genuinely
-      // tested — excluding them didn't change the numbers, it just put ~1,700
-      // lines out of reach of the floors below. Don't reintroduce an exclude
-      // list without measuring coverage both ways first.
-      exclude: ["src/**/*.test.{ts,tsx}"],
+      // Only tests and test-only repository helpers are excluded. An earlier
+      // draft also excluded index.tsx/types.ts/barrels as "just re-exports",
+      // but those files carry real logic (extension factories, runtime exports)
+      // and are genuinely tested — excluding them didn't change the numbers, it
+      // just put ~1,700 lines out of reach of the floors below. Don't reintroduce
+      // an exclude list without measuring coverage both ways first.
+      exclude: ["src/**/*.test.{ts,tsx}", "src/test-utils/**"],
       // Floors, not targets. Re-measured at the end of the extension-kit tier C
       // work — statements 93.84, branches 86.40, functions 95.08, lines 96.09,
       // every one of them up on the Phase 8 ratchet (93.06 / 85.26 / 93.57 /

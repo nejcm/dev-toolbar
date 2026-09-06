@@ -188,7 +188,8 @@ const EXTENSION_SHEET_DEFINITIONS: Record<string, SheetDefinition> = {
   "theme-editor": { css: THEME_EDITOR_CSS, allow: [] },
 };
 
-const extensionSheets = extensionRoster().withStyles.map((name) => {
+const styledExtensionNames = extensionRoster().withStyles;
+const extensionSheets = styledExtensionNames.map((name) => {
   const sheet = EXTENSION_SHEET_DEFINITIONS[name];
   if (!sheet) {
     throw new Error(`Missing stylesheet test entry for extension "${name}"`);
@@ -201,6 +202,15 @@ const SHEETS = [
   { name: "kit", css: KIT_CSS, allow: [] as const },
   ...extensionSheets,
 ];
+
+describe("stylesheet test roster", () => {
+  it("has exactly one definition per styled extension", () => {
+    expect(
+      Object.keys(EXTENSION_SHEET_DEFINITIONS).sort(),
+      "stylesheet test definitions must match the styled extension roster",
+    ).toEqual(styledExtensionNames);
+  });
+});
 
 describe.each(SHEETS)("$name stylesheet", ({ css, allow }) => {
   const withoutComments = stripComments(css);

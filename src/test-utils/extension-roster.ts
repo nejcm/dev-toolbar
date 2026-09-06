@@ -1,8 +1,16 @@
+/**
+ * Shared by tests that enumerate first-party extensions. It reads the source
+ * tree and package exports so a new extension cannot disappear from one test
+ * suite. `shared` and `__tests__` are support directories, not extensions.
+ * Keep this outside `src/testing/`: it reads the repository with `node:fs` and
+ * is not part of the published `/testing` entrypoint.
+ */
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
 const root = resolve(__dirname, "../..");
 const NOT_AN_EXTENSION = new Set(["shared", "__tests__"]);
+const STYLELESS = new Set(["agent"]);
 
 export interface ExtensionRoster {
   onDisk: string[];
@@ -37,9 +45,33 @@ export function extensionRoster(): ExtensionRoster {
     throw new Error(`Extension roster mismatch: ${details.join("; ")}`);
   }
 
+  const hasStyles = (name: string): boolean => existsSync(resolve(root, "src/ext", name, "css.ts"));
+  const missingStyleless = [...STYLELESS].filter((name) => !onDisk.includes(name));
+  const stylelessWithStyles = onDisk.filter((name) => STYLELESS.has(name) && hasStyles(name));
+  const styledWithoutStyles = onDisk.filter((name) => !STYLELESS.has(name) && !hasStyles(name));
+
+  if (
+    missingStyleless.length > 0 ||
+    stylelessWithStyles.length > 0 ||
+    styledWithoutStyles.length > 0
+  ) {
+    const details = [
+      missingStyleless.length > 0
+        ? `STYLELESS names missing from src/ext: ${missingStyleless.join(", ")}`
+        : null,
+      stylelessWithStyles.length > 0
+        ? `styleless extensions with css.ts: ${stylelessWithStyles.join(", ")}`
+        : null,
+      styledWithoutStyles.length > 0
+        ? `styled extensions without css.ts: ${styledWithoutStyles.join(", ")}`
+        : null,
+    ].filter((detail): detail is string => detail !== null);
+    throw new Error(`Extension style classification mismatch: ${details.join("; ")}`);
+  }
+
   return {
     onDisk,
     published,
-    withStyles: onDisk.filter((name) => existsSync(resolve(root, "src/ext", name, "css.ts"))),
+    withStyles: onDisk.filter((name) => !STYLELESS.has(name)),
   };
 }

@@ -1,17 +1,12 @@
 /**
- * Every first-party extension wires `useExtensionSurface` to its own
- * `ensureXStyles` at fifteen call sites across the seven ui.tsx files. The
- * third argument is typed `() => unknown`, so a swapped injector typechecks
- * and — for four of the seven (command-menu, diagnostics, flags, theme-editor)
- * — had no injectStyles test until this file. Environment, metrics and overlays
- * already asserted own-sheet presence; this file generalises the pattern and
+ * Every stylesheet-bearing extension wires `useExtensionSurface` to its own
+ * `ensureXStyles`. The third argument is typed `() => unknown`, so a swapped
+ * injector typechecks. This file generalises the existing own-sheet checks and
  * adds the foreign-sheet half that catches a wrong ensureXStyles argument.
  *
  * Mounting the toolbar renders only the `compact` slot and the overlay slots —
- * `PanelHost` never mounts a panel that has not been opened — so six of the
- * fifteen call sites live in a panel component that a bare `mount()` would
- * never run. Each case therefore names its `panel` id and the test opens it
- * before asserting.
+ * `PanelHost` never mounts a panel that has not been opened. Each case therefore
+ * names its `panel` id and the test opens it before asserting.
  *
  * What `mountEverySurface` checks is a floor, not a proof: it catches the host
  * slot failing to render, and an extension whose surface threw. It cannot
@@ -163,6 +158,15 @@ const EXTENSIONS: ExtensionCase[] = extensionNames.map((name) => {
     throw new Error(`Missing inject-styles test entry for extension "${name}"`);
   }
   return { name, entry: `ext-${name}`, ...definition };
+});
+
+describe("inject-styles test roster", () => {
+  it("has exactly one definition per styled extension", () => {
+    expect(
+      Object.keys(EXTENSION_CASE_DEFINITIONS).sort(),
+      "inject-styles test definitions must match the styled extension roster",
+    ).toEqual(extensionNames);
+  });
 });
 
 function removeExtensionStyles(): void {
