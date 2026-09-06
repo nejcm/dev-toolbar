@@ -248,7 +248,10 @@ export function metrics(options: MetricsOptions = {}): DevToolbarExtension {
         "normalised, redacted request — parsed the way the browser parses it, so " +
         "the line runs where the recorded string would not, then masked again on " +
         "the way out so `user:pass@` userinfo and credential-shaped query " +
-        "parameters cannot reach the clipboard. Returns the line; pass " +
+        "parameters cannot reach the clipboard. One limit: a hostname holding any " +
+        "of ``!\"$&'()*+,;=`{}`` parses in a browser but not in curl, which " +
+        "answers `URL rejected: Bad hostname` — such a host resolves nowhere " +
+        "either way. Returns the line; pass " +
         "`copy: false` to skip the clipboard entirely.",
       group: "Metrics",
       keywords: ["network", "curl", "copy", "request", "clipboard", "repro"],

@@ -118,9 +118,23 @@ describe("formatCurl", () => {
     Object.defineProperty(globalThis, "location", { value: undefined, configurable: true });
     try {
       expect(formatCurl(entry("/api/orders"))).toBe("curl --globoff '/api/orders'");
+      // …and the string still gets encoded on the way out. Without a base
+      // there is no parser to do it, so this branch is the only thing between
+      // the raw space and `curl: (3) URL rejected`.
+      expect(formatCurl(entry("/api/orders?q=a b"))).toBe("curl --globoff '/api/orders?q=a%20b'");
     } finally {
       if (saved) Object.defineProperty(globalThis, "location", saved);
     }
+  });
+
+  it("encodes a URL neither parser will take, rather than emitting it raw", () => {
+    // An overflowing port throws in `new URL(url)` *and* in `new URL(url,
+    // base)`, so both normalisation attempts fall through and the recorded
+    // string reaches the encoder untouched by any parser — the third branch.
+    expect(new URL("http://localhost:3000/").href).toBeTruthy(); // a base exists here
+    expect(formatCurl(entry("http://ab:99999999/p q"))).toBe(
+      "curl --globoff 'http://ab:99999999/p%20q'",
+    );
   });
 
   it("writes the mask after the parser, so it survives normalisation literally", () => {
@@ -232,13 +246,21 @@ describe.skipIf(!curlAvailable)("the line, handed to curl itself", () => {
    * everywhere — which is why the URL is parsed before it is redacted.
    */
   const forgivenByTheBrowser = [
-    ["a leading space", " http://127.0.0.1:1/v1"],
-    ["a tab in the port", "http://127.0.0.1:\t1/v1"],
-    ["a backslash path separator", "http://127.0.0.1:1\\v1"],
-    ["a tab in the hostname", "http://127.0.0\t.1:1/v1"],
+    ["a leading space", " http://127.0.0.1:1/v1", "curl --globoff '%20http://127.0.0.1:1/v1'"],
+    ["a tab in the port", "http://127.0.0.1:\t1/v1", "curl --globoff 'http://127.0.0.1:%091/v1'"],
+    [
+      "a backslash path separator",
+      "http://127.0.0.1:1\\v1",
+      "curl --globoff 'http://127.0.0.1:1\\v1'",
+    ],
+    [
+      "a tab in the hostname",
+      "http://127.0.0\t.1:1/v1",
+      "curl --globoff 'http://127.0.0%09.1:1/v1'",
+    ],
   ] as const;
 
-  it.each(forgivenByTheBrowser)("parses a URL with %s", (_name, recorded) => {
+  it.each(forgivenByTheBrowser)("parses a URL with %s", (_name, recorded, _before) => {
     const line = formatCurl(entry(recorded));
     expect(line).toBe("curl --globoff 'http://127.0.0.1:1/v1'");
     const { status, stderr } = run(line);
@@ -248,10 +270,14 @@ describe.skipIf(!curlAvailable)("the line, handed to curl itself", () => {
 
   it.each(forgivenByTheBrowser)(
     "would fail unnormalised (%s), so the above is not vacuous",
-    (_name, recorded) => {
+    (_name, recorded, before) => {
       // Exactly what the previous implementation emitted: redact first, then
-      // encode in place, with the recorded string otherwise preserved.
-      const { status, stderr } = run(formatCurl(entry(recorded), { absolute: false }));
+      // encode in place, with the recorded string otherwise preserved. Pinned
+      // byte for byte, so this stays a comparison against the old output
+      // rather than against whatever `absolute: false` happens to produce.
+      const line = formatCurl(entry(recorded), { absolute: false });
+      expect(line).toBe(before);
+      const { status, stderr } = run(line);
       expect(stderr).toContain("URL rejected");
       expect(status).toBe(MALFORMED_URL);
     },
@@ -275,6 +301,51 @@ describe.skipIf(!curlAvailable)("the line, handed to curl itself", () => {
       }
     }
     expect(rejected).toEqual([]);
+  });
+
+  /**
+   * The one class parsing does *not* cover. WHATWG's forbidden-host set is
+   * narrower than curl's, so a few characters survive `new URL()` inside a
+   * hostname and curl still refuses the line. Probed rather than recalled:
+   * every printable ASCII character goes through the platform parser and, if
+   * the host keeps it verbatim, through curl itself. Pinning the exact set is
+   * the point — either parser loosening or tightening surfaces here rather
+   * than in a developer's terminal.
+   */
+  it("rejects exactly the hostname characters WHATWG keeps and curl will not", () => {
+    const rejected: string[] = [];
+    const reached: string[] = [];
+    for (let code = 0x21; code <= 0x7e; code += 1) {
+      const character = String.fromCharCode(code);
+      const recorded = `http://a${character}b.test:49152/v1`;
+      let hostname: string;
+      try {
+        hostname = new URL(recorded).hostname;
+      } catch {
+        continue; // The platform rejects it too; never reaches a line.
+      }
+      // Otherwise the character moved elsewhere in the URL (`#`, `/`, `?`,
+      // `@`) and is not a hostname question at all.
+      if (hostname !== `a${character}b.test`) continue;
+      const { status, stderr } = run(formatCurl(entry(recorded)));
+      if (status === MALFORMED_URL) {
+        expect(stderr).toContain("Bad hostname");
+        rejected.push(character);
+      } else reached.push(character);
+    }
+    expect(rejected.join("")).toBe("!\"$&'()*+,;=`{}");
+    // Non-vacuity: most of the swept characters really were handed to curl and
+    // got past its URL parser, so the list above is a class and not a wall.
+    expect(reached.length).toBeGreaterThan(rejected.length);
+  });
+
+  it("could not have encoded its way out of that class, which is why it does not try", () => {
+    // curl percent-decodes a host *before* validating it, so escaping the
+    // character changes nothing — while `%2E` for `.` does decode through to a
+    // connection attempt, which proves the decode step is real and that the
+    // rejection above is about the character, not about the escaping.
+    expect(run(`curl --globoff 'http://a%21b.test:49152/v1'`).status).toBe(MALFORMED_URL);
+    expect(run(`curl --globoff 'http://127%2E0%2E0%2E1:1/v1'`).status).toBe(CONNECT_REFUSED);
   });
 
   it("runs a line carrying masks, a glob bracket, whitespace and a secret", () => {

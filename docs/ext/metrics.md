@@ -212,7 +212,18 @@ sent; curl's URL parser is stricter than a browser's and answers those with
 `curl: (3) URL rejected`. So the URL goes through `URL` first, exactly as the platform
 would, and then through `redactUrl()`. Where the two strings differ, the curl line is
 the one that runs. Pass `absolute: false` to `formatCurl` to keep the recorded string
-instead — the panel's view, at the cost of a line curl may refuse.
+instead — the panel's view rather than its exact bytes, since control characters are
+still percent-encoded for curl to parse the line at all — at the cost of a line curl
+may refuse.
+
+One class of URL survives parsing and curl still refuses it. WHATWG allows characters
+in a hostname that curl does not, so the fifteen printable ASCII characters
+``!"$&'()*+,;=`{}`` reach the line verbatim inside a host and make curl answer
+`curl: (3) URL rejected: Bad hostname`. This is a divergence between the two parsers,
+not something the line can encode around — curl percent-decodes a host before it
+validates it, so `a%21b.test` fails exactly as `a!b.test` does, and rewriting the host
+would point the line at a different server. A hostname like that has no address in a
+browser either, so curl's error is the honest one; the failure is loud, never silent.
 
 Normalising *before* redacting is also what keeps the mask readable: it is written
 after the parser, so `[redacted]` reaches the line literally rather than as
