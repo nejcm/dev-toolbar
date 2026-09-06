@@ -8,6 +8,7 @@ import { useEffect, useState } from "react";
 import { describe, expect, it, vi } from "vitest";
 import { mountToolbar } from "../lifecycle";
 import { makeExtension } from "../makeExtension";
+import { renderWithToolbar } from "../renderWithToolbar";
 import type { DevToolbarExtension } from "../../core/contract";
 
 /** Tracked by `mountToolbar`, so `vitest.setup.ts` tears every mount down. */
@@ -59,7 +60,7 @@ describe("renderWithToolbar handle", () => {
   });
 
   it("rerenders the consumer UI inside the same toolbar", () => {
-    const { toolbar, rerender } = mount(<div data-dtb-part="consumer">first</div>, {
+    const { toolbar, rerender, container } = mount(<div data-dtb-part="consumer">first</div>, {
       extensions: [makeExtension({ id: "one", label: "One" })],
       layout: true,
     });
@@ -72,7 +73,7 @@ describe("renderWithToolbar handle", () => {
     // The toolbar is still mounted — RTL's own `rerender` would have replaced
     // the whole tree with the bare `ui`.
     expect(toolbar.root()).not.toBeNull();
-    expect(toolbar.part("consumer")?.textContent).toBe("second");
+    expect(container.querySelector('[data-dtb-part="consumer"]')?.textContent).toBe("second");
     expect(toolbar.item("one")).not.toBeNull();
     // Same instance, so its preferences and its layout install survived.
     expect(toolbar.position()).toBe("top");
@@ -84,7 +85,7 @@ describe("renderWithToolbar handle", () => {
 
     rerender();
     expect(toolbar.root()).not.toBeNull();
-    expect(toolbar.part("consumer")).toBeNull();
+    expect(container.querySelector('[data-dtb-part="consumer"]')).toBeNull();
   });
 
   it("escapes an extension id rather than interpolating it into the selector", () => {
@@ -159,5 +160,61 @@ describe("renderWithToolbar handle", () => {
 
     expect(() => toolbar.context()).toThrow(/is not mounted/);
     expect(toolbar.root()).toBeNull();
+  });
+});
+
+describe("toolbar handle isolation", () => {
+  it("scopes DOM queries and visibility to the mounted instance", () => {
+    const first = renderWithToolbar(null, {
+      instanceId: "first",
+      extensions: [makeExtension({ id: "a", panel: true, overlay: true })],
+      layout: true,
+    });
+    const second = renderWithToolbar(null, {
+      instanceId: "second",
+      extensions: [makeExtension({ id: "b", panel: true, overlay: true })],
+      layout: true,
+    });
+
+    expect(first.toolbar.barIds()).toEqual(["a"]);
+    expect(second.toolbar.barIds()).toEqual(["b"]);
+    expect(first.toolbar.root()?.dataset["dtbInstance"]).toBe("first");
+    expect(second.toolbar.root()?.dataset["dtbInstance"]).toBe("second");
+    expect(second.toolbar.part("root")).toBe(second.toolbar.root());
+    expect(second.toolbar.parts("root")).toEqual([second.toolbar.root()]);
+    expect(second.toolbar.part("bar")).toBe(second.toolbar.bar());
+    expect(second.toolbar.root()?.contains(second.toolbar.bar())).toBe(true);
+    expect(second.toolbar.parts("item")).toEqual([second.toolbar.item("b")]);
+    expect(first.toolbar.item("b")).toBeNull();
+    expect(second.toolbar.item("a")).toBeNull();
+
+    first.toolbar.openPanel("a");
+    second.toolbar.openPanel("b");
+    expect(first.toolbar.panel("a")).not.toBeNull();
+    expect(second.toolbar.panel("b")).not.toBeNull();
+    expect(first.toolbar.panel("b")).toBeNull();
+    expect(second.toolbar.panel("a")).toBeNull();
+    expect(first.toolbar.overlay("b")).toBeNull();
+    expect(second.toolbar.overlay("a")).toBeNull();
+
+    const secondRoot = second.toolbar.root();
+    first.toolbar.setVisible(false);
+    expect(first.toolbar.root()).toBeNull();
+    expect(first.toolbar.part("bar")).toBeNull();
+    expect(first.toolbar.parts("item")).toEqual([]);
+    expect(first.toolbar.panel("a")).toBeNull();
+    expect(first.toolbar.barIds()).toEqual([]);
+    expect(first.toolbar.overflowedIds()).toEqual([]);
+    expect(second.toolbar.root()).toBe(secondRoot);
+    expect(second.toolbar.root()?.isConnected).toBe(true);
+    expect(second.toolbar.visible()).toBe(true);
+    expect(second.toolbar.barIds()).toEqual(["b"]);
+
+    first.toolbar.setVisible(true);
+    expect(first.toolbar.barIds()).toEqual(["a"]);
+    first.unmount();
+    expect(first.toolbar.root()).toBeNull();
+    expect(second.toolbar.barIds()).toEqual(["b"]);
+    second.unmount();
   });
 });

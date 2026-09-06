@@ -31,6 +31,10 @@ expect(toolbar.overflowedIds()).toContain("my-extension");
 unmount();
 ```
 
+Toolbar handles are instance-scoped: their DOM queries and state changes refer to
+the toolbar they mounted. Use a different `instanceId` for each toolbar when
+mounting more than one in a test.
+
 `overflowedIds()` and `isOverflowed()` answer *whether* an item collapsed and work
 with the `⋮` menu closed. A collapsed item is not rendered at all until the menu
 opens, so `item(id)` returns `null` for one until you call `toolbar.openOverflow()`.

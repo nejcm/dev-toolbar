@@ -84,17 +84,21 @@ const current = (): Install | undefined => stack[stack.length - 1];
 class FakeResizeObserver implements ResizeObserver {
   private readonly entry: Observer;
   private readonly owner: Install | undefined;
+  private readonly targets = new Set<Element>();
   constructor(callback: ResizeObserverCallback) {
     this.entry = { callback, instance: this };
     this.owner = current();
   }
-  observe(): void {
+  observe(target: Element): void {
+    this.targets.add(target);
     this.owner?.observers.add(this.entry);
   }
-  unobserve(): void {
-    this.owner?.observers.delete(this.entry);
+  unobserve(target: Element): void {
+    this.targets.delete(target);
+    if (this.targets.size === 0) this.owner?.observers.delete(this.entry);
   }
   disconnect(): void {
+    this.targets.clear();
     this.owner?.observers.delete(this.entry);
   }
 }

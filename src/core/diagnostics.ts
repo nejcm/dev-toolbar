@@ -40,14 +40,13 @@ export function resetDiagnosticsWarnings(): void {
  * so it hands over the parts and lets the downstream reader redact them.
  */
 function describe(error: unknown): { name?: string; message: string } {
-  if (error instanceof Error) {
-    return { name: error.name, message: error.message };
-  }
   try {
+    if (error instanceof Error) {
+      return { name: String(error.name), message: String(error.message) };
+    }
     return { message: String(error) };
   } catch {
-    // A thrown object with a hostile `toString`. Saying so beats throwing from
-    // the error path of an error path.
+    // Getters and string coercion can throw while describing a thrown value.
     return { message: "threw a value that could not be described" };
   }
 }

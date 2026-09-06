@@ -61,6 +61,18 @@ extension that needs it. The kit is a shared surface with semver attached to eve
 prop in it, so a helper with one user is a liability: it costs a public API and buys
 nothing that a local function would not.
 
+The current kit has these grandfathered interfaces. Counts are production imports
+of the exact kit specifier, not same-name locals:
+
+| Interface | Production imports | Why it stays |
+| --- | --- | --- |
+| Persisted state | `readJson`: 0; `writeJson`: 0; `parseList`: 1; `parseRecord`: 2 | The JSON helpers keep guarded parsing and the storage guard and failure policy in one place. `parseList` serves the command menu's persisted recents; `parseRecord` serves the flag and theme-editor override maps. |
+| Key/value readout | `Rows`: 2; `Row`: 2 | `Rows` is `Row`'s container half. The `<dl>` grid needs the fragment-shaped `<dt>`/`<dd>` pair to be usable. |
+| Inputs | `SearchField`: 2; `TextInput`: 2; `Select`: 2 | They are the kit's input set. Core's `:where(input, select, textarea)` rule supplies field geometry, while the `field` and `search` kinds give authors a stable pair of hooks covering all three. |
+| Copy actions | `CopyButton`: 2; `useCopyStatus`: 2 | `CopyButton` owns the button/status-region pairing. `useCopyStatus` is the shared status state for panels with several copy buttons. |
+| Filtering | `matchesQuery`: 2 | It is the string-level predicate shared by the flags and theme-editor view wrappers. |
+| Labelled control | `Field`: 1 | It names the wrapping-label pattern that associates a control without generating or synchronising an `id`. |
+
 The current examples of things that do **not** qualify: `switch` (two sites, both
 `role="switch"` buttons in `/ext/flags` and `/ext/overlays`, so a kit `Toggle` would
 have shipped with zero users and a kit `Switch` with two), `sparkline` (metrics only)
@@ -205,7 +217,8 @@ const visible = rows.filter((row) => matchesQuery([row.key, row.label, row.owner
 
 `/ext/flags` and `/ext/theme-editor` each export a `matchesQuery` of their own that
 takes a *view object*. Those are published API on their own subpaths and stay where
-they are, as thin wrappers over this one.
+they are, as thin wrappers over this one. Same-name locals are not kit usage: each
+extension's `severityFor` is likewise its own, judging its own data.
 
 ### React glue
 
