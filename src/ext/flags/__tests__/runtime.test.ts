@@ -638,6 +638,35 @@ describe("redaction", () => {
     expect(runtime.store.getSnapshot().maskedCount).toBe(3);
   });
 
+  it("masks the variants a sensitive flag publishes and throws", () => {
+    const runtime = createFlagsRuntime({
+      flags: [
+        {
+          key: "billing.gateway",
+          type: "variant",
+          variants: ["live-sk-abcdef123456", "test-sk-abcdef123456"],
+          value: "live-sk-abcdef123456",
+          sensitive: true,
+        },
+      ],
+      onOverride: () => {},
+    });
+    const view = runtime.store.getSnapshot().flags[0];
+    // Numbered, not N identical `[redacted]` rows nobody can choose between.
+    expect(view?.variantTexts).toEqual(["variant 1 (masked)", "variant 2 (masked)"]);
+    // The raw values stay on the view — the UI commits by index — but nothing
+    // that renders or serialises may read them.
+    expect(JSON.stringify(view?.variantTexts)).not.toContain("live-sk");
+
+    // The refusal message is thrown out to the agent bridge, which redacts it
+    // as one whole string: a credential mid-sentence matches no anchored shape.
+    expect(() => runtime.applyOverride("billing.gateway", "nope")).toThrow(
+      '(variants: ["[redacted]","[redacted]"])',
+    );
+    expect(() => runtime.applyOverride("billing.gateway", "nope")).not.toThrow(/live-sk/);
+    runtime.store.destroy();
+  });
+
   it("keeps the raw value out of the recipe and the JSON dump", () => {
     const runtime = createFlagsRuntime({
       flags: SENSITIVE,
@@ -939,7 +968,14 @@ describe("publication guarantees", () => {
     expiresAt: "2030-01-01T00:00:00.000Z",
   };
 
-  const assertViewPublication = (field: string, value: unknown, count: 0 | 1) => {
+  const assertViewPublication = (
+    field: string,
+    value: unknown,
+    count: 0 | 1,
+    // Fields the view *derives* from the changed one, which the generic
+    // `{ ...before, [field]: value }` patch cannot know about.
+    derived: Record<string, unknown> = {},
+  ) => {
     let reading: FlagReading = { ...initial };
     const runtime = createFlagsRuntime({ flags: () => [reading], now: () => 0 });
     const before = runtime.store.getSnapshot();
@@ -948,7 +984,9 @@ describe("publication guarantees", () => {
     reading = { ...reading, [field]: value };
     runtime.refresh();
     runtime.store.flush();
-    expect(runtime.store.peek().flags).toEqual([{ ...before.flags[0], [field]: value }]);
+    expect(runtime.store.peek().flags).toEqual([
+      { ...before.flags[0], [field]: value, ...derived },
+    ]);
     expect(listener).toHaveBeenCalledTimes(count);
     expect(runtime.store.getSnapshot()).toBe(count ? runtime.store.peek() : before);
     runtime.store.destroy();
@@ -959,7 +997,7 @@ describe("publication guarantees", () => {
     ["label", "Renamed", 1],
     ["description", "Changed", 1],
     ["type", "string", 1],
-    ["variants", ["a", "c"], 1],
+    ["variants", ["a", "c"], 1, { variantTexts: ["a", "c"] }],
     ["source", "cohort", 1],
     ["projectUrl", "https://example.test/b", 1],
     ["expiresAt", "2031-01-01T00:00:00.000Z", 1],

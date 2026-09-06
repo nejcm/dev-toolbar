@@ -128,8 +128,24 @@ function detectConnection(): string | undefined {
  * A side effect: an address-shaped *parameter key* (`?token@x.co=`) gets masked
  * too, once the URL pass has re-encoded it. Cosmetic — the value it guards is
  * `[redacted]` by then — and over-masking is the recoverable direction.
+ *
+ * Every quantifier is bounded, and the domain is written as dot-terminated
+ * labels rather than one `[A-Za-z0-9.-]+\.` run, so no start position can
+ * backtrack more than a fixed number of steps. The unbounded form was
+ * quadratic: on a long class-character run with no separator it rescanned the
+ * remainder from every position, and `detectRoute()` feeds it an unbounded URL
+ * fragment on every snapshot, so a shared link could stall the main thread.
+ * The bounds are deliberately looser than RFC 5321 (local part 128 against its
+ * 64, up to 63 labels) and empty labels stay matchable, so every *valid* address
+ * the unbounded pattern masked is still masked — including `a@b..io` and a
+ * twelve-label domain. What no longer matches is only what no mailbox can be: a
+ * local part over 128 characters (the address still masks, just from later in
+ * the run), a label over 63, a domain over 63 labels. Widening a bound is safe,
+ * and costs about 0.4 ms per 100 kB scanned; removing one puts the quadratic
+ * scan back.
  */
-const EMAIL = /([A-Za-z0-9._%+-])[A-Za-z0-9._%+-]*(@|%40)([A-Za-z0-9.-]+\.[A-Za-z]{2,})/g;
+const EMAIL =
+  /([A-Za-z0-9._%+-])[A-Za-z0-9._%+-]{0,127}(@|%40)((?:[A-Za-z0-9-]{0,63}\.){1,63}[A-Za-z]{2,24})/g;
 
 export function maskEmails(value: string): string {
   return value.replace(
@@ -324,7 +340,11 @@ export function createEnvironmentRuntime(
       impersonation: impersonation.display,
       roles: ctx.roles === undefined ? undefined : ctx.roles.join(", "),
       sync: ctx.syncStatus,
-      route: detect ? detectRoute() : undefined,
+      // `allowed` is consulted here, not just when the row is built: the route
+      // is the one detected field an outsider controls (via a shared link),
+      // and redaction runs over `raw` before the rows are filtered. Excluding
+      // the row has to mean the value is never collected, not merely hidden.
+      route: detect && (!allowed || allowed.has("route")) ? detectRoute() : undefined,
       viewport: detect ? detectViewport() : undefined,
       connection: detect ? detectConnection() : undefined,
     };

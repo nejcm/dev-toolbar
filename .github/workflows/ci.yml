@@ -59,11 +59,14 @@ jobs:
     #  1. The release PR (GitHub triggers it despite `GITHUB_TOKEN` opening
     #     it). The title marker backstops the branch prefix in case
     #     release-please-config.json's title pattern changes; cost is a
-    #     hand-written `chore(release):` PR skipping CI.
+    #     hand-written `chore(release):` PR skipping CI. Same-repo only: both
+    #     the branch name and the title are attacker-chosen on a fork PR, so
+    #     without that clause any outsider could opt their own PR out of CI.
     #  2. Draft PRs — `converted_to_draft` isn't a trigger since that flip
     #     changes no code and would replace a real status with a skipped one.
     if: >-
       (github.event_name != 'pull_request'
+      || github.event.pull_request.head.repo.full_name != github.repository
       || !(startsWith(github.head_ref, 'release-please--')
       || startsWith(github.event.pull_request.title, 'chore(release):')))
       && (github.event_name != 'pull_request'

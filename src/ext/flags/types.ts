@@ -105,7 +105,18 @@ export interface FlagView {
   description?: string;
   owner?: string;
   type: FlagType;
+  /**
+   * The raw variant values, for committing an override. Not a display surface —
+   * render {@link FlagView.variantTexts} instead, and address a variant by its
+   * index into this array.
+   */
   variants?: readonly FlagValue[];
+  /**
+   * Display strings for {@link FlagView.variants}, same length and order, each
+   * already through the same redaction the value rows get. A variant that masks
+   * reads `variant N (masked)` so the options stay tellable apart.
+   */
+  variantTexts?: readonly string[];
   reloadBehavior: ReloadBehavior;
   projectUrl?: string;
   expiresAt?: string;

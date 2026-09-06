@@ -219,22 +219,36 @@ function Editor({
   }
 
   if (view.type === "variant" && view.variants && view.variants.length > 0) {
+    // Options carry the *index*, never the value: a `<option value>` is DOM
+    // text, so a credential variant would sit in the page unmasked next to a
+    // row the badge claims is masked. The label comes from the redacted
+    // `variantTexts`, and the raw value is resolved back here, on commit.
+    const variants = view.variants;
+    const texts = view.variantTexts;
+    // Same match the old `value={formatValue(view.effective)}` made, kept so a
+    // reading whose type differs from its variant still selects its own row.
+    const effectiveText = formatValue(view.effective);
+    const selected = variants.findIndex((variant) => formatValue(variant) === effectiveText);
     return (
       <>
         <Select
           data-dtb-part="flag-input"
           data-dtb-flag={view.key}
           aria-label={`Override ${view.key}`}
-          value={view.masked ? "" : formatValue(view.effective)}
+          value={view.masked || selected < 0 ? "" : String(selected)}
           onChange={(next) => {
-            const chosen = view.variants?.find((variant) => formatValue(variant) === next);
+            // The placeholder is a real option; picking it must not index to 0.
+            if (next === "") return;
+            const chosen = variants[Number(next)];
             if (chosen !== undefined) commit(chosen);
           }}
         >
-          {view.masked ? <option value="">(masked)</option> : null}
-          {view.variants.map((variant) => (
-            <option key={formatValue(variant)} value={formatValue(variant)}>
-              {formatValue(variant)}
+          {view.masked || selected < 0 ? (
+            <option value="">{view.masked ? "(masked)" : "—"}</option>
+          ) : null}
+          {variants.map((_variant, index) => (
+            <option key={index} value={String(index)}>
+              {texts?.[index] ?? `variant ${index + 1}`}
             </option>
           ))}
         </Select>
