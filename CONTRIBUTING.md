@@ -335,10 +335,18 @@ not write changelog entries by hand.
    `chore(release): release X.Y.Z`, carrying the version bump and the generated
    `CHANGELOG.md` section.
 3. The same job **squash-merges the open release PR** and deletes its branch.
-   It looks the PR up by release-please's `release-please--` branch prefix
-   rather than trusting the action to report one as created this run, so a
-   release left stranded by an earlier failure is picked up and finished by the
-   next push instead of sitting open forever.
+   It looks the PR up in the repo rather than trusting the action to report one
+   as created this run, so a release left stranded by an earlier failure is
+   picked up and finished by the next push instead of sitting open forever.
+   Three things have to hold for a PR to qualify: it is **not** from a fork, its
+   branch carries release-please's `release-please--` prefix, and it carries the
+   `autorelease: pending` label. Branch names and titles are attacker-chosen on
+   a fork PR, so the prefix alone would let an outsider's PR be merged
+   unreviewed; the label is applied by the PAT and a fork author cannot set it.
+   The merge passes `--match-head-commit`, so a push racing the merge aborts it.
+   Don't set a custom `label` in `release-please-config.json` without updating
+   the workflow — the selection would match nothing and every release would
+   become a green no-op (the step warns when it rejects a prefix-matching PR).
    The PR is not a review step and is never left open — it exists because
    merging it is how release-please recognises a release, and because the squash
    subject (`chore(release): release X.Y.Z (#N)`) is what it parses afterwards.
@@ -353,8 +361,9 @@ not write changelog entries by hand.
    tree and pack the previous version. The gate is `ci.yml` called as a
    reusable workflow, and it is the only CI the release commit gets.
    `ci.yml` skips the release PR itself (by release-please's
-   `release-please--*` branch prefix, or the `chore(release):` title marker)
-   and skips draft PRs.
+   `release-please--*` branch prefix, or the `chore(release):` title marker, and
+   only for a **same-repo** PR — otherwise any fork could opt out of CI by
+   naming its branch) and skips draft PRs.
 6. Publishing uses npm **trusted publishing** (OIDC). There is no npm token in
    this repository, and there should never be one again.
 

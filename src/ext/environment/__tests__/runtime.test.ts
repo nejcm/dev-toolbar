@@ -25,6 +25,33 @@ describe("maskEmails", () => {
   it("leaves anything that is not an address alone", () => {
     expect(maskEmails("usr_123")).toBe("usr_123");
   });
+
+  it("still masks the shapes the unbounded pattern did", () => {
+    // The bounded rewrite is only safe if it gives up nothing: an empty label,
+    // a deep domain and a long local part all masked before, so they must now.
+    expect(maskEmails("a@b..io")).toBe("a***@b..io");
+    expect(maskEmails(`a@${"l.".repeat(12)}com`)).toBe(`a***@${"l.".repeat(12)}com`);
+    expect(maskEmails(`${"x".repeat(100)}@b.io`)).toBe("x***@b.io");
+  });
+
+  it("stays linear on a long run with no separator", () => {
+    // `detectRoute()` hands this pass an unbounded URL fragment, so an
+    // attacker-shared link is an attacker-chosen input. The unbounded pattern
+    // rescanned the remainder from every start position — ~10 s at 100k
+    // characters, repeated on every poll. Ten times the input must cost about
+    // ten times the work, not a hundred.
+    const time = (size: number) => {
+      const input = `/#${"a".repeat(size)}`;
+      const started = performance.now();
+      maskEmails(input);
+      return performance.now() - started;
+    };
+    time(10_000); // warm the JIT so the budget measures the scan, not compilation
+    // ~10,000 ms before, ~25 ms after, measured on the author's machine. The
+    // budget is absolute rather than a ratio so a slow runner reads as slow,
+    // not as a regression; even 40x slower than measured still passes.
+    expect(time(100_000)).toBeLessThan(1_000);
+  });
 });
 
 describe("normaliseKind", () => {
@@ -266,6 +293,35 @@ describe("the `fields` allowlist", () => {
     expect(snapshot.fields.map((field) => field.id)).toEqual(["environment"]);
     expect(runtime.snapshotText()).not.toContain("enterprise");
     expect(JSON.stringify(runtime.diagnostics())).not.toContain("enterprise");
+  });
+
+  it("never reads the route when the row is excluded", () => {
+    // Excluding a row has to mean the value is never collected: redaction runs
+    // over every detected field before the rows are filtered, so an excluded
+    // route would still be read off `location` and scanned on every snapshot.
+    // Asserting the row is absent would pass either way — the row was always
+    // filtered. What has to be pinned is that `location` is never *read*, so
+    // this stands in a `location` whose `pathname` throws.
+    const original = window.location;
+    Object.defineProperty(window, "location", {
+      configurable: true,
+      value: {
+        ...original,
+        get pathname(): string {
+          throw new Error("detectRoute() read location for an excluded row");
+        },
+      },
+    });
+    try {
+      const runtime = createEnvironmentRuntime({
+        fields: ["environment"],
+        context: { environment: "production" },
+      });
+      const snapshot = runtime.store.getSnapshot();
+      expect(snapshot.fields.map((field) => field.id)).toEqual(["environment"]);
+    } finally {
+      Object.defineProperty(window, "location", { configurable: true, value: original });
+    }
   });
 
   it("lets an extra through when it is named", () => {

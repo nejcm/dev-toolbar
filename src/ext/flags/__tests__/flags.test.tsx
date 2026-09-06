@@ -178,6 +178,72 @@ describe("the promoted flag", () => {
 });
 
 describe("the panel", () => {
+  it("keeps a sensitive flag's variants out of the DOM and still commits the raw one", () => {
+    const { toolbar } = mount({
+      onOverride: record,
+      flags: [
+        {
+          key: "billing.gateway",
+          type: "variant",
+          variants: ["live-sk-abcdef123456", "test-sk-abcdef123456"],
+          value: "live-sk-abcdef123456",
+          defaultValue: "live-sk-abcdef123456",
+          sensitive: true,
+        },
+      ],
+    });
+    act(() => {
+      toolbar.openPanel("flags");
+    });
+    const select = row(toolbar.panel("flags"), "billing.gateway")?.querySelector<HTMLSelectElement>(
+      '[data-dtb-part="flag-input"]',
+    );
+    // The dropdown is the one surface that renders every variant, not just the
+    // current one, so a masked row must not spell them out here either.
+    expect(toolbar.panel("flags")?.innerHTML).not.toContain("live-sk-abcdef123456");
+    expect(toolbar.panel("flags")?.innerHTML).not.toContain("test-sk-abcdef123456");
+    expect([...(select?.options ?? [])].map((option) => option.value)).toEqual(["", "0", "1"]);
+    expect(text(select)).toContain("variant 2 (masked)");
+
+    // Masked or not, picking a row still applies the value the consumer gave.
+    act(() => {
+      fireEvent.change(select as HTMLSelectElement, { target: { value: "1" } });
+    });
+    expect(applied).toEqual([["billing.gateway", "test-sk-abcdef123456"]]);
+  });
+
+  it("selects the current variant and does not commit the placeholder", () => {
+    const { toolbar } = mount({
+      onOverride: record,
+      flags: [
+        {
+          key: "checkout.theme",
+          type: "variant",
+          variants: ["control", "bold"],
+          value: "bold",
+          defaultValue: "control",
+        },
+      ],
+    });
+    act(() => {
+      toolbar.openPanel("flags");
+    });
+    const select = row(toolbar.panel("flags"), "checkout.theme")?.querySelector<HTMLSelectElement>(
+      '[data-dtb-part="flag-input"]',
+    );
+    // Readable labels survive: only a masked variant is numbered.
+    expect([...(select?.options ?? [])].map((option) => option.textContent)).toEqual([
+      "control",
+      "bold",
+    ]);
+    expect(select?.value).toBe("1");
+    act(() => {
+      fireEvent.change(select as HTMLSelectElement, { target: { value: "" } });
+    });
+    // `Number("")` is 0 — the empty placeholder must not read as variant 0.
+    expect(applied).toEqual([]);
+  });
+
   it("shows the effective value, the app's own value and the default", () => {
     const { toolbar } = mount({ onOverride: record });
     act(() => {

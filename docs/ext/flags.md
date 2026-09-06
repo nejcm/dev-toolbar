@@ -87,7 +87,10 @@ snapshot. Each value is redacted under its own flag key, so `checkout.apiToken`
 masks by key and an innocent key holding `Bearer …` masks by value; booleans and
 numbers are left readable, since they cannot carry a credential. `sensitive: true`
 on a definition masks it whatever it looks like. A masked value never round-trips
-through the editor — the input takes a new value instead.
+through the editor — the input takes a new value instead. The `<select>` a variant
+flag gets is covered by the same rule: its options carry an index, never the value,
+and their labels are redacted alongside the row (a masked one reads
+`variant N (masked)`), so a credential in a `variants` list never reaches the DOM.
 
 Commands aggregated into `useToolbarCommands()`: one `flags.toggle.<key>` per
 boolean flag — re-enumerated on every aggregation pass, so a flag that appears after

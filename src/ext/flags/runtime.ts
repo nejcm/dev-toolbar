@@ -383,7 +383,21 @@ export function createFlagsRuntime(options: FlagsRuntimeOptions = {}): FlagsRunt
         ...(reading.description === undefined ? {} : { description: reading.description }),
         ...(reading.owner === undefined ? {} : { owner: reading.owner }),
         type,
-        ...(reading.variants === undefined ? {} : { variants: reading.variants }),
+        ...(reading.variants === undefined
+          ? {}
+          : {
+              variants: reading.variants,
+              // The variants are what the `<select>` actually renders, so they
+              // need their own trip through `render()` — `masked` is derived
+              // from `effective`/`base`/`defaultValue` alone, and a masked
+              // current value next to a dropdown of raw credentials is no
+              // masking at all. Masked labels are numbered because N rows all
+              // reading `[redacted]` are indistinguishable to pick between.
+              variantTexts: reading.variants.map((variant, index) => {
+                const rendered = render(key, variant, reading.sensitive);
+                return rendered.masked ? `variant ${index + 1} (masked)` : rendered.text;
+              }),
+            }),
         reloadBehavior: reading.reloadBehavior ?? "live",
         ...(reading.projectUrl === undefined ? {} : { projectUrl: reading.projectUrl }),
         ...(reading.expiresAt === undefined ? {} : { expiresAt: reading.expiresAt }),
@@ -671,7 +685,19 @@ export function createFlagsRuntime(options: FlagsRuntimeOptions = {}): FlagsRunt
         if (!valueMatchesFlagType(value, type, reading.variants)) {
           throw new Error(
             `"${key}" is a ${type} flag; ${JSON.stringify(value)} is not a valid ${type} value` +
-              `${reading.variants === undefined ? "" : ` (variants: ${JSON.stringify(reading.variants)})`}.`,
+              `${
+                reading.variants === undefined
+                  ? ""
+                  : // Rendered, not raw. This message is thrown to the caller, and the
+                    // agent bridge redacts it as one whole string — a credential
+                    // spliced into the middle of a sentence matches none of the
+                    // anchored value shapes, so it has to be masked before it lands here.
+                    ` (variants: ${JSON.stringify(
+                      reading.variants.map(
+                        (variant) => render(key, variant, reading.sensitive).text,
+                      ),
+                    )})`
+              }.`,
           );
         }
       }
