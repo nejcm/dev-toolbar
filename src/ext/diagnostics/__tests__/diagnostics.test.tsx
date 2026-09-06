@@ -247,7 +247,7 @@ describe("the contract it uses", () => {
     expect(text).not.toContain("classified");
   });
 
-  it("contributes four commands and captures without opening the panel", () => {
+  it("contributes its commands and captures without opening the panel", () => {
     const { toolbar } = mount();
     const ids = toolbar.getCommands().map((command) => command.id);
     expect(ids).toEqual([
@@ -255,6 +255,8 @@ describe("the contract it uses", () => {
       "diagnostics.copy",
       "diagnostics.copyJson",
       "diagnostics.download",
+      "diagnostics.console.export",
+      "diagnostics.console.clear",
     ]);
     // The chip reflects a capture driven entirely from the palette.
     expect(toolbar.item("diagnostics")?.textContent).toContain("capture");

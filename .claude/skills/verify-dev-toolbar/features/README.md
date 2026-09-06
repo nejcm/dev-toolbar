@@ -180,7 +180,9 @@ raises. Add them here before claiming them. All three extensions now publish
 state through the bridge — `ext("theme-editor").overrides` (edited tokens and
 their values), `ext("metrics").metrics` (per metric: numeric `value`, `unit`,
 `severity`, `status`), `ext("diagnostics")` (`captured`, `revision`,
-`capturedAt`, `contributionCount`, `omissionCount`, `omissions`) — so a map for
+`capturedAt`, `generatedAt`, `gathered`, `contributionCount`, `omissionCount`,
+`omissions`, `format`, and `console` — `{status, errors, warnings, dropped,
+watching}` for the §1B console tail) — so a map for
 them is now mostly writing down assertions, not building a way to read them.
 `/ext/diagnostics` publishes a **summary**, never the snapshot: the snapshot is
 built from the roster, so embedding it would put one snapshot inside the next.
@@ -193,3 +195,19 @@ is edited; the diagnostics chip's becomes `Diagnostics, 1 missing` once a
 snapshot has omissions — so a `find` by role `button` and the bare label
 stops matching in exactly the states worth verifying. Map them with those
 names, not the resting ones.
+
+The diagnostics chip has a third state on top of those: the console tail's
+badge, `[data-dtb-part="diag-errors"]` inside the chip, carrying the combined
+count with `data-dtb-errors` / `data-dtb-warnings` beside it, and the
+`aria-label` growing to `Diagnostics, 1 error, 1 warning`. The playground's
+**Drive the console tail** card drives every source of it —
+`[data-testid="console-error"]`, `console-warn`, `console-repeat`,
+`console-throw`, `console-reject`, and `console-log`, the last of which must
+move nothing, because `console.log` is never patched. The tail itself is
+readable without pixels through `runCommand("diagnostics.console.export")`
+(and cleared with `diagnostics.console.clear`); `console-error` deliberately
+logs a `sessionToken` and a URL carrying an `access_token`, and neither may
+appear in that command's result or in a captured snapshot. Also unmapped, and
+worth an assertion when diagnostics is mapped: the `boom` extension's crash is
+logged by core's `ExtensionBoundary` through `console.error`, so it appears in
+the tail exactly once.

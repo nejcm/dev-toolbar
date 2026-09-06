@@ -997,9 +997,14 @@ if (built || !mustBeBuilt) {
       const diag = node(
         `const { diagnostics } = await import("@nejcm/dev-toolbar/ext/diagnostics");` +
           `const { createDiagnosticsRuntime } = await import("@nejcm/dev-toolbar/ext/diagnostics");` +
+          // Captured before anything is imported: the §1B console tail patches
+          // console.error in start(api) and nowhere else, so importing the
+          // module and capturing a snapshot must leave the global alone.
+          `const beforeImport = console.error;` +
           `const ext = diagnostics();` +
           `const snap = createDiagnosticsRuntime().capture();` +
-          `console.log(JSON.stringify({ id: ext.id, commands: ext.commands.map(c => c.id), contributes: typeof ext.diagnostics, gathered: snap.toolbar.gathered, omissions: snap.omissions.length }));`,
+          `const out = { id: ext.id, commands: ext.commands.map(c => c.id), contributes: typeof ext.diagnostics, gathered: snap.toolbar.gathered, omissions: snap.omissions.length, consolePatched: console.error !== beforeImport, tail: snap.console.status };` +
+          `console.log(JSON.stringify(out));`,
       );
       expect(JSON.parse(diag)).toEqual({
         id: "diagnostics",
@@ -1008,7 +1013,14 @@ if (built || !mustBeBuilt) {
           "diagnostics.copy",
           "diagnostics.copyJson",
           "diagnostics.download",
+          "diagnostics.console.export",
+          "diagnostics.console.clear",
         ],
+        // Nothing global is touched until the toolbar starts the extension,
+        // and a snapshot taken before that says so rather than reporting zero
+        // errors it never watched for.
+        consolePatched: false,
+        tail: "pending",
         // It reads the aggregation, and contributes only a *summary* of its
         // own last capture — never the snapshot, which is built from the
         // aggregation and would embed one snapshot inside the next

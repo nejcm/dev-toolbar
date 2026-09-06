@@ -63,10 +63,18 @@ of masked values is shown next to the buttons. It is still not a security bounda
 no telltale shape survives, which is exactly why the text is on screen before you
 send it.
 
-**A `recentErrors` field is deliberately absent.** Shipping it would mean this extension
-installing a global `window.onerror` handler — permanent instrumentation of your
-application, duplicating the error reporter you already have, and liable to disagree
-with it. `sources` is the answer instead, and it works today:
+**It says what went wrong on the way here.** `window`'s `error` and
+`unhandledrejection` events, and patched `console.error` / `console.warn`, go into a
+bounded tail that the snapshot carries under `console` and the chip counts on a badge.
+That is the half of a bug report you cannot otherwise get: you can copy state, and you
+cannot copy the console.
+
+An earlier version of this page argued the opposite — that a global handler is
+permanent instrumentation of your application, duplicating a reporter you already have.
+The instrumentation is real, which is why every part of it below is a rule rather than
+a detail; the conclusion was wrong, because "the console at the moment it broke" is not
+something your reporter puts in the ticket either. `sources` still works, and is still
+the right way to hand over an existing reporter's own view:
 
 ```tsx
 diagnostics({
@@ -74,13 +82,62 @@ diagnostics({
 });
 ```
 
-Options: `app` (object or getter), `sources`, `windowMs`, `slowInteractionMs`,
-`historySize`, `recentSize`, `now`, `redactOptions`, plus the usual `id` / `label` /
-`align` / `order` / `priority` / `hidden` / `keepMounted` / `injectStyles` /
-`styleNonce`.
+### The console tail
+
+- **It always calls through.** Your `console.error` runs, with the arguments you
+  passed, on every path — including when something inside the tail throws. Nothing is
+  swallowed and nothing is reordered.
+- **It restores on teardown, by identity.** Unmount the toolbar and `console.error` is
+  the function it was before, `===`. The one exception is somebody else patching after
+  us: their wrapper stays, because clobbering it back to the original would silently
+  uninstall *their* instrumentation. Same rule, same reason, as the `fetch` interceptor
+  in [`/runtime`](../runtime.md).
+- **It cannot recurse.** Anything logged *while* the tail is recording — the toolbar's
+  own `ExtensionBoundary`, which calls `console.error` by design when an extension
+  crashes; your logging pipeline's own mirror of a log — goes straight to the original
+  and is not captured a second time.
+- **`console.log` is never patched**, and there is no option that would. Errors and
+  warnings are the signal; logs are volume.
+- **Format strings are substituted**, the way the console shows them: `%s`, `%d`/`%i`,
+  `%f`, `%o`/`%O`/`%j`, `%%`, and `%c`, which consumes its CSS argument and emits
+  nothing. React's own dev warnings are format strings, so without this the most common
+  `console.error` in a React app would read as `%o` followed by its arguments.
+- **Repeats group.** The same message from the same source is one entry with a `count`,
+  so a render loop logging 4,000 times is one row with a number on it. Older *distinct*
+  messages fall out of the ring and are counted in `dropped`.
+- **Stacks are kept where there are any, without their header line.** V8 repeats the
+  raw message there, where anchored value matching cannot see it; the message is
+  reported, masked, in `message`.
+- **Off is one option.** `console: false` patches nothing and adds no listener, and each
+  source has its own switch: `{ error, warn, windowErrors, rejections, size,
+  maxMessageChars, maxStackChars }`. With capture off, the counts are `null` and the
+  status says `disabled` — never a zero that reads as "nothing went wrong".
+
+What it masks, and what it cannot: every argument is redacted **before** the line is
+assembled — objects walked by `redact()` (where key-name matching works), strings
+matched by value shape, and every `scheme://…` run in a string or a stack frame put
+through `redactUrl()`, because a credential-carrying URL in the middle of a sentence is
+the shape a console message actually has and anchored matching cannot see it. What
+survives is what survives everywhere else in this extension: a bare secret written into
+prose (`"the password is hunter2"`) is neither a matched key nor a matched shape. That
+is pinned by its own test, and it is why the panel shows you the text before you copy it.
+
+Options: `app` (object or getter), `sources`, `console`, `windowMs`,
+`slowInteractionMs`, `historySize`, `recentSize`, `now`, `redactOptions`, plus the usual
+`id` / `label` / `align` / `order` / `priority` / `hidden` / `keepMounted` /
+`injectStyles` / `styleNonce`.
 
 Commands: `diagnostics.capture` (capture only — it deliberately does not copy),
-`diagnostics.copy`, `diagnostics.copyJson`, `diagnostics.download`.
+`diagnostics.copy`, `diagnostics.copyJson`, `diagnostics.download`, and — unless capture
+is off — `diagnostics.console.export` (the tail as data, newest first, `limit` optional)
+and `diagnostics.console.clear`. The chip's badge count and the tail's status also
+appear in this extension's own `diagnostics()` summary, so an agent reading the roster
+learns something is on fire without opening a panel.
+
+**There is no console panel, and one is not planned.** Without object inspection, source
+maps, filtering and live evaluation it would be strictly worse than the real console,
+and object inspection alone is unwinnable. The toolbar owns the summary and the export;
+DevTools owns the drill-down.
 
 ## Contributing to somebody else's snapshot
 

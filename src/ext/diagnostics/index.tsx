@@ -40,6 +40,12 @@
  * - **It never claims to know what it does not.** §3E entry types vary by
  *   engine, so counts are `null` rather than `0` when unobservable, each with
  *   a note explaining why.
+ * - **It says what went wrong on the way here.** `window`'s `error` and
+ *   `unhandledrejection` events and patched `console.error`/`console.warn` go
+ *   into a bounded, grouped tail that the snapshot carries and the chip
+ *   counts. The patch always calls through, restores by identity on teardown,
+ *   is opt-out-able per method (`console: false` for all of it), and never
+ *   touches `console.log`. See `./console.ts`.
  *
  * ## What it is not
  *
@@ -52,12 +58,13 @@ import { DiagnosticsChip, DiagnosticsPanel } from "./ui";
 import { resolveStyleNonce } from "@nejcm/dev-toolbar/kit";
 import type { DiagnosticsRuntimeOptions } from "./runtime";
 import type {
+  AnyToolbarCommand,
   DevToolbarExtension,
   ExtensionRuntimeApi,
   ToolbarAlign,
   ToolbarCommand,
 } from "../../core/contract";
-import type { DiagnosticSnapshot } from "./types";
+import type { ConsoleTailReport, DiagnosticSnapshot } from "./types";
 
 export interface DiagnosticsOptions extends Omit<DiagnosticsRuntimeOptions, "id"> {
   /** Extension id. Default `"diagnostics"`. */
@@ -113,6 +120,65 @@ export function diagnostics(options: DiagnosticsOptions = {}): DevToolbarExtensi
   // Built here, not in start(api): slot functions run on the toolbar's first
   // render, before any effect fires, and a persisted open panel needs it then.
   const runtime = createDiagnosticsRuntime({ ...runtimeOptions, id });
+
+  /**
+   * The console commands (`plans/ecosystem-extensions.md` § 1B), contributed
+   * only when the tail is actually capturing something — the same rule
+   * `/ext/metrics` applies to its `network.*` commands: a command that is
+   * always listed and can only ever answer "turned off" is worse in `⌘K`, and
+   * worse in an agent's command list, than an absent one. `diagnostics()`
+   * still reports the status either way, so nothing becomes unknowable by
+   * being unlisted.
+   */
+  const consoleCommands: AnyToolbarCommand[] =
+    runtime.tail(0).status === "disabled"
+      ? []
+      : [
+          {
+            id: `${id}.console.export`,
+            label: "Export the console error tail",
+            description:
+              "Returns what went wrong on the way here: `window` errors, unhandled " +
+              "rejections and patched `console.error`/`console.warn`, newest first. " +
+              "Repeats of one message share an entry and raise its `count`, so a render " +
+              "loop is one row with a number on it. `console.log` is never captured. " +
+              "Every message was masked argument by argument as it was captured — object " +
+              "arguments walked by `redact()`, strings matched by value shape and every " +
+              "URL in them masked — and this is the same report the snapshot carries, not " +
+              "a second, rawer copy of it. A stack is included where there was one, " +
+              "minus its header line, since V8 repeats the unmasked message there. " +
+              "`errors`, `warnings` and `dropped` are `null` rather than `0` when nothing " +
+              "was being watched. Omit `limit` for every retained entry.",
+            group: "Diagnostics",
+            keywords: ["console", "errors", "warnings", "tail", "export", "bug", "report"],
+            input: {
+              fields: {
+                limit: {
+                  type: "number",
+                  description: "Keep only the newest N grouped entries. Omit for all of them.",
+                },
+              },
+            },
+            run: (input) => {
+              const { limit } = input ?? {};
+              if (limit !== undefined && (typeof limit !== "number" || !Number.isFinite(limit))) {
+                throw new Error("`limit` must be a finite number.");
+              }
+              return runtime.tail(limit);
+            },
+          } satisfies ToolbarCommand<{ limit?: number } | void, ConsoleTailReport>,
+          {
+            id: `${id}.console.clear`,
+            label: "Clear the console error tail",
+            description:
+              "Drops every captured message and zeroes the counters on the chip. " +
+              "Capture continues; the next error starts a fresh tail. Nothing else " +
+              "in the snapshot is affected.",
+            group: "Diagnostics",
+            keywords: ["console", "errors", "clear", "reset", "tail"],
+            run: () => runtime.clearTail(),
+          } satisfies ToolbarCommand,
+        ];
 
   return {
     id,
@@ -231,6 +297,7 @@ export function diagnostics(options: DiagnosticsOptions = {}): DevToolbarExtensi
           }
         },
       },
+      ...consoleCommands,
     ],
   };
 }
@@ -254,8 +321,17 @@ export type {
 export { DIAGNOSTICS_CSS, ensureDiagnosticsStyles } from "./css";
 export { LONG_TASK_THRESHOLD_MS, createResponsivenessMonitor } from "./responsiveness";
 export type { ResponsivenessMonitor, ResponsivenessOptions } from "./responsiveness";
-export { NO_SNAPSHOT, SNAPSHOT_FORMATS, describeSupport } from "./types";
+export { DEFAULT_MESSAGE_CHARS, DEFAULT_STACK_CHARS, DEFAULT_TAIL_SIZE } from "./console";
+export type { ConsoleTail, ConsoleTailDeps, ConsoleTailOptions } from "./console";
+export { createConsoleTail } from "./console";
+export { NO_SNAPSHOT, SNAPSHOT_FORMATS, describeSupport, describeTail } from "./types";
 export type {
+  ConsoleTailCounts,
+  ConsoleTailEntry,
+  ConsoleTailLevel,
+  ConsoleTailReport,
+  ConsoleTailSource,
+  ConsoleTailStatus,
   ContributionStatus,
   DiagnosticContribution,
   DiagnosticOmission,

@@ -151,6 +151,98 @@ function LoadControls() {
   );
 }
 
+/**
+ * Drives `/ext/diagnostics`' console tail (§1B). Every button here logs
+ * something the tail must handle: a credential-carrying object, a repeated
+ * message that has to group rather than fill the ring, a real uncaught throw
+ * and a real unhandled rejection. Nothing here is swallowed — each line still
+ * reaches the browser's own console, which is the point of the patch.
+ */
+function ConsoleControls() {
+  return (
+    <section className="pg-card">
+      <h2>Drive the console tail</h2>
+      <p>
+        The badge on the <code>diagnostics</code> chip counts what{" "}
+        <code>@nejcm/dev-toolbar/ext/diagnostics</code> caught:{" "}
+        <code>window.onerror</code>, unhandled rejections and patched{" "}
+        <code>console.error</code>/<code>console.warn</code>. Open the panel and
+        the same messages are in the snapshot, under <em>Console</em>, already
+        masked. <code>console.log</code> is never patched — press the last
+        button and nothing moves.
+      </p>
+      <div className="pg-controls">
+        <button
+          type="button"
+          className="pg-button"
+          data-testid="console-error"
+          onClick={() =>
+            console.error("checkout failed", {
+              orderId: "ord_991",
+              sessionToken: "sess-console-secret",
+              retryUrl: "https://api.playground.test/retry?access_token=tok-console-secret",
+            })
+          }
+        >
+          console.error with credentials
+        </button>
+        <button
+          type="button"
+          className="pg-button"
+          data-testid="console-warn"
+          onClick={() => console.warn("deprecated: <LegacyTile> goes away in v3")}
+        >
+          console.warn
+        </button>
+        <button
+          type="button"
+          className="pg-button"
+          data-testid="console-repeat"
+          onClick={() => {
+            for (let index = 0; index < 5; index += 1) {
+              console.error("render loop: state updated during render");
+            }
+          }}
+        >
+          Same error ×5 (groups to one row)
+        </button>
+        <button
+          type="button"
+          className="pg-button"
+          data-testid="console-throw"
+          onClick={() => {
+            // Thrown out of a timer, so it reaches window.onerror rather than
+            // React's error boundary.
+            setTimeout(() => {
+              throw new Error("playground: uncaught from a timer");
+            }, 0);
+          }}
+        >
+          Uncaught error (window.onerror)
+        </button>
+        <button
+          type="button"
+          className="pg-button"
+          data-testid="console-reject"
+          onClick={() => {
+            void Promise.reject(new Error("playground: nobody caught this"));
+          }}
+        >
+          Unhandled rejection
+        </button>
+        <button
+          type="button"
+          className="pg-button"
+          data-testid="console-log"
+          onClick={() => console.log("playground: never captured, by design")}
+        >
+          console.log (not captured)
+        </button>
+      </div>
+    </section>
+  );
+}
+
 /** What the app resolves for each flag via `override ?? base` — an override in the toolbar must show up here. */
 function FlagReadout() {
   const [, force] = useState(0);
@@ -535,6 +627,8 @@ export function App() {
       </section>
 
       <LoadControls />
+
+      <ConsoleControls />
 
       <ThemePlayground />
 

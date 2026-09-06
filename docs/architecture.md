@@ -1015,7 +1015,7 @@ the console carries no hydration warning.
 | Any rendering of the diagnostics aggregation | `./ext/diagnostics` — core collects the roster and renders nothing, as with commands |
 | Severity thresholds | The extension that owns the metric |
 | Access control | The consumer, before rendering `<DevToolbar>` at all |
-| Error capture (`window.onerror`) | Nowhere. Pass your existing reporter to `/ext/diagnostics` as a `sources` entry. |
+| Error capture (`window.onerror`) | `./ext/diagnostics` — a bounded, grouped tail of `window` errors, unhandled rejections and `console.error`/`console.warn`, folded into the snapshot. Core captures nothing; the patch restores by identity on teardown and is `console: false`-able. Your own reporter still belongs there as a `sources` entry. |
 | A global extension registry | Nowhere. See §2. |
 | Visual overlays over the host page | `./ext/overlays` — core draws on nobody's application |
 

@@ -17,6 +17,24 @@ const DIAGNOSTICS_EXTENSION_CSS = String.raw`@layer dev-toolbar {
     color: var(--dtb-muted);
   }
 
+  /* §1B's badge: the count of what the console tail caught, on the chip. */
+  [data-dev-toolbar] [data-dtb-part="diag-errors"] {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 1.5em;
+    padding: 0 0.35em;
+    border-radius: var(--dtb-radius);
+    background: var(--dtb-warn-bg);
+    color: var(--dtb-warn);
+    font-variant-numeric: tabular-nums;
+  }
+
+  [data-dev-toolbar] [data-dtb-part="diag-errors"][data-dtb-tone="error"] {
+    background: var(--dtb-danger-bg);
+    color: var(--dtb-danger);
+  }
+
   [data-dev-toolbar] [data-dtb-part="diag-panel"] {
     display: flex;
     flex-direction: column;
