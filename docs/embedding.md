@@ -83,10 +83,23 @@ panel: ({ close }) => (
 
 Without it, the recipe still works and the tool's own stylesheet still wins every
 conflict — the difference is only what a vendor element *without* a rule of its own
-looks like: ours, or the browser's. `src/kit/__tests__/embed.test.tsx` walks every rule
-in core's sheet and the kit's against a vendor DOM containing one of each element those
-rules name, and fails on the first that matches — so the guard and this page cannot
-drift apart unnoticed.
+looks like: ours, or the browser's.
+
+Two tests keep the guard and this page from drifting apart, and they prove different
+halves of it:
+
+- **The guard works.** `src/kit/__tests__/embed.test.tsx` mounts a real toolbar around a
+  vendor DOM containing one of each element core's defaults name, walks every rule in
+  core's sheet and the kit's against it, and fails on the first that matches — with the
+  focus rules exercised on a focused link and a focused field, and a negative control
+  that removes the attribute and checks each rule matches again. What it does *not*
+  prove is coverage: a new unguarded rule naming an element that fixture happens not to
+  contain would pass it.
+- **The guard is applied everywhere.** `src/core/__tests__/css.test.ts` reads core's
+  stylesheet itself, with no fixture and no element list, and rejects any rule that
+  styles a descendant of the root by element rather than by a `data-dtb-*` attribute
+  unless it carries the guard, naming the selector. Adding one — a bare
+  `[data-dev-toolbar] :where(table)`, or a `p` under a part — fails it.
 
 What the attribute does **not** stop is inheritance, and it should not: the frame sits
 inside the panel, so the panel's `font-family`, `font-size`, `line-height`, `color` and

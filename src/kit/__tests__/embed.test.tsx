@@ -283,7 +283,17 @@ describe("embed()", () => {
     expect(node?.className).toBe("");
     expect(node?.children).toHaveLength(1);
     expect(node?.firstElementChild?.className).toBe("vendor-devtools");
-    expect(node?.querySelector("[data-dtb-kind], [data-dtb-part], [data-dtb-embed]")).toBeNull();
+    // Not a list of the three attribute names that exist today: *no* data-dtb-*
+    // attribute appears below the frame. Core's structural invariant
+    // (src/core/__tests__/css.test.ts) exempts a rule whose subject requires
+    // one, and this is why that exemption is sound.
+    const inside = Array.from(node?.querySelectorAll("*") ?? []);
+    expect(inside.length).toBeGreaterThan(0);
+    expect(
+      inside.flatMap((element) =>
+        element.getAttributeNames().filter((name) => name.startsWith("data-dtb-")),
+      ),
+    ).toEqual([]);
   });
 
   describe("the stylesheet rule: no core or kit selector reaches the embedded subtree", () => {
@@ -295,7 +305,16 @@ describe("embed()", () => {
      * of those rules is guarded with `:where(:not([data-dtb-embed] *))`. This
      * walks every rule in every injected sheet against a vendor DOM containing
      * one of each element those rules name, and fails on the first that
-     * matches — a new unguarded descendant rule in core lands here.
+     * matches.
+     *
+     * What this proves is that the guard *works*. The two `:focus-visible`
+     * rules select nothing until something is focused, so they get their own
+     * test below. What none of it proves is that core applies the guard
+     * everywhere:
+     * these are the elements this fixture happens to contain, and a new
+     * unguarded rule naming one it does not have would sail through. That is
+     * the job of the structural invariant over core's selectors in
+     * `src/core/__tests__/css.test.ts`, which needs no fixture at all.
      */
     const vendorElements = (): Element[] => {
       const root = frame()?.querySelector(".vendor-devtools");
@@ -303,11 +322,60 @@ describe("embed()", () => {
       return [root as Element, ...Array.from((root as Element).querySelectorAll("*"))];
     };
 
-    it("through embed(): the frame's subtree matches no injected rule", () => {
-      const { toolbar } = mount(
+    const openKitchenSink = () => {
+      const mounted = mount(
         embed({ id: "vendor", label: "Vendor", render: () => <VendorKitchenSink /> }),
       );
-      toolbar.openPanel("vendor");
+      mounted.toolbar.openPanel("vendor");
+      return mounted;
+    };
+
+    /**
+     * Core's two `:focus-visible` rules select nothing until something is
+     * focused, so the checks above never exercise them. This does: it focuses
+     * one vendor element and reports which of the sheets' focus rules reach
+     * *it*.
+     *
+     * `:focus-visible` itself is rewritten to `:focus` first. jsdom answers
+     * `:focus-visible` inconsistently — the answer depends on when in a
+     * document's life the element was first asked, so a rule written against
+     * it silently stops biting — while `:focus` is exact. Everything that is
+     * under test here survives the rewrite: the guard, the element list it
+     * guards, and which of the two rings each vendor element falls under.
+     * Which elements a browser considers focus-*visible* is the browser's
+     * business, and the same either way.
+     */
+    const focusRings = (): string[] =>
+      injectedSelectors()
+        .filter((selector) => selector.includes(":focus-visible"))
+        .map((selector) => selector.replaceAll(":focus-visible", ":focus"));
+
+    const ringsReaching = (which: "link" | "field", unguard: boolean): string[] => {
+      const { unmount } = openKitchenSink();
+      // The link falls under `:where(a, button, summary, [role="button"],
+      // [tabindex])`, the text field under `input, select, textarea`.
+      const element = frame()?.querySelector(
+        which === "link" ? "a[href]" : "input:not([type])",
+      ) as HTMLElement;
+      expect(element).toBeTruthy();
+      if (unguard) frame()?.removeAttribute("data-dtb-embed");
+      element.focus();
+      expect(document.activeElement).toBe(element);
+      expect(element.matches(":focus")).toBe(true);
+
+      const rings = focusRings();
+      // Both guarded rules are in there, alongside the part-keyed ones.
+      expect(rings).toContainEqual(
+        expect.stringContaining(':where(a, button, summary, [role="button"], [tabindex])'),
+      );
+      expect(rings).toContainEqual(expect.stringContaining(":where(input, select, textarea)"));
+      const hits = reaching(rings, [element]);
+      unmount();
+      return hits;
+    };
+
+    it("through embed(): the frame's subtree matches no injected rule", () => {
+      openKitchenSink();
 
       const selectors = injectedSelectors();
       // The sheets parsed and the walk found the rules it is guarding against.
@@ -318,14 +386,32 @@ describe("embed()", () => {
       expect(reaching(selectors, vendorElements())).toEqual([]);
 
       // Negative control, so a guard that stopped guarding cannot pass by
-      // accident: the same vendor button, with the frame's attribute gone,
-      // is matched by core's button reset, the box-sizing rule and the ring.
+      // accident: with the frame's attribute gone, the same vendor elements
+      // are matched by core's box-sizing rule, its button reset and its field
+      // geometry. It says nothing about the two focus rings, which select
+      // nothing here because nothing is focused — that is the next test.
       frame()?.removeAttribute("data-dtb-embed");
       const unguarded = reaching(selectors, vendorElements());
       expect(unguarded).toContainEqual(expect.stringContaining(":where(button)"));
       expect(unguarded).toContainEqual(expect.stringContaining("[data-dev-toolbar] :where(:not("));
       expect(unguarded).toContainEqual(expect.stringContaining(":where(select)"));
       expect(unguarded).toContainEqual(expect.stringContaining(":where(textarea)"));
+    });
+
+    it("and neither focus ring reaches a focused vendor link or field", () => {
+      expect(ringsReaching("link", false)).toEqual([]);
+      expect(ringsReaching("field", false)).toEqual([]);
+
+      // Negative control: the same two elements, focused the same way, on a
+      // frame whose opt-out has been removed. Each ring is then the one rule
+      // that reaches its element — so a guard dropped from either of them
+      // fails the two assertions above rather than passing unnoticed.
+      expect(ringsReaching("link", true)).toEqual([
+        expect.stringContaining(':where(a, button, summary, [role="button"], [tabindex])'),
+      ]);
+      expect(ringsReaching("field", true)).toEqual([
+        expect.stringContaining(":where(input, select, textarea)"),
+      ]);
     });
 
     it("through the four-line recipe: any element marked data-dtb-embed gets the same exemption", () => {
@@ -354,10 +440,7 @@ describe("embed()", () => {
       // The guard exempts the embedded subtree and nothing else: the embed
       // chip's trigger and the retry button on a first-party panel are core's
       // to style, and the same rules that skip the vendor still match them.
-      const { toolbar } = mount(
-        embed({ id: "vendor", label: "Vendor", render: () => <VendorKitchenSink /> }),
-      );
-      toolbar.openPanel("vendor");
+      openKitchenSink();
       const trigger = screen.getByRole("button", { name: "Vendor" });
       const selectors = injectedSelectors();
       const onTrigger = reaching(selectors, [trigger]);
