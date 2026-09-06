@@ -43,13 +43,16 @@
  * — both call through and both record, once each. **Detaching them
  * inner-first is what costs**: rule 2 forbids restoring over the outer
  * wrapper, so the inner one stays, listener-less but still forwarding, and
- * every start/stop cycle strands one more. Executed, two module copies over
- * one `console`, inner stopped first each cycle: `console.error` throws
- * `RangeError: Maximum call stack size exceeded` from cycle 8,801 here, and
- * from about cycle 5,000 on the built ESM+CJS pair under Bun and Node. The
- * exact cycle is whatever the engine's stack depth allows; what matters is
- * that past it nothing reaches the original at all — the **host app's own
- * logging** is gone, not merely our capture.
+ * every start/stop cycle strands one more. Executed on the built ESM+CJS pair
+ * over one `console`, inner stopped first each cycle: **under Node 26.4.0,
+ * `console.error` throws `RangeError: Maximum call stack size exceeded` from
+ * cycle 10,408** (stable across runs); **under Bun 1.4.0 the same loop still
+ * forwarded after 20,000 cycles** and never threw. The number is a property of
+ * the engine's stack depth, not of this package — quote it with its engine or
+ * not at all. What matters is not the cycle but what happens past it: nothing
+ * reaches the original, so the **host app's own logging** is gone, not merely
+ * our capture. An engine that never runs out simply keeps paying a frame per
+ * cycle instead.
  *
  * This is documented rather than fixed. The fix is to resolve the package to
  * one format; a bundler-level problem is not one a `Symbol.for` handshake
@@ -68,30 +71,56 @@
  * (`redact()`'s value matching is anchored, so masking an assembled sentence
  * masks nothing). Object arguments are walked by `redact()`, which is where
  * key-name matching does its work; strings get value-shape matching plus a
- * URL pass plus a *run* pass, because a credential-carrying URL — or a
- * `Bearer …` — sitting *inside* a sentence is the common console shape and
- * anchored matching cannot see it. Strings this module *builds* are masked
- * too — the leaves of a `redact()`ed object before they are joined into
- * JSON, since `redact()` keeps an `Error`'s `name` verbatim and anchored
- * matching cannot see into a finished line.
+ * URL pass, because a credential-carrying URL sitting *inside* a sentence is
+ * the common console shape and anchored matching cannot see it. Strings this
+ * module *builds* are masked too — the leaves of a `redact()`ed object before
+ * they are joined into JSON, since `redact()` keeps an `Error`'s `name`
+ * verbatim and anchored matching cannot see into a finished line.
+ *
+ * ### `redact()` is the only judge of a credential, and it is not asked twice
+ *
+ * There is exactly one thing in this module that decides what a credential
+ * looks like, and it is `redact()` looking at a **whole value**. Three
+ * mechanisms tried to be a second one — a frame classifier, then a header
+ * classifier, then a whitespace tokeniser that re-asked `redact()` about each
+ * word and each adjacent pair — and all three shipped a leak. The tokeniser
+ * missed a credential the message split across a newline, masked `token
+ * Bearer` while shipping the overlapping secret beside the marker, and turned
+ * `"the token expired"` into `"the token [redacted]"` on the way.
+ *
+ * A stack header leaks for one reason and it is not a matching problem: V8
+ * repeats the message above the first frame, so the credential appears there
+ * *as part of a longer string*. Both forms of that message are already
+ * computed — the raw one read by `readErrorLike()`, the masked one by
+ * `prepareError()` — so `maskStack()` substitutes the second for the first and
+ * then masks the whole value. No scanner, no tokeniser, no second notion of a
+ * credential. See `maskStack()`.
  *
  * Three rules the leaks all came from, and all three are load-bearing:
  *
  * - **Read a foreign property once.** A getter answers differently on the
  *   second read; `typeof e.message === "string" ? mask(e.message) : ""` is two
- *   reads. Everything error-shaped is snapshotted by `readErrorLike()` first.
+ *   reads. Everything that classifies as error-shaped is snapshotted by
+ *   `readErrorLike()` first and only the snapshot is used after that. The
+ *   guarantee stops at classification: an argument that is *not* error-shaped
+ *   is handed to `redact()`, which walks it and reads its properties itself,
+ *   so "read once" is a claim about a classified `ErrorSnapshot`, not about
+ *   every value the tail is given.
  * - **Never mask half of something.** A URL run stops at whitespace only —
  *   ending it at a quote handed `redactUrl()` a truncated URL and left the
  *   credential sitting next to a `[redacted]` marker that claimed otherwise.
  * - **Never emit a branch you did not walk.** Whatever the masker stops
- *   short of — a stack line it did not classify, an object deeper than it
- *   descends — is dropped or `[truncated]`, never passed through verbatim.
- *   Every leak here began as something kept because it "looked harmless".
+ *   short of — an object deeper than it descends — is `[truncated]`, never
+ *   passed through verbatim. Every leak here began as something kept because
+ *   it "looked harmless".
  *
- * What still escapes, pinned by tests in `__tests__/console.test.tsx`: a bare
- * secret in prose, a credential inside a stack frame's *function name*, and
- * anything reachable only through `Error.cause` or `AggregateError.errors`,
- * which are not read at all.
+ * What still escapes, pinned by tests in `__tests__/console.test.tsx`: **a
+ * credential written into prose**, which now explicitly includes an `Error`
+ * *message* like `"failed: token Bearer sk-live-…"` — the message and the
+ * stack both carry it, because the whole string is not a credential and
+ * nothing here judges parts of one; a credential inside a stack frame's
+ * *function name*; and anything reachable only through `Error.cause` or
+ * `AggregateError.errors`, which are not read at all.
  */
 import { redact, redactUrl } from "../../runtime";
 import type { RedactOptions } from "../../runtime";
@@ -169,7 +198,26 @@ export interface ConsoleTailDeps {
 type PatchedMethod = "error" | "warn";
 type ConsoleListener = (args: readonly unknown[]) => void;
 
+/**
+ * One live wrapper, shared by every tail in this module copy.
+ *
+ * `target` is part of it because the registry is keyed by *method name* and a
+ * page can change `globalThis.console` underneath it (a test rig stubbing it,
+ * a hardened host swapping it). An entry installed on a console that is no
+ * longer the live one describes a wrapper nobody can reach; reusing it made
+ * every later tail inherit its `verified: false` and silently watch nothing.
+ *
+ * `owners` counts tails, `listeners` counts the ones actually recording. They
+ * differ for an unverified patch, which is registered — so a second tail from
+ * this module copy does not wrap our own wrapper — but adds no listener and
+ * claims nothing.
+ */
 interface Installed {
+  target: ConsoleLike;
+  owners: number;
+  verified: boolean;
+  /** Re-runs the read-back. A getter that threw once may answer the second time. */
+  verify(): boolean;
   listeners: Set<ConsoleListener>;
   uninstall(): void;
 }
@@ -210,6 +258,8 @@ const consoleObject = (): ConsoleLike | null => {
 interface Patch {
   restore(): void;
   verified: boolean;
+  /** The read-back, callable again later. See `Installed.verify`. */
+  verify(): boolean;
 }
 
 function install(
@@ -260,26 +310,29 @@ function install(
     }
   };
 
+  // An accessor with a *silent* setter swallows the assignment and leaves the
+  // original in place. Reporting that as `watching` would be the worst kind of
+  // wrong: a tail that says it is capturing and records nothing. A throwing
+  // getter is not evidence that the assignment failed either way, so it reads
+  // as unverified and stays askable.
+  const verify = (): boolean => {
+    try {
+      return target[method] === wrapper;
+    } catch {
+      return false;
+    }
+  };
+
   try {
     target[method] = wrapper;
   } catch {
     // A frozen or getter-only `console` (a hardened host, a locked-down test
     // rig). A setter can also store the value and *then* throw, so from here
     // on the handle is kept: an unverified patch is still a patch to undo.
-    return { restore, verified: false };
+    return { restore, verified: false, verify };
   }
 
-  // An accessor with a *silent* setter swallows the assignment and leaves the
-  // original in place. Reporting that as `watching` would be the worst kind of
-  // wrong: a tail that says it is capturing and records nothing.
-  let verified = false;
-  try {
-    verified = target[method] === wrapper;
-  } catch {
-    // A throwing getter is not evidence that the assignment failed.
-    verified = false;
-  }
-  return { restore, verified };
+  return { restore, verified: verify(), verify };
 }
 
 /**
@@ -294,29 +347,46 @@ interface Attachment {
 }
 
 function attach(method: PatchedMethod, listener: ConsoleListener): Attachment | null {
+  const target = consoleObject();
+  if (target === null) return null;
   let current = patches[method];
+  // A registration made on a console that is no longer the live object says
+  // nothing about this one. It keeps its own owners and its own identity-
+  // guarded teardown; it just stops being the entry new tails share.
+  if (current !== null && current.target !== target) current = null;
   if (current === null) {
-    const target = consoleObject();
-    if (target === null) return null;
     const listeners = new Set<ConsoleListener>();
     const patch = install(target, method, listeners);
     if (patch === null) return null;
-    if (!patch.verified) {
-      // Not registered as the live patch and given no listener: it captures
-      // nothing. It is still handed back so `stop()` can undo an assignment
-      // that may have taken effect behind an unreadable getter.
-      return { off: patch.restore, verified: false };
-    }
-    current = { listeners, uninstall: patch.restore };
+    current = {
+      target,
+      listeners,
+      uninstall: patch.restore,
+      verify: patch.verify,
+      owners: 0,
+      verified: patch.verified,
+    };
     patches[method] = current;
+  } else if (!current.verified) {
+    // Ask again rather than install a second wrapper over our own. The whole
+    // reason an unverified patch is registered at all is that read-back can
+    // fail once — a getter that threw during the assignment and has since
+    // recovered — and installing again would wrap our own wrapper, so the
+    // outer teardown would "restore" the inner one and strand it forever.
+    current.verified = current.verify();
   }
   const installed = current;
-  installed.listeners.add(listener);
+  installed.owners += 1;
+  if (installed.verified) installed.listeners.add(listener);
+  let attached = true;
   return {
-    verified: true,
+    verified: installed.verified,
     off: () => {
+      if (!attached) return;
+      attached = false;
+      installed.owners -= 1;
       installed.listeners.delete(listener);
-      if (installed.listeners.size > 0) return;
+      if (installed.owners > 0) return;
       installed.uninstall();
       if (patches[method] === installed) patches[method] = null;
     },
@@ -347,12 +417,6 @@ function attach(method: PatchedMethod, listener: ConsoleListener): Attachment | 
  * kept credential.
  */
 const URL_LIKE = /[a-z][a-z0-9+.-]*:\/\/\S+/gi;
-
-/**
- * Whitespace, kept as its own piece by `split` so a line can be put back
- * together byte-for-byte when nothing in it matched. See `maskRuns`.
- */
-const WHITESPACE = /(\s+)/;
 
 const defaultNow = (): number => {
   try {
@@ -388,6 +452,10 @@ interface ErrorSnapshot {
   stack: string | null;
 }
 
+interface MaskedErrorSnapshot extends ErrorSnapshot {
+  maskedMessage: string;
+}
+
 /** One property read, guarded, kept only if it is a string. */
 function readString(value: object, key: "name" | "message" | "stack"): string | null {
   try {
@@ -402,7 +470,7 @@ function readString(value: object, key: "name" | "message" | "stack"): string | 
 /** One console argument and what it turned out to be, both settled before use. */
 interface Argument {
   value: unknown;
-  error: ErrorSnapshot | null;
+  error: MaskedErrorSnapshot | null;
 }
 
 /** Duck-typed on purpose: `instanceof Error` is false across realms (an iframe, a worker). */
@@ -477,100 +545,70 @@ export function createConsoleTail(
   };
 
   /**
-   * `redact()` on one piece of a line, defensively — it is the only judge of
-   * what a credential looks like, and this module never adds a second one.
+   * A foreign string: whole-value shape matching, then the URL pass. That is
+   * the entire mechanism — see the module docblock for the three that tried to
+   * be more than this and leaked.
    */
-  const maskPiece = (piece: string): string => {
-    try {
-      const masked = redact(piece, redactOptions);
-      return typeof masked === "string" ? masked : piece;
-    } catch {
-      return piece;
-    }
-  };
-
-  /**
-   * Credential *runs* inside a line — the same judgement `redact()` makes
-   * about a whole string, asked again about each word and each adjacent pair
-   * of words.
-   *
-   * `redact()`'s value matching is anchored (`^bearer\s+\S+$`), which is
-   * right for a leaf and blind to `Error: Bearer sk-live-…`, the exact shape
-   * V8 writes at the top of a stack. Rather than teach this module a second
-   * notion of "credential", the line is split on whitespace and the pieces are
-   * handed back to `redact()`: a pair first (`Bearer …`, `Digest …` are two
-   * words), then singles (a bare JWT, a URL `maskUrls` did not reach).
-   *
-   * The cost is `redact()`'s own false positives, now reachable mid-sentence:
-   * `"the token expired"` reports as `"the token [redacted]"`, because
-   * `redact("token expired")` says so. That is the trade — a masked ordinary
-   * word against a credential printed in full — and it is the same trade
-   * `redact()` already made for a whole string.
-   */
-  const maskRuns = (text: string): string => {
-    try {
-      const pieces = text.split(WHITESPACE);
-      for (let index = 0; index < pieces.length; index += 2) {
-        const token = pieces[index] as string;
-        if (token === "") continue;
-        const gap = pieces[index + 1];
-        const next = pieces[index + 2];
-        if (gap !== undefined && next !== undefined && next !== "") {
-          const pair = `${token}${gap}${next}`;
-          const maskedPair = maskPiece(pair);
-          if (maskedPair !== pair) {
-            // The pair matched as a unit; it is replaced as a unit, so no
-            // half of it is left behind claiming to have been handled.
-            pieces[index] = maskedPair;
-            pieces[index + 1] = "";
-            pieces[index + 2] = "";
-            index += 2;
-            continue;
-          }
-        }
-        pieces[index] = maskPiece(token);
-      }
-      return pieces.join("");
-    } catch {
-      return text;
-    }
-  };
-
-  /** A foreign string: value-shape matching, then the URL pass, then runs. */
   const maskString = (value: string): string => {
     try {
-      return maskRuns(maskUrls(String(redact(value, redactOptions))));
+      return maskUrls(redact(value, redactOptions));
     } catch {
       return "[unreadable]";
     }
   };
 
   /**
-   * The whole stack, every line masked, nothing classified.
-   *
-   * There were two earlier shapes and both leaked. Keeping the stack verbatim
-   * exported the credential in V8's header, which repeats the raw message
-   * (`Error: Bearer sk-live-…`) above the first frame. Dropping everything
-   * above the first line that *looked* like a frame then leaked through the
-   * frame test itself: `^\S*@\S*:\d+` is the SpiderMonkey/JSC frame shape, and
-   * an `Error` whose `name` is `fake@host:1` produces a header that matches
-   * it — accepted as a frame, kept unmasked. It also silently threw away
-   * every stack from an engine whose frames this module had never seen.
-   *
-   * So: no header detection, no frame detection. Each line goes through
-   * `maskString`, whose run pass is what actually catches the credential in a
-   * header, and every line that exists is kept. A retained header is
-   * harmless once it is masked, and an unrecognised stack is now reported
-   * instead of vanishing.
+   * Classify once, and mask the message once, here. The masked message is
+   * carried on the snapshot because two places need exactly it: the line
+   * `describeErrorLike()` builds, and the substitution `maskStack()` makes.
+   * Masking it twice would be two answers to the same question.
    */
-  const maskStack = (value: string | null): string | null => {
+  const prepareError = (value: unknown): MaskedErrorSnapshot | null => {
+    const error = readErrorLike(value);
+    return error === null ? null : { ...error, maskedMessage: maskString(error.message ?? "") };
+  };
+
+  /**
+   * The whole stack, nothing classified — but with the message it repeats
+   * swapped for the masked message first.
+   *
+   * The stack leaks for one specific reason: V8 writes `\`${name}: ${message}\``
+   * above the first frame, and `redact()`'s value matching is anchored, so
+   * `Bearer sk-live-…` is a credential and `Error: Bearer sk-live-…` is not.
+   * Two earlier shapes tried to find that header and both leaked — dropping
+   * lines above the first *recognised* frame threw away frameless stacks and
+   * every stack from an unfamiliar engine, and `^\S*@\S*:\d+` accepted the
+   * header of an `Error` whose `name` was `fake@host:1`. A third split every
+   * line on whitespace and re-asked `redact()` about the pieces, which is a
+   * second notion of "credential" and leaked twice more.
+   *
+   * Nothing is detected here. The raw message and its masked form are both
+   * already known, so the raw one is replaced with the masked one wherever it
+   * appears — that is the header, by construction, with no test for what a
+   * header looks like — and the result then goes through `maskString` like any
+   * other foreign string. Every line that exists is kept: a masked header
+   * costs nothing, and dropping lines by shape is what leaked in the first
+   * place.
+   *
+   * A message this module could not mask (prose carrying a secret) is
+   * substituted with itself, unchanged — the documented limit, and the reason
+   * the panel shows you the text before you copy it.
+   */
+  const maskStack = (
+    value: string | null,
+    rawMessage: string | null,
+    maskedMessage: string,
+  ): string | null => {
     if (value === null || value === "" || maxStackChars === 0) return null;
     try {
-      const masked = value
-        .split("\n")
-        .map((line) => maskString(line))
-        .join("\n");
-      return cap(masked, maxStackChars);
+      // `replaceAll` with a *callback*: a custom mask containing `$` would
+      // otherwise be read as a substitution pattern (`$&`, `$1`) and rewrite
+      // itself out of the string.
+      const substituted =
+        rawMessage !== null && rawMessage !== "" && rawMessage !== maskedMessage
+          ? value.replaceAll(rawMessage, () => maskedMessage)
+          : value;
+      return cap(maskString(substituted), maxStackChars);
     } catch {
       return null;
     }
@@ -636,9 +674,9 @@ export function createConsoleTail(
   };
 
   /** Name and message masked separately, then joined — never the other way round. */
-  const describeErrorLike = (error: ErrorSnapshot): string => {
+  const describeErrorLike = (error: MaskedErrorSnapshot): string => {
     const name = error.name === null ? "" : maskString(error.name);
-    const message = error.message === null ? "" : maskString(error.message);
+    const message = error.maskedMessage;
     if (name === "" && message === "") return "an error with no message";
     if (name === "") return message;
     return message === "" ? name : `${name}: ${message}`;
@@ -751,9 +789,14 @@ export function createConsoleTail(
 
   const describe = (argument: Argument): string => describeArgument(argument);
 
-  /** A value nobody has classified yet. Reads it once, then only the snapshot. */
+  /**
+   * A value nobody has classified yet. Classifies it once; if it *is*
+   * error-shaped, only the snapshot is used from here on. A value that is not
+   * error-shaped is read again by `redact()` inside `describeArgument`, which
+   * is unavoidable — walking an object is reading it.
+   */
   const describeValue = (value: unknown): string =>
-    describeArgument({ value, error: readErrorLike(value) });
+    describeArgument({ value, error: prepareError(value) });
 
   const fromArguments = (
     source: ConsoleTailSource,
@@ -762,12 +805,16 @@ export function createConsoleTail(
   ): void => {
     // Every argument is read here, once, and only this copy is used below —
     // classification and formatting must not ask a getter twice.
-    const prepared: Argument[] = args.map((value) => ({ value, error: readErrorLike(value) }));
+    const prepared: Argument[] = args.map((value) => ({ value, error: prepareError(value) }));
 
     let stack: string | null = null;
     for (const argument of prepared) {
       if (argument.error !== null) {
-        stack = maskStack(argument.error.stack);
+        stack = maskStack(
+          argument.error.stack,
+          argument.error.message,
+          argument.error.maskedMessage,
+        );
         break;
       }
     }
@@ -820,7 +867,7 @@ export function createConsoleTail(
     }
 
     const parts: string[] = [];
-    const error = readErrorLike(thrown);
+    const error = prepareError(thrown);
     const message = typeof raw.message === "string" ? raw.message : "";
     const filename = typeof raw.filename === "string" ? raw.filename : "";
     const { lineno, colno } = raw;
@@ -841,7 +888,7 @@ export function createConsoleTail(
       "window.error",
       "error",
       cap(parts.join(" "), maxMessageChars),
-      error === null ? null : maskStack(error.stack),
+      error === null ? null : maskStack(error.stack, error.message, error.maskedMessage),
     );
   };
 
@@ -852,14 +899,14 @@ export function createConsoleTail(
     } catch {
       reason = undefined;
     }
-    const error = readErrorLike(reason);
+    const error = prepareError(reason);
     const described = error === null ? describeValue(reason) : describeErrorLike(error);
     record(
       "unhandledrejection",
       "error",
       // Our own prefix, joined *after* the foreign half was masked.
       cap(`Unhandled rejection: ${described}`, maxMessageChars),
-      error === null ? null : maskStack(error.stack),
+      error === null ? null : maskStack(error.stack, error.message, error.maskedMessage),
     );
   };
 

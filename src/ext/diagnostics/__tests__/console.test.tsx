@@ -21,7 +21,7 @@ import {
 } from "@nejcm/dev-toolbar/testing";
 import { REDACTED } from "../../../runtime";
 import { diagnostics } from "../index";
-import { createDiagnosticsRuntime } from "../runtime";
+import { createDiagnosticsRuntime, renderJson, renderMarkdown } from "../runtime";
 import { createConsoleTail } from "../console";
 import type { DiagnosticsOptions } from "../index";
 import type { DiagnosticsRuntimeOptions } from "../runtime";
@@ -845,9 +845,10 @@ describe("credentials the masking used to let through", () => {
   it("masks the header of a stack that is only a header, and keeps it", () => {
     // `Error.stackTraceLimit = 0` (and any engine that yields no frames): the
     // stack is the raw message, and `redact()`'s anchored value matching
-    // cannot see a credential inside `Error: Bearer …` — only the run pass
-    // can. Kept, because a masked header costs nothing and dropping lines by
-    // shape is what leaked in the first place.
+    // cannot see a credential inside `Error: Bearer …`. Substituting the
+    // masked message for the raw one can, without deciding what a header
+    // looks like. Kept, because a masked header costs nothing and dropping
+    // lines by shape is what leaked in the first place.
     const { json, report } = captured(() => {
       console.error({
         name: "Error",
@@ -989,6 +990,95 @@ describe("credentials the masking used to let through", () => {
   });
 });
 
+/* -------------------------------------------------------------------------- */
+/* The header, proved through both renderers                                   */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Every claim below is executed through `renderJson` **and** `renderMarkdown`
+ * off a real captured snapshot, never off a hand-built string. Three masking
+ * mechanisms shipped a leak past unit tests that asserted on the shape of an
+ * intermediate string, and the two renderers are what a reader actually pastes
+ * into a ticket.
+ */
+describe("what reaches a pasted ticket", () => {
+  const rendered = (log: () => void) => {
+    console.error = () => {};
+    console.warn = () => {};
+    const { runtime, stop } = started();
+    log();
+    const snapshot = runtime.capture();
+    stop();
+    return { json: renderJson(snapshot), markdown: renderMarkdown(snapshot) };
+  };
+
+  const bothMask = (log: () => void) => {
+    const { json, markdown } = rendered(log);
+    expect(json).not.toContain("LEAK_SECRET_123");
+    expect(markdown).not.toContain("LEAK_SECRET_123");
+    expect(json).toContain(REDACTED);
+    expect(markdown).toContain(REDACTED);
+  };
+
+  it("masks a plain `Bearer …` message and the header that repeats it", () => {
+    bothMask(() => void console.error(new Error("Bearer LEAK_SECRET_123")));
+  });
+
+  it("masks a credential the message splits across a newline", () => {
+    // The line-by-line stack masking could not see this one: it split the
+    // stack on "\n" first, so the header became "Error: Bearer" and the
+    // secret became a line of its own, and neither is a credential by itself.
+    bothMask(() => void console.error(new Error("Bearer\nLEAK_SECRET_123")));
+  });
+
+  it("masks a credential the message splits across a CRLF", () => {
+    bothMask(() => void console.error(new Error("Bearer\r\nLEAK_SECRET_123")));
+  });
+
+  it("masks a `Digest …` message, which is a credential only as a whole", () => {
+    bothMask(
+      () => void console.error(new Error('Digest username="alice", response="LEAK_SECRET_123"')),
+    );
+  });
+
+  it("masks the header even when the Error name is shaped like a frame", () => {
+    const error = new Error("Bearer LEAK_SECRET_123");
+    error.name = "fake@host:1";
+    bothMask(() => void console.error(error));
+    // And the header is still there, masked, rather than dropped by shape.
+    const { markdown } = rendered(() => {
+      const again = new Error("Bearer LEAK_SECRET_123");
+      again.name = "fake@host:1";
+      console.error(again);
+    });
+    expect(markdown).toContain(`fake@host:1: Bearer ${REDACTED}`);
+  });
+
+  it("leaves ordinary prose alone — `redact()` never sees a sentence any more", () => {
+    // The run pass this replaced asked `redact()` about every word and every
+    // adjacent pair, so "the token expired" came back as
+    // "the token [redacted]". Only whole values are judged now.
+    const { json, markdown } = rendered(() => void console.error("the token expired"));
+    expect(json).toContain("the token expired");
+    expect(markdown).toContain("the token expired");
+    expect(json).not.toContain(REDACTED);
+  });
+
+  it("cannot mask a credential embedded in prose — the documented limit", () => {
+    // The one probe that still leaks, and it leaks in the *message* as well as
+    // the stack. `redact()` is the only judge of a credential and its value
+    // matching is anchored: "failed: token Bearer …" is not a credential, it
+    // is a sentence containing one. Teaching this module a second notion of
+    // "credential" is what leaked three times; the panel shows you the text
+    // before you copy it instead.
+    const { json, markdown } = rendered(() => {
+      console.error(new Error("failed: token Bearer LEAK_SECRET_123"));
+    });
+    expect(json).toContain("LEAK_SECRET_123");
+    expect(markdown).toContain("LEAK_SECRET_123");
+  });
+});
+
 describe("installing over a hostile console", () => {
   it("skips a method whose getter throws, without stranding the other", () => {
     const original = { error: console.error, warn: console.warn };
@@ -1081,6 +1171,86 @@ describe("installing over a hostile console", () => {
     expect(report.watching).toEqual([]);
     // The wrapper is gone, not stranded on the console for the page's life.
     expect(afterStop).toBe(original);
+  });
+
+  it("does not wrap its own wrapper when a second tail starts behind an unreadable read-back", () => {
+    // The blocker an unverified patch used to leave behind. A patch that was
+    // assigned but could not be read back was handed out *unregistered*, so a
+    // second tail from this same module copy installed a second wrapper —
+    // around the first. Teardown then restored the abandoned inner wrapper and
+    // `console.error` never came back, for the life of the page.
+    //
+    // Registered-but-unverified fixes that, and the second tail asks the
+    // read-back again instead: the getter that threw once answers now.
+    const original = console.error;
+    let stored: unknown = original;
+    let thrown = false;
+    Object.defineProperty(console, "error", {
+      configurable: true,
+      get() {
+        if (!thrown && stored !== original) {
+          thrown = true;
+          throw new Error("error getter failed");
+        }
+        return stored;
+      },
+      set(next: unknown) {
+        stored = next;
+      },
+    });
+
+    const first = createConsoleTail({ warn: false, windowErrors: false, rejections: false });
+    first.start();
+    const second = createConsoleTail({ warn: false, windowErrors: false, rejections: false });
+    second.start();
+    const secondReport = second.report();
+    // One wrapper, not two: the second tail adopted the first tail's patch.
+    const live = stored;
+    (console.error as (...args: unknown[]) => void)("boom");
+    const captured = entriesOf(second.report());
+
+    first.stop();
+    second.stop();
+    const afterStop = stored;
+    Object.defineProperty(console, "error", {
+      configurable: true,
+      writable: true,
+      value: original,
+    });
+
+    // The read-back that threw during installation succeeds for the second
+    // tail, so it watches the wrapper that is already there.
+    expect(secondReport.watching).toEqual(["console.error"]);
+    expect(captured).toEqual(["boom"]);
+    expect(live).not.toBe(original);
+    // The whole point: the console is the app's again, not a stranded wrapper.
+    expect(afterStop).toBe(original);
+  });
+
+  it("patches again once `globalThis.console` is a different object", () => {
+    // An unverified patch is registered so a second tail does not wrap it —
+    // but the registration describes *that* console. When the global is
+    // replaced, the entry names a wrapper nobody can reach, and reusing it
+    // made every later tail inherit its `verified: false` and watch nothing
+    // while reporting no error at all.
+    const frozen = Object.freeze({ error: () => {}, warn: () => {}, log: () => {} });
+    vi.stubGlobal("console", frozen);
+    const onFrozen = createConsoleTail({ windowErrors: false, rejections: false });
+    onFrozen.start();
+    expect(onFrozen.report().watching).toEqual([]);
+
+    vi.unstubAllGlobals();
+    console.error = () => {};
+
+    const onReal = createConsoleTail({ windowErrors: false, rejections: false });
+    onReal.start();
+    console.error("after the swap");
+    const report = onReal.report();
+    onReal.stop();
+    onFrozen.stop();
+
+    expect(report.watching).toEqual(["console.error", "console.warn"]);
+    expect(entriesOf(report)).toEqual(["after the swap"]);
   });
 });
 
