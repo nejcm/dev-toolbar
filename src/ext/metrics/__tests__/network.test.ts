@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, expectTypeOf, it, vi } from "vitest";
 import { createEventBus } from "../../../runtime";
+import { instrumentFetch } from "@nejcm/dev-toolbar/runtime";
 import type { BusLike, ToolbarEventMap } from "../../../runtime";
 import { createMockBus } from "../../../testing";
 import { createNetworkCollector } from "../collectors/network";
@@ -262,6 +263,42 @@ describe("network collector — fetch present", () => {
     controller.abort();
   });
 
+  it("shares one wrapper with a direct /runtime caller", async () => {
+    /**
+     * The collector imports `/runtime`'s interceptor through the **published**
+     * specifier, so both callers meet in one module instance rather than one
+     * per bundle. A relative import, or duplicated patch state, gives each
+     * caller a wrapper of its own and fails the two `toBe(wrapper)` lines.
+     */
+    const base = vi.fn(async () => response(200)) as unknown as typeof fetch;
+    globalThis.fetch = base;
+
+    const seen: string[] = [];
+    const detach = instrumentFetch({
+      begin: (_method, url) => {
+        seen.push(url);
+        return url;
+      },
+      end: () => {},
+    });
+    const wrapper = globalThis.fetch;
+
+    const collector = createNetworkCollector({ patchXhr: false });
+    const controller = new AbortController();
+    collector.start(context(controller, { t: 0 }));
+    expect(globalThis.fetch).toBe(wrapper);
+
+    await globalThis.fetch("/api/both?api_key=secret");
+    expect(seen).toEqual(["/api/both?api_key=secret"]);
+    // The sink sees the raw URL; only what is *retained* is redacted.
+    expect(collector.entries(0)[0]?.url).toBe(`/api/both?api_key=${REDACTED}`);
+
+    controller.abort();
+    expect(globalThis.fetch).toBe(wrapper);
+    detach();
+    expect(globalThis.fetch).toBe(base);
+  });
+
   it("lets two live collectors both record through one shared patch", async () => {
     const base = vi.fn(async () => response(200)) as unknown as typeof fetch;
     globalThis.fetch = base;
@@ -325,16 +362,31 @@ describe("network collector — fetch present", () => {
     controller.abort();
   });
 
-  it("never unpatches over a stranger's later wrapper", () => {
+  it("records nothing while paused, on either instrumentation route", async () => {
     globalThis.fetch = vi.fn(async () => response(200)) as unknown as typeof fetch;
-    const collector = createNetworkCollector({ patchXhr: false });
+    const bus = createEventBus<ToolbarEventMap>();
+    const collector = createNetworkCollector({ bus, patchFetch: true, patchXhr: false });
     const controller = new AbortController();
     collector.start(context(controller, { t: 0 }));
 
-    const stranger = vi.fn(async () => response(200)) as unknown as typeof fetch;
-    globalThis.fetch = stranger;
+    expect(collector.isPaused()).toBe(false);
+    expect(collector.setPaused(true)).toBe(true);
+
+    await globalThis.fetch("/api/patched");
+    bus.emit("network-start", { requestId: "b1", method: "GET", url: "/api/bus" });
+    bus.emit("network-end", { requestId: "b1", ok: true, status: 200, duration: 10 });
+    expect(collector.entries(0)).toEqual([]);
+    // Pausing is a mode, and a mode that hides itself is a trap: the chip says
+    // so, and so does the dump an agent reads.
+    expect(collector.read(0).display).toBe("paused");
+    expect(Object.fromEntries(collector.read(0).detail)["Recording"]).toBe("paused");
+    expect(collector.diagnostics(0)).toMatchObject({ paused: true });
+
+    collector.setPaused(false);
+    await globalThis.fetch("/api/after");
+    expect(collector.entries(0).map((entry) => entry.url)).toEqual(["/api/after"]);
+    expect(collector.read(0).display).toBe("0");
     controller.abort();
-    expect(globalThis.fetch).toBe(stranger);
   });
 
   it("clears everything on reset", async () => {

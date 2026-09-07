@@ -16,7 +16,7 @@ import { createThrottledStore, redact, redactUrl } from "../../runtime";
 import type { ThrottledStore } from "../../runtime";
 import type { ExtensionRuntimeApi, ToolbarStorage } from "../../core/contract";
 import { isMetricId, metricView } from "./types";
-import type { Collector, CollectorId, MetricView, MetricsSnapshot } from "./types";
+import type { Collector, CollectorId, MetricView, MetricsSnapshot, NetworkExport } from "./types";
 
 export interface MetricsRuntimeOptions {
   collectors: readonly Collector[];
@@ -33,6 +33,19 @@ export interface MetricsRuntime {
   start(api: ExtensionRuntimeApi): () => void;
   reset(): void;
   diagnostics(): unknown;
+  /**
+   * The redacted request tail, for `network.export` and for a bug report.
+   *
+   * Rebuilds and publishes first, then hands back **that snapshot's own
+   * `requests` array** rather than mapping the collector a second time: after
+   * the flush it is the identical object `store.getSnapshot()` holds, so what
+   * an agent reads and what the panel paints cannot disagree about redaction,
+   * ordering or shape. Two mappings would be two chances to redact
+   * differently; there is one. A `limit` short enough to bite returns a slice
+   * of that array — the same entry objects, fewer of them — and `retained` and
+   * `truncated` say so.
+   */
+  exportRequests(limit?: number): NetworkExport;
   /** Rebuilds and publishes now. Used by tests and by the panel's Reset. */
   flush(): void;
 }
@@ -173,6 +186,29 @@ export function createMetricsRuntime(options: MetricsRuntimeOptions): MetricsRun
       for (const collector of collectors) collector.reset();
       publish();
       store.flush();
+    },
+    exportRequests(limit?: number) {
+      // Not `peek()` alone: a request that landed since the last tick would be
+      // missing, and the point of this call is the tail as it is *now*.
+      publish();
+      store.flush();
+      const snapshot = store.getSnapshot();
+      const keep = limit === undefined ? Infinity : Math.max(0, Math.floor(limit));
+      // A slice only when the limit actually bites, so the identity below holds
+      // for every call that asks for the whole tail.
+      const requests =
+        keep >= snapshot.requests.length ? snapshot.requests : snapshot.requests.slice(0, keep);
+      return {
+        generatedAt: new Date().toISOString(),
+        // Same reasoning as `diagnostics()`: the page URL is the likeliest
+        // credential carrier in this payload, and this is headed for a
+        // clipboard or an agent.
+        url: typeof location === "undefined" ? null : redactUrl(location.href),
+        count: requests.length,
+        retained: snapshot.requests.length,
+        truncated: requests.length < snapshot.requests.length,
+        requests,
+      };
     },
     diagnostics() {
       const at = now();

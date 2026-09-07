@@ -19,6 +19,7 @@ import { createMemoryCollector } from "./collectors/memory";
 import { createDelayCollector } from "./collectors/delay";
 import { createJankCollector } from "./collectors/jank";
 import { createNetworkCollector } from "./collectors/network";
+import { formatCurl } from "./curl";
 import { writeClipboardTextOrThrow } from "../../runtime";
 import { createMetricsRuntime } from "./runtime";
 import { MetricsChips, MetricsPanel } from "./ui";
@@ -28,8 +29,15 @@ import type { Collector, CollectorId, MetricId } from "./types";
 import type { MemoryCollectorOptions } from "./collectors/memory";
 import type { DelayCollectorOptions } from "./collectors/delay";
 import type { JankCollectorOptions } from "./collectors/jank";
-import type { NetworkCollectorOptions } from "./collectors/network";
-import type { DevToolbarExtension, ExtensionRuntimeApi, ToolbarAlign } from "../../core/contract";
+import type { NetworkCollector, NetworkCollectorOptions } from "./collectors/network";
+import type {
+  AnyToolbarCommand,
+  DevToolbarExtension,
+  ExtensionRuntimeApi,
+  ToolbarAlign,
+  ToolbarCommand,
+} from "../../core/contract";
+import type { NetworkEntryView, NetworkExport } from "./types";
 
 export interface MetricsOptions {
   /** Extension id. Change it to mount two independent metric groups. Default `"metrics"`. */
@@ -63,6 +71,18 @@ export interface MetricsOptions {
   jank?: boolean | JankCollectorOptions;
   network?: boolean | NetworkCollectorOptions;
 }
+
+/**
+ * The most requests one `network.export` call returns.
+ *
+ * `/ext/agent` runs `redact()` over a command result on the way out, and
+ * `redact()` cuts an array at 200 entries and pushes a `"[+N more]"` *string*
+ * onto it. An unbounded export would therefore reach an agent as an array whose
+ * last element is not a request, under a `count` that disagrees with its
+ * length. This bound is that same 200, so the payload an agent receives is the
+ * payload this command returns.
+ */
+const EXPORT_MAX_REQUESTS = 200;
 
 function optionsFor<T extends object>(value: boolean | T | undefined): T | null {
   if (value === false) return null;
@@ -100,6 +120,8 @@ export function metrics(options: MetricsOptions = {}): DevToolbarExtension {
     custom.set(collector.id, collector);
   }
 
+  let networkCollector: NetworkCollector | null = null;
+
   const build: Record<MetricId, () => Collector | null> = {
     memory: () => {
       const config = optionsFor(options.memory);
@@ -115,7 +137,13 @@ export function metrics(options: MetricsOptions = {}): DevToolbarExtension {
     },
     network: () => {
       const config = optionsFor(options.network);
-      return config === null ? null : createNetworkCollector(config);
+      if (config === null) return null;
+      // Kept, so the `network.*` commands below can reach the one collector
+      // that owns the request tail. Null when the collector is switched off or
+      // left out of `only` — and then those commands are not contributed at
+      // all, rather than contributed and throwing when called.
+      networkCollector = createNetworkCollector(config);
+      return networkCollector;
     },
   };
 
@@ -131,6 +159,178 @@ export function metrics(options: MetricsOptions = {}): DevToolbarExtension {
 
   // Built here, not in start(api): slot functions run before any effect fires.
   const runtime = createMetricsRuntime({ collectors, updateHz });
+
+  /**
+   * The `network.*` commands (`plans/ecosystem-extensions.md` § 1A).
+   *
+   * Contributed only when the network collector is actually running: a command
+   * that is always listed and always throws is worse than an absent one, both
+   * in `⌘K` and in an agent's `listCommands()`.
+   *
+   * All four are reads or state toggles over what the panel already shows.
+   * None of them can reach a header or a body: the collector never records
+   * one, so there is nothing here to leak.
+   */
+  const networkCommands = (network: NetworkCollector): AnyToolbarCommand[] => {
+    const requestFor = (requestId: string | undefined): NetworkEntryView => {
+      const { requests } = runtime.exportRequests();
+      const found =
+        requestId === undefined
+          ? requests[0]
+          : requests.find((request) => request.id === requestId);
+      if (found === undefined) {
+        throw new Error(
+          requestId === undefined
+            ? "No request has been recorded yet."
+            : `No retained request has id "${requestId}". Ids come from ${id}.network.export.`,
+        );
+      }
+      return found;
+    };
+
+    const exportCommand: ToolbarCommand<{ limit?: number; copy?: boolean } | void, NetworkExport> =
+      {
+        id: `${id}.network.export`,
+        label: "Export recent requests",
+        description:
+          "Returns the retained request tail as JSON — method, URL, status, duration, " +
+          "size, state and error per request, newest first — drawn from the same " +
+          "entries the network panel lists, in the same order and already through " +
+          "`redactUrl()` (the panel shows the newest 30 of them). No raw header " +
+          "value and no body is captured — `bytes` is a number a recorder " +
+          "reported, not header text — so neither can appear here. At most 200 requests come " +
+          "back per call: `count` is always `requests.length`, `retained` is how many " +
+          "the collector holds (100 by default), and `truncated` is true when older " +
+          "retained requests were left out — there is no paging past them. Omit " +
+          "`limit` for the newest 200; pass `copy: true` to also put the JSON on the " +
+          "clipboard for a bug report, which throws if the clipboard is unavailable.",
+        group: "Metrics",
+        keywords: ["network", "requests", "export", "json", "har", "report"],
+        input: {
+          fields: {
+            limit: {
+              type: "number",
+              description: "Keep only the newest N requests. Omit for the newest 200, the cap.",
+            },
+            copy: {
+              type: "boolean",
+              default: false,
+              description: "Also write the JSON to the clipboard.",
+            },
+          },
+        },
+        run: async (input) => {
+          const { limit, copy } = input ?? {};
+          if (limit !== undefined && (typeof limit !== "number" || !Number.isFinite(limit))) {
+            throw new Error("`limit` must be a finite number.");
+          }
+          const payload = runtime.exportRequests(
+            limit === undefined ? EXPORT_MAX_REQUESTS : Math.min(limit, EXPORT_MAX_REQUESTS),
+          );
+          if (copy === true) {
+            await writeClipboardTextOrThrow(
+              JSON.stringify(payload, null, 2),
+              "The same payload is this command's return value.",
+            );
+          }
+          return payload;
+        },
+      };
+
+    const copyAsCurlCommand: ToolbarCommand<{ id?: string; copy?: boolean } | void, string> = {
+      id: `${id}.network.copyAsCurl`,
+      label: "Copy request as curl",
+      description:
+        "Renders one retained request as a `curl` line and copies it: the request " +
+        "whose `id` you pass, or the most recent one. Method and URL only — no raw " +
+        "header value, body or cookie is captured anywhere in this extension, so the " +
+        "line identifies a request rather than replaying it. The URL is the " +
+        "normalised, redacted request — parsed the way the browser parses it, so " +
+        "the line runs where the recorded string would not, then masked again on " +
+        "the way out so `user:pass@` userinfo and credential-shaped query " +
+        "parameters cannot reach the clipboard. One limit: a hostname holding any " +
+        "of ``!\"$&'()*+,;=`{}`` parses in a browser but not in curl, which " +
+        "answers `URL rejected: Bad hostname` — such a host resolves nowhere " +
+        "either way. Returns the line; pass " +
+        "`copy: false` to skip the clipboard entirely.",
+      group: "Metrics",
+      keywords: ["network", "curl", "copy", "request", "clipboard", "repro"],
+      input: {
+        fields: {
+          id: {
+            type: "string",
+            description: `A request id from ${id}.network.export. Omit for the most recent request.`,
+          },
+          copy: {
+            type: "boolean",
+            default: true,
+            description: "Write the line to the clipboard. `false` only returns it.",
+          },
+        },
+      },
+      run: async (input) => {
+        const { id: requestId, copy } = input ?? {};
+        if (requestId !== undefined && typeof requestId !== "string") {
+          throw new Error("`id` must be a string.");
+        }
+        const request = requestFor(requestId);
+        const command = formatCurl(request, { redact: network.redactOptions });
+        if (copy !== false) {
+          await writeClipboardTextOrThrow(
+            command,
+            "The line is this command's return value; copy it from there.",
+          );
+        }
+        return command;
+      },
+    };
+
+    const clearCommand: ToolbarCommand<void, void> = {
+      id: `${id}.network.clear`,
+      label: "Clear recorded requests",
+      description:
+        "Drops every retained request and the network counters. Only the network " +
+        `collector — the other metrics keep their history; ${id}.reset clears those too.`,
+      group: "Metrics",
+      keywords: ["network", "clear", "requests", "reset"],
+      run: () => {
+        network.reset();
+        runtime.flush();
+      },
+    };
+
+    const pauseCommand: ToolbarCommand<{ paused?: boolean } | void, { paused: boolean }> = {
+      id: `${id}.network.pause`,
+      label: "Pause or resume request recording",
+      description:
+        "Stops recording new requests. Omit `paused` to toggle. Already-retained " +
+        "requests stay readable and exportable while paused, and the chip reads " +
+        "`paused` so the state is never a secret. The `fetch`/`XMLHttpRequest` " +
+        "wrapper stays installed: it is shared with everything else observing " +
+        "requests, so pausing one recorder must not unpatch it for the rest.",
+      group: "Metrics",
+      keywords: ["network", "pause", "resume", "record", "freeze"],
+      input: {
+        fields: {
+          paused: {
+            type: "boolean",
+            description: "`true` pauses, `false` resumes. Omit to toggle the current state.",
+          },
+        },
+      },
+      run: (input) => {
+        const next = input?.paused;
+        if (next !== undefined && typeof next !== "boolean") {
+          throw new Error("`paused` must be a boolean, or omitted to toggle.");
+        }
+        const paused = network.setPaused(next ?? !network.isPaused());
+        runtime.flush();
+        return { paused };
+      },
+    };
+
+    return [exportCommand, copyAsCurlCommand, clearCommand, pauseCommand];
+  };
 
   return {
     id,
@@ -185,6 +385,7 @@ export function metrics(options: MetricsOptions = {}): DevToolbarExtension {
           await writeClipboardTextOrThrow(JSON.stringify(runtime.diagnostics(), null, 2));
         },
       },
+      ...(networkCollector === null ? [] : networkCommands(networkCollector)),
     ],
   };
 }
@@ -199,7 +400,15 @@ export { createNetworkCollector, instrumentFetch, instrumentXhr } from "./collec
 export type { DelayCollectorOptions, InteractionRecord } from "./collectors/delay";
 export type { JankCollectorOptions } from "./collectors/jank";
 export type { MemoryCollectorOptions } from "./collectors/memory";
-export type { NetworkCollectorOptions, NetworkEntry, NetworkSink } from "./collectors/network";
+export type {
+  NetworkCollector,
+  NetworkCollectorOptions,
+  NetworkEntry,
+  NetworkSink,
+  NetworkSinkResult,
+} from "./collectors/network";
+export { formatCurl } from "./curl";
+export type { CurlOptions } from "./curl";
 export { METRIC_IDS, severityFor } from "./types";
 export type {
   Collector,
@@ -210,6 +419,7 @@ export type {
   MetricView,
   MetricsSnapshot,
   NetworkEntryView,
+  NetworkExport,
   Severity,
   Thresholds,
 } from "./types";

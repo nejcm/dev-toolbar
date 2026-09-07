@@ -156,8 +156,13 @@ is not the merged list the toolbar renders — read the aggregation through
 
 For the metrics subpath, see [custom collectors](./ext/metrics.md#custom-collectors):
 `MetricsOptions.collectors`, `CollectorId`, the collector contract, and the separate
-built-in `views` and consumer `custom` snapshot records. These are subpath exports,
-not root exports; the extension contract version remains 2.
+built-in `views` and consumer `custom` snapshot records. The same subpath adds the
+four [`network.*` commands](./ext/metrics.md#the-network-commands) — `export`,
+`copyAsCurl`, `clear` and `pause` — reachable from here through
+`invokeCommand("metrics.network.export")` like any other aggregated command, and the
+`fetch`/`XMLHttpRequest` interceptor behind them is a [`/runtime`](./runtime.md)
+export. These are subpath exports, not root exports; the extension contract version
+remains 2.
 
 To put a third-party devtool's panel on the bar, see [embedding.md](./embedding.md):
 the plain `{ id, label, panel }` object needs nothing from this entry but the

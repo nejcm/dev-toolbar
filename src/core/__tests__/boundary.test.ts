@@ -29,6 +29,14 @@ const CORE_PREFIX = "[dev-toolbar] ";
 
 /** Only ever present in a `src/runtime/*` or `src/ext/*` module. */
 const RUNTIME_MARKER = "[dev-toolbar/runtime]";
+
+/**
+ * The shared `fetch`/`XMLHttpRequest` interceptor's own console message. Unique
+ * to `src/runtime/network.ts`, which makes it a marker for *that module's
+ * bytes* — used below to prove `/ext/metrics` links against it rather than
+ * carrying a second copy of its patch state.
+ */
+const INTERCEPTOR_MESSAGE = "[dev-toolbar/runtime] a network recorder threw";
 const EXT_MARKERS = new Set(extensionRoster().onDisk.map((name) => `[dev-toolbar/ext/${name}]`));
 const EXT_MARKER_ORDER = [
   "[dev-toolbar/ext/metrics]",
@@ -501,6 +509,44 @@ if (!built && mustBeBuilt) {
       // /testing ever legitimately creates a context of its own.
       expect(cjs).not.toContain("createContext");
       expect(esm).not.toContain("createContext");
+    });
+
+    /**
+     * The interceptor's patch state is module-level, so a relative value import
+     * would give `/ext/metrics` a second copy of it and two wrappers over one
+     * `fetch`. Vitest aliases the published specifier onto `src/`, so only the
+     * built bytes can tell the two apart, and the two formats have to be checked
+     * differently — hence two tests, each failing on its own evidence.
+     */
+    it("keeps the interceptor's bytes out of dist/ext/metrics.cjs, which cannot split", () => {
+      const cjs = readFileSync(`${root}dist/ext/metrics.cjs`, "utf8");
+      expect(cjs).toContain('require("@nejcm/dev-toolbar/runtime")');
+      expect(cjs).not.toContain(INTERCEPTOR_MESSAGE);
+      // Non-vacuity: the string does exist, in the entry that owns it.
+      expect(readFileSync(`${root}dist/runtime.cjs`, "utf8")).toContain(INTERCEPTOR_MESSAGE);
+    });
+
+    it("binds the interceptor from the package in dist/ext/metrics.js, which does split", () => {
+      // Sharing a chunk with `/runtime` is legitimate in ESM, so the question
+      // is not whether the bytes are nearby but where the binding comes from.
+      const esm = readFileSync(`${root}dist/ext/metrics.js`, "utf8");
+      const sources = (name: string): string[] => {
+        const found: string[] = [];
+        for (const match of esm.matchAll(/import\s*\{([^}]*)\}\s*from\s*["']([^"']+)["']/g)) {
+          if (new RegExp(String.raw`\b${name}\b`).test(match[1] as string)) {
+            found.push(match[2] as string);
+          }
+        }
+        return found;
+      };
+      for (const name of ["instrumentFetch", "instrumentXhr"]) {
+        const from = sources(name);
+        expect(from, name).not.toEqual([]);
+        expect(new Set(from), name).toEqual(new Set(["@nejcm/dev-toolbar/runtime"]));
+      }
+      // And the scan finds something it should not attribute to the package:
+      // the stateless helpers still come from the shared chunk.
+      expect(sources("createRingBuffer").some((from) => from.startsWith("."))).toBe(true);
     });
 
     it("finds core's marker where it belongs, so the check above can fail", () => {

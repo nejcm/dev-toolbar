@@ -3,7 +3,8 @@
  *
  * Opt-in machinery for extensions that *measure* something: an event bus,
  * bounded ring buffers, a store that coalesces high-frequency writes, a derived
- * store that owns snapshot revisions, and `redact()`. The root entry never
+ * store that owns snapshot revisions, one shared `fetch`/`XMLHttpRequest`
+ * interceptor, and `redact()`. The root entry never
  * imports this subpath, so a toolbar that is three buttons doesn't ship a ring buffer.
  *
  * Framework-free on purpose — nothing here imports React, so a collector
@@ -40,6 +41,9 @@ export type { CreateThrottledStoreOptions, ThrottledStore, Unsubscribe } from ".
 
 export { createDerivedStore } from "./derivedStore";
 export type { CreateDerivedStoreOptions, DerivedStore } from "./derivedStore";
+
+export { instrumentFetch, instrumentXhr } from "./network";
+export type { NetworkSink, NetworkSinkResult } from "./network";
 
 export { STYLE_ATTRIBUTE, ensureStyleSheet } from "./styles";
 
