@@ -203,6 +203,9 @@ export function A11yPanel({ runtime, label, injectStyles, styleNonce }: PanelPro
                         </Action>
                         <code data-dtb-part="a11y-node-target">{node.target}</code>
                         <code data-dtb-part="a11y-node-html">{node.html}</code>
+                        {node.summary === null ? null : (
+                          <p data-dtb-part="a11y-node-summary">{node.summary}</p>
+                        )}
                       </li>
                     );
                   })}

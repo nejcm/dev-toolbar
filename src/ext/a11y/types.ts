@@ -44,7 +44,11 @@ export interface AxeLike {
 }
 
 export interface A11yNodeView {
-  /** The selector, masked for display. Never fed back to `querySelector`. */
+  /**
+   * The selector, masked for display. Never fed back to `querySelector`. Frame
+   * steps are space-separated; a step inside an open shadow root is joined to
+   * its host with ` >> `.
+   */
   target: string;
   /** axe's HTML snippet, attribute values masked. */
   html: string;

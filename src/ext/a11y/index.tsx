@@ -146,8 +146,9 @@ export function a11y(options: A11yOptions = {}): DevToolbarExtension {
       "pointer events. `rule` is a violated rule id and `node` its zero-based index " +
       "within that rule's *listed* elements — at most `nodeLimit` of them, default " +
       "`5`, however large `nodeCount` is. Omit `rule` to clear the highlight; a rule " +
-      "or an index the last report does not list clears it too. An element axe " +
-      "reached through an iframe cannot be highlighted.",
+      "or an index the last report does not list clears it too. An element inside " +
+      "an open shadow root can be highlighted; one axe reached through an iframe " +
+      "cannot.",
     group: "Accessibility",
     keywords: ["a11y", "axe", "highlight", "inspect", "element"],
     input: {
@@ -184,7 +185,8 @@ export function a11y(options: A11yOptions = {}): DevToolbarExtension {
     description:
       "Drops the last report and the highlight, returning the extension to `pending`. " +
       "Nothing is re-scanned; the scan count survives so a reader can tell " +
-      '"never scanned" from "cleared".',
+      '"never scanned" from "cleared". A scan already in flight is disowned — it ' +
+      "runs to completion and its result is thrown away.",
     group: "Accessibility",
     keywords: ["a11y", "axe", "clear", "reset"],
     run: () => runtime.clear(),

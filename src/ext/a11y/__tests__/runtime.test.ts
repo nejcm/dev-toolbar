@@ -412,6 +412,48 @@ describe("what reaches the report", () => {
     const report = await createA11yRuntime({ load }).scan();
     expect(JSON.stringify(report)).not.toContain("hunter2");
   });
+
+  it("masks a `data-*` value that contains a quoted `>`", async () => {
+    // Ending a tag at the first `>` ends it *inside* the quotes and carries the
+    // tail through unmasked. Real axe exports exactly this markup.
+    document.body.innerHTML = `<main><img src="/logo.png" data-secret="prefix>MY_SECRET"></main>`;
+    const report = await createA11yRuntime({
+      load: () => Promise.resolve(realAxe),
+      axeOptions: { runOnly: ["image-alt"] },
+    }).scan();
+
+    expect(report.groups[0]?.violations[0]?.nodes[0]?.html).toContain('data-secret="[redacted]"');
+    expect(JSON.stringify(report)).not.toContain("MY_SECRET");
+  });
+
+  it("drops a snippet whose quoting never closes rather than emitting it raw", async () => {
+    const { load } = stubAxe({
+      violations: [violation("x", "minor", [{ html: '<img alt="a" data-secret="hunter2' }])],
+    });
+    const report = await createA11yRuntime({ load }).scan();
+    expect(report.groups[0]?.violations[0]?.nodes[0]?.html).toBe("[unreadable]");
+  });
+
+  it("caps a snippet and a summary instead of copying a hundred kilobytes", async () => {
+    const { load } = stubAxe({
+      violations: [
+        violation("x", "minor", [
+          { html: `<p>${"word ".repeat(30_000)}</p>`, failureSummary: "line ".repeat(30_000) },
+          { html: `<p>${"<span>x</span>".repeat(5_000)}</p>` },
+          { html: `<img alt="${"alt ".repeat(30_000)}">` },
+        ]),
+      ],
+    });
+    const nodes = (await createA11yRuntime({ load }).scan()).groups[0]?.violations[0]?.nodes ?? [];
+
+    for (const node of nodes) expect(node.html.length).toBeLessThan(10_000);
+    expect(nodes[0]?.html).toContain("[truncated]");
+    expect(nodes[0]?.summary?.length).toBeLessThan(10_000);
+    expect(nodes[1]?.html).toContain("[truncated]");
+    // Truncating an attribute value could split a token, so an oversized one
+    // goes wholesale instead.
+    expect(nodes[2]?.html).toBe('<img alt="[redacted]">');
+  });
 });
 
 describe("axe's arguments", () => {
@@ -429,6 +471,34 @@ describe("axe's arguments", () => {
       { exclude: [[TOOLBAR_EXCLUDE]] },
       { resultTypes: ["violations"], rules: { "color-contrast": { enabled: false } } },
     );
+  });
+
+  it("asks for violations in full even when `resultTypes` leaves them out", async () => {
+    // axe truncates an omitted type's nodes to one, with nothing in the output
+    // to say so, which would quietly make `nodeCount` a lie.
+    document.body.innerHTML = `<main><img src="/a.png"><img src="/b.png"></main>`;
+    const report = await createA11yRuntime({
+      load: () => Promise.resolve(realAxe),
+      axeOptions: { runOnly: ["image-alt"], resultTypes: ["passes"] },
+    }).scan();
+
+    expect(report.nodeTotal).toBe(2);
+    expect(report.groups[0]?.violations[0]?.nodeCount).toBe(2);
+    expect(report.groups[0]?.violations[0]?.truncated).toBe(false);
+  });
+
+  it("keeps the result types the caller did ask for", async () => {
+    let seen: unknown;
+    const load = () =>
+      Promise.resolve({
+        run: (_context: unknown, options: unknown) => {
+          seen = options;
+          return Promise.resolve({ violations: [] });
+        },
+      } as AxeLike);
+
+    await createA11yRuntime({ load, axeOptions: { resultTypes: ["passes"] } }).scan();
+    expect(seen).toMatchObject({ resultTypes: ["passes", "violations"] });
   });
 
   it("lets a caller replace the context outright", async () => {
@@ -618,5 +688,188 @@ describe("the empty report", () => {
     expect(report).toMatchObject({ status: "pending", total: 0, at: null, scans: 0 });
     expect(worstImpact(report.counts)).toBeNull();
     expect(DEFAULT_NODE_LIMIT).toBe(5);
+  });
+});
+
+describe("a peer object that fights back", () => {
+  it("reports unsupported when reading `run` throws", async () => {
+    const runtime = createA11yRuntime({
+      load: () =>
+        Promise.resolve({
+          get run(): AxeLike["run"] {
+            throw new Error("boom");
+          },
+        } as AxeLike),
+    });
+    const report = await runtime.scan();
+
+    expect(report.status).toBe("unsupported");
+    expect(report.unsupportedReason).toContain("run()");
+  });
+
+  it("scans anyway when reading `version` throws, at start and at scan", async () => {
+    const runtime = createA11yRuntime({
+      load: () =>
+        Promise.resolve({
+          get version(): string {
+            throw new Error("v boom");
+          },
+          run: async () => ({ violations: [], testEngine: {} }),
+        } as AxeLike),
+    });
+    const fake = fakeExtensionApi();
+    const stop = runtime.start(fake.api);
+    const report = await runtime.scan();
+    stop();
+
+    expect(report.status).toBe("ok");
+    expect(report.axeVersion).toBeNull();
+  });
+
+  it("describes a rejection whose own `name` throws", async () => {
+    const nasty = Object.create(Error.prototype, {
+      name: {
+        get() {
+          throw new Error("name boom");
+        },
+      },
+      message: { value: "x" },
+    }) as Error;
+    const report = await createA11yRuntime({
+      load: () => Promise.resolve({ run: () => Promise.reject(nasty) } as AxeLike),
+    }).scan();
+
+    expect(report.status).toBe("failed");
+    expect(report.error).toContain("[unreadable]");
+  });
+});
+
+describe("two runtimes over one engine", () => {
+  it("serialises their passes instead of tripping axe's own guard", async () => {
+    document.body.innerHTML = `<main><img src="/a.png"></main>`;
+    const load = () => Promise.resolve(realAxe);
+    const first = createA11yRuntime({ load, axeOptions: { runOnly: ["image-alt"] } });
+    const second = createA11yRuntime({ load, axeOptions: { runOnly: ["image-alt"] } });
+
+    const [a, b] = await Promise.all([first.scan(), second.scan()]);
+
+    expect([a.status, b.status]).toEqual(["ok", "ok"]);
+    // Serialised, not shared: each runtime keeps its own report.
+    expect(a).not.toBe(b);
+    expect(a.total).toBe(1);
+    expect(b.total).toBe(1);
+  });
+});
+
+describe("the scan's lifecycle", () => {
+  it("hands a waiting caller the finalised report, not the one it had captured", async () => {
+    let release: (value: unknown) => void = () => {};
+    const pending = new Promise((resolve) => {
+      release = resolve;
+    });
+    const runtime = createA11yRuntime({ load: () => Promise.resolve({ run: () => pending }) });
+    const fake = fakeExtensionApi();
+    const stop = runtime.start(fake.api);
+    const first = runtime.scan();
+    const second = runtime.scan();
+    await vi.waitFor(() => expect(runtime.report().running).toBe(true));
+
+    stop();
+    release({ violations: [] });
+    const [a, b] = await Promise.all([first, second]);
+    runtime.store.flush();
+
+    expect(a.running).toBe(false);
+    expect(b.running).toBe(false);
+    expect(a).toBe(runtime.store.getSnapshot().report);
+  });
+
+  it("does not let a torn-down mount's result land on the next one", async () => {
+    let release: (value: unknown) => void = () => {};
+    const pending = new Promise((resolve) => {
+      release = resolve;
+    });
+    const run = vi
+      .fn()
+      .mockImplementationOnce(() => pending)
+      .mockImplementation(async () => ({ violations: [] }));
+    const runtime = createA11yRuntime({ load: () => Promise.resolve({ run } as AxeLike) });
+    const stop = runtime.start(fakeExtensionApi().api);
+    const abandoned = runtime.scan();
+    await vi.waitFor(() => expect(runtime.report().running).toBe(true));
+
+    stop();
+    const restop = runtime.start(fakeExtensionApi().api);
+    const fresh = runtime.scan();
+    release({ violations: [violation("stale", "critical", [{}])] });
+    await abandoned;
+    const report = await fresh;
+    restop();
+
+    // A fresh scan, not the previous mount's promise, and not its result.
+    expect(run).toHaveBeenCalledTimes(2);
+    expect(report.total).toBe(0);
+    expect(runtime.report().total).toBe(0);
+  });
+
+  it("clear() disowns the scan in flight instead of letting it repopulate", async () => {
+    let release: (value: unknown) => void = () => {};
+    const pending = new Promise((resolve) => {
+      release = resolve;
+    });
+    const runtime = createA11yRuntime({ load: () => Promise.resolve({ run: () => pending }) });
+    const scan = runtime.scan();
+    await vi.waitFor(() => expect(runtime.report().running).toBe(true));
+
+    runtime.clear();
+    release({ violations: [violation("late", "critical", [{}])] });
+    await scan;
+
+    expect(runtime.report().status).toBe("pending");
+    expect(runtime.report().total).toBe(0);
+  });
+
+  it("lets the next caller start its own scan rather than join the disowned one", async () => {
+    let release: (value: unknown) => void = () => {};
+    const pending = new Promise((resolve) => {
+      release = resolve;
+    });
+    const run = vi
+      .fn()
+      .mockImplementationOnce(() => pending)
+      .mockImplementation(async () => ({ violations: [] }));
+    const runtime = createA11yRuntime({ load: () => Promise.resolve({ run } as AxeLike) });
+    const disowned = runtime.scan();
+    await vi.waitFor(() => expect(runtime.report().running).toBe(true));
+
+    runtime.clear();
+    const next = runtime.scan();
+    expect(next).not.toBe(disowned);
+    release({ violations: [violation("late", "critical", [{}])] });
+    await disowned;
+
+    expect((await next).status).toBe("ok");
+    expect(run).toHaveBeenCalledTimes(2);
+    expect(runtime.report().total).toBe(0);
+  });
+});
+
+describe("an element in a shadow root", () => {
+  it("keeps axe's target path and highlights through the open root", async () => {
+    document.body.innerHTML = `<main><div id="host"></div></main>`;
+    const host = document.getElementById("host") as HTMLElement;
+    host.attachShadow({ mode: "open" }).innerHTML = `<img id="bad" src="/x.png">`;
+
+    const runtime = createA11yRuntime({
+      load: () => Promise.resolve(realAxe),
+      axeOptions: { runOnly: ["image-alt"] },
+    });
+    const report = await runtime.scan();
+    const selected = runtime.select(selectionKey("image-alt", 0));
+    runtime.store.flush();
+
+    expect(report.groups[0]?.violations[0]?.nodes[0]?.target).toBe("#host >> #bad");
+    expect(selected.selected).toBe(selectionKey("image-alt", 0));
+    expect(runtime.store.getSnapshot().highlight[0]?.label).toBe("image-alt");
   });
 });

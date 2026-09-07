@@ -105,6 +105,7 @@ const A11Y_EXTENSION_CSS = String.raw`@layer dev-toolbar {
   [data-dev-toolbar] [data-dtb-part="a11y-node"] {
     display: flex;
     align-items: center;
+    flex-wrap: wrap;
     gap: var(--dtb-space-2);
   }
 
@@ -121,6 +122,13 @@ const A11Y_EXTENSION_CSS = String.raw`@layer dev-toolbar {
     color: var(--dtb-muted);
     overflow-x: auto;
     white-space: pre;
+  }
+
+  [data-dev-toolbar] [data-dtb-part="a11y-node-summary"] {
+    flex: 1 0 100%;
+    margin: 0;
+    color: var(--dtb-muted);
+    white-space: pre-wrap;
   }
 
   [data-dev-toolbar] [data-dtb-part="a11y-node"][data-dtb-selected="true"] {

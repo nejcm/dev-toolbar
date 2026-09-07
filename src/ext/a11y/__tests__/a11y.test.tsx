@@ -372,12 +372,48 @@ describe("diagnostics() and the panel", () => {
       for (const entry of group.violations) {
         expect(rendered, entry.rule).toContain(entry.rule);
         expect(rendered, entry.help).toContain(entry.help);
-        for (const node of entry.nodes) expect(rendered).toContain(node.html);
+        for (const node of entry.nodes) {
+          expect(rendered).toContain(node.html);
+          // The summary is in the export, so it has to be on the screen: the
+          // documented mitigation is "read the panel before you share this".
+          if (node.summary !== null) expect(rendered).toContain(node.summary);
+        }
       }
     }
     // And the chip's number is the report's, not a second count.
     expect(toolbar.item("a11y")?.textContent).toContain(String(report.total));
     expect(JSON.stringify(report)).not.toContain("hunter2");
+  });
+
+  it("shows a failure summary, so nothing is exported that the panel hides", async () => {
+    const results = {
+      violations: [
+        {
+          id: "label",
+          impact: "critical",
+          help: "Form elements must have labels",
+          helpUrl: null,
+          tags: [],
+          nodes: [
+            {
+              target: ["#one"],
+              html: '<input id="one">',
+              failureSummary: "Fix any of the following: retry against /cb?token=abc123SECRET",
+            },
+          ],
+        },
+      ],
+    };
+    const { extension, toolbar } = mount({ load: () => Promise.resolve(stub(results)) });
+    act(() => toolbar.openPanel("a11y"));
+    await act(async () => {
+      await toolbar.invokeCommand("a11y.scan");
+    });
+
+    const report = (extension.diagnostics as () => A11yReport)();
+    const summary = report.groups[0]?.violations[0]?.nodes[0]?.summary ?? "";
+    expect(summary).toContain("Fix any of the following");
+    expect(part("a11y-node-summary")?.textContent).toBe(summary);
   });
 
   it("reaches core's roster, which is what /ext/agent and /ext/diagnostics read", async () => {
