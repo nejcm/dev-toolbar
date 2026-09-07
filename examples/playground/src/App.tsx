@@ -7,6 +7,7 @@ import {
   playgroundExtensions,
   playgroundFlags,
 } from "./extensions";
+import { EmbedDemoProvider, QueryPlayground } from "./embedDemo";
 
 /** Live readout of the `--dev-toolbar-height` the shell publishes. */
 function HeightReadout() {
@@ -543,6 +544,8 @@ export function App() {
 
       <FlagReadout />
 
+      <QueryPlayground />
+
       <section className="pg-card">
         <h2>Restyle demo</h2>
         <p>
@@ -616,27 +619,29 @@ export function App() {
   );
 
   return (
-    <DevToolbar
-      extensions={playgroundExtensions}
-      enabled={enabled}
-      instanceId="playground"
-      density={density}
-      defaultPosition="bottom"
-      classNames={{ bar: "pg-bar" }}
-    >
-      <Profiler id="playground-app" onRender={reactProfiler.onRender}>
-        {inset ? (
-          <DevToolbarInset className="pg-app" data-testid="inset">
-            {header}
-            <div className="pg-scroll">{body}</div>
-          </DevToolbarInset>
-        ) : (
-          <div className="pg-app" data-testid="no-inset">
-            {header}
-            <div className="pg-scroll">{body}</div>
-          </div>
-        )}
-      </Profiler>
-    </DevToolbar>
+    <EmbedDemoProvider>
+      <DevToolbar
+        extensions={playgroundExtensions}
+        enabled={enabled}
+        instanceId="playground"
+        density={density}
+        defaultPosition="bottom"
+        classNames={{ bar: "pg-bar" }}
+      >
+        <Profiler id="playground-app" onRender={reactProfiler.onRender}>
+          {inset ? (
+            <DevToolbarInset className="pg-app" data-testid="inset">
+              {header}
+              <div className="pg-scroll">{body}</div>
+            </DevToolbarInset>
+          ) : (
+            <div className="pg-app" data-testid="no-inset">
+              {header}
+              <div className="pg-scroll">{body}</div>
+            </div>
+          )}
+        </Profiler>
+      </DevToolbar>
+    </EmbedDemoProvider>
   );
 }

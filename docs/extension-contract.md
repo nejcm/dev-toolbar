@@ -137,7 +137,10 @@ const build: DevToolbarExtension = {
 ```
 
 A dozen lines, and it imports nothing. That is the floor on purpose: an extension is
-a plain object, and none of what follows is required to render one.
+a plain object, and none of what follows is required to render one. The same floor is
+how a *third-party* devtool gets onto the bar — `{ id, label, panel: () => <Whatever /> }`
+and core supplies the trigger; [embedding.md](./embedding.md) is that recipe, the
+bring-your-own-CSS rule that goes with it, and the optional `embed()` frame helper.
 
 The next step, when you want it to look like the first-party panels rather than like a
 `<button>` on a page, is [`@nejcm/dev-toolbar/kit`](./kit.md) — the shared stylesheet

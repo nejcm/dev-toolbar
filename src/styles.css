@@ -103,10 +103,20 @@
     z-index: var(--dtb-z-index);
   }
 
+  /* Every element-level default below — this box-sizing, the margin resets,
+     the focus ring, the button face, the field geometry — stops at a subtree
+     marked data-dtb-embed. That attribute means "somebody else's UI": a
+     third-party devtool panel hosted through the recipe in docs/embedding.md
+     (the kit's embed() frame carries it). Such a tool brings its own CSS and
+     must arrive with the UA's defaults, exactly as it would anywhere else on
+     the page, not with ours. The guard is a chained :where(:not(…)) so it
+     adds no specificity: each rule keeps the weight it had, and a part rule
+     still outranks it. Inheritance is untouched on purpose — the frame's
+     font, size and colour reach the tool as any parent's would. */
   [data-dev-toolbar],
-  [data-dev-toolbar] *,
-  [data-dev-toolbar] *::before,
-  [data-dev-toolbar] *::after {
+  [data-dev-toolbar] :where(:not([data-dtb-embed] *)),
+  [data-dev-toolbar] :where(:not([data-dtb-embed] *))::before,
+  [data-dev-toolbar] :where(:not([data-dtb-embed] *))::after {
     box-sizing: border-box;
   }
 
@@ -118,11 +128,11 @@
      reset of their own (see the Tailwind note in docs/architecture.md) lands
      on these values rather than on a UA 1em. */
   [data-dev-toolbar]
-    :where(blockquote, dd, dl, figure, h1, h2, h3, h4, h5, h6, p, pre) {
+    :where(blockquote, dd, dl, figure, h1, h2, h3, h4, h5, h6, p, pre):where(:not([data-dtb-embed] *)) {
     margin: 0;
   }
 
-  [data-dev-toolbar] :where(menu, ol, ul) {
+  [data-dev-toolbar] :where(menu, ol, ul):where(:not([data-dtb-embed] *)) {
     margin: 0;
     padding: 0;
   }
@@ -133,7 +143,7 @@
      an attribute deeper and still wins where a control wants its own ring or
      offset. */
   [data-dev-toolbar]
-    :where(a, button, summary, [role="button"], [tabindex]):focus-visible {
+    :where(a, button, summary, [role="button"], [tabindex]):where(:not([data-dtb-embed] *)):focus-visible {
     outline: 2px solid var(--dtb-accent);
     outline-offset: -1px;
   }
@@ -145,7 +155,7 @@
      than only in one that happens to ship a reset. Zero specificity again, so
      every part rule and every unlayered class a consumer puts on their own
      chip still wins. */
-  [data-dev-toolbar] :where(button) {
+  [data-dev-toolbar] :where(button):where(:not([data-dtb-embed] *)) {
     margin: 0;
     padding: 0;
     border: 0;
@@ -517,9 +527,9 @@
      whatever order the sheets happen to be injected in — which is what lets
      the command palette's query line, which is a surface rather than a
      control in a row, keep its own much larger padding. */
-  [data-dev-toolbar] :where(input:not([type="color"]):not([type="checkbox"])),
-  [data-dev-toolbar] :where(select),
-  [data-dev-toolbar] :where(textarea) {
+  [data-dev-toolbar] :where(input:not([type="color"]):not([type="checkbox"])):where(:not([data-dtb-embed] *)),
+  [data-dev-toolbar] :where(select):where(:not([data-dtb-embed] *)),
+  [data-dev-toolbar] :where(textarea):where(:not([data-dtb-embed] *)) {
     padding: var(--dtb-field-padding-y) var(--dtb-field-padding-x);
     border: 1px solid var(--dtb-border);
     border-radius: var(--dtb-radius);
@@ -528,21 +538,21 @@
     font: inherit;
   }
 
-  [data-dev-toolbar] :where(input:not([type="color"]):not([type="checkbox"])),
-  [data-dev-toolbar] :where(select) {
+  [data-dev-toolbar] :where(input:not([type="color"]):not([type="checkbox"])):where(:not([data-dtb-embed] *)),
+  [data-dev-toolbar] :where(select):where(:not([data-dtb-embed] *)) {
     min-height: var(--dtb-control-height);
   }
 
-  [data-dev-toolbar] :where(textarea) {
+  [data-dev-toolbar] :where(textarea):where(:not([data-dtb-embed] *)) {
     padding: var(--dtb-space-2) var(--dtb-field-padding-x);
     line-height: 1.5;
   }
 
-  [data-dev-toolbar] :where(input, textarea)::placeholder {
+  [data-dev-toolbar] :where(input, textarea):where(:not([data-dtb-embed] *))::placeholder {
     color: var(--dtb-muted);
   }
 
-  [data-dev-toolbar] :where(input, select, textarea):focus-visible {
+  [data-dev-toolbar] :where(input, select, textarea):where(:not([data-dtb-embed] *)):focus-visible {
     outline: 2px solid var(--dtb-accent);
     outline-offset: -1px;
   }

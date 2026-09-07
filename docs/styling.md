@@ -47,6 +47,12 @@ kit adds nothing on top. That core rule skips `type="color"` and `type="checkbox
 a `<TextInput type="color">` carries `data-dtb-kind="field"` while getting neither
 core's treatment nor a kit one.
 
+Those element-level rules — the `:where(input, select, textarea)` geometry, the
+`:where(button)` face, `box-sizing` on `*` — apply to everything under the root
+*except* a subtree marked `data-dtb-embed`, which is how a third-party devtool keeps
+its own look inside a panel; [embedding.md](./embedding.md#the-stylesheet-rule-theirs-is-theirs)
+has the details.
+
 **Severity** is a third attribute, `data-dtb-severity`, carrying `unknown`, `ok`,
 `warn`, `bad` or `override`. The kit's rules pair it with a kind **on the same
 element** — never as a descendant selector — so a container carrying a severity does

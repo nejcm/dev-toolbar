@@ -34,6 +34,8 @@ export type {
   CopyStatus,
   UseCopyStatusResult,
 } from "./CopyButton";
+export { embed } from "./embed";
+export type { EmbedOptions } from "./embed";
 export { useExtensionSurface } from "./hooks";
 export { parseList, parseRecord, readJson, writeJson } from "./json";
 export { resolveStyleNonce } from "./nonce";

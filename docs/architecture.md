@@ -500,6 +500,7 @@ on the same element for targeting.
 | --- | --- | --- |
 | `data-dtb-legend` | a section heading | Small mono caps with a hairline running from the word to the end of the measure |
 | `data-dtb-bleed` | a panel's scroll container, or a fixed region with a rule | Reaches the panel's inline edges and re-applies the body's padding inside, so a scrollbar sits on the panel edge and a toolbar's or footer's rule runs the panel's width |
+| `data-dtb-embed` | the root of a third-party tool's subtree | Opts the subtree *out*: core's element-level defaults — `box-sizing`, the heading/list margin resets, the button face, field geometry, the focus ring — are each guarded with `:where(:not([data-dtb-embed] *))` and stop at it, so the tool arrives with the UA's defaults and its own CSS. Inheritance still flows in. [embedding.md](./embedding.md#the-stylesheet-rule-theirs-is-theirs) |
 
 `data-dtb-bleed` must not be nested inside another bled element — a second bleed
 overflows rather than aligning, which is why a legend's rule stops at the measure.

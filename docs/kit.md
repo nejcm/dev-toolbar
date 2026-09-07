@@ -26,6 +26,7 @@ import {
   matchesQuery,
   KIT_CSS,
   // React
+  embed,
   useExtensionSurface,
   useCopyStatus,
   Action,
@@ -72,6 +73,15 @@ of the exact kit specifier, not same-name locals:
 | Copy actions | `CopyButton`: 2; `useCopyStatus`: 2 | `CopyButton` owns the button/status-region pairing. `useCopyStatus` is the shared status state for panels with several copy buttons. |
 | Filtering | `matchesQuery`: 2 | It is the string-level predicate shared by the flags and theme-editor view wrappers. |
 | Labelled control | `Field`: 1 | It names the wrapping-label pattern that associates a control without generating or synchronising an `id`. |
+
+One helper is admitted as an explicit exception to that bar rather than on either half
+of it: `embed()`, below, has **zero** first-party users by construction — it frames
+somebody else's panel, and no first-party extension is somebody else's — and no third
+party asked for it. It was approved through Phase 0C of `plans/ecosystem-extensions.md`,
+which weighed an `/ext/embed` subpath against a helper and chose the helper: the
+containment a subpath would have offered is already core's, and what remained was a
+frame for extension authors, not an extension. The exception is this one helper; the
+rule stands for the next candidate.
 
 The current examples of things that do **not** qualify: `switch` (two sites, both
 `role="switch"` buttons in `/ext/flags` and `/ext/overlays`, so a kit `Toggle` would
@@ -251,6 +261,35 @@ export function BuildChip({ runtime, injectStyles, styleNonce }: BuildChipProps)
   const snapshot = useExtensionSurface(runtime.store, injectStyles, ensureBuildInfoStyles, styleNonce);
   return <Chip label="build" value={snapshot.commit} severity={snapshot.severity} />;
 }
+```
+
+### `embed`
+
+```ts
+embed(options: EmbedOptions): DevToolbarExtension;
+```
+
+The frame for a third-party devtool panel — TanStack Query's, React Hook Form's, a Redux
+monitor. It returns an ordinary extension: a `Chip`-based trigger reading `label` (and
+`value`, if given), a `panel` that renders `options.render(props)` inside a bare
+`<div data-dtb-part="embed-frame">` with `height: 100%` and a `min-height` floor
+(default 240px), `keepMounted` passed through, and `render()` left uncalled until the
+panel first opens. It scopes, resets and injects **nothing** for the embedded subtree —
+the frame carries core's `data-dtb-embed` opt-out, which keeps core's element-level
+defaults (the button face, field geometry, box-sizing) off the tool, and the only sheet
+the helper ensures is this kit's, for its own chip. The plain `{ id, label, panel }` object works without it; the helper is
+for the fiddly parts. [embedding.md](./embedding.md) is the recipe and the reference for
+`EmbedOptions`.
+
+```tsx
+const queryDevtools = embed({
+  id: "tanstack-query",
+  label: "query",
+  keepMounted: true,
+  render: ({ close }) => (
+    <ReactQueryDevtoolsPanel client={queryClient} style={{ height: "100%" }} onClose={close} />
+  ),
+});
 ```
 
 ---
