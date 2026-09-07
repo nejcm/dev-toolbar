@@ -35,6 +35,8 @@
    * the editor refuses to round-trip the mask back through the input.
    */
   --pg-font-license-token: lic-playground-abcdef;
+  /* The `color-contrast` fixture's text colour — see `.pg-a11y-faint` below. */
+  --pg-a11y-faint: #b9b9b9;
   color-scheme: light dark;
 }
 
@@ -47,6 +49,7 @@
     --pg-card: #16191e;
     --pg-tile-accent: #1d2440;
     --pg-session-panel-bg: #171b2c;
+    --pg-a11y-faint: #55585f;
   }
 }
 
@@ -63,6 +66,7 @@
   --pg-card: #16191e;
   --pg-tile-accent: #1d2440;
   --pg-session-panel-bg: #171b2c;
+  --pg-a11y-faint: #55585f;
 }
 
 * {
@@ -98,14 +102,21 @@ body {
 }
 
 .pg-header {
+  padding: 12px 20px;
+  border-bottom: 1px solid var(--pg-border);
+  background: var(--pg-card);
+}
+
+/* Full-bleed strip, centred contents — aligned to the same 1100px measure as
+   `.pg-main`, so the header row and the cards share one left edge. */
+.pg-header-inner {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: 12px 20px;
-  border-bottom: 1px solid var(--pg-border);
-  background: var(--pg-card);
+  max-width: 1100px;
+  margin-inline: auto;
 }
 
 .pg-header h1 {
@@ -152,11 +163,40 @@ body {
   overflow: auto;
 }
 
+/*
+ * The centred measure, and the one number on this page that two other things
+ * depend on.
+ *
+ * `max-width` is 1140px with 20px of padding, so the content box is exactly
+ * 1100px — the `maxWidth` handed to `overlays({ grid })` in `extensions.tsx`.
+ * Before it was centred at 860px the column overlay drew a 1100px band that
+ * lined up with nothing on the page, which made the one overlay whose whole job
+ * is alignment impossible to judge.
+ *
+ * Prose does not want 1100px, so the measure below caps running text at 72
+ * characters while grids, media and control rows keep the full width.
+ */
 .pg-main {
   display: grid;
+  /*
+   * `minmax(0, 1fr)`, not `1fr`. An `auto` grid track floors at the widest
+   * item's `min-content`, and a card holding a 1600px-wide `<img>` or a wrapped
+   * `<code>` run reports one wider than a phone: the cards grew past the column
+   * and the page scrolled sideways. The explicit `0` floor lets them shrink,
+   * which is what `max-width: 100%` on the images inside them expects.
+   */
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--pg-space);
-  max-width: 860px;
+  max-width: 1140px;
+  margin-inline: auto;
   padding: 20px;
+}
+
+.pg-card > p,
+.pg-card > ol,
+.pg-card > ul,
+.pg-card > figure > figcaption {
+  max-width: 72ch;
 }
 
 .pg-card {
@@ -183,12 +223,45 @@ body {
   margin: 0 0 6px;
 }
 
+/*
+ * Preflight strips `list-style` and padding from every list, so the numbered
+ * "What to look at" checklist rendered as unnumbered paragraphs — a twelve-item
+ * ordered list whose whole value is that the items are numbered. The toolbar's
+ * own lists are handled by the `revert-layer` block below; these are the page's.
+ */
+.pg-card ol,
+.pg-card ul {
+  padding-left: 22px;
+}
+
+.pg-card ol {
+  list-style: decimal;
+}
+
+.pg-card ul {
+  list-style: disc;
+}
+
+.pg-card li::marker {
+  color: var(--pg-muted);
+}
+
 .pg-card code {
   padding: 1px 4px;
   border-radius: 4px;
   background: color-mix(in srgb, var(--pg-muted) 14%, transparent);
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 12px;
+  /*
+   * `anywhere`, not `break-word`. Identifiers like
+   * `window.__DEV_TOOLBAR__.instances["playground"]` and
+   * `dtb:v1:playground:*` offer no break opportunity, so on a phone one list
+   * item was 28px wider than the viewport and the whole page scrolled
+   * sideways. Only `anywhere` also lowers the element's `min-content`, which is
+   * the measurement the grid track above is sized from — `break-word` would
+   * have wrapped the text and left the overflow.
+   */
+  overflow-wrap: anywhere;
 }
 
 /* --------------------------------------------------------------------------
@@ -328,8 +401,18 @@ body {
   display: grid;
   grid-template-columns: repeat(12, 1fr);
   gap: 24px;
-  max-width: 1100px;
-  margin: 16px auto 0;
+  /*
+   * Cancels the card's own horizontal padding, so the tiles span `.pg-main`'s
+   * 1100px content box — the same width the column overlay draws. A capped
+   * `max-width: 1100px` inside a padded card never reached 1100, and the
+   * overlay had nothing true to line up with.
+   *
+   * The two are the same width but not the same left edge: the overlay centres
+   * 1100px in the viewport, this centres it in `.pg-scroll`, so a vertical
+   * scrollbar offsets them by half its width. Widths matching is what makes the
+   * gutters readable; the offset is the app's, and visible on purpose.
+   */
+  margin: 16px calc(-1 * (var(--pg-space) + 2px)) 0;
 }
 
 .pg-tile {
@@ -431,6 +514,281 @@ body {
   height: 32px;
 }
 
+/*
+ * A hard-coded `#b9b9b9` failed WCAG AA against the light card and comfortably
+ * *passed* against the dark one, so in dark mode the page's third deliberate
+ * violation quietly was not one and the scan came back with two. One value per
+ * mode, both around 2.3:1 against their own card.
+ *
+ * Deliberately two flat hex values and not `color-mix(in srgb, ...)`, which is
+ * the obvious way to write this: that computes to `color(srgb 0.39 0.4 0.42)`,
+ * axe-core's contrast rule does not read the non-legacy `color()` syntax, and
+ * the element came back a *pass* at a real 3.1:1 — a fixture that reports the
+ * opposite of the truth, which is worse than one that only works by day.
+ */
 .pg-a11y-demo .pg-a11y-faint {
-  color: #b9b9b9;
+  color: var(--pg-a11y-faint);
+}
+
+/* -- Media ----------------------------------------------------------------
+ *
+ * Everything below states its own margins, list style, font size and borders
+ * rather than leaning on a UA default, because Tailwind's Preflight — loaded
+ * unlayered from the CDN in `index.html` — has already removed all four. A
+ * heading here without an explicit `font-size` renders at body size; a table
+ * without an explicit border renders with none.
+ * ------------------------------------------------------------------------- */
+
+.pg-hero {
+  margin: 0;
+  overflow: hidden;
+  border: 1px solid var(--pg-border);
+  border-radius: var(--pg-radius);
+  background: var(--pg-card);
+}
+
+.pg-hero-image {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.pg-hero figcaption {
+  padding: 8px calc(var(--pg-space) + 2px) 12px;
+  color: var(--pg-muted);
+  font-size: 12px;
+}
+
+.pg-media-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  /* The images have four different aspect ratios on purpose, so a figure must
+     hug its own height rather than stretch to its row's. */
+  align-items: start;
+  gap: 16px;
+  margin-top: 16px;
+}
+
+.pg-media-figure {
+  margin: 0;
+  overflow: hidden;
+  border: 1px solid var(--pg-border);
+  border-radius: var(--pg-radius);
+  background: var(--pg-bg);
+}
+
+.pg-media-image {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.pg-media-figure figcaption {
+  padding: 6px 10px 8px;
+  color: var(--pg-muted);
+  font-size: 11px;
+}
+
+/* -- Third-party embed ---------------------------------------------------- */
+
+.pg-embed-frame {
+  position: relative;
+  margin-top: 16px;
+  overflow: hidden;
+  aspect-ratio: 16 / 9;
+  border: 1px solid var(--pg-border);
+  border-radius: var(--pg-radius);
+  background: #0b0d12;
+}
+
+.pg-embed-iframe,
+.pg-embed-facade {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border: 0;
+}
+
+.pg-embed-facade {
+  position: relative;
+  padding: 0;
+  background: transparent;
+  cursor: pointer;
+}
+
+.pg-embed-poster {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+/*
+ * Opaque on purpose. A play label set over the poster with a translucent scrim
+ * gives axe's `color-contrast` rule an image to guess against, and it answers
+ * "incomplete" — which is not a violation, but it is noise in the one card of
+ * this page whose scan result is asserted by name.
+ */
+.pg-embed-play {
+  position: absolute;
+  inset-block-start: 50%;
+  inset-inline-start: 50%;
+  transform: translate(-50%, -50%);
+  padding: 10px 18px;
+  border-radius: 999px;
+  background: #14161a;
+  color: #ffffff;
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.pg-embed-facade:hover .pg-embed-play {
+  background: var(--pg-brand);
+  color: var(--pg-brand-contrast);
+}
+
+/* -- Animation stage ------------------------------------------------------ */
+
+.pg-canvas-stage {
+  margin-top: 16px;
+  overflow: hidden;
+  border: 1px solid var(--pg-border);
+  border-radius: var(--pg-radius);
+  background: var(--pg-bg);
+}
+
+.pg-canvas {
+  display: block;
+  width: 100%;
+  height: 220px;
+}
+
+/* -- Long-form article ---------------------------------------------------- */
+
+.pg-article h3 {
+  margin: 24px 0 8px;
+  font-size: 15px;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+}
+
+.pg-article h3:first-of-type {
+  margin-top: 16px;
+}
+
+.pg-article p {
+  margin: 0 0 12px;
+}
+
+.pg-article .pg-lede {
+  color: var(--pg-muted);
+  font-size: 1.15em;
+  line-height: 1.5;
+}
+
+.pg-article ul {
+  margin: 0 0 12px;
+  padding-left: 20px;
+  list-style: disc;
+}
+
+.pg-article-figure {
+  max-width: 520px;
+  margin: 16px 0;
+  overflow: hidden;
+  border: 1px solid var(--pg-border);
+  border-radius: var(--pg-radius);
+}
+
+.pg-article-image {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.pg-article-figure figcaption {
+  padding: 8px 12px 10px;
+  background: var(--pg-bg);
+  color: var(--pg-muted);
+  font-size: 12px;
+}
+
+.pg-quote {
+  margin: 16px 0;
+  padding: 8px 0 8px 16px;
+  border-left: 3px solid var(--pg-brand);
+  color: var(--pg-muted);
+  font-style: italic;
+}
+
+.pg-quote p:last-child {
+  margin-bottom: 0;
+}
+
+/* Focusable because it scrolls: axe's `scrollable-region-focusable` is right,
+   and a table nobody can reach with a keyboard is a real defect, not a fixture. */
+.pg-table-scroll {
+  overflow-x: auto;
+  margin: 0 0 16px;
+  border-radius: var(--pg-radius);
+}
+
+.pg-table-scroll:focus-visible {
+  outline: 2px solid var(--pg-brand);
+  outline-offset: 2px;
+}
+
+.pg-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+  text-align: left;
+}
+
+.pg-table caption {
+  padding-bottom: 8px;
+  color: var(--pg-muted);
+  font-size: 12px;
+  text-align: left;
+}
+
+.pg-table th,
+.pg-table td {
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--pg-border);
+  vertical-align: top;
+  font-weight: 400;
+}
+
+.pg-table thead th {
+  border-bottom: 1px solid var(--pg-fg);
+  color: var(--pg-muted);
+  font-weight: 650;
+  white-space: nowrap;
+}
+
+.pg-table tbody th {
+  white-space: nowrap;
+}
+
+.pg-pre {
+  margin: 0 0 12px;
+  padding: 12px 14px;
+  overflow-x: auto;
+  border: 1px solid var(--pg-border);
+  border-radius: var(--pg-radius);
+  background: var(--pg-bg);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  line-height: 1.6;
+  tab-size: 2;
+}
+
+/* The card rule adds a chip background to every inline `code`; inside a block
+   it would paint a box behind each line instead. */
+.pg-pre code {
+  padding: 0;
+  background: none;
+  font: inherit;
 }

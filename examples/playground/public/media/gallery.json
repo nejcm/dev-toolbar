@@ -1,0 +1,46 @@
+{
+  "images": [
+    {
+      "src": "/media/tile-01.svg",
+      "width": 1200,
+      "height": 800,
+      "alt": "Gradient study, indigo \u2014 an abstract composition of overlapping discs on a two-stop gradient.",
+      "caption": "Gradient study, indigo"
+    },
+    {
+      "src": "/media/tile-02.svg",
+      "width": 1200,
+      "height": 900,
+      "alt": "Gradient study, cyan \u2014 an abstract composition of overlapping discs on a two-stop gradient.",
+      "caption": "Gradient study, cyan"
+    },
+    {
+      "src": "/media/tile-03.svg",
+      "width": 1000,
+      "height": 1000,
+      "alt": "Gradient study, amber \u2014 an abstract composition of overlapping discs on a two-stop gradient.",
+      "caption": "Gradient study, amber"
+    },
+    {
+      "src": "/media/tile-04.svg",
+      "width": 1200,
+      "height": 675,
+      "alt": "Gradient study, magenta \u2014 an abstract composition of overlapping discs on a two-stop gradient.",
+      "caption": "Gradient study, magenta"
+    },
+    {
+      "src": "/media/tile-05.svg",
+      "width": 900,
+      "height": 1200,
+      "alt": "Gradient study, green \u2014 an abstract composition of overlapping discs on a two-stop gradient.",
+      "caption": "Gradient study, green"
+    },
+    {
+      "src": "/media/tile-06.svg",
+      "width": 1200,
+      "height": 800,
+      "alt": "Gradient study, gold \u2014 an abstract composition of overlapping discs on a two-stop gradient.",
+      "caption": "Gradient study, gold"
+    }
+  ]
+}

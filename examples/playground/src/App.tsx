@@ -8,6 +8,8 @@ import {
   playgroundFlags,
 } from "./extensions";
 import { EmbedDemoProvider, QueryPlayground } from "./embedDemo";
+import { CanvasStage, HeroFigure, MediaGallery, VideoEmbed } from "./mediaDemo";
+import { ArticleDemo } from "./articleDemo";
 
 /** Live readout of the `--dev-toolbar-height` the shell publishes. */
 function HeightReadout() {
@@ -104,7 +106,7 @@ function LoadControls() {
           type="button"
           className="pg-button"
           data-testid="load-fetch-ok"
-          onClick={() => request(5, "/vite.svg")}
+          onClick={() => request(5, "/media/tile-01.svg")}
         >
           5 requests (200)
         </button>
@@ -493,7 +495,11 @@ function A11yPlayground() {
 
       <div className="pg-controls">
         {/* Deliberately alt-less: axe's `image-alt` rule. */}
-        <img className="pg-a11y-image" src="/vite.svg" data-testid="a11y-image" />
+        <img
+          className="pg-a11y-image"
+          src="/media/tile-03.svg"
+          data-testid="a11y-image"
+        />
         {/* Deliberately unlabelled: axe's `label` rule. */}
         <input type="text" defaultValue="unlabelled" data-testid="a11y-input" />
         <button
@@ -620,6 +626,8 @@ export function App() {
 
   const body = (
     <main className="pg-main">
+      <HeroFigure />
+
       <section className="pg-card">
         <h2>What to look at</h2>
         <ol>
@@ -665,8 +673,11 @@ export function App() {
             classes — the light-DOM regression test.
           </li>
           <li>
-            Accessibility: press <em>Scan this page</em> and expect three
-            violations from <em>Break accessibility on purpose</em>. Highlight
+            Accessibility: press <em>Scan this page</em> and expect the three
+            violations <em>Break accessibility on purpose</em> ships — in either
+            colour mode, which the faint paragraph did not manage before —
+            alongside the unnamed control and positive <code>tabindex</code>{" "}
+            <em>Drive the overlays</em> keeps for the focus overlay. Highlight
             one and check it draws below the bar and passes clicks through.
             Uninstall <code>axe-core</code> from this app and the panel says{" "}
             <em>not installed</em> instead of breaking.
@@ -684,10 +695,41 @@ export function App() {
             panel or <code>⌘K</code>, and clicking straight through one still
             hits the button underneath. Turning them all off leaves no trace.
           </li>
+          <li>
+            Media: the banner above is the page's <code>LCP</code> element. Load
+            the gallery with <em>Reserve space</em> off and <code>CLS</code>{" "}
+            climbs; with it on, it does not. Both are read from the real{" "}
+            <code>layout-shift</code> entries, so a shift inside 500 ms of your
+            click is excluded — which is why the gallery waits.
+          </li>
+          <li>
+            The video card loads a real cross-origin <code>&lt;iframe&gt;</code>{" "}
+            only when asked. The bar, its panel and <code>⌘K</code> must all draw
+            over it; the shortcuts must stop working while focus is inside it;
+            and taking it fullscreen must hide the bar and give it back
+            unchanged.
+          </li>
+          <li>
+            <em>Animate something</em> on <em>heavy</em> is the only thing here
+            that makes <code>jank</code> go red and <em>stay</em> red. The
+            page's own frame counter sits next to the canvas — it and the chip
+            are measuring the same frames from opposite sides.
+          </li>
+          <li>
+            The article at the bottom is real typography on an 8px rhythm, so{" "}
+            <em>Baseline grid</em> has something to be right or wrong about, and{" "}
+            <code>--pg-font-scale</code> has somewhere to be felt.
+          </li>
         </ol>
       </section>
 
       <LoadControls />
+
+      <MediaGallery />
+
+      <VideoEmbed />
+
+      <CanvasStage />
 
       <ConsoleControls />
 
@@ -725,52 +767,46 @@ export function App() {
         </button>
       </section>
 
-      <section className="pg-card">
-        <h2>Filler</h2>
-        {Array.from({ length: 12 }, (_, index) => (
-          <p key={index}>
-            Row {index + 1} — scrolls inside the app's own container, never
-            behind a bar that changed the page height.
-          </p>
-        ))}
-      </section>
+      <ArticleDemo />
     </main>
   );
 
   const header = (
     <header className="pg-header">
-      <h1>@nejcm/dev-toolbar playground</h1>
-      <div className="pg-controls">
-        <HeightReadout />
-        <button
-          type="button"
-          className="pg-button"
-          data-testid="toggle-inset"
-          onClick={() => setInset((value) => !value)}
-        >
-          Inset: {inset ? "on" : "off"}
-        </button>
-        <button
-          type="button"
-          className="pg-button"
-          data-testid="toggle-density"
-          onClick={() =>
-            setDensity((value) =>
-              value === "compact" ? "comfortable" : "compact",
-            )
-          }
-        >
-          Density: {density}
-        </button>
-        <ShellControls />
-        <button
-          type="button"
-          className="pg-button"
-          data-testid="toggle-enabled"
-          onClick={() => setEnabled((value) => !value)}
-        >
-          enabled: {String(enabled)}
-        </button>
+      <div className="pg-header-inner">
+        <h1>@nejcm/dev-toolbar playground</h1>
+        <div className="pg-controls">
+          <HeightReadout />
+          <button
+            type="button"
+            className="pg-button"
+            data-testid="toggle-inset"
+            onClick={() => setInset((value) => !value)}
+          >
+            Inset: {inset ? "on" : "off"}
+          </button>
+          <button
+            type="button"
+            className="pg-button"
+            data-testid="toggle-density"
+            onClick={() =>
+              setDensity((value) =>
+                value === "compact" ? "comfortable" : "compact",
+              )
+            }
+          >
+            Density: {density}
+          </button>
+          <ShellControls />
+          <button
+            type="button"
+            className="pg-button"
+            data-testid="toggle-enabled"
+            onClick={() => setEnabled((value) => !value)}
+          >
+            enabled: {String(enabled)}
+          </button>
+        </div>
       </div>
     </header>
   );
