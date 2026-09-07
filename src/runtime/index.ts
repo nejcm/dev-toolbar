@@ -55,6 +55,7 @@ export {
   isSensitiveKey,
   redact,
   redactHeaders,
+  redactText,
   redactUrl,
 } from "./redact";
-export type { HeaderLike, RedactOptions } from "./redact";
+export type { HeaderLike, RedactOptions, RedactTextOptions } from "./redact";

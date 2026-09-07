@@ -14,6 +14,7 @@ import {
   createDerivedStore,
   ensureStyleSheet,
   redact,
+  redactText,
   redactUrl,
   redactHeaders,
   writeClipboardText,
@@ -75,6 +76,21 @@ injected sheet, and `writeClipboardTextOrThrow()`.
     against the key's *entire* canonicalised form, so `["sessionName"]` exempts
     `session-name` and `SESSION_NAME` but not `sessionNameV2`, and `["session"]`
     exempts `sessionName` not at all. Name the exact key you mean to keep.
+  - **`redactText(text, options)` is the substring counterpart.** `redact()` is
+    *anchored* — it masks a value that **is** a credential, never one with text
+    in front of it — which is the right call for a header value or an object
+    leaf. For prose and for multi-line text (a stack trace, an element's
+    snippet) it is the wrong one, so `redactText()` scans for the same shapes
+    *anywhere* inside the string, merges overlapping matches before replacing
+    anything, and rewrites only the matched spans. It widens *where* a shape is
+    looked for, not *which* shapes count, so an unknown shape still survives.
+    Scheme separators can cross line breaks; a Digest match masks the remaining
+    suffix, including later lines. These conservative rules retain masking of
+    multiline credentials but can remove stack frames or place a mask on an
+    innocent word after a newline.
+    Pass `url: true` when the whole input is known to be a URL, including a
+    relative one; embedded `scheme://…` runs are scanned either way. `redact()`
+    keeps its anchored semantics — reach for `redactText()` deliberately.
   - **Inside a URL the mask is written literally** — `?token=[redacted]`, not
     `%5Bredacted%5D` — so the URL stays readable, still parses, and still
     contains the exported `REDACTED`. A custom `mask` carrying a URL delimiter

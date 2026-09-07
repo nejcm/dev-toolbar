@@ -6,9 +6,9 @@
  * milliseconds at best and seconds on a large page.
  *
  * axe's results are foreign data on their way into a bug report, so every
- * string that reaches the report is masked the way `/ext/diagnostics`' console
- * tail masks a log line: `redact()` for whole-value credentials, then a URL
- * pass for the ones embedded in a longer string. An element's HTML snippet is
+ * string that reaches the report gets credential and URL masking. Snippet
+ * text uses `redactText()` to find credentials within prose; other fields
+ * retain whole-value `redact()` matching. An element's HTML snippet is
  * the sharpest edge of that — a `<input type="password" value="...">` is
  * exactly the markup axe flags — so attribute values survive only for the
  * attributes accessibility is about.
@@ -17,10 +17,11 @@ import {
   createThrottledStore,
   isSensitiveKey,
   redact,
+  redactText,
   redactUrl,
 } from "@nejcm/dev-toolbar/runtime";
 import { A11Y_MARKER, IMPACTS, NO_COUNTS, emptyReport, isImpact, selectionKey } from "./types";
-import type { RedactOptions, ThrottledStore } from "@nejcm/dev-toolbar/runtime";
+import type { RedactOptions, RedactTextOptions, ThrottledStore } from "@nejcm/dev-toolbar/runtime";
 import type { ExtensionRuntimeApi } from "../../core/contract";
 import type {
   A11yGroupView,
@@ -134,14 +135,11 @@ const readTag = (
     const close = html.indexOf("-->", i + 3);
     if (close === -1) return null;
     return {
-      out: `<!--${maskText(html.slice(i + 3, close), masks.text)}-->`,
+      out: "<!--[redacted]-->",
       next: close + 3,
     };
   }
-  if (html.charAt(i) === "!" || html.charAt(i) === "?") {
-    const close = html.indexOf(">", i);
-    return close === -1 ? null : { out: html.slice(start, close + 1), next: close + 1 };
-  }
+  if (html.charAt(i) === "!" || html.charAt(i) === "?") return null;
 
   let out = "<";
   if (html.charAt(i) === "/") {
@@ -161,6 +159,7 @@ const readTag = (
   out += html.slice(nameStart, i);
 
   for (;;) {
+    if (out.length > TEXT_LIMIT) return { out, next: html.length };
     while (i < html.length && isSpace(html.charAt(i))) i += 1;
     if (i >= html.length) return null;
     if (html.charAt(i) === ">") return { out: `${out}>`, next: i + 1 };
@@ -327,6 +326,14 @@ export function createA11yRuntime(options: A11yRuntimeOptions = {}): A11yRuntime
     scanOnStart = false,
   } = options;
 
+  // Snapshotted on first use rather than at construction: `redactOptions` is the
+  // caller's own object and every other path reads it lazily, so spreading it here
+  // would let a caller that fills it in after `a11y()` returns see `href`/`src`
+  // masked differently from the attribute beside them. Cached once taken, so
+  // `resolveCached` hits per scan instead of per attribute.
+  let urlRedactOptionsCache: RedactTextOptions | null = null;
+  const urlRedactOptions = (): RedactTextOptions =>
+    (urlRedactOptionsCache ??= { ...redactOptions, url: true });
   const limit = Number.isFinite(nodeLimit)
     ? Math.max(1, Math.min(50, Math.round(nodeLimit)))
     : DEFAULT_NODE_LIMIT;
@@ -375,14 +382,6 @@ export function createA11yRuntime(options: A11yRuntimeOptions = {}): A11yRuntime
     }
   };
 
-  const maskUrlValue = (value: string): string => {
-    try {
-      return redactUrl(value, redactOptions);
-    } catch {
-      return value;
-    }
-  };
-
   const maskString = (value: string): string => {
     try {
       return maskUrls(String(redact(value, redactOptions)));
@@ -402,15 +401,22 @@ export function createA11yRuntime(options: A11yRuntimeOptions = {}): A11yRuntime
   // before, and a `value=` attribute has no a11y meaning.
   const maskAttribute = (name: string, value: string): string => {
     if (!keepsValue(name)) return "[redacted]";
-    const masked = maskString(value);
-    return URL_ATTRIBUTES.has(name.toLowerCase()) ? maskUrlValue(masked) : masked;
+    return URL_ATTRIBUTES.has(name.toLowerCase())
+      ? redactText(value, urlRedactOptions())
+      : maskSnippetText(value);
   };
 
-  const masks: Masks = { text: maskString, attribute: maskAttribute };
+  const maskSnippetText = (value: string): string => redactText(value, redactOptions);
+
+  const masks: Masks = { text: maskSnippetText, attribute: maskAttribute };
 
   const maskHtml = (html: string): string => {
     try {
-      return maskMarkup(html, masks) ?? UNREADABLE;
+      const masked = maskMarkup(html, masks) ?? UNREADABLE;
+      const suffix = "… [truncated]";
+      return masked.length <= TEXT_LIMIT
+        ? masked
+        : masked.slice(0, TEXT_LIMIT - suffix.length) + suffix;
     } catch {
       return UNREADABLE;
     }

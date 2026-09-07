@@ -299,27 +299,18 @@ describe("what it captures", () => {
     expect(report.errors).toBe(4);
   });
 
-  it("drops the stack's header line and keeps every line below it", () => {
+  it("keeps the stack's header and every frame after masking", () => {
     console.error = () => {};
     const { runtime, stop } = started();
-    console.error("failed:", new Error("kaboom"));
+    const error = new Error("kaboom");
+    console.error("failed:", error);
     const report = runtime.tail();
     stop();
 
     const entry = report.entries[0];
-    // The message is still reported — masked, and built from the two halves
-    // the header repeats.
     expect(entry?.message).toContain("Error: kaboom");
+    expect(entry?.stack).toBe(error.stack);
     expect(entry?.stack).toContain("at ");
-    // The header is gone, by comparison against the known raw text. Nothing
-    // classifies a line, so nothing can misclassify one, and a deletion
-    // cannot corrupt what is left.
-    expect(entry?.stack?.startsWith("Error: kaboom")).toBe(false);
-    expect(entry?.stack).not.toContain("kaboom");
-    // Frame by frame, everything below the header survives.
-    expect(entry?.stack?.split("\n").every((line) => line.trimStart().startsWith("at "))).toBe(
-      true,
-    );
   });
 
   it("separates warnings from errors", () => {
@@ -840,9 +831,7 @@ describe("credentials the masking used to let through", () => {
     expect(json).toContain(REDACTED);
   });
 
-  it("reports no stack at all for a stack that is only a header", () => {
-    // `Error.stackTraceLimit = 0`: deleting the header leaves no lines, so
-    // "no stack" is the honest report — the message is still there, masked.
+  it("keeps a masked stack that is only a header", () => {
     const { json, report } = captured(() => {
       console.error({
         name: "Error",
@@ -851,18 +840,18 @@ describe("credentials the masking used to let through", () => {
       });
     });
     expect(json).not.toContain("LEAK_SECRET_123");
-    expect(report.entries[0]?.stack).toBeNull();
+    expect(report.entries[0]?.stack).toBe(`Error: Bearer ${REDACTED}`);
     expect(report.entries[0]?.message).toContain(REDACTED);
   });
 
-  it("reports no stack for a real frameless stack from this engine either", () => {
+  it("keeps a masked frameless stack from this engine", () => {
     const limit = Error.stackTraceLimit;
     Error.stackTraceLimit = 0;
     const error = new Error("Bearer LEAK_SECRET_123");
     Error.stackTraceLimit = limit;
     const { json, report } = captured(() => void console.error(error));
     expect(json).not.toContain("LEAK_SECRET_123");
-    expect(report.entries[0]?.stack).toBeNull();
+    expect(report.entries[0]?.stack).toBe(`Error: Bearer ${REDACTED}`);
     expect(report.entries[0]?.message).toContain(REDACTED);
   });
 
@@ -873,7 +862,7 @@ describe("credentials the masking used to let through", () => {
     error.name = "fake@host:1";
     const { json, report } = captured(() => void console.error(error));
     expect(json).not.toContain("LEAK_SECRET_123");
-    expect(report.entries[0]?.stack).not.toContain("fake@host:1");
+    expect(report.entries[0]?.stack).toContain(`fake@host:1: Bearer ${REDACTED}`);
     expect(report.entries[0]?.message).toBe(`fake@host:1: Bearer ${REDACTED}`);
   });
 
@@ -903,7 +892,7 @@ describe("credentials the masking used to let through", () => {
     );
   });
 
-  it("takes a credential-shaped Error name out of the stack with the header", () => {
+  it("masks a credential-shaped Error name inside the stack header", () => {
     // Regression: only the message half used to be substituted, so a
     // credential-shaped `name` survived verbatim in the stack.
     const error = new Error("ordinary message");
@@ -911,7 +900,7 @@ describe("credentials the masking used to let through", () => {
     const { json, report } = captured(() => void console.error(error));
     expect(json).not.toContain("LEAK_SECRET_123");
     expect(report.entries[0]?.message).toBe(`Bearer ${REDACTED}: ordinary message`);
-    expect(report.entries[0]?.stack).not.toContain("ordinary message");
+    expect(report.entries[0]?.stack).toContain("ordinary message");
     expect(report.entries[0]?.stack).toContain("at ");
   });
 
@@ -1047,6 +1036,24 @@ describe("what reaches a pasted ticket", () => {
     );
   });
 
+  it.each(["\n", "\r\n"])(
+    "masks Digest parameters continued after %j in both exports",
+    (separator) => {
+      bothMask(() => {
+        console.error(new Error(`Digest realm=ordinary,${separator}nonce=LEAK_SECRET_123`));
+      });
+    },
+  );
+
+  it("exports the documented cross-line scheme marker displacement", () => {
+    const { json, markdown } = rendered(() => {
+      console.error({ name: "Error", message: "", stack: "Error: Bearer\n    at LEAK (a.js:1:1)" });
+    });
+    const expected = "Error: Bearer\n    [redacted] LEAK (a.js:1:1)";
+    expect(snapshotStack(json)).toBe(expected);
+    expect(markdown).toContain(expected);
+  });
+
   it("masks the header even when the Error name is shaped like a frame", () => {
     const error = new Error("Bearer LEAK_SECRET_123");
     error.name = "fake@host:1";
@@ -1117,12 +1124,12 @@ describe("what reaches a pasted ticket", () => {
     const entry = snapshot.console.entries[0];
 
     expect(entry?.message).toBe("Error: Bearer Bearer A");
-    expect(entry?.stack).not.toContain("Bearer");
+    expect(entry?.stack).toContain("Error: Bearer Bearer A");
     expect(renderJson(snapshot)).not.toContain("Bearer Bearer Bearer A");
     expect(renderMarkdown(snapshot)).not.toContain("Bearer Bearer Bearer A");
   });
 
-  it("leaves an ordinary TypeError's frames alone, header apart", () => {
+  it("leaves an ordinary TypeError stack alone", () => {
     const { json, markdown } = rendered(() => {
       // A real TypeError from a real throw, not a hand-built string.
       try {
@@ -1143,15 +1150,12 @@ describe("what reaches a pasted ticket", () => {
     error.name = "boom";
     const { json } = rendered(() => void console.error(error));
 
-    // `${name}: ${message}` wins over either half alone, so the header goes
-    // whole and the frames stay. The joined line the tail shows still carries
-    // it — masked, and it is not a credential.
     expect(json).toContain("at ");
     expect(json).toContain("boom: boom");
-    expect(snapshotStack(json)).not.toContain("boom");
+    expect(snapshotStack(json)).toContain("boom: boom");
   });
 
-  it("drops the header of a message-only error, whose name the engine supplied", () => {
+  it("masks the header of a message-only error, whose name the engine supplied", () => {
     // Regression: V8 writes `Error:` itself for an absent/empty `name`, which
     // neither `${name}: ${message}` nor `${message}` alone would match.
     const emptied = new Error("Bearer LEAK_SECRET_123");
@@ -1173,8 +1177,6 @@ describe("what reaches a pasted ticket", () => {
   });
 
   it("keeps a nameless engine stack that has no header at all", () => {
-    // The other side of that fallback: `Error: ${message}` may not delete a
-    // line that is a frame. This one is not.
     const { json } = rendered(() => {
       console.error({
         message: "chunk failed",
@@ -1201,8 +1203,6 @@ describe("what reaches a pasted ticket", () => {
   });
 
   it("treats a message full of regex and `$` text as the literal it is", () => {
-    // `startsWith` and nothing else: no pattern is compiled, and `$&` cannot
-    // be read as a replacement reference because there is no replacement.
     const error = new Error("(.*)+$& [a-z]{2,} $1 \\d+ ^anchored$");
     const { json, markdown } = rendered(() => void console.error(error));
 
@@ -1224,9 +1224,7 @@ describe("what reaches a pasted ticket", () => {
     expect(json).toContain("chunk failed");
   });
 
-  it("still drops a header that transformed the message, because the name prefixes it", () => {
-    // The message half is transformed (upper-cased) so neither known form
-    // matches it, but the name still prefixes the line, so it goes anyway.
+  it("masks a header whose message was uppercased", () => {
     const { json, markdown } = rendered(() => {
       console.error({
         name: "Error",
@@ -1240,9 +1238,7 @@ describe("what reaches a pasted ticket", () => {
     expect(json).toContain("at foo (a.js:1:1)");
   });
 
-  it("cannot drop a header whose *name* half was transformed too — a documented limit", () => {
-    // Documented limit: once the name half is transformed too, nothing known
-    // matches the header line and it survives verbatim.
+  it("masks a header whose name half was transformed too", () => {
     const { json, markdown } = rendered(() => {
       console.error({
         name: "bearer name_secret_123",
@@ -1251,9 +1247,8 @@ describe("what reaches a pasted ticket", () => {
       });
     });
 
-    expect(json).toContain("NAME_SECRET_123");
-    expect(markdown).toContain("NAME_SECRET_123");
-    // The name the tail *shows* is masked; it is the stack line that survives.
+    expect(json).not.toContain("NAME_SECRET_123");
+    expect(markdown).not.toContain("NAME_SECRET_123");
     expect(json).toContain(REDACTED);
   });
 
@@ -1275,9 +1270,7 @@ describe("what reaches a pasted ticket", () => {
     expect(json).toContain("at foo (app.js:1:2)");
   });
 
-  it("cannot mask a credential on a line of its own that is not a header — a pre-existing limit", () => {
-    // Documented limit, older than the header deletion: the line is not a
-    // header, so nothing removes it, and the stack is masked as one value.
+  it("masks a credential on a line of its own without a header", () => {
     const { json, markdown } = rendered(() => {
       console.error({
         name: "Error",
@@ -1286,22 +1279,31 @@ describe("what reaches a pasted ticket", () => {
       });
     });
 
-    expect(json).toContain("LEAK_SECRET_123");
-    expect(markdown).toContain("LEAK_SECRET_123");
+    expect(json).not.toContain("LEAK_SECRET_123");
+    expect(markdown).not.toContain("LEAK_SECRET_123");
   });
 
   it("cannot mask a credential embedded in prose — the documented limit", () => {
     // Documented limit: "failed: token Bearer …" is a sentence containing a
     // credential, not a credential itself, so `redact()`'s anchored matching
-    // misses it in both the message and the stack.
+    // misses it in the message. The stack opts into substring matching.
     const { json, markdown } = rendered(() => {
       console.error(new Error("failed: token Bearer LEAK_SECRET_123"));
     });
     expect(json).toContain("LEAK_SECRET_123");
     expect(markdown).toContain("LEAK_SECRET_123");
-    // It reaches the ticket **once** now, in the message. The stack used to
-    // repeat it through the header; the header is deleted, so it does not.
     expect(snapshotStack(json)).not.toContain("LEAK_SECRET_123");
+  });
+
+  it("keeps unknown secrets on foreign stack lines that header prefix collisions used to delete", () => {
+    const stack = "Error sk-live-LEAK\nErrorX LEAK2\n    at foo";
+    const { json, markdown } = rendered(() => {
+      console.error({ name: "Error", message: "", stack });
+    });
+    expect(snapshotStack(json)).toBe(stack);
+    expect(markdown).toContain(stack);
+    expect(json).not.toContain(REDACTED);
+    expect(markdown).not.toContain(REDACTED);
   });
 });
 
@@ -1828,5 +1830,88 @@ describe("ExtensionBoundary re-entrancy", () => {
     ).not.toBeNull();
 
     unmount();
+  });
+});
+
+describe("credential-redaction export regressions", () => {
+  it.each([
+    [
+      "review URL hostname overlap",
+      "Error",
+      "ordinary",
+      "Error: ordinary\n    at foo (https://LEAK_SECRET_123:password@customer.services.internal/path:1:2)",
+    ],
+    [
+      "review URL query overlap",
+      "Error",
+      "ordinary",
+      "Error: ordinary\nhttps://example.com/?token=x&Bearer LEAK_SECRET_123",
+    ],
+    [
+      "B1 repeated header after frame",
+      "Error",
+      "Bearer LEAK_SECRET_123",
+      "Error: Bearer LEAK_SECRET_123\n    at foo (app.js:1:2)\nError: Bearer LEAK_SECRET_123",
+    ],
+    [
+      "B2 over-deletion",
+      "Digest",
+      "",
+      'Digest\nDigest realm="ordinary"\nBearer LEAK_SECRET_123\n    at foo (app.js:1:2)',
+    ],
+    [
+      "B2 non-colliding control",
+      "Zzz",
+      "",
+      'Zzz\nDigest realm="ordinary"\nBearer LEAK_SECRET_123\n    at foo (app.js:1:2)',
+    ],
+    [
+      "history 1 verbatim message repeat",
+      "Error",
+      "Bearer LEAK_SECRET_123",
+      "Error: Bearer LEAK_SECRET_123\n    at foo (app.js:1:2)",
+    ],
+    [
+      "history 2 SpiderMonkey-shaped name",
+      "fake@host:1",
+      "Bearer LEAK_SECRET_123",
+      "fake@host:1: Bearer LEAK_SECRET_123\n    at foo (app.js:1:2)",
+    ],
+    [
+      "history 3 newline split",
+      "Error",
+      "Bearer\nLEAK_SECRET_123",
+      "Error: Bearer\nLEAK_SECRET_123\n    at foo (app.js:1:2)",
+    ],
+    [
+      "history 3 destructive pair overlap",
+      "Error",
+      "ordinary",
+      "Error: ordinary\nprefix token Bearer LEAK_SECRET_123\n    at foo (app.js:1:2)",
+    ],
+    [
+      "history 4 overlapping name/message",
+      "Bearer A",
+      'Digest realm="Bearer A",nonce="LEAK_SECRET_123"',
+      'Bearer A: Digest realm="Bearer A",nonce="LEAK_SECRET_123"\n    at foo (app.js:1:2)',
+    ],
+    [
+      "history 5 repeated leading header",
+      "Error",
+      "Bearer LEAK_SECRET_123",
+      "Error: Bearer LEAK_SECRET_123\nError: Bearer LEAK_SECRET_123\n    at foo (app.js:1:2)",
+    ],
+  ])("%s", (label, name, message, stack) => {
+    console.error = () => {};
+    const { runtime, stop } = started();
+    console.error({ name, message, stack });
+    const snapshot = runtime.capture();
+    stop();
+    const json = renderJson(snapshot);
+    const markdown = renderMarkdown(snapshot);
+    expect(json).not.toContain("LEAK_SECRET_123");
+    expect(markdown).not.toContain("LEAK_SECRET_123");
+    expect(json).toContain(REDACTED);
+    expect(markdown).toContain(REDACTED);
   });
 });
