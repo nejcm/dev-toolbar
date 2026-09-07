@@ -6,11 +6,13 @@ extension against it. The README documents the package for consumers; this docum
 is the *why*, and is the thing to read before changing the contract.
 
 - Contract version: **2** (`CONTRACT_VERSION`, in `src/core/contract.ts`)
-- Entries: `@nejcm/dev-toolbar` (root), `/runtime`, `/ext/metrics`,
+- Entries: `@nejcm/dev-toolbar` (root), `/runtime`, `/kit`, `/ext/metrics`,
   `/ext/environment`, `/ext/flags`, `/ext/command-menu`, `/ext/overlays`,
-  `/ext/diagnostics`, `/ext/theme-editor`, `/ext/agent`, `/testing`,
-  `/styles.css`
-- Runtime dependencies: **none**
+  `/ext/diagnostics`, `/ext/theme-editor`, `/ext/agent`, `/ext/a11y`,
+  `/testing`, `/styles.css`
+- Runtime dependencies: **none**. One *optional* peer, `axe-core`, reached only
+  by `/ext/a11y` and only through `import()` — see [ext/a11y.md](./ext/a11y.md)
+  for what installing it costs
 
 `src/core/contract.ts` is the source of truth for the types. Where this document and
 that file disagree, the file is right and this document is a bug.

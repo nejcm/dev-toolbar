@@ -26,6 +26,7 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { cleanupToolbar, mountToolbar } from "@nejcm/dev-toolbar/testing";
 import { STYLE_ATTRIBUTE } from "../../runtime/styles";
+import { a11y } from "../a11y";
 import { commandMenu } from "../command-menu";
 import { diagnostics } from "../diagnostics";
 import { environment } from "../environment";
@@ -77,6 +78,18 @@ const mountExtension = (
 type ExtensionCaseDefinition = Omit<ExtensionCase, "name" | "entry">;
 
 const EXTENSION_CASE_DEFINITIONS: Record<string, ExtensionCaseDefinition> = {
+  a11y: {
+    panel: "a11y",
+    overlays: [],
+    usesKitStyles: true,
+    mount(injectStyles) {
+      // A stub loader: this suite is about stylesheets, and the real peer's
+      // import would be a 550 KB parse in every one of these mounts.
+      return mountExtension(
+        a11y({ injectStyles, load: () => Promise.reject(new Error("no axe")) }),
+      );
+    },
+  },
   "command-menu": {
     panel: null,
     overlays: ["command-menu"],

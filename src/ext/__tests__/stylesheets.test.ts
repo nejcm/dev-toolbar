@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { KIT_CSS } from "../../kit/css";
 import { CORE_CSS } from "../../core/css";
+import { A11Y_CSS } from "../a11y/css";
 import { COMMAND_MENU_CSS } from "../command-menu/css";
 import { DIAGNOSTICS_CSS } from "../diagnostics/css";
 import { ENVIRONMENT_CSS } from "../environment/css";
@@ -156,6 +157,7 @@ interface SheetDefinition {
 }
 
 const EXTENSION_SHEET_DEFINITIONS: Record<string, SheetDefinition> = {
+  a11y: { css: A11Y_CSS, allow: [] },
   "command-menu": {
     css: COMMAND_MENU_CSS,
     allow: [

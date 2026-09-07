@@ -8,6 +8,7 @@ const entry = {
   index: "src/index.ts",
   runtime: "src/runtime/index.ts",
   kit: "src/kit/index.ts",
+  "ext/a11y": "src/ext/a11y/index.tsx",
   "ext/agent": "src/ext/agent/index.tsx",
   "ext/metrics": "src/ext/metrics/index.tsx",
   "ext/environment": "src/ext/environment/index.tsx",
@@ -44,5 +45,7 @@ export default defineConfig({
     "react/jsx-runtime",
     // Optional peer for ./testing; must never be bundled.
     "@testing-library/react",
+    // Optional peer for ./ext/a11y — 550 KB, loaded with import() at runtime.
+    "axe-core",
   ],
 });

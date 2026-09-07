@@ -34,6 +34,7 @@ Everything the [README](../README.md) links to, in one place.
 | `ext/diagnostics` | [ext/diagnostics.md](./ext/diagnostics.md) |
 | `ext/theme-editor` | [ext/theme-editor.md](./ext/theme-editor.md) |
 | `ext/agent` | [ext/agent.md](./ext/agent.md) |
+| `ext/a11y` | [ext/a11y.md](./ext/a11y.md) — the one optional peer |
 
 ## Working on the package itself
 

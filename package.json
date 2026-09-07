@@ -66,6 +66,16 @@
         "default": "./dist/kit.cjs"
       }
     },
+    "./ext/a11y": {
+      "import": {
+        "types": "./dist/ext/a11y.d.ts",
+        "default": "./dist/ext/a11y.js"
+      },
+      "require": {
+        "types": "./dist/ext/a11y.d.cts",
+        "default": "./dist/ext/a11y.cjs"
+      }
+    },
     "./ext/agent": {
       "import": {
         "types": "./dist/ext/agent.d.ts",
@@ -192,7 +202,8 @@
   "peerDependencies": {
     "react": ">=18",
     "react-dom": ">=18",
-    "@testing-library/react": ">=14"
+    "@testing-library/react": ">=14",
+    "axe-core": ">=4.8"
   },
   "devDependencies": {
     "@arethetypeswrong/cli": "^0.18.5",
@@ -204,6 +215,7 @@
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.5",
     "@vitest/coverage-v8": "^4.1.11",
+    "axe-core": "^4.13.0",
     "jsdom": "^30.0.1",
     "knip": "^6.34.0",
     "lint-staged": "^17.4.1",
@@ -219,6 +231,9 @@
   },
   "peerDependenciesMeta": {
     "@testing-library/react": {
+      "optional": true
+    },
+    "axe-core": {
       "optional": true
     }
   },

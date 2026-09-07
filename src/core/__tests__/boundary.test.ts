@@ -44,6 +44,7 @@ const EXT_MARKER_ORDER = [
   "[dev-toolbar/ext/theme-editor]",
   // Appended, never inserted: the indices below are positional.
   "[dev-toolbar/ext/agent]",
+  "[dev-toolbar/ext/a11y]",
 ];
 
 function sourceFiles(directory: string): string[] {
@@ -326,7 +327,7 @@ describe("runtime boundary (source)", () => {
 describe("extension kit (source)", () => {
   /**
    * The kit is shared by first-party and third-party extensions, so it is held
-   * to the same rules as the eight extensions:
+   * to the same rules as the extensions themselves:
    * no extension marker (the dist scan below reads markers as proof one
    * bundle does not carry another's code), no core message prefix, no value
    * import of core, and nothing reaching sideways into a sibling extension.
@@ -583,6 +584,9 @@ if (!built && mustBeBuilt) {
       expect(readFileSync(`${root}dist/ext/agent.cjs`, "utf8")).toContain(
         EXT_MARKER_ORDER[7] as string,
       );
+      expect(readFileSync(`${root}dist/ext/a11y.cjs`, "utf8")).toContain(
+        EXT_MARKER_ORDER[8] as string,
+      );
     });
   });
 }
@@ -661,6 +665,36 @@ if (built || !mustBeBuilt) {
         expect(bundle).not.toContain(EXT_MARKER_ORDER[7] as string);
       }
 
+      // Nine. /ext/a11y is the only extension with a peer dependency, so it
+      // has two ways to carry code it should not: a sibling extension, and
+      // axe-core itself. Neither may be in the bundle.
+      const a11yBundle = readFileSync(`${root}dist/ext/a11y.cjs`, "utf8");
+      for (const marker of EXT_MARKER_ORDER.slice(0, 8)) {
+        expect(a11yBundle, marker).not.toContain(marker);
+      }
+      for (const bundle of [
+        flagsBundle,
+        menuBundle,
+        overlaysBundle,
+        diagnosticsBundle,
+        themeBundle,
+        agentBundle,
+      ]) {
+        expect(bundle).not.toContain(EXT_MARKER_ORDER[8] as string);
+      }
+      // The peer is imported at runtime, never inlined: `aria-allowed-attr` is
+      // an axe rule id, so it exists in axe's own bundle and nowhere else. The
+      // CommonJS build keeps a native `import("axe-core")` rather than a
+      // `require`, which is what lets a consumer without the peer installed
+      // reach a rejected promise instead of a hard resolution failure.
+      expect(a11yBundle).toContain('import("axe-core")');
+      expect(a11yBundle).not.toContain("aria-allowed-attr");
+      expect(readFileSync(`${root}dist/ext/a11y.js`, "utf8")).not.toContain("aria-allowed-attr");
+      // Non-vacuity: the string does exist, in the package we did not bundle.
+      expect(readFileSync(`${root}node_modules/axe-core/axe.js`, "utf8")).toContain(
+        "aria-allowed-attr",
+      );
+
       for (const [name, bundle] of [
         ["metrics", readFileSync(`${root}dist/ext/metrics.cjs`, "utf8")],
         ["environment", readFileSync(`${root}dist/ext/environment.cjs`, "utf8")],
@@ -670,6 +704,7 @@ if (built || !mustBeBuilt) {
         ["diagnostics", diagnosticsBundle],
         ["theme-editor", themeBundle],
         ["agent", agentBundle],
+        ["a11y", a11yBundle],
       ] as const) {
         expect(bundle, name).not.toContain(CORE_PREFIX);
       }
@@ -692,6 +727,7 @@ if (built || !mustBeBuilt) {
         "./ext/diagnostics",
         "./ext/theme-editor",
         "./ext/agent",
+        "./ext/a11y",
       ];
       for (const subpath of subpaths) {
         const base = subpath === "." ? "./dist/index" : `./dist/${subpath.replace(/^\.\//, "")}`;
@@ -725,6 +761,8 @@ if (built || !mustBeBuilt) {
         "dist/ext/theme-editor.cjs",
         "dist/ext/agent.js",
         "dist/ext/agent.cjs",
+        "dist/ext/a11y.js",
+        "dist/ext/a11y.cjs",
       ]) {
         expect(readFileSync(`${root}${file}`, "utf8").startsWith('"use client";'), file).toBe(true);
       }
@@ -755,6 +793,18 @@ if (built || !mustBeBuilt) {
         "ThemeEditorOptions",
       );
       expect(readFileSync(`${root}dist/ext/agent.d.ts`, "utf8")).toContain("AgentBridgeOptions");
+      expect(readFileSync(`${root}dist/ext/a11y.d.ts`, "utf8")).toContain("A11yOptions");
+      // The optional peer must not reach the published types either: a
+      // consumer without axe-core installed has to be able to typecheck ours.
+      // Comments are stripped first — the declarations explain the peer, and
+      // matching prose would pass or fail on the wording.
+      for (const types of ["dist/ext/a11y.d.ts", "dist/ext/a11y.d.cts"]) {
+        const declarations = readFileSync(`${root}${types}`, "utf8")
+          .replace(/\/\*[\s\S]*?\*\//g, "")
+          .replace(/\/\/[^\n]*/g, "");
+        expect(declarations, types).not.toContain("axe-core");
+        expect(declarations, types).toContain("interface AxeLike");
+      }
     });
 
     it("declares every subpath the plan promised, and nothing by wildcard", () => {
@@ -764,6 +814,7 @@ if (built || !mustBeBuilt) {
       // own — is what makes a *missing* entry fail rather than only a wrong one.
       expect(Object.keys(pkg.exports).sort()).toEqual([
         ".",
+        "./ext/a11y",
         "./ext/agent",
         "./ext/command-menu",
         "./ext/diagnostics",
@@ -792,7 +843,8 @@ if (built || !mustBeBuilt) {
           `const d = await import("@nejcm/dev-toolbar/ext/diagnostics");` +
           `const t = await import("@nejcm/dev-toolbar/ext/theme-editor");` +
           `const a = await import("@nejcm/dev-toolbar/ext/agent");` +
-          `console.log(JSON.stringify({ runtime: Object.keys(r).sort(), kit: Object.keys(k).sort(), metrics: Object.keys(m).sort(), environment: Object.keys(e).sort(), flags: Object.keys(f).sort(), commandMenu: Object.keys(c).sort(), overlays: Object.keys(o).sort(), diagnostics: Object.keys(d).sort(), themeEditor: Object.keys(t).sort(), agent: Object.keys(a).sort() }));`,
+          `const x = await import("@nejcm/dev-toolbar/ext/a11y");` +
+          `console.log(JSON.stringify({ runtime: Object.keys(r).sort(), kit: Object.keys(k).sort(), metrics: Object.keys(m).sort(), environment: Object.keys(e).sort(), flags: Object.keys(f).sort(), commandMenu: Object.keys(c).sort(), overlays: Object.keys(o).sort(), diagnostics: Object.keys(d).sort(), themeEditor: Object.keys(t).sort(), agent: Object.keys(a).sort(), a11y: Object.keys(x).sort() }));`,
       );
       const result = JSON.parse(names) as {
         runtime: string[];
@@ -805,6 +857,7 @@ if (built || !mustBeBuilt) {
         diagnostics: string[];
         themeEditor: string[];
         agent: string[];
+        a11y: string[];
       };
       expect(result.runtime).toEqual(
         expect.arrayContaining([
@@ -892,6 +945,16 @@ if (built || !mustBeBuilt) {
           "createAgentRegistry",
           "installAgentBridge",
           "DEFAULT_GLOBAL_NAME",
+        ]),
+      );
+      expect(result.a11y).toEqual(
+        expect.arrayContaining([
+          "a11y",
+          "createA11yRuntime",
+          "A11Y_CSS",
+          "A11Y_MARKER",
+          "IMPACTS",
+          "TOOLBAR_EXCLUDE",
         ]),
       );
       expect(result.runtime).toEqual(
@@ -1044,6 +1107,25 @@ if (built || !mustBeBuilt) {
         ],
         contributes: "function",
         overlay: "undefined",
+      });
+
+      // /ext/a11y must import in Node with no `document` and no peer: the
+      // factory builds the store and enumerates commands, and the import of
+      // axe-core waits for start(api).
+      const axe = node(
+        `const { a11y } = await import("@nejcm/dev-toolbar/ext/a11y");` +
+          `const ext = a11y();` +
+          `const report = ext.diagnostics();` +
+          `console.log(JSON.stringify({ id: ext.id, commands: ext.commands.map(c => c.id), status: report.status, total: report.total, described: ext.commands.every(c => typeof c.description === "string" && c.description.length > 0) }));`,
+      );
+      expect(JSON.parse(axe)).toEqual({
+        id: "a11y",
+        commands: ["a11y.scan", "a11y.export", "a11y.highlight", "a11y.clear"],
+        // Nothing has been scanned and nothing was loaded — importing the
+        // module must not reach for the peer.
+        status: "pending",
+        total: 0,
+        described: true,
       });
     });
   });
