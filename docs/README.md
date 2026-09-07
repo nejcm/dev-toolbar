@@ -16,7 +16,7 @@ Everything the [README](../README.md) links to, in one place.
 | Document | What is in it |
 | --- | --- |
 | [extension-contract.md](./extension-contract.md) | The object you write, the slot props, `start(api)`, and the two lifecycle rules that bite |
-| [runtime.md](./runtime.md) | `@nejcm/dev-toolbar/runtime` — event bus, ring buffers, throttled store, `redact()` |
+| [runtime.md](./runtime.md) | `@nejcm/dev-toolbar/runtime` — event bus, ring buffers, throttled store, `redact()` and `redactText()` |
 | [kit.md](./kit.md) | `@nejcm/dev-toolbar/kit` — the shared severity vocabulary, the storage/poll/style helpers, `data-dtb-kind`, the thin React controls and `embed()` |
 | [embedding.md](./embedding.md) | Putting a third-party devtool on the bar: the four-line recipe that already works, the bring-your-own-CSS rule, and the `embed()` frame helper |
 | [architecture.md](./architecture.md) | What the shell guarantees, why the boundaries sit where they do, and the known gaps in the contract |
@@ -35,6 +35,10 @@ Everything the [README](../README.md) links to, in one place.
 | `ext/theme-editor` | [ext/theme-editor.md](./ext/theme-editor.md) |
 | `ext/agent` | [ext/agent.md](./ext/agent.md) |
 | `ext/a11y` | [ext/a11y.md](./ext/a11y.md) — the one optional peer |
+
+Each extension directory carries a README too — the developer's view of the same
+extension: the files in it, what it owns, the decisions that bite, and its
+commands. [`src/ext/README.md`](../src/ext/README.md) indexes all nine.
 
 ## Working on the package itself
 
