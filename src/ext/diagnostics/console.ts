@@ -15,9 +15,10 @@
  *
  * Patch state is module-level, so the dual-package hazard applies (see
  * `src/runtime/network.ts`): the built ESM+CJS pair, detached inner-first,
- * strands a wrapper per cycle — measured to a `RangeError` at cycle 10,408
- * under Node 26.4.0, and still forwarding past 20,000 cycles under Bun 1.4.0
- * (docs/ext/diagnostics.md § "before you ship two copies").
+ * strands a wrapper per cycle — measured to a `RangeError` after the order of
+ * ten thousand cycles under Node 26.4.0 (harness-dependent), and still
+ * forwarding past 20,000 under Bun 1.4.0 (docs/ext/diagnostics.md § "before
+ * you ship two copies").
  *
  * `redact()` alone judges whether a value is a credential; no tokeniser,
  * header scanner or frame-shape detector may be reintroduced here — three
@@ -328,7 +329,7 @@ interface MaskedErrorSnapshot extends ErrorSnapshot {
 const DEFAULT_ERROR_NAME = "Error";
 
 /**
- * The stack with its header line (`` `${name}: ${message}` ``) removed by
+ * The stack with its header lines (`` `${name}: ${message}` ``) removed by
  * comparing known text, never by guessing a header's shape — two shape-based
  * versions each leaked a different stack. See docs/ext/diagnostics.md § "The
  * console tail" for why deletion, not substitution, is what stays.
@@ -346,15 +347,22 @@ function withoutHeader(stack: string, name: string | null, message: string | nul
   // Last, and only ever a real one: a bare `Error` would be needed only where
   // both halves are empty, and a header with nothing in it has nothing to leak.
   if (named !== "") forms.push(named);
-  for (const form of forms) {
-    if (form === "" || !stack.startsWith(form)) continue;
+  let rest = stack;
+  // Every leading copy, not just one: a stack repeating its header sent the
+  // second copy to whole-value masking, which cannot see a credential inside a
+  // longer string, and it reached both renderers verbatim.
+  for (;;) {
+    const form = forms.find((candidate) => candidate !== "" && rest.startsWith(candidate));
+    if (form === undefined) return rest;
+    // A prefix collision deletes genuine frames — a run of them, now that this
+    // loops: name `Error` with an empty message eats every leading `ErrorFoo:`.
+    const after = rest.slice(form.length);
     // Whatever an engine appended to the header shares its line and goes with
     // it; no engine puts a frame on that line.
-    const rest = stack.slice(form.length);
-    const newline = rest.indexOf("\n");
-    return newline === -1 ? "" : rest.slice(newline + 1);
+    const newline = after.indexOf("\n");
+    if (newline === -1) return "";
+    rest = after.slice(newline + 1);
   }
-  return stack;
 }
 
 /** One property read, guarded, kept only if it is a string. */
@@ -424,6 +432,8 @@ export function createConsoleTail(
   /* Masking                                                                 */
   /* ---------------------------------------------------------------------- */
 
+  // `URL_LIKE` runs to the next delimiter, so adjacent non-whitespace text is
+  // consumed into the match and masked with the URL.
   const maskUrls = (text: string): string => {
     try {
       return text.replace(URL_LIKE, (match) => {

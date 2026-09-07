@@ -120,7 +120,10 @@ diagnostics({
   by shape silently threw away frameless stacks and every stack from an engine whose
   frame shape this package had not been taught). Every other line is kept, masked. A
   stack that is *only* a header — `Error.stackTraceLimit = 0` — therefore reports as no
-  stack at all, and the message is still there.
+  stack at all, and the message is still there. Removal repeats while the remaining
+  stack still starts with known header text, because a stack that repeats its header
+  left the second copy for whole-value masking, which cannot see a credential inside a
+  longer string, and it reached both exports verbatim.
 
   Deletion replaced substitution because substitution leaked on **overlapping halves**:
   an `Error` named `Bearer A` whose message was `Digest realm="Bearer A",nonce="…"`
@@ -186,6 +189,10 @@ The rest of what survives is pinned by a test rather than hoped about:
 
 - a credential embedded in a stack frame's **function name** — matching looks for URLs
   and whole-value shapes, not for `Bearer …` welded into an identifier;
+- a credential on a **line of its own that is not a header** — nothing removes it,
+  because it matches no known header text, and the stack below the header is masked as
+  one value, so no whole value is the credential either. Older than the header
+  deletion, and not fixable without the line scanner that leaked three times;
 - an `Error`'s `cause`, and an `AggregateError`'s `errors`, which are not read at all,
   so anything only reachable through them is absent rather than masked;
 - zero-width spaces or punctuation immediately before `Bearer`, which stop the value
@@ -215,10 +222,12 @@ nothing is lost. Taking them down *inner-first* is what costs: teardown never re
 over a later patch, so the inner wrapper stays — listener-less, still forwarding — and
 every start/stop cycle strands one more. Executed with two module copies over one
 `console`, over the built ESM+CJS pair: **Node 26.4.0 throws `RangeError: Maximum call
-stack size exceeded` from cycle 10,408** (stable across runs), while **Bun 1.4.0 still
-forwarded after 20,000 cycles** and never threw. The number belongs to the engine's
-stack depth, not to this package — quote it with its engine or not at all, and do not
-read Bun's result as an absence of the problem: every cycle still costs a frame. What
+stack size exceeded` after the order of ten thousand cycles** — two harnesses on the
+same Node lost call-through at 10,358 and 10,408 — while **Bun 1.4.0 still forwarded
+after 20,000 cycles** and never threw. Treat the count as a property of the engine's
+stack depth and of the harness measuring it, never of this package: quote an order of
+magnitude with its engine or not at all, and do not read Bun's result as an absence of
+the problem — every cycle still costs a frame. What
 matters is what happens past the limit, where it exists: the call throws and never
 reaches the original, so it is **your** app's logging that is gone, not only our
 capture. The fix is a bundler one —

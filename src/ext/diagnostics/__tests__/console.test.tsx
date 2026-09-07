@@ -1257,6 +1257,39 @@ describe("what reaches a pasted ticket", () => {
     expect(json).toContain(REDACTED);
   });
 
+  it("masks every copy of a header the stack repeats, not only the first", () => {
+    // Regression: removing one leading header sent the second copy to
+    // whole-value masking, which cannot see a credential inside a longer
+    // string, so it reached both renderers verbatim.
+    const { json, markdown } = rendered(() => {
+      const error = new Error("Bearer LEAK_SECRET_123");
+      error.stack =
+        "Error: Bearer LEAK_SECRET_123\n" +
+        "Error: Bearer LEAK_SECRET_123\n    at foo (app.js:1:2)";
+      console.error(error);
+    });
+
+    expect(json).not.toContain("LEAK_SECRET_123");
+    expect(markdown).not.toContain("LEAK_SECRET_123");
+    expect(json).toContain(REDACTED);
+    expect(json).toContain("at foo (app.js:1:2)");
+  });
+
+  it("cannot mask a credential on a line of its own that is not a header — a pre-existing limit", () => {
+    // Documented limit, older than the header deletion: the line is not a
+    // header, so nothing removes it, and the stack is masked as one value.
+    const { json, markdown } = rendered(() => {
+      console.error({
+        name: "Error",
+        message: "ordinary message",
+        stack: "Error: ordinary message\nBearer LEAK_SECRET_123\n    at foo (a.js:1:1)",
+      });
+    });
+
+    expect(json).toContain("LEAK_SECRET_123");
+    expect(markdown).toContain("LEAK_SECRET_123");
+  });
+
   it("cannot mask a credential embedded in prose — the documented limit", () => {
     // Documented limit: "failed: token Bearer …" is a sentence containing a
     // credential, not a credential itself, so `redact()`'s anchored matching
