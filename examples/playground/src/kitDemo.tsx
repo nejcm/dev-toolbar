@@ -343,7 +343,7 @@ function KitDemoPanel({ runtime, injectStyles, styleNonce }: SurfaceProps): Reac
   );
 
   return (
-    <div data-dtb-part="kit-demo-panel">
+    <div data-dtb-part="kit-demo-panel" data-dtb-kind="stack">
       {snapshot.worst === "bad" ? (
         <Banner severity="bad" role="alert" data-dtb-part="kit-demo-banner">
           Something is over its threshold. The banner is coloured by{" "}

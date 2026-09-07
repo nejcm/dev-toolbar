@@ -375,6 +375,17 @@ export const CORE_CSS = String.raw`/**
     background: var(--dtb-item-hover-bg);
   }
 
+  /* An extension with a compact slot and no panel renders its label in a
+     span: a readout, not a control, so it neither invites a click nor
+     answers a hover. */
+  [data-dev-toolbar] span[data-dtb-part="trigger"] {
+    cursor: default;
+  }
+
+  [data-dev-toolbar] span[data-dtb-part="trigger"]:hover {
+    background: var(--dtb-item-bg);
+  }
+
   [data-dev-toolbar] [data-dtb-part="trigger"][aria-expanded="true"],
   [data-dev-toolbar] [data-dtb-part="overflow-button"][aria-expanded="true"] {
     background: var(--dtb-item-active-bg);
