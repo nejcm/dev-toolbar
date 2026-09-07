@@ -79,24 +79,30 @@ yours to change with the `shortcut` prop.
 Each extension is a separate opt-in subpath with its own bundle. Import none of
 them and you have a bar that hosts only your own tools.
 
-| Extension | What it gives you |
-| --- | --- |
-| [`ext/metrics`](./docs/ext/metrics.md) | Memory, interaction delay, jank and in-flight network, plus consumer-supplied collectors; each built-in degrades on its own where a browser API is missing |
-| [`ext/environment`](./docs/ext/environment.md) | Environment, release, commit and actor context — all supplied by you, all redacted, with production coloured like production |
-| [`ext/flags`](./docs/ext/flags.md) | Your feature flags, with local overrides that survive a reload and a `?dtb-flags=reset` kill switch |
-| [`ext/command-menu`](./docs/ext/command-menu.md) | A `⌘K` palette over every command the toolbar has aggregated. Leave it out and write your own over `useToolbarCommands()` |
-| [`ext/overlays`](./docs/ext/overlays.md) | Layout boxes, a column grid, an element inspector and focus order — drawn over your page, never intercepting a click |
-| [`ext/diagnostics`](./docs/ext/diagnostics.md) | One snapshot for a bug report: the page, long tasks, a tail of console errors and unhandled rejections, and every other extension's diagnostics. You read the exact text before it goes anywhere |
-| [`ext/theme-editor`](./docs/ext/theme-editor.md) | Live design-token editing, with the app's own value next to your edit, and CSS, a recipe, a design-tokens export or a link on the way out |
-| [`ext/a11y`](./docs/ext/a11y.md) | axe-core violations grouped by impact, on demand and never on a timer, with click-to-highlight. The one optional peer: install `axe-core` or the panel says so and nothing breaks |
-| [`ext/agent`](./docs/ext/agent.md) | The bar's state and commands on a global, for an in-page agent to read from `page.evaluate` rather than scrape. Development builds; running commands is a second opt-in |
+| Extension | What it gives you | Source |
+| --- | --- | --- |
+| [`ext/metrics`](./docs/ext/metrics.md) | Memory, interaction delay, jank and in-flight network, plus consumer-supplied collectors; each built-in degrades on its own where a browser API is missing | [`src/ext/metrics`](./src/ext/metrics/README.md) |
+| [`ext/environment`](./docs/ext/environment.md) | Environment, release, commit and actor context — all supplied by you, all redacted, with production coloured like production | [`src/ext/environment`](./src/ext/environment/README.md) |
+| [`ext/flags`](./docs/ext/flags.md) | Your feature flags, with local overrides that survive a reload and a `?dtb-flags=reset` kill switch | [`src/ext/flags`](./src/ext/flags/README.md) |
+| [`ext/command-menu`](./docs/ext/command-menu.md) | A `⌘K` palette over every command the toolbar has aggregated. Leave it out and write your own over `useToolbarCommands()` | [`src/ext/command-menu`](./src/ext/command-menu/README.md) |
+| [`ext/overlays`](./docs/ext/overlays.md) | Layout boxes, a column grid, an element inspector and focus order — drawn over your page, never intercepting a click | [`src/ext/overlays`](./src/ext/overlays/README.md) |
+| [`ext/diagnostics`](./docs/ext/diagnostics.md) | One snapshot for a bug report: the page, long tasks, a tail of console errors and unhandled rejections, and every other extension's diagnostics. You read the exact text before it goes anywhere | [`src/ext/diagnostics`](./src/ext/diagnostics/README.md) |
+| [`ext/theme-editor`](./docs/ext/theme-editor.md) | Live design-token editing, with the app's own value next to your edit, and CSS, a recipe, a design-tokens export or a link on the way out | [`src/ext/theme-editor`](./src/ext/theme-editor/README.md) |
+| [`ext/a11y`](./docs/ext/a11y.md) | axe-core violations grouped by impact, on demand and never on a timer, with click-to-highlight. The one optional peer: install `axe-core` or the panel says so and nothing breaks | [`src/ext/a11y`](./src/ext/a11y/README.md) |
+| [`ext/agent`](./docs/ext/agent.md) | The bar's state and commands on a global, for an in-page agent to read from `page.evaluate` rather than scrape. Development builds; running commands is a second opt-in | [`src/ext/agent`](./src/ext/agent/README.md) |
+
+The **Source** column is each extension's own README, next to its code: the files
+in the directory, what it owns and refuses to own, and the design decisions that
+bite. [`src/ext/README.md`](./src/ext/README.md) indexes all nine and states the
+conventions they share.
 
 Four more subpaths exist for the code you write yourself:
 [`/kit`](./docs/kit.md) — the extension kit: shared types, non-React helpers, one
 stylesheet keyed on `data-dtb-kind`, and the thin React controls the first-party panels
 are built from, so a third-party extension looks native without copying a few hundred
 lines of CSS — [`/runtime`](./docs/runtime.md), the event bus, ring buffers, throttled
-store and `redact()`, for extensions that measure something —
+store and the redactors (`redact()` anchored, `redactText()` scanning), for
+extensions that measure something —
 [`/testing`](./docs/testing.md), for testing them, and
 `@nejcm/dev-toolbar/styles.css`, the shell's stylesheet for a host that would rather
 import it than have it injected at runtime.
@@ -271,11 +277,12 @@ other. The whole surface, and the Jest caveats, are in
 | [docs/extension-contract.md](./docs/extension-contract.md) | The object you write, the slot props, and `start(api)` |
 | [docs/kit.md](./docs/kit.md) | `/kit`: shared types, helpers, the `data-dtb-kind` stylesheet and the React controls |
 | [docs/embedding.md](./docs/embedding.md) | A third-party devtool on the bar: the four-line recipe, the CSS rule, and `embed()` |
-| [docs/runtime.md](./docs/runtime.md) | `/runtime`: event bus, ring buffers, throttled store, `redact()` |
+| [docs/runtime.md](./docs/runtime.md) | `/runtime`: event bus, ring buffers, throttled store, `redact()` and `redactText()` |
 | [docs/testing.md](./docs/testing.md) | `/testing`: helpers, the fake layout, the mock bus |
 | [docs/styling.md](./docs/styling.md) | Tokens, parts, `classNames` |
 | [docs/ssr.md](./docs/ssr.md) | Hydration and the Next.js app router |
 | [docs/ext/](./docs/ext/) | One document per first-party extension, including [`ext/agent`](./docs/ext/agent.md) |
+| [src/ext/](./src/ext/README.md) | The developer's view of the same nine: files, ownership, and the decisions that bite |
 | [docs/architecture.md](./docs/architecture.md) | What the shell guarantees, and why the boundaries sit where they do |
 | [docs/adr/](./docs/adr/) | Decision records |
 | [CHANGELOG.md](./CHANGELOG.md) | Every release |

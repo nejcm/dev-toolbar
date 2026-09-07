@@ -18,7 +18,7 @@ The contract an extension is written against is the real public API.
 | Folder | Layer | Stack | Talks to |
 | --- | --- | --- | --- |
 | `src/core/` | The shell: portal, bar, overflow, panel host, overlay host, storage, styles, aggregations | React 18/19, `useSyncExternalStore`, no deps | Nothing. **Never imports `runtime/`, `kit/` or `ext/`.** |
-| `src/runtime/` | Opt-in primitives for extensions that measure: event bus, ring buffers, throttled store, `redact()`, style injection | Framework-free TS | Nothing in this package |
+| `src/runtime/` | Opt-in primitives for extensions that measure: event bus, ring buffers, throttled store, `redact()`/`redactText()`, style injection | Framework-free TS | Nothing in this package |
 | `src/test-utils/` | Test-only repository helpers, including extension roster checks | Framework-free TS | Test suites; never a published entrypoint |
 | `src/kit/` | Shared vocabulary, helpers and controls for extension authors | React + `src/runtime`, **types only** from core | `src/runtime`, core's *types* |
 | `src/ext/<name>/` | First-party extensions, one directory each | React + `src/runtime`, **types only** from core | `src/runtime`, `src/kit`, core's *types* |
@@ -30,7 +30,10 @@ The contract an extension is written against is the real public API.
 | `.github/actions/` | Composite actions the workflows share: `setup-job`, `report-bundle-size`, `knip-check` | GitHub Actions | `.github/workflows/` |
 
 Each extension directory follows the same convention: `index.tsx` (the factory),
-`runtime.ts` (non-React logic), `ui.tsx`, `types.ts`, `css.ts`, `__tests__/`.
+`runtime.ts` (non-React logic), `ui.tsx`, `types.ts`, `css.ts`, `__tests__/`, and a
+`README.md` — the developer's view of that extension, indexed by
+[`src/ext/README.md`](./src/ext/README.md); the consumer-facing page stays in
+`docs/ext/`.
 Shared extension glue lives in the published `src/kit/` subpath. First-party
 extensions value-import it through `@nejcm/dev-toolbar/kit` so CJS consumers get one
 instance. Keep it stateless and marker-free; `src/core/__tests__/boundary.test.ts`
@@ -136,6 +139,8 @@ that ship nothing.
 
 - [docs/README.md](./docs/README.md) — the documentation index: one page per entry
   point, per first-party extension and per decision record
+- [src/ext/README.md](./src/ext/README.md) — the first-party extensions from the
+  inside: what each owns, its files, and the conventions all nine share
 - [README.md](./README.md) — the consumer-facing user guide
 - [CONTRIBUTING.md](./CONTRIBUTING.md) — setup, the commit convention, the contract as
   it matters when changing the library

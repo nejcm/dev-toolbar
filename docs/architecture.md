@@ -1009,7 +1009,7 @@ the console carries no hydration warning.
 
 | Not in core | Where it goes |
 | --- | --- |
-| Event bus, ring buffers, throttled store, `redact()` | `./runtime` |
+| Event bus, ring buffers, throttled store, `redact()` and `redactText()` | `./runtime` |
 | Metrics, environment, flags, overlays, diagnostics, theme editor | `./ext/*` |
 | Any design system, colour model or palette generator | `./ext/theme-editor` edits the tokens *you* publish — core has no `ctx` and neither does it |
 | Environment, build and session context, and any redaction of it | `./ext/environment` — core has no `ctx` to hand anybody |
@@ -1055,7 +1055,9 @@ is blocking; all were found by building an extension against the contract.
   both halves.
 - **`redact()`'s value pass only inspects bare absolute URLs** (`scheme://…`). A
   relative reference (`/cb?access_token=…`) or a URL-shaped string sitting in a header
-  value is not rewritten unless the caller runs `redactUrl()` on it explicitly — the
+  value is not rewritten unless the caller runs `redactUrl()` — or `redactText()` with
+  `url: true`, which tries the whole value as a URL, relative references included, and
+  scans for embedded `scheme://…` runs as well — on it explicitly. The
   environment extension does this for `location.href` and `document.referrer`, but a
   custom diagnostics source that dumps a relative route or a header bag must do the
   same for those fields.
