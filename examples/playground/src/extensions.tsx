@@ -11,6 +11,8 @@ import { themeEditor } from "@nejcm/dev-toolbar/ext/theme-editor";
 import { agentBridge } from "@nejcm/dev-toolbar/ext/agent";
 import type { DesignTokenDefinition } from "@nejcm/dev-toolbar/ext/theme-editor";
 import type { FlagReading, FlagValue } from "@nejcm/dev-toolbar/ext/flags";
+import { createReactProfilerCollector } from "./collectors/reactProfiler";
+import { createWebVitalsCollector } from "./collectors/webVitals";
 import { kitDemo } from "./kitDemo";
 
 /**
@@ -601,7 +603,10 @@ const runtimeThemeEditor = themeEditor({
 });
 
 /** Built once at module scope — calling `metrics()` inside a component would hand the bar a new object every render while collectors stayed with the first one; core warns about this. */
+export const reactProfiler = createReactProfilerCollector();
+
 const runtimeMetrics = metrics({
+  collectors: [reactProfiler.collector, createWebVitalsCollector()],
   order: 30,
   priority: 35,
   network: { slowMs: 400 },

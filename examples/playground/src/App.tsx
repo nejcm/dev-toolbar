@@ -1,7 +1,8 @@
-import { useEffect, useState } from "react";
+import { Profiler, useEffect, useState } from "react";
 import { DevToolbar, DevToolbarInset, useDevToolbar } from "@nejcm/dev-toolbar";
 import type { ToolbarDensity } from "@nejcm/dev-toolbar";
 import {
+  reactProfiler,
   playgroundContext,
   playgroundExtensions,
   playgroundFlags,
@@ -623,17 +624,19 @@ export function App() {
       defaultPosition="bottom"
       classNames={{ bar: "pg-bar" }}
     >
-      {inset ? (
-        <DevToolbarInset className="pg-app" data-testid="inset">
-          {header}
-          <div className="pg-scroll">{body}</div>
-        </DevToolbarInset>
-      ) : (
-        <div className="pg-app" data-testid="no-inset">
-          {header}
-          <div className="pg-scroll">{body}</div>
-        </div>
-      )}
+      <Profiler id="playground-app" onRender={reactProfiler.onRender}>
+        {inset ? (
+          <DevToolbarInset className="pg-app" data-testid="inset">
+            {header}
+            <div className="pg-scroll">{body}</div>
+          </DevToolbarInset>
+        ) : (
+          <div className="pg-app" data-testid="no-inset">
+            {header}
+            <div className="pg-scroll">{body}</div>
+          </div>
+        )}
+      </Profiler>
     </DevToolbar>
   );
 }

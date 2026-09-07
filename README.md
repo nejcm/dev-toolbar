@@ -78,7 +78,7 @@ them and you have a bar that hosts only your own tools.
 
 | Extension | What it gives you |
 | --- | --- |
-| [`ext/metrics`](./docs/ext/metrics.md) | Memory, interaction delay, jank and in-flight network as four chips, each degrading on its own where a browser API is missing |
+| [`ext/metrics`](./docs/ext/metrics.md) | Memory, interaction delay, jank and in-flight network, plus consumer-supplied collectors; each built-in degrades on its own where a browser API is missing |
 | [`ext/environment`](./docs/ext/environment.md) | Environment, release, commit and actor context — all supplied by you, all redacted, with production coloured like production |
 | [`ext/flags`](./docs/ext/flags.md) | Your feature flags, with local overrides that survive a reload and a `?dtb-flags=reset` kill switch |
 | [`ext/command-menu`](./docs/ext/command-menu.md) | A `⌘K` palette over every command the toolbar has aggregated. Leave it out and write your own over `useToolbarCommands()` |

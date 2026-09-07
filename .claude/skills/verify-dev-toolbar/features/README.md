@@ -158,6 +158,7 @@ handles, required state, calls and observable proof.
 
 ## Features
 
+- [Metrics](./metrics.md) — consumer collectors in chips, tabs, persistence, agent reads and diagnostics capture.
 - [The shell](./shell.md) — the bar, panel hosting, position, density,
   visibility, the inset, the height variable, and what survives a reload.
 - [Overflow](./overflow.md) — collapsing into `⋮` in priority order, and

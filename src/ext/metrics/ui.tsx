@@ -13,7 +13,8 @@ import {
 import { ensureMetricsStyles } from "./css";
 import { formatBytes, formatMs, shortenUrl } from "./format";
 import type { MetricsRuntime } from "./runtime";
-import type { MetricId, MetricsSnapshot } from "./types";
+import { metricView } from "./types";
+import type { CollectorId, MetricsSnapshot } from "./types";
 
 /**
  * The rendered surface. [dev-toolbar/ext/metrics]
@@ -52,7 +53,7 @@ export function MetricsChips({
     return (
       <div data-dtb-part="metrics-overflow-list">
         {snapshot.order.map((id) => {
-          const view = snapshot.views[id];
+          const view = metricView(snapshot, id);
           return (
             <button
               key={id}
@@ -94,7 +95,7 @@ export function MetricsChips({
     >
       <span data-dtb-part="metrics-chips">
         {snapshot.order.map((id) => {
-          const view = snapshot.views[id];
+          const view = metricView(snapshot, id);
           return (
             <Chip
               key={id}
@@ -132,30 +133,32 @@ export function MetricsPanel({ runtime, injectStyles, styleNonce }: PanelProps):
   );
   const first = snapshot.order[0] ?? "memory";
   const idPrefix = `dtb-metrics-${useId().replace(/:/g, "")}`;
-  const tabRefs = useRef<Partial<Record<MetricId, HTMLButtonElement | null>>>({});
+  const tabRefs = useRef<Partial<Record<CollectorId, HTMLButtonElement | null>>>(
+    Object.create(null),
+  );
   // start(api) has already run by the time a panel can open, so the
   // persisted tab is readable here.
-  const [active, setActive] = useState<MetricId>(() => {
+  const [active, setActive] = useState<CollectorId>(() => {
     const stored = runtime.storage()?.getItem(STORAGE_TAB_KEY);
-    return stored && snapshot.order.includes(stored as MetricId) ? (stored as MetricId) : first;
+    return stored && snapshot.order.includes(stored) ? stored : first;
   });
 
-  const select = (id: MetricId) => {
+  const select = (id: CollectorId) => {
     setActive(id);
     runtime.storage()?.setItem(STORAGE_TAB_KEY, id);
   };
 
-  const view = snapshot.views[snapshot.order.includes(active) ? active : first];
+  const view = metricView(snapshot, snapshot.order.includes(active) ? active : first);
   const collector = runtime.collectors.find((entry) => entry.id === view.id);
-  const tabId = (id: MetricId) => `${idPrefix}-tab-${id}`;
+  const tabId = (id: CollectorId) => `${idPrefix}-tab-${id}`;
   const metricsPanelId = `${idPrefix}-panel`;
-  const focusTab = (id: MetricId | undefined) => {
+  const focusTab = (id: CollectorId | undefined) => {
     if (id === undefined) return;
     select(id);
     tabRefs.current[id]?.focus();
   };
 
-  const moveTab = (id: MetricId, offset: number) => {
+  const moveTab = (id: CollectorId, offset: number) => {
     const index = snapshot.order.indexOf(id);
     const nextIndex = (index + offset + snapshot.order.length) % snapshot.order.length;
     focusTab(snapshot.order[nextIndex]);
@@ -165,7 +168,7 @@ export function MetricsPanel({ runtime, injectStyles, styleNonce }: PanelProps):
     <div data-dtb-part="metrics-panel" data-dtb-severity={view.severity}>
       <div data-dtb-part="metrics-tabs" data-dtb-bleed="" role="tablist" aria-label="Metrics">
         {snapshot.order.map((id) => {
-          const tab = snapshot.views[id];
+          const tab = metricView(snapshot, id);
           return (
             <button
               key={id}

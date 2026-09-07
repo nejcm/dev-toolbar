@@ -15,7 +15,8 @@
 import { createThrottledStore, redact, redactUrl } from "../../runtime";
 import type { ThrottledStore } from "../../runtime";
 import type { ExtensionRuntimeApi, ToolbarStorage } from "../../core/contract";
-import type { Collector, MetricId, MetricView, MetricsSnapshot } from "./types";
+import { isMetricId, metricView } from "./types";
+import type { Collector, CollectorId, MetricView, MetricsSnapshot } from "./types";
 
 export interface MetricsRuntimeOptions {
   collectors: readonly Collector[];
@@ -26,7 +27,7 @@ export interface MetricsRuntimeOptions {
 export interface MetricsRuntime {
   readonly store: ThrottledStore<MetricsSnapshot>;
   readonly collectors: readonly Collector[];
-  readonly order: readonly MetricId[];
+  readonly order: readonly CollectorId[];
   /** `null` until `start(api)` runs. */
   storage(): ToolbarStorage | null;
   start(api: ExtensionRuntimeApi): () => void;
@@ -41,7 +42,7 @@ const now = (): number =>
     ? performance.now()
     : Date.now();
 
-function emptyView(id: MetricId): MetricView {
+function emptyView(id: CollectorId): MetricView {
   return {
     id,
     label: id,
@@ -60,8 +61,11 @@ function emptyView(id: MetricId): MetricView {
 function signature(snapshot: MetricsSnapshot): string {
   let out = `${snapshot.seriesWritten}|`;
   for (const id of snapshot.order) {
-    const view = snapshot.views[id];
-    out += `${id}:${view.status}:${view.severity}:${view.display};`;
+    const view = metricView(snapshot, id);
+    // Preserve built-in notifications; custom details and raw values can change independently.
+    out += isMetricId(id)
+      ? `${id}:${view.status}:${view.severity}:${view.display};`
+      : JSON.stringify(view);
   }
   out += `#${snapshot.requests.length}:${snapshot.requests[0]?.id ?? ""}:${
     snapshot.requests[0]?.state ?? ""
@@ -80,19 +84,24 @@ export function createMetricsRuntime(options: MetricsRuntimeOptions): MetricsRun
 
   const build = (): MetricsSnapshot => {
     const at = now();
-    const views = {} as Record<MetricId, MetricView>;
+    const views: Record<keyof MetricsSnapshot["views"], MetricView> = {
+      memory: emptyView("memory"),
+      delay: emptyView("delay"),
+      jank: emptyView("jank"),
+      network: emptyView("network"),
+    };
+    const custom: Record<string, MetricView> = Object.create(null);
     let seriesWritten = 0;
     let requests: MetricsSnapshot["requests"] = [];
-    for (const id of ["memory", "delay", "jank", "network"] as MetricId[]) {
-      views[id] = emptyView(id);
-    }
     for (const collector of collectors) {
-      views[collector.id] = collector.read(at);
+      const view = collector.read(at);
+      if (isMetricId(collector.id)) views[collector.id] = view;
+      else custom[collector.id] = view;
       seriesWritten += collector.series.times.written;
       if (collector.entries) requests = collector.entries(at);
     }
     revision += 1;
-    return { revision, at, order, views, requests, seriesWritten };
+    return { revision, at, order, views, custom, requests, seriesWritten };
   };
 
   const store = createThrottledStore<MetricsSnapshot>(build(), {
@@ -181,7 +190,7 @@ export function createMetricsRuntime(options: MetricsRuntimeOptions): MetricsRun
          * runs on every roster read.
          */
         metrics: latest.order.map((id) => {
-          const view = latest.views[id];
+          const view = metricView(latest, id);
           return {
             id,
             status: view.status,
@@ -192,9 +201,12 @@ export function createMetricsRuntime(options: MetricsRuntimeOptions): MetricsRun
           };
         }),
       };
+      const custom: Record<string, unknown> = Object.create(null);
       for (const collector of collectors) {
-        payload[collector.id] = collector.diagnostics(at);
+        if (isMetricId(collector.id)) payload[collector.id] = collector.diagnostics(at);
+        else custom[collector.id] = collector.diagnostics(at);
       }
+      if (Object.keys(custom).length > 0) payload.custom = custom;
       // Catch credential-shaped values added to the payload above.
       return redact(payload);
     },

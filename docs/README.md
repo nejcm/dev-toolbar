@@ -25,7 +25,7 @@ Everything the [README](../README.md) links to, in one place.
 
 | Extension | Document |
 | --- | --- |
-| `ext/metrics` | [ext/metrics.md](./ext/metrics.md) |
+| `ext/metrics` | [Built-in metrics and custom collectors](./ext/metrics.md) |
 | `ext/environment` | [ext/environment.md](./ext/environment.md) |
 | `ext/flags` | [ext/flags.md](./ext/flags.md) |
 | `ext/command-menu` | [ext/command-menu.md](./ext/command-menu.md) |
