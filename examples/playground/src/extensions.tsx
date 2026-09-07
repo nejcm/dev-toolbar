@@ -53,14 +53,8 @@ function Chip({
     error: "var(--dtb-danger)",
   }[tone];
 
-  return (
-    <button
-      type="button"
-      data-dtb-part="trigger"
-      aria-expanded={expanded ?? false}
-      onClick={onClick}
-      title={`${label} — playground placeholder`}
-    >
+  const body = (
+    <>
       <span
         aria-hidden="true"
         style={{
@@ -73,6 +67,27 @@ function Chip({
       />
       <span style={{ color: "var(--dtb-muted)" }}>{label}</span>
       <span style={{ fontFamily: "var(--dtb-font-mono)" }}>{value}</span>
+    </>
+  );
+  const title = `${label} — playground placeholder`;
+  // No handler means nothing to expand: a readout, not a control. Core renders a
+  // panel-less extension the same way, so the chip must not look clickable.
+  if (!onClick) {
+    return (
+      <span data-dtb-part="trigger" title={title}>
+        {body}
+      </span>
+    );
+  }
+  return (
+    <button
+      type="button"
+      data-dtb-part="trigger"
+      aria-expanded={expanded ?? false}
+      onClick={onClick}
+      title={title}
+    >
+      {body}
     </button>
   );
 }

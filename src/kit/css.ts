@@ -71,6 +71,22 @@ export const KIT_CSS = String.raw`@layer dev-toolbar {
     margin: 0;
   }
 
+  /* An action that follows a value in the same cell — pin, copy, reset — sits
+     one step off the value instead of touching it. */
+  [data-dev-toolbar] [data-dtb-kind="rows"] dd > [data-dtb-kind="action"] {
+    margin-inline-start: var(--dtb-space-2);
+  }
+
+  /* A panel's root: its sections stack with the same rhythm every first-party
+     panel uses, and it fills the body so a scroller inside it can take the rest. */
+  [data-dev-toolbar] [data-dtb-kind="stack"] {
+    display: flex;
+    flex-direction: column;
+    gap: var(--dtb-space-3);
+    height: 100%;
+    min-height: 0;
+  }
+
   [data-dev-toolbar] [data-dtb-kind="list"] {
     display: flex;
     flex-direction: column;
@@ -102,6 +118,15 @@ export const KIT_CSS = String.raw`@layer dev-toolbar {
     flex-wrap: wrap;
     padding-bottom: var(--dtb-space-3);
     border-bottom: 1px solid var(--dtb-border);
+  }
+
+  /* A toolbar that ends its panel is a footer: the rule moves above it, so it
+     reads as the floor of the content rather than underlining the edge. */
+  [data-dev-toolbar] [data-dtb-kind="toolbar"]:last-child:not(:only-child) {
+    padding-bottom: 0;
+    padding-top: var(--dtb-space-3);
+    border-bottom: 0;
+    border-top: 1px solid var(--dtb-border);
   }
 
   [data-dev-toolbar] [data-dtb-kind="dot"][data-dtb-severity="unknown"] {

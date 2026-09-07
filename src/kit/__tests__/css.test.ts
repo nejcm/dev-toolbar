@@ -16,6 +16,7 @@ const KINDS = [
   "value",
   "search",
   "toolbar",
+  "stack",
 ] as const;
 
 afterEach(() => {

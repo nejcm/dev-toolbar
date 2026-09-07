@@ -327,13 +327,14 @@ lets one stylesheet serve every extension. An element usually carries both:
 | `banner` | padded and rounded; bordered and tinted per severity | `<Banner>` |
 | `search` | a flexible, bounded-width search box | `<SearchField>` |
 | `toolbar` | a wrapping control row with a rule under it | — (hand-written) |
+| `stack` | a panel root: a flex column with the first-party section gap, filling the body | — (hand-written) |
 | `field` | **nothing** — a hook only, see below | `<TextInput>`, `<Select>` |
 
-Fifteen kinds, and `field` is the one the kit styles nothing for; the other fourteen
+Sixteen kinds, and `field` is the one the kit styles nothing for; the other fifteen
 each get rules from `KIT_CSS`.
 
-`row`, `list` and `toolbar` have no control because there is nothing for one to do:
-they are a `<div>`, a `<ul>` and a `<div>` with an attribute on them. Add the attribute
+`row`, `list`, `toolbar` and `stack` have no control because there is nothing for one to
+do: they are a `<div>`, a `<ul>` and two `<div>`s with an attribute on them. Add the attribute
 by hand.
 
 `field` is the deliberate carve-out. Core already owns field geometry through its
