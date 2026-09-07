@@ -65,7 +65,21 @@ export function DiagnosticsChip({
   );
   const omissions = state.snapshot?.omissions.length ?? 0;
   const captured = state.snapshot !== null;
-  const accessibleLabel = omissions > 0 ? `${label}, ${omissions} missing` : label;
+  // §1B's badge. Live — it counts events as they happen, not as of the last
+  // capture, so the chip is the first place you learn something is on fire.
+  const { errors, warnings } = state;
+  const caught = errors + warnings;
+  const caughtText =
+    errors > 0
+      ? `${errors} error${errors === 1 ? "" : "s"}${warnings > 0 ? `, ${warnings} warning${warnings === 1 ? "" : "s"}` : ""}`
+      : `${warnings} warning${warnings === 1 ? "" : "s"}`;
+  const accessibleLabel = [
+    label,
+    omissions > 0 ? `${omissions} missing` : null,
+    caught > 0 ? caughtText : null,
+  ]
+    .filter((part) => part !== null)
+    .join(", ");
 
   return (
     <button
@@ -75,9 +89,10 @@ export function DiagnosticsChip({
       aria-label={accessibleLabel}
       onClick={onToggle}
       title={
-        captured
+        (captured
           ? `${label}: snapshot taken${omissions === 0 ? ", complete" : `, ${omissions} omission${omissions === 1 ? "" : "s"}`} — click to review, copy or download it`
-          : `${label}: click to capture a snapshot for a bug report`
+          : `${label}: click to capture a snapshot for a bug report`) +
+        (caught > 0 ? `\n${caughtText} captured since load; the snapshot lists them.` : "")
       }
     >
       <Chip
@@ -87,7 +102,21 @@ export function DiagnosticsChip({
         data-dtb-incomplete={omissions > 0 ? "true" : "false"}
         dotProps={{ "data-dtb-part": "diag-dot" }}
         valueProps={{ "data-dtb-part": "diag-value" }}
-      />
+      >
+        {caught > 0 ? (
+          <span
+            data-dtb-part="diag-errors"
+            data-dtb-tone={errors > 0 ? "error" : "warn"}
+            data-dtb-errors={String(errors)}
+            data-dtb-warnings={String(warnings)}
+            // The accessible name above already carries the same words; the
+            // badge itself is a duplicate to a screen reader.
+            aria-hidden="true"
+          >
+            {caught}
+          </span>
+        ) : null}
+      </Chip>
     </button>
   );
 }

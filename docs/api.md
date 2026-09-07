@@ -164,6 +164,16 @@ four [`network.*` commands](./ext/metrics.md#the-network-commands) — `export`,
 export. These are subpath exports, not root exports; the extension contract version
 remains 2.
 
+The [diagnostics subpath](./ext/diagnostics.md#the-console-tail) adds the console and
+error tail: `window`'s `error` and `unhandledrejection` events plus patched
+`console.error` / `console.warn`, grouped and redacted into `DiagnosticSnapshot.console`
+with a count on the chip, and two more commands — `diagnostics.console.export` and
+`diagnostics.console.clear` — reachable from here through `invokeCommand` like any other
+aggregated command. It is the only thing in the package that patches `console`: it
+always calls through, restores by identity on teardown, never patches `console.log`, and
+`diagnostics({ console: false })` turns it off entirely. Subpath exports again, not root
+ones; the contract version remains 2.
+
 To put a third-party devtool's panel on the bar, see [embedding.md](./embedding.md):
 the plain `{ id, label, panel }` object needs nothing from this entry but the
 `DevToolbarExtension` type, and the optional `embed()` frame helper is a

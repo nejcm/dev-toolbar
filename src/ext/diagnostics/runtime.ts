@@ -36,10 +36,13 @@ import type {
   ExtensionRuntimeApi,
   ToolbarStorage,
 } from "../../core/contract";
+import { createConsoleTail } from "./console";
+import type { ConsoleTailOptions } from "./console";
 import { createResponsivenessMonitor } from "./responsiveness";
 import type { ResponsivenessOptions } from "./responsiveness";
-import { NO_SNAPSHOT, SNAPSHOT_FORMATS } from "./types";
+import { NO_SNAPSHOT, SNAPSHOT_FORMATS, describeTail } from "./types";
 import type {
+  ConsoleTailReport,
   DiagnosticContribution,
   DiagnosticOmission,
   DiagnosticSnapshot,
@@ -78,6 +81,11 @@ export interface DiagnosticsRuntimeOptions extends ResponsivenessOptions {
   redactOptions?: RedactOptions;
   /** Long tasks listed per snapshot. Default `5`. */
   recentSize?: number;
+  /**
+   * The console and error tail (`plans/ecosystem-extensions.md` § 1B). On by
+   * default; `false` opts out entirely — see `src/ext/diagnostics/console.ts`.
+   */
+  console?: ConsoleTailOptions | false;
 }
 
 export interface DiagnosticsRuntime {
@@ -116,6 +124,14 @@ export interface DiagnosticsRuntime {
    * The full object remains available through this extension's commands.
    */
   summary(): unknown;
+  /**
+   * The console/error tail as it stands now, newest first — the same object
+   * the snapshot carries, so a reader never gets a second, less-redacted view
+   * of it. `limit` keeps the newest N grouped entries.
+   */
+  tail(limit?: number): ConsoleTailReport;
+  /** Drops every captured entry and zeroes the counters. Keeps capturing. */
+  clearTail(): void;
   /** Persisted panel format. */
   readFormat(): SnapshotFormat;
   writeFormat(format: SnapshotFormat): void;
@@ -277,6 +293,13 @@ export function createDiagnosticsRuntime(
   const mask = redactOptions?.mask ?? REDACTED;
 
   const monitor = createResponsivenessMonitor(options);
+  // Built here, not in `start(api)`: `report()` must answer "pending" for a
+  // snapshot captured before the extension was ever started.
+  const tail = createConsoleTail(options.console, {
+    redactOptions,
+    now: options.now ?? now,
+    onChange: () => publishCounts(),
+  });
 
   let api: ExtensionRuntimeApi | null = null;
   let storage: ToolbarStorage | null = null;
@@ -511,6 +534,10 @@ export function createDiagnosticsRuntime(
       },
       page: readPage(redactOptions),
       responsiveness: readResponsiveness(),
+      // Already redacted, entry by entry, on the way into the ring — it does
+      // not go through `finish()` for the same reason `responsiveness` does
+      // not: this extension built it, so there is no foreign value left in it.
+      console: safeTail(),
       app: appContribution?.status === "ok" ? appContribution.data : null,
       contributions,
       omissions,
@@ -570,6 +597,24 @@ export function createDiagnosticsRuntime(
     }
   };
 
+  /** Same rule as `safeReport`: the failure path may not itself fail. */
+  const safeTail = (limit?: number): ConsoleTailReport => {
+    try {
+      return tail.report(limit);
+    } catch {
+      return {
+        status: "unavailable",
+        note: describeTail("unavailable"),
+        watching: [],
+        errors: null,
+        warnings: null,
+        dropped: null,
+        truncated: false,
+        entries: [],
+      };
+    }
+  };
+
   const failedSnapshot = (error: unknown): DiagnosticSnapshot => ({
     generatedAt: nowIso(),
     toolbar: {
@@ -593,6 +638,7 @@ export function createDiagnosticsRuntime(
       navigation: null,
     },
     responsiveness: safeReport(),
+    console: safeTail(),
     app: null,
     contributions: [],
     omissions: [
@@ -606,20 +652,84 @@ export function createDiagnosticsRuntime(
     ],
   });
 
+  /**
+   * True while a publish — or the store's own report of a failed publish — is
+   * running. See `publishCounts`.
+   */
+  let publishing = false;
+
+  /** Raises the guard for one call, and puts it back where it was. */
+  const whilePublishing = (body: () => void): void => {
+    const outer = publishing;
+    publishing = true;
+    try {
+      body();
+    } finally {
+      publishing = outer;
+    }
+  };
+
   const store = createThrottledStore<DiagnosticsSnapshotState>(NO_SNAPSHOT, {
     intervalMs: 100,
     // The store's default clock is unguarded performance.now(); handing it
     // the guarded `now` keeps a failed capture's publish step fail-closed too.
     now,
+    // Regression: guarding `store.set()` alone missed the throttle's trailing
+    // edge, which notifies from a timer after that guard is down — measured
+    // at five notifications and seven captured errors from two logs.
+    onError: (error) => {
+      whilePublishing(() => {
+        // eslint-disable-next-line no-console
+        console.error("[dev-toolbar/diagnostics] a store listener threw.", error);
+      });
+    },
   });
+
+  // Published off the current task: React reports its own dev warnings
+  // through `console.error` during render, and a synchronous `store.set()`
+  // here would trigger React's "update while rendering" warning right back.
+  let countsPending = false;
+  /** False before `start()` and after disposal — see the `write` guard. */
+  let live = false;
+  const publishCounts = (): void => {
+    if (countsPending || publishing) return;
+    countsPending = true;
+    const write = () => {
+      countsPending = false;
+      // Scheduled while running, arriving after teardown: a disposed extension
+      // may not publish. (Measured: `stop()` then a microtask still wrote one
+      // notification.)
+      if (!live) return;
+      whilePublishing(() => {
+        const { errors, warnings } = tail.counts();
+        const previous = store.peek();
+        if (previous.errors === errors && previous.warnings === warnings) return;
+        store.set({ ...previous, errors, warnings });
+      });
+    };
+    try {
+      if (typeof queueMicrotask === "function") {
+        queueMicrotask(write);
+        return;
+      }
+      setTimeout(write, 0);
+    } catch {
+      // No scheduler at all: write now rather than lose the count. The
+      // mid-render hazard above is a React warning, not a lost update.
+      write();
+    }
+  };
 
   const capture = (): DiagnosticSnapshot => {
     const snapshot = build();
     const previous = store.peek();
+    const { errors, warnings } = tail.counts();
     store.set({
       revision: previous.revision + 1,
       snapshot,
       capturedAt: now(),
+      errors,
+      warnings,
     });
     store.flush();
     return snapshot;
@@ -685,6 +795,18 @@ export function createDiagnosticsRuntime(
         // The ids alone. `reason` is a sentence per omission and belongs in
         // the snapshot the commands hand over, not in every roster read.
         omissions: (snapshot?.omissions ?? []).map((omission) => omission.id),
+        // Counts only, same as the chip — messages stay in the snapshot and
+        // `<id>.console.export`; a roster read is not for redacted foreign text.
+        console: (() => {
+          const report = safeTail(0);
+          return {
+            status: report.status,
+            errors: report.errors,
+            warnings: report.warnings,
+            dropped: report.dropped,
+            watching: report.watching,
+          };
+        })(),
         format: readFormat(),
       };
     },
@@ -714,6 +836,14 @@ export function createDiagnosticsRuntime(
       return true;
     },
 
+    tail: (limit) => safeTail(limit),
+
+    clearTail() {
+      tail.clear();
+      // The chip must drop to zero without waiting for a capture.
+      publishCounts();
+    },
+
     readFormat,
 
     writeFormat(format) {
@@ -728,9 +858,18 @@ export function createDiagnosticsRuntime(
       // anybody) — the long task you want in the report happens while using
       // the app, not while reading the toolbar.
       monitor.start();
+      // Same reason, and the same rule in reverse: `dispose` below restores
+      // `console.error`/`console.warn` by identity.
+      tail.start();
+      live = true;
 
       const dispose = () => {
+        live = false;
+        // A queued counter write is now void: it would notify subscribers of
+        // an extension that is gone.
+        countsPending = false;
         monitor.stop();
+        tail.stop();
         // An un-revoked object URL is a retained Blob.
         for (const revoke of revocations) revoke();
         revocations = [];
@@ -763,6 +902,21 @@ export function renderJson(snapshot: DiagnosticSnapshot): string {
   }
 }
 
+/**
+ * A fenced block needs more backticks than any run inside it, or the block
+ * ends early and spills the rest of the snapshot into the surrounding prose
+ * (e.g. a README contribution that itself escapes a fence). Measure instead of
+ * guessing a fixed count.
+ */
+const block = (body: string, language: string): string => {
+  let longest = 0;
+  for (const run of body.match(/`+/g) ?? []) {
+    if (run.length > longest) longest = run.length;
+  }
+  const ticks = "`".repeat(Math.max(3, longest + 1));
+  return `${ticks}${language}\n${body}\n${ticks}`;
+};
+
 const fence = (value: unknown): string => {
   let body: string;
   try {
@@ -770,16 +924,7 @@ const fence = (value: unknown): string => {
   } catch (error) {
     body = `"unserialisable — ${safeDescribe(error)}"`;
   }
-  // A fenced block needs more backticks than any run inside it, or the block
-  // ends early and spills the rest of the snapshot into the surrounding
-  // prose (e.g. a README contribution that itself escapes a fence). Measure
-  // instead of guessing a fixed count.
-  let longest = 0;
-  for (const run of body.match(/`+/g) ?? []) {
-    if (run.length > longest) longest = run.length;
-  }
-  const ticks = "`".repeat(Math.max(3, longest + 1));
-  return `${ticks}json\n${body}\n${ticks}`;
+  return block(body, "json");
 };
 
 /**
@@ -928,6 +1073,39 @@ export function renderMarkdown(snapshot: DiagnosticSnapshot, mask: string = REDA
         : `, ${shifts.total} total, worst ${shifts.worst}`),
   );
   lines.push(`  - ${shifts.note}`);
+  lines.push("");
+
+  const tail = snapshot.console;
+  lines.push(
+    `## Console — ${tail.errors === null ? "_unknown_" : tail.errors} error${tail.errors === 1 ? "" : "s"}, ` +
+      `${tail.warnings === null ? "_unknown_" : tail.warnings} warning${tail.warnings === 1 ? "" : "s"}`,
+  );
+  lines.push("");
+  lines.push(tail.note);
+  lines.push("");
+  if (tail.dropped !== null && tail.dropped > 0) {
+    lines.push(
+      `${tail.dropped} older message${tail.dropped === 1 ? "" : "s"} fell out of the buffer before this was taken.`,
+    );
+    lines.push("");
+  }
+  for (const entry of tail.entries) {
+    lines.push(
+      `- **${entry.level}** \`${entry.source}\`${entry.count === 1 ? "" : ` ×${entry.count}`}: ` +
+        // The message is already masked; the fence guard is for Markdown, not
+        // for redaction — a message with a newline in it would otherwise end
+        // the list and spill the rest of the snapshot into loose text.
+        cell(entry.message),
+    );
+    if (entry.stack !== null) {
+      lines.push("");
+      lines.push(block(entry.stack, ""));
+      lines.push("");
+    }
+  }
+  if (tail.entries.length === 0 && (tail.errors === 0 || tail.errors === null)) {
+    lines.push("_Nothing captured._");
+  }
   lines.push("");
 
   if (snapshot.app !== null && snapshot.app !== undefined) {

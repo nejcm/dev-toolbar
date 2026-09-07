@@ -1,24 +1,15 @@
 /**
  * A small, deliberate CSS scanner for the stylesheet invariants in
- * `__tests__`. It exists so a test can assert something about *every* rule in
- * a shipped sheet without a hand-maintained list of rules or of elements —
- * the omission mechanism those lists carry is exactly what the invariants are
- * there to catch.
- *
- * It is not a CSS parser and does not try to be. Every construct it does not
- * recognise throws, so an unfamiliar sheet fails a test and a human decides,
- * rather than being scanned to a vacuous pass.
+ * `__tests__` — lets a test assert something about every rule in a shipped
+ * sheet without a hand-maintained list to go stale. Not a CSS parser: any
+ * construct it does not recognise throws rather than scanning to a vacuous pass.
  */
 
 /** At-rules whose block holds further rules, and is therefore descended into. */
 const NESTING_AT_RULES = new Set(["layer", "media", "supports", "container", "scope"]);
 
-/**
- * Semicolon-terminated at-rules that carry no rules of their own, and are the
- * only statement forms this scanner will pass over. Everything else — `@import`
- * above all, which can pull in a whole unscanned sheet — throws, so the audit
- * cannot be emptied out by a statement it never looks at.
- */
+// The only statement forms this scanner passes over; everything else — `@import`
+// above all — throws rather than silently skip a statement it never looks at.
 const STATEMENT_AT_RULES = new Set(["charset", "layer"]);
 
 /** At-rules whose block holds no style rules, and is therefore skipped whole. */
@@ -39,29 +30,16 @@ export interface StyleRule {
   readonly enclosing: readonly string[];
 }
 
-/**
- * A sheet with its comments removed and its string literals located.
- *
- * Both halves matter, and for opposite reasons. A comment opener inside a
- * quoted value opens no comment, so a regex-based stripper can erase the
- * rules between two such values and report a clean sheet that is simply
- * missing them. And a `{`, `}` or `;` inside a quoted value is not structure,
- * so a scanner that counts braces blindly loses the shape of the sheet. The
- * strings are therefore kept verbatim — a selector is reported as written —
- * with `quoted` saying which indices are inside one, delimiters included, so
- * every structural test can ignore them.
- */
+// Comments removed, strings kept verbatim (a selector is reported as written)
+// with `quoted` marking their indices so structural tests can skip them —
+// braces and comment openers inside a quoted value are not structure.
 interface ScannedSource {
   readonly source: string;
   readonly quoted: readonly boolean[];
 }
 
-/**
- * Strip comments and locate strings in one pass, so neither can be mistaken
- * for the other. Fails closed: an unterminated comment or string, an unopened
- * comment terminator, and an escape (which this scanner does not model) all
- * throw rather than silently swallowing the rest of the sheet.
- */
+// Strips comments and locates strings in one pass so neither is mistaken for
+// the other. Fails closed: an unterminated comment/string or an escape throws.
 function scanSource(css: string): ScannedSource {
   let source = "";
   const quoted: boolean[] = [];
@@ -245,27 +223,16 @@ function subjectCompound(selector: string): string {
   return selector.slice(start);
 }
 
-/**
- * Functional pseudo-classes taking a selector list, where the subject matches
- * *some* branch: a condition holds on the subject only if every branch imposes
- * it.
- */
+// Functional pseudo-classes taking a selector list where the subject matches
+// *some* branch: a condition holds only if every branch imposes it.
 const SELECTOR_LIST_PSEUDOS = new Set(["is", "where", "matches", "any"]);
 
-/**
- * Pseudo-classes whose argument is a selector the subject must *not* match.
- * A token inside one is never a positive condition on the subject: it says
- * what the element is not. The argument is still parsed, so syntax this
- * scanner does not model throws rather than being waved through.
- */
+// A token inside `:not()`'s argument is never a positive condition on the
+// subject. The argument is still parsed, so unmodelled syntax throws.
 const NEGATION_PSEUDOS = new Set(["not"]);
 
-/**
- * Pseudo-classes and pseudo-elements that are recognised but say nothing about
- * whether the subject is toolbar-owned: state, structure, and anything whose
- * argument constrains descendants rather than the subject. Their arguments are
- * not parsed. Anything absent from all three sets throws.
- */
+// Recognised but say nothing about whether the subject is toolbar-owned;
+// their arguments are not parsed. Anything absent from all three sets throws.
 const NEUTRAL_PSEUDOS = new Set([
   "active",
   "after",
@@ -483,35 +450,11 @@ export interface EmbedGuardAudit {
 }
 
 /**
- * Sort every selector in `css` by whether it can reach into a `data-dtb-embed`
- * subtree, working from the selector text alone — no fixture, no element list.
- *
- * The subject compound (the elements a rule actually styles) decides it, and
- * every test on it is *mandatory and positive*: the condition must hold for
- * every element the selector matches. A token inside `:not()`, a token in only
- * some branch of `:is()`/`:where()`, and a token inside a quoted attribute
- * value are all worth nothing.
- *
- * - the subject must carry `[data-dev-toolbar]` → the toolbar root, which an
- *   embedded subtree never is → `root`;
- * - the subject must carry a `[data-dtb-*]` attribute → a toolbar-owned part,
- *   kind or opt-in, which nothing inside an embed frame carries → `keyed`;
- * - otherwise the rule styles descendants by element, attribute or state, so
- *   it lands on a vendor's DOM unless {@link EMBED_GUARD} is one of the
- *   subject's own pieces → `guarded` or `unguarded`. A guard reached only
- *   through an `:is()` branch does not count: it is conservatively rejected,
- *   which fails the audit even where every branch happens to carry it.
- *
- * It fails closed: a selector that is not scoped by `[data-dev-toolbar]` at
- * all throws rather than being sorted, as does any selector syntax this
- * scanner does not model and any sheet {@link styleRules} cannot scan.
- *
- * The `keyed` exemption is why this is core's invariant and not every sheet's.
- * What makes it sound is not where the attribute sits in the selector's
- * context — `[data-dtb-part="region"]` contexts belong to the bar, and the bar
- * is the panel host's sibling, not the embed frame's ancestor — but that the
- * *selected* element must itself carry a toolbar-owned attribute. The embed
- * frame is the boundary the toolbar stops writing those below.
+ * Sorts every selector in `css` by its subject compound, mandatory-and-positive
+ * matching only; throws on anything unscoped by `[data-dev-toolbar]` or
+ * unparseable. `keyed` requires the *selected* element itself to carry a
+ * toolbar-owned attribute — why this is core's invariant, not every sheet's;
+ * see docs/embedding.md.
  */
 export function auditEmbedGuards(css: string): EmbedGuardAudit {
   const audit: EmbedGuardAudit = { root: [], keyed: [], guarded: [], unguarded: [] };

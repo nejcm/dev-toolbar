@@ -22,7 +22,7 @@ const MAX_CAPACITY = 1 << 24;
  * the same pass, so a bad value fails predictably here rather than throwing
  * a `RangeError` from `new Array()`/`new Float64Array()`.
  */
-function clampCapacity(capacity: number): number {
+export function clampCapacity(capacity: number): number {
   // `NaN > 0` and `-Infinity > 0` are both false, so both take `: 1`.
   if (!Number.isFinite(capacity)) return capacity > 0 ? MAX_CAPACITY : 1;
   return Math.max(1, Math.min(MAX_CAPACITY, Math.floor(capacity) || 1));

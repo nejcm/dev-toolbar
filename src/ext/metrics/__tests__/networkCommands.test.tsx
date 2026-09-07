@@ -98,13 +98,8 @@ describe("network.export", () => {
   });
 
   it("bounds the payload at what survives the agent bridge, and says so", async () => {
-    /**
-     * `/ext/agent` re-redacts a command result, and `redact()` replaces
-     * everything past the 200th array entry with a `"[+N more]"` string. An
-     * unbounded export would reach an agent as an array ending in a string,
-     * under a `count` that disagreed with its length — so the command caps at
-     * the same 200 and reports what it left behind.
-     */
+    // Caps at `redact()`'s own 200-entry array cutoff (docs/ext/metrics.md),
+    // so an unbounded export can't disagree with its own reported count.
     const { toolbar } = mount({ network: { patchXhr: false, historySize: 300 } });
     for (let index = 0; index < 250; index += 1) await request(`/api/${index}`);
 
@@ -152,13 +147,8 @@ describe("network.export", () => {
 });
 
 it("returns the identical array the panel's snapshot holds", async () => {
-  /**
-   * Identity, not equality. The panel renders `store.getSnapshot().requests`
-   * and `exportRequests()` returns that same object, so the two cannot drift
-   * into different redaction, ordering or shape — the divergence the plan
-   * calls "a bug, not a nuance". A second mapping written for the export
-   * would fail this `toBe` while still passing a `toEqual`.
-   */
+  // Identity, not equality: exportRequests() must return the same array
+  // store.getSnapshot() holds, so a second mapping can't quietly diverge.
   const collector = createNetworkCollector({ patchXhr: false });
   const runtime = createMetricsRuntime({ collectors: [collector] });
   const { api, abort } = fakeExtensionApi();

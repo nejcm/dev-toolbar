@@ -176,6 +176,111 @@ export interface DiagnosticOmission {
 }
 
 /* -------------------------------------------------------------------------- */
+/* §1B — the console and error tail                                            */
+/* -------------------------------------------------------------------------- */
+
+/** Where one captured entry came from. `console.log` is deliberately not among them. */
+export type ConsoleTailSource =
+  | "console.error"
+  | "console.warn"
+  | "window.error"
+  | "unhandledrejection";
+
+export type ConsoleTailLevel = "error" | "warn";
+
+/** Live event totals for the chip. Counts events, not grouped entries. */
+export interface ConsoleTailCounts {
+  errors: number;
+  warnings: number;
+}
+
+/**
+ * Same shape of claim as `SupportState`: a count is only meaningful when
+ * something was actually watched, so the statuses that never watched report
+ * `null` counts rather than a zero somebody would act on.
+ */
+export type ConsoleTailStatus =
+  /** Patched and listening. The counts mean what they say. */
+  | "capturing"
+  /** Turned off — `console: false`, or every source individually disabled. */
+  | "disabled"
+  /**
+   * Nothing here can be watched. Either the start found nothing to watch (no
+   * `console`, no `window`), or what it did patch is no longer live — the page
+   * replaced the method, or swapped `globalThis.console` for another object.
+   * Nothing is re-patched automatically; the claim is dropped instead.
+   */
+  | "unavailable"
+  /** `start(api)` has not run yet. Nothing has been captured. */
+  | "pending"
+  /** Was capturing, no longer is — the toolbar tore this extension down. */
+  | "stopped";
+
+/**
+ * One grouped message. Repeats of the same message from the same source share
+ * an entry and bump `count` — a render loop logging 4,000 times is one row
+ * with a number on it, not a ring with one message in it 25 times.
+ */
+export interface ConsoleTailEntry {
+  source: ConsoleTailSource;
+  level: ConsoleTailLevel;
+  /** Redacted on the way in, argument by argument, before they were joined. */
+  message: string;
+  /**
+   * The stack where there was one, redacted, with the header line deleted
+   * (see `src/ext/diagnostics/console.ts`). `null` where there was no stack,
+   * or deleting the header left nothing.
+   */
+  stack: string | null;
+  /** How many times this message was seen. `1` for a message seen once. */
+  count: number;
+  /** Clock reading at the first and most recent occurrence, ms. */
+  firstAt: number;
+  lastAt: number;
+}
+
+export interface ConsoleTailReport {
+  status: ConsoleTailStatus;
+  /** Always populated. Says what the numbers mean, or why there are none. */
+  note: string;
+  /**
+   * The sources being watched **at the moment of the report** — a live
+   * read-back, not the answer `start()` got. Empty unless `status` is
+   * `"capturing"`.
+   */
+  watching: readonly ConsoleTailSource[];
+  /** Every error-level event seen, grouped repeats included. `null` unless observed. */
+  errors: number | null;
+  /** Every warn-level event seen, grouped repeats included. `null` unless observed. */
+  warnings: number | null;
+  /** Distinct messages pushed out of the ring by newer ones. `null` unless observed. */
+  dropped: number | null;
+  /** True when a `limit` left retained entries out. */
+  truncated: boolean;
+  /** Newest first. Copies — a retained entry keeps being grouped into. */
+  entries: ConsoleTailEntry[];
+}
+
+/** Human wording for a `ConsoleTailStatus`, used in every `note` and in the panel. */
+export function describeTail(
+  status: ConsoleTailStatus,
+  watching: readonly ConsoleTailSource[] = [],
+): string {
+  switch (status) {
+    case "capturing":
+      return `Captured from ${watching.join(", ")}. console.log is never captured.`;
+    case "disabled":
+      return "Console capture is off, so this is unknown — not zero. Pass `console: true`-shaped options to /ext/diagnostics to turn it back on.";
+    case "unavailable":
+      return "Nothing here is being watched — there is no console or window to patch, or the console this tail patched is no longer the live one. Anything not captured is unknown, not zero.";
+    case "pending":
+      return "The toolbar has not started this extension yet, so nothing has been captured — this is unknown, not zero.";
+    case "stopped":
+      return "Capture has stopped — the toolbar tore this extension down. Anything after that point is unknown, not zero.";
+  }
+}
+
+/* -------------------------------------------------------------------------- */
 /* The snapshot                                                                */
 /* -------------------------------------------------------------------------- */
 
@@ -194,6 +299,12 @@ export interface DiagnosticSnapshot {
   };
   page: PageReport;
   responsiveness: ResponsivenessReport;
+  /**
+   * What went wrong on the way here — window errors, unhandled rejections and
+   * `console.error`/`console.warn`, grouped and redacted on the way in
+   * (`plans/ecosystem-extensions.md` § 1B).
+   */
+  console: ConsoleTailReport;
   /** Consumer-supplied `app` / `session` context, redacted. `null` when none. */
   app: unknown;
   /** One per present, non-hidden extension, plus one per consumer `source`. */
@@ -210,6 +321,15 @@ export interface DiagnosticsSnapshotState {
   snapshot: DiagnosticSnapshot | null;
   /** `performance.now()` of the last capture. */
   capturedAt: number | null;
+  /**
+   * Console/error events seen so far — **live**, not as of the last capture,
+   * because the chip's count would otherwise only move when somebody opened
+   * the panel. `0` while capture is off, which is why the snapshot's
+   * `console.errors` is `number | null` and this is not: this pair is a badge,
+   * and the report is the claim.
+   */
+  errors: number;
+  warnings: number;
 }
 
 /** A consumer-supplied section, treated exactly like an extension contribution. */
@@ -223,6 +343,8 @@ export const NO_SNAPSHOT: DiagnosticsSnapshotState = {
   revision: 0,
   snapshot: null,
   capturedAt: null,
+  errors: 0,
+  warnings: 0,
 };
 
 /** Human wording for a `SupportState`, used in every `note` and in the panel. */

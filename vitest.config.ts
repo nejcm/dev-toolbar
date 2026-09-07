@@ -48,24 +48,20 @@ export default defineConfig({
       // test imports it, and dropped the old `all` flag — don't reintroduce
       // `all: true`, it's now a type error, not a no-op.
       include: ["src/**/*.{ts,tsx}"],
-      // Only tests and test-only repository helpers are excluded. An earlier
-      // draft also excluded index.tsx/types.ts/barrels as "just re-exports",
-      // but those files carry real logic (extension factories, runtime exports)
-      // and are genuinely tested — excluding them didn't change the numbers, it
-      // just put ~1,700 lines out of reach of the floors below. Don't reintroduce
-      // an exclude list without measuring coverage both ways first.
+      // index.tsx/types.ts/barrels look like "just re-exports" but carry real
+      // logic and are genuinely tested — don't exclude them without measuring
+      // coverage both ways first (it previously put ~1,700 lines out of reach).
       exclude: ["src/**/*.test.{ts,tsx}", "src/test-utils/**"],
-      // Floors, not targets. Re-measured at the end of the extension-kit tier C
-      // work — statements 93.84, branches 86.40, functions 95.08, lines 96.09,
-      // every one of them up on the Phase 8 ratchet (93.06 / 85.26 / 93.57 /
-      // 95.38) because the kit is small, densely tested code and the seven
-      // extensions handed it the branches they used to carry themselves.
-      // The floors keep roughly two to three points of room for ordinary
-      // movement while a real regression still fails the build; `branches` and
-      // `functions` are raised here to hold the gain rather than let it drain
-      // away unnoticed. `statements` already sat at that margin, so it stays.
-      // `functions` is tightest in practice — if it fires on ordinary work, add
-      // tests rather than lowering the number.
+      // Floors, not targets. Measured: statements 93.84, branches 86.40,
+      // functions 95.08, lines 96.09 — up from 93.06 / 85.26 / 93.57 / 95.38
+      // because the kit is small, densely tested code that the extensions now
+      // delegate branches to instead of carrying them individually. The floors
+      // keep roughly two to three points of room for ordinary movement while a
+      // real regression still fails the build; `branches` and `functions` are
+      // raised here to hold the gain rather than let it drain away unnoticed.
+      // `statements` already sat at that margin, so it stays. `functions` is
+      // tightest in practice — if it fires on ordinary work, add tests rather
+      // than lowering the number.
       thresholds: {
         statements: 91,
         branches: 84,

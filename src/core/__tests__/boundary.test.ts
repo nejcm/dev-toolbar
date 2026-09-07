@@ -30,12 +30,8 @@ const CORE_PREFIX = "[dev-toolbar] ";
 /** Only ever present in a `src/runtime/*` or `src/ext/*` module. */
 const RUNTIME_MARKER = "[dev-toolbar/runtime]";
 
-/**
- * The shared `fetch`/`XMLHttpRequest` interceptor's own console message. Unique
- * to `src/runtime/network.ts`, which makes it a marker for *that module's
- * bytes* — used below to prove `/ext/metrics` links against it rather than
- * carrying a second copy of its patch state.
- */
+// Unique to src/runtime/network.ts — a marker for that module's bytes, used
+// below to prove /ext/metrics links against it rather than a second copy.
 const INTERCEPTOR_MESSAGE = "[dev-toolbar/runtime] a network recorder threw";
 const EXT_MARKERS = new Set(extensionRoster().onDisk.map((name) => `[dev-toolbar/ext/${name}]`));
 const EXT_MARKER_ORDER = [
@@ -511,13 +507,8 @@ if (!built && mustBeBuilt) {
       expect(esm).not.toContain("createContext");
     });
 
-    /**
-     * The interceptor's patch state is module-level, so a relative value import
-     * would give `/ext/metrics` a second copy of it and two wrappers over one
-     * `fetch`. Vitest aliases the published specifier onto `src/`, so only the
-     * built bytes can tell the two apart, and the two formats have to be checked
-     * differently — hence two tests, each failing on its own evidence.
-     */
+    // Vitest aliases the published specifier onto `src/`, so only the built
+    // bytes can tell a relative import from a value one — hence two tests.
     it("keeps the interceptor's bytes out of dist/ext/metrics.cjs, which cannot split", () => {
       const cjs = readFileSync(`${root}dist/ext/metrics.cjs`, "utf8");
       expect(cjs).toContain('require("@nejcm/dev-toolbar/runtime")');
@@ -997,9 +988,14 @@ if (built || !mustBeBuilt) {
       const diag = node(
         `const { diagnostics } = await import("@nejcm/dev-toolbar/ext/diagnostics");` +
           `const { createDiagnosticsRuntime } = await import("@nejcm/dev-toolbar/ext/diagnostics");` +
+          // Captured before anything is imported: the §1B console tail patches
+          // console.error in start(api) and nowhere else, so importing the
+          // module and capturing a snapshot must leave the global alone.
+          `const beforeImport = console.error;` +
           `const ext = diagnostics();` +
           `const snap = createDiagnosticsRuntime().capture();` +
-          `console.log(JSON.stringify({ id: ext.id, commands: ext.commands.map(c => c.id), contributes: typeof ext.diagnostics, gathered: snap.toolbar.gathered, omissions: snap.omissions.length }));`,
+          `const out = { id: ext.id, commands: ext.commands.map(c => c.id), contributes: typeof ext.diagnostics, gathered: snap.toolbar.gathered, omissions: snap.omissions.length, consolePatched: console.error !== beforeImport, tail: snap.console.status };` +
+          `console.log(JSON.stringify(out));`,
       );
       expect(JSON.parse(diag)).toEqual({
         id: "diagnostics",
@@ -1008,7 +1004,14 @@ if (built || !mustBeBuilt) {
           "diagnostics.copy",
           "diagnostics.copyJson",
           "diagnostics.download",
+          "diagnostics.console.export",
+          "diagnostics.console.clear",
         ],
+        // Nothing global is touched until the toolbar starts the extension,
+        // and a snapshot taken before that says so rather than reporting zero
+        // errors it never watched for.
+        consolePatched: false,
+        tail: "pending",
         // It reads the aggregation, and contributes only a *summary* of its
         // own last capture — never the snapshot, which is built from the
         // aggregation and would embed one snapshot inside the next

@@ -333,21 +333,10 @@ describe("embed()", () => {
       return mounted;
     };
 
-    /**
-     * Core's two `:focus-visible` rules select nothing until something is
-     * focused, so the checks above never exercise them. This does: it focuses
-     * one vendor element and reports which of the sheets' focus rules reach
-     * *it*.
-     *
-     * `:focus-visible` itself is rewritten to `:focus` first. jsdom answers
-     * `:focus-visible` inconsistently — the answer depends on when in a
-     * document's life the element was first asked, so a rule written against
-     * it silently stops biting — while `:focus` is exact. Everything that is
-     * under test here survives the rewrite: the guard, the element list it
-     * guards, and which of the two rings each vendor element falls under.
-     * Which elements a browser considers focus-*visible* is the browser's
-     * business, and the same either way.
-     */
+    // Core's `:focus-visible` rules select nothing until something is
+    // focused, so this focuses one vendor element and checks which rules
+    // reach it. Rewritten to `:focus` first — jsdom answers `:focus-visible`
+    // inconsistently, while `:focus` is exact and preserves what's under test.
     const focusRings = (): string[] =>
       injectedSelectors()
         .filter((selector) => selector.includes(":focus-visible"))

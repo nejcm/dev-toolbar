@@ -175,13 +175,9 @@ describe("formatCurl", () => {
   });
 });
 
-/**
- * A string comparison cannot tell a runnable line from a broken one: curl's
- * glob syntax and its URL parser both reject characters no assertion over the
- * expected text would notice. These hand the line to a shell, against a port
- * nothing listens on — exit 7 means curl accepted the URL and got as far as
- * connecting, exit 3 means it rejected the URL before trying.
- */
+// A string comparison can't tell a runnable line from a broken one, so these
+// hand the line to a shell against a port nothing listens on: exit 7 means
+// curl accepted the URL, exit 3 means it rejected it before trying.
 const curlAvailable = spawnSync("curl", ["--version"]).status === 0;
 
 describe.skipIf(!curlAvailable)("the line, handed to curl itself", () => {
@@ -303,15 +299,9 @@ describe.skipIf(!curlAvailable)("the line, handed to curl itself", () => {
     expect(rejected).toEqual([]);
   });
 
-  /**
-   * The one class parsing does *not* cover. WHATWG's forbidden-host set is
-   * narrower than curl's, so a few characters survive `new URL()` inside a
-   * hostname and curl still refuses the line. Probed rather than recalled:
-   * every printable ASCII character goes through the platform parser and, if
-   * the host keeps it verbatim, through curl itself. Pinning the exact set is
-   * the point — either parser loosening or tightening surfaces here rather
-   * than in a developer's terminal.
-   */
+  // Probed, not recalled: every printable ASCII character goes through the
+  // platform parser and, if kept verbatim, through curl — pinning the exact
+  // WHATWG-vs-curl gap (docs/ext/metrics.md) so either parser changing surfaces here.
   it("rejects exactly the hostname characters WHATWG keeps and curl will not", () => {
     const rejected: string[] = [];
     const reached: string[] = [];

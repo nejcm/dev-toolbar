@@ -11,17 +11,8 @@ describe("core stylesheet", () => {
     expect(CORE_CSS).toBe(stylesheet);
   });
 
-  /**
-   * The structural half of the `data-dtb-embed` promise in docs/embedding.md.
-   * `src/kit/__tests__/embed.test.tsx` proves the guard *works*, by matching
-   * core's rules against a vendor DOM — but only against the elements that
-   * fixture happens to contain, so a new unguarded rule naming an element it
-   * does not have would pass unnoticed. This one needs no fixture: it reads
-   * every selector core ships and rejects any that styles a descendant by
-   * element rather than by a `data-dtb-*` attribute without the guard, naming
-   * it. Between them, the fixture says the mechanism holds and this says the
-   * mechanism is applied everywhere.
-   */
+  // The structural half of the guard promise: no fixture, reads every selector
+  // core ships. `embed.test.tsx` proves the guard works; see docs/embedding.md.
   describe("no element-level descendant default reaches an embedded subtree", () => {
     it("guards every one of them", () => {
       const audit = auditEmbedGuards(CORE_CSS);
@@ -46,16 +37,10 @@ describe("core stylesheet", () => {
       );
     });
 
-    /**
-     * Mutation test: the invariant above is only worth having if it fails.
-     * Each probe is a shape a future core rule could plausibly take, and each
-     * must land in `unguarded` and be named. The second half of the list is
-     * the set an earlier, substring-matching classifier waved through: a
-     * `[data-dtb-*]` token inside a negation, inside one branch of a selector
-     * list, or inside a quoted attribute value is not a condition the selected
-     * element meets, and every one of these still matches a vendor element
-     * beneath `[data-dtb-embed]`.
-     */
+    // Mutation test: each probe must land in `unguarded` and be named. The
+    // second half is the set an earlier substring-matching classifier waved
+    // through — a token inside a negation, a selector-list branch, or a
+    // quoted value is not a condition the selected element meets.
     it.each([
       [
         "a bare element default",
@@ -125,15 +110,8 @@ describe("core stylesheet", () => {
       expect(audit.keyed).toEqual(clean.keyed);
     });
 
-    /**
-     * A quoted value is text, not structure. Each of these hides a plain
-     * element default between declarations whose values contain a comment
-     * opener, a closing brace or a semicolon — shapes that a scanner stripping
-     * comments by regex, or counting braces blindly, erases or mis-nests. The
-     * rule then never reaches the audit at all and the sheet reads clean while
-     * still styling a vendor `<table>` beneath `[data-dtb-embed]`. Each must
-     * be scanned, reach `unguarded`, and be named.
-     */
+    // A quoted value is text, not structure: each of these hides a plain
+    // element default inside a value a naive scanner would mis-nest.
     it.each([
       [
         "a comment opener inside a quoted value",
