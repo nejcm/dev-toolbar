@@ -160,12 +160,25 @@ describe("grouping and counts", () => {
     expect(report.nodeTotal).toBe(9);
   });
 
-  it("survives a run that returns nothing recognisable", async () => {
-    const { load } = stubAxe(undefined);
+  it.each([undefined, null, "hello", 42, { violations: "x" }])(
+    "refuses to call %o a clean page — the one wrong answer that matters",
+    async (result) => {
+      const { load } = stubAxe(result);
+      const report = await createA11yRuntime({ load }).scan();
+      // A green `0` from a module that is not axe is worse than an error.
+      expect(report.status).toBe("failed");
+      expect(report.error).toContain("not an axe result");
+      expect(report.total).toBe(0);
+      expect(report.groups).toEqual([]);
+    },
+  );
+
+  it("still coerces a malformed entry inside a real violations array", async () => {
+    const { load } = stubAxe({ violations: [null] });
     const report = await createA11yRuntime({ load }).scan();
     expect(report.status).toBe("ok");
-    expect(report.total).toBe(0);
-    expect(report.groups).toEqual([]);
+    expect(report.total).toBe(1);
+    expect(report.groups[0]?.violations[0]?.rule).toBe("unknown");
   });
 
   it("records a thrown run as failed, with the reason", async () => {
@@ -209,7 +222,7 @@ describe("grouping and counts", () => {
     expect(runtime.report().status).not.toBe("ok");
   });
 
-  it("ignores a second scan while one is in flight", async () => {
+  it("shares one axe pass between concurrent callers, and answers both", async () => {
     let release: (value: unknown) => void = () => {};
     const pending = new Promise((resolve) => {
       release = resolve;
@@ -219,13 +232,42 @@ describe("grouping and counts", () => {
 
     const first = runtime.scan();
     await vi.waitFor(() => expect(runtime.report().running).toBe(true));
-    const second = await runtime.scan();
-    expect(second.running).toBe(true);
-    expect(run).toHaveBeenCalledTimes(1);
+    const second = runtime.scan();
 
     release({ violations: [] });
-    await first;
+    const [a, b] = await Promise.all([first, second]);
+
+    // axe refuses to run twice at once, so a second caller must join the pass
+    // rather than start one — and must get the result, not a stale report.
+    expect(run).toHaveBeenCalledTimes(1);
+    expect(a.status).toBe("ok");
+    expect(b).toBe(a);
+    expect(runtime.report().scans).toBe(1);
     expect(runtime.report().running).toBe(false);
+  });
+
+  it("guards the second caller before the peer is even loaded", async () => {
+    // Both calls happen in one tick, so the guard has to be in place *before*
+    // the `await` that loads axe — axe's own "already running" error is what
+    // reaching `run()` twice produces.
+    const run = vi.fn(async () => ({ violations: [] }));
+    const runtime = createA11yRuntime({ load: () => Promise.resolve({ run }) });
+
+    const [a, b] = await Promise.all([runtime.scan(), runtime.scan()]);
+
+    expect(run).toHaveBeenCalledTimes(1);
+    expect(a.status).toBe("ok");
+    expect(b).toBe(a);
+    expect(runtime.report().scans).toBe(1);
+  });
+
+  it("scans again after the first pass settles", async () => {
+    const { load, run } = stubAxe({ violations: [] });
+    const runtime = createA11yRuntime({ load });
+    await runtime.scan();
+    await runtime.scan();
+    expect(run).toHaveBeenCalledTimes(2);
+    expect(runtime.report().scans).toBe(2);
   });
 });
 
@@ -290,6 +332,34 @@ describe("what reaches the report", () => {
     expect(JSON.stringify(report)).not.toContain("eyJhbGciOiJIUzI1NiJ9");
   });
 
+  it("does NOT catch a credential once anything precedes it — the real boundary", async () => {
+    // The limit is "is the whole value", not "is short": a complete bearer
+    // token is masked on its own and survives one word of prefix away. Pinned
+    // as a pair so the boundary cannot be mis-stated in either direction.
+    const jwt = "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NSJ9.dBjftJeZ4CVPmB92";
+    const { load } = stubAxe({
+      violations: [
+        violation("link-name", "serious", [
+          { html: `<a href="/x">Bearer ${jwt}</a>` },
+          { html: `<p>Authorization: Bearer ${jwt}</p>` },
+          { html: '<button aria-label="key sk-9f2a7c">b</button>' },
+          { html: '<img alt="AKIAIOSFODNN7EXAMPLE">' },
+        ]),
+      ],
+    });
+    const report = await createA11yRuntime({ load }).scan();
+    const nodes = report.groups[0]?.violations[0]?.nodes ?? [];
+
+    expect(nodes[0]?.html).not.toContain(jwt);
+    expect(nodes[1]?.html).toContain(jwt);
+    // `title`, `alt`, `placeholder` and `aria-*` are kept, and kept means
+    // whole-value masking only — a prefix carries the rest through.
+    expect(nodes[2]?.html).toContain("sk-9f2a7c");
+    // And `redact()` has no AWS-key *shape*, so a whole-value one survives:
+    // the anchoring is not the only limit.
+    expect(nodes[3]?.html).toContain("AKIAIOSFODNN7EXAMPLE");
+  });
+
   it("does NOT catch a credential mid-sentence in text — the known limit, pinned", async () => {
     // `redact()`'s value matching is anchored: it masks a string that *is* a
     // credential, not one embedded in prose. Documented in docs/ext/a11y.md;
@@ -301,6 +371,24 @@ describe("what reaches the report", () => {
     });
     const report = await createA11yRuntime({ load }).scan();
     expect(report.groups[0]?.violations[0]?.nodes[0]?.html).toContain("sk-9f2a7c");
+  });
+
+  it("masks a sensitive query parameter in a *relative* href or src", async () => {
+    // The common SPA shape. A substring pass keyed on `scheme://` never sees
+    // one, so `href`/`src` go through the URL redactor as whole values.
+    const { load } = stubAxe({
+      violations: [
+        violation("link-name", "serious", [
+          { html: '<a href="/reset?token=abc123SECRETvalue&page=2">go</a>' },
+          { html: '<img src="/avatar.png?session=sess-abcdef" alt="me">' },
+        ]),
+      ],
+    });
+    const report = await createA11yRuntime({ load }).scan();
+    const nodes = report.groups[0]?.violations[0]?.nodes ?? [];
+
+    expect(nodes[0]?.html).toBe('<a href="/reset?token=[redacted]&page=2">go</a>');
+    expect(nodes[1]?.html).toBe('<img src="/avatar.png?session=[redacted]" alt="me">');
   });
 
   it("masks a sensitive query parameter in a kept attribute", async () => {

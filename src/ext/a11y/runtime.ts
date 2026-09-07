@@ -78,6 +78,13 @@ const KEPT_ATTRIBUTES = new Set([
   "height",
 ]);
 
+/**
+ * Kept attributes whose value *is* a URL, so the URL redactor runs on the
+ * whole value rather than only on the `scheme://` substrings a free-text pass
+ * can recognise — `href="/reset?token=…"` is the common SPA shape.
+ */
+const URL_ATTRIBUTES = new Set(["href", "src"]);
+
 const TAG_OR_TEXT = /<[^>]*>|[^<]+/g;
 const ATTRIBUTE = /([a-zA-Z_:][-a-zA-Z0-9_:.]*)\s*=\s*("[^"]*"|'[^']*'|[^\s"'>]+)/g;
 
@@ -153,7 +160,7 @@ export function createA11yRuntime(options: A11yRuntimeOptions = {}): A11yRuntime
   let report = emptyReport("pending");
   let revision = 0;
   let highlight: readonly A11yHighlightView[] = [];
-  let scanning = false;
+  let inFlight: Promise<A11yReport> | null = null;
   let axe: AxeLike | null = null;
   let loading: Promise<AxeLike | null> | null = null;
   let torn = false;
@@ -194,6 +201,14 @@ export function createA11yRuntime(options: A11yRuntimeOptions = {}): A11yRuntime
     }
   };
 
+  const maskUrlValue = (value: string): string => {
+    try {
+      return redactUrl(value, redactOptions);
+    } catch {
+      return value;
+    }
+  };
+
   const maskString = (value: string): string => {
     try {
       return maskUrls(String(redact(value, redactOptions)));
@@ -213,6 +228,12 @@ export function createA11yRuntime(options: A11yRuntimeOptions = {}): A11yRuntime
    * wholesale rather than being tested for credential shape: the test is the
    * part that has leaked before, and a `value=` attribute has no a11y meaning.
    */
+  const maskAttribute = (name: string, value: string): string => {
+    if (!keepsValue(name)) return "[redacted]";
+    const masked = maskString(value);
+    return URL_ATTRIBUTES.has(name.toLowerCase()) ? maskUrlValue(masked) : masked;
+  };
+
   const maskHtml = (html: string): string => {
     try {
       return html.replace(TAG_OR_TEXT, (part) => {
@@ -220,7 +241,7 @@ export function createA11yRuntime(options: A11yRuntimeOptions = {}): A11yRuntime
         return part.replace(ATTRIBUTE, (_match, name: string, raw: string) => {
           const quote = raw.startsWith('"') || raw.startsWith("'") ? raw[0] : "";
           const inner = quote === "" ? raw : raw.slice(1, -1);
-          const value = keepsValue(name) ? maskString(inner) : "[redacted]";
+          const value = maskAttribute(name, inner);
           return `${name}="${value.replace(/"/g, "&quot;")}"`;
         });
       });
@@ -448,11 +469,9 @@ export function createA11yRuntime(options: A11yRuntimeOptions = {}): A11yRuntime
     return report;
   };
 
-  const scan = async (): Promise<A11yReport> => {
-    if (scanning) return report;
+  const runScan = async (): Promise<A11yReport> => {
     const loaded = await ensureAxe();
     if (loaded === null || torn) return report;
-    scanning = true;
     report = { ...report, running: true, error: null };
     publish(true);
     const started = now();
@@ -462,8 +481,20 @@ export function createA11yRuntime(options: A11yRuntimeOptions = {}): A11yRuntime
         ...(rules === undefined ? {} : { rules }),
       });
       if (torn) return report;
-      unwatch();
-      apply(raw, now() - started);
+      // A result with no `violations` array is not axe's, and the wrong answer
+      // to publish is a confident zero: say the scan failed instead. The peer
+      // range is `>=4.8`; nothing enforces that at load time, so this is where
+      // a too-old or wrong module is noticed.
+      if (Array.isArray(asRecord(raw)["violations"])) {
+        unwatch();
+        apply(raw, now() - started);
+      } else {
+        report = {
+          ...report,
+          status: "failed",
+          error: `${A11Y_MARKER} axe.run() resolved with something that is not an axe result — check the installed axe-core version (this extension needs >=4.8).`,
+        };
+      }
     } catch (error) {
       report = {
         ...report,
@@ -471,11 +502,27 @@ export function createA11yRuntime(options: A11yRuntimeOptions = {}): A11yRuntime
         error: `${A11Y_MARKER} axe.run() threw — ${describe(error)}`,
       };
     } finally {
-      scanning = false;
       report = { ...report, running: false };
       publish(true);
     }
     return report;
+  };
+
+  /**
+   * Concurrent callers share one axe pass: axe itself refuses to run twice at
+   * once, so a second `scan()` would otherwise fail a caller whose scan was
+   * really succeeding.
+   */
+  const scan = (): Promise<A11yReport> => {
+    if (inFlight !== null) return inFlight;
+    inFlight = (async () => {
+      try {
+        return await runScan();
+      } finally {
+        inFlight = null;
+      }
+    })();
+    return inFlight;
   };
 
   const clear = (): A11yReport => {

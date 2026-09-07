@@ -54,7 +54,11 @@ export interface A11yOptions extends A11yRuntimeOptions {
    */
   priority?: number;
   hidden?: boolean;
-  /** Keep the panel mounted after it closes. Default `true` — a scan is expensive to lose. */
+  /**
+   * Keep the panel mounted after it closes. Default `true`, as in `/ext/flags`
+   * and `/ext/theme-editor`. The report lives in the runtime, not the panel, so
+   * this preserves the groups list's scroll position rather than the scan.
+   */
   keepMounted?: boolean;
   /**
    * Inject this extension's stylesheet. Default `true`. If core's
@@ -140,8 +144,10 @@ export function a11y(options: A11yOptions = {}): DevToolbarExtension {
     description:
       "Draws a box over one element from the last scan, below the bar and taking no " +
       "pointer events. `rule` is a violated rule id and `node` its zero-based index " +
-      "within that rule's elements (default `0`). Omit `rule` to clear the highlight. " +
-      "An element axe reached through an iframe cannot be highlighted.",
+      "within that rule's *listed* elements — at most `nodeLimit` of them, default " +
+      "`5`, however large `nodeCount` is. Omit `rule` to clear the highlight; a rule " +
+      "or an index the last report does not list clears it too. An element axe " +
+      "reached through an iframe cannot be highlighted.",
     group: "Accessibility",
     keywords: ["a11y", "axe", "highlight", "inspect", "element"],
     input: {
@@ -153,7 +159,9 @@ export function a11y(options: A11yOptions = {}): DevToolbarExtension {
         node: {
           type: "number",
           default: 0,
-          description: "Zero-based index into that rule's elements.",
+          description:
+            "Zero-based index into that rule's listed elements. An index the report " +
+            "does not list clears the highlight instead.",
         },
       },
     },
