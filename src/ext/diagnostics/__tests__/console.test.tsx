@@ -308,7 +308,7 @@ describe("what it captures", () => {
     expect(report.errors).toBe(4);
   });
 
-  it("keeps a stack whole, header included, with every line masked", () => {
+  it("drops the stack's header line and keeps every line below it", () => {
     console.error = () => {};
     const { runtime, stop } = started();
     console.error("failed:", new Error("kaboom"));
@@ -316,12 +316,19 @@ describe("what it captures", () => {
     stop();
 
     const entry = report.entries[0];
+    // The message is still reported — masked, and built from the two halves
+    // the header repeats.
     expect(entry?.message).toContain("Error: kaboom");
     expect(entry?.stack).toContain("at ");
-    // The header stays. Nothing here classifies a line, so nothing can
-    // misclassify one; it is safe because it went through the same masking
-    // as every frame below it.
-    expect(entry?.stack?.startsWith("Error: kaboom")).toBe(true);
+    // The header is gone, by comparison against the known raw text. Nothing
+    // classifies a line, so nothing can misclassify one, and a deletion
+    // cannot corrupt what is left.
+    expect(entry?.stack?.startsWith("Error: kaboom")).toBe(false);
+    expect(entry?.stack).not.toContain("kaboom");
+    // Frame by frame, everything below the header survives.
+    expect(entry?.stack?.split("\n").every((line) => line.trimStart().startsWith("at "))).toBe(
+      true,
+    );
   });
 
   it("separates warnings from errors", () => {
@@ -842,13 +849,12 @@ describe("credentials the masking used to let through", () => {
     expect(json).toContain(REDACTED);
   });
 
-  it("masks the header of a stack that is only a header, and keeps it", () => {
+  it("reports no stack at all for a stack that is only a header", () => {
     // `Error.stackTraceLimit = 0` (and any engine that yields no frames): the
     // stack is the raw message, and `redact()`'s anchored value matching
-    // cannot see a credential inside `Error: Bearer …`. Substituting the
-    // masked message for the raw one can, without deciding what a header
-    // looks like. Kept, because a masked header costs nothing and dropping
-    // lines by shape is what leaked in the first place.
+    // cannot see a credential inside `Error: Bearer …`. Deleting the header
+    // leaves no lines, and "no stack" is the honest report of that — the
+    // message is still there, masked.
     const { json, report } = captured(() => {
       console.error({
         name: "Error",
@@ -857,30 +863,33 @@ describe("credentials the masking used to let through", () => {
       });
     });
     expect(json).not.toContain("LEAK_SECRET_123");
-    expect(report.entries[0]?.stack).toBe(`Error: Bearer ${REDACTED}`);
+    expect(report.entries[0]?.stack).toBeNull();
     expect(report.entries[0]?.message).toContain(REDACTED);
   });
 
-  it("masks a real frameless stack from this engine too", () => {
+  it("reports no stack for a real frameless stack from this engine either", () => {
     const limit = Error.stackTraceLimit;
     Error.stackTraceLimit = 0;
     const error = new Error("Bearer LEAK_SECRET_123");
     Error.stackTraceLimit = limit;
     const { json, report } = captured(() => void console.error(error));
     expect(json).not.toContain("LEAK_SECRET_123");
-    expect(report.entries[0]?.stack).toContain(REDACTED);
+    expect(report.entries[0]?.stack).toBeNull();
+    expect(report.entries[0]?.message).toContain(REDACTED);
   });
 
   it("does not let an `@`-shaped Error name smuggle a credential through the header", () => {
     // The frame test that used to find the first frame was
     // `/^\s+at\s|^\S*@\S*:\d+/`. A name of `fake@host:1` makes V8 write a
     // header that matches the SpiderMonkey/JSC half of it, so the header was
-    // taken for a frame and kept verbatim, credential and all.
+    // taken for a frame and kept verbatim, credential and all. Now the header
+    // is deleted by known text, so its shape cannot matter.
     const error = new Error("Bearer LEAK_SECRET_123");
     error.name = "fake@host:1";
     const { json, report } = captured(() => void console.error(error));
     expect(json).not.toContain("LEAK_SECRET_123");
-    expect(report.entries[0]?.stack).toContain(`Bearer ${REDACTED}`);
+    expect(report.entries[0]?.stack).not.toContain("fake@host:1");
+    expect(report.entries[0]?.message).toBe(`fake@host:1: Bearer ${REDACTED}`);
   });
 
   it("still keeps the frames of a SpiderMonkey/JSC stack, which has no header", () => {
@@ -910,9 +919,9 @@ describe("credentials the masking used to let through", () => {
     );
   });
 
-  it("masks a credential-shaped Error name in the header too, not only in the message", () => {
+  it("takes a credential-shaped Error name out of the stack with the header", () => {
     // The other half of the header. V8 writes `${name}: ${message}` above the
-    // first frame; only the *message* half was substituted, so an `Error`
+    // first frame; while only the *message* half was substituted, an `Error`
     // whose name carried the credential and whose message was ordinary came
     // out masked in the line the tail shows and verbatim in the stack right
     // beside it — a marker claiming a value two lines up is handled.
@@ -921,7 +930,8 @@ describe("credentials the masking used to let through", () => {
     const { json, report } = captured(() => void console.error(error));
     expect(json).not.toContain("LEAK_SECRET_123");
     expect(report.entries[0]?.message).toBe(`Bearer ${REDACTED}: ordinary message`);
-    expect(report.entries[0]?.stack).toContain(`Bearer ${REDACTED}: ordinary message`);
+    expect(report.entries[0]?.stack).not.toContain("ordinary message");
+    expect(report.entries[0]?.stack).toContain("at ");
   });
 
   it("masks a credential-shaped Error name nested deeper than the leaf walk goes", () => {
@@ -1026,6 +1036,11 @@ describe("what reaches a pasted ticket", () => {
     return { json: renderJson(snapshot), markdown: renderMarkdown(snapshot) };
   };
 
+  /** The `stack` field of the first tail entry, out of the rendered JSON. */
+  const snapshotStack = (json: string): string =>
+    (JSON.parse(json) as { console: { entries: { stack: string | null }[] } }).console.entries[0]
+      ?.stack ?? "";
+
   const bothMask = (log: () => void) => {
     const { json, markdown } = rendered(log);
     expect(json).not.toContain("LEAK_SECRET_123");
@@ -1089,6 +1104,199 @@ describe("what reaches a pasted ticket", () => {
     });
   });
 
+  it("does not leak the second half of an overlapping name and message", () => {
+    // The hole substitution could not close. `name` is `Bearer A`, and the
+    // *message* contains `Bearer A` as well: replacing the name rewrote the
+    // very text the message replacement then had to match, so the message
+    // replacement missed and the header shipped the nonce. Reversing the
+    // order only moves the hole to the other overlap. Deleting the header
+    // cannot have a second pass to corrupt.
+    const error = new Error('Digest realm="Bearer A",nonce="FULL_SECRET_123"');
+    error.name = "Bearer A";
+    const { json, markdown } = rendered(() => void console.error(error));
+
+    expect(json).not.toContain("FULL_SECRET_123");
+    expect(markdown).not.toContain("FULL_SECRET_123");
+    expect(json).toContain(REDACTED);
+  });
+
+  it("does not leak the suffix of a message whose prefix is also the name", () => {
+    // The same overlap the other way round: replacing `Bearer A` first turns
+    // `Bearer A_LONG_SECRET_123` into `Bearer [redacted]_LONG_SECRET_123` —
+    // the secret's tail intact beside a marker claiming it was handled.
+    const error = new Error("Bearer A_LONG_SECRET_123");
+    error.name = "Bearer A";
+    const { json, markdown } = rendered(() => void console.error(error));
+
+    expect(json).not.toContain("A_LONG_SECRET_123");
+    expect(json).not.toContain("_LONG_SECRET_123");
+    expect(markdown).not.toContain("_LONG_SECRET_123");
+  });
+
+  it("does not double-substitute a custom mask that is itself credential-shaped", () => {
+    // `mask: "Bearer A"` used to be masked *again* on the way through the
+    // stack — the substitution wrote `Bearer Bearer A` into it and the
+    // whole-value pass then masked that, so the stack read `Bearer Bearer
+    // Bearer A` beside a message reading `Bearer Bearer A`. One mask, one
+    // answer, and the stack no longer carries the header at all.
+    console.error = () => {};
+    const { runtime, stop } = started({ redactOptions: { mask: "Bearer A" } });
+    console.error(new Error("Bearer LEAK_SECRET_123"));
+    const snapshot = runtime.capture();
+    stop();
+    const entry = snapshot.console.entries[0];
+
+    expect(entry?.message).toBe("Error: Bearer Bearer A");
+    expect(entry?.stack).not.toContain("Bearer");
+    expect(renderJson(snapshot)).not.toContain("Bearer Bearer Bearer A");
+    expect(renderMarkdown(snapshot)).not.toContain("Bearer Bearer Bearer A");
+  });
+
+  it("leaves an ordinary TypeError's frames alone, header apart", () => {
+    const { json, markdown } = rendered(() => {
+      // A real TypeError from a real throw, not a hand-built string.
+      try {
+        (undefined as unknown as { nope: () => void }).nope();
+      } catch (thrown) {
+        console.error(thrown);
+      }
+    });
+
+    expect(json).toContain("TypeError");
+    expect(markdown).toContain("TypeError");
+    expect(json).toContain("at ");
+    expect(json).not.toContain(REDACTED);
+  });
+
+  it("keeps the frames when the name and the message are the same string", () => {
+    const error = new Error("boom");
+    error.name = "boom";
+    const { json } = rendered(() => void console.error(error));
+
+    // `${name}: ${message}` wins over either half alone, so the header goes
+    // whole and the frames stay. The joined line the tail shows still carries
+    // it — masked, and it is not a credential.
+    expect(json).toContain("at ");
+    expect(json).toContain("boom: boom");
+    expect(snapshotStack(json)).not.toContain("boom");
+  });
+
+  it("drops the header of a message-only error, whose name the engine supplied", () => {
+    // Measured regression, caught by probe before it shipped: V8's stack
+    // formatter treats an empty `name` as absent and writes `Error:` itself,
+    // so `${name}: ${message}` and `${message}` both miss and the raw
+    // credential went back into the stack. `Error: ${message}` is known text
+    // too — it is what an error with no usable name writes.
+    const emptied = new Error("Bearer LEAK_SECRET_123");
+    emptied.name = "";
+    bothMask(() => void console.error(emptied));
+
+    const undefinedName = new Error("Bearer LEAK_SECRET_123");
+    (undefinedName as unknown as { name: unknown }).name = undefined;
+    bothMask(() => void console.error(undefinedName));
+
+    // And the shape with no `name` property at all — a hand-built or
+    // cross-realm error-like object.
+    bothMask(() => {
+      console.error({
+        message: "Bearer LEAK_SECRET_123",
+        stack: "Error: Bearer LEAK_SECRET_123\n    at foo (a.js:1:1)",
+      });
+    });
+  });
+
+  it("keeps a nameless engine stack that has no header at all", () => {
+    // The other side of that fallback: `Error: ${message}` may not delete a
+    // line that is a frame. This one is not.
+    const { json } = rendered(() => {
+      console.error({
+        message: "chunk failed",
+        stack: "load@https://cdn.test/app.js:1:1\n@https://cdn.test/app.js:2:2",
+      });
+    });
+    expect(json).toContain("load@https://cdn.test/app.js:1:1");
+    expect(json).toContain("@https://cdn.test/app.js:2:2");
+  });
+
+  it("keeps the frames for an empty and for a whitespace-only name", () => {
+    const empty = new Error("empty name");
+    empty.name = "";
+    const spaces = new Error("spaced name");
+    spaces.name = "   ";
+    const { json } = rendered(() => {
+      console.error(empty);
+      console.error(spaces);
+    });
+
+    expect(json).toContain("empty name");
+    expect(json).toContain("spaced name");
+    expect(json).toContain("at ");
+  });
+
+  it("treats a message full of regex and `$` text as the literal it is", () => {
+    // `startsWith` and nothing else: no pattern is compiled, and `$&` cannot
+    // be read as a replacement reference because there is no replacement.
+    const error = new Error("(.*)+$& [a-z]{2,} $1 \\d+ ^anchored$");
+    const { json, markdown } = rendered(() => void console.error(error));
+
+    expect(json).toContain("$&");
+    expect(markdown).toContain("$1");
+    expect(json).toContain("at ");
+  });
+
+  it("keeps a non-Error object's stack when its header does not repeat the message", () => {
+    const { json } = rendered(() => {
+      console.error({
+        name: "Error",
+        message: "chunk failed",
+        stack: "load@https://cdn.test/app.js:1:1\n@https://cdn.test/app.js:2:2",
+      });
+    });
+
+    expect(json).toContain("load@https://cdn.test/app.js:1:1");
+    expect(json).toContain("chunk failed");
+  });
+
+  it("still drops a header that transformed the message, because the name prefixes it", () => {
+    // A header need not be `${name}: ${message}` byte for byte. This one
+    // upper-cases the message half — the two-half form does not match, and
+    // neither does the message alone. The *name* still prefixes the line
+    // (every engine writes it first), so the line goes anyway, with whatever
+    // the engine did to the rest of it.
+    const { json, markdown } = rendered(() => {
+      console.error({
+        name: "Error",
+        message: "Bearer name_secret_123",
+        stack: "Error: BEARER NAME_SECRET_123\n    at foo (a.js:1:1)",
+      });
+    });
+
+    expect(json).not.toContain("NAME_SECRET_123");
+    expect(markdown).not.toContain("NAME_SECRET_123");
+    expect(json).toContain("at foo (a.js:1:1)");
+  });
+
+  it("cannot drop a header whose *name* half was transformed too — a documented limit", () => {
+    // Where it does run out: if the name is not a literal prefix of the
+    // header either, nothing known matches the line and it stays — and
+    // whole-value matching cannot see a credential inside a longer string.
+    // Pinned as a leak rather than closed: recognising a transformed header
+    // means teaching this module a second notion of "credential", which is
+    // what leaked three times.
+    const { json, markdown } = rendered(() => {
+      console.error({
+        name: "bearer name_secret_123",
+        message: "ordinary message",
+        stack: "BEARER NAME_SECRET_123: ordinary message\n    at foo (a.js:1:1)",
+      });
+    });
+
+    expect(json).toContain("NAME_SECRET_123");
+    expect(markdown).toContain("NAME_SECRET_123");
+    // The name the tail *shows* is masked; it is the stack line that survives.
+    expect(json).toContain(REDACTED);
+  });
+
   it("cannot mask a credential embedded in prose — the documented limit", () => {
     // The one probe that still leaks, and it leaks in the *message* as well as
     // the stack. `redact()` is the only judge of a credential and its value
@@ -1101,6 +1309,9 @@ describe("what reaches a pasted ticket", () => {
     });
     expect(json).toContain("LEAK_SECRET_123");
     expect(markdown).toContain("LEAK_SECRET_123");
+    // It reaches the ticket **once** now, in the message. The stack used to
+    // repeat it through the header; the header is deleted, so it does not.
+    expect(snapshotStack(json)).not.toContain("LEAK_SECRET_123");
   });
 });
 
@@ -1324,6 +1535,168 @@ describe("installing over a hostile console", () => {
 
     expect(report.watching).toEqual(["console.error", "console.warn"]);
     expect(entriesOf(report)).toEqual(["after the swap"]);
+  });
+});
+
+/* -------------------------------------------------------------------------- */
+/* Losing the patch, and saying so                                             */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Nothing here re-patches. What every one of these proves is that the *claim*
+ * is dropped: a tail that is no longer installed reports `unavailable` with an
+ * empty `watching`, instead of `capturing` with counts nobody observed.
+ */
+describe("a patch that stopped being live", () => {
+  const soloConsole = { warn: false, windowErrors: false, rejections: false } as const;
+
+  it("re-verifies on every attach, so a replaced method disables new tails visibly", () => {
+    // The defect: only a *previously unverified* registration was re-checked.
+    // Start tail 1 on A, replace `A.error`, start tail 2 — the registration is
+    // keyed by (console, method) and that key never changed, so it still said
+    // `verified`. Both tails reported `capturing` and `["console.error"]`, and
+    // both recorded nothing from the replacement.
+    const seen: string[] = [];
+    const A = { error: (...args: unknown[]) => seen.push(args.join(" ")), warn() {}, log() {} };
+    vi.stubGlobal("console", A);
+
+    const first = createConsoleTail(soloConsole);
+    first.start();
+    expect(first.report().status).toBe("capturing");
+
+    // Somebody else replaces the method. Same console object, different function.
+    const replacement = vi.fn();
+    A.error = replacement;
+
+    const second = createConsoleTail(soloConsole);
+    second.start();
+    (A.error as (...args: unknown[]) => void)("boom");
+
+    const firstReport = first.report();
+    const secondReport = second.report();
+    first.stop();
+    second.stop();
+    vi.unstubAllGlobals();
+
+    expect(replacement).toHaveBeenCalledWith("boom");
+    // Neither tail saw it, and neither says it did.
+    expect(entriesOf(firstReport)).toEqual([]);
+    expect(entriesOf(secondReport)).toEqual([]);
+    expect(firstReport.status).toBe("unavailable");
+    expect(firstReport.watching).toEqual([]);
+    expect(secondReport.status).toBe("unavailable");
+    expect(secondReport.watching).toEqual([]);
+    // Tail 2 never watched anything, so its counts are unknown, not zero.
+    expect(secondReport.errors).toBeNull();
+    expect(secondReport.warnings).toBeNull();
+    // And no second wrapper was installed over our own.
+    expect(seen).toEqual([]);
+  });
+
+  it("stops claiming `capturing` once `globalThis.console` is another object", () => {
+    // Executed: a tail started on A, then `globalThis.console = B`. Nothing is
+    // re-patched — that would be patching consoles nobody asked us to — but
+    // the status is re-derived, so the stale claim is gone.
+    const A = { error: () => {}, warn() {}, log() {} };
+    const originalA = A.error;
+    const fromB = vi.fn();
+    const B = { error: fromB, warn() {}, log() {} };
+
+    vi.stubGlobal("console", A);
+    const tail = createConsoleTail(soloConsole);
+    tail.start();
+    expect(tail.report().status).toBe("capturing");
+
+    vi.stubGlobal("console", B);
+    (B.error as (...args: unknown[]) => void)("from B");
+    const report = tail.report();
+    tail.stop();
+    vi.unstubAllGlobals();
+
+    expect(fromB).toHaveBeenCalledWith("from B");
+    expect(entriesOf(report)).toEqual([]);
+    expect(report.status).toBe("unavailable");
+    expect(report.watching).toEqual([]);
+    expect(report.note).toContain("no longer the live one");
+    // Nothing stranded: A's method is restorable by identity and restored.
+    expect(A.error).toBe(originalA);
+  });
+
+  it("keeps the counts it actually observed when the console is swapped away", () => {
+    // A count is a claim about what was watched, and it survives the watch
+    // ending — the same reason `"stopped"` reports its counts. What may never
+    // read as zero is a tail that never watched anything.
+    const A = { error: () => {}, warn() {}, log() {} };
+    vi.stubGlobal("console", A);
+    const tail = createConsoleTail(soloConsole);
+    tail.start();
+    (A.error as (...args: unknown[]) => void)("while watching");
+    vi.stubGlobal("console", { error: () => {}, warn() {}, log() {} });
+    const report = tail.report();
+    tail.stop();
+    vi.unstubAllGlobals();
+
+    expect(report.status).toBe("unavailable");
+    expect(report.errors).toBe(1);
+    expect(entriesOf(report)).toEqual(["while watching"]);
+  });
+
+  it("still reports `capturing` while the window listeners are the only live source", () => {
+    // The re-derivation may not turn a working tail into `unavailable`: a
+    // frozen console leaves the two `window` listeners, which are held by
+    // reference and removed by identity, so they stay live until teardown.
+    const frozen = Object.freeze({ error: () => {}, warn: () => {}, log: () => {} });
+    vi.stubGlobal("console", frozen);
+    const tail = createConsoleTail({});
+    tail.start();
+    const report = tail.report();
+    tail.stop();
+    vi.unstubAllGlobals();
+
+    expect(report.status).toBe("capturing");
+    expect(report.watching).toEqual(["window.error", "unhandledrejection"]);
+  });
+
+  it("wraps its own wrapper behind a transparent Proxy — the documented limit", () => {
+    // A `new Proxy(A, {})` is a distinct object, so it is a distinct WeakMap
+    // key addressing the same underlying property. No key can tell it from
+    // its target, so this is measured and documented rather than fixed.
+    const seen: string[] = [];
+    const A = { error: (...args: unknown[]) => seen.push(args.join(" ")), warn() {}, log() {} };
+    const originalA = A.error;
+
+    vi.stubGlobal("console", A);
+    const first = createConsoleTail(soloConsole);
+    first.start();
+
+    vi.stubGlobal("console", new Proxy(A, {}));
+    const second = createConsoleTail(soloConsole);
+    second.start();
+
+    (A.error as (...args: unknown[]) => void)("through both wrappers");
+    const firstReport = first.report();
+    const secondReport = second.report();
+
+    // Inner-first teardown, which is what strands a wrapper.
+    first.stop();
+    second.stop();
+    const afterBoth = A.error;
+    vi.unstubAllGlobals();
+
+    // Tail 2 wrapped tail 1's wrapper, and the shared depth guard silences the
+    // inner one, so only tail 2 captured.
+    expect(entriesOf(secondReport)).toEqual(["through both wrappers"]);
+    expect(entriesOf(firstReport)).toEqual([]);
+    // Tail 1 at least says so: the console it patched is not the live one.
+    expect(firstReport.status).toBe("unavailable");
+    expect(secondReport.status).toBe("capturing");
+    // The app's own method still ran, exactly once.
+    expect(seen).toEqual(["through both wrappers"]);
+    // And the cost: tail 1's wrapper is stranded on A for the page's life.
+    expect(afterBoth).not.toBe(originalA);
+    // Stranded, but still forwarding — the app's logging is not lost.
+    (afterBoth as (...args: unknown[]) => void)("after teardown");
+    expect(seen).toEqual(["through both wrappers", "after teardown"]);
   });
 });
 

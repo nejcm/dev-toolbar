@@ -146,8 +146,9 @@ export function diagnostics(options: DiagnosticsOptions = {}): DevToolbarExtensi
               "arguments walked by `redact()`, strings matched by value shape and every " +
               "URL in them masked — and this is the same report the snapshot carries, not " +
               "a second, rawer copy of it. A stack is included where there was one, " +
-              "whole, with every line masked — its header too, which is where V8 " +
-              "repeats the message. " +
+              "masked, with its header line deleted — that line is where V8 repeats the " +
+              "`name` and the `message`, both of which this report already carries " +
+              "masked, so a stack here starts at a frame. " +
               "`errors`, `warnings` and `dropped` are `null` rather than `0` when nothing " +
               "was being watched. Omit `limit` for every retained entry.",
             group: "Diagnostics",

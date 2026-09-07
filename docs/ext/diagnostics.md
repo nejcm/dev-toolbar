@@ -107,17 +107,42 @@ diagnostics({
   it — and the row moves back to the front when it repeats. "Newest first" and the
   `limit` on the export therefore mean *most recently seen*, not first seen, and a full
   tail evicts the message nothing has repeated. Evictions are counted in `dropped`.
-- **Stacks are kept whole, and the message they repeat is substituted, not detected.**
+- **The stack keeps every line but its header, which is deleted rather than rewritten.**
   V8 writes `` `${name}: ${message}` `` above the first frame, and `redact()`'s value
   matching is anchored, so `Bearer sk-live-…` is a credential and `Error: Bearer
-  sk-live-…` is not. Both forms of the message are already computed on the way in, so
-  the raw one is replaced by the masked one wherever it appears in the stack — which is
-  the header, by construction — and the result is then masked like any other string.
-  Nothing tests for what a header looks like. Trying to identify it was its own leak: a
-  header from an `Error` whose `name` contains `@host:1` reads exactly like a
-  SpiderMonkey frame, and dropping by shape also silently threw away frameless stacks
-  (`Error.stackTraceLimit = 0`) and every stack from an engine whose frame shape this
-  package had not been taught. Every line that exists is kept.
+  sk-live-…` is not. That header carries nothing the tail does not already report — the
+  message line is those same two halves, masked — so it is **removed**, by comparing the
+  head of the stack with the known raw `name` and `message` — plus `Error: ${message}`,
+  because V8's formatter treats an absent or empty `name` as absent and writes that name
+  itself, and leaving it out put a message-only error's raw message back in the stack.
+  Nothing tests for what a header looks like; trying to identify one was its own leak (a header from an `Error`
+  whose `name` contains `@host:1` reads exactly like a SpiderMonkey frame, and dropping
+  by shape silently threw away frameless stacks and every stack from an engine whose
+  frame shape this package had not been taught). Every other line is kept, masked. A
+  stack that is *only* a header — `Error.stackTraceLimit = 0` — therefore reports as no
+  stack at all, and the message is still there.
+
+  Deletion replaced substitution because substitution leaked on **overlapping halves**:
+  an `Error` named `Bearer A` whose message was `Digest realm="Bearer A",nonce="…"`
+  exported the nonce, because replacing the name first rewrote the very text the message
+  replacement then had to match. Reversing the order moves the hole to the other
+  overlap. Removing text cannot corrupt what is left, which is the whole point.
+
+  What survives is a header an engine **transforms** instead of repeating. Because every
+  engine writes the `name` first, an upper-cased *message* half still goes (the name is
+  still a literal prefix of the line); a header whose **name half** was transformed too
+  is not known text, so that line stays. Pinned as a test, not patched — recognising a
+  transformed header means a second notion of "credential", which is what leaked three
+  times.
+- **It never claims to be capturing when it is not.** The tail patches the console that
+  is live when it starts and never re-patches on its own — a tail that silently wrapped
+  whatever object turned up at `globalThis.console` would be instrumenting consoles
+  nobody asked it to. What it does is ask again: every attach re-runs the read-back, and
+  `status` and `watching` are re-derived on every read. So replacing `console.error`
+  under us, or swapping `globalThis.console` for another object, turns the report into
+  `unavailable` with an empty `watching` instead of `capturing` with counts nobody
+  observed. Counts already taken stay — they are what was seen while it *was* watching —
+  and the wrapper it installed stays restorable by identity, so nothing is stranded.
 - **Off is one option.** `console: false` patches nothing and adds no listener, and each
   source has its own switch: `{ error, warn, windowErrors, rejections, size,
   maxMessageChars, maxStackChars }`. With capture off, the counts are `null` and the
@@ -146,10 +171,11 @@ console.error(new Error("failed: token Bearer sk-live-abc123"))
 ```
 
 `"Bearer sk-live-abc123"` is a credential and `redact()` masks it. `"failed: token
-Bearer sk-live-abc123"` is a *sentence containing* one, and it is reported verbatim —
-in `entries[].message` and again in `entries[].stack`, because the stack repeats the
-message. The same is true of `"the password is hunter2"`. This is not an oversight to
-be patched with a scanner: every attempt to teach this module a second notion of
+Bearer sk-live-abc123"` is a *sentence containing* one, and it is reported verbatim in
+`entries[].message`. The same is true of `"the password is hunter2"`. It reaches the
+ticket once rather than twice — `entries[].stack` used to repeat it through the header,
+and the header is deleted now — but once is enough to matter. This is not an oversight
+to be patched with a scanner: every attempt to teach this module a second notion of
 "credential" leaked something worse, including masking one half of an overlapping pair
 and shipping the other half beside a `[redacted]` marker that claimed it was handled.
 
@@ -163,7 +189,17 @@ The rest of what survives is pinned by a test rather than hoped about:
 - an `Error`'s `cause`, and an `AggregateError`'s `errors`, which are not read at all,
   so anything only reachable through them is absent rather than masked;
 - zero-width spaces or punctuation immediately before `Bearer`, which stop the value
-  matcher from recognising the whole value.
+  matcher from recognising the whole value;
+- a header an engine transformed rather than repeated, where the transformation reaches
+  the `name` half as well (see the stack rule above);
+- a **transparent `Proxy`** over the console. `new Proxy(A, {})` is a distinct object, so
+  it is a distinct key addressing the same property, and no key can tell it from its
+  target. Executed: start a tail on `A`, then set `globalThis.console = new Proxy(A, {})`
+  and start a second tail — the second wraps the first's wrapper, only the second
+  captures (the shared re-entrancy guard silences the inner one, and the first honestly
+  reports `unavailable`), the app's own method still runs exactly once, and stopping the
+  first tail before the second strands the first's wrapper on `A` for the life of the
+  page. It keeps forwarding, so no logging is lost.
 
 One guarantee worth stating precisely: **a foreign property is read once** — but that
 holds for an argument this extension successfully classifies as error-shaped, whose

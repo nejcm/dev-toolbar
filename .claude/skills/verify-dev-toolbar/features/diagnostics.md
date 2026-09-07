@@ -173,9 +173,18 @@ place for redacted foreign text — so they come from
   only, because stopping at a quote left the secret next to a mask that
   claimed otherwise) — do not report the missing brace as corruption.
 - A credential written into **prose** — `failed: token Bearer …` — is a
-  documented limit and survives in both the message and the stack;
-  `redact()` judges whole values and nothing here judges parts of one. The
-  panel shows the text before you copy it.
+  documented limit and survives in `entries[].message`; `redact()` judges
+  whole values and nothing here judges parts of one. It no longer appears a
+  second time in `entries[].stack`: the stack's header line is deleted, so
+  every `stack` in the export starts at a frame. A missing `Error: …` line at
+  the top of a stack is the design, not truncation. The panel shows the text
+  before you copy it.
+- `status` and `watching` are re-derived on **every** read, so they are
+  present-tense. If a driving step replaces `console.error` or reassigns
+  `globalThis.console`, expect `status: "unavailable"` with `watching: []` —
+  the tail does not re-patch, it drops the claim. Counts already taken stay
+  (they are what was seen while it was watching); a tail that never watched
+  anything still reports `null`.
 - `console.log` is never patched, and there is no option that would patch it.
   A request to capture logs is a source change, not a driving step.
 - The two console commands are contributed **only** when the tail is not

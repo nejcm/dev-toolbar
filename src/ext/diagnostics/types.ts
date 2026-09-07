@@ -204,7 +204,12 @@ export type ConsoleTailStatus =
   | "capturing"
   /** Turned off — `console: false`, or every source individually disabled. */
   | "disabled"
-  /** Started, but nothing here could be watched (no `console`, no `window`). */
+  /**
+   * Nothing here can be watched. Either the start found nothing to watch (no
+   * `console`, no `window`), or what it did patch is no longer live — the page
+   * replaced the method, or swapped `globalThis.console` for another object.
+   * Nothing is re-patched automatically; the claim is dropped instead.
+   */
   | "unavailable"
   /** `start(api)` has not run yet. Nothing has been captured. */
   | "pending"
@@ -222,12 +227,15 @@ export interface ConsoleTailEntry {
   /** Redacted on the way in, argument by argument, before they were joined. */
   message: string;
   /**
-   * The stack where there was one, **whole and redacted line by line** —
-   * header included. V8 repeats the raw message above the first frame, so
-   * that line is masked like every other rather than identified and dropped;
-   * identifying it was its own leak (an `Error` named `fake@host:1` writes a
-   * header shaped exactly like a SpiderMonkey frame), and dropping by shape
-   * threw away frameless and unfamiliar stacks with it.
+   * The stack where there was one, **header removed and everything else
+   * kept**, redacted. V8 repeats `` `${name}: ${message}` `` above the first
+   * frame; that line is deleted by comparison against the known raw text, so
+   * a credential in either half cannot ride out inside a longer string —
+   * every attempt to *rewrite* it instead leaked. Nothing is identified by
+   * shape (that was its own leak: an `Error` named `fake@host:1` writes a
+   * header shaped exactly like a SpiderMonkey frame), so a frameless stack
+   * and a stack from an unfamiliar engine keep every line they have. `null`
+   * where there was no stack, and where deleting the header left nothing.
    */
   stack: string | null;
   /** How many times this message was seen. `1` for a message seen once. */
@@ -241,7 +249,11 @@ export interface ConsoleTailReport {
   status: ConsoleTailStatus;
   /** Always populated. Says what the numbers mean, or why there are none. */
   note: string;
-  /** The sources actually being watched. Empty unless `status` is `"capturing"`. */
+  /**
+   * The sources being watched **at the moment of the report** — a live
+   * read-back, not the answer `start()` got. Empty unless `status` is
+   * `"capturing"`.
+   */
   watching: readonly ConsoleTailSource[];
   /** Every error-level event seen, grouped repeats included. `null` unless observed. */
   errors: number | null;
@@ -266,7 +278,7 @@ export function describeTail(
     case "disabled":
       return "Console capture is off, so this is unknown — not zero. Pass `console: true`-shaped options to /ext/diagnostics to turn it back on.";
     case "unavailable":
-      return "There is no console or window to watch here, so this is unknown — not zero.";
+      return "Nothing here is being watched — there is no console or window to patch, or the console this tail patched is no longer the live one. Anything not captured is unknown, not zero.";
     case "pending":
       return "The toolbar has not started this extension yet, so nothing has been captured — this is unknown, not zero.";
     case "stopped":

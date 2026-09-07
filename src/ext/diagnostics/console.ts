@@ -90,11 +90,15 @@
  *
  * A stack header leaks for one reason and it is not a matching problem: V8
  * repeats `\`${name}: ${message}\`` above the first frame, so a credential in
- * either half appears there *as part of a longer string*. Both forms of both
- * halves are already computed — the raw ones read by `readErrorLike()`, the
- * masked ones by `prepareError()` — so `maskStack()` substitutes the masked
- * for the raw and then masks the whole value. No scanner, no tokeniser, no
- * second notion of a credential. See `maskStack()`.
+ * either half appears there *as part of a longer string*. The header carries
+ * nothing the tail does not already report — the message line is built from
+ * the same two halves, masked — so `maskStack()` **deletes** it and keeps
+ * every remaining line. Deletion is why this is the last shape: substituting
+ * the masked halves for the raw ones leaked on overlapping halves (a `name` of
+ * `Bearer A` inside a `Digest realm="Bearer A",nonce="…"` message — replacing
+ * the name rewrote the text the message replacement needed to match, and
+ * reversing the order only moved the hole), and nothing that removes text can
+ * corrupt what is left. See `maskStack()`.
  *
  * Three rules the leaks all came from, and all three are load-bearing:
  *
@@ -114,28 +118,54 @@
  *   passed through verbatim. Every leak here began as something kept because
  *   it "looked harmless".
  *
- * ## Swapping `console` out from under a running tail
+ * ## Nothing is re-patched, and nothing claims to be watching what it is not
  *
- * `start()` patches the console that is live at that moment and `watching` is
- * the answer from then. A page that replaces `globalThis.console` *after* a
- * tail started therefore leaves the new object unpatched while the tail still
- * reports the sources it attached to — executed: a tail started on A, then
- * `globalThis.console = B`, captures nothing from `B.error` and still reports
- * `capturing` with `["console.error"]`. This is a different thing from the
- * ownership bug it looks like (returning to a console we are still patching,
- * which is keyed by object identity and handled — see `patches`): closing it
- * would mean polling the global, or re-verifying on every `report()`, and a
- * tail that silently re-patched whatever object appeared would be patching
- * consoles nobody asked it to. The wrapper on A stays restorable by identity,
- * so nothing is stranded; the claim is stale, and that is the accepted cost.
+ * `start()` patches the console that is live at that moment, and it never
+ * patches again on its own: a tail that silently re-wrapped whatever object
+ * appeared at `globalThis.console` would be patching consoles nobody asked it
+ * to. What it does do is **ask again**. Every `attach()` re-runs the
+ * read-back, whatever the cached registration says, and `report()` re-derives
+ * the status from a live read-back rather than from the answer `start()` got.
+ *
+ * So the two ways a patch stops being live are both visible instead of
+ * silent — executed, both of them:
+ *
+ * - **The method is replaced under a stable console identity.** Start a tail
+ *   on `A`, then `A.error = something else`. The registration is keyed by
+ *   `(console, method)` and that key is unchanged, so nothing is re-installed;
+ *   the read-back fails, and the tail reports `unavailable` with an empty
+ *   `watching` instead of `capturing`. A second tail started in that state is
+ *   told the same thing rather than adopting a dead wrapper.
+ * - **The whole console is swapped.** `globalThis.console = B` leaves `B`
+ *   unpatched. The wrapper on `A` stays restorable by identity, so nothing is
+ *   stranded, and because the target we hold is no longer the live console the
+ *   tail reports `unavailable` — not `capturing` with counts nobody observed.
+ *   The wrapper on `A` does keep recording if anything still calls `A.error`
+ *   directly, so `unavailable` can arrive with entries and a non-zero count.
+ *   That is deliberate: a count is a claim about what was seen, and the status
+ *   is a claim about what is being watched. Measured: `status: "unavailable"`,
+ *   `watching: []`, `errors: 1`, one entry.
+ *
+ * A **transparent `Proxy`** is the case that stays open, and it cannot be
+ * closed from here: `new Proxy(A, {})` is a distinct object, so it is a
+ * distinct `WeakMap` key addressing the same underlying property. Executed —
+ * start tail 1 on `A`, then `globalThis.console = new Proxy(A, {})` and start
+ * tail 2: tail 2 installs a second wrapper *around tail 1's*, only tail 2
+ * captures (the shared depth guard silences the inner one), and stopping tail
+ * 1 first strands tail 2's wrapper because teardown never restores over a
+ * later patch. No key can tell a transparent `Proxy` from its target, so this
+ * is documented rather than detected.
  *
  * What still escapes, pinned by tests in `__tests__/console.test.tsx`: **a
  * credential written into prose**, which now explicitly includes an `Error`
  * *message* like `"failed: token Bearer sk-live-…"` — the message and the
  * stack both carry it, because the whole string is not a credential and
  * nothing here judges parts of one; a credential inside a stack frame's
- * *function name*; and anything reachable only through `Error.cause` or
- * `AggregateError.errors`, which are not read at all.
+ * *function name*; a header an engine **transforms** rather than repeats (an
+ * upper-cased `name`, say), which is not the text `maskStack()` compares
+ * against and therefore survives as a line of the stack; and anything
+ * reachable only through `Error.cause` or `AggregateError.errors`, which are
+ * not read at all.
  */
 import { redact, redactUrl } from "../../runtime";
 import type { RedactOptions } from "../../runtime";
@@ -197,6 +227,25 @@ export interface ConsoleTail {
   /** Live totals for the chip. Counts events, not grouped entries. */
   counts(): ConsoleTailCounts;
 }
+
+/**
+ * One source this tail attached to, and how to ask whether it is still
+ * attached. `watching` used to be a plain list of source names, fixed at
+ * `start()`: the answer from then, reported forever after. `live()` is what
+ * makes the report a present-tense claim.
+ */
+interface Watch {
+  source: ConsoleTailSource;
+  live(): boolean;
+}
+
+/**
+ * A `window` listener's liveness. It is held by a reference this module owns
+ * and removed by identity on teardown, so there is nothing to re-read: while
+ * the tail is running, it is listening. Only a console *patch* can be taken
+ * away without telling us, and that is what `Attachment.live()` re-reads.
+ */
+const stillListening = (): boolean => true;
 
 export interface ConsoleTailDeps {
   redactOptions?: RedactOptions | undefined;
@@ -369,6 +418,16 @@ function install(
 interface Attachment {
   off(): void;
   verified: boolean;
+  /**
+   * Whether this attachment is watching *right now*, asked fresh. Three things
+   * have to hold, and each one failed on its own in a reviewer's hands: our
+   * listener is registered, the console we patched is still the live one (a
+   * page that swapped `globalThis.console` leaves us holding a patched object
+   * nothing calls), and the read-back still finds our wrapper (a page that
+   * replaced the method under a stable console identity leaves the
+   * registration keyed correctly and dead).
+   */
+  live(): boolean;
 }
 
 function attach(method: PatchedMethod, listener: ConsoleListener): Attachment | null {
@@ -392,12 +451,17 @@ function attach(method: PatchedMethod, listener: ConsoleListener): Attachment | 
     };
     if (known === undefined) patches.set(target, methods);
     methods.set(method, current);
-  } else if (!current.verified) {
-    // Ask again rather than install a second wrapper over our own. The whole
-    // reason an unverified patch is registered at all is that read-back can
-    // fail once — a getter that threw during the assignment and has since
-    // recovered — and installing again would wrap our own wrapper, so the
-    // outer teardown would "restore" the inner one and strand it forever.
+  } else {
+    // Ask again — *every* time, whatever the cached entry says — rather than
+    // install a second wrapper over our own. The reason an unverified patch is
+    // registered at all is that a read-back can fail once (a getter that threw
+    // during the assignment and has since recovered), and installing again
+    // would wrap our own wrapper, so the outer teardown would "restore" the
+    // inner one and strand it forever. Re-asking only when the entry was
+    // *unverified* was its own defect: a page that replaced the method under a
+    // stable console identity left a registration that still said `verified`,
+    // so every later tail adopted a dead wrapper and reported `capturing`
+    // while recording nothing.
     current.verified = current.verify();
   }
   const installed = current;
@@ -406,6 +470,11 @@ function attach(method: PatchedMethod, listener: ConsoleListener): Attachment | 
   let attached = true;
   return {
     verified: installed.verified,
+    live: () =>
+      attached &&
+      installed.listeners.has(listener) &&
+      consoleObject() === target &&
+      installed.verify(),
     off: () => {
       if (!attached) return;
       attached = false;
@@ -481,13 +550,74 @@ interface ErrorSnapshot {
 
 /**
  * The snapshot plus what masking made of the two halves V8 writes above the
- * first frame. Both are needed twice — for the line the tail shows and for the
- * substitution `maskStack()` makes — and computing either one a second time
- * would be a second answer to the same question.
+ * first frame. The masked forms are the line the tail shows
+ * (`describeErrorLike()`); the raw ones are what `maskStack()` compares the
+ * head of the stack against before deleting it. Masking either half twice
+ * would be two answers to the same question.
  */
 interface MaskedErrorSnapshot extends ErrorSnapshot {
   maskedName: string;
   maskedMessage: string;
+}
+
+/**
+ * The name an engine writes into the header when the error has none. Not a
+ * guess about shape — `Error.prototype.toString` and V8's stack formatter both
+ * fall back to it, and V8's formatter treats an empty `name` as absent — so
+ * for a `message`-only error the known header text is `` `Error: ${message}` ``
+ * and nothing else. Leaving it out was a leak, measured: an error-shaped object
+ * with no `name` property, or one whose `name` was set to `""` after
+ * construction, put its raw credential-carrying message back into the stack.
+ */
+const DEFAULT_ERROR_NAME = "Error";
+
+/**
+ * The stack with the header line removed, or unchanged when it has none.
+ *
+ * The header is the one place in a stack where the `name` and the `message`
+ * appear, and both are known here **exactly** — so this is a comparison
+ * against known text, never a test for what a header looks like. Two earlier
+ * versions did test for that and both leaked: dropping everything above the
+ * first *recognised* frame threw away frameless stacks and every stack from an
+ * unfamiliar engine, and `^\S*@\S*:\d+` accepted the header of an `Error`
+ * whose `name` was `fake@host:1`.
+ *
+ * Whichever known form the stack **starts with** is removed with the rest of
+ * its line. Matching the prefix of the whole stack rather than of the first
+ * line is deliberate: a message containing a newline spreads the header over
+ * several lines (`new Error("Bearer\nsk-live-…")`), and deleting only the
+ * first of them would leave the second half of a credential behind.
+ *
+ * The forms are tried most-specific-first, because `${name}: ${message}` has
+ * to win over either half alone. Over-deletion is possible — a `message` of `""` and
+ * a `name` of `Error` also prefixes a first line reading `ErrorFoo: bar` — and
+ * it is acceptable in a way that rewriting is not: removing text can lose a
+ * frame, but it cannot leave a credential next to a marker claiming it was
+ * handled, and it cannot corrupt the text another replacement was about to
+ * match. That is the whole reason this replaces substitution.
+ */
+function withoutHeader(stack: string, name: string | null, message: string | null): string {
+  const named = name ?? "";
+  const said = message ?? "";
+  const forms: string[] = [];
+  if (said !== "") {
+    if (named !== "") forms.push(`${named}: ${said}`);
+    // The message-only shape: no usable `name`, so the engine wrote its own.
+    forms.push(`${DEFAULT_ERROR_NAME}: ${said}`);
+    forms.push(said);
+  }
+  // Last, and only ever a real one: a bare `Error` would be needed only where
+  // both halves are empty, and a header with nothing in it has nothing to leak.
+  if (named !== "") forms.push(named);
+  for (const form of forms) {
+    if (form === "" || !stack.startsWith(form)) continue;
+    // Whatever an engine appended to the header shares its line and goes with
+    // it; no engine puts a frame on that line.
+    const rest = stack.slice(form.length);
+    const newline = rest.indexOf("\n");
+    return newline === -1 ? "" : rest.slice(newline + 1);
+  }
+  return stack;
 }
 
 /** One property read, guarded, kept only if it is a string. */
@@ -557,7 +687,7 @@ export function createConsoleTail(
   let started = false;
   /** True once a start actually watched something. See `status()`. */
   let observedAnything = false;
-  let watching: ConsoleTailSource[] = [];
+  let watches: Watch[] = [];
   let stops: (() => void)[] = [];
 
   /* ---------------------------------------------------------------------- */
@@ -592,11 +722,11 @@ export function createConsoleTail(
   };
 
   /**
-   * Classify once, and mask both halves of the header once, here. `name` and
-   * `message` are each carried in masked form because two places need exactly
-   * them: the line `describeErrorLike()` builds, and the substitution
-   * `maskStack()` makes. Masking either twice would be two answers to the same
-   * question.
+   * Classify once, and mask both halves of the header once, here. The masked
+   * halves are what `describeErrorLike()` joins into the line the tail shows;
+   * the raw ones stay on the snapshot because `maskStack()` compares the head
+   * of the stack against them. Masking either twice would be two answers to
+   * the same question.
    */
   const prepareError = (value: unknown): MaskedErrorSnapshot | null => {
     const error = readErrorLike(value);
@@ -609,56 +739,52 @@ export function createConsoleTail(
   };
 
   /**
-   * The whole stack, nothing classified — but with the header it repeats
-   * swapped for the masked form of that header first.
+   * The stack with its header line deleted, and every remaining line masked.
    *
    * The stack leaks for one specific reason: V8 writes `\`${name}: ${message}\``
    * above the first frame, and `redact()`'s value matching is anchored, so
    * `Bearer sk-live-…` is a credential and `Error: Bearer sk-live-…` is not.
-   * **Both halves of that header carry the hazard** — a credential assigned to
-   * `Error.name` is masked in the line the tail shows and used to survive
-   * verbatim in the stack beside it, which is a mask that lies about the value
-   * next to it.
-   * Two earlier shapes tried to find that header and both leaked — dropping
-   * lines above the first *recognised* frame threw away frameless stacks and
-   * every stack from an unfamiliar engine, and `^\S*@\S*:\d+` accepted the
-   * header of an `Error` whose `name` was `fake@host:1`. A third split every
-   * line on whitespace and re-asked `redact()` about the pieces, which is a
-   * second notion of "credential" and leaked twice more.
+   * **Both halves of that header carry the hazard**, so both had to go, and
+   * three shapes of *rewriting* it leaked before this one:
    *
-   * Nothing is detected here. The raw `name` and `message` and their masked
-   * forms are all already known, so each raw one is replaced with its masked
-   * one wherever it appears — that is the header, by construction, with no
-   * test for what a header looks like — and the result then goes through
-   * `maskString` like any other foreign string. A half masking left unchanged
-   * is substituted with itself and therefore skipped, so an ordinary `name`
-   * like `TypeError` rewrites nothing. Every line that exists is kept: a
-   * masked header costs nothing, and dropping lines by shape is what leaked in
-   * the first place.
+   * - masking line by line missed a credential the message split across a
+   *   newline (the header became `Error: Bearer`, the secret a line of its
+   *   own, and neither is a credential alone);
+   * - re-tokenising every line into words and adjacent pairs masked `token
+   *   Bearer` and shipped the overlapping secret beside the marker, and
+   *   reported `"the token expired"` as `"the token [redacted]"`;
+   * - substituting the masked halves for the raw ones leaked on **overlapping
+   *   halves**: a `name` of `Bearer A` under a message of
+   *   `Digest realm="Bearer A",nonce="FULL_SECRET_123"` exported the nonce,
+   *   because replacing the name rewrote the text the message replacement
+   *   needed to match. Reversing the order moves the hole to the other overlap
+   *   rather than closing it.
    *
-   * A message this module could not mask (prose carrying a secret) is
-   * substituted with itself, unchanged — the documented limit, and the reason
-   * the panel shows you the text before you copy it.
+   * So the header is **removed**, by `withoutHeader()`, against the known raw
+   * text — no scanner, no tokeniser, no frame shape. A deletion cannot
+   * overlap-corrupt what is left, which is the entire reason it replaces
+   * substitution. Nothing is lost by it either: the header's only content is
+   * the `name` and the `message`, and the line the tail shows is those two
+   * halves, masked. A stack that is *only* a header therefore has no lines
+   * left, and `null` — no stack — is the honest report of that.
    *
-   * Takes the snapshot rather than loose strings: every value it substitutes
-   * has to be the one read and masked once, and a parameter list is an
-   * invitation to pass a freshly-read or freshly-masked one.
+   * Everything that remains goes through `maskString` like any other foreign
+   * string, unchanged from before: whole-value matching plus the URL pass. A
+   * credential inside a frame's function name still survives, and so does one
+   * in prose — documented limits, and the reason the panel shows you the text
+   * before you copy it.
+   *
+   * Takes the snapshot rather than loose strings: the `name` and `message` it
+   * compares against have to be the ones read **once**, and a parameter list
+   * is an invitation to pass a freshly-read one.
    */
   const maskStack = (error: MaskedErrorSnapshot): string | null => {
-    const { stack, name, maskedName, message, maskedMessage } = error;
+    const { stack, name, message } = error;
     if (stack === null || stack === "" || maxStackChars === 0) return null;
     try {
-      // `replaceAll` with a *callback*: a custom mask containing `$` would
-      // otherwise be read as a substitution pattern (`$&`, `$1`) and rewrite
-      // itself out of the string.
-      let substituted = stack;
-      if (name !== null && name !== "" && name !== maskedName) {
-        substituted = substituted.replaceAll(name, () => maskedName);
-      }
-      if (message !== null && message !== "" && message !== maskedMessage) {
-        substituted = substituted.replaceAll(message, () => maskedMessage);
-      }
-      return cap(maskString(substituted), maxStackChars);
+      const frames = withoutHeader(stack, name, message);
+      if (frames.trim() === "") return null;
+      return cap(maskString(frames), maxStackChars);
     } catch {
       return null;
     }
@@ -966,7 +1092,7 @@ export function createConsoleTail(
     running = false;
     const pending = stops;
     stops = [];
-    watching = [];
+    watches = [];
     for (const off of pending) {
       try {
         off();
@@ -980,7 +1106,7 @@ export function createConsoleTail(
     if (!enabled || running) return stop;
     running = true;
     started = true;
-    watching = [];
+    watches = [];
 
     try {
       attachAll();
@@ -992,7 +1118,7 @@ export function createConsoleTail(
       // `unavailable` rather than take the app's console down with us.
       stop();
     }
-    observedAnything ||= watching.length > 0;
+    observedAnything ||= watches.length > 0;
     return stop;
   };
 
@@ -1003,14 +1129,14 @@ export function createConsoleTail(
         // Registered whether or not it was verified: teardown first, claims
         // second.
         stops.push(patch.off);
-        if (patch.verified) watching.push("console.error");
+        if (patch.verified) watches.push({ source: "console.error", live: patch.live });
       }
     }
     if (watchWarn) {
       const patch = attach("warn", (args) => fromArguments("console.warn", "warn", args));
       if (patch !== null) {
         stops.push(patch.off);
-        if (patch.verified) watching.push("console.warn");
+        if (patch.verified) watches.push({ source: "console.warn", live: patch.live });
       }
     }
 
@@ -1019,20 +1145,47 @@ export function createConsoleTail(
       if (watchWindow) {
         target.addEventListener("error", onWindowError);
         stops.push(() => target.removeEventListener("error", onWindowError));
-        watching.push("window.error");
+        watches.push({ source: "window.error", live: stillListening });
       }
       if (watchRejections) {
         target.addEventListener("unhandledrejection", onRejection);
         stops.push(() => target.removeEventListener("unhandledrejection", onRejection));
-        watching.push("unhandledrejection");
+        watches.push({ source: "unhandledrejection", live: stillListening });
       }
     }
   };
 
-  const status = (): ConsoleTailStatus => {
+  /**
+   * Every source still attached, asked fresh. A window listener is held by a
+   * reference we own and removed by identity, so it stays live until teardown;
+   * a console patch is re-read every time, because the page can take it away
+   * without telling us. Never throws: an unreadable console is not a watched
+   * one.
+   */
+  const liveSources = (): ConsoleTailSource[] => {
+    const live: ConsoleTailSource[] = [];
+    for (const watch of watches) {
+      try {
+        if (watch.live()) live.push(watch.source);
+      } catch {
+        /* not watched, then */
+      }
+    }
+    return live;
+  };
+
+  /**
+   * Derived from a *live* read-back, not from the answer `start()` got. A tail
+   * whose console was swapped or whose method was replaced under it used to go
+   * on reporting `capturing` with the sources it once attached to; it reports
+   * `unavailable` now — nothing here can be watched any more — which is the
+   * same claim, for the same reason, as a start that never managed to watch
+   * anything.
+   */
+  const stateOf = (live: readonly ConsoleTailSource[]): ConsoleTailStatus => {
     if (!enabled) return "disabled";
-    if (running) return watching.length === 0 ? "unavailable" : "capturing";
     if (!started) return "pending";
+    if (running) return live.length === 0 ? "unavailable" : "capturing";
     // "Stopped" is a claim about what was seen while running. A start that
     // never managed to watch anything — no `window`, a frozen `console` — saw
     // nothing, and reporting zero errors for it would be an observation
@@ -1054,8 +1207,13 @@ export function createConsoleTail(
     },
 
     report(limit) {
-      const state = status();
-      const observed = state === "capturing" || state === "stopped";
+      const live = liveSources();
+      const state = stateOf(live);
+      // A count is a claim about what was watched, so it survives the watch
+      // ending: a tail that captured four errors and then had its console
+      // swapped still saw four. What may never read as zero is a tail that
+      // never watched anything — the same rule as before, now the only rule.
+      const observed = observedAnything;
       const all = [...groups.values()].reverse();
       const kept =
         limit === undefined || !Number.isFinite(limit)
@@ -1063,8 +1221,8 @@ export function createConsoleTail(
           : all.slice(0, Math.max(0, Math.floor(limit)));
       return {
         status: state,
-        note: describeTail(state, watching),
-        watching: [...watching],
+        note: describeTail(state, live),
+        watching: live,
         // "Watched and saw none" and "never watched" are opposite claims; the
         // second is `null`, exactly as the responsiveness counts are.
         errors: observed ? errors : null,
