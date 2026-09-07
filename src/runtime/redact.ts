@@ -362,6 +362,94 @@ const JWT = /^[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}$/;
 const SCHEME_CREDENTIAL = /^(bearer|basic|token)\s+\S+$/i;
 const SCHEME_DIGEST = /^digest\s+[a-z-]+=/i;
 
+const TEXT_SCHEME = /\b(?=(bearer|basic|token)(\s+)(\S+))/gi;
+const TEXT_DIGEST = /\bdigest\s+(?=[a-z-]+=)/gi;
+const TEXT_JWT =
+  /(?<![A-Za-z0-9_-])[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}(?![A-Za-z0-9_-])/g;
+const TEXT_URL = /[a-z][a-z0-9+.-]*:\/\/\S+/gi;
+
+export interface RedactTextOptions extends RedactOptions {
+  /** Also treat the entire input as a URL, including relative references. */
+  url?: boolean;
+}
+
+interface TextMaskSpan {
+  start: number;
+  end: number;
+  replacement: string;
+}
+
+/** Masks credential shapes and URLs inside text, merging overlaps before replacing anything. */
+export function redactText(text: string, options?: RedactTextOptions): string {
+  const resolved = resolveCached(options);
+  const spans: TextMaskSpan[] = [];
+  if (resolved.values) {
+    const schemes = new RegExp(TEXT_SCHEME);
+    let match: RegExpExecArray | null;
+    while ((match = schemes.exec(text)) !== null) {
+      const start = match.index + match[1]!.length + match[2]!.length;
+      spans.push({ start, end: start + match[3]!.length, replacement: resolved.mask });
+      // A zero-width match leaves overlapping schemes available for the next scan.
+      schemes.lastIndex = match.index + 1;
+    }
+    const digest = new RegExp(TEXT_DIGEST).exec(text);
+    // Digest has no reliable end delimiter in prose; discard its entire suffix.
+    if (digest !== null) {
+      spans.push({
+        start: digest.index + digest[0].length,
+        end: text.length,
+        replacement: resolved.mask,
+      });
+    }
+    for (const jwt of text.matchAll(TEXT_JWT)) {
+      spans.push({ start: jwt.index, end: jwt.index + jwt[0].length, replacement: resolved.mask });
+    }
+  }
+  // With `url`, the whole input is tried as one URL — that keeps the precise rewrite
+  // (`?token=[redacted]`) where the value really is one URL. The embedded-URL scan
+  // runs *as well*, never instead: a value with whitespace parses as one URL that
+  // hides the rest of itself from inspection — after a `#` the query has ended, and
+  // `maskUrl` reads neither userinfo nor the path, so a second URL's credentials go
+  // unseen. Where both find something the merge below collapses them to a plain
+  // mask, which is the safe direction; an identical whole-range match is skipped so
+  // the single-URL case keeps its rewrite rather than being masked whole.
+  let whole = false;
+  if (options?.url === true) {
+    const pass = maskUrl(text, resolved);
+    if (pass.masked) {
+      spans.push({ start: 0, end: text.length, replacement: pass.output });
+      whole = true;
+    }
+  }
+  for (const url of text.matchAll(TEXT_URL)) {
+    const start = url.index;
+    const end = start + url[0].length;
+    if (whole && start === 0 && end === text.length) continue;
+    const pass = maskUrl(url[0], resolved);
+    if (pass.masked) spans.push({ start, end, replacement: pass.output });
+  }
+  if (spans.length === 0) return text;
+  spans.sort((a, b) => a.start - b.start);
+  const merged: TextMaskSpan[] = [];
+  for (const span of spans) {
+    const previous = merged[merged.length - 1];
+    if (previous !== undefined && span.start < previous.end) {
+      previous.end = Math.max(previous.end, span.end);
+      // Overlapping URL rewrites and token masks cannot safely retain either partial rewrite.
+      previous.replacement = resolved.mask;
+    } else {
+      merged.push(span);
+    }
+  }
+  let out = "";
+  let cursor = 0;
+  for (const span of merged) {
+    out += text.slice(cursor, span.start) + span.replacement;
+    cursor = span.end;
+  }
+  return out + text.slice(cursor);
+}
+
 // Cheap prefix gate before paying for a URL parse.
 const ABSOLUTE_URL = /^[A-Za-z][A-Za-z0-9+.-]*:\/\/\S+$/;
 

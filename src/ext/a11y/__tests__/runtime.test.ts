@@ -8,8 +8,11 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import axe from "axe-core";
 import { fakeExtensionApi } from "@nejcm/dev-toolbar/testing";
 import { DEFAULT_NODE_LIMIT, TOOLBAR_EXCLUDE, createA11yRuntime } from "../runtime";
+import { a11y } from "../index";
+import type { A11yOptions } from "../index";
 import { emptyReport, selectionKey, worstImpact } from "../types";
-import type { AxeLike, Impact } from "../types";
+import type { RedactOptions } from "@nejcm/dev-toolbar/runtime";
+import type { A11yReport, AxeLike, Impact } from "../types";
 
 /** The real peer must satisfy the structural type we declare instead of importing its. */
 const realAxe: AxeLike = axe;
@@ -332,10 +335,7 @@ describe("what reaches the report", () => {
     expect(JSON.stringify(report)).not.toContain("eyJhbGciOiJIUzI1NiJ9");
   });
 
-  it("does NOT catch a credential once anything precedes it — the real boundary", async () => {
-    // The limit is "is the whole value", not "is short": a complete bearer
-    // token is masked on its own and survives one word of prefix away. Pinned
-    // as a pair so the boundary cannot be mis-stated in either direction.
+  it("masks credential shapes in prose but keeps unknown key formats", async () => {
     const jwt = "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NSJ9.dBjftJeZ4CVPmB92";
     const { load } = stubAxe({
       violations: [
@@ -351,19 +351,12 @@ describe("what reaches the report", () => {
     const nodes = report.groups[0]?.violations[0]?.nodes ?? [];
 
     expect(nodes[0]?.html).not.toContain(jwt);
-    expect(nodes[1]?.html).toContain(jwt);
-    // `title`, `alt`, `placeholder` and `aria-*` are kept, and kept means
-    // whole-value masking only — a prefix carries the rest through.
+    expect(nodes[1]?.html).not.toContain(jwt);
     expect(nodes[2]?.html).toContain("sk-9f2a7c");
-    // And `redact()` has no AWS-key *shape*, so a whole-value one survives:
-    // the anchoring is not the only limit.
     expect(nodes[3]?.html).toContain("AKIAIOSFODNN7EXAMPLE");
   });
 
-  it("does NOT catch a credential mid-sentence in text — the known limit, pinned", async () => {
-    // `redact()`'s value matching is anchored: it masks a string that *is* a
-    // credential, not one embedded in prose. Documented in docs/ext/a11y.md;
-    // asserted here so the gap cannot close silently and be assumed absent.
+  it("keeps an unknown credential format mid-sentence — the known limit, pinned", async () => {
     const { load } = stubAxe({
       violations: [
         violation("link-name", "serious", [{ html: '<a href="/x">key is sk-9f2a7c</a>' }]),
@@ -872,4 +865,167 @@ describe("an element in a shadow root", () => {
     expect(selected.selected).toBe(selectionKey("image-alt", 0));
     expect(runtime.store.getSnapshot().highlight[0]?.label).toBe("image-alt");
   });
+});
+
+describe("credential-redaction export regressions", () => {
+  const scanAndExport = async (options: A11yOptions): Promise<A11yReport> => {
+    const extension = a11y(options);
+    const commands =
+      typeof extension.commands === "function" ? extension.commands() : extension.commands;
+    const scanned = await commands?.find((command) => command.id === "a11y.scan")?.run();
+    const exported = await commands
+      ?.find((command) => command.id === "a11y.export")
+      ?.run({ copy: false });
+    expect(exported).toBe(scanned);
+    return exported as A11yReport;
+  };
+  it.each([
+    ["A1 comment real axe", '<button><!--<input data-secret="LEAK_SECRET_123">--></button>'],
+    ["A1 attribute control real axe", '<button><input data-secret="LEAK_SECRET_123"></button>'],
+  ])("%s", async (label, html) => {
+    document.body.innerHTML = html;
+    const report = await scanAndExport({
+      load: () => Promise.resolve(realAxe),
+      axeOptions: { runOnly: ["button-name"] },
+    });
+    expect(report.status).toBe("ok");
+    expect(report.total).toBeGreaterThan(0);
+    const json = JSON.stringify(report);
+    expect(json).not.toContain("LEAK_SECRET_123");
+    expect(json).toContain("[redacted]");
+  });
+
+  it.each([
+    [
+      "review CDATA quoted close",
+      "<button><![CDATA[ordinary > data-secret=LEAK_SECRET_123]]></button>",
+    ],
+    [
+      "review PI quoted close",
+      '<button><?php $x="ordinary > data-secret=LEAK_SECRET_123" ?></button>',
+    ],
+    [
+      "review declaration quoted close",
+      '<!DOCTYPE x PUBLIC "ordinary > data-secret=LEAK_SECRET_123"><button></button>',
+    ],
+    ["A2 CDATA", "<![CDATA[Bearer LEAK_SECRET_123]]>"],
+    ["A2 declaration", "<!DOCTYPE Bearer LEAK_SECRET_123>"],
+    ["A2 processing instruction", '<?php $x="Bearer LEAK_SECRET_123" ?>'],
+  ])("%s", async (label, html) => {
+    const { load } = stubAxe({ violations: [violation("label", "critical", [{ html }])] });
+    const report = await scanAndExport({ load });
+    const json = JSON.stringify(report);
+    expect(json).not.toContain("LEAK_SECRET_123");
+    expect(json).toContain("[unreadable]");
+  });
+
+  // `href` and `src` are tried as one URL, but a value with whitespace in it hides
+  // the rest of itself from that parse — after a `#` the query has ended, and
+  // neither userinfo nor the path is inspected. The embedded-URL scan runs as well.
+  it.each([
+    '<a href="https://a.test/?x=1 https://b.test/?token=LEAK_SECRET_123">x</a>',
+    '<a href="/a b?x=https://b.test/?token=LEAK_SECRET_123">x</a>',
+    '<img src="/a b?x=https://b.test/?token=LEAK_SECRET_123">',
+    '<a href="https://a.test/?token=x #https://LEAK_SECRET_123:pw@b.test/">x</a>',
+    '<a href="https://a.test/p https://LEAK_SECRET_123:pw@b.test/ ?token=x">x</a>',
+    '<a href="/a?token=x #https://LEAK_SECRET_123:pw@b.test/">x</a>',
+  ])("masks a second URL hidden inside a whitespace-bearing value: %s", async (html) => {
+    const { load } = stubAxe({ violations: [violation("label", "critical", [{ html }])] });
+    const report = await scanAndExport({ load });
+    expect(JSON.stringify(report)).not.toContain("LEAK_SECRET_123");
+  });
+
+  it("still rewrites a plain single URL precisely rather than masking it whole", async () => {
+    const { load } = stubAxe({
+      violations: [
+        violation("label", "critical", [
+          { html: '<a href="/reset?token=LEAK_SECRET_123&page=2">x</a>' },
+        ]),
+      ],
+    });
+    const report = await scanAndExport({ load });
+    const json = JSON.stringify(report);
+    expect(json).not.toContain("LEAK_SECRET_123");
+    expect(json).toContain("/reset?token=[redacted]&page=2");
+  });
+
+  it.each([
+    "https://a.test/?x=1 /b?token=SECRET",
+    "https://a.test/p https://b.test/?x=1 ?token=SECRET",
+  ])("keeps an embedded relative reference as an accepted limit: %s", async (url) => {
+    const html = `<a href="${url}">link</a>`;
+    const { load } = stubAxe({ violations: [violation("link-name", "serious", [{ html }])] });
+    const report = await scanAndExport({ load });
+    expect(report.groups[0]?.violations[0]?.nodes[0]?.html).toBe(html);
+  });
+
+  it("resolves URL masking options independently of the attribute count", async () => {
+    const scan = async (count: number) => {
+      const extraKeys = ["privateCode"];
+      const iterations = vi.spyOn(extraKeys, Symbol.iterator);
+      try {
+        const html =
+          '<a href="/reset?privateCode=SECRET&page=2"><img src="/img?privateCode=SECRET"></a>'.repeat(
+            count,
+          );
+        const { load } = stubAxe({ violations: [violation("link-name", "serious", [{ html }])] });
+        const report = await scanAndExport({ load, redactOptions: { extraKeys } });
+        expect(JSON.stringify(report)).not.toContain("SECRET");
+        expect(report.groups[0]?.violations[0]?.nodes[0]?.html).toBe(
+          html.replaceAll("SECRET", "[redacted]"),
+        );
+        return iterations.mock.calls.length;
+      } finally {
+        iterations.mockRestore();
+      }
+    };
+    expect(await scan(10)).toBe(await scan(1));
+  });
+
+  it("reads redactOptions filled in after the runtime was built", async () => {
+    // Regression: caching the URL options at construction let a caller who filled
+    // `redactOptions` in later see `href`/`src` masked differently from the
+    // attribute beside them — the name masked, the query value leaking.
+    const redactOptions: RedactOptions = {};
+    const html =
+      '<a href="/x?privateCode=SECRET"><img src="/i?privateCode=SECRET" privateCode="v"></a>';
+    const { load } = stubAxe({ violations: [violation("link-name", "serious", [{ html }])] });
+    const runtime = createA11yRuntime({ load, redactOptions });
+    redactOptions.extraKeys = ["privateCode"];
+    const report = await runtime.scan();
+    expect(JSON.stringify(report)).not.toContain("SECRET");
+  });
+});
+
+it.each([
+  [
+    "many attributes",
+    `<input ${Array.from({ length: 10000 }, (_, index) => `data-x${index}="secret"`).join(" ")}>`,
+  ],
+  ["long attribute name", `<input ${"a".repeat(10000)}="secret">`],
+  ["long tag name", `<${"a".repeat(10000)}>`],
+  ["text and tags", `<p>${"word ".repeat(10000)}</p>`],
+  ["oversized custom mask", '<input aria-label="Bearer SECRET">'],
+])("caps the exported snippet at 4096 characters: %s", async (_label, html) => {
+  const { load } = stubAxe({ violations: [violation("label", "critical", [{ html }])] });
+  const runtime = createA11yRuntime({ load, redactOptions: { mask: "x".repeat(5000) } });
+  await runtime.scan();
+  const node = runtime.report().groups[0]?.violations[0]?.nodes[0];
+  expect(node?.html?.length).toBeLessThanOrEqual(4096);
+  expect(node?.html).toContain("[truncated]");
+  expect(node?.html).not.toContain("secret");
+  expect(node?.html).not.toContain("SECRET");
+});
+
+it.each([
+  "https://LEAK_SECRET_123:password@customer.services.internal/path",
+  "https://example.com/?token=x&Bearer LEAK_SECRET_123",
+  "/path?token=x&Bearer LEAK_SECRET_123",
+])("masks URL and credential shapes using the original href: %s", async (url) => {
+  const { load } = stubAxe({
+    violations: [violation("link-name", "critical", [{ html: `<a href="${url}">link</a>` }])],
+  });
+  const runtime = createA11yRuntime({ load });
+  await runtime.scan();
+  expect(JSON.stringify(runtime.report())).not.toContain("LEAK_SECRET_123");
 });

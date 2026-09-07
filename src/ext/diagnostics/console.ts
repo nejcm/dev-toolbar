@@ -20,14 +20,11 @@
  * forwarding past 20,000 under Bun 1.4.0 (docs/ext/diagnostics.md § "before
  * you ship two copies").
  *
- * `redact()` alone judges whether a value is a credential; no tokeniser,
- * header scanner or frame-shape detector may be reintroduced here — three
- * were tried and each shipped a leak (docs/ext/diagnostics.md § "The limit
- * that matters most before you paste"). A transparent `Proxy` over `console`
- * cannot be told apart from its target, so a tail behind one cannot be closed
- * from here (same section).
+ * Stacks use `redactText()` on the original text, then a cap.
+ * Messages retain whole-value `redact()` semantics. A transparent `Proxy`
+ * over `console` remains a distinct patch owner; see the documented limit.
  */
-import { redact, redactUrl } from "../../runtime";
+import { redact, redactText, redactUrl } from "../../runtime";
 import type { RedactOptions } from "../../runtime";
 // The real clamp, not a copy of it: a restatement that matches today drifts
 // tomorrow, and `size` has always produced the numbers every other ring does.
@@ -317,52 +314,9 @@ interface ErrorSnapshot {
   stack: string | null;
 }
 
-// Masked forms of the header halves: what the tail shows; the raw ones stay
-// on `ErrorSnapshot` for `maskStack()` to compare the stack's head against.
 interface MaskedErrorSnapshot extends ErrorSnapshot {
   maskedName: string;
   maskedMessage: string;
-}
-
-// The name V8 writes into the header when the error has none — leaving it out
-// leaked a message-only error's raw text back into the stack.
-const DEFAULT_ERROR_NAME = "Error";
-
-/**
- * The stack with its header lines (`` `${name}: ${message}` ``) removed by
- * comparing known text, never by guessing a header's shape — two shape-based
- * versions each leaked a different stack. See docs/ext/diagnostics.md § "The
- * console tail" for why deletion, not substitution, is what stays.
- */
-function withoutHeader(stack: string, name: string | null, message: string | null): string {
-  const named = name ?? "";
-  const said = message ?? "";
-  const forms: string[] = [];
-  if (said !== "") {
-    if (named !== "") forms.push(`${named}: ${said}`);
-    // The message-only shape: no usable `name`, so the engine wrote its own.
-    forms.push(`${DEFAULT_ERROR_NAME}: ${said}`);
-    forms.push(said);
-  }
-  // Last, and only ever a real one: a bare `Error` would be needed only where
-  // both halves are empty, and a header with nothing in it has nothing to leak.
-  if (named !== "") forms.push(named);
-  let rest = stack;
-  // Every leading copy, not just one: a stack repeating its header sent the
-  // second copy to whole-value masking, which cannot see a credential inside a
-  // longer string, and it reached both renderers verbatim.
-  for (;;) {
-    const form = forms.find((candidate) => candidate !== "" && rest.startsWith(candidate));
-    if (form === undefined) return rest;
-    // A prefix collision deletes genuine frames — a run of them, now that this
-    // loops: name `Error` with an empty message eats every leading `ErrorFoo:`.
-    const after = rest.slice(form.length);
-    // Whatever an engine appended to the header shares its line and goes with
-    // it; no engine puts a frame on that line.
-    const newline = after.indexOf("\n");
-    if (newline === -1) return "";
-    rest = after.slice(newline + 1);
-  }
 }
 
 /** One property read, guarded, kept only if it is a string. */
@@ -448,8 +402,8 @@ export function createConsoleTail(
     }
   };
 
-  // Whole-value shape matching, then the URL pass — the entire mechanism; see
-  // the module docblock for what tried to be more than this and leaked.
+  // Whole-value shape matching, then the URL pass. This is what `message` gets;
+  // stacks take `redactText()` instead, for the reason in the module docblock.
   const maskString = (value: string): string => {
     try {
       return maskUrls(redact(value, redactOptions));
@@ -458,8 +412,6 @@ export function createConsoleTail(
     }
   };
 
-  // Masks both header halves once; `maskStack()` still needs the raw ones to
-  // compare the stack's head against.
   const prepareError = (value: unknown): MaskedErrorSnapshot | null => {
     const error = readErrorLike(value);
     if (error === null) return null;
@@ -470,16 +422,11 @@ export function createConsoleTail(
     };
   };
 
-  // Header deleted via `withoutHeader()`, then every remaining line masked.
-  // No scanner, tokeniser or frame-shape guess may be reintroduced here —
-  // three such attempts each leaked (docs/ext/diagnostics.md § "The console tail").
   const maskStack = (error: MaskedErrorSnapshot): string | null => {
-    const { stack, name, message } = error;
-    if (stack === null || stack === "" || maxStackChars === 0) return null;
+    const { stack } = error;
+    if (stack === null || stack.trim() === "" || maxStackChars === 0) return null;
     try {
-      const frames = withoutHeader(stack, name, message);
-      if (frames.trim() === "") return null;
-      return cap(maskString(frames), maxStackChars);
+      return cap(redactText(stack, redactOptions), maxStackChars);
     } catch {
       return null;
     }

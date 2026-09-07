@@ -107,36 +107,36 @@ diagnostics({
   it — and the row moves back to the front when it repeats. "Newest first" and the
   `limit` on the export therefore mean *most recently seen*, not first seen, and a full
   tail evicts the message nothing has repeated. Evictions are counted in `dropped`.
-- **The stack keeps every line but its header, which is deleted rather than rewritten.**
-  V8 writes `` `${name}: ${message}` `` above the first frame, and `redact()`'s value
-  matching is anchored, so `Bearer sk-live-…` is a credential and `Error: Bearer
-  sk-live-…` is not. That header carries nothing the tail does not already report — the
-  message line is those same two halves, masked — so it is **removed**, by comparing the
-  head of the stack with the known raw `name` and `message` — plus `Error: ${message}`,
-  because V8's formatter treats an absent or empty `name` as absent and writes that name
-  itself, and leaving it out put a message-only error's raw message back in the stack.
-  Nothing tests for what a header looks like; trying to identify one was its own leak (a header from an `Error`
-  whose `name` contains `@host:1` reads exactly like a SpiderMonkey frame, and dropping
-  by shape silently threw away frameless stacks and every stack from an engine whose
-  frame shape this package had not been taught). Every other line is kept, masked. A
-  stack that is *only* a header — `Error.stackTraceLimit = 0` — therefore reports as no
-  stack at all, and the message is still there. Removal repeats while the remaining
-  stack still starts with known header text, because a stack that repeats its header
-  left the second copy for whole-value masking, which cannot see a credential inside a
-  longer string, and it reached both exports verbatim.
+- **The stack is masked without deleting headers.** The original stack, header
+  included, is scanned for known credential shapes *wherever they sit in a line*
+  rather than only when a line is a credential end to end. `redact()`'s value matching
+  is anchored — `Bearer sk-live-…` is a credential to it, `Error: Bearer sk-live-…` is
+  not — and a stack is exactly the case where credentials arrive inside longer strings.
+  So stacks go through `redactText()` instead: it scans for credential shapes anywhere
+  in the text, merges overlapping matches before replacing anything, and rewrites only
+  the matched spans, then applies the stack length cap. A Digest match masks the
+  entire remaining suffix, so frames below it can disappear. `redact()`'s own
+  semantics are unchanged for every other caller,
+  including `entries[].message`.
 
-  Deletion replaced substitution because substitution leaked on **overlapping halves**:
-  an `Error` named `Bearer A` whose message was `Digest realm="Bearer A",nonce="…"`
-  exported the nonce, because replacing the name first rewrote the very text the message
-  replacement then had to match. Reversing the order moves the hole to the other
-  overlap. Removing text cannot corrupt what is left, which is the whole point.
+  This replaced **header deletion**, which is what six earlier rounds each tried a
+  variant of. Deleting the `` `${name}: ${message}` `` line meant deciding which lines
+  were headers, and every way of deciding leaked: by shape, because an `Error` whose
+  `name` contains `@host:1` reads exactly like a SpiderMonkey frame and unrecognised
+  engines' stacks vanished silently; by known text, because a header repeated *after* a
+  frame was never reached, and because a prefix collision (`name` of `Digest`, empty
+  message) deleted a line whose presence was the only reason the text below it was
+  masked. Substitution leaked earlier still, on overlapping halves — an `Error` named
+  `Bearer A` whose message was `Digest realm="Bearer A",nonce="…"` exported the nonce,
+  because replacing one half rewrote the text the other half had to match. Masking in
+  place decides nothing about a line's role, so there is no classification left to get
+  wrong.
 
-  What survives is a header an engine **transforms** instead of repeating. Because every
-  engine writes the `name` first, an upper-cased *message* half still goes (the name is
-  still a literal prefix of the line); a header whose **name half** was transformed too
-  is not known text, so that line stays. Pinned as a test, not patched — recognising a
-  transformed header means a second notion of "credential", which is what leaked three
-  times.
+  Two consequences are worth knowing. A stack that is *only* a header —
+  `Error.stackTraceLimit = 0` — now reports as that header, masked, rather than as no
+  stack at all. And the header line is no longer redundant with `message`: it repeats
+  the same two halves, so a credential in either is masked twice over rather than
+  removed once.
 - **It never claims to be capturing when it is not.** The tail patches the console that
   is live when it starts and never re-patches on its own — a tail that silently wrapped
   whatever object turned up at `globalThis.console` would be instrumenting consoles
@@ -153,21 +153,22 @@ diagnostics({
 
 What it masks, and what it cannot: every argument is redacted **before** the line is
 assembled — objects walked by `redact()` (where key-name matching works), strings
-matched by value shape, and every `scheme://…` run in a string or a stack line put
+matched by value shape, and every `scheme://…` run in a string or a stack put
 through `redactUrl()`, because a credential-carrying URL in the middle of a sentence is
 the shape a console message actually has and anchored matching cannot see it.
 
-`redact()` is the **only** judge of a credential here, and it judges **whole values**.
-Nothing in this extension scans a line for one. Three mechanisms that did — a frame
-classifier, a header classifier, and a whitespace tokeniser that re-asked `redact()`
-about each word and each adjacent pair — each shipped a leak, and the tokeniser also
-reported `"the token expired"` as `"the token [redacted]"`. That false positive is gone;
-so is the mechanism.
+Two judges, deliberately different. `entries[].message` is judged by `redact()`, which
+matches **whole values**. `entries[].stack` goes through `redactText()`, which scans for
+credential *shapes* anywhere inside the text. The distinction is not arbitrary: a stack
+is a multi-line string whose credentials arrive inside longer lines, and every earlier
+attempt to handle that by classifying lines — a frame classifier, a header classifier,
+and a whitespace tokeniser that re-asked `redact()` about each word and adjacent pair —
+shipped a leak. `redactText()` classifies nothing; it masks matched spans in place.
 
 ### The limit that matters most before you paste
 
-**A credential written into prose survives, in the message as well as the stack.** The
-worked example, executed through both the JSON and the Markdown export:
+**A credential written into prose survives in the message.** The worked example,
+executed through both the JSON and the Markdown export:
 
 ```
 console.error(new Error("failed: token Bearer sk-live-abc123"))
@@ -175,30 +176,47 @@ console.error(new Error("failed: token Bearer sk-live-abc123"))
 
 `"Bearer sk-live-abc123"` is a credential and `redact()` masks it. `"failed: token
 Bearer sk-live-abc123"` is a *sentence containing* one, and it is reported verbatim in
-`entries[].message`. The same is true of `"the password is hunter2"`. It reaches the
-ticket once rather than twice — `entries[].stack` used to repeat it through the header,
-and the header is deleted now — but once is enough to matter. This is not an oversight
-to be patched with a scanner: every attempt to teach this module a second notion of
-"credential" leaked something worse, including masking one half of an overlapping pair
-and shipping the other half beside a `[redacted]` marker that claimed it was handled.
+`entries[].message`. The same is true of `"the password is hunter2"`. The stack repeats
+that header line, but the stack is scanned, so the `Bearer …` half is masked there —
+the message is where it survives. Widening `redact()` itself to scan is separate work
+with its own review: it is the shared primitive every surface in the package uses.
 
 Diagnostics output is designed to be pasted into a bug report, so read it first. **That
 is why the panel shows you the text before you copy it.**
 
-The rest of what survives is pinned by a test rather than hoped about:
+### Accepted limits
+
+With a foreign stack string such as
+`{name: "Error", message: "", stack: "Error sk-live-LEAK\nErrorX LEAK2\n    at foo"}`,
+both secret-bearing lines survive unchanged in JSON and Markdown. This is
+strictly more text than the old prefix-collision deletion exposed. That deletion
+incidentally removed lines starting with `Error`, including `ErrorX`; neither
+secret matches a recognised credential shape. This example requires a supplied
+foreign stack string rather than the native V8 header for those name and message
+values. It is not fixed because restoring line classification or header deletion
+would restore the mechanism behind the previous leaks. A test pins the current
+output explicitly.
+
+Cross-line masking also has costs. `Error: Bearer\n    at LEAK (a.js:1:1)`
+becomes `Error: Bearer\n    [redacted] LEAK (a.js:1:1)`: the marker replaces
+`at`, and says nothing about the text beside it. Restricting the separator to
+one line would reopen the tested `Bearer\nLEAK_SECRET_123` leak. Digest masking
+discards everything after its first parameter, including later frames.
+Stopping at a newline would expose `nonce=LEAK_SECRET_123` in
+`Digest realm=ordinary,\nnonce=LEAK_SECRET_123`. These rules remain conservative;
+preserving those frames needs a separate decision about multiline credentials.
+
+Other limits pinned by tests:
 
 - a credential embedded in a stack frame's **function name** — matching looks for URLs
   and whole-value shapes, not for `Bearer …` welded into an identifier;
-- a credential on a **line of its own that is not a header** — nothing removes it,
-  because it matches no known header text, and the stack below the header is masked as
-  one value, so no whole value is the credential either. Older than the header
-  deletion, and not fixable without the line scanner that leaked three times;
 - an `Error`'s `cause`, and an `AggregateError`'s `errors`, which are not read at all,
   so anything only reachable through them is absent rather than masked;
-- zero-width spaces or punctuation immediately before `Bearer`, which stop the value
-  matcher from recognising the whole value;
-- a header an engine transformed rather than repeated, where the transformation reaches
-  the `name` half as well (see the stack rule above);
+- a word character or `=` immediately before `Bearer` (`_Bearer …`, `1Bearer …`,
+  `Bearer=…`), which stops both matchers — the anchored value matcher for `message`,
+  the word boundary for the stack. A **zero-width space** is not a word character, so
+  it stops only the `message` matcher: `​Bearer …` is masked in the stack and
+  survives in the message;
 - a **transparent `Proxy`** over the console. `new Proxy(A, {})` is a distinct object, so
   it is a distinct key addressing the same property, and no key can tell it from its
   target. Executed: start a tail on `A`, then set `globalThis.console = new Proxy(A, {})`

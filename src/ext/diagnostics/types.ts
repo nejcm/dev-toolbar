@@ -227,9 +227,9 @@ export interface ConsoleTailEntry {
   /** Redacted on the way in, argument by argument, before they were joined. */
   message: string;
   /**
-   * The stack where there was one, redacted, with the header line deleted
-   * (see `src/ext/diagnostics/console.ts`). `null` where there was no stack,
-   * or deleting the header left nothing.
+   * The stack scanned for known credential shapes, then capped; a Digest
+   * match masks its entire suffix. `null` where there was no stack, where it
+   * held only whitespace, where `maxStackChars` is `0`, or where masking threw.
    */
   stack: string | null;
   /** How many times this message was seen. `1` for a message seen once. */

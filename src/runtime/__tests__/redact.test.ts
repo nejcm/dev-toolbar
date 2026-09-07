@@ -6,6 +6,7 @@ import {
   isSensitiveKey,
   redact,
   redactHeaders,
+  redactText,
   redactUrl,
 } from "../redact";
 
@@ -1087,4 +1088,113 @@ describe("a key called __proto__", () => {
     expect(Object.getOwnPropertyDescriptor(redacted, "__proto__")?.value).toBe("keep-me");
     expect(Object.getPrototypeOf(redacted)).toBe(Object.prototype);
   });
+});
+
+describe("redactText", () => {
+  it.each([
+    ["prefix Bearer SECRET suffix", "prefix Bearer [redacted] suffix"],
+    ["prefix bAsIc SECRET suffix", "prefix bAsIc [redacted] suffix"],
+    ["prefix token SECRET suffix", "prefix token [redacted] suffix"],
+    ["prefix Bearer\nSECRET suffix", "prefix Bearer\n[redacted] suffix"],
+    ["prefix Bearer\r\nSECRET suffix", "prefix Bearer\r\n[redacted] suffix"],
+    ["prefix token Bearer SECRET suffix", "prefix token [redacted] [redacted] suffix"],
+    [
+      'Bearer A: Digest realm="Bearer A",nonce="SECRET"\nframe',
+      "Bearer [redacted] Digest [redacted]",
+    ],
+    ["Bearer A: Bearer A_LONG_SECRET suffix", "Bearer [redacted] Bearer [redacted] suffix"],
+    ["prefix abcdefgh.ijklmnop.qrstuvwx suffix", "prefix [redacted] suffix"],
+    ["prefix Bearer abcdefgh.ijklmnop.qrstuvwx suffix", "prefix Bearer [redacted] suffix"],
+    [
+      "ordinary stack\n    at withBearer_secret (app.js:1:2)",
+      "ordinary stack\n    at withBearer_secret (app.js:1:2)",
+    ],
+    ["digest of a file", "digest of a file"],
+    ["", ""],
+  ])("masks original-input spans in %j", (input, expected) => {
+    expect(redactText(input)).toBe(expected);
+  });
+
+  it("does not rescan a credential-shaped replacement", () => {
+    expect(redactText("Error: Bearer SECRET", { mask: "Bearer A" })).toBe("Error: Bearer Bearer A");
+    expect(redactText("Error: Bearer SECRET", { mask: "$&" })).toBe("Error: Bearer $&");
+    expect(redactText("Error: Bearer SECRET", { mask: "" })).toBe("Error: Bearer ");
+  });
+
+  it.each(["\\n", "%0A", "\n", "\r\n", "\r", "\u2028", "\u2029"])(
+    "keeps Digest continuation parameters masked after %j",
+    (separator) => {
+      const input = `Digest realm="ordinary${separator}nonce=SECRET"\n    at foo (a.js:1:1)`;
+      expect(redactText(input)).toBe("Digest [redacted]");
+    },
+  );
+
+  it("masks later Digest credentials conservatively with the first suffix", () => {
+    expect(redactText('Digest realm="FIRST"\n    at foo\nDigest nonce="SECOND"\n    at bar')).toBe(
+      "Digest [redacted]",
+    );
+  });
+
+  it("pins the cross-line scheme marker displacement while retaining split credential masking", () => {
+    expect(redactText("Error: Bearer\n    at LEAK (a.js:1:1)")).toBe(
+      "Error: Bearer\n    [redacted] LEAK (a.js:1:1)",
+    );
+    expect(redactText("Error: Bearer\nLEAK_SECRET_123")).toBe("Error: Bearer\n[redacted]");
+  });
+
+  it("honours the value opt-out without changing redact's whole-value semantics", () => {
+    const input = "prefix Bearer SECRET";
+    expect(redactText(input, { values: false })).toBe(input);
+    expect(redact(input)).toBe(input);
+    expect(redact({ note: input })).toEqual({ note: input });
+    expect(redactText("the token expired")).toBe("the token [redacted]");
+    expect(redact("the token expired")).toBe("the token expired");
+  });
+});
+
+it.each([
+  "https://SECRET:password@customer.services.internal/path",
+  "https://example.com/?token=x&Bearer SECRET",
+])("redactText combines URL and credential masks against %s", (url) => {
+  expect(redactText(`prefix ${url}`)).not.toContain("SECRET");
+});
+
+it("redactText combines a whole relative URL with credential spans", () => {
+  expect(redactText("/path?token=x&Bearer SECRET", { url: true })).toBe(REDACTED);
+  expect(redactText("/path?token=SECRET&page=2", { url: true })).toBe(
+    "/path?token=[redacted]&page=2",
+  );
+  expect(redactText("https://a.test/?token=SECRET", { values: false })).toBe(
+    "https://a.test/?token=[redacted]",
+  );
+  expect(redactText("https://a.test/?token=SECRET", { mask: "Bearer A" })).toBe(
+    "https://a.test/?token=Bearer+A",
+  );
+});
+
+it.each([
+  "https://a.test/?x=1 https://b.test/?token=SECRET",
+  "/a b?x=https://b.test/?token=SECRET",
+  // A `#` ends the query, so the fragment is not swallowed by the outer parse, and
+  // `maskUrl` reads neither userinfo nor the path — a second URL's credentials go
+  // unseen even when the whole-value pass did mask something.
+  "https://a.test/?token=x #https://SECRET:pw@b.test/",
+  "https://a.test/?token=x #https://SECRET:pw@b.test/?x=1",
+  "https://a.test/p https://SECRET:pw@b.test/ ?token=x",
+  "/a?token=x #https://SECRET:pw@b.test/",
+])("redactText scans embedded URLs alongside the whole value: %s", (value) => {
+  // Regression: `url: true` used to replace the embedded-URL scan rather than run
+  // alongside it, so a value with whitespace parsed as one URL that hid the rest of
+  // itself from inspection.
+  expect(redactText(value, { url: true })).not.toContain("SECRET");
+});
+
+it("redactText keeps the precise rewrite when the whole value is one URL", () => {
+  expect(redactText("https://a.test/?token=SECRET", { url: true })).toBe(
+    "https://a.test/?token=[redacted]",
+  );
+  // The outer query swallows the second URL, so masking that value covers both.
+  expect(
+    redactText("https://a.test/?token=FIRST https://b.test/?token=SECRET", { url: true }),
+  ).not.toContain("SECRET");
 });
