@@ -9,6 +9,7 @@ import { overlays } from "@nejcm/dev-toolbar/ext/overlays";
 import { diagnostics } from "@nejcm/dev-toolbar/ext/diagnostics";
 import { themeEditor } from "@nejcm/dev-toolbar/ext/theme-editor";
 import { agentBridge } from "@nejcm/dev-toolbar/ext/agent";
+import { a11y } from "@nejcm/dev-toolbar/ext/a11y";
 import type { DesignTokenDefinition } from "@nejcm/dev-toolbar/ext/theme-editor";
 import type { FlagReading, FlagValue } from "@nejcm/dev-toolbar/ext/flags";
 import { createReactProfilerCollector } from "./collectors/reactProfiler";
@@ -25,8 +26,9 @@ const runtimeKitDemo = kitDemo({ order: 40, priority: 60, pollMs: 1000 });
 
 /**
  * Deliberately varied `priority` so narrowing the window collapses extensions into `⋮` in order:
- * agent (-1) → boom (5) → diagnostics (10) → hydr (20) → metrics (35) → theme (45) → overlays (55)
- * → kit (60) → query (65) → tw (70) → flags (80) → cmds (85) → env (90) → user (100, aligned end). The agent
+ * agent (-1) → boom (5) → diagnostics (10) → hydr (20) → a11y (25) → metrics (35) → theme (45)
+ * → overlays (55) → kit (60) → query (65) → tw (70) → flags (80) → cmds (85) → env (90) → user (100,
+ * aligned end). The agent
  * bridge goes first by design: it is a transport, and nothing is lost when its chip collapses.
  * metrics/env/flags are the real extensions, `query` is a real third-party panel; the rest are placeholders.
  */
@@ -603,6 +605,19 @@ const runtimeThemeEditor = themeEditor({
   },
 });
 
+/**
+ * The real `@nejcm/dev-toolbar/ext/a11y`. axe-core is an optional peer, installed here as a
+ * devDependency because this app is the consumer who opted in — leave it out and the panel
+ * shows the `unsupported` state instead, which is the state most consumers see. `region` is
+ * off because the playground's demo cards are deliberately unlandmarked scaffolding, and
+ * turning it off is what "rule configuration passed through" looks like.
+ */
+const runtimeA11y = a11y({
+  order: 18,
+  priority: 25,
+  rules: { region: { enabled: false } },
+});
+
 /** Built once at module scope — calling `metrics()` inside a component would hand the bar a new object every render while collectors stayed with the first one; core warns about this. */
 export const reactProfiler = createReactProfilerCollector();
 
@@ -644,6 +659,7 @@ export const playgroundExtensions: DevToolbarExtension[] = [
   commands,
   runtimeFlags,
   runtimeOverlays,
+  runtimeA11y,
   runtimeThemeEditor,
   runtimeMetrics,
   runtimeKitDemo,

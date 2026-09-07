@@ -423,3 +423,14 @@ body {
   font-size: 13px;
   cursor: pointer;
 }
+
+/* The a11y card's three deliberate violations. `pg-a11y-faint` must stay a
+   real contrast failure — it is the fixture for axe's color-contrast rule. */
+.pg-a11y-demo .pg-a11y-image {
+  width: 32px;
+  height: 32px;
+}
+
+.pg-a11y-demo .pg-a11y-faint {
+  color: #b9b9b9;
+}

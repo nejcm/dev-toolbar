@@ -471,6 +471,60 @@ function OverlayPlayground() {
 }
 
 /**
+ * Markup with real, deliberate accessibility violations, so `/ext/a11y` has something to find
+ * and something to highlight: an image with no alternative text, a control with no accessible
+ * name, and text that fails contrast against the card. The `region` rule is switched off in
+ * `extensions.tsx`, so what shows up here is these three and nothing else.
+ *
+ * The counter proves the highlight takes no pointer events, the same way the overlays card does.
+ */
+function A11yPlayground() {
+  const [clicks, setClicks] = useState(0);
+
+  return (
+    <section className="pg-card pg-a11y-demo">
+      <h2>Break accessibility on purpose</h2>
+      <p>
+        The <code>a11y</code> chip is the real{" "}
+        <code>@nejcm/dev-toolbar/ext/a11y</code>, running <code>axe-core</code>{" "}
+        <em>only when you press Scan</em>. Nothing here is measured on a timer.
+        The three controls below each break one rule.
+      </p>
+
+      <div className="pg-controls">
+        {/* Deliberately alt-less: axe's `image-alt` rule. */}
+        <img className="pg-a11y-image" src="/vite.svg" data-testid="a11y-image" />
+        {/* Deliberately unlabelled: axe's `label` rule. */}
+        <input type="text" defaultValue="unlabelled" data-testid="a11y-input" />
+        <button
+          type="button"
+          className="pg-button"
+          data-testid="a11y-click-through"
+          onClick={() => setClicks((value) => value + 1)}
+        >
+          Click-through test: {clicks}
+        </button>
+      </div>
+
+      {/* Deliberately low contrast: axe's `color-contrast` rule. */}
+      <p className="pg-a11y-faint" data-testid="a11y-faint">
+        This sentence is #b9b9b9 on the card's own background, which fails WCAG
+        AA.
+      </p>
+
+      <p>
+        Scan, then press <em>Highlight</em> on any element: the box draws below
+        the bar and above the page, and the counter above still counts through
+        it. An agent does the same with{" "}
+        <code>a11y.scan</code> and <code>a11y.highlight</code>, and reads the
+        result — the same object this panel renders — from{" "}
+        <code>read().diagnostics</code>.
+      </p>
+    </section>
+  );
+}
+
+/**
  * Content whose appearance is entirely token-driven. Nothing here talks to the extension — the
  * tokens are the app's own, declared in `playground.css`, and the toolbar edits them where they live.
  */
@@ -611,6 +665,13 @@ export function App() {
             classes — the light-DOM regression test.
           </li>
           <li>
+            Accessibility: press <em>Scan this page</em> and expect three
+            violations from <em>Break accessibility on purpose</em>. Highlight
+            one and check it draws below the bar and passes clicks through.
+            Uninstall <code>axe-core</code> from this app and the panel says{" "}
+            <em>not installed</em> instead of breaking.
+          </li>
+          <li>
             Theme: edit a token, watch this page change and the{" "}
             <em>bar stay exactly where it was</em>, reload and find the edit
             still applied, then <em>Reset everything</em> and confirm the page
@@ -633,6 +694,8 @@ export function App() {
       <ThemePlayground />
 
       <OverlayPlayground />
+
+      <A11yPlayground />
 
       <EnvironmentControls />
 

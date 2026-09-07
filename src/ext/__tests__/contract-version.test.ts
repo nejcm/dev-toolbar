@@ -3,7 +3,7 @@
  * one declares equals the `CONTRACT_VERSION` core implements.
  *
  * It exists because §7 forbids an extension from importing a *value* from core,
- * so each of the eight hand-maintains its own copy of the number and a bump has
+ * so each extension hand-maintains its own copy of the number and a bump has
  * to be propagated by hand. A missed one is silent in tests and surfaces only as
  * a mount-time `console.warn` that nothing asserts the absence of — the risk
  * `docs/adr/ADR-003-contract-version-policy.md` records under "Risk accepted",
@@ -11,10 +11,10 @@
  * alongside the constant.
  *
  * `/ext/diagnostics` and `/ext/theme-editor` already assert this inside their
- * own suites. This file is what covers the other six.
+ * own suites. This file is what covers the rest.
  *
  * **The roster is derived, not restated.** A list of names checked against
- * another list of names is a tautology: a ninth `src/ext/foo/` added to neither
+ * another list of names is a tautology: a new `src/ext/foo/` added to neither
  * would pass it. So the expected set is read from the filesystem *and* from
  * `package.json`'s `exports`, and the two are required to agree with each other
  * and with the factories below. A new extension therefore cannot reach `main`
@@ -26,6 +26,7 @@
  */
 import { describe, expect, it } from "vitest";
 import { CONTRACT_VERSION } from "@nejcm/dev-toolbar";
+import { a11y } from "../a11y/index";
 import { agentBridge } from "../agent/index";
 import { commandMenu } from "../command-menu/index";
 import { diagnostics } from "../diagnostics/index";
@@ -42,6 +43,7 @@ const roster = extensionRoster();
 
 /** Keyed by subpath name, so the keys can be compared against the two derived sets. */
 const FACTORIES: Record<string, () => DevToolbarExtension> = {
+  a11y: () => a11y(),
   agent: () => agentBridge({ instanceId: "version-probe" }),
   "command-menu": () => commandMenu(),
   diagnostics: () => diagnostics(),
@@ -54,7 +56,7 @@ const FACTORIES: Record<string, () => DevToolbarExtension> = {
 
 describe("every first-party extension declares core's contract version", () => {
   it("covers exactly the extensions that exist on disk", () => {
-    // Fails for a ninth `src/ext/foo/` that nobody added below — which is the
+    // Fails for a `src/ext/foo/` that nobody added below — which is the
     // whole point, and is not something comparing two hand-written lists can do.
     expect(Object.keys(FACTORIES).sort()).toEqual(roster.onDisk);
   });

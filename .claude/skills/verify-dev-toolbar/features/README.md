@@ -24,14 +24,18 @@ driving the app, then use the matching feature file as the recipe.
   `dtb:v1:playground:ext:overlays:enabled`. Later recipes in a sequence must
   therefore assert on the *keys they are about*, never on `storage` equalling
   a whole object — or re-clear and reload first.
-- Require the **roster of thirteen** — twelve extensions plus the bridge's own
+- Require the **roster of fourteen** — thirteen extensions plus the bridge's own
   `agent` — as `diagnostics` (`curl -s localhost:5273/__dev-toolbar/state | jq
-  '.diagnostics|length'` → `13`, 7 `ok` and 6 `absent` at baseline). The roster
+  '.diagnostics|length'` → `14`, 8 `ok` and 6 `absent` at baseline; `a11y` is
+  the eighth `ok`, publishing `status: "pending"` before anything is scanned). The roster
   is the fixed number; `shell.bar` is **not**. `shell.bar` is only what still
-  fits, so it depends on the viewport: measured at the mandated 1280×800 it is
+  fits, so it depends on the viewport: measured at the mandated 1280×800 it was
   **8** — `environment`, `cmds`, `flags`, `theme-editor`, `overlays`, `tw`,
   `command-menu`, `user` — with `shell.overflow.present: true` and `agent`,
-  `metrics`, `diagnostics`, `hydr`, `boom` collapsed. (Cross-checked the same
+  `metrics`, `diagnostics`, `hydr`, `boom` collapsed. **`a11y` (priority 25)
+  joined the playground after that measurement**, so re-measure before quoting
+  a bar count: one more item at the same viewport moves the collapse line, and
+  `a11y` sits between `hydr` (20) and `metrics` (35) in collapse order. (Cross-checked the same
   moment against the DOM: `[data-dtb-part="region"] > [data-dtb-part="item"]`
   lists those same eight at `innerWidth: 1280`.) `agent` has the lowest
   `priority` (`-1`), so it is the first to leave the bar as the window narrows.
@@ -39,8 +43,8 @@ driving the app, then use the matching feature file as the recipe.
 - Require the bridge itself: `window.__DEV_TOOLBAR__.instances["playground"]`
   exists, `read().allowRun` is `true` (the playground opts in), and
   `read().diagnostics` carries a `status: "ok"` entry for each of `flags`,
-  `metrics`, `environment`, `overlays`, `command-menu`, `theme-editor` and
-  `diagnostics`. A `"failed"` entry is a finding before any recipe runs; an
+  `metrics`, `environment`, `overlays`, `command-menu`, `theme-editor`,
+  `diagnostics` and `a11y`. A `"failed"` entry is a finding before any recipe runs; an
   `"absent"` one means that extension publishes nothing and every state
   assertion about it below is unreachable.
 - Pin the viewport: `resize_window` with `{"width": 1280, "height": 800}`.
@@ -137,7 +141,11 @@ actually returns as a finding about the recipe, and fix it here.
   `limit` and the rejection of a non-numeric one) and `.clear`, the chip badge
   and its attributes read through the open `⋮`, the three-way credential grep,
   and the captured snapshot's `console` section.
-- **Not driven — verify before reporting:** the flags text/number editors and
+- **Not driven — verify before reporting:** every step in
+  [a11y.md](./a11y.md) (written against the source and its unit tests, which do
+  run the real `axe-core` against a jsdom document — the stacking, the
+  click-through and the removed-peer step have not been driven in a browser),
+  the flags text/number editors and
   their `rejected` state, every `flags.set` and `theme-editor.setToken` step
   (contract v2's input-carrying commands — written from the source and the
   unit tests, never driven in a browser), the `⌘K`-skips-input assertion in
@@ -177,6 +185,9 @@ handles, required state, calls and observable proof.
   playground's context that must never reach the screen or the clipboard.
 - [Overlays](./overlays.md) — drawing over the page, never over the toolbar,
   and passing clicks through.
+- [Accessibility scans](./a11y.md) — axe on demand and never on a timer, the
+  impact grouping, click-to-highlight, the masked markup, and the panel state a
+  consumer without the optional `axe-core` peer sees.
 - [The console error tail](./diagnostics.md) — the four watched sources,
   grouping, `console.log` staying unpatched, redaction on the way in, the two
   console commands, and the chip badge (which needs the `⋮` menu open at

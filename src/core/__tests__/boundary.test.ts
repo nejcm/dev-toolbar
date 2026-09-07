@@ -33,7 +33,9 @@ const RUNTIME_MARKER = "[dev-toolbar/runtime]";
 // Unique to src/runtime/network.ts — a marker for that module's bytes, used
 // below to prove /ext/metrics links against it rather than a second copy.
 const INTERCEPTOR_MESSAGE = "[dev-toolbar/runtime] a network recorder threw";
-const EXT_MARKERS = new Set(extensionRoster().onDisk.map((name) => `[dev-toolbar/ext/${name}]`));
+/** Read once: every list below is derived from it, so a new extension cannot be omitted. */
+const roster = extensionRoster();
+const EXT_MARKERS = new Set(roster.onDisk.map((name) => `[dev-toolbar/ext/${name}]`));
 const EXT_MARKER_ORDER = [
   "[dev-toolbar/ext/metrics]",
   "[dev-toolbar/ext/environment]",
@@ -44,6 +46,7 @@ const EXT_MARKER_ORDER = [
   "[dev-toolbar/ext/theme-editor]",
   // Appended, never inserted: the indices below are positional.
   "[dev-toolbar/ext/agent]",
+  "[dev-toolbar/ext/a11y]",
 ];
 
 function sourceFiles(directory: string): string[] {
@@ -326,7 +329,7 @@ describe("runtime boundary (source)", () => {
 describe("extension kit (source)", () => {
   /**
    * The kit is shared by first-party and third-party extensions, so it is held
-   * to the same rules as the eight extensions:
+   * to the same rules as the extensions themselves:
    * no extension marker (the dist scan below reads markers as proof one
    * bundle does not carry another's code), no core message prefix, no value
    * import of core, and nothing reaching sideways into a sibling extension.
@@ -583,6 +586,9 @@ if (!built && mustBeBuilt) {
       expect(readFileSync(`${root}dist/ext/agent.cjs`, "utf8")).toContain(
         EXT_MARKER_ORDER[7] as string,
       );
+      expect(readFileSync(`${root}dist/ext/a11y.cjs`, "utf8")).toContain(
+        EXT_MARKER_ORDER[8] as string,
+      );
     });
   });
 }
@@ -596,83 +602,39 @@ if (built || !mustBeBuilt) {
       }).trim();
 
     it("keeps one extension out of another's bundle", () => {
-      // Two extensions on two subpaths: neither should drag the other in, or
-      // adding a second chip would quietly cost the first one's collectors.
-      expect(readFileSync(`${root}dist/ext/environment.cjs`, "utf8")).not.toContain(
-        EXT_MARKER_ORDER[0] as string,
-      );
-      expect(readFileSync(`${root}dist/ext/metrics.cjs`, "utf8")).not.toContain(
-        EXT_MARKER_ORDER[1] as string,
-      );
-      // Three now: /ext/flags must drag in neither of the other two.
-      const flagsBundle = readFileSync(`${root}dist/ext/flags.cjs`, "utf8");
-      expect(flagsBundle).not.toContain(EXT_MARKER_ORDER[0] as string);
-      expect(flagsBundle).not.toContain(EXT_MARKER_ORDER[1] as string);
-      // Four. /ext/command-menu reads the aggregation, which is core's, so it
-      // must not end up carrying the extensions that produce it.
-      const menuBundle = readFileSync(`${root}dist/ext/command-menu.cjs`, "utf8");
-      for (const marker of EXT_MARKER_ORDER.slice(0, 3)) {
-        expect(menuBundle, marker).not.toContain(marker);
-      }
-      // Five. /ext/overlays is the first extension that draws over the host
-      // page; it must not drag any of the others along for the ride.
-      const overlaysBundle = readFileSync(`${root}dist/ext/overlays.cjs`, "utf8");
-      for (const marker of EXT_MARKER_ORDER.slice(0, 4)) {
-        expect(overlaysBundle, marker).not.toContain(marker);
-      }
-      expect(menuBundle).not.toContain(EXT_MARKER_ORDER[4] as string);
-      // Six. /ext/diagnostics is the second reader of a core aggregation, and
-      // the one whose whole job is to report on the others — so it is the most
-      // likely of the lot to drag one in. It must not: a consumer who wants a
-      // bug-report button should not thereby ship a flag editor.
-      const diagnosticsBundle = readFileSync(`${root}dist/ext/diagnostics.cjs`, "utf8");
-      for (const marker of EXT_MARKER_ORDER.slice(0, 5)) {
-        expect(diagnosticsBundle, marker).not.toContain(marker);
-      }
-      for (const bundle of [flagsBundle, menuBundle, overlaysBundle]) {
-        expect(bundle).not.toContain(EXT_MARKER_ORDER[5] as string);
-      }
-      // Seven. /ext/theme-editor writes to the host document, which makes it
-      // the one a consumer is most likely to adopt on its own; adding a token
-      // editor must not thereby ship a flag editor, a palette or a profiler.
-      const themeBundle = readFileSync(`${root}dist/ext/theme-editor.cjs`, "utf8");
-      for (const marker of EXT_MARKER_ORDER.slice(0, 6)) {
-        expect(themeBundle, marker).not.toContain(marker);
-      }
-      for (const bundle of [flagsBundle, menuBundle, overlaysBundle, diagnosticsBundle]) {
-        expect(bundle).not.toContain(EXT_MARKER_ORDER[6] as string);
+      // The cross product of the roster, not a hand-maintained pair list:
+      // adding a chip must never cost a consumer another extension's
+      // collectors, and the extension most likely to drag one in is whichever
+      // is added next. Own marker present is the non-vacuity half — the
+      // `not.toContain` above it would otherwise pass on an empty file.
+      for (const name of roster.published) {
+        for (const format of ["js", "cjs"] as const) {
+          const label = `ext/${name}.${format}`;
+          const bundle = readFileSync(`${root}dist/ext/${name}.${format}`, "utf8");
+          expect(bundle, label).toContain(`[dev-toolbar/ext/${name}]`);
+          expect(bundle, label).not.toContain(CORE_PREFIX);
+          for (const other of roster.published) {
+            if (other === name) continue;
+            expect(bundle, `${label} / ${other}`).not.toContain(`[dev-toolbar/ext/${other}]`);
+          }
+        }
       }
 
-      // Eight. /ext/agent publishes core's aggregations on a global. It reads
-      // them through `api`, so it must carry none of the extensions that
-      // produce them — a bridge is a transport, and a transport that ships a
-      // flag editor is not one.
-      const agentBundle = readFileSync(`${root}dist/ext/agent.cjs`, "utf8");
-      for (const marker of EXT_MARKER_ORDER.slice(0, 7)) {
-        expect(agentBundle, marker).not.toContain(marker);
-      }
-      for (const bundle of [
-        flagsBundle,
-        menuBundle,
-        overlaysBundle,
-        diagnosticsBundle,
-        themeBundle,
-      ]) {
-        expect(bundle).not.toContain(EXT_MARKER_ORDER[7] as string);
-      }
-
-      for (const [name, bundle] of [
-        ["metrics", readFileSync(`${root}dist/ext/metrics.cjs`, "utf8")],
-        ["environment", readFileSync(`${root}dist/ext/environment.cjs`, "utf8")],
-        ["flags", flagsBundle],
-        ["command-menu", menuBundle],
-        ["overlays", overlaysBundle],
-        ["diagnostics", diagnosticsBundle],
-        ["theme-editor", themeBundle],
-        ["agent", agentBundle],
-      ] as const) {
-        expect(bundle, name).not.toContain(CORE_PREFIX);
-      }
+      // /ext/a11y is the only extension with a peer dependency, so it has a
+      // second way to carry code it should not: axe-core itself. The peer is
+      // imported at runtime, never inlined — `aria-allowed-attr` is an axe rule
+      // id, so it exists in axe's own bundle and nowhere else. The CommonJS
+      // build keeps a native `import("axe-core")` rather than a `require`,
+      // which is what lets a consumer without the peer installed reach a
+      // rejected promise instead of a hard resolution failure.
+      const a11yBundle = readFileSync(`${root}dist/ext/a11y.cjs`, "utf8");
+      expect(a11yBundle).toContain('import("axe-core")');
+      expect(a11yBundle).not.toContain("aria-allowed-attr");
+      expect(readFileSync(`${root}dist/ext/a11y.js`, "utf8")).not.toContain("aria-allowed-attr");
+      // Non-vacuity: the string does exist, in the package we did not bundle.
+      expect(readFileSync(`${root}node_modules/axe-core/axe.js`, "utf8")).toContain(
+        "aria-allowed-attr",
+      );
     });
 
     it("declares the root, ./runtime, ./kit and the ./ext/* entries explicitly, with no wildcards", () => {
@@ -684,14 +646,7 @@ if (built || !mustBeBuilt) {
         ".",
         "./runtime",
         "./kit",
-        "./ext/metrics",
-        "./ext/environment",
-        "./ext/flags",
-        "./ext/command-menu",
-        "./ext/overlays",
-        "./ext/diagnostics",
-        "./ext/theme-editor",
-        "./ext/agent",
+        ...roster.published.map((name) => `./ext/${name}`),
       ];
       for (const subpath of subpaths) {
         const base = subpath === "." ? "./dist/index" : `./dist/${subpath.replace(/^\.\//, "")}`;
@@ -709,22 +664,7 @@ if (built || !mustBeBuilt) {
         "dist/runtime.cjs",
         "dist/kit.js",
         "dist/kit.cjs",
-        "dist/ext/metrics.js",
-        "dist/ext/metrics.cjs",
-        "dist/ext/environment.js",
-        "dist/ext/environment.cjs",
-        "dist/ext/flags.js",
-        "dist/ext/flags.cjs",
-        "dist/ext/command-menu.js",
-        "dist/ext/command-menu.cjs",
-        "dist/ext/overlays.js",
-        "dist/ext/overlays.cjs",
-        "dist/ext/diagnostics.js",
-        "dist/ext/diagnostics.cjs",
-        "dist/ext/theme-editor.js",
-        "dist/ext/theme-editor.cjs",
-        "dist/ext/agent.js",
-        "dist/ext/agent.cjs",
+        ...roster.published.flatMap((name) => [`dist/ext/${name}.js`, `dist/ext/${name}.cjs`]),
       ]) {
         expect(readFileSync(`${root}${file}`, "utf8").startsWith('"use client";'), file).toBe(true);
       }
@@ -755,6 +695,18 @@ if (built || !mustBeBuilt) {
         "ThemeEditorOptions",
       );
       expect(readFileSync(`${root}dist/ext/agent.d.ts`, "utf8")).toContain("AgentBridgeOptions");
+      expect(readFileSync(`${root}dist/ext/a11y.d.ts`, "utf8")).toContain("A11yOptions");
+      // The optional peer must not reach the published types either: a
+      // consumer without axe-core installed has to be able to typecheck ours.
+      // Comments are stripped first — the declarations explain the peer, and
+      // matching prose would pass or fail on the wording.
+      for (const types of ["dist/ext/a11y.d.ts", "dist/ext/a11y.d.cts"]) {
+        const declarations = readFileSync(`${root}${types}`, "utf8")
+          .replace(/\/\*[\s\S]*?\*\//g, "")
+          .replace(/\/\/[^\n]*/g, "");
+        expect(declarations, types).not.toContain("axe-core");
+        expect(declarations, types).toContain("interface AxeLike");
+      }
     });
 
     it("declares every subpath the plan promised, and nothing by wildcard", () => {
@@ -764,6 +716,7 @@ if (built || !mustBeBuilt) {
       // own — is what makes a *missing* entry fail rather than only a wrong one.
       expect(Object.keys(pkg.exports).sort()).toEqual([
         ".",
+        "./ext/a11y",
         "./ext/agent",
         "./ext/command-menu",
         "./ext/diagnostics",
@@ -781,32 +734,34 @@ if (built || !mustBeBuilt) {
     });
 
     it("resolves through Node's own exports map", () => {
+      // The `./ext/*` imports are generated from the roster, so an extension
+      // that resolves nowhere cannot simply be absent from this probe; the
+      // per-extension export names below stay explicit, because what each one
+      // publishes is not derivable from its directory name.
+      const imports = roster.published
+        .map((name, index) => `const e${index} = await import("@nejcm/dev-toolbar/ext/${name}");`)
+        .join("");
+      const keys = roster.published
+        .map((name, index) => `${JSON.stringify(name)}: Object.keys(e${index}).sort()`)
+        .join(",");
       const names = node(
         `const r = await import("@nejcm/dev-toolbar/runtime");` +
           `const k = await import("@nejcm/dev-toolbar/kit");` +
-          `const m = await import("@nejcm/dev-toolbar/ext/metrics");` +
-          `const e = await import("@nejcm/dev-toolbar/ext/environment");` +
-          `const f = await import("@nejcm/dev-toolbar/ext/flags");` +
-          `const c = await import("@nejcm/dev-toolbar/ext/command-menu");` +
-          `const o = await import("@nejcm/dev-toolbar/ext/overlays");` +
-          `const d = await import("@nejcm/dev-toolbar/ext/diagnostics");` +
-          `const t = await import("@nejcm/dev-toolbar/ext/theme-editor");` +
-          `const a = await import("@nejcm/dev-toolbar/ext/agent");` +
-          `console.log(JSON.stringify({ runtime: Object.keys(r).sort(), kit: Object.keys(k).sort(), metrics: Object.keys(m).sort(), environment: Object.keys(e).sort(), flags: Object.keys(f).sort(), commandMenu: Object.keys(c).sort(), overlays: Object.keys(o).sort(), diagnostics: Object.keys(d).sort(), themeEditor: Object.keys(t).sort(), agent: Object.keys(a).sort() }));`,
+          imports +
+          `console.log(JSON.stringify({ runtime: Object.keys(r).sort(), kit: Object.keys(k).sort(), ext: { ${keys} } }));`,
       );
-      const result = JSON.parse(names) as {
+      const parsed = JSON.parse(names) as {
         runtime: string[];
         kit: string[];
-        metrics: string[];
-        environment: string[];
-        flags: string[];
-        commandMenu: string[];
-        overlays: string[];
-        diagnostics: string[];
-        themeEditor: string[];
-        agent: string[];
+        ext: Record<string, string[]>;
       };
-      expect(result.runtime).toEqual(
+      const ext = (name: string): string[] => parsed.ext[name] ?? [];
+      // Every published subpath resolved, and each one exports something.
+      expect(Object.keys(parsed.ext).sort()).toEqual(roster.published);
+      for (const [name, exported] of Object.entries(parsed.ext)) {
+        expect(exported, name).not.toEqual([]);
+      }
+      expect(parsed.runtime).toEqual(
         expect.arrayContaining([
           "createEventBus",
           "createRingBuffer",
@@ -814,7 +769,7 @@ if (built || !mustBeBuilt) {
           "redact",
         ]),
       );
-      expect(result.kit).toEqual([
+      expect(parsed.kit).toEqual([
         "Action",
         "Banner",
         "Chip",
@@ -842,14 +797,14 @@ if (built || !mustBeBuilt) {
         "useExtensionSurface",
         "writeJson",
       ]);
-      expect(result.metrics).toEqual(expect.arrayContaining(["metrics", "createMetricsRuntime"]));
-      expect(result.environment).toEqual(
+      expect(ext("metrics")).toEqual(expect.arrayContaining(["metrics", "createMetricsRuntime"]));
+      expect(ext("environment")).toEqual(
         expect.arrayContaining(["environment", "createEnvironmentRuntime", "ENVIRONMENT_CSS"]),
       );
-      expect(result.flags).toEqual(
+      expect(ext("flags")).toEqual(
         expect.arrayContaining(["flags", "createFlagsRuntime", "readStoredOverrides", "FLAGS_CSS"]),
       );
-      expect(result.commandMenu).toEqual(
+      expect(ext("command-menu")).toEqual(
         expect.arrayContaining([
           "commandMenu",
           "createCommandMenuRuntime",
@@ -857,7 +812,7 @@ if (built || !mustBeBuilt) {
           "COMMAND_MENU_CSS",
         ]),
       );
-      expect(result.overlays).toEqual(
+      expect(ext("overlays")).toEqual(
         expect.arrayContaining([
           "overlays",
           "createOverlaysRuntime",
@@ -866,7 +821,7 @@ if (built || !mustBeBuilt) {
           "BOXES_CSS",
         ]),
       );
-      expect(result.diagnostics).toEqual(
+      expect(ext("diagnostics")).toEqual(
         expect.arrayContaining([
           "diagnostics",
           "createDiagnosticsRuntime",
@@ -875,7 +830,7 @@ if (built || !mustBeBuilt) {
           "DIAGNOSTICS_CSS",
         ]),
       );
-      expect(result.themeEditor).toEqual(
+      expect(ext("theme-editor")).toEqual(
         expect.arrayContaining([
           "themeEditor",
           "createThemeEditorRuntime",
@@ -885,7 +840,7 @@ if (built || !mustBeBuilt) {
           "THEME_EDITOR_CSS",
         ]),
       );
-      expect(result.agent).toEqual(
+      expect(ext("agent")).toEqual(
         expect.arrayContaining([
           "agentBridge",
           "createAgentHandle",
@@ -894,7 +849,17 @@ if (built || !mustBeBuilt) {
           "DEFAULT_GLOBAL_NAME",
         ]),
       );
-      expect(result.runtime).toEqual(
+      expect(ext("a11y")).toEqual(
+        expect.arrayContaining([
+          "a11y",
+          "createA11yRuntime",
+          "A11Y_CSS",
+          "A11Y_MARKER",
+          "IMPACTS",
+          "TOOLBAR_EXCLUDE",
+        ]),
+      );
+      expect(parsed.runtime).toEqual(
         expect.arrayContaining(["writeClipboardText", "writeClipboardTextOrThrow"]),
       );
     });
@@ -1044,6 +1009,25 @@ if (built || !mustBeBuilt) {
         ],
         contributes: "function",
         overlay: "undefined",
+      });
+
+      // /ext/a11y must import in Node with no `document` and no peer: the
+      // factory builds the store and enumerates commands, and the import of
+      // axe-core waits for start(api).
+      const axe = node(
+        `const { a11y } = await import("@nejcm/dev-toolbar/ext/a11y");` +
+          `const ext = a11y();` +
+          `const report = ext.diagnostics();` +
+          `console.log(JSON.stringify({ id: ext.id, commands: ext.commands.map(c => c.id), status: report.status, total: report.total, described: ext.commands.every(c => typeof c.description === "string" && c.description.length > 0) }));`,
+      );
+      expect(JSON.parse(axe)).toEqual({
+        id: "a11y",
+        commands: ["a11y.scan", "a11y.export", "a11y.highlight", "a11y.clear"],
+        // Nothing has been scanned and nothing was loaded — importing the
+        // module must not reach for the peer.
+        status: "pending",
+        total: 0,
+        described: true,
       });
     });
   });

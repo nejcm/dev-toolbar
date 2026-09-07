@@ -9,7 +9,8 @@ The package is a **shell** — chrome plus hosting. It renders a fixed bar, sort
 and collapses the items it is given, hosts one panel at a time, persists
 preferences and isolates failures. It ships no metrics, no flag adapters and
 no opinions about what a number means; those are extensions, and the first-party ones
-live on their own subpath exports. Zero runtime dependencies, light DOM, SSR-safe.
+live on their own subpath exports. Zero runtime dependencies — `/ext/a11y`'s
+`axe-core` is an *optional* peer, the only one — light DOM, SSR-safe.
 The contract an extension is written against is the real public API.
 
 ## Structure

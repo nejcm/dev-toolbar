@@ -28,7 +28,7 @@ describe("the version", () => {
     expect(CONTRACT_VERSION).toBe(2);
   });
 
-  // The matching assertion — that all eight first-party extensions declare
+  // The matching assertion — that every first-party extension declares
   // this same number — lives in `src/ext/__tests__/contract-version.test.ts`.
   // It cannot live here: `boundary.test.ts` forbids anything under `src/core`
   // from naming `ext/`, tests included, and that rule is worth more than the

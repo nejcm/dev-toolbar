@@ -24,6 +24,9 @@ opinions about what a number means — those are **extensions**, and the first-p
 ones arrive on their own opt-in subpaths, each with its own bundle.
 
 - **Zero runtime dependencies.** React and `react-dom` are peers; nothing else.
+  One extension, [`ext/a11y`](./docs/ext/a11y.md), declares `axe-core` as an
+  *optional* peer — install it or don't, and read what installing it costs on
+  that page.
 - **Light DOM**, so Tailwind, CSS-in-JS and your design system work inside extensions.
 - **Restyleable from your own CSS** without `!important`.
 - **SSR-safe**: your app server-renders untouched, the bar is client-only.
@@ -85,6 +88,7 @@ them and you have a bar that hosts only your own tools.
 | [`ext/overlays`](./docs/ext/overlays.md) | Layout boxes, a column grid, an element inspector and focus order — drawn over your page, never intercepting a click |
 | [`ext/diagnostics`](./docs/ext/diagnostics.md) | One snapshot for a bug report: the page, long tasks, a tail of console errors and unhandled rejections, and every other extension's diagnostics. You read the exact text before it goes anywhere |
 | [`ext/theme-editor`](./docs/ext/theme-editor.md) | Live design-token editing, with the app's own value next to your edit, and CSS, a recipe, a design-tokens export or a link on the way out |
+| [`ext/a11y`](./docs/ext/a11y.md) | axe-core violations grouped by impact, on demand and never on a timer, with click-to-highlight. The one optional peer: install `axe-core` or the panel says so and nothing breaks |
 | [`ext/agent`](./docs/ext/agent.md) | The bar's state and commands on a global, for an in-page agent to read from `page.evaluate` rather than scrape. Development builds; running commands is a second opt-in |
 
 Four more subpaths exist for the code you write yourself:
@@ -279,7 +283,7 @@ other. The whole surface, and the Jest caveats, are in
 > **Status:** complete, but **not on npm yet** — the first publish is a manual
 > step still outstanding ([CONTRIBUTING](./CONTRIBUTING.md#one-time-bootstrap--not-yet-done)),
 > so `npm install @nejcm/dev-toolbar` does not resolve today. Until it does, use
-> a git or `file:` dependency. The shell, `/runtime` and all eight first-party
+> a git or `file:` dependency. The shell, `/runtime` and all nine first-party
 > extensions are implemented and released as tags. `CONTRACT_VERSION` is **2**:
 > commands may declare an `input` schema and resolve a result, which asks nothing
 > of an extension written against v1 — see
