@@ -12,6 +12,7 @@ import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
+import { extensionRoster } from "../../test-utils/extension-roster";
 
 const root = `${process.cwd().replace(/\/$/, "")}/`;
 const pkg = JSON.parse(readFileSync(`${root}package.json`, "utf8")) as {
@@ -28,7 +29,8 @@ const CORE_PREFIX = "[dev-toolbar] ";
 
 /** Only ever present in a `src/runtime/*` or `src/ext/*` module. */
 const RUNTIME_MARKER = "[dev-toolbar/runtime]";
-const EXT_MARKERS = [
+const EXT_MARKERS = new Set(extensionRoster().onDisk.map((name) => `[dev-toolbar/ext/${name}]`));
+const EXT_MARKER_ORDER = [
   "[dev-toolbar/ext/metrics]",
   "[dev-toolbar/ext/environment]",
   "[dev-toolbar/ext/flags]",
@@ -123,6 +125,13 @@ const outsideCoreLayer = (specifier: string): boolean =>
   /(^|\/)(runtime|kit|ext)(\/|$)/.test(specifier);
 
 describe("core boundary (source)", () => {
+  it("keeps the explicit marker order complete", () => {
+    expect(
+      new Set(EXT_MARKER_ORDER),
+      "EXT_MARKER_ORDER must include every extension marker",
+    ).toEqual(EXT_MARKERS);
+  });
+
   it("never imports from runtime/, kit/ or ext/", () => {
     const files = sourceFiles(resolve(root, "src/core")).filter(
       // This file contains forbidden-import fixtures for the scanner's meta-tests.
@@ -514,25 +523,29 @@ if (!built && mustBeBuilt) {
     it("does contain the markers where they belong, so the check can fail", () => {
       expect(readFileSync(`${root}dist/runtime.cjs`, "utf8")).toContain(RUNTIME_MARKER);
       expect(readFileSync(`${root}dist/ext/metrics.cjs`, "utf8")).toContain(
-        EXT_MARKERS[0] as string,
+        EXT_MARKER_ORDER[0] as string,
       );
       expect(readFileSync(`${root}dist/ext/environment.cjs`, "utf8")).toContain(
-        EXT_MARKERS[1] as string,
+        EXT_MARKER_ORDER[1] as string,
       );
-      expect(readFileSync(`${root}dist/ext/flags.cjs`, "utf8")).toContain(EXT_MARKERS[2] as string);
+      expect(readFileSync(`${root}dist/ext/flags.cjs`, "utf8")).toContain(
+        EXT_MARKER_ORDER[2] as string,
+      );
       expect(readFileSync(`${root}dist/ext/command-menu.cjs`, "utf8")).toContain(
-        EXT_MARKERS[3] as string,
+        EXT_MARKER_ORDER[3] as string,
       );
       expect(readFileSync(`${root}dist/ext/overlays.cjs`, "utf8")).toContain(
-        EXT_MARKERS[4] as string,
+        EXT_MARKER_ORDER[4] as string,
       );
       expect(readFileSync(`${root}dist/ext/diagnostics.cjs`, "utf8")).toContain(
-        EXT_MARKERS[5] as string,
+        EXT_MARKER_ORDER[5] as string,
       );
       expect(readFileSync(`${root}dist/ext/theme-editor.cjs`, "utf8")).toContain(
-        EXT_MARKERS[6] as string,
+        EXT_MARKER_ORDER[6] as string,
       );
-      expect(readFileSync(`${root}dist/ext/agent.cjs`, "utf8")).toContain(EXT_MARKERS[7] as string);
+      expect(readFileSync(`${root}dist/ext/agent.cjs`, "utf8")).toContain(
+        EXT_MARKER_ORDER[7] as string,
+      );
     });
   });
 }
@@ -549,48 +562,48 @@ if (built || !mustBeBuilt) {
       // Two extensions on two subpaths: neither should drag the other in, or
       // adding a second chip would quietly cost the first one's collectors.
       expect(readFileSync(`${root}dist/ext/environment.cjs`, "utf8")).not.toContain(
-        EXT_MARKERS[0] as string,
+        EXT_MARKER_ORDER[0] as string,
       );
       expect(readFileSync(`${root}dist/ext/metrics.cjs`, "utf8")).not.toContain(
-        EXT_MARKERS[1] as string,
+        EXT_MARKER_ORDER[1] as string,
       );
       // Three now: /ext/flags must drag in neither of the other two.
       const flagsBundle = readFileSync(`${root}dist/ext/flags.cjs`, "utf8");
-      expect(flagsBundle).not.toContain(EXT_MARKERS[0] as string);
-      expect(flagsBundle).not.toContain(EXT_MARKERS[1] as string);
+      expect(flagsBundle).not.toContain(EXT_MARKER_ORDER[0] as string);
+      expect(flagsBundle).not.toContain(EXT_MARKER_ORDER[1] as string);
       // Four. /ext/command-menu reads the aggregation, which is core's, so it
       // must not end up carrying the extensions that produce it.
       const menuBundle = readFileSync(`${root}dist/ext/command-menu.cjs`, "utf8");
-      for (const marker of EXT_MARKERS.slice(0, 3)) {
+      for (const marker of EXT_MARKER_ORDER.slice(0, 3)) {
         expect(menuBundle, marker).not.toContain(marker);
       }
       // Five. /ext/overlays is the first extension that draws over the host
       // page; it must not drag any of the others along for the ride.
       const overlaysBundle = readFileSync(`${root}dist/ext/overlays.cjs`, "utf8");
-      for (const marker of EXT_MARKERS.slice(0, 4)) {
+      for (const marker of EXT_MARKER_ORDER.slice(0, 4)) {
         expect(overlaysBundle, marker).not.toContain(marker);
       }
-      expect(menuBundle).not.toContain(EXT_MARKERS[4] as string);
+      expect(menuBundle).not.toContain(EXT_MARKER_ORDER[4] as string);
       // Six. /ext/diagnostics is the second reader of a core aggregation, and
       // the one whose whole job is to report on the others — so it is the most
       // likely of the lot to drag one in. It must not: a consumer who wants a
       // bug-report button should not thereby ship a flag editor.
       const diagnosticsBundle = readFileSync(`${root}dist/ext/diagnostics.cjs`, "utf8");
-      for (const marker of EXT_MARKERS.slice(0, 5)) {
+      for (const marker of EXT_MARKER_ORDER.slice(0, 5)) {
         expect(diagnosticsBundle, marker).not.toContain(marker);
       }
       for (const bundle of [flagsBundle, menuBundle, overlaysBundle]) {
-        expect(bundle).not.toContain(EXT_MARKERS[5] as string);
+        expect(bundle).not.toContain(EXT_MARKER_ORDER[5] as string);
       }
       // Seven. /ext/theme-editor writes to the host document, which makes it
       // the one a consumer is most likely to adopt on its own; adding a token
       // editor must not thereby ship a flag editor, a palette or a profiler.
       const themeBundle = readFileSync(`${root}dist/ext/theme-editor.cjs`, "utf8");
-      for (const marker of EXT_MARKERS.slice(0, 6)) {
+      for (const marker of EXT_MARKER_ORDER.slice(0, 6)) {
         expect(themeBundle, marker).not.toContain(marker);
       }
       for (const bundle of [flagsBundle, menuBundle, overlaysBundle, diagnosticsBundle]) {
-        expect(bundle).not.toContain(EXT_MARKERS[6] as string);
+        expect(bundle).not.toContain(EXT_MARKER_ORDER[6] as string);
       }
 
       // Eight. /ext/agent publishes core's aggregations on a global. It reads
@@ -598,7 +611,7 @@ if (built || !mustBeBuilt) {
       // produce them — a bridge is a transport, and a transport that ships a
       // flag editor is not one.
       const agentBundle = readFileSync(`${root}dist/ext/agent.cjs`, "utf8");
-      for (const marker of EXT_MARKERS.slice(0, 7)) {
+      for (const marker of EXT_MARKER_ORDER.slice(0, 7)) {
         expect(agentBundle, marker).not.toContain(marker);
       }
       for (const bundle of [
@@ -608,7 +621,7 @@ if (built || !mustBeBuilt) {
         diagnosticsBundle,
         themeBundle,
       ]) {
-        expect(bundle).not.toContain(EXT_MARKERS[7] as string);
+        expect(bundle).not.toContain(EXT_MARKER_ORDER[7] as string);
       }
 
       for (const [name, bundle] of [

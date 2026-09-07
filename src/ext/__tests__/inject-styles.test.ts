@@ -1,17 +1,12 @@
 /**
- * Every first-party extension wires `useExtensionSurface` to its own
- * `ensureXStyles` at fifteen call sites across the seven ui.tsx files. The
- * third argument is typed `() => unknown`, so a swapped injector typechecks
- * and — for four of the seven (command-menu, diagnostics, flags, theme-editor)
- * — had no injectStyles test until this file. Environment, metrics and overlays
- * already asserted own-sheet presence; this file generalises the pattern and
+ * Every stylesheet-bearing extension wires `useExtensionSurface` to its own
+ * `ensureXStyles`. The third argument is typed `() => unknown`, so a swapped
+ * injector typechecks. This file generalises the existing own-sheet checks and
  * adds the foreign-sheet half that catches a wrong ensureXStyles argument.
  *
  * Mounting the toolbar renders only the `compact` slot and the overlay slots —
- * `PanelHost` never mounts a panel that has not been opened — so six of the
- * fifteen call sites live in a panel component that a bare `mount()` would
- * never run. Each case therefore names its `panel` id and the test opens it
- * before asserting.
+ * `PanelHost` never mounts a panel that has not been opened. Each case therefore
+ * names its `panel` id and the test opens it before asserting.
  *
  * What `mountEverySurface` checks is a floor, not a proof: it catches the host
  * slot failing to render, and an extension whose surface threw. It cannot
@@ -38,33 +33,20 @@ import { flags } from "../flags";
 import { metrics } from "../metrics";
 import { overlays } from "../overlays";
 import { themeEditor } from "../theme-editor";
+import { extensionRoster } from "../../test-utils/extension-roster";
 import type { ToolbarHandle } from "@nejcm/dev-toolbar/testing";
 import type { DevToolbarExtension } from "../../core/contract";
 
-const EXTENSION_STYLE_ENTRIES = [
-  "ext-command-menu",
-  "ext-diagnostics",
-  "ext-environment",
-  "ext-flags",
-  "ext-metrics",
-  "ext-overlays",
-  "ext-theme-editor",
-] as const;
+const extensionNames = extensionRoster().withStyles;
+const EXTENSION_STYLE_ENTRIES = extensionNames.map((name) => `ext-${name}`);
 const KIT_STYLE_ENTRY = "kit";
-const STYLE_ENTRIES = [KIT_STYLE_ENTRY, ...EXTENSION_STYLE_ENTRIES] as const;
+const STYLE_ENTRIES = [KIT_STYLE_ENTRY, ...EXTENSION_STYLE_ENTRIES];
 
-type ExtensionName =
-  | "command-menu"
-  | "diagnostics"
-  | "environment"
-  | "flags"
-  | "metrics"
-  | "overlays"
-  | "theme-editor";
+type ExtensionName = string;
 
 interface ExtensionCase {
   name: ExtensionName;
-  entry: (typeof EXTENSION_STYLE_ENTRIES)[number];
+  entry: string;
   /**
    * Extension id whose panel holds a second `useExtensionSurface` call site,
    * or `null` for command-menu, which has no panel slot at all.
@@ -92,10 +74,10 @@ const mountExtension = (
     layout: { barWidth: 1200, itemWidth: 120 },
   }).toolbar;
 
-const EXTENSIONS: ExtensionCase[] = [
-  {
-    name: "command-menu",
-    entry: "ext-command-menu",
+type ExtensionCaseDefinition = Omit<ExtensionCase, "name" | "entry">;
+
+const EXTENSION_CASE_DEFINITIONS: Record<string, ExtensionCaseDefinition> = {
+  "command-menu": {
     panel: null,
     overlays: ["command-menu"],
     usesKitStyles: true,
@@ -103,9 +85,7 @@ const EXTENSIONS: ExtensionCase[] = [
       return mountExtension(commandMenu({ apple: false, injectStyles }));
     },
   },
-  {
-    name: "diagnostics",
-    entry: "ext-diagnostics",
+  diagnostics: {
     panel: "diagnostics",
     overlays: [],
     usesKitStyles: true,
@@ -113,9 +93,7 @@ const EXTENSIONS: ExtensionCase[] = [
       return mountExtension(diagnostics({ injectStyles }));
     },
   },
-  {
-    name: "environment",
-    entry: "ext-environment",
+  environment: {
     panel: "environment",
     overlays: [],
     usesKitStyles: true,
@@ -123,9 +101,7 @@ const EXTENSIONS: ExtensionCase[] = [
       return mountExtension(environment({ injectStyles }));
     },
   },
-  {
-    name: "flags",
-    entry: "ext-flags",
+  flags: {
     panel: "flags",
     overlays: [],
     usesKitStyles: true,
@@ -138,9 +114,7 @@ const EXTENSIONS: ExtensionCase[] = [
       );
     },
   },
-  {
-    name: "metrics",
-    entry: "ext-metrics",
+  metrics: {
     panel: "metrics",
     overlays: [],
     usesKitStyles: true,
@@ -154,9 +128,7 @@ const EXTENSIONS: ExtensionCase[] = [
       );
     },
   },
-  {
-    name: "overlays",
-    entry: "ext-overlays",
+  overlays: {
     panel: "overlays",
     overlays: ["overlays"],
     usesKitStyles: true,
@@ -164,9 +136,7 @@ const EXTENSIONS: ExtensionCase[] = [
       return mountExtension(overlays({ injectStyles }));
     },
   },
-  {
-    name: "theme-editor",
-    entry: "ext-theme-editor",
+  "theme-editor": {
     panel: "theme-editor",
     overlays: [],
     usesKitStyles: true,
@@ -180,7 +150,24 @@ const EXTENSIONS: ExtensionCase[] = [
       );
     },
   },
-];
+};
+
+const EXTENSIONS: ExtensionCase[] = extensionNames.map((name) => {
+  const definition = EXTENSION_CASE_DEFINITIONS[name];
+  if (!definition) {
+    throw new Error(`Missing inject-styles test entry for extension "${name}"`);
+  }
+  return { name, entry: `ext-${name}`, ...definition };
+});
+
+describe("inject-styles test roster", () => {
+  it("has exactly one definition per styled extension", () => {
+    expect(
+      Object.keys(EXTENSION_CASE_DEFINITIONS).sort(),
+      "inject-styles test definitions must match the styled extension roster",
+    ).toEqual(extensionNames);
+  });
+});
 
 function removeExtensionStyles(): void {
   for (const style of document.head.querySelectorAll(`style[${STYLE_ATTRIBUTE}]`)) {

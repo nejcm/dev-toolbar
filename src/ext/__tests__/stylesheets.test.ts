@@ -9,6 +9,7 @@ import { METRICS_CSS } from "../metrics/css";
 import { OVERLAYS_CSS } from "../overlays/css";
 import { BOXES_CSS } from "../overlays/runtime";
 import { THEME_EDITOR_CSS } from "../theme-editor/css";
+import { extensionRoster } from "../../test-utils/extension-roster";
 
 // One pattern for every sheet: left/right/margin-left/margin-right/padding-left/padding-right and
 // text-align: left|right pin to a physical side regardless of dir="rtl"; so does a
@@ -149,11 +150,13 @@ function removeAllowlisted(
   return sanitized;
 }
 
-const SHEETS = [
-  { name: "core", css: CORE_CSS, allow: [] as const },
-  { name: "kit", css: KIT_CSS, allow: [] as const },
-  {
-    name: "command-menu",
+interface SheetDefinition {
+  css: string;
+  allow: readonly { text: string; count: number; why: string }[];
+}
+
+const EXTENSION_SHEET_DEFINITIONS: Record<string, SheetDefinition> = {
+  "command-menu": {
     css: COMMAND_MENU_CSS,
     allow: [
       {
@@ -161,14 +164,13 @@ const SHEETS = [
         count: 1,
         why: 'cmd-dialog centres itself with `left: 50%` + `transform: translateX(-50%)`. That pair is symmetric and needs no RTL mirroring — `inset-inline-start: 50%` is NOT an equivalent here, because under dir="rtl" it resolves to the right edge landing at the midpoint while translateX(-50%) still shifts left by half the width, so the dialog would end up a full width off-centre. See the comment on cmd-dialog in css.ts. Removed by exact text so any other left/right creeping in elsewhere is still caught.',
       },
-    ] as const,
+    ],
   },
-  { name: "diagnostics", css: DIAGNOSTICS_CSS, allow: [] as const },
-  { name: "environment", css: ENVIRONMENT_CSS, allow: [] as const },
-  { name: "flags", css: FLAGS_CSS, allow: [] as const },
-  { name: "metrics", css: METRICS_CSS, allow: [] as const },
-  {
-    name: "overlays",
+  diagnostics: { css: DIAGNOSTICS_CSS, allow: [] },
+  environment: { css: ENVIRONMENT_CSS, allow: [] },
+  flags: { css: FLAGS_CSS, allow: [] },
+  metrics: { css: METRICS_CSS, allow: [] },
+  overlays: {
     css: OVERLAYS_CSS,
     allow: [
       {
@@ -181,10 +183,34 @@ const SHEETS = [
         count: 1,
         why: "ovl-grid-columns pairs `left: 50%; right: auto;` with `transform: translateX(-50%)` for deliberate horizontal centring that must stay physical; see css.ts.",
       },
-    ] as const,
+    ],
   },
-  { name: "theme-editor", css: THEME_EDITOR_CSS, allow: [] as const },
-] as const;
+  "theme-editor": { css: THEME_EDITOR_CSS, allow: [] },
+};
+
+const styledExtensionNames = extensionRoster().withStyles;
+const extensionSheets = styledExtensionNames.map((name) => {
+  const sheet = EXTENSION_SHEET_DEFINITIONS[name];
+  if (!sheet) {
+    throw new Error(`Missing stylesheet test entry for extension "${name}"`);
+  }
+  return { name, ...sheet };
+});
+
+const SHEETS = [
+  { name: "core", css: CORE_CSS, allow: [] as const },
+  { name: "kit", css: KIT_CSS, allow: [] as const },
+  ...extensionSheets,
+];
+
+describe("stylesheet test roster", () => {
+  it("has exactly one definition per styled extension", () => {
+    expect(
+      Object.keys(EXTENSION_SHEET_DEFINITIONS).sort(),
+      "stylesheet test definitions must match the styled extension roster",
+    ).toEqual(styledExtensionNames);
+  });
+});
 
 describe.each(SHEETS)("$name stylesheet", ({ css, allow }) => {
   const withoutComments = stripComments(css);

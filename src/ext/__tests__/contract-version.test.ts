@@ -24,8 +24,6 @@
  * because `src/core/__tests__/boundary.test.ts` forbids anything under
  * `src/core` from naming `ext/` at all, tests included.
  */
-import { readdirSync, readFileSync } from "node:fs";
-import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import { CONTRACT_VERSION } from "@nejcm/dev-toolbar";
 import { agentBridge } from "../agent/index";
@@ -37,32 +35,10 @@ import { flags } from "../flags/index";
 import { metrics } from "../metrics/index";
 import { overlays } from "../overlays/index";
 import { themeEditor } from "../theme-editor/index";
+import { extensionRoster } from "../../test-utils/extension-roster";
 import type { DevToolbarExtension } from "../../core/contract";
 
-const root = resolve(__dirname, "../../..");
-
-/**
- * Directories under `src/ext/` that are extensions. `shared` is React glue and
- * deliberately not a subpath (AGENTS.md); `__tests__` is this file's own home.
- */
-const NOT_AN_EXTENSION = new Set(["shared", "__tests__"]);
-
-const onDisk = (): string[] =>
-  readdirSync(resolve(root, "src/ext"), { withFileTypes: true })
-    .filter((entry) => entry.isDirectory() && !NOT_AN_EXTENSION.has(entry.name))
-    .map((entry) => entry.name)
-    .sort();
-
-/** The `./ext/*` keys of the published `exports` map — what a consumer can actually import. */
-const published = (): string[] => {
-  const manifest = JSON.parse(readFileSync(resolve(root, "package.json"), "utf8")) as {
-    exports: Record<string, unknown>;
-  };
-  return Object.keys(manifest.exports)
-    .filter((key) => key.startsWith("./ext/"))
-    .map((key) => key.slice("./ext/".length))
-    .sort();
-};
+const roster = extensionRoster();
 
 /** Keyed by subpath name, so the keys can be compared against the two derived sets. */
 const FACTORIES: Record<string, () => DevToolbarExtension> = {
@@ -80,7 +56,7 @@ describe("every first-party extension declares core's contract version", () => {
   it("covers exactly the extensions that exist on disk", () => {
     // Fails for a ninth `src/ext/foo/` that nobody added below — which is the
     // whole point, and is not something comparing two hand-written lists can do.
-    expect(Object.keys(FACTORIES).sort()).toEqual(onDisk());
+    expect(Object.keys(FACTORIES).sort()).toEqual(roster.onDisk);
   });
 
   it("covers exactly the extensions package.json publishes", () => {
@@ -88,7 +64,7 @@ describe("every first-party extension declares core's contract version", () => {
     // is unpublishable (AGENTS.md), and one that is exported without a
     // directory is broken. Requiring both to match these factories catches
     // either mistake here rather than at `bun run build`.
-    expect(Object.keys(FACTORIES).sort()).toEqual(published());
+    expect(Object.keys(FACTORIES).sort()).toEqual(roster.published);
   });
 
   it.each(Object.entries(FACTORIES))("%s", (name, build) => {
