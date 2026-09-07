@@ -123,6 +123,15 @@ The playground consumes the package through its `exports` map, so it reads
 `dist/`, not `src/`. After editing `src/` you must `bun run build` (or keep
 `bun run dev` running) before the playground shows your change.
 
+`playground:install` deletes `examples/playground/node_modules/@nejcm` before
+installing, and needs to. For a `file:` dependency bun copies the whole
+repository root rather than the `files` list, so once a previous install has
+left a copy in place, the copy's source contains its own destination and bun
+recurses into it until it fails with `ENOENT: failed copying files from cache
+to destination`. Removing the copy first is what keeps a second install
+working. The files inside the copied `dist/` are symlinks back to the root, so
+the playground still reads whatever was last built.
+
 ## Commits
 
 Commit messages follow [Conventional Commits](https://www.conventionalcommits.org).
