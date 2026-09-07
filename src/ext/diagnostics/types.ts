@@ -227,15 +227,9 @@ export interface ConsoleTailEntry {
   /** Redacted on the way in, argument by argument, before they were joined. */
   message: string;
   /**
-   * The stack where there was one, **header removed and everything else
-   * kept**, redacted. V8 repeats `` `${name}: ${message}` `` above the first
-   * frame; that line is deleted by comparison against the known raw text, so
-   * a credential in either half cannot ride out inside a longer string —
-   * every attempt to *rewrite* it instead leaked. Nothing is identified by
-   * shape (that was its own leak: an `Error` named `fake@host:1` writes a
-   * header shaped exactly like a SpiderMonkey frame), so a frameless stack
-   * and a stack from an unfamiliar engine keep every line they have. `null`
-   * where there was no stack, and where deleting the header left nothing.
+   * The stack where there was one, redacted, with the header line deleted
+   * (see `src/ext/diagnostics/console.ts`). `null` where there was no stack,
+   * or deleting the header left nothing.
    */
   stack: string | null;
   /** How many times this message was seen. `1` for a message seen once. */

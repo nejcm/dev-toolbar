@@ -2,27 +2,17 @@
  * In-flight and recent HTTP requests. [dev-toolbar/ext/metrics]
  *
  * Two instrumentation routes: pass a `/runtime` bus and emit `network-start` /
- * `network-end` from your own HTTP client, or let `/runtime`'s shared
- * interceptor patch `fetch` and `XMLHttpRequest` for you. The patches live in
- * `src/runtime/network.ts` — one wrapper feeding every sink in the package,
- * restored on teardown by identity and never restored over somebody else's
- * later patch. This collector is one sink among possibly several.
- *
- * Every URL goes through `redactUrl()` before retention, as do the URL-shaped
- * substrings of an error message — that text is foreign, and a rejection
- * routinely names the request it failed on. Headers and bodies are never read.
+ * `network-end` yourself, or let `/runtime`'s shared interceptor
+ * (`src/runtime/network.ts`) patch `fetch`/`XMLHttpRequest` for you — this
+ * collector is one sink among possibly several. Every URL, and the URL-shaped
+ * substrings of an error message, goes through `redactUrl()` before retention;
+ * headers and bodies are never read.
  */
 import { createRingBuffer, createTimeSeries, redactUrl } from "../../../runtime";
-/**
- * The one stateful import in this file that goes through the **published**
- * specifier rather than `../../../runtime`. The interceptor's patch state is
- * module-level, and the CJS build does not code-split: a relative value import
- * would be inlined into `dist/ext/metrics.cjs`, so a consumer using both this
- * collector and `@nejcm/dev-toolbar/runtime`'s `instrumentFetch()` would install
- * two wrappers. `@nejcm/dev-toolbar` is `external` in `tsup.config.ts`, so this
- * resolves to the host's single copy in both formats — the same rule that keeps
- * `/kit` one instance. Everything else here is stateless and stays relative.
- */
+// Through the published specifier, not `../../../runtime`: a relative value
+// import would inline a second copy of the interceptor's patch state into
+// dist/ext/metrics.cjs (docs/architecture.md § "external"). Everything else
+// here is stateless and stays relative.
 import { instrumentFetch, instrumentXhr } from "@nejcm/dev-toolbar/runtime";
 import type { BusLike, RedactOptions, ToolbarEventMap } from "../../../runtime";
 import type { NetworkSink } from "../../../runtime";
@@ -69,13 +59,9 @@ export interface NetworkCollectorOptions {
 }
 
 /**
- * The network collector's own surface, on top of `Collector`.
- *
- * `/ext/metrics` reaches for these when it builds the `network.*` commands;
- * a consumer holding the collector can call them directly. Recording is what
- * pauses — never the interceptor: unpatching and re-patching `fetch` on a
- * toggle would hand the wrapper back to whatever patched after us, and pausing
- * is not a reason to fight over a global.
+ * The network collector's own surface, on top of `Collector`. Recording is
+ * what pauses — never the interceptor itself, since unpatching on a toggle
+ * would hand the wrapper back to whatever patched after us.
  */
 export interface NetworkCollector extends Collector {
   /** Newest first, already redacted. Required here, optional on `Collector`. */
@@ -99,37 +85,14 @@ export interface NetworkCollector extends Collector {
 export { instrumentFetch, instrumentXhr } from "@nejcm/dev-toolbar/runtime";
 export type { NetworkSink, NetworkSinkResult } from "../../../runtime";
 
-/**
- * An absolute-URL substring inside free text. Same scheme shape `redact()`'s
- * `ABSOLUTE_URL` uses, but unanchored. Only whitespace, a quote and `<>` end it
- * mid-URL; the closing delimiters `)` and `]` and the sentence punctuation
- * `.,;:!?` are excluded from the **last character only**.
- *
- * That split is load-bearing in both directions. Excluding them from the last
- * character is what keeps `…?token=x. Then` from burying its full stop in the
- * mask, and what lets `(https://a.test/?token=x)` and `[https://a.test/]` stop
- * at their closing delimiter. Excluding them mid-URL instead would truncate the
- * match at the *first* `)` or `]` — so a bracketed array or filter parameter,
- * ordinary Rails / PHP / JSON:API query syntax, ended the match before the
- * credential that followed it and `?ids[]=1&access_token=abc` went to
- * `diagnostics()` verbatim. A legitimate trailing dot inside a path is still
- * consumed mid-URL for the same reason.
- *
- * The leading lookbehind is what keeps this linear. Without it, every position
- * inside a long alphanumeric run is a candidate start: `[A-Za-z][A-Za-z0-9+.-]*`
- * scans to the end of the run before failing on the missing `:`, which is
- * quadratic — the same shape Phase 1's R1 removed from `ACRONYM`, and reachable
- * here because the text is app-supplied (a stringified body or a base64 blob in
- * an error message, and `[A-Za-z0-9+.-]` covers most of base64). 200k letters
- * took 5.4s synchronously inside the host's rejection handler; the lookbehind
- * makes every interior position fail in O(1).
- *
- * The lookbehind has a deliberate cost: a URL glued directly to a preceding
- * digit, `.`, `-` or `+` with no separator (`code=1https://a.test/?token=x`) is
- * not seen at all. That is accepted, not overlooked — dropping the lookbehind
- * to catch it puts the quadratic blow-up straight back. Widen the *separator*
- * class if a real case turns up; do not remove the lookbehind.
- */
+// An absolute-URL substring inside free text (unanchored, unlike `redact()`'s
+// `ABSOLUTE_URL`). Closing delimiters `)`/`]` and `.,;:!?` end the match only
+// as its last character, so a URL wrapped in punctuation still stops cleanly
+// without truncating a query like `?ids[]=1&access_token=abc` at the first `]`.
+// The leading lookbehind keeps this linear: without it, a long app-supplied
+// alphanumeric run (e.g. base64) is quadratic to fail on — measured at 5.4s
+// for 200k letters. Cost: a URL glued to a preceding digit/`.`/`-`/`+` with no
+// separator is not matched; do not remove the lookbehind to catch that case.
 const URL_IN_TEXT =
   /(?<![A-Za-z0-9+.-])[A-Za-z][A-Za-z0-9+.-]*:\/\/[^\s"'`<>]*[^\s"'`<>)\].,;:!?]/g;
 
@@ -163,20 +126,9 @@ export function createNetworkCollector(options: NetworkCollectorOptions = {}): N
 
   const clean = (url: string) => redactUrl(url, options.redact);
 
-  /**
-   * Error text is *foreign*: it comes from the host's `fetch` rejection, an
-   * `XMLHttpRequest` event, or whatever an app put on a `network-end` payload.
-   * A rejection routinely names the request it failed on
-   * (`TypeError: Failed to fetch https://api.test/v1?token=abc`), so the string
-   * kept for `diagnostics()` and the panel had a credential in it while the
-   * sibling `url` field next to it was already redacted.
-   *
-   * Only the URL-shaped substrings are rewritten, not the whole message:
-   * `redactUrl()` on a whole sentence resolves it against a base and comes back
-   * percent-encoded, which would mangle the one piece of a failed request a
-   * developer actually reads. Non-URL secrets in foreign prose are still not
-   * covered — this pass only knows URLs.
-   */
+  // Error text is foreign (a rejection routinely names the failed request's
+  // URL), so only URL-shaped substrings are rewritten — `redactUrl()` on the
+  // whole sentence would resolve it against a base and mangle the message.
   const cleanErrorText = (text: string) => text.replace(URL_IN_TEXT, (url) => clean(url));
 
   const begin = (now: number, method: string, rawUrl: string, id?: string): NetworkEntry | null => {
@@ -429,13 +381,8 @@ export function createNetworkCollector(options: NetworkCollectorOptions = {}): N
         title: "Network",
         status: totals.started === 0 ? "pending" : "ok",
         severity: window.failed > 0 ? "bad" : window.slow > 0 ? "warn" : "ok",
-        /**
-         * The chip says `paused` rather than a count that has stopped moving.
-         * It is also what makes the pause *visible*: the metrics runtime's
-         * publish signature is built from `status`, `severity` and `display`
-         * for a built-in, so a state that changed none of those would leave
-         * the panel showing "Recording: on" until the next request arrived.
-         */
+        // "paused" rather than a stalled count: the publish signature is built
+        // from status/severity/display, so an unchanged count wouldn't notify.
         display: paused ? "paused" : String(window.active),
         value: window.active,
         unit: "requests",

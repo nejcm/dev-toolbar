@@ -72,16 +72,8 @@ export interface MetricsOptions {
   network?: boolean | NetworkCollectorOptions;
 }
 
-/**
- * The most requests one `network.export` call returns.
- *
- * `/ext/agent` runs `redact()` over a command result on the way out, and
- * `redact()` cuts an array at 200 entries and pushes a `"[+N more]"` *string*
- * onto it. An unbounded export would therefore reach an agent as an array whose
- * last element is not a request, under a `count` that disagrees with its
- * length. This bound is that same 200, so the payload an agent receives is the
- * payload this command returns.
- */
+// Matches `redact()`'s own array cutoff (docs/ext/metrics.md), so an unbounded
+// export doesn't reach an agent truncated with a `count` that disagrees with it.
 const EXPORT_MAX_REQUESTS = 200;
 
 function optionsFor<T extends object>(value: boolean | T | undefined): T | null {
@@ -160,17 +152,10 @@ export function metrics(options: MetricsOptions = {}): DevToolbarExtension {
   // Built here, not in start(api): slot functions run before any effect fires.
   const runtime = createMetricsRuntime({ collectors, updateHz });
 
-  /**
-   * The `network.*` commands (`plans/ecosystem-extensions.md` § 1A).
-   *
-   * Contributed only when the network collector is actually running: a command
-   * that is always listed and always throws is worse than an absent one, both
-   * in `⌘K` and in an agent's `listCommands()`.
-   *
-   * All four are reads or state toggles over what the panel already shows.
-   * None of them can reach a header or a body: the collector never records
-   * one, so there is nothing here to leak.
-   */
+  // Contributed only while the network collector is running — an always-listed
+  // command that always throws is worse than an absent one. All four are reads
+  // or toggles over what the panel already shows; none can reach a header or
+  // body, since the collector never records one.
   const networkCommands = (network: NetworkCollector): AnyToolbarCommand[] => {
     const requestFor = (requestId: string | undefined): NetworkEntryView => {
       const { requests } = runtime.exportRequests();

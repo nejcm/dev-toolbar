@@ -1,15 +1,9 @@
 /**
  * The console and error tail (`plans/ecosystem-extensions.md` § 1B).
  *
- * Patching `console` is the most invasive thing this package does, so almost
- * every test here *executes* the patch rather than inspecting a string: the
- * app's own `console.error` is replaced with a recorder before the toolbar
- * mounts, and the assertions are about what that recorder received, what the
- * global identity is afterwards, and what a nested log does.
- *
- * The two the plan calls non-negotiable are `restores console.error by
- * identity on unmount` and the `ExtensionBoundary` re-entrancy test at the
- * bottom, which throws inside a real panel while the patch is live.
+ * Most tests execute the real patch rather than inspect a string: a recorder
+ * replaces `console.error` before mount, and assertions check what it received,
+ * the global identity afterwards, and what a nested log does.
  */
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { act } from "@testing-library/react";
@@ -45,11 +39,8 @@ const started = (options: DiagnosticsRuntimeOptions = {}) => {
 
 const entriesOf = (report: { entries: ConsoleTailEntry[] }) => report.entries.map((e) => e.message);
 
-/**
- * The one thing a global patch can leak past a failing test. Every test in
- * this file installs its own recorder over the real methods and restores them
- * here, so a bug in teardown fails loudly rather than poisoning the file.
- */
+// Restored after every test, so a teardown bug fails loudly instead of
+// poisoning the rest of the file.
 const REAL = { error: console.error, warn: console.warn, log: console.log };
 afterEach(() => {
   cleanupToolbar();
@@ -850,11 +841,8 @@ describe("credentials the masking used to let through", () => {
   });
 
   it("reports no stack at all for a stack that is only a header", () => {
-    // `Error.stackTraceLimit = 0` (and any engine that yields no frames): the
-    // stack is the raw message, and `redact()`'s anchored value matching
-    // cannot see a credential inside `Error: Bearer …`. Deleting the header
-    // leaves no lines, and "no stack" is the honest report of that — the
-    // message is still there, masked.
+    // `Error.stackTraceLimit = 0`: deleting the header leaves no lines, so
+    // "no stack" is the honest report — the message is still there, masked.
     const { json, report } = captured(() => {
       console.error({
         name: "Error",
@@ -879,11 +867,8 @@ describe("credentials the masking used to let through", () => {
   });
 
   it("does not let an `@`-shaped Error name smuggle a credential through the header", () => {
-    // The frame test that used to find the first frame was
-    // `/^\s+at\s|^\S*@\S*:\d+/`. A name of `fake@host:1` makes V8 write a
-    // header that matches the SpiderMonkey/JSC half of it, so the header was
-    // taken for a frame and kept verbatim, credential and all. Now the header
-    // is deleted by known text, so its shape cannot matter.
+    // Regression: a name of `fake@host:1` used to match the old frame-shape
+    // test, so the header was kept verbatim, credential and all.
     const error = new Error("Bearer LEAK_SECRET_123");
     error.name = "fake@host:1";
     const { json, report } = captured(() => void console.error(error));
@@ -904,9 +889,8 @@ describe("credentials the masking used to let through", () => {
   });
 
   it("keeps a stack from an engine whose frame shape it has never seen", () => {
-    // Dropping everything above the first *recognised* frame threw away a
-    // whole stack from any engine this module had not been taught. Nothing is
-    // recognised now, so nothing is thrown away.
+    // Regression: dropping down to the first "recognised" frame used to throw
+    // away a whole stack from an untaught engine.
     const { report } = captured(() => {
       console.error({
         name: "Error",
@@ -920,11 +904,8 @@ describe("credentials the masking used to let through", () => {
   });
 
   it("takes a credential-shaped Error name out of the stack with the header", () => {
-    // The other half of the header. V8 writes `${name}: ${message}` above the
-    // first frame; while only the *message* half was substituted, an `Error`
-    // whose name carried the credential and whose message was ordinary came
-    // out masked in the line the tail shows and verbatim in the stack right
-    // beside it — a marker claiming a value two lines up is handled.
+    // Regression: only the message half used to be substituted, so a
+    // credential-shaped `name` survived verbatim in the stack.
     const error = new Error("ordinary message");
     error.name = "Bearer LEAK_SECRET_123";
     const { json, report } = captured(() => void console.error(error));
@@ -1018,13 +999,9 @@ describe("credentials the masking used to let through", () => {
 /* The header, proved through both renderers                                   */
 /* -------------------------------------------------------------------------- */
 
-/**
- * Every claim below is executed through `renderJson` **and** `renderMarkdown`
- * off a real captured snapshot, never off a hand-built string. Three masking
- * mechanisms shipped a leak past unit tests that asserted on the shape of an
- * intermediate string, and the two renderers are what a reader actually pastes
- * into a ticket.
- */
+// Executed through both `renderJson` and `renderMarkdown` off a real captured
+// snapshot, never a hand-built string — three masking mechanisms leaked past
+// tests that asserted on an intermediate string's shape instead.
 describe("what reaches a pasted ticket", () => {
   const rendered = (log: () => void) => {
     console.error = () => {};
@@ -1105,12 +1082,8 @@ describe("what reaches a pasted ticket", () => {
   });
 
   it("does not leak the second half of an overlapping name and message", () => {
-    // The hole substitution could not close. `name` is `Bearer A`, and the
-    // *message* contains `Bearer A` as well: replacing the name rewrote the
-    // very text the message replacement then had to match, so the message
-    // replacement missed and the header shipped the nonce. Reversing the
-    // order only moves the hole to the other overlap. Deleting the header
-    // cannot have a second pass to corrupt.
+    // Regression: substitution rewrote the name first, which corrupted the
+    // text the message replacement needed to match, leaking the nonce.
     const error = new Error('Digest realm="Bearer A",nonce="FULL_SECRET_123"');
     error.name = "Bearer A";
     const { json, markdown } = rendered(() => void console.error(error));
@@ -1134,11 +1107,8 @@ describe("what reaches a pasted ticket", () => {
   });
 
   it("does not double-substitute a custom mask that is itself credential-shaped", () => {
-    // `mask: "Bearer A"` used to be masked *again* on the way through the
-    // stack — the substitution wrote `Bearer Bearer A` into it and the
-    // whole-value pass then masked that, so the stack read `Bearer Bearer
-    // Bearer A` beside a message reading `Bearer Bearer A`. One mask, one
-    // answer, and the stack no longer carries the header at all.
+    // Regression: a custom `mask: "Bearer A"` used to get masked again on the
+    // way through the stack, compounding into `Bearer Bearer A`.
     console.error = () => {};
     const { runtime, stop } = started({ redactOptions: { mask: "Bearer A" } });
     console.error(new Error("Bearer LEAK_SECRET_123"));
@@ -1182,11 +1152,8 @@ describe("what reaches a pasted ticket", () => {
   });
 
   it("drops the header of a message-only error, whose name the engine supplied", () => {
-    // Measured regression, caught by probe before it shipped: V8's stack
-    // formatter treats an empty `name` as absent and writes `Error:` itself,
-    // so `${name}: ${message}` and `${message}` both miss and the raw
-    // credential went back into the stack. `Error: ${message}` is known text
-    // too — it is what an error with no usable name writes.
+    // Regression: V8 writes `Error:` itself for an absent/empty `name`, which
+    // neither `${name}: ${message}` nor `${message}` alone would match.
     const emptied = new Error("Bearer LEAK_SECRET_123");
     emptied.name = "";
     bothMask(() => void console.error(emptied));
@@ -1258,11 +1225,8 @@ describe("what reaches a pasted ticket", () => {
   });
 
   it("still drops a header that transformed the message, because the name prefixes it", () => {
-    // A header need not be `${name}: ${message}` byte for byte. This one
-    // upper-cases the message half — the two-half form does not match, and
-    // neither does the message alone. The *name* still prefixes the line
-    // (every engine writes it first), so the line goes anyway, with whatever
-    // the engine did to the rest of it.
+    // The message half is transformed (upper-cased) so neither known form
+    // matches it, but the name still prefixes the line, so it goes anyway.
     const { json, markdown } = rendered(() => {
       console.error({
         name: "Error",
@@ -1277,12 +1241,8 @@ describe("what reaches a pasted ticket", () => {
   });
 
   it("cannot drop a header whose *name* half was transformed too — a documented limit", () => {
-    // Where it does run out: if the name is not a literal prefix of the
-    // header either, nothing known matches the line and it stays — and
-    // whole-value matching cannot see a credential inside a longer string.
-    // Pinned as a leak rather than closed: recognising a transformed header
-    // means teaching this module a second notion of "credential", which is
-    // what leaked three times.
+    // Documented limit: once the name half is transformed too, nothing known
+    // matches the header line and it survives verbatim.
     const { json, markdown } = rendered(() => {
       console.error({
         name: "bearer name_secret_123",
@@ -1298,12 +1258,9 @@ describe("what reaches a pasted ticket", () => {
   });
 
   it("cannot mask a credential embedded in prose — the documented limit", () => {
-    // The one probe that still leaks, and it leaks in the *message* as well as
-    // the stack. `redact()` is the only judge of a credential and its value
-    // matching is anchored: "failed: token Bearer …" is not a credential, it
-    // is a sentence containing one. Teaching this module a second notion of
-    // "credential" is what leaked three times; the panel shows you the text
-    // before you copy it instead.
+    // Documented limit: "failed: token Bearer …" is a sentence containing a
+    // credential, not a credential itself, so `redact()`'s anchored matching
+    // misses it in both the message and the stack.
     const { json, markdown } = rendered(() => {
       console.error(new Error("failed: token Bearer LEAK_SECRET_123"));
     });
@@ -1368,10 +1325,8 @@ describe("installing over a hostile console", () => {
   });
 
   it("keeps the teardown for a patch it cannot read back", () => {
-    // A setter that stores the wrapper while the getter throws once, during
-    // read-back, and then recovers. The patch is real; we simply cannot see
-    // it. Reporting `unavailable` is right — discarding the handle was not,
-    // because `stop()` then left our wrapper on `console` for good.
+    // A setter stores the wrapper while the getter throws once, then recovers.
+    // Regression: discarding the handle here left the wrapper on for good.
     const original = console.error;
     let stored: unknown = original;
     let thrown = false;
@@ -1410,14 +1365,9 @@ describe("installing over a hostile console", () => {
   });
 
   it("does not wrap its own wrapper when a second tail starts behind an unreadable read-back", () => {
-    // The blocker an unverified patch used to leave behind. A patch that was
-    // assigned but could not be read back was handed out *unregistered*, so a
-    // second tail from this same module copy installed a second wrapper —
-    // around the first. Teardown then restored the abandoned inner wrapper and
-    // `console.error` never came back, for the life of the page.
-    //
-    // Registered-but-unverified fixes that, and the second tail asks the
-    // read-back again instead: the getter that threw once answers now.
+    // Regression: an unverified patch used to be handed out unregistered, so a
+    // second tail wrapped it again and teardown stranded the abandoned inner
+    // wrapper for the page's life. Registered-but-unverified fixes that.
     const original = console.error;
     let stored: unknown = original;
     let thrown = false;
@@ -1464,13 +1414,8 @@ describe("installing over a hostile console", () => {
   });
 
   it("shares the wrapper it already installed when the page returns to a console", () => {
-    // Registration used to be one entry per *method*, checked against the
-    // console it was made on. Start a tail on A, one on B, then a third on A:
-    // the entry named B, so the third tail installed a *second* wrapper on A
-    // — around the first tail's. The shared recursion guard then suppressed
-    // tail 1 while it still reported `capturing`, and neither stop order
-    // could give A its own method back. Ownership follows (console, method)
-    // now, so the third tail finds the wrapper that is there.
+    // Regression: registration used to be one entry per method regardless of
+    // console, so a tail on A after one on B wrapped A's method a second time.
     const seenByA: string[] = [];
     const A = { error: (...args: unknown[]) => seenByA.push(args.join(" ")), warn() {}, log() {} };
     const B = { error() {}, warn() {}, log() {} };
@@ -1512,11 +1457,8 @@ describe("installing over a hostile console", () => {
   });
 
   it("patches again once `globalThis.console` is a different object", () => {
-    // An unverified patch is registered so a second tail does not wrap it —
-    // but the registration describes *that* console. When the global is
-    // replaced, the entry names a wrapper nobody can reach, and reusing it
-    // made every later tail inherit its `verified: false` and watch nothing
-    // while reporting no error at all.
+    // Regression: reusing a registration made for the old console object made
+    // every later tail inherit its stale `verified: false`.
     const frozen = Object.freeze({ error: () => {}, warn: () => {}, log: () => {} });
     vi.stubGlobal("console", frozen);
     const onFrozen = createConsoleTail({ windowErrors: false, rejections: false });
@@ -1542,20 +1484,14 @@ describe("installing over a hostile console", () => {
 /* Losing the patch, and saying so                                             */
 /* -------------------------------------------------------------------------- */
 
-/**
- * Nothing here re-patches. What every one of these proves is that the *claim*
- * is dropped: a tail that is no longer installed reports `unavailable` with an
- * empty `watching`, instead of `capturing` with counts nobody observed.
- */
+// Proves the claim drops, not that anything re-patches: a tail no longer
+// installed reports `unavailable` with an empty `watching`.
 describe("a patch that stopped being live", () => {
   const soloConsole = { warn: false, windowErrors: false, rejections: false } as const;
 
   it("re-verifies on every attach, so a replaced method disables new tails visibly", () => {
-    // The defect: only a *previously unverified* registration was re-checked.
-    // Start tail 1 on A, replace `A.error`, start tail 2 — the registration is
-    // keyed by (console, method) and that key never changed, so it still said
-    // `verified`. Both tails reported `capturing` and `["console.error"]`, and
-    // both recorded nothing from the replacement.
+    // Regression: only a previously-unverified registration was re-checked, so
+    // replacing `A.error` between two tails left both reporting `capturing`.
     const seen: string[] = [];
     const A = { error: (...args: unknown[]) => seen.push(args.join(" ")), warn() {}, log() {} };
     vi.stubGlobal("console", A);
@@ -1734,11 +1670,8 @@ describe('what "newest" and "stopped" mean', () => {
 
 describe("publishing the chip's counts", () => {
   it("does not feed itself through the toolbar's own error logging", async () => {
-    // The asynchronous half of the re-entrancy guard. A throwing subscriber
-    // makes the store log with `console.error` — a microtask *after* the
-    // synchronous depth guard released — which the tail captures, which
-    // schedules another publish, which throws again. Measured before the fix
-    // as four captured errors and three notifications from one log, climbing.
+    // Regression: a throwing subscriber's async re-log used to climb —
+    // measured at four captured errors and three notifications from one log.
     console.error = () => {};
     const { runtime, stop } = started();
     let notifications = 0;
@@ -1759,11 +1692,9 @@ describe("publishing the chip's counts", () => {
   });
 
   it("does not feed itself through the throttle's trailing edge either", async () => {
-    // The guard used to sit around `store.set()` only. The throttle publishes
-    // the *trailing* edge from a timer, long after that guard is down, so the
-    // throwing subscriber's report was captured, scheduled another publish,
-    // and went round again: two logs 10 ms apart measured as five
-    // notifications and seven captured errors over ~450 ms.
+    // Regression: the guard only sat around `store.set()`, so the throttle's
+    // later trailing-edge publish went round again — measured at five
+    // notifications and seven captured errors from two logs.
     console.error = () => {};
     const { runtime, stop } = started();
     let notifications = 0;
@@ -1783,10 +1714,7 @@ describe("publishing the chip's counts", () => {
     const captured = runtime.tail().errors;
     stop();
 
-    // Two notifications, one per real log, and four captured errors: the two
-    // logs plus the store's report of each throwing notification. The reports
-    // are recorded but publish nothing, so it stops there instead of going
-    // round again.
+    // Recorded reports publish nothing, so it stops here rather than looping.
     expect(notifications).toBeLessThanOrEqual(2);
     expect(captured).toBeLessThanOrEqual(4);
   });

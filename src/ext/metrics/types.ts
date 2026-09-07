@@ -71,12 +71,7 @@ export interface NetworkEntryView {
 
 /**
  * What `network.export` returns, and what a bug report gets pasted into.
- *
- * `requests` is **the array the panel is rendering**, not a re-derivation of
- * it: the runtime hands out the one it last built, so an entry an agent reads
- * and an entry a developer sees cannot disagree about redaction, ordering or
- * shape (`plans/ecosystem-extensions.md` § The agent surface — "divergence
- * between the two is a bug, not a nuance").
+ * `requests` is the array the panel is rendering, not a re-derivation of it.
  */
 export interface NetworkExport {
   generatedAt: string;

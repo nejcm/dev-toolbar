@@ -310,15 +310,8 @@ describe("instrumentXhr", () => {
 
 describe("the dual-package hazard, as documented", () => {
   it("stacks rather than conflicts when two copies of this module are loaded", async () => {
-    /**
-     * Patch state is module-level, so a page resolving both `dist/runtime.js`
-     * and `dist/runtime.cjs` holds two of it. The docblock claims they *stack*
-     * — both record, the app pays for two wrappers — rather than one blinding
-     * the other. This asserts that claim instead of restating it, and pins the
-     * artefact it leaves behind: detaching inner-first strands the first
-     * wrapper on `globalThis.fetch`. It records nothing, having no sinks left,
-     * but it is not inert — see the next test.
-     */
+    // Two module copies both record (stack, not conflict) — see docs/runtime.md.
+    // Detaching inner-first strands the first wrapper, sink-less but not inert.
     globalThis.fetch = vi.fn(async () => response(200)) as unknown as typeof fetch;
     vi.resetModules();
     const first = await import("../network");
@@ -345,15 +338,8 @@ describe("the dual-package hazard, as documented", () => {
   });
 
   it("strands one more forwarding wrapper on every inner-first teardown", async () => {
-    /**
-     * The stranded wrapper is sink-less, not free: it still chains a `.then()`
-     * onto every response and still reads `content-length` off it. One per
-     * attach/detach cycle accumulates, and a long-lived page cycling
-     * collectors pays a deeper `fetch` chain each time — deep enough, far out,
-     * to overflow the stack. Bounding it is out of scope for this module; the
-     * fix is resolving the package to one format. This pins the growth so the
-     * cost is measured rather than described.
-     */
+    // A stranded wrapper still chains a `.then()` and reads `content-length`;
+    // one accumulates per cycle, deep enough to overflow the stack eventually.
     let headerReads = 0;
     const counting = () =>
       ({

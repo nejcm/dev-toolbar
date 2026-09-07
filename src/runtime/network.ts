@@ -1,42 +1,10 @@
 /**
- * The shared HTTP interceptor. [dev-toolbar/runtime]
- *
- * `fetch` and `XMLHttpRequest` are global, singular and shared with the host
- * app, so *who* patches them is a package-wide question rather than one
- * extension's business. This is the one wrapper, and everything that wants to
- * observe requests attaches a `NetworkSink` to it — `/ext/metrics`' network
- * collector is simply the first caller.
- *
- * Method and URL are handed to the sink **raw**. Redaction is the sink's job
- * (`/ext/metrics` runs every URL through `redactUrl()` on the way into its ring
- * buffer): a sink that filters on the real URL cannot do so against a masked
- * one. Request headers and bodies are never read; the one response header read
- * is `content-length`, for the byte count a sink reports, and it is read on
- * both paths (`response.headers.get` for `fetch`, `getResponseHeader` for XHR).
- * No body is read, cloned or buffered anywhere.
- *
- * One patch, many recorders.
- *
- * Patch state is module-level, so the usual dual-package hazard applies: a
- * page loading both `dist/runtime.js` and `dist/runtime.cjs` gets two
- * `fetchPatch` copies, each installing its own wrapper. Both still record
- * correctly (they stack rather than conflict), but the app pays for two
- * wrappers, and detaching them inner-first strands the inner one on
- * `globalThis.fetch`: sink-less, so it records nothing, but still forwarding
- * every call, chaining a `.then()` and reading `content-length`. One is
- * stranded per attach/detach cycle, so the chain deepens as long as the page
- * cycles recorders, and deep enough overflows the stack. Resolve the package
- * to one format to avoid all of it. This is also why
- * `/ext/metrics` value-imports this module through `@nejcm/dev-toolbar/runtime`
- * rather than relatively: the CJS build does not code-split, so a relative
- * import would inline a second copy of this state into `dist/ext/metrics.cjs`
- * and a consumer holding both would have two wrappers by construction.
- *
- * The wrapper is installed once, globally, and feeds a set of sinks. It's
- * removed when the last sink leaves, and never removed if something has
- * patched on top of it since (refusing to patch when it saw its own flag on
- * `fetch` would instead make the first of two live collectors own the
- * wrapper while every later one silently records nothing).
+ * The shared HTTP interceptor. [dev-toolbar/runtime] One wrapper, many sinks —
+ * `fetch`/`XMLHttpRequest` are global and shared with the host app, so who
+ * patches them is a package-wide question. Method/URL reach a sink raw;
+ * redaction is the sink's job. Full contract, including the dual-package
+ * hazard and why `/ext/metrics` value-imports this module rather than
+ * relatively, is in docs/runtime.md.
  */
 
 /** How a completed request is reported back to a sink. */

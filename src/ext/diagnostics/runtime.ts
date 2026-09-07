@@ -82,14 +82,8 @@ export interface DiagnosticsRuntimeOptions extends ResponsivenessOptions {
   /** Long tasks listed per snapshot. Default `5`. */
   recentSize?: number;
   /**
-   * The console and error tail (`plans/ecosystem-extensions.md` § 1B): window
-   * errors, unhandled rejections and `console.error`/`console.warn`, grouped
-   * into a bounded tail and folded into the snapshot.
-   *
-   * On by default, because a bug report that cannot say what was already on
-   * fire is the reason this extension exists. `false` turns the whole thing
-   * off — nothing is patched, no listener is added — and each source has its
-   * own switch. `console.log` is never patched and has no option.
+   * The console and error tail (`plans/ecosystem-extensions.md` § 1B). On by
+   * default; `false` opts out entirely — see `src/ext/diagnostics/console.ts`.
    */
   console?: ConsoleTailOptions | false;
 }
@@ -299,11 +293,8 @@ export function createDiagnosticsRuntime(
   const mask = redactOptions?.mask ?? REDACTED;
 
   const monitor = createResponsivenessMonitor(options);
-  /**
-   * Built here, not in `start(api)`: the factory runs before the toolbar
-   * renders, and `report()` has to answer (`"pending"`) for a snapshot
-   * captured before the extension was ever started.
-   */
+  // Built here, not in `start(api)`: `report()` must answer "pending" for a
+  // snapshot captured before the extension was ever started.
   const tail = createConsoleTail(options.console, {
     redactOptions,
     now: options.now ?? now,
@@ -683,13 +674,9 @@ export function createDiagnosticsRuntime(
     // The store's default clock is unguarded performance.now(); handing it
     // the guarded `now` keeps a failed capture's publish step fail-closed too.
     now,
-    // The store's default `onError` logs with `console.error`, which the tail
-    // captures — so a throwing subscriber turns one log into a publish that
-    // logs that provokes a publish. Guarding `store.set()` alone was not
-    // enough: the throttle's *trailing* edge notifies from a timer, long
-    // after that guard is down (measured: two logs 10 ms apart produced five
-    // notifications and seven captured errors over ~450 ms). The report is
-    // the last thing in the loop, so the guard belongs around it.
+    // Regression: guarding `store.set()` alone missed the throttle's trailing
+    // edge, which notifies from a timer after that guard is down — measured
+    // at five notifications and seven captured errors from two logs.
     onError: (error) => {
       whilePublishing(() => {
         // eslint-disable-next-line no-console
@@ -698,16 +685,9 @@ export function createDiagnosticsRuntime(
     },
   });
 
-  /**
-   * The chip's live counters, published **off the current task**.
-   *
-   * React itself reports its dev-mode warnings through `console.error` *during
-   * render*, so a synchronous `store.set()` here would write to an external
-   * store mid-render — React's "cannot update a component while rendering a
-   * different component" warning, caused by the toolbar, in a build the
-   * consumer is trying to debug. A microtask lands after the render that
-   * logged, and the throttle coalesces a burst into one publish anyway.
-   */
+  // Published off the current task: React reports its own dev warnings
+  // through `console.error` during render, and a synchronous `store.set()`
+  // here would trigger React's "update while rendering" warning right back.
   let countsPending = false;
   /** False before `start()` and after disposal — see the `write` guard. */
   let live = false;
@@ -815,11 +795,8 @@ export function createDiagnosticsRuntime(
         // The ids alone. `reason` is a sentence per omission and belongs in
         // the snapshot the commands hand over, not in every roster read.
         omissions: (snapshot?.omissions ?? []).map((omission) => omission.id),
-        // Live, and counted the same way the chip counts: an agent reading the
-        // roster learns that something is on fire without opening a panel or
-        // taking a snapshot first. The messages themselves stay in the
-        // snapshot and in `<id>.console.export` — a roster read is not the
-        // place for redacted foreign text.
+        // Counts only, same as the chip — messages stay in the snapshot and
+        // `<id>.console.export`; a roster read is not for redacted foreign text.
         console: (() => {
           const report = safeTail(0);
           return {

@@ -5,20 +5,12 @@ import { ReactQueryDevtoolsPanel } from "@tanstack/react-query-devtools";
 import { embed } from "@nejcm/dev-toolbar/kit";
 
 /**
- * A real third-party devtool on the bar, through the recipe in docs/embedding.md.
- *
- * TanStack Query's devtools panel is the canonical case: it is somebody else's
- * UI, it brings its own stylesheet (injected into `document.head` by the
- * devtools themselves — the toolbar neither scopes nor resets it), and it
- * wants a definite height. `embed()` supplies the chip, hands the panel height
- * through, mounts nothing until the chip is first clicked, and keeps the panel
- * alive across closes so the devtools' own UI state (the selected query, the
- * filter) survives. Everything else is core's: the trigger, the single-panel
- * rule, and the error boundary around the slot.
- *
- * The package never names `@tanstack/*`: both libraries are devDependencies of
- * this playground only, and the `QueryClient` is injected — shape A from
- * plans/ecosystem-extensions.md.
+ * A real third-party devtool on the bar, through the recipe in
+ * docs/embedding.md. TanStack Query's devtools panel brings its own
+ * stylesheet and wants a definite height; `embed()` supplies the chip and
+ * height, and keeps the panel mounted across closes so its own UI state
+ * survives. The package never names `@tanstack/*` — both are devDependencies
+ * of this playground only, with the `QueryClient` injected.
  */
 export const queryClient = new QueryClient({
   defaultOptions: { queries: { staleTime: 5_000, retry: false } },

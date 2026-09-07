@@ -30,12 +30,8 @@ const CORE_PREFIX = "[dev-toolbar] ";
 /** Only ever present in a `src/runtime/*` or `src/ext/*` module. */
 const RUNTIME_MARKER = "[dev-toolbar/runtime]";
 
-/**
- * The shared `fetch`/`XMLHttpRequest` interceptor's own console message. Unique
- * to `src/runtime/network.ts`, which makes it a marker for *that module's
- * bytes* — used below to prove `/ext/metrics` links against it rather than
- * carrying a second copy of its patch state.
- */
+// Unique to src/runtime/network.ts — a marker for that module's bytes, used
+// below to prove /ext/metrics links against it rather than a second copy.
 const INTERCEPTOR_MESSAGE = "[dev-toolbar/runtime] a network recorder threw";
 const EXT_MARKERS = new Set(extensionRoster().onDisk.map((name) => `[dev-toolbar/ext/${name}]`));
 const EXT_MARKER_ORDER = [
@@ -511,13 +507,8 @@ if (!built && mustBeBuilt) {
       expect(esm).not.toContain("createContext");
     });
 
-    /**
-     * The interceptor's patch state is module-level, so a relative value import
-     * would give `/ext/metrics` a second copy of it and two wrappers over one
-     * `fetch`. Vitest aliases the published specifier onto `src/`, so only the
-     * built bytes can tell the two apart, and the two formats have to be checked
-     * differently — hence two tests, each failing on its own evidence.
-     */
+    // Vitest aliases the published specifier onto `src/`, so only the built
+    // bytes can tell a relative import from a value one — hence two tests.
     it("keeps the interceptor's bytes out of dist/ext/metrics.cjs, which cannot split", () => {
       const cjs = readFileSync(`${root}dist/ext/metrics.cjs`, "utf8");
       expect(cjs).toContain('require("@nejcm/dev-toolbar/runtime")');

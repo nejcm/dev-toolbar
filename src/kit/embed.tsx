@@ -1,22 +1,10 @@
 /**
  * `embed()` — the frame around a third-party devtool panel. [dev-toolbar/kit]
- *
- * Everything an embedded tool needs from the toolbar is already public: a
- * `{ id, label, panel }` object mounts one, core supplies the trigger, the
- * single-active-panel rule, `keepMounted`, and one error boundary per slot
- * (`src/core/ExtensionBoundary.tsx`). This helper adds none of that. It covers
- * the four things that are fiddly rather than hard — a native-looking chip, the
- * panel `height` handed through with a floor, the embedded `render()` left
- * uncalled until the panel first opens, and `keepMounted` as an option — and it
- * deliberately does **not** scope, reset or restyle the embedded subtree. The
- * frame is a bare `<div>` carrying `data-dtb-part` and `data-dtb-embed`; the
- * second is core's opt-out (`src/styles.css`), which stops every element-level
- * default core would otherwise apply inside a panel — box-sizing, the button
- * face, field geometry, the margin resets, the focus ring — at the frame. The
- * one sheet the helper ensures is the kit's, whose rules are keyed on
- * `data-dtb-kind` attributes the embedded tool never carries. What still
- * reaches the tool is inheritance alone — font, size, colour — as from any
- * parent. `docs/embedding.md` is the recipe.
+ * Core supplies the trigger, single-panel rule and error boundary; this adds
+ * only the fiddly parts — a native-looking chip, panel height, deferred
+ * `render()`, `keepMounted` — and deliberately does not scope, reset or
+ * restyle the embedded subtree (the frame carries `data-dtb-embed`, core's
+ * opt-out). See docs/embedding.md for the recipe and the full rationale.
  */
 import { useEffect } from "react";
 import type { CSSProperties, ReactNode } from "react";
@@ -33,12 +21,8 @@ import { ensureKitStyles } from "./styles";
 /** The frame's default `min-height`, in pixels. */
 const DEFAULT_MIN_HEIGHT = 240;
 
-/**
- * The contract version the built extension states. A literal, not core's
- * `CONTRACT_VERSION`: the kit never value-imports core (the boundary suite
- * enforces it), so `src/kit/__tests__/embed.test.tsx` asserts the two are
- * equal instead, and a core bump fails there rather than shipping stale.
- */
+// Literal, not core's `CONTRACT_VERSION` — the kit never value-imports core
+// (boundary suite enforces it); embed.test.tsx asserts the two stay equal.
 const TARGET_CONTRACT_VERSION = 2;
 
 export interface EmbedOptions {

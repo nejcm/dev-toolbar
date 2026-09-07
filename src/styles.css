@@ -103,16 +103,10 @@
     z-index: var(--dtb-z-index);
   }
 
-  /* Every element-level default below — this box-sizing, the margin resets,
-     the focus ring, the button face, the field geometry — stops at a subtree
-     marked data-dtb-embed. That attribute means "somebody else's UI": a
-     third-party devtool panel hosted through the recipe in docs/embedding.md
-     (the kit's embed() frame carries it). Such a tool brings its own CSS and
-     must arrive with the UA's defaults, exactly as it would anywhere else on
-     the page, not with ours. The guard is a chained :where(:not(…)) so it
-     adds no specificity: each rule keeps the weight it had, and a part rule
-     still outranks it. Inheritance is untouched on purpose — the frame's
-     font, size and colour reach the tool as any parent's would. */
+  /* Every element-level default below stops at a data-dtb-embed subtree — a
+     third-party devtool panel (docs/embedding.md) that must get the UA's
+     defaults, not ours. The chained :where(:not(…)) adds no specificity, so
+     every rule keeps the weight it had. */
   [data-dev-toolbar],
   [data-dev-toolbar] :where(:not([data-dtb-embed] *)),
   [data-dev-toolbar] :where(:not([data-dtb-embed] *))::before,

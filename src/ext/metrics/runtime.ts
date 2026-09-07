@@ -35,15 +35,9 @@ export interface MetricsRuntime {
   diagnostics(): unknown;
   /**
    * The redacted request tail, for `network.export` and for a bug report.
-   *
-   * Rebuilds and publishes first, then hands back **that snapshot's own
-   * `requests` array** rather than mapping the collector a second time: after
-   * the flush it is the identical object `store.getSnapshot()` holds, so what
-   * an agent reads and what the panel paints cannot disagree about redaction,
-   * ordering or shape. Two mappings would be two chances to redact
-   * differently; there is one. A `limit` short enough to bite returns a slice
-   * of that array — the same entry objects, fewer of them — and `retained` and
-   * `truncated` say so.
+   * Returns the same `requests` array `store.getSnapshot()` holds, not a
+   * second mapping, so an agent and the panel can never disagree about
+   * redaction, ordering or shape.
    */
   exportRequests(limit?: number): NetworkExport;
   /** Rebuilds and publishes now. Used by tests and by the panel's Reset. */

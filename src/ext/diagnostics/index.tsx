@@ -121,15 +121,10 @@ export function diagnostics(options: DiagnosticsOptions = {}): DevToolbarExtensi
   // render, before any effect fires, and a persisted open panel needs it then.
   const runtime = createDiagnosticsRuntime({ ...runtimeOptions, id });
 
-  /**
-   * The console commands (`plans/ecosystem-extensions.md` § 1B), contributed
-   * only when the tail is actually capturing something — the same rule
-   * `/ext/metrics` applies to its `network.*` commands: a command that is
-   * always listed and can only ever answer "turned off" is worse in `⌘K`, and
-   * worse in an agent's command list, than an absent one. `diagnostics()`
-   * still reports the status either way, so nothing becomes unknowable by
-   * being unlisted.
-   */
+  // Contributed only while the tail is capturing — same rule as /ext/metrics'
+  // `network.*` commands: an always-listed command that can only answer
+  // "turned off" is worse than an absent one; `diagnostics()` still reports
+  // the status either way.
   const consoleCommands: AnyToolbarCommand[] =
     runtime.tail(0).status === "disabled"
       ? []
