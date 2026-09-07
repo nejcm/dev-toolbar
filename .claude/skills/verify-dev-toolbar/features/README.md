@@ -131,6 +131,12 @@ actually returns as a finding about the recipe, and fix it here.
   filter, run, `Escape`), environment redaction (all four secrets masked, no
   leak anywhere in the snapshot), and overlays (on via `⌘K`, stacking below the
   bar, click-through).
+- **Driven since, against `dist/` built 2026-09-07:** the whole console tail
+  in [diagnostics.md](./diagnostics.md) — all four watched sources, grouping,
+  `console.log` moving nothing, `diagnostics.console.export` (including its
+  `limit` and the rejection of a non-numeric one) and `.clear`, the chip badge
+  and its attributes read through the open `⋮`, the three-way credential grep,
+  and the captured snapshot's `console` section.
 - **Not driven — verify before reporting:** the flags text/number editors and
   their `rejected` state, every `flags.set` and `theme-editor.setToken` step
   (contract v2's input-carrying commands — written from the source and the
@@ -171,12 +177,17 @@ handles, required state, calls and observable proof.
   playground's context that must never reach the screen or the clipboard.
 - [Overlays](./overlays.md) — drawing over the page, never over the toolbar,
   and passing clicks through.
+- [The console error tail](./diagnostics.md) — the four watched sources,
+  grouping, `console.log` staying unpatched, redaction on the way in, the two
+  console commands, and the chip badge (which needs the `⋮` menu open at
+  1280×800 before it exists).
 
 Not yet mapped, and therefore not yet verified: `theme-editor` (token editing,
 reserved `--dtb-*` names refused, `?dtb-theme=reset`, the four export formats),
-`metrics` (the `LoadControls` buttons drive it), `diagnostics` (snapshot
-capture and download), and the error-isolation chip the `boom` extension
-raises. Add them here before claiming them. All three extensions now publish
+`metrics` (the `LoadControls` buttons drive it), `diagnostics`' **snapshot**
+half (capture, the format buttons, copy and download — its console tail is
+mapped in [diagnostics.md](./diagnostics.md)), and the error-isolation chip the
+`boom` extension raises. Add them here before claiming them. All three extensions now publish
 state through the bridge — `ext("theme-editor").overrides` (edited tokens and
 their values), `ext("metrics").metrics` (per metric: numeric `value`, `unit`,
 `severity`, `status`), `ext("diagnostics")` (`captured`, `revision`,
@@ -197,17 +208,20 @@ stops matching in exactly the states worth verifying. Map them with those
 names, not the resting ones.
 
 The diagnostics chip has a third state on top of those: the console tail's
-badge, `[data-dtb-part="diag-errors"]` inside the chip, carrying the combined
-count with `data-dtb-errors` / `data-dtb-warnings` beside it, and the
-`aria-label` growing to `Diagnostics, 1 error, 1 warning`. The playground's
-**Drive the console tail** card drives every source of it —
-`[data-testid="console-error"]`, `console-warn`, `console-repeat`,
-`console-throw`, `console-reject`, and `console-log`, the last of which must
-move nothing, because `console.log` is never patched. The tail itself is
-readable without pixels through `runCommand("diagnostics.console.export")`
-(and cleared with `diagnostics.console.clear`); `console-error` deliberately
-logs a `sessionToken` and a URL carrying an `access_token`, and neither may
-appear in that command's result or in a captured snapshot. Also unmapped, and
-worth an assertion when diagnostics is mapped: the `boom` extension's crash is
-logged by core's `ExtensionBoundary` through `console.error`, so it appears in
-the tail exactly once.
+badge, `[data-dtb-part="diag-errors"]` inside the chip. That state, its
+`data-dtb-errors` / `data-dtb-warnings` / `data-dtb-tone` attributes, the
+`aria-label` that grows to `Diagnostics, 1 error, 1 warning`, the playground's
+**Drive the console tail** card and the two `diagnostics.console.*` commands
+are all mapped and driven in [diagnostics.md](./diagnostics.md). Read its
+badge recipe before asserting anything about the badge: at 1280×800
+`diagnostics` is collapsed, so the badge is **not in the document** until the
+`⋮` menu is open, and the counts live at
+`read().diagnostics.find(d => d.id === "diagnostics").data.console.{errors,
+warnings}` — there is no top-level `errors` and no `extensions` map. Reading
+either wrong path against a collapsed chip is what produced one "the badge is
+broken" report that was wrong on both counts. One correction to the note this
+paragraph used to carry: the `boom` extension's crash appears in the tail as
+**two** entries, not one — core's `ExtensionBoundary` logs it and React logs
+its own "The above error occurred in the `<Slot>` component" beside it, so
+`console.errors` is 2 at baseline and climbs by two more whenever the overflow
+menu remounts `boom`.

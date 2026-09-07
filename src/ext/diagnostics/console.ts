@@ -89,12 +89,12 @@
  * `"the token expired"` into `"the token [redacted]"` on the way.
  *
  * A stack header leaks for one reason and it is not a matching problem: V8
- * repeats the message above the first frame, so the credential appears there
- * *as part of a longer string*. Both forms of that message are already
- * computed — the raw one read by `readErrorLike()`, the masked one by
- * `prepareError()` — so `maskStack()` substitutes the second for the first and
- * then masks the whole value. No scanner, no tokeniser, no second notion of a
- * credential. See `maskStack()`.
+ * repeats `\`${name}: ${message}\`` above the first frame, so a credential in
+ * either half appears there *as part of a longer string*. Both forms of both
+ * halves are already computed — the raw ones read by `readErrorLike()`, the
+ * masked ones by `prepareError()` — so `maskStack()` substitutes the masked
+ * for the raw and then masks the whole value. No scanner, no tokeniser, no
+ * second notion of a credential. See `maskStack()`.
  *
  * Three rules the leaks all came from, and all three are load-bearing:
  *
@@ -113,6 +113,21 @@
  *   short of — an object deeper than it descends — is `[truncated]`, never
  *   passed through verbatim. Every leak here began as something kept because
  *   it "looked harmless".
+ *
+ * ## Swapping `console` out from under a running tail
+ *
+ * `start()` patches the console that is live at that moment and `watching` is
+ * the answer from then. A page that replaces `globalThis.console` *after* a
+ * tail started therefore leaves the new object unpatched while the tail still
+ * reports the sources it attached to — executed: a tail started on A, then
+ * `globalThis.console = B`, captures nothing from `B.error` and still reports
+ * `capturing` with `["console.error"]`. This is a different thing from the
+ * ownership bug it looks like (returning to a console we are still patching,
+ * which is keyed by object identity and handled — see `patches`): closing it
+ * would mean polling the global, or re-verifying on every `report()`, and a
+ * tail that silently re-patched whatever object appeared would be patching
+ * consoles nobody asked it to. The wrapper on A stays restorable by identity,
+ * so nothing is stranded; the claim is stale, and that is the accepted cost.
  *
  * What still escapes, pinned by tests in `__tests__/console.test.tsx`: **a
  * credential written into prose**, which now explicitly includes an `Error`
@@ -199,13 +214,8 @@ type PatchedMethod = "error" | "warn";
 type ConsoleListener = (args: readonly unknown[]) => void;
 
 /**
- * One live wrapper, shared by every tail in this module copy.
- *
- * `target` is part of it because the registry is keyed by *method name* and a
- * page can change `globalThis.console` underneath it (a test rig stubbing it,
- * a hardened host swapping it). An entry installed on a console that is no
- * longer the live one describes a wrapper nobody can reach; reusing it made
- * every later tail inherit its `verified: false` and silently watch nothing.
+ * One live wrapper, shared by every tail in this module copy that patches the
+ * same method **of the same console object**.
  *
  * `owners` counts tails, `listeners` counts the ones actually recording. They
  * differ for an unverified patch, which is registered — so a second tail from
@@ -213,7 +223,6 @@ type ConsoleListener = (args: readonly unknown[]) => void;
  * claims nothing.
  */
 interface Installed {
-  target: ConsoleLike;
   owners: number;
   verified: boolean;
   /** Re-runs the read-back. A getter that threw once may answer the second time. */
@@ -222,7 +231,23 @@ interface Installed {
   uninstall(): void;
 }
 
-const patches: Record<PatchedMethod, Installed | null> = { error: null, warn: null };
+/**
+ * Registrations, owned by *console identity* and then by method.
+ *
+ * A page can change `globalThis.console` underneath us (a test rig stubbing
+ * it, a hardened host swapping it), and a registration made on one console
+ * says nothing about another: keeping a single entry per method name and
+ * comparing its target made every later tail on a *third* console inherit the
+ * wrong answer. Keying by the object instead is what makes "is this method
+ * already ours?" a question about the object in front of us — a page that
+ * returns to a console we are still patching finds the wrapper that is there
+ * and shares it, instead of wrapping our own wrapper (which the shared `depth`
+ * guard then silences, and which teardown cannot unwind in either order).
+ *
+ * A `WeakMap`, so a console the page has dropped is collectable with its
+ * registrations.
+ */
+const patches = new WeakMap<ConsoleLike, Map<PatchedMethod, Installed>>();
 
 /**
  * Shared by every patched method. Anything logged while a listener runs is
@@ -349,24 +374,24 @@ interface Attachment {
 function attach(method: PatchedMethod, listener: ConsoleListener): Attachment | null {
   const target = consoleObject();
   if (target === null) return null;
-  let current = patches[method];
-  // A registration made on a console that is no longer the live object says
-  // nothing about this one. It keeps its own owners and its own identity-
-  // guarded teardown; it just stops being the entry new tails share.
-  if (current !== null && current.target !== target) current = null;
+  const known = patches.get(target);
+  // Created eagerly, published only once something is actually registered in
+  // it — a method we could not patch leaves no trace behind.
+  const methods = known ?? new Map<PatchedMethod, Installed>();
+  let current = methods.get(method) ?? null;
   if (current === null) {
     const listeners = new Set<ConsoleListener>();
     const patch = install(target, method, listeners);
     if (patch === null) return null;
     current = {
-      target,
       listeners,
       uninstall: patch.restore,
       verify: patch.verify,
       owners: 0,
       verified: patch.verified,
     };
-    patches[method] = current;
+    if (known === undefined) patches.set(target, methods);
+    methods.set(method, current);
   } else if (!current.verified) {
     // Ask again rather than install a second wrapper over our own. The whole
     // reason an unverified patch is registered at all is that read-back can
@@ -388,7 +413,9 @@ function attach(method: PatchedMethod, listener: ConsoleListener): Attachment | 
       installed.listeners.delete(listener);
       if (installed.owners > 0) return;
       installed.uninstall();
-      if (patches[method] === installed) patches[method] = null;
+      // Only if it is still the registration for this console's method: a
+      // stale teardown may not evict a live one.
+      if (methods.get(method) === installed) methods.delete(method);
     },
   };
 }
@@ -452,7 +479,14 @@ interface ErrorSnapshot {
   stack: string | null;
 }
 
+/**
+ * The snapshot plus what masking made of the two halves V8 writes above the
+ * first frame. Both are needed twice — for the line the tail shows and for the
+ * substitution `maskStack()` makes — and computing either one a second time
+ * would be a second answer to the same question.
+ */
 interface MaskedErrorSnapshot extends ErrorSnapshot {
+  maskedName: string;
   maskedMessage: string;
 }
 
@@ -558,23 +592,33 @@ export function createConsoleTail(
   };
 
   /**
-   * Classify once, and mask the message once, here. The masked message is
-   * carried on the snapshot because two places need exactly it: the line
-   * `describeErrorLike()` builds, and the substitution `maskStack()` makes.
-   * Masking it twice would be two answers to the same question.
+   * Classify once, and mask both halves of the header once, here. `name` and
+   * `message` are each carried in masked form because two places need exactly
+   * them: the line `describeErrorLike()` builds, and the substitution
+   * `maskStack()` makes. Masking either twice would be two answers to the same
+   * question.
    */
   const prepareError = (value: unknown): MaskedErrorSnapshot | null => {
     const error = readErrorLike(value);
-    return error === null ? null : { ...error, maskedMessage: maskString(error.message ?? "") };
+    if (error === null) return null;
+    return {
+      ...error,
+      maskedName: error.name === null ? "" : maskString(error.name),
+      maskedMessage: maskString(error.message ?? ""),
+    };
   };
 
   /**
-   * The whole stack, nothing classified — but with the message it repeats
-   * swapped for the masked message first.
+   * The whole stack, nothing classified — but with the header it repeats
+   * swapped for the masked form of that header first.
    *
    * The stack leaks for one specific reason: V8 writes `\`${name}: ${message}\``
    * above the first frame, and `redact()`'s value matching is anchored, so
    * `Bearer sk-live-…` is a credential and `Error: Bearer sk-live-…` is not.
+   * **Both halves of that header carry the hazard** — a credential assigned to
+   * `Error.name` is masked in the line the tail shows and used to survive
+   * verbatim in the stack beside it, which is a mask that lies about the value
+   * next to it.
    * Two earlier shapes tried to find that header and both leaked — dropping
    * lines above the first *recognised* frame threw away frameless stacks and
    * every stack from an unfamiliar engine, and `^\S*@\S*:\d+` accepted the
@@ -582,32 +626,38 @@ export function createConsoleTail(
    * line on whitespace and re-asked `redact()` about the pieces, which is a
    * second notion of "credential" and leaked twice more.
    *
-   * Nothing is detected here. The raw message and its masked form are both
-   * already known, so the raw one is replaced with the masked one wherever it
-   * appears — that is the header, by construction, with no test for what a
-   * header looks like — and the result then goes through `maskString` like any
-   * other foreign string. Every line that exists is kept: a masked header
-   * costs nothing, and dropping lines by shape is what leaked in the first
-   * place.
+   * Nothing is detected here. The raw `name` and `message` and their masked
+   * forms are all already known, so each raw one is replaced with its masked
+   * one wherever it appears — that is the header, by construction, with no
+   * test for what a header looks like — and the result then goes through
+   * `maskString` like any other foreign string. A half masking left unchanged
+   * is substituted with itself and therefore skipped, so an ordinary `name`
+   * like `TypeError` rewrites nothing. Every line that exists is kept: a
+   * masked header costs nothing, and dropping lines by shape is what leaked in
+   * the first place.
    *
    * A message this module could not mask (prose carrying a secret) is
    * substituted with itself, unchanged — the documented limit, and the reason
    * the panel shows you the text before you copy it.
+   *
+   * Takes the snapshot rather than loose strings: every value it substitutes
+   * has to be the one read and masked once, and a parameter list is an
+   * invitation to pass a freshly-read or freshly-masked one.
    */
-  const maskStack = (
-    value: string | null,
-    rawMessage: string | null,
-    maskedMessage: string,
-  ): string | null => {
-    if (value === null || value === "" || maxStackChars === 0) return null;
+  const maskStack = (error: MaskedErrorSnapshot): string | null => {
+    const { stack, name, maskedName, message, maskedMessage } = error;
+    if (stack === null || stack === "" || maxStackChars === 0) return null;
     try {
       // `replaceAll` with a *callback*: a custom mask containing `$` would
       // otherwise be read as a substitution pattern (`$&`, `$1`) and rewrite
       // itself out of the string.
-      const substituted =
-        rawMessage !== null && rawMessage !== "" && rawMessage !== maskedMessage
-          ? value.replaceAll(rawMessage, () => maskedMessage)
-          : value;
+      let substituted = stack;
+      if (name !== null && name !== "" && name !== maskedName) {
+        substituted = substituted.replaceAll(name, () => maskedName);
+      }
+      if (message !== null && message !== "" && message !== maskedMessage) {
+        substituted = substituted.replaceAll(message, () => maskedMessage);
+      }
       return cap(maskString(substituted), maxStackChars);
     } catch {
       return null;
@@ -675,7 +725,8 @@ export function createConsoleTail(
 
   /** Name and message masked separately, then joined — never the other way round. */
   const describeErrorLike = (error: MaskedErrorSnapshot): string => {
-    const name = error.name === null ? "" : maskString(error.name);
+    // Both already masked, by `prepareError`, once — see `MaskedErrorSnapshot`.
+    const name = error.maskedName;
     const message = error.maskedMessage;
     if (name === "" && message === "") return "an error with no message";
     if (name === "") return message;
@@ -810,11 +861,7 @@ export function createConsoleTail(
     let stack: string | null = null;
     for (const argument of prepared) {
       if (argument.error !== null) {
-        stack = maskStack(
-          argument.error.stack,
-          argument.error.message,
-          argument.error.maskedMessage,
-        );
+        stack = maskStack(argument.error);
         break;
       }
     }
@@ -888,7 +935,7 @@ export function createConsoleTail(
       "window.error",
       "error",
       cap(parts.join(" "), maxMessageChars),
-      error === null ? null : maskStack(error.stack, error.message, error.maskedMessage),
+      error === null ? null : maskStack(error),
     );
   };
 
@@ -906,7 +953,7 @@ export function createConsoleTail(
       "error",
       // Our own prefix, joined *after* the foreign half was masked.
       cap(`Unhandled rejection: ${described}`, maxMessageChars),
-      error === null ? null : maskStack(error.stack, error.message, error.maskedMessage),
+      error === null ? null : maskStack(error),
     );
   };
 
@@ -1034,6 +1081,19 @@ export function createConsoleTail(
 const positive = (value: number | undefined, fallback: number): number =>
   value === undefined || !Number.isFinite(value) || value <= 0 ? fallback : Math.floor(value);
 
+/**
+ * Truncation, and it may cut anywhere — including through a `[redacted]`
+ * marker. Executed: a `maxMessageChars` of 12 over `Bearer sk-live-…` yields
+ * `Bearer [reda… (5 more characters)`.
+ *
+ * That is accepted rather than fixed, deliberately. Slicing only ever
+ * *removes* trailing characters, so a cut mask cannot reveal anything: the
+ * secret was already replaced before `cap()` saw the string, and a shortened
+ * marker is a cosmetic blemish on a caller who asked for a twelve-character
+ * message. Teaching `cap()` to avoid cutting a mask would give this module a
+ * second notion of what a mask looks like — the exact shape of the three
+ * classifiers that leaked here — for a caller nobody has.
+ */
 const cap = (text: string, max: number): string =>
   text.length <= max ? text : `${text.slice(0, max)}… (${text.length - max} more characters)`;
 

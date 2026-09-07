@@ -910,6 +910,20 @@ describe("credentials the masking used to let through", () => {
     );
   });
 
+  it("masks a credential-shaped Error name in the header too, not only in the message", () => {
+    // The other half of the header. V8 writes `${name}: ${message}` above the
+    // first frame; only the *message* half was substituted, so an `Error`
+    // whose name carried the credential and whose message was ordinary came
+    // out masked in the line the tail shows and verbatim in the stack right
+    // beside it — a marker claiming a value two lines up is handled.
+    const error = new Error("ordinary message");
+    error.name = "Bearer LEAK_SECRET_123";
+    const { json, report } = captured(() => void console.error(error));
+    expect(json).not.toContain("LEAK_SECRET_123");
+    expect(report.entries[0]?.message).toBe(`Bearer ${REDACTED}: ordinary message`);
+    expect(report.entries[0]?.stack).toContain(`Bearer ${REDACTED}: ordinary message`);
+  });
+
   it("masks a credential-shaped Error name nested deeper than the leaf walk goes", () => {
     // `redactOptions.maxDepth: 24` keeps the object; the leaf walk stops at 8
     // and used to hand back the rest of the branch untouched, so `name` went
@@ -1062,6 +1076,17 @@ describe("what reaches a pasted ticket", () => {
     expect(json).toContain("the token expired");
     expect(markdown).toContain("the token expired");
     expect(json).not.toContain(REDACTED);
+  });
+
+  it("masks a credential in the Error `name` through both renderers", () => {
+    // Executed off a real captured snapshot, because the stack is what the
+    // ticket carries: the name half of the header used to reach `renderJson`
+    // and `renderMarkdown` intact under a masked message.
+    bothMask(() => {
+      const error = new Error("ordinary message");
+      error.name = "Bearer LEAK_SECRET_123";
+      console.error(error);
+    });
   });
 
   it("cannot mask a credential embedded in prose — the documented limit", () => {
@@ -1225,6 +1250,54 @@ describe("installing over a hostile console", () => {
     expect(live).not.toBe(original);
     // The whole point: the console is the app's again, not a stranded wrapper.
     expect(afterStop).toBe(original);
+  });
+
+  it("shares the wrapper it already installed when the page returns to a console", () => {
+    // Registration used to be one entry per *method*, checked against the
+    // console it was made on. Start a tail on A, one on B, then a third on A:
+    // the entry named B, so the third tail installed a *second* wrapper on A
+    // — around the first tail's. The shared recursion guard then suppressed
+    // tail 1 while it still reported `capturing`, and neither stop order
+    // could give A its own method back. Ownership follows (console, method)
+    // now, so the third tail finds the wrapper that is there.
+    const seenByA: string[] = [];
+    const A = { error: (...args: unknown[]) => seenByA.push(args.join(" ")), warn() {}, log() {} };
+    const B = { error() {}, warn() {}, log() {} };
+    const originalA = A.error;
+    const originalB = B.error;
+    const options = { warn: false, windowErrors: false, rejections: false };
+
+    vi.stubGlobal("console", A);
+    const first = createConsoleTail(options);
+    first.start();
+    vi.stubGlobal("console", B);
+    const second = createConsoleTail(options);
+    second.start();
+    vi.stubGlobal("console", A);
+    const third = createConsoleTail(options);
+    third.start();
+
+    A.error("hello from A");
+    const firstReport = first.report();
+    const thirdReport = third.report();
+    vi.unstubAllGlobals();
+
+    // Oldest first: the tail that owns the wrapper keeps it installed.
+    first.stop();
+    const whileThirdOwnsIt = A.error;
+    third.stop();
+    const afterBothStopped = A.error;
+    second.stop();
+
+    expect(firstReport.status).toBe("capturing");
+    // Both tails on A record it, once each — one wrapper, two listeners.
+    expect(entriesOf(firstReport)).toEqual(["hello from A"]);
+    expect(entriesOf(thirdReport)).toEqual(["hello from A"]);
+    // And the app's own method still saw it exactly once.
+    expect(seenByA).toEqual(["hello from A"]);
+    expect(whileThirdOwnsIt).not.toBe(originalA);
+    expect(afterBothStopped).toBe(originalA);
+    expect(B.error).toBe(originalB);
   });
 
   it("patches again once `globalThis.console` is a different object", () => {
