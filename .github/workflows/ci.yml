@@ -136,6 +136,51 @@ jobs:
         run: bun run typecheck
         working-directory: examples/playground
 
+      # Read from the playground's manifest rather than hardcoded here, so a
+      # Dependabot bump of the exact `@playwright/test` pin keys a fresh cache
+      # on its own instead of restoring a browser build that no longer matches.
+      - name: Read the pinned Playwright version
+        id: playwright
+        run: echo "version=$(jq -r '.devDependencies["@playwright/test"]' package.json)" >> "$GITHUB_OUTPUT"
+        working-directory: examples/playground
+
+      # Playwright downloads Chromium to ~/.cache/ms-playwright and skips the
+      # download when the build it wants is already there, so a hit saves the
+      # ~150 MB fetch on every run. Same SHA and version as setup-job's cache.
+      - name: Cache Playwright's browser
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/ms-playwright
+          key: ${{ runner.os }}-playwright-${{ steps.playwright.outputs.version }}
+
+      # The browser half of the suite: the real shell and first-party
+      # extensions in a real Chromium, driven through the playground (see
+      # examples/playground/e2e/README.md). Needs the install above and the
+      # dist/ verify:static built. Not part of `bun run test`; vitest stays
+      # fast, and this is where layout, keys and reloads get proven.
+      #
+      # Runs even on a cache hit: `--with-deps` installs the system libraries
+      # Chromium links against, which live outside the cached directory, and
+      # the browser download itself is what Playwright skips when present.
+      - name: Install Playwright's Chromium
+        run: bunx playwright install --with-deps chromium
+        working-directory: examples/playground
+
+      - name: Browser tests
+        run: bun run test:e2e
+        working-directory: examples/playground
+
+      # Traces and screenshots are only written for failures, so this is
+      # empty on green and the one thing you want on red.
+      - name: Upload browser test evidence
+        if: ${{ failure() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: playwright-report
+          path: examples/playground/e2e-results/
+          retention-days: 14
+          if-no-files-found: ignore
+
       # `!cancelled()` rather than `always()`: useful on a failed
       # verify:static, but shouldn't block a cancellation.
       #

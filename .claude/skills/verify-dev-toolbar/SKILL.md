@@ -29,6 +29,27 @@ Secondary surfaces, out of scope for this skill: `bun run test:jest-consumer`
 (a real CommonJS consumer of `dist/`), `bun run check:package`, and
 `bun run size`. They are commands, not apps — run them directly.
 
+## Run the suite first
+
+Most of the feature map below is already encoded as Playwright specs in
+[`examples/playground/e2e/`](../../../examples/playground/e2e/README.md), one
+file per recipe. Before driving anything by hand:
+
+```bash
+bun run test:e2e     # repo root: builds dist/, starts its own Vite on :5274, runs Chromium
+```
+
+Green means the *specs' assertions* hold at 1280×800 over the current `src/` —
+the specs are organised by recipe, but each encodes a subset of its recipe's
+steps, not all of them (the `Mod`-exclusivity check and the top-position inset,
+for instance, are still manual). Read the spec before treating a step as
+covered; the feature map's *not driven* list is history, not a coverage map. A
+red test keeps its trace and screenshot under
+`examples/playground/e2e-results/`. Drive the browser by hand for what a spec
+does not assert, for pixels a reviewer wants to see, or to investigate a red
+test. A spec marked `test.fail(...)` is a known library bug kept visible on
+purpose — read its comment before reporting it as new.
+
 ## Launch
 
 The playground is the `playground` entry in [`.claude/launch.json`](../../launch.json).

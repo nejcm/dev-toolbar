@@ -47,8 +47,10 @@ Everything here is `read().shell` — `bar` (what is still in the regions) and
   the report what width that took, or treat this step as unrun.
 - **Narrow the window.** `resize_window` with `{"width": 520, "height": 800}`,
   then re-read until it settles. Read: `shell.overflow.present` is `true` and
-  `shell.bar` is down to `environment`, `cmds`, `flags`, `command-menu`,
-  `user`. The `⋮` button's accessible name is not published state — `find`
+  `shell.bar` is down to the highest-priority chips — `environment`, `cmds`,
+  `command-menu`, `user` (measured 2026-09-08; `flags` collapsed too once the
+  playground grew its TanStack chips, so assert on containment and order,
+  never on this exact list). The `⋮` button's accessible name is not published state — `find`
   role `button` name `More developer toolbar items` if you want to assert it.
 - **Collapse order.** The ids missing from `bar` are `agent`, `theme-editor`,
   `overlays`, `metrics`, `hydr`, `tw`, `boom`, `diagnostics` — everything below
@@ -60,7 +62,13 @@ Everything here is `read().shell` — `bar` (what is still in the regions) and
   there rather than trusting this list.
 - **Open the menu.** Click `[data-dtb-part="overflow-button"]`. Read:
   `shell.overflow.open` is `true` and `shell.overflow.items` lists those same
-  ids in bar order.
+  ids in bar order — ascending `order`, **not** priority (`metrics`, order 30,
+  comes before `kit-demo`, order 40, despite the lower priority); `agent` keeps
+  the default `order: 90` and so renders last. `items` is `[]` while the menu
+  is closed; read it only after opening. The rows are
+  `flex-shrink: 0`, so a menu taller than its 50vh cap scrolls rather than
+  letting a tall row (the metrics list) paint over its neighbours —
+  `e2e/overflow.spec.ts` guards this.
 - **A collapsed extension still works.** Click the `overlays` entry inside the
   menu (`[data-dtb-part="overflow-menu-item"][data-dtb-ext-id="overlays"] [data-dtb-part="trigger"]`)
   and drive it per [overlays.md](./overlays.md). The overlay turns on from

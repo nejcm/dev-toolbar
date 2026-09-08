@@ -22,3 +22,6 @@ TODO.md
 
 # Verification evidence from .claude/skills/verify-dev-toolbar.
 .verify-artifacts/
+
+# Playwright output from examples/playground (traces, screenshots, the HTML report).
+examples/playground/e2e-results/
