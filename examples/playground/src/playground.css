@@ -19,6 +19,14 @@
   --pg-card: #ffffff;
   --pg-brand: #5e6ad2;
   --pg-brand-contrast: #ffffff;
+  /* Link colour inside cards. The brand blue is 4.7:1 on the light card but only
+     3.7:1 on the dark one, so dark mode lightens it — otherwise every tile's
+     "Open tile" link is a `color-contrast` violation and the a11y card's fixture
+     stops being the only one. */
+  --pg-link: var(--pg-brand);
+  /* The flag list's override annotation, same story: 4.6:1 on the light card,
+     3.7:1 on the dark one. */
+  --pg-flag-note: #a1651f;
   --pg-radius: 10px;
   --pg-space: 16px;
   --pg-font-scale: 1;
@@ -50,6 +58,8 @@
     --pg-tile-accent: #1d2440;
     --pg-session-panel-bg: #171b2c;
     --pg-a11y-faint: #55585f;
+    --pg-link: #8d96f0;
+    --pg-flag-note: #d9954a;
   }
 }
 
@@ -67,6 +77,8 @@
   --pg-tile-accent: #1d2440;
   --pg-session-panel-bg: #171b2c;
   --pg-a11y-faint: #55585f;
+  --pg-link: #8d96f0;
+  --pg-flag-note: #d9954a;
 }
 
 * {
@@ -207,7 +219,7 @@ body {
 }
 
 .pg-card a {
-  color: var(--pg-brand);
+  color: var(--pg-link);
 }
 
 .pg-card h2 {
@@ -387,7 +399,7 @@ body {
 }
 
 .pg-flag-list em {
-  color: #a1651f;
+  color: var(--pg-flag-note);
 }
 
 /* -- Overlay demo -------------------------------------------------------- */
@@ -516,9 +528,10 @@ body {
 
 /*
  * A hard-coded `#b9b9b9` failed WCAG AA against the light card and comfortably
- * *passed* against the dark one, so in dark mode the page's third deliberate
- * violation quietly was not one and the scan came back with two. One value per
- * mode, both around 2.3:1 against their own card.
+ * *passed* against the dark one, so in dark mode the card's third deliberate
+ * violation quietly was not one and `color-contrast` was missing from the
+ * scan. One value per mode: 1.96:1 in light, 2.47:1 in dark, against their own
+ * card.
  *
  * Deliberately two flat hex values and not `color-mix(in srgb, ...)`, which is
  * the obvious way to write this: that computes to `color(srgb 0.39 0.4 0.42)`,

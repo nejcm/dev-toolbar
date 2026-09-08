@@ -484,8 +484,8 @@ const runtimeDiagnostics = diagnostics({
 
 /**
  * The token catalogue. Every name is a custom property `playground.css` actually declares and
- * consumes — edit `--pg-radius` and the cards round off, edit `--pg-brand` and tiles/links/buttons
- * follow. Four exist to exercise a rule rather than to be pretty:
+ * consumes — edit `--pg-radius` and the cards round off, edit `--pg-brand` and tiles, buttons and
+ * light-mode links follow (dark-mode links use `--pg-link`, a lighter tint that clears AA). Four exist to exercise a rule rather than to be pretty:
  * - `--dtb-accent`: the toolbar's own token, **refused** — writing it to `:root` would restyle
  *   the bar instead of the app, and the row says so rather than silently disappearing.
  * - `--pg-session-panel-bg`: normalises to a `redact()`-sensitive key but is a **colour**, so it
@@ -502,7 +502,7 @@ const PLAYGROUND_TOKENS: DesignTokenDefinition[] = [
     group: "Colour",
     type: "color",
     defaultValue: "#5e6ad2",
-    description: "Links, tile gradients, button focus.",
+    description: "Light-mode links, tile gradients, button focus.",
   },
   {
     name: "--pg-brand-contrast",

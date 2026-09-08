@@ -141,11 +141,20 @@ actually returns as a finding about the recipe, and fix it here.
   `limit` and the rejection of a non-numeric one) and `.clear`, the chip badge
   and its attributes read through the open `⋮`, the three-way credential grep,
   and the captured snapshot's `console` section.
-- **Not driven — verify before reporting:** every step in
+- **Driven 2026-09-08, against `dist/` built 2026-09-07T22:41Z:** the
+  [a11y.md](./a11y.md) baseline (`pending`, `scans: 0`) and scan steps — from
+  the top of the page and with the fixture scrolled into view, in both colour
+  modes, in the hidden Browser pane and in a visible headless Chromium driven
+  through `playwright-cli` — plus the toolbar-exclusion grep. That run is where
+  the `total: 4`/`total: 5` split and the `.pg-scroll` gotcha come from. The
+  animation card's `anim-fps` readout was driven the same way: `60 fps` in
+  *smooth* against `jank.ratio` 0.007, `42 fps` in *heavy* against
+  `jank.dropped` 65 of 299 (`severity: "bad"`), `—` when off.
+- **Not driven — verify before reporting:** the rest of
   [a11y.md](./a11y.md) (written against the source and its unit tests, which do
-  run the real `axe-core` against a jsdom document — the stacking, the
-  click-through and the removed-peer step have not been driven in a browser),
-  the flags text/number editors and
+  run the real `axe-core` against a jsdom document — the highlight box, its
+  stacking, the click-through, masking and the removed-peer step have not been
+  driven in a browser), the flags text/number editors and
   their `rejected` state, every `flags.set` and `theme-editor.setToken` step
   (contract v2's input-carrying commands — written from the source and the
   unit tests, never driven in a browser), the `⌘K`-skips-input assertion in
