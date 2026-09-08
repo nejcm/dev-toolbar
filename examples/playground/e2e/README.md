@@ -24,6 +24,16 @@ Chromium is installed once with `bunx playwright install chromium` (CI does
   never the `bun run dev` playground on `:5273`. A different port is a
   different `localStorage`, so the suite cannot disturb a toolbar someone is
   looking at, and each test's fresh browser context starts with an empty store.
+- **One suite per port.** Two runs on one machine collide: the second Vite
+  loses `--strictPort`, Playwright sees the URL answer anyway and drives the
+  first run's server, and both runs' pages report into the bridge's single
+  slot — `bridge-http` then fails with `connection.ambiguous: true` for its
+  whole poll. Give a concurrent run its own port with `DTB_E2E_PORT=5275`.
+- **A stale `dist/` fails the run.** `e2e/global-setup.ts` refuses to start
+  when `dist/` is missing or anything under `src/` (tests aside) is newer than
+  it, since the playground links `file:../..` and would prove the old build.
+  Rebuild, run root `bun run test:e2e`, or set `DTB_E2E_SKIP_DIST_CHECK=1`
+  for a deliberate run against an older build.
 - **State through the bridge, selectors for input.** `fixtures.ts` wraps
   `window.__DEV_TOOLBAR__.instances.playground`: `read()`, `ext(id)`,
   `run(id, input)`, `storage()`. Every state assertion goes through it. A

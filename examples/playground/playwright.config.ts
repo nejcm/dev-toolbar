@@ -15,11 +15,19 @@ import { defineConfig } from "@playwright/test";
  * not start holds. `dist/` must exist: `bun run test:e2e` at the repo root
  * builds first; CI has already built it by the time this runs.
  */
-const PORT = 5274;
+// Override with DTB_E2E_PORT when two suites must run on one machine (parallel
+// worktrees, an agent and a human): a second Vite loses `--strictPort`, but the
+// URL still answers from the first run's server, so Playwright proceeds against
+// it and both runs' pages report into the bridge's single slot. The symptom is
+// `connection.ambiguous: true` for the whole of bridge-http's poll.
+const PORT = Number(process.env.DTB_E2E_PORT ?? 5274);
 const isCI = !!process.env.CI;
 
 export default defineConfig({
   testDir: "./e2e",
+  // Fails the run when `src/` is newer than `dist/`, or `dist/` is missing —
+  // otherwise `bunx playwright test` here would silently prove the old build.
+  globalSetup: "./e2e/global-setup.ts",
   outputDir: "./e2e-results/output",
   fullyParallel: true,
   forbidOnly: isCI,

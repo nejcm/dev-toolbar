@@ -25,9 +25,13 @@ test("GET /state answers with the live snapshot once a page has checked in", asy
       { timeout: 10_000 },
     )
     .toBe("sole-reporter");
+  // The very first check-in can predate the shell's commit and say
+  // `mounted: false`; the next poll (500 ms) corrects it. Wait for that one.
+  await expect
+    .poll(async () => (await (await request.get("/__dev-toolbar/state")).json()).shell?.mounted)
+    .toBe(true);
   const state = await (await request.get("/__dev-toolbar/state")).json();
   expect(state.connection).toMatchObject({ connected: true, ambiguous: false });
-  expect(state.shell.mounted).toBe(true);
   expect(state.diagnostics.length).toBe((await toolbar.read()).diagnostics.length);
   expect(Object.keys(state.extensions)).toContain("flags");
 });
