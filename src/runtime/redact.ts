@@ -366,7 +366,11 @@ const TEXT_SCHEME = /\b(?=(bearer|basic|token)(\s+)(\S+))/gi;
 const TEXT_DIGEST = /\bdigest\s+(?=[a-z-]+=)/gi;
 const TEXT_JWT =
   /(?<![A-Za-z0-9_-])[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}(?![A-Za-z0-9_-])/g;
-const TEXT_URL = /[a-z][a-z0-9+.-]*:\/\/\S+/gi;
+// An absolute-URL substring inside free text (unanchored, unlike `ABSOLUTE_URL`).
+// Byte-identical to `URL_IN_TEXT` in `ext/metrics/collectors/network.ts`, which
+// explains the lookbehind (linear time) and the punctuation tail; keep them in
+// step until Phase 1 removes the copy there.
+const TEXT_URL = /(?<![A-Za-z0-9+.-])[A-Za-z][A-Za-z0-9+.-]*:\/\/[^\s"'`<>]*[^\s"'`<>)\].,;:!?]/g;
 
 export interface RedactTextOptions extends RedactOptions {
   /** Also treat the entire input as a URL, including relative references. */

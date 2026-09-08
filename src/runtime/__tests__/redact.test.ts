@@ -1150,6 +1150,30 @@ describe("redactText", () => {
     expect(redactText("the token expired")).toBe("the token [redacted]");
     expect(redact("the token expired")).toBe("the token expired");
   });
+
+  // `TEXT_URL` without a leading lookbehind was quadratic on a long
+  // alphanumeric run: every interior position started a candidate scan that
+  // ran to the end of the run before failing on the missing `:` (the same
+  // defect `network.test.ts` pins for `URL_IN_TEXT`). The text is app-supplied —
+  // a stringified body or a base64 blob in an error message. The timeout is
+  // the regression guard; the expectation is that the URL is still masked.
+  it("scans a long alphanumeric run in one pass", () => {
+    const blob = "a".repeat(200_000);
+    expect(redactText(`${blob} https://api.test/v1?access_token=super-secret`)).toBe(
+      `${blob} https://api.test/v1?access_token=${REDACTED}`,
+    );
+  }, 2000);
+
+  it("stops a URL at trailing punctuation instead of masking the sentence's full stop", () => {
+    expect(redactText("see https://api.test/v1?access_token=abc.")).toBe(
+      `see https://api.test/v1?access_token=${REDACTED}.`,
+    );
+    // `]` must not end the match: the credential after it is still masked and
+    // the wrapping `)` survives (the URL parser percent-encodes the brackets).
+    const wrapped = redactText("(https://api.test/v1?ids[]=1&access_token=abc)");
+    expect(wrapped).not.toContain("abc");
+    expect(wrapped).toBe(`(https://api.test/v1?ids%5B%5D=1&access_token=${REDACTED})`);
+  });
 });
 
 it.each([

@@ -6,7 +6,13 @@
  */
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { act, fireEvent } from "@testing-library/react";
-import { cleanupToolbar, installClipboard, mountToolbar } from "@nejcm/dev-toolbar/testing";
+import {
+  cleanupToolbar,
+  createMemoryStorage,
+  installClipboard,
+  mountToolbar,
+} from "@nejcm/dev-toolbar/testing";
+import type { ToolbarStorage } from "../../../core/contract";
 import { metrics } from "../index";
 
 const memoryRead = () => ({
@@ -15,7 +21,7 @@ const memoryRead = () => ({
   jsHeapSizeLimit: 128 * 1024 * 1024,
 });
 
-const mount = (options: Parameters<typeof metrics>[0] = {}) => {
+const mount = (options: Parameters<typeof metrics>[0] = {}, storage?: ToolbarStorage) => {
   const extension = metrics({
     only: ["memory"],
     memory: { read: memoryRead, sampleMs: 50 },
@@ -24,6 +30,7 @@ const mount = (options: Parameters<typeof metrics>[0] = {}) => {
   const result = mountToolbar(null, {
     extensions: [extension],
     layout: { barWidth: 900, itemWidth: 200 },
+    ...(storage === undefined ? {} : { storage }),
   });
   return { extension, ...result };
 };
@@ -251,5 +258,60 @@ describe("accessibility", () => {
     expect(memory?.tabIndex).toBe(-1);
     expect(tabpanel?.getAttribute("aria-labelledby")).toBe(jank?.id);
     expect(tabpanel?.getAttribute("data-dtb-metric")).toBe("jank");
+  });
+});
+
+/*
+ * 0C: the `tab` preference goes through the runtime, guarded. A throwing
+ * adapter must not take the panel down, and the stored value stays a raw id.
+ */
+describe("the persisted tab", () => {
+  const STORAGE_KEY = "dtb:v1:test:ext:metrics:tab";
+  const tabs = (panel: HTMLElement | null) => [
+    ...(panel?.querySelectorAll<HTMLButtonElement>('[data-dtb-part="metrics-tab"]') ?? []),
+  ];
+
+  it("survives a storage adapter that throws on both ends", () => {
+    const broken: ToolbarStorage = {
+      getItem: () => {
+        throw new Error("no");
+      },
+      setItem: () => {
+        throw new Error("no");
+      },
+      removeItem: () => {
+        throw new Error("no");
+      },
+    };
+    const { toolbar } = mount({ only: ["memory", "jank"] }, broken);
+    expect(() => act(() => toolbar.openPanel("metrics"))).not.toThrow();
+    const panel = toolbar.panel("metrics");
+    const [, jank] = tabs(panel);
+    expect(() => fireEvent.click(jank as HTMLButtonElement)).not.toThrow();
+    expect(jank?.getAttribute("aria-selected")).toBe("true");
+    expect(panel?.querySelector('[role="tabpanel"]')?.getAttribute("data-dtb-metric")).toBe("jank");
+  });
+
+  it("round-trips the stored id as a raw string", () => {
+    const storage = createMemoryStorage();
+    storage.setItem(STORAGE_KEY, "jank");
+    const { toolbar } = mount({ only: ["memory", "jank"] }, storage);
+    act(() => toolbar.openPanel("metrics"));
+    const panel = toolbar.panel("metrics");
+    const [memory, jank] = tabs(panel);
+    expect(jank?.getAttribute("aria-selected")).toBe("true");
+
+    fireEvent.click(memory as HTMLButtonElement);
+    expect(memory?.getAttribute("aria-selected")).toBe("true");
+    expect(storage.getItem(STORAGE_KEY)).toBe("memory");
+  });
+
+  it("ignores a stored id that is not one of the mounted collectors", () => {
+    const storage = createMemoryStorage();
+    storage.setItem(STORAGE_KEY, "network");
+    const { toolbar } = mount({ only: ["memory", "jank"] }, storage);
+    act(() => toolbar.openPanel("metrics"));
+    const [memory] = tabs(toolbar.panel("metrics"));
+    expect(memory?.getAttribute("aria-selected")).toBe("true");
   });
 });

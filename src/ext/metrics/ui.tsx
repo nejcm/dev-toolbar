@@ -122,8 +122,6 @@ export interface PanelProps {
   styleNonce?: string;
 }
 
-const STORAGE_TAB_KEY = "tab";
-
 export function MetricsPanel({ runtime, injectStyles, styleNonce }: PanelProps): ReactNode {
   const snapshot = useExtensionSurface(
     runtime.store,
@@ -138,14 +136,11 @@ export function MetricsPanel({ runtime, injectStyles, styleNonce }: PanelProps):
   );
   // start(api) has already run by the time a panel can open, so the
   // persisted tab is readable here.
-  const [active, setActive] = useState<CollectorId>(() => {
-    const stored = runtime.storage()?.getItem(STORAGE_TAB_KEY);
-    return stored && snapshot.order.includes(stored) ? stored : first;
-  });
+  const [active, setActive] = useState<CollectorId>(() => runtime.readTab() ?? first);
 
   const select = (id: CollectorId) => {
     setActive(id);
-    runtime.storage()?.setItem(STORAGE_TAB_KEY, id);
+    runtime.writeTab(id);
   };
 
   const view = metricView(snapshot, snapshot.order.includes(active) ? active : first);

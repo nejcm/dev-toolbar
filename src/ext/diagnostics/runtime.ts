@@ -847,7 +847,13 @@ export function createDiagnosticsRuntime(
     readFormat,
 
     writeFormat(format) {
-      storage?.setItem(FORMAT_KEY, format);
+      // Same adapter as `readFormat`: losing persistence is survivable, a
+      // throw out of a preference is not.
+      try {
+        storage?.setItem(FORMAT_KEY, format);
+      } catch {
+        // Ignore: the format still applies for this session.
+      }
     },
 
     start(runtimeApi: ExtensionRuntimeApi) {

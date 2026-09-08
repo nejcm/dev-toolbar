@@ -282,6 +282,59 @@ describe("allowRun", () => {
             throw new TypeError("https://api.example.com/v1?access_token=sk-live-abc");
           },
         },
+        {
+          id: "jobs.unreadable",
+          label: "Unreadable",
+          run: () => {
+            throw Object.defineProperty(new Error(), "message", {
+              get() {
+                throw 1;
+              },
+            });
+          },
+        },
+        {
+          id: "jobs.nameless",
+          label: "Nameless",
+          run: () => {
+            throw Object.defineProperty(new Error("plain"), "name", {
+              get() {
+                throw 1;
+              },
+            });
+          },
+        },
+        {
+          id: "jobs.unstringable",
+          label: "Unstringable",
+          run: () => {
+            throw {
+              toString() {
+                throw 1;
+              },
+            };
+          },
+        },
+        {
+          id: "jobs.revoked",
+          label: "Revoked",
+          run: () => {
+            const { proxy, revoke } = Proxy.revocable(new Error("gone"), {});
+            revoke();
+            throw proxy;
+          },
+        },
+        {
+          id: "jobs.hostile-prototype",
+          label: "Hostile prototype",
+          run: () => {
+            throw new Proxy(new Error("trap"), {
+              getPrototypeOf() {
+                throw 1;
+              },
+            });
+          },
+        },
       ],
     });
 
@@ -336,6 +389,55 @@ describe("allowRun", () => {
     const message = (result as { error: string }).error;
     expect(message).not.toContain("sk-live-abc");
     expect(message).toContain("[redacted]");
+  });
+
+  // `runCommand()` promises a value, so a hostile getter on the thrown error
+  // must not turn into a rejection crossing `page.evaluate`.
+  it("resolves a value when the thrown error's message getter throws", async () => {
+    renderWithToolbar(undefined, { extensions: [agentBridge({ allowRun: true }), runnable()] });
+
+    await expect(registry().default.runCommand?.("jobs.unreadable")).resolves.toEqual({
+      ok: false,
+      reason: "threw",
+      error: "[unreadable]",
+      errorName: "Error",
+    });
+  });
+
+  // `instanceof` is a read too: a revoked proxy, or one whose `getPrototypeOf`
+  // trap throws, must not reject before the message is ever looked at.
+  it.each(["jobs.revoked", "jobs.hostile-prototype"])(
+    "resolves a value when classifying the thrown value throws (%s)",
+    async (id) => {
+      renderWithToolbar(undefined, { extensions: [agentBridge({ allowRun: true }), runnable()] });
+
+      await expect(registry().default.runCommand?.(id)).resolves.toEqual({
+        ok: false,
+        reason: "threw",
+        error: "[unreadable]",
+      });
+    },
+  );
+
+  it("falls back per property: an unreadable name keeps the readable message", async () => {
+    renderWithToolbar(undefined, { extensions: [agentBridge({ allowRun: true }), runnable()] });
+
+    await expect(registry().default.runCommand?.("jobs.nameless")).resolves.toEqual({
+      ok: false,
+      reason: "threw",
+      error: "plain",
+      errorName: "[unreadable]",
+    });
+  });
+
+  it("resolves a value when a non-Error throw cannot be stringified", async () => {
+    renderWithToolbar(undefined, { extensions: [agentBridge({ allowRun: true }), runnable()] });
+
+    await expect(registry().default.runCommand?.("jobs.unstringable")).resolves.toEqual({
+      ok: false,
+      reason: "threw",
+      error: "[unreadable]",
+    });
   });
 });
 

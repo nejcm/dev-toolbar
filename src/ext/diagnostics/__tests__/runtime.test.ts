@@ -1028,6 +1028,20 @@ describe("output", () => {
     stop();
   });
 
+  it("returns from writeFormat when the storage adapter throws", () => {
+    const runtime = createDiagnosticsRuntime();
+    const broken = {
+      ...storage(),
+      setItem: () => {
+        throw new Error("site data blocked");
+      },
+    };
+    runtime.start({ ...api(), storage: broken });
+    expect(() => runtime.writeFormat("json")).not.toThrow();
+    // The preference did not persist; the reader stays on its default.
+    expect(runtime.readFormat()).toBe("markdown");
+  });
+
   it("falls back to markdown when the stored format is nonsense", () => {
     const runtime = createDiagnosticsRuntime();
     const store = storage();
