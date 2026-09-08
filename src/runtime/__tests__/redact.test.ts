@@ -3,9 +3,11 @@ import {
   DEFAULT_SENSITIVE_KEYS,
   REDACTED,
   type RedactOptions,
+  UNREADABLE,
   isSensitiveKey,
   redact,
   redactHeaders,
+  redactProse,
   redactText,
   redactUrl,
 } from "../redact";
@@ -1221,4 +1223,163 @@ it("redactText keeps the precise rewrite when the whole value is one URL", () =>
   expect(
     redactText("https://a.test/?token=FIRST https://b.test/?token=SECRET", { url: true }),
   ).not.toContain("SECRET");
+});
+
+describe("redactProse", () => {
+  const JWT = "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NSJ9.dBjftJeZ4CVPmB92K";
+
+  it.each([
+    // What it masks: the anchored pass, then every `scheme://…` run.
+    ["failed for https://x/?token=abc", "failed for https://x/?token=[redacted]"],
+    ["https://x/?token=abc", "https://x/?token=[redacted]"],
+    [
+      "callback https://app.test/cb?access_token=hunter2&state=1 rejected",
+      "callback https://app.test/cb?access_token=[redacted]&state=1 rejected",
+    ],
+    // The body runs to whitespace, so a quoted value is masked *with* its quotes:
+    // `TEXT_URL` stops at a quote and would leave `"abc"` alone.
+    ['failed for https://x/?token="abc" (401)', "failed for https://x/?token=[redacted] (401)"],
+    ["Bearer abc", "Bearer [redacted]"],
+    [JWT, "[redacted]"],
+    [
+      "postgres://user:secret@db.test/app failed",
+      "postgres://[redacted]:[redacted]@db.test/app failed",
+    ],
+    [
+      "wss://s.test/live?token=abc\nnext line https://y/?sid=1",
+      "wss://s.test/live?token=[redacted]\nnext line https://y/?sid=[redacted]",
+    ],
+    // A run of digits glued to the scheme is prose, not scheme: masked as the
+    // original `URL_LIKE` did, the digits left in place.
+    ["code 500https://x/?token=abc", "code 500https://x/?token=[redacted]"],
+    ["", ""],
+    ["nothing to see", "nothing to see"],
+    // Known limits, pinned at today's behaviour so a change is visible.
+    [`${JWT}.`, `${JWT}.`],
+    ["auth failed: Bearer secret rejected", "auth failed: Bearer secret rejected"],
+    ["Authorization: hunter2", "Authorization: hunter2"],
+    ["X-Api-Key: sk-test-abc123", "X-Api-Key: sk-test-abc123"],
+    ["password: hunter2", "password: hunter2"],
+    ['error: {"token":"abc"}', 'error: {"token":"abc"}'],
+    [
+      'failed "https://x/?ok=1","https://y/?token=abc"',
+      'failed "https://x/?ok=1","https://y/?token=abc"',
+    ],
+    ["see https://x/?token=abchttps://y/?ok=1", "see https://x/?token=[redacted]"],
+    // A wrapping bracket glued to the value goes with it; one after a later
+    // parameter survives, percent-encoded by the URL parser.
+    ["see [https://x/?token=abc]", "see [https://x/?token=[redacted]"],
+    ["see [https://x/?token=abc&ok=1]", "see [https://x/?token=[redacted]&ok=1%5D"],
+  ])("masks %j as %j", (input, expected) => {
+    expect(redactProse(input)).toBe(expected);
+  });
+
+  it("returns UNREADABLE for a non-string where the type says string", () => {
+    expect(UNREADABLE).toBe("[unreadable]");
+    for (const value of [undefined, null, 7, { message: "x" }, ["x"], Symbol("s")]) {
+      expect(redactProse(value as unknown as string)).toBe(UNREADABLE);
+    }
+  });
+
+  it("returns UNREADABLE when the options throw while being read", () => {
+    const hostile = new Proxy({} as RedactOptions, {
+      get() {
+        throw new Error("no");
+      },
+    });
+    expect(redactProse("failed for https://x/?token=abc", hostile)).toBe(UNREADABLE);
+    expect(() => redactProse("plain", hostile)).not.toThrow();
+  });
+
+  it("honours extraKeys, allowKeys, values and a custom mask", () => {
+    expect(redactProse("see https://x/?zap=abc", { extraKeys: ["zap"], mask: "***" })).toBe(
+      "see https://x/?zap=***",
+    );
+    expect(redactProse("see https://x/?token=abc", { allowKeys: ["token"] })).toBe(
+      "see https://x/?token=abc",
+    );
+    // `values: false` turns off the anchored shape pass; the URL sweep is key
+    // matching and still runs, exactly as the a11y composition behaved.
+    expect(redactProse("Bearer abc", { values: false })).toBe("Bearer abc");
+    expect(redactProse("see https://x/?token=abc", { values: false })).toBe(
+      "see https://x/?token=[redacted]",
+    );
+    // A URL-unsafe mask is percent-encoded inside the URL, as `redactUrl` does.
+    expect(redactProse("see https://x/?token=abc", { mask: "a b" })).toBe(
+      "see https://x/?token=a+b",
+    );
+  });
+
+  // Parity with the a11y and console compositions on their one per-match
+  // failure path. `redactUrl()` falls back to a raw query rewrite when the
+  // parser rejects the URL, and that fallback percent-encodes the mask — so a
+  // lone surrogate as the mask throws *inside* the sweep, after the options were
+  // resolved and cached. The shipped `maskUrls` caught that per match and kept
+  // the match as written; `redactProse` does the same. Pinned, not repaired:
+  // this branch's claim is byte-identical consolidation. Both prefix shapes of
+  // `PROSE_URL` group 1 are covered — empty (`failed http://…`) and non-empty
+  // (`+.-500http://…`, the digits and punctuation the shipped regex skipped).
+  describe("hands a URL back as written when its own rewrite throws", () => {
+    const surrogate = { mask: "\uD800" };
+
+    it.each([
+      ["failed http://[?token=secret", "failed http://[?token=secret"],
+      ["failed +.-500http://[?token=secret", "failed +.-500http://[?token=secret"],
+      // A well-formed URL earlier in the text is still masked — the parser
+      // substitutes U+FFFD for the surrogate — so the output is partial.
+      [
+        "see https://x/?token=abc then 500http://[?token=secret",
+        "see https://x/?token=%EF%BF%BD then 500http://[?token=secret",
+      ],
+    ])("masks %j as %j", (input, expected) => {
+      expect(redactProse(input, surrogate)).toBe(expected);
+    });
+
+    it("is UNREADABLE when the whole text is that URL, because the anchored pass throws first", () => {
+      expect(redactProse("http://[?token=secret", surrogate)).toBe(UNREADABLE);
+    });
+
+    it("is only the mask: the same URLs are rewritten with an encodable one", () => {
+      expect(redactProse("failed +.-500http://[?token=secret")).toBe(
+        `failed +.-500http://[?token=${REDACTED}`,
+      );
+      expect(redactProse("failed http://[?token=secret", { mask: "***" })).toBe(
+        "failed http://[?token=***",
+      );
+    });
+  });
+
+  // The shipped `URL_LIKE` had no lookbehind, so a long run with no `://`
+  // started a scan at every letter that ran to the end of the run before
+  // failing — quadratic. `PROSE_URL` starts only at the head of a run. The
+  // timeout is the regression guard; the expectations are that the URL after
+  // the run is still masked.
+  //
+  // Calibration (Node 26, this machine): the shipped composition takes 10-22 s
+  // on the four alphanumeric runs at 200k and 0.3-0.8 s at 40k, where the
+  // 2,000 ms timeout let it pass; `PROSE_URL` takes 1-3 ms at 200k. 200k is
+  // the same size `network.test.ts` uses for `URL_IN_TEXT`, and the margins
+  // hold on a slower, noisier CI machine in both directions: the quadratic form
+  // only gets further past the timeout, the linear form has three orders of
+  // magnitude in hand. An elapsed-time assertion would be tighter and no
+  // stricter — the timeout already fails the test — while adding a GC- and
+  // JIT-sensitive number to the suite. The quotes and angle-wrapper rows were
+  // never quadratic (no letter run); they pin the sweep's behaviour on the two
+  // non-letter shapes the fixture would otherwise miss.
+  it.each([
+    ["letters", "a".repeat(200_000)],
+    ["hex", "3f9a2b7c1d".repeat(20_000)],
+    ["digit-letter", "1a".repeat(100_000)],
+    ["dotted", "a.".repeat(100_000)],
+    ["quotes", '"'.repeat(200_000)],
+    ["angle wrappers", `see ${"Bearer <a ".repeat(20_000)}>`],
+  ])(
+    "scans a long %s run in one pass",
+    (_, run) => {
+      expect(redactProse(`${run} https://api.test/v1?access_token=super-secret`)).toBe(
+        `${run} https://api.test/v1?access_token=${REDACTED}`,
+      );
+    },
+    2000,
+  );
 });
