@@ -465,6 +465,11 @@ export const CORE_CSS = String.raw`/**
     display: flex;
     align-items: center;
     gap: var(--dtb-chip-gap);
+    /* The menu is a flex column capped at 50vh that scrolls. Without this a
+       list taller than the cap squashes every row to its min-height and a
+       tall row (the metrics list) paints over its neighbours instead of the
+       menu scrolling. */
+    flex-shrink: 0;
     min-height: calc(var(--dtb-bar-height) - 8px);
     padding: 0 var(--dtb-control-padding-x);
     border-radius: var(--dtb-radius);

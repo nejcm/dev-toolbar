@@ -136,6 +136,30 @@ jobs:
         run: bun run typecheck
         working-directory: examples/playground
 
+      # The browser half of the suite: the real shell and first-party
+      # extensions in a real Chromium, driven through the playground (see
+      # examples/playground/e2e/README.md). Needs the install above and the
+      # dist/ verify:static built. Not part of `bun run test`; vitest stays
+      # fast, and this is where layout, keys and reloads get proven.
+      - name: Install Playwright's Chromium
+        run: bunx playwright install --with-deps chromium
+        working-directory: examples/playground
+
+      - name: Browser tests
+        run: bun run test:e2e
+        working-directory: examples/playground
+
+      # Traces and screenshots are only written for failures, so this is
+      # empty on green and the one thing you want on red.
+      - name: Upload browser test evidence
+        if: ${{ failure() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: playwright-report
+          path: examples/playground/e2e-results/
+          retention-days: 14
+          if-no-files-found: ignore
+
       # `!cancelled()` rather than `always()`: useful on a failed
       # verify:static, but shouldn't block a cancellation.
       #

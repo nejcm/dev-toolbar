@@ -60,6 +60,7 @@ bun run check:package        # publint + attw over a packed tarball (needs dist/
 bun run knip                 # unused files, exports and deps — a gate, inside `verify`
 bun run size                 # builds, then a per-entrypoint size table
 bun run test:jest-consumer   # builds, then runs Jest against dist/ — not part of `test`
+bun run test:e2e             # builds, then Playwright drives the playground in Chromium — not part of `test`
 bun run playground           # builds, then Vite on :5273
 ```
 
@@ -125,6 +126,12 @@ that ship nothing.
 - **`--max-warnings=0` is a ratchet.** A new warning fails the build. The tree is
   clean; keep it that way, or suppress a warning at the line that earns it with a
   comment saying why.
+- **Browser behaviour is proven in `examples/playground/e2e/`** (Playwright, `bun run
+  test:e2e`), one spec per recipe in `.claude/skills/verify-dev-toolbar/features/`.
+  Layout, stacking, real keys, a reload, `localStorage` — anything jsdom cannot see —
+  belongs there, asserted through the agent bridge, never a selector. Run it before
+  claiming a change to `src/core` or `src/ext` works; drive the browser by hand only
+  for what it does not cover. Conventions in [its README](./examples/playground/e2e/README.md).
 - **Tests are colocated** in `__tests__/` next to what they cover. New behaviour needs
   a test; a bug fix needs a test that fails before the fix. `src/testing/` is both the
   published test helper surface and what the internal tests use — if you are writing
