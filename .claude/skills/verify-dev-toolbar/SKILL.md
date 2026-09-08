@@ -39,14 +39,16 @@ file per recipe. Before driving anything by hand:
 bun run test:e2e     # repo root: builds dist/, starts its own Vite on :5274, runs Chromium
 ```
 
-Green means the shell, flags, command menu, environment redaction, overlays,
-overflow and the HTTP bridge behave as their recipes say, at 1280×800, over the
-current `src/`. A red test keeps its trace and screenshot under
-`examples/playground/e2e-results/`. Drive the browser by hand only for what the
-suite does not cover (listed as *not driven* in the feature map), for pixels a
-reviewer wants to see, or to investigate a red test. A spec marked
-`test.fail(...)` is a known library bug kept visible on purpose — read its
-comment before reporting it as new.
+Green means the *specs' assertions* hold at 1280×800 over the current `src/` —
+the specs are organised by recipe, but each encodes a subset of its recipe's
+steps, not all of them (the `Mod`-exclusivity check and the top-position inset,
+for instance, are still manual). Read the spec before treating a step as
+covered; the feature map's *not driven* list is history, not a coverage map. A
+red test keeps its trace and screenshot under
+`examples/playground/e2e-results/`. Drive the browser by hand for what a spec
+does not assert, for pixels a reviewer wants to see, or to investigate a red
+test. A spec marked `test.fail(...)` is a known library bug kept visible on
+purpose — read its comment before reporting it as new.
 
 ## Launch
 

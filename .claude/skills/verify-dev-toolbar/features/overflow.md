@@ -62,8 +62,10 @@ Everything here is `read().shell` — `bar` (what is still in the regions) and
   there rather than trusting this list.
 - **Open the menu.** Click `[data-dtb-part="overflow-button"]`. Read:
   `shell.overflow.open` is `true` and `shell.overflow.items` lists those same
-  ids in bar order — highest priority first, so `agent` is *last*. `items` is
-  `[]` while the menu is closed; read it only after opening. The rows are
+  ids in bar order — ascending `order`, **not** priority (`metrics`, order 30,
+  comes before `kit-demo`, order 40, despite the lower priority); `agent` keeps
+  the default `order: 90` and so renders last. `items` is `[]` while the menu
+  is closed; read it only after opening. The rows are
   `flex-shrink: 0`, so a menu taller than its 50vh cap scrolls rather than
   letting a tall row (the metrics list) paint over its neighbours —
   `e2e/overflow.spec.ts` guards this.

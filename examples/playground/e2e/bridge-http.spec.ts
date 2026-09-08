@@ -32,7 +32,13 @@ test("GET /state answers with the live snapshot once a page has checked in", asy
   expect(Object.keys(state.extensions)).toContain("flags");
 });
 
-test("GET /commands lists the registry with input schemas", async ({ request }) => {
+test("GET /commands lists the registry with input schemas", async ({ toolbar, request }) => {
+  // `toolbar` opens the page whose check-in fills the registry; without it
+  // this test only passes on the previous test's leftovers.
+  expect(toolbar).toBeDefined();
+  await expect
+    .poll(async () => (await request.get("/__dev-toolbar/commands")).status(), { timeout: 10_000 })
+    .toBe(200);
   const body = await (await request.get("/__dev-toolbar/commands")).json();
   const ids = body.commands.map((c: { id: string }) => c.id);
   expect(ids).toContain("flags.set");

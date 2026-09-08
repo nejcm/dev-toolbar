@@ -40,6 +40,12 @@ Chromium is installed once with `bunx playwright install chromium` (CI does
 - **`bridge-http.spec.ts` runs last, alone.** The dev-server plugin holds one
   snapshot slot; a second open page makes its `connection.ambiguous` true. It
   is a separate project with `dependencies` on the main one and one worker.
+- **One network dependency.** `index.html` loads the Tailwind Play CDN on
+  purpose — it is the light-DOM regression fixture behind the `tw` chip, and
+  its utility classes decide that chip's width. The suite does not intercept
+  it, so an offline machine or a CDN outage turns the run red at page load
+  rather than silently changing the overflow measurements. Read a failure
+  that starts at `goto` with that in mind.
 - **Failures keep evidence.** Traces and screenshots are retained on failure
   under `e2e-results/` (git-ignored). Open a trace with
   `bunx playwright show-trace <path>`.

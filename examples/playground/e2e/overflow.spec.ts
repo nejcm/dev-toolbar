@@ -22,8 +22,9 @@ test("collapses in priority order as the window narrows", async ({ toolbar, page
   await toolbar.overflowButton.click();
   await expect.poll(() => toolbar.read().then((s) => s.shell.overflow.open)).toBe(true);
   const items = (await toolbar.read()).shell.overflow.items;
-  // Items are listed in bar order, so the lowest priority — first to collapse — is last.
-  expect(items.at(-1), "lowest priority collapses first").toBe("agent");
+  // Items come in bar order (ascending `order`, not priority); `agent` keeps
+  // the default `order: 90`, so it renders last wherever it lands.
+  expect(items.at(-1)).toBe("agent");
   for (const id of ["boom", "diagnostics", "hydr", "a11y", "metrics"]) expect(items).toContain(id);
   await page.keyboard.press("Escape");
 
@@ -85,9 +86,25 @@ test("stepping the viewport never trips a ResizeObserver loop", async ({ toolbar
     (window as any).__dtbErrors = [];
     addEventListener("error", (e) => (window as any).__dtbErrors.push(e.message));
   });
+  const settled = async () => {
+    // Two frames for the ResizeObserver to deliver, then the bar has to read
+    // the same twice in a row before the next step.
+    await page.evaluate(
+      () => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))),
+    );
+    let last = "";
+    await expect
+      .poll(async () => {
+        const now = JSON.stringify((await toolbar.read()).shell.bar.map((b) => b.id));
+        const stable = now === last;
+        last = now;
+        return stable;
+      })
+      .toBe(true);
+  };
   for (const width of [1280, 900, 700, 520, 400, 700, 1280]) {
     await page.setViewportSize({ width, height: 800 });
-    await expect.poll(() => toolbar.read().then((s) => s.shell.mounted)).toBe(true);
+    await settled();
   }
   expect(await page.evaluate(() => (window as any).__dtbErrors)).toEqual([]);
 });
