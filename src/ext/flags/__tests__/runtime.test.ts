@@ -1403,3 +1403,70 @@ describe("published flag ordering", () => {
     runtime.store.destroy();
   });
 });
+
+describe("recording a hostile adapter failure", () => {
+  const BOOLEANS: FlagReading[] = [
+    { key: "ui-facelift", type: "boolean", defaultValue: false, value: false },
+  ];
+
+  it("masks a credential-carrying URL with the extension's own redactOptions", () => {
+    const runtime = createFlagsRuntime({
+      flags: BOOLEANS,
+      // `ticket` is not a default sensitive key: only the consumer's options mask it.
+      redactOptions: { extraKeys: ["ticket"] },
+      onOverride: () => {
+        throw new Error("failed for https://x/?ticket=abc");
+      },
+    });
+    runtime.setOverride("ui-facelift", true);
+    const recorded = runtime.store.getSnapshot().adapterErrors["ui-facelift"];
+    expect(recorded).toContain("failed for https://x/?ticket=[redacted]");
+    expect(recorded).not.toContain("abc");
+  });
+
+  it("records a message getter that throws instead of throwing out of setOverride()", () => {
+    const runtime = createFlagsRuntime({
+      flags: BOOLEANS,
+      onOverride: () => {
+        throw Object.defineProperty(new Error("x"), "message", {
+          get() {
+            throw new Error("no");
+          },
+        });
+      },
+    });
+    expect(() => runtime.setOverride("ui-facelift", true)).not.toThrow();
+    expect(runtime.store.getSnapshot().adapterErrors["ui-facelift"]).toContain("[unreadable]");
+  });
+
+  it("describes a non-string message by its tag, as a string", () => {
+    const runtime = createFlagsRuntime({
+      flags: BOOLEANS,
+      onOverride: () => {
+        throw Object.assign(new Error("x"), { message: 42 });
+      },
+    });
+    expect(() => runtime.setOverride("ui-facelift", true)).not.toThrow();
+    expect(runtime.store.getSnapshot().adapterErrors["ui-facelift"]).toContain("[object Error]");
+  });
+
+  it("records the failure when the consumer's redactOptions throw on read", () => {
+    // A boolean-only catalogue: rendering a string flag would consult these
+    // options first, which is a separate hazard — this pins the catch alone.
+    const runtime = createFlagsRuntime({
+      flags: BOOLEANS,
+      redactOptions: {
+        get extraKeys(): string[] {
+          throw new Error("no");
+        },
+      },
+      onOverride: () => {
+        throw new Error("failed for https://x/?token=abc");
+      },
+    });
+    expect(() => runtime.setOverride("ui-facelift", true)).not.toThrow();
+    const recorded = runtime.store.getSnapshot().adapterErrors["ui-facelift"];
+    expect(recorded).toContain("[unreadable]");
+    expect(recorded).not.toContain("abc");
+  });
+});

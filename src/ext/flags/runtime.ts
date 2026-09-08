@@ -19,7 +19,7 @@
  * in; the panel and the clipboard read the same redacted view. No path from a
  * raw flag value skips it.
  */
-import { createDerivedStore, redact } from "../../runtime";
+import { createDerivedStore, describeError, redact } from "../../runtime";
 import { createPoller, parseRecord } from "@nejcm/dev-toolbar/kit";
 import type { RedactOptions, ThrottledStore } from "../../runtime";
 import type { ExtensionRuntimeApi, ToolbarStorage } from "../../core/contract";
@@ -576,11 +576,11 @@ export function createFlagsRuntime(options: FlagsRuntimeOptions = {}): FlagsRunt
       // Only this key's own failure clears, and only on its own success.
       adapterErrors.delete(key);
     } catch (error) {
+      // Rendered as a row `title`, so the thrown text is masked — under the
+      // consumer's own `redactOptions` — before this sentence is built.
       adapterErrors.set(
         key,
-        `${
-          error instanceof Error ? error.message : String(error)
-        } — your application may not have picked this override up.`,
+        `${describeError(error, redactOptions).message} — your application may not have picked this override up.`,
       );
       // eslint-disable-next-line no-console
       console.error(`[dev-toolbar/ext/flags] the onOverride adapter threw for "${key}".`, error);

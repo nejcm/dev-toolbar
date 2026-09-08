@@ -21,7 +21,12 @@
  *   catch it, so a throw switches every overlay off instead of recurring
  *   every frame.
  */
-import { STYLE_ATTRIBUTE, createThrottledStore, ensureStyleSheet } from "../../runtime";
+import {
+  STYLE_ATTRIBUTE,
+  createThrottledStore,
+  describeError,
+  ensureStyleSheet,
+} from "../../runtime";
 import type { ThrottledStore } from "../../runtime";
 import type { ExtensionRuntimeApi, ToolbarStorage } from "../../core/contract";
 import {
@@ -332,7 +337,9 @@ export function createOverlaysRuntime(options: OverlaysRuntimeOptions = {}): Ove
    * so the only honest response is to stop drawing.
    */
   const fail = (where: string, thrown: unknown): void => {
-    const message = thrown instanceof Error ? thrown.message : String(thrown);
+    // `error` reaches `diagnostics()`, which leaves the page: the thrown text
+    // is masked before this sentence is built around it, never after.
+    const { message } = describeError(thrown);
     error = `${where} failed: ${message} — every overlay was switched off.`;
     // eslint-disable-next-line no-console
     console.error(

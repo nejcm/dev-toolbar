@@ -13,7 +13,7 @@
  * somebody else's code — it may throw, reject, or have vanished since being
  * listed, all shown in the palette rather than thrown at the host app.
  */
-import { createThrottledStore } from "../../runtime";
+import { createThrottledStore, describeError } from "../../runtime";
 import { parseList } from "@nejcm/dev-toolbar/kit";
 import type { ThrottledStore } from "../../runtime";
 import type { AnyToolbarCommand, ExtensionRuntimeApi } from "../../core/contract";
@@ -376,7 +376,10 @@ export function createCommandMenuRuntime(
       ok = api === null ? false : await api.runCommand(target);
       if (!ok) message = "That command is no longer available.";
     } catch (error) {
-      message = error instanceof Error && error.message !== "" ? error.message : String(error);
+      // Outbound via `diagnostics()`, so masked before it is stored; the class
+      // name stands in for an empty message, as `String(error)` used to.
+      const described = describeError(error);
+      message = described.message !== "" ? described.message : (described.name ?? "");
     }
 
     if (!ok) {

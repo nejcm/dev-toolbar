@@ -728,3 +728,30 @@ describe("accessibility", () => {
     expect(trigger()?.getAttribute("aria-label")).toBe("Theme, 1 edited");
   });
 });
+
+/* -------------------------------------------------------------------------- */
+
+describe("a failed adapter's error text reaches the row", () => {
+  it("masks a credential-carrying URL before it becomes the title", () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const { toolbar } = mount({
+      onApply: () => {
+        throw new Error("failed for https://x/?token=abc");
+      },
+    });
+    act(() => toolbar.openPanel("theme-editor"));
+    const input = row(
+      toolbar.panel("theme-editor"),
+      "--brand-500",
+    )?.querySelector<HTMLInputElement>('input[data-dtb-part="thm-input"]') as HTMLInputElement;
+    act(() => {
+      fireEvent.change(input, { target: { value: "#ff0000" } });
+      fireEvent.keyDown(input, { key: "Enter" });
+    });
+    const title = row(toolbar.panel("theme-editor"), "--brand-500")
+      ?.querySelector('[data-dtb-tag="not-applied"]')
+      ?.getAttribute("title");
+    expect(title).toContain("failed for https://x/?token=[redacted]");
+    expect(title).not.toContain("abc");
+  });
+});
