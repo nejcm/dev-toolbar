@@ -14,6 +14,50 @@
   style break at the boundary is accepted, not an oversight.
 -->
 
+## [0.6.0](https://github.com/nejcm/dev-toolbar/compare/v0.5.0...v0.6.0) (2026-09-08)
+
+
+### ⚠ BREAKING CHANGES
+
+* make the toolbar readable and drivable by agents ([#35](https://github.com/nejcm/dev-toolbar/issues/35))
+
+### Features
+
+* **a11y:** put the page's own violations on the bar ([#61](https://github.com/nejcm/dev-toolbar/issues/61)) ([f0f8918](https://github.com/nejcm/dev-toolbar/commit/f0f8918a7d284487c6ff432b74e48fce0b07d46b))
+* bind command shortcuts when a host asks for it ([24a1cac](https://github.com/nejcm/dev-toolbar/commit/24a1cace3926e15cf3eead7cf5eb11eac2448e4d))
+* **core:** a spacing system for panels, menus and form controls ([#33](https://github.com/nejcm/dev-toolbar/issues/33)) ([873f152](https://github.com/nejcm/dev-toolbar/commit/873f152c542fe76763121d8a96e503c38aa233b0))
+* **core:** flush the ··· popup, divide the bar, darken the selected item ([0113465](https://github.com/nejcm/dev-toolbar/commit/011346599dfaa9132850650ffea19765e377de27))
+* **core:** space the bar so its items read as separate readouts ([6d22091](https://github.com/nejcm/dev-toolbar/commit/6d22091c2a43eaa67e2f597c17e0be4bd9cf1a83))
+* **core:** vertical ellipsis, softer popup shadow, and the bar's edge back ([91fa0d6](https://github.com/nejcm/dev-toolbar/commit/91fa0d6b25e802b40381dd9d9e8b526deca86619))
+* **diagnostics:** keep what went wrong on the way here ([#60](https://github.com/nejcm/dev-toolbar/issues/60)) ([249c809](https://github.com/nejcm/dev-toolbar/commit/249c80931b6b69fa9538e8a32f43d0b33db6187e))
+* **kit:** add @nejcm/dev-toolbar/kit, a shared package for extension authors ([#42](https://github.com/nejcm/dev-toolbar/issues/42)) ([1827c21](https://github.com/nejcm/dev-toolbar/commit/1827c212877e78286f6e3de8957934541b57868a))
+* **kit:** frame an embedded third-party panel ([#56](https://github.com/nejcm/dev-toolbar/issues/56)) ([314df8c](https://github.com/nejcm/dev-toolbar/commit/314df8c4741e0a77df48cba312edddc242da1699))
+* let hosts control visibility and position, and observe both ([1720439](https://github.com/nejcm/dev-toolbar/commit/17204398fffc96c73b53c57cfb2deeb774ff0fcd))
+* make the toolbar readable and drivable by agents ([#35](https://github.com/nejcm/dev-toolbar/issues/35)) ([91436e7](https://github.com/nejcm/dev-toolbar/commit/91436e7e38fb7b1cbf7f5f18237b8995d4b9149c))
+* **metrics:** accept consumer-supplied collectors ([#55](https://github.com/nejcm/dev-toolbar/issues/55)) ([a97e54f](https://github.com/nejcm/dev-toolbar/commit/a97e54f581479e9d4a8144adbbcfa7c955d8f3e6))
+* **metrics:** commands over the requests already recorded ([#57](https://github.com/nejcm/dev-toolbar/issues/57)) ([482cdd3](https://github.com/nejcm/dev-toolbar/commit/482cdd3b870b43f66f8bc9bbff5c98dfb17720ff))
+* **playground:** give the bar real media to measure ([#64](https://github.com/nejcm/dev-toolbar/issues/64)) ([64fea46](https://github.com/nejcm/dev-toolbar/commit/64fea46b6d8a5caab89555626847608a57d84ca3))
+* **playground:** open TanStack's devtools shell from one chip ([#67](https://github.com/nejcm/dev-toolbar/issues/67)) ([070780b](https://github.com/nejcm/dev-toolbar/commit/070780bb02a17091a7a24e81417d3c26fffee49f))
+* **playground:** prove the toolbar in a real browser with Playwright ([#68](https://github.com/nejcm/dev-toolbar/issues/68)) ([004f6e4](https://github.com/nejcm/dev-toolbar/commit/004f6e4bdc80d9493d0700804d6e7346b0d97a5a))
+* report extension crashes to the host through onExtensionError ([39def47](https://github.com/nejcm/dev-toolbar/commit/39def4702c9afd9af90616800895f2f19956fed0))
+* **testing:** let the fake layout fake padding and gap ([#48](https://github.com/nejcm/dev-toolbar/issues/48)) ([1fc7a86](https://github.com/nejcm/dev-toolbar/commit/1fc7a8604bc55a25ef75f4c77bd2060c98efe2e0))
+
+
+### Bug Fixes
+
+* close the review findings on controlled state, shortcuts and the overlays nonce ([1efcba4](https://github.com/nejcm/dev-toolbar/commit/1efcba4aec1cc0e13885443d15639f9ebfbbae99))
+* close three findings from a security review of the repo ([#53](https://github.com/nejcm/dev-toolbar/issues/53)) ([2251ed4](https://github.com/nejcm/dev-toolbar/commit/2251ed42e1bf6b1e8a29a6fc692bb2a606f0044a))
+* **core:** describe a diagnostics error without trusting its getters ([#45](https://github.com/nejcm/dev-toolbar/issues/45)) ([2e19483](https://github.com/nejcm/dev-toolbar/commit/2e194830239800349fc009b952fec60e7aca0648))
+* **core:** put the bar on one font family so it sits on one baseline ([8577b92](https://github.com/nejcm/dev-toolbar/commit/8577b929fbffb8401e7948b0885624afdb7fbbf2))
+* **ext/flags:** include variants in the snapshot signature ([#43](https://github.com/nejcm/dev-toolbar/issues/43)) ([a234d40](https://github.com/nejcm/dev-toolbar/commit/a234d400428a33c88e9e6820417099f6bffbb6e8))
+* **ext/flags:** include variants in the snapshot signature ([#44](https://github.com/nejcm/dev-toolbar/issues/44)) ([cebfc6e](https://github.com/nejcm/dev-toolbar/commit/cebfc6e57163e533323c2c95dfa707c520fef177))
+* **ext:** make jank, memory, delay and diagnostics report what they claim ([#37](https://github.com/nejcm/dev-toolbar/issues/37)) ([30ad520](https://github.com/nejcm/dev-toolbar/commit/30ad520ba6789b8f07598d8c70fed20523288cc5))
+* **kit:** give a hand-built panel the spacing first-party panels hardcode ([#65](https://github.com/nejcm/dev-toolbar/issues/65)) ([f9fd10d](https://github.com/nejcm/dev-toolbar/commit/f9fd10d0ae677cc9d740a9c15523738c6996bf11))
+* **playground:** make a second playground install work ([#59](https://github.com/nejcm/dev-toolbar/issues/59)) ([494cf8a](https://github.com/nejcm/dev-toolbar/commit/494cf8a844440ef6dfd1dbb61a6c48ba0328a09a))
+* **redact:** mask credentials inside longer strings, not only whole values ([#62](https://github.com/nejcm/dev-toolbar/issues/62)) ([72a7480](https://github.com/nejcm/dev-toolbar/commit/72a748048e0e85e2d05ec167cb3de1f8852ef919))
+* **testing:** track targets in the fake ResizeObserver and scope handles to their toolbar ([#46](https://github.com/nejcm/dev-toolbar/issues/46)) ([3e93bea](https://github.com/nejcm/dev-toolbar/commit/3e93bea56e6cbb2bf3954feca51ed7b8be4e029c))
+* thread styleNonce through to every first-party stylesheet ([0cdfaf6](https://github.com/nejcm/dev-toolbar/commit/0cdfaf621b7971f6feb8da1c016455412adbf7de))
+
 ## [0.5.0](https://github.com/nejcm/dev-toolbar/compare/v0.4.1...v0.5.0) (2026-09-03)
 
 
