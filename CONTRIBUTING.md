@@ -335,11 +335,11 @@ not write changelog entries by hand.
 1. Land a conventional commit on `main`. `feat:` and `fix:` are what move the
    version; `chore:`, `docs:`, `refactor:` and friends do not, unless they carry
    a `BREAKING CHANGE:` footer.
-2. Run `.github/workflows/release.yml` from the Actions tab
-   (`workflow_dispatch`). The `push:` trigger is **commented out**, so landing on
-   `main` releases nothing by itself — a run is started by hand, and it releases
-   everything unreleased at once. Restore the `push:` block to go back to
-   release-on-merge. The workflow runs `release-please`, which opens a
+2. That push starts `.github/workflows/release.yml` — the `push:` trigger on
+   `main` is **live**, so landing a version-moving commit releases it without
+   anyone doing anything. (`workflow_dispatch` is still there for a re-run, or
+   for release-by-hand if the `push:` block is ever commented out again.) The
+   workflow runs `release-please`, which opens a
    **release PR** titled
    `chore(release): release X.Y.Z`, carrying the version bump and the generated
    `CHANGELOG.md` section.
@@ -386,11 +386,12 @@ deliberately keeps using `GITHUB_TOKEN` — merging under the PAT would make the
 release commit re-trigger this workflow. If the PAT expires, the job fails on its
 first step with an explicit message rather than an opaque 403.
 
-**Within a run, no release is declined.** A dispatched run ships every `feat:`
-and `fix:` that has reached `main` since the last release, under a version
-nobody chose by hand; the gate can stop a _broken_ release, not an unwanted one.
-Deciding _when_ is the dispatch itself. If a change should not ship yet, either
-do not dispatch, or land it behind `chore:`/`refactor:`, which move no version.
+**Within a run, no release is declined.** A run ships every `feat:` and `fix:`
+that has reached `main` since the last release, under a version nobody chose by
+hand; the gate can stop a _broken_ release, not an unwanted one. With
+release-on-merge there is no separate "when" to decide — merging *is* the
+decision. If a change should not ship yet, keep it off `main`, or land it behind
+`chore:`/`refactor:`, which move no version.
 
 After a failed `publish`, use "Re-run failed jobs" on the original run. Two runs
 in quick succession do not race: `concurrency` uses a fixed `release` group with

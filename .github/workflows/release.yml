@@ -3,9 +3,9 @@ name: Release
 # npm's trusted publisher matches this file by name (docs.npmjs.com/trusted-publishers); renaming it breaks publishing until reconfigured on npmjs.com.
 
 on:
-  # Disabled: push trigger commented out, so merges to `main` no longer release/publish. Restore the `push` block to re-enable.
-  # push:
-  #   branches: [main]
+  # Release-on-merge: every `feat:`/`fix:` that lands on `main` ships without anyone dispatching a run. Comment this block out again to go back to release-by-hand — the `workflow_dispatch` below keeps working either way, and the merge step's same-repo + `autorelease: pending` + `--match-head-commit` checks are what keep an unattended run from squashing a fork PR onto `main`.
+  push:
+    branches: [main]
   workflow_dispatch: {}
 
 # Least privilege at the top; each job widens only what it needs.
@@ -56,7 +56,7 @@ jobs:
 
       # Gated on repo state (an open release PR exists), not on `prs_created` — that's only true when a PR was opened *this run*, so it'd skip an existing PR and strand it forever. Squash merge so the subject is `chore(release): release X.Y.Z (#N)`, parsed by the config's title patterns. Retries because GitHub computes mergeability async and can reject a too-early merge.
       #
-      # The branch prefix alone does NOT authorise the merge. Anyone can open a fork PR on a branch named `release-please--x`, and ci.yml skips that prefix, so prefix-only selection would squash unreviewed, un-CI'd code onto `main` under a write token whenever a dispatch found no real release PR. Three checks close that: `isCrossRepository` (release-please pushes its branch to this repo, never a fork), the `autorelease: pending` label (applied by the PAT, and a fork author cannot label a PR), and `--match-head-commit`, so a push racing the merge aborts instead of landing unseen. Keep all three if the `push` trigger is ever restored — without a human dispatching, they are the only thing between a fork branch and `main`. The label is release-please's default; do not set a custom `label` in release-please-config.json without changing the filter here, or the selection matches nothing and every release becomes a green no-op (hence the warning below).
+      # The branch prefix alone does NOT authorise the merge. Anyone can open a fork PR on a branch named `release-please--x`, and ci.yml skips that prefix, so prefix-only selection would squash unreviewed, un-CI'd code onto `main` under a write token whenever a dispatch found no real release PR. Three checks close that: `isCrossRepository` (release-please pushes its branch to this repo, never a fork), the `autorelease: pending` label (applied by the PAT, and a fork author cannot label a PR), and `--match-head-commit`, so a push racing the merge aborts instead of landing unseen. All three are load-bearing now that the `push` trigger is live — with no human dispatching, they are the only thing between a fork branch and `main`. The label is release-please's default; do not set a custom `label` in release-please-config.json without changing the filter here, or the selection matches nothing and every release becomes a green no-op (hence the warning below).
       - name: Merge the release PR
         id: merge
         env:
