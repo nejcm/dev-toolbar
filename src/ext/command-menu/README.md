@@ -19,7 +19,7 @@ const extensions = [commandMenu(), flags({ /* … */ }), metrics()];
 | --- | --- |
 | `index.tsx` | The factory and the overlay/trigger wiring |
 | `runtime.ts` | Enumeration, matching, recent-command memory, keyboard handling |
-| `ui.tsx` / `css.ts` | The dialog, the list and the empty state |
+| `ui.tsx` / `css.ts` | The dialog, the list, the empty state, and the shortcut hints — whose `⌘ ⌃ ⌥ ⇧` are set in the UI face, the monospace ones having no such glyph |
 | `types.ts` | The row view model and the matching vocabulary |
 
 ## Four rules that shape it

@@ -41,7 +41,7 @@ Everything here is `read().shell` — `bar` (what is still in the regions) and
 `overflow` (`{present, open, items}`).
 
 - **Nothing collapsed at full width.** Read. `shell.overflow.present` is
-  `false` and `shell.bar` lists all thirteen roster ids. **1280×800 is not
+  `false` and `shell.bar` lists all sixteen roster ids. **1280×800 is not
   wide enough for this** — measured there, `overflow.present` is already `true`
   with 8 items in the bar. Widen until `present` flips to `false` and say in
   the report what width that took, or treat this step as unrun.
@@ -71,7 +71,7 @@ Everything here is `read().shell` — `bar` (what is still in the regions) and
   click put it.
 - **Restore.** `resize_window` with `{"preset": "desktop"}`, then re-read.
   Read: `shell.bar` is back to whatever the un-emulated pane fits — which is
-  `overflow.present: false` and thirteen ids only if the pane is wide enough,
+  `overflow.present: false` and sixteen ids only if the pane is wide enough,
   the same caveat as the first step.
 - **The collapse never loops.** *(Listener mechanics confirmed live; the
   stepping sequence itself not yet driven end to end.)* This is a claim about

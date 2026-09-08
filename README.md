@@ -276,7 +276,7 @@ other. The whole surface, and the Jest caveats, are in
 | [docs/api.md](./docs/api.md) | Every prop, export and type on the root entry |
 | [docs/extension-contract.md](./docs/extension-contract.md) | The object you write, the slot props, and `start(api)` |
 | [docs/kit.md](./docs/kit.md) | `/kit`: shared types, helpers, the `data-dtb-kind` stylesheet and the React controls |
-| [docs/embedding.md](./docs/embedding.md) | A third-party devtool on the bar: the four-line recipe, the CSS rule, and `embed()` |
+| [docs/embedding.md](./docs/embedding.md) | A third-party devtool on the bar: the four-line recipe, the CSS rule, `embed()`, and one chip for a whole devtools shell |
 | [docs/runtime.md](./docs/runtime.md) | `/runtime`: event bus, ring buffers, throttled store, `redact()` and `redactText()` |
 | [docs/testing.md](./docs/testing.md) | `/testing`: helpers, the fake layout, the mock bus |
 | [docs/styling.md](./docs/styling.md) | Tokens, parts, `classNames` |

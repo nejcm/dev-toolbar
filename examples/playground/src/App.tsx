@@ -8,6 +8,7 @@ import {
   playgroundFlags,
 } from "./extensions";
 import { EmbedDemoProvider, QueryPlayground } from "./embedDemo";
+import { TanStackShell, TanStackShellCard } from "./tanstackDemo";
 import { CanvasStage, HeroFigure, MediaGallery, VideoEmbed } from "./mediaDemo";
 import { ArticleDemo } from "./articleDemo";
 
@@ -476,7 +477,9 @@ function OverlayPlayground() {
  * Markup with real, deliberate accessibility violations, so `/ext/a11y` has something to find
  * and something to highlight: an image with no alternative text, a control with no accessible
  * name, and text that fails contrast against the card. The `region` rule is switched off in
- * `extensions.tsx`, so what shows up here is these three and nothing else.
+ * `extensions.tsx`, so this card contributes these three and nothing else — a page scan also
+ * counts the *Drive the overlays* card's focus-order fixtures (`button-name`, `label`,
+ * `tabindex`), and it only sees the contrast failure while this card is scrolled into view.
  *
  * The counter proves the highlight takes no pointer events, the same way the overlays card does.
  */
@@ -565,7 +568,8 @@ function ThemePlayground() {
       <ul>
         <li>
           Edit <code>--pg-radius</code> or <code>--pg-brand</code> and watch
-          every card, tile and link follow. <em>Preview: off</em> puts the
+          every card, tile and button follow (links too, in light mode — dark
+          mode gives them a lighter tint of their own, for contrast). <em>Preview: off</em> puts the
           application's own values back without discarding the edit — §3H's
           before/after.
         </li>
@@ -673,11 +677,13 @@ export function App() {
             classes — the light-DOM regression test.
           </li>
           <li>
-            Accessibility: press <em>Scan this page</em> and expect the three
-            violations <em>Break accessibility on purpose</em> ships — in either
-            colour mode, which the faint paragraph did not manage before —
-            alongside the unnamed control and positive <code>tabindex</code>{" "}
-            <em>Drive the overlays</em> keeps for the focus overlay. Highlight
+            Accessibility: scroll <em>Break accessibility on purpose</em> into
+            view, press <em>Scan this page</em> and expect five rules: the three
+            that card ships — the contrast one in either colour mode, which the
+            faint paragraph did not manage before, and only while the card is on
+            screen — alongside the unnamed button, unlabelled input and positive{" "}
+            <code>tabindex</code> <em>Drive the overlays</em> keeps for the focus
+            overlay. Highlight
             one and check it draws below the bar and passes clicks through.
             Uninstall <code>axe-core</code> from this app and the panel says{" "}
             <em>not installed</em> instead of breaking.
@@ -744,6 +750,8 @@ export function App() {
       <FlagReadout />
 
       <QueryPlayground />
+
+      <TanStackShellCard />
 
       <section className="pg-card">
         <h2>Restyle demo</h2>
@@ -835,6 +843,7 @@ export function App() {
           )}
         </Profiler>
       </DevToolbar>
+      <TanStackShell />
     </EmbedDemoProvider>
   );
 }

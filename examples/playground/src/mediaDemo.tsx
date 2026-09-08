@@ -11,9 +11,10 @@ import { useCallback, useEffect, useRef, useState } from "react";
  * `console.error`.
  *
  * Everything here is deliberately **accessible**. `/ext/a11y`'s fixture is the
- * *Break accessibility on purpose* card and its three violations are asserted
- * by name; an alt-less image or a title-less iframe added here would show up in
- * that scan as a fourth. Every `<img>` carries `alt`, the `<iframe>` carries
+ * *Break accessibility on purpose* card, and the rules a scan reports (its
+ * three, plus the *Drive the overlays* card's `button-name`, `label` and
+ * `tabindex`) are asserted by name; an alt-less image added here would add a
+ * node to `image-alt`, a title-less iframe would add a sixth rule. Every `<img>` carries `alt`, the `<iframe>` carries
  * `title`, the scrollable table is focusable, and the canvas is
  * `aria-hidden` next to a real text readout.
  */

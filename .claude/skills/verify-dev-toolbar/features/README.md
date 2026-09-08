@@ -24,9 +24,9 @@ driving the app, then use the matching feature file as the recipe.
   `dtb:v1:playground:ext:overlays:enabled`. Later recipes in a sequence must
   therefore assert on the *keys they are about*, never on `storage` equalling
   a whole object — or re-clear and reload first.
-- Require the **roster of fourteen** — thirteen extensions plus the bridge's own
+- Require the **roster of seventeen** — sixteen extensions plus the bridge's own
   `agent` — as `diagnostics` (`curl -s localhost:5273/__dev-toolbar/state | jq
-  '.diagnostics|length'` → `14`, 8 `ok` and 6 `absent` at baseline; `a11y` is
+  '.diagnostics|length'` → `17`; 8 `ok` and 6 `absent` were the fourteen-roster baseline, before `kit-demo`, `tanstack-query` and `tanstack` joined; `a11y` is
   the eighth `ok`, publishing `status: "pending"` before anything is scanned). The roster
   is the fixed number; `shell.bar` is **not**. `shell.bar` is only what still
   fits, so it depends on the viewport: measured at the mandated 1280×800 it was
@@ -141,11 +141,20 @@ actually returns as a finding about the recipe, and fix it here.
   `limit` and the rejection of a non-numeric one) and `.clear`, the chip badge
   and its attributes read through the open `⋮`, the three-way credential grep,
   and the captured snapshot's `console` section.
-- **Not driven — verify before reporting:** every step in
+- **Driven 2026-09-08, against `dist/` built 2026-09-07T22:41Z:** the
+  [a11y.md](./a11y.md) baseline (`pending`, `scans: 0`) and scan steps — from
+  the top of the page and with the fixture scrolled into view, in both colour
+  modes, in the hidden Browser pane and in a visible headless Chromium driven
+  through `playwright-cli` — plus the toolbar-exclusion grep. That run is where
+  the `total: 4`/`total: 5` split and the `.pg-scroll` gotcha come from. The
+  animation card's `anim-fps` readout was driven the same way: `60 fps` in
+  *smooth* against `jank.ratio` 0.007, `42 fps` in *heavy* against
+  `jank.dropped` 65 of 299 (`severity: "bad"`), `—` when off.
+- **Not driven — verify before reporting:** the rest of
   [a11y.md](./a11y.md) (written against the source and its unit tests, which do
-  run the real `axe-core` against a jsdom document — the stacking, the
-  click-through and the removed-peer step have not been driven in a browser),
-  the flags text/number editors and
+  run the real `axe-core` against a jsdom document — the highlight box, its
+  stacking, the click-through, masking and the removed-peer step have not been
+  driven in a browser), the flags text/number editors and
   their `rejected` state, every `flags.set` and `theme-editor.setToken` step
   (contract v2's input-carrying commands — written from the source and the
   unit tests, never driven in a browser), the `⌘K`-skips-input assertion in

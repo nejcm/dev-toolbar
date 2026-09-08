@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef } from "react";
+import { Fragment, useEffect, useId, useRef } from "react";
 import type { KeyboardEvent as ReactKeyboardEvent, ReactNode } from "react";
 import { EmptyState, useExtensionSurface } from "@nejcm/dev-toolbar/kit";
 import { ensureCommandMenuStyles } from "./css";
@@ -63,14 +63,42 @@ export function CommandMenuTrigger({
       }
       onClick={() => runtime.toggle()}
     >
-      <span aria-hidden="true">{"⌘"}</span>
+      <span aria-hidden="true" data-dtb-part="cmd-glyph">
+        {"⌘"}
+      </span>
       {isOverflowed || hint === "" ? (
         <span>{label}</span>
       ) : (
-        <span data-dtb-part="cmd-trigger">{hint}</span>
+        <span data-dtb-part="cmd-trigger">
+          <HotkeyHint hint={hint} />
+        </span>
       )}
     </button>
   );
+}
+
+/** The Apple modifier symbols `describeHotkey()` can emit. */
+const MODIFIER_GLYPHS = /([⌘⌃⌥⇧])/;
+
+/**
+ * The hint with each modifier symbol in its own `cmd-glyph` span. Monospace
+ * fonts have no `⌘`, so the glyph falls back to another face at a visibly
+ * smaller size than the `K` beside it; the span lets the stylesheet set it in
+ * the UI face, where the symbols are drawn to match the letters.
+ */
+function HotkeyHint({ hint }: { hint: string }): ReactNode {
+  return hint
+    .split(MODIFIER_GLYPHS)
+    .filter((part) => part !== "")
+    .map((part, index) =>
+      MODIFIER_GLYPHS.test(part) ? (
+        <span key={index} data-dtb-part="cmd-glyph">
+          {part}
+        </span>
+      ) : (
+        <Fragment key={index}>{part}</Fragment>
+      ),
+    );
 }
 
 /* -------------------------------------------------------------------------- */
@@ -273,7 +301,9 @@ function Dialog({
                         <span data-dtb-part="cmd-option-group">{match.command.group}</span>
                       )}
                       {match.command.shortcut === undefined ? null : (
-                        <kbd data-dtb-part="cmd-option-hint">{match.command.shortcut}</kbd>
+                        <kbd data-dtb-part="cmd-option-hint">
+                          <HotkeyHint hint={match.command.shortcut} />
+                        </kbd>
                       )}
                     </div>
                   );

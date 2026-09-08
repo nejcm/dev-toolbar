@@ -45,7 +45,7 @@ Preconditions:
 
 - **Mount.** State read (`curl … /state`, or the bridge in-page). `instanceId`
   is `"playground"`, `shell.mounted` is `true`, and `diagnostics` carries the
-  thirteen-extension roster. `shell.bar` is the *width-dependent* subset — 8
+  sixteen-extension roster. `shell.bar` is the *width-dependent* subset — 8
   ids at the mandated 1280×800, see the README — so assert on the ids you care
   about, not on a count.
   The bar's accessible name is not published state — check it with `find` for
@@ -88,7 +88,7 @@ Preconditions:
   stored panel (`shell.activePanel`).
 - **Error isolation.** Page read at baseline. `errorChips` contains exactly
   `{extension: "boom", slot: "compact"}`, while `diagnostics` still carries all
-  thirteen roster entries and every other extension is still reachable in
+  sixteen roster entries and every other extension is still reachable in
   `shell.bar` or `shell.overflow` — one extension throwing from both slots
   costs one chip and nothing else. This is the one extension fact still read from markup, and
   deliberately: a slot that threw rendered nothing and has no state to

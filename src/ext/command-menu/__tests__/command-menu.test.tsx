@@ -566,3 +566,33 @@ describe("a chord a host command and this palette both claim", () => {
     expect(ran).toEqual(["host.open"]);
   });
 });
+
+describe("modifier glyphs in shortcut hints", () => {
+  const glyphs = (root: Element) =>
+    [...root.querySelectorAll('[data-dtb-part="cmd-glyph"]')].map((el) => el.textContent);
+
+  it("wraps each Apple modifier symbol in the chip's hint, leaving the text intact", () => {
+    mount({ apple: true, shortcut: "Mod+K" });
+    const hint = document.querySelector<HTMLElement>('[data-dtb-part="cmd-trigger"]');
+    expect(hint?.textContent).toBe("⌘K");
+    expect(glyphs(hint!)).toEqual(["⌘"]);
+  });
+
+  it("does the same in a palette option's hint, and wraps nothing for letters", () => {
+    // Author-supplied shortcut strings are shown verbatim on every platform.
+    mount({}, [
+      makeExtension({
+        id: "host",
+        commands: [
+          { ...command("host.chord", "Run the chord"), shortcut: "⌘⇧P" },
+          { ...command("host.plain", "Run the plain one"), shortcut: "Ctrl+K" },
+        ],
+      }),
+    ]);
+    hotkey();
+    const hints = [...document.querySelectorAll<HTMLElement>('[data-dtb-part="cmd-option-hint"]')];
+    expect(hints.map((el) => el.textContent)).toEqual(["⌘⇧P", "Ctrl+K"]);
+    expect(glyphs(hints[0]!)).toEqual(["⌘", "⇧"]);
+    expect(glyphs(hints[1]!)).toEqual([]);
+  });
+});

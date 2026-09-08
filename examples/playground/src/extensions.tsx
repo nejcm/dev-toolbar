@@ -16,6 +16,7 @@ import { createReactProfilerCollector } from "./collectors/reactProfiler";
 import { createWebVitalsCollector } from "./collectors/webVitals";
 import { kitDemo } from "./kitDemo";
 import { tanstackQuery } from "./embedDemo";
+import { tanstackDevtools } from "./tanstackDemo";
 
 /**
  * `kit-demo` is not a first-party extension: it lives in this app and is built entirely
@@ -27,10 +28,10 @@ const runtimeKitDemo = kitDemo({ order: 40, priority: 60, pollMs: 1000 });
 /**
  * Deliberately varied `priority` so narrowing the window collapses extensions into `⋮` in order:
  * agent (-1) → boom (5) → diagnostics (10) → hydr (20) → a11y (25) → metrics (35) → theme (45)
- * → overlays (55) → kit (60) → query (65) → tw (70) → flags (80) → cmds (85) → env (90) → user (100,
+ * → overlays (55) → kit (60) → query (65) → tanstack (66) → tw (70) → flags (80) → cmds (85) → env (90) → user (100,
  * aligned end). The agent
  * bridge goes first by design: it is a transport, and nothing is lost when its chip collapses.
- * metrics/env/flags are the real extensions, `query` is a real third-party panel; the rest are placeholders.
+ * metrics/env/flags are the real extensions, `query` is a real third-party panel and `tanstack` opens TanStack's own shell; the rest are placeholders.
  */
 
 function Chip({
@@ -484,8 +485,8 @@ const runtimeDiagnostics = diagnostics({
 
 /**
  * The token catalogue. Every name is a custom property `playground.css` actually declares and
- * consumes — edit `--pg-radius` and the cards round off, edit `--pg-brand` and tiles/links/buttons
- * follow. Four exist to exercise a rule rather than to be pretty:
+ * consumes — edit `--pg-radius` and the cards round off, edit `--pg-brand` and tiles, buttons and
+ * light-mode links follow (dark-mode links use `--pg-link`, a lighter tint that clears AA). Four exist to exercise a rule rather than to be pretty:
  * - `--dtb-accent`: the toolbar's own token, **refused** — writing it to `:root` would restyle
  *   the bar instead of the app, and the row says so rather than silently disappearing.
  * - `--pg-session-panel-bg`: normalises to a `redact()`-sensitive key but is a **colour**, so it
@@ -502,7 +503,7 @@ const PLAYGROUND_TOKENS: DesignTokenDefinition[] = [
     group: "Colour",
     type: "color",
     defaultValue: "#5e6ad2",
-    description: "Links, tile gradients, button focus.",
+    description: "Light-mode links, tile gradients, button focus.",
   },
   {
     name: "--pg-brand-contrast",
@@ -679,6 +680,7 @@ export const playgroundExtensions: DevToolbarExtension[] = [
   runtimeMetrics,
   runtimeKitDemo,
   tanstackQuery,
+  tanstackDevtools,
   hydration,
   tailwind,
   broken,
