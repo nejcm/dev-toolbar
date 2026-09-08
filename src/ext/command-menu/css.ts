@@ -13,6 +13,16 @@ const COMMAND_MENU_EXTENSION_CSS = String.raw`@layer dev-toolbar {
     font-family: var(--dtb-font-mono);
   }
 
+  /* ⌘ ⌃ ⌥ ⇧ are not in the monospace faces, so there they fall back to a
+     font that draws them small beside the letter. The UI face has them at
+     letter height; a touch larger still, since the symbols sit lower than
+     a capital's cap height. */
+  [data-dev-toolbar] [data-dtb-part="cmd-glyph"] {
+    font-family: var(--dtb-font-family);
+    font-size: 1.18em;
+    line-height: 1;
+  }
+
   /* The palette is modal, so it sits above everything else the toolbar root
      paints — including the ⋮ popup, which claims 1. */
   [data-dev-toolbar] [data-dtb-part="cmd-scrim"] {

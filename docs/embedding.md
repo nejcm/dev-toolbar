@@ -210,13 +210,110 @@ const queryDevtools = embed({
 The dynamic `import()` runs the first time `render()` does — the first open — so
 neither the module nor the panel exists before the chip is clicked.
 
+## One chip for a whole devtools suite
+
+Some devtools are not one panel but a shell of their own: TanStack Devtools
+(`@tanstack/react-devtools`) hosts Query, Router, Form and Pacer as plugins behind a
+single floating trigger, with its own tabs, settings and persistence. Embedding that
+shell is not possible — it renders a fixed, viewport-docked panel and has no inline
+mode — and embedding its plugins one by one gives you a chip per tool when what you
+wanted was TanStack's UI, whole. The third recipe is a **remote control**: one chip that
+opens their shell and otherwise stays out of the way. The toolbar renders none of the
+devtools UI; it contributes a trigger.
+
+The shell hides its own button with `triggerHidden`, and the chip drives it over the
+shell's event bus. TanStack's trigger emits `trigger-toggled { isOpen }` on the client
+from `@tanstack/devtools-client`, and the shell listens for that same event, so an emit
+from outside opens or closes it, and a subscription mirrors what the hotkey or the
+panel's own close button did:
+
+```tsx
+import { useEffect, useSyncExternalStore } from "react";
+import type { DevToolbarExtension } from "@nejcm/dev-toolbar";
+import { Chip, ensureKitStyles } from "@nejcm/dev-toolbar/kit";
+import { devtoolsEventClient } from "@tanstack/devtools-client";
+import { TanStackDevtools } from "@tanstack/react-devtools";
+import { ReactQueryDevtoolsPanel } from "@tanstack/react-query-devtools";
+
+// Module scope, not a hook: a chip collapsed into `⋮` is unmounted and must not miss a toggle.
+let open = false;
+const listeners = new Set<() => void>();
+devtoolsEventClient.on("trigger-toggled", ({ payload }) => {
+  open = payload.isOpen;
+  listeners.forEach((notify) => notify());
+});
+const subscribe = (notify: () => void) => (listeners.add(notify), () => listeners.delete(notify));
+
+function ShellChip({ styleNonce }: { styleNonce?: string }) {
+  const isOpen = useSyncExternalStore(subscribe, () => open, () => false);
+  useEffect(() => ensureKitStyles(undefined, styleNonce), [styleNonce]);
+  return (
+    <button
+      type="button"
+      data-dtb-part="trigger"
+      aria-expanded={isOpen}
+      onClick={() => devtoolsEventClient.emit("trigger-toggled", { isOpen: !open })}
+    >
+      <Chip label="tanstack" value={isOpen ? "open" : "closed"} />
+    </button>
+  );
+}
+
+// No `panel` slot: the surface it opens is TanStack's, outside the toolbar.
+export const tanstackDevtools: DevToolbarExtension = {
+  id: "tanstack",
+  label: "TanStack Devtools",
+  compact: ({ styleNonce }) => <ShellChip styleNonce={styleNonce} />,
+};
+
+// Mount once, beside <DevToolbar>. `plugins` at module scope: the shell re-registers on identity change.
+const plugins = [
+  { id: "tanstack-query", name: "TanStack Query", render: <ReactQueryDevtoolsPanel style={{ height: "100%" }} /> },
+];
+export const TanStackShell = () => (
+  <TanStackDevtools config={{ triggerHidden: true }} plugins={plugins} />
+);
+```
+
+Add every TanStack tool you use to `plugins` exactly as their setup guide shows — the
+shell is theirs, so a new tool is a new plugin there, never a change here. The playground
+runs this recipe as `examples/playground/src/tanstackDemo.tsx`, next to the `embed()` one:
+its `tanstack` chip opens the shell hosting the same Query panel the `query` chip embeds.
+
+Four things to know before you ship it:
+
+- **It opens over the bar, not inside it.** The shell is TanStack's fixed overlay,
+  docked to the bottom of the viewport by default (`panelLocation`), rising from the
+  same edge as the bar, and it paints at `z-index: 99999`. Core's default
+  `--dtb-z-index` is far higher, which would leave the bar and any open toolbar panel
+  sitting over the shell. Lower the token on the toolbar root to let the shell win
+  while it is open (the playground sets `--dtb-z-index: 99990` in its stylesheet; the
+  chip is covered only then, and the shell's own close button and hotkey remain). Set
+  `panelLocation: "top"` if you would rather the two never meet at all. Core's panel host,
+  resizer and error boundary play no part — which is the point.
+- **Seed the chip from the shell's storage.** The shell restores its open state on load
+  from `localStorage["tanstack_devtools_state"].persistOpen` and announces nothing when
+  it does, so read that key once at module init or the chip says `closed` over an open
+  shell after a reload. The playground shows the defensive read.
+- **The event is client wiring, not a documented "open" API.** `trigger-toggled` is
+  exported and typed on `@tanstack/devtools-client`'s event map and it is what their own
+  trigger uses, but TanStack describes the shell as under active development. Verified
+  against `@tanstack/react-devtools` 0.10 and `@tanstack/devtools` 0.14; if the name
+  moves, the chip stops working until the recipe is updated, and nothing in this package
+  breaks with it.
+- **Development only, by their design.** `@tanstack/devtools-event-client`'s root export
+  is a no-op outside `NODE_ENV=development`, so in a production bundle the chip emits into
+  the void — the same bundle in which the shell renders nothing. If you ship the toolbar
+  to production, `hidden` the extension there too.
+
 ## Why there is no `/ext/embed`
 
 Embedding third-party panels inside this chrome makes the toolbar's perceived quality
 the *minimum* over every tool anyone embeds, and turns their breaking changes into this
 package's support burden. TanStack already ships `@tanstack/react-devtools` as a
 unified host for Query, Router, Form and Pacer, and describes it as under active
-development with possible breaking changes; let it host its own. A subpath here would
+development with possible breaking changes; let it host its own — the
+[one-chip recipe above](#one-chip-for-a-whole-devtools-suite) does exactly that. A subpath here would
 also have re-implemented the one thing worth having — containment — which
 [architecture.md](./architecture.md#6-failure-isolation) shows core already does per
 slot. What was left after that is the helper above, and a helper is not a subpath.

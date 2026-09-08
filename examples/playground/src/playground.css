@@ -805,3 +805,16 @@ body {
   background: none;
   font: inherit;
 }
+
+/* --------------------------------------------------------------------------
+ * TanStack's devtools shell (src/tanstackDemo.tsx) docks to the same bottom
+ * edge as the bar and paints at z-index 99999. Core's default `--dtb-z-index`
+ * (2147483000) would put the bar and any open toolbar panel over the shell,
+ * so the playground lowers the token — a documented styling surface — to sit
+ * one layer beneath the shell. The shell's own close button and hotkey remain;
+ * the chip is covered only while the shell is open.
+ * -------------------------------------------------------------------------- */
+
+[data-dev-toolbar][data-dtb-instance="playground"] {
+  --dtb-z-index: 99990;
+}

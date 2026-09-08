@@ -8,6 +8,7 @@ import {
   playgroundFlags,
 } from "./extensions";
 import { EmbedDemoProvider, QueryPlayground } from "./embedDemo";
+import { TanStackShell, TanStackShellCard } from "./tanstackDemo";
 import { CanvasStage, HeroFigure, MediaGallery, VideoEmbed } from "./mediaDemo";
 import { ArticleDemo } from "./articleDemo";
 
@@ -750,6 +751,8 @@ export function App() {
 
       <QueryPlayground />
 
+      <TanStackShellCard />
+
       <section className="pg-card">
         <h2>Restyle demo</h2>
         <p>
@@ -840,6 +843,7 @@ export function App() {
           )}
         </Profiler>
       </DevToolbar>
+      <TanStackShell />
     </EmbedDemoProvider>
   );
 }

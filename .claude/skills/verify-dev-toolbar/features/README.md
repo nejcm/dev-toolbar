@@ -24,9 +24,9 @@ driving the app, then use the matching feature file as the recipe.
   `dtb:v1:playground:ext:overlays:enabled`. Later recipes in a sequence must
   therefore assert on the *keys they are about*, never on `storage` equalling
   a whole object — or re-clear and reload first.
-- Require the **roster of fourteen** — thirteen extensions plus the bridge's own
+- Require the **roster of seventeen** — sixteen extensions plus the bridge's own
   `agent` — as `diagnostics` (`curl -s localhost:5273/__dev-toolbar/state | jq
-  '.diagnostics|length'` → `14`, 8 `ok` and 6 `absent` at baseline; `a11y` is
+  '.diagnostics|length'` → `17`; 8 `ok` and 6 `absent` were the fourteen-roster baseline, before `kit-demo`, `tanstack-query` and `tanstack` joined; `a11y` is
   the eighth `ok`, publishing `status: "pending"` before anything is scanned). The roster
   is the fixed number; `shell.bar` is **not**. `shell.bar` is only what still
   fits, so it depends on the viewport: measured at the mandated 1280×800 it was
