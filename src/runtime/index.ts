@@ -52,10 +52,15 @@ export { writeClipboardText, writeClipboardTextOrThrow } from "./clipboard";
 export {
   DEFAULT_SENSITIVE_KEYS,
   REDACTED,
+  UNREADABLE,
   isSensitiveKey,
   redact,
   redactHeaders,
+  redactProse,
   redactText,
   redactUrl,
 } from "./redact";
 export type { HeaderLike, RedactOptions, RedactTextOptions } from "./redact";
+
+export { describeError, describeErrorUnmasked, formatError } from "./describeError";
+export type { ErrorDescription } from "./describeError";

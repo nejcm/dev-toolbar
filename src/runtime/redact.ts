@@ -13,6 +13,18 @@
 export const REDACTED = "[redacted]";
 
 /**
+ * What `redactProse()` returns when it could not run at all — the input was
+ * not a string, or the anchored `redact()` pass over the whole text threw (a
+ * caller's `RedactOptions` whose fields throw when read, or a mask that cannot
+ * be encoded when the whole text is one URL). This replaces the *whole* text,
+ * so nothing that could not be inspected is shown. It is not the only
+ * non-input value `redactProse()` returns, and its output is not
+ * all-or-nothing: the URL sweep that follows is per-match, and a URL whose own
+ * rewrite throws is handed back as written — see `redactProse`.
+ */
+export const UNREADABLE = "[unreadable]";
+
+/**
  * Matched case-insensitively against the key's **word segments** (split on
  * separators, case and letter/digit boundaries — see `isSensitiveKey`), so
  * `token` covers `Token`, `access_token`, `X-Access-Token`, `accessToken`,
@@ -1010,4 +1022,104 @@ function redactHeadersResolved(
     put(key, Array.isArray(value) ? value.join(", ") : value);
   }
   return output;
+}
+
+/*
+ * An absolute URL inside free text, for `redactProse`. Semantically the
+ * `/[a-z][a-z0-9+.-]*:\/\/\S+/gi` a11y and the console collector shipped, in
+ * a form that runs in linear time:
+ *
+ * - The lookbehind means only the *start* of a run of scheme characters is
+ *   tried. Without it, every letter in a 40k-character blob with no `://`
+ *   started a scan that ran to the end of the run before failing (quadratic:
+ *   224 ms at 40k letters, 5.3 s at 200k). This is the fix `TEXT_URL` and the
+ *   network collector's `URL_IN_TEXT` already carry.
+ * - Group 1 is the run's leading non-letters, kept *outside* the URL. The
+ *   original had no lookbehind, so in `500https://x/?token=abc` it started at
+ *   the first letter and masked the URL, leaving `500` alone. A lookbehind on
+ *   the whole class would refuse to start there at all and leak the token, so
+ *   the prefix is matched and handed back untouched instead. `TEXT_URL` does
+ *   not do this and is not a drop-in: its body also stops at a quote, and
+ *   `?token="abc"` leaks through it where `\S+` keeps the quote inside the URL.
+ *
+ * Equivalence: the original's leftmost match at `p` needs a letter at `p` and
+ * scheme characters through the `:`; if the character before `p` were a letter
+ * the match would have started there instead, so every original match begins
+ * at the first letter of a run — which is where group 2 begins, with the
+ * identical greedy body following. Both then resume at the same whitespace.
+ * The timing regression guard is in `redact.test.ts`.
+ */
+const PROSE_URL = /(?<![a-z0-9+.-])([0-9+.-]*)([a-z][a-z0-9+.-]*:\/\/\S+)/gi;
+
+/**
+ * Masks credentials in free text that is about to leave the page: an error
+ * message on its way into a snapshot, a `title` attribute, a status line, or an
+ * agent's report. This is the composition `/ext/a11y` and `/ext/diagnostics`'s
+ * console collector each built privately, lifted here unchanged:
+ *
+ * 1. `redact()` on the whole string — the anchored pass, so text that *is* a
+ *    credential (`Bearer abc`, a bare JWT, a URL with `?access_token=`) is
+ *    masked as a value.
+ * 2. Every `scheme://…` run inside the text, taken to the next whitespace, goes
+ *    through `redactUrl()` — so `failed for https://x/?token=abc` comes back as
+ *    `failed for https://x/?token=[redacted]`, and `?token="abc"` is masked with
+ *    its quote still attached.
+ *
+ * Never throws, and never returns anything but a string. Two failure paths, in
+ * the order they can occur:
+ *
+ * - **The whole text is replaced by `UNREADABLE`** when step 1 cannot run: a
+ *   non-string where the type says string, a `RedactOptions` whose fields throw
+ *   when read, or a text that *is* one URL whose rewrite throws (below). The
+ *   caller stops wrapping.
+ * - **A single URL is handed back as written** when its own `redactUrl()` throws
+ *   in step 2, and the sweep carries on with the next match — so the output can
+ *   be *partially* masked. `redactUrl()` throws only on its fallback path: a
+ *   URL the parser rejects (`http://[?token=secret`) is rewritten as a raw query
+ *   string, and a mask that `encodeURIComponent()` rejects — a lone surrogate,
+ *   `{ mask: "\uD800" }` — throws there even though the options were already
+ *   resolved and cached. A well-formed URL earlier in the same text is still
+ *   masked (the parser substitutes U+FFFD for the surrogate), the malformed
+ *   one survives with its credential. This is the a11y and console
+ *   compositions' behaviour, kept byte-for-byte, and it is pinned by the
+ *   `redactProse` parity fixtures rather than repaired: a caller who supplies
+ *   an unencodable mask has opted out of the URL rewrite for unparseable URLs.
+ *
+ * This is **defence in depth for outbound error text, not a guarantee**. It
+ * masks the shapes above and nothing else; in particular it is *not* the
+ * substring scan `redactText()` performs. Known limits, each pinned by a test so
+ * a change is visible:
+ *
+ * - **A credential in prose with no URL or assignment syntax is not masked.**
+ *   `auth failed: Bearer secret rejected`, `Authorization: hunter2`,
+ *   `X-Api-Key: sk-test-…`, `password: hunter2`, `error: {"token":"abc"}` all
+ *   come back unchanged. `redact()` masks `Bearer secret` only as the *whole*
+ *   value; mid-sentence it does not. No text-only rule distinguishes a secret
+ *   from an identical English word, so this stays a stated limit rather than a
+ *   heuristic.
+ * - **A JWT glued to punctuation** (`eyJ…eyJ…sig.`) is not a bare JWT and is
+ *   not masked.
+ * - **Adjacent URLs with no whitespace between them** are one match:
+ *   `"https://x/?ok=1","https://y/?token=abc"` is parsed as the first URL, whose
+ *   `ok` value happens to contain the second, so `abc` survives. Likewise a
+ *   value glued to the next scheme, `?token=abchttps://y/?ok=1`, is one URL
+ *   whose `token` value is masked wholesale.
+ * - **The body runs to the next whitespace**, so a closing `"`, `]` or `)`
+ *   glued to the credential is masked with it, and one after a later parameter
+ *   survives, percent-encoded by the parser (`[redacted]&ok=1%5D`). Everything
+ *   else about the rewrite is whatever `redactUrl()` does.
+ */
+export function redactProse(text: string, options?: RedactOptions): string {
+  if (typeof text !== "string") return UNREADABLE;
+  try {
+    return redact(text, options).replace(PROSE_URL, (match, prefix: string, url: string) => {
+      try {
+        return prefix + redactUrl(url, options);
+      } catch {
+        return match;
+      }
+    });
+  } catch {
+    return UNREADABLE;
+  }
 }
