@@ -13,6 +13,10 @@ if (typeof document !== "undefined") {
   // Safety net for a bare `installToolbarLayout()` whose `restore()` was missed;
   // `renderWithToolbar` already ties cleanup to RTL's below.
   const { cleanupToolbar } = await import("@nejcm/dev-toolbar/testing");
+  // The step order, and the guarantee that a throwing step cannot skip a later
+  // one, live in one tested place — this hook runs last and is the only thing
+  // that resets the DOM and `localStorage` for any test file.
+  const { resetToolbarTestEnvironment } = await import("./src/test-utils/teardown");
 
   /**
    * Install a minimal in-memory Storage, unconditionally: Node 22+'s
@@ -54,12 +58,6 @@ if (typeof document !== "undefined") {
   }
 
   afterEach(() => {
-    cleanupToolbar();
-    cleanup();
-    document.documentElement.removeAttribute("style");
-    for (const style of document.head.querySelectorAll("style[data-dev-toolbar-styles]")) {
-      style.remove();
-    }
-    window.localStorage.clear();
+    resetToolbarTestEnvironment({ cleanupToolbar, cleanup });
   });
 }

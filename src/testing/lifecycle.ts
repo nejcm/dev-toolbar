@@ -47,12 +47,36 @@ export function mountToolbar(
  *
  * For plain `renderWithToolbar()` it's only a safety net: that path already
  * ties unmount and layout teardown to Testing Library's `cleanup()`.
+ *
+ * **A throwing unmount does not abort the teardown.** `mounted.splice(0)` has
+ * already detached the list, so a mount an early exit skipped is unreachable —
+ * its tree would stay mounted, fake layout still answering core's measurer
+ * slot, for every later test in the file. So every mount is unmounted, the
+ * layout restored, and the failure re-thrown after: one as itself, several as
+ * an `AggregateError`, newest mount first. `entry.done` is set before the
+ * inner `try` — that ordering is what makes this re-entrant, and it drops a
+ * mount whose unmount threw rather than retrying a half-torn-down root.
  */
 export function cleanupToolbar(): void {
-  for (const entry of mounted.splice(0).reverse()) {
-    if (entry.done) continue;
-    entry.done = true;
-    entry.unmount();
+  const errors: unknown[] = [];
+  try {
+    for (const entry of mounted.splice(0).reverse()) {
+      if (entry.done) continue;
+      entry.done = true;
+      try {
+        entry.unmount();
+      } catch (error) {
+        errors.push(error);
+      }
+    }
+  } finally {
+    restoreToolbarLayouts();
   }
-  restoreToolbarLayouts();
+  if (errors.length === 1) throw errors[0];
+  if (errors.length > 1) {
+    throw new AggregateError(
+      errors,
+      `[dev-toolbar/testing] cleanupToolbar(): ${errors.length} mounts failed to unmount.`,
+    );
+  }
 }

@@ -151,6 +151,18 @@ is `renderWithToolbar()` that keeps that list for you, and `cleanupToolbar()` dr
 `unmount` is idempotent and de-registers the mount, so a test that tears its own
 toolbar down to assert teardown behaviour needs no bookkeeping either.
 
+**A throwing unmount no longer aborts `cleanupToolbar()`.** If an effect cleanup in
+one of the mounted trees throws, every remaining mount is still unmounted and any
+fake layout is still restored; the failure is re-thrown afterwards, so a broken
+teardown still fails the test. This matters because the drain detaches the tracked
+list in one step: a mount the old early exit skipped was unreachable — a second
+`cleanupToolbar()` could not see it — so its tree stayed mounted and its fake layout
+kept answering core's measurer slot for every later test in the file. Nothing
+is swallowed: a single failure is re-thrown as itself, and several arrive as one
+`AggregateError`, newest mount first. A mount whose unmount threw is *not* retried by
+a later call — re-running teardown over a half-torn-down React root is worse than
+leaving it — so treat the re-thrown error as the bug to fix, not as noise.
+
 **`afterEach(cleanupToolbar)` is required if you use `mountToolbar()`**, not optional
 tidying. The tracked list is this package's own, and nothing tells it about RTL's
 auto-cleanup: without the hook it is never drained, so it accumulates every mount in

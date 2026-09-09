@@ -63,6 +63,20 @@ function Tracker({ id, into }: { id: string; into: string[] }): null {
   return null;
 }
 
+/**
+ * A tree whose unmount throws, i.e. ordinary application code with a failing
+ * effect cleanup. React re-throws it out of `unmount()`, so it lands in
+ * `cleanupToolbar()`'s loop.
+ */
+function Boom({ message }: { message: string }): null {
+  useEffect(() => {
+    return () => {
+      throw new Error(message);
+    };
+  }, [message]);
+  return null;
+}
+
 describe("Testing Library cleanup()", () => {
   it("restores the fake layout, even though nothing called unmount()", () => {
     expect(isPristine()).toBe(true);
@@ -143,6 +157,64 @@ describe("mountToolbar / cleanupToolbar", () => {
     expect(isPristine()).toBe(true);
     // And with nothing left to do it is still safe to call.
     cleanupToolbar();
+    expect(isPristine()).toBe(true);
+  });
+});
+
+/**
+ * Regression: a throwing `unmount()` used to abort the loop, and the list is
+ * already detached — so the entries it never reached were unreachable, their
+ * trees stayed mounted, and a fake kept answering the measurer slot.
+ */
+describe("cleanupToolbar() when an unmount throws", () => {
+  it("unmounts the rest, restores the layout, and re-throws the failure", () => {
+    const order: string[] = [];
+    mountToolbar(<Tracker id="first" into={order} />);
+    mountToolbar(<Boom message="second blew up" />);
+    mountToolbar(<Tracker id="third" into={order} />);
+    // A bare install, the case `cleanupToolbar()` is the only net for.
+    installToolbarLayout({ barWidth: 321 });
+    expect(measuredBarWidth()).toBe(321);
+
+    expect(() => cleanupToolbar()).toThrow("second blew up");
+
+    // "first" was queued behind the thrower and is the whole point: it is
+    // already untracked, so nothing else could ever have unmounted it.
+    expect(order).toEqual(["third", "first"]);
+    expect(isPristine()).toBe(true);
+  });
+
+  it("does not retry the mount whose unmount threw", () => {
+    mountToolbar(<Boom message="blew up once" />);
+
+    expect(() => cleanupToolbar()).toThrow("blew up once");
+    // Retrying teardown over a half-torn-down React root is worse than dropping
+    // it, so the entry is marked done before `unmount()` is attempted.
+    expect(() => cleanupToolbar()).not.toThrow();
+  });
+
+  it("reports every failure as an AggregateError when more than one throws", () => {
+    const order: string[] = [];
+    mountToolbar(<Tracker id="first" into={order} />);
+    mountToolbar(<Boom message="older blew up" />);
+    mountToolbar(<Boom message="newer blew up" />);
+    let caught: unknown;
+
+    try {
+      cleanupToolbar();
+    } catch (error) {
+      caught = error;
+    }
+
+    // Newest first, matching the teardown order. Re-throwing only the first
+    // would drop the rest, and these are independent trees — one failure is not
+    // a variation on another.
+    expect(caught).toBeInstanceOf(AggregateError);
+    expect((caught as AggregateError).errors.map((error: Error) => error.message)).toEqual([
+      "newer blew up",
+      "older blew up",
+    ]);
+    expect(order).toEqual(["first"]);
     expect(isPristine()).toBe(true);
   });
 });
