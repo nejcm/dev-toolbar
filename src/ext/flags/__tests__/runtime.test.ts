@@ -1295,42 +1295,111 @@ describe("isolated flag publication fields", () => {
   });
 });
 
-describe("adapter-error publication without flag rows", () => {
-  // Pins missing adapterErrors keys in signature() (runtime.ts:517) when fallback rows
-  // are empty; ui.tsx:455 never receives the newly failed adapter key.
-  // When covered, invert to toHaveBeenCalledTimes(1) and getSnapshot() toBe(peek()).
-  it("BUG: a failed override under an unreadable catalogue adds an invisible error key", () => {
-    const runtime = createFlagsRuntime({
-      flags: [
-        {
-          key: "feature",
-          type: "string",
-          get label(): string {
-            throw new Error("unreadable label");
-          },
-        },
-      ],
-      onOverride: () => {
+describe.each(["unreadable", "readable"] as const)(
+  "adapter-error publication with %s catalogue rows",
+  (catalogue) => {
+    const setup = () => {
+      const onOverride = vi.fn((): void => {
         throw new Error("adapter failed");
-      },
+      });
+      const runtime = createFlagsRuntime({
+        flags: [
+          {
+            key: "feature",
+            type: "string",
+            get label(): string {
+              if (catalogue === "unreadable") throw new Error("unreadable label");
+              return "Feature";
+            },
+          },
+        ],
+        onOverride,
+      });
+      return { runtime, onOverride };
+    };
+
+    // Fallback rows carry no applyError, so the panel needs adapterErrors to publish independently.
+    it("publishes a failed override and exposes its error key", () => {
+      const { runtime } = setup();
+      const before = runtime.store.getSnapshot();
+      if (catalogue === "unreadable") {
+        expect(before.flags).toEqual([]);
+        expect(before.readError).not.toBeNull();
+      } else {
+        expect(before.flags).toHaveLength(1);
+        expect(before.readError).toBeNull();
+      }
+      const listener = vi.fn();
+      runtime.store.subscribe(listener);
+      runtime.setOverride("feature", "a");
+      if (catalogue === "unreadable") {
+        expect(runtime.store.peek()).toEqual({
+          ...before,
+          adapterErrors: { feature: expect.stringContaining("adapter failed") },
+          revision: before.revision + 1,
+          at: expect.any(Number),
+        });
+      }
+      expect(listener).toHaveBeenCalledTimes(1);
+      expect(runtime.store.getSnapshot()).toBe(runtime.store.peek());
+      expect(runtime.store.getSnapshot()).not.toBe(before);
+      expect(Object.keys(runtime.store.getSnapshot().adapterErrors)).toEqual(["feature"]);
+      expect(runtime.store.getSnapshot().adapterErrors.feature).toContain("adapter failed");
+      runtime.store.destroy();
     });
-    const before = runtime.store.getSnapshot();
-    expect(before.flags).toEqual([]);
-    expect(before.readError).not.toBeNull();
-    const listener = vi.fn();
-    runtime.store.subscribe(listener);
-    runtime.setOverride("feature", "a");
-    expect(runtime.store.peek()).toEqual({
-      ...before,
-      adapterErrors: { feature: expect.stringContaining("adapter failed") },
-      revision: before.revision + 1,
-      at: expect.any(Number),
+
+    it("publishes a changed adapter error for the same override", () => {
+      const { runtime, onOverride } = setup();
+      runtime.setOverride("feature", "a");
+      const before = runtime.store.getSnapshot();
+      const listener = vi.fn();
+      runtime.store.subscribe(listener);
+      onOverride.mockImplementation(() => {
+        throw new Error("adapter still unavailable");
+      });
+      runtime.setOverride("feature", "a");
+      expect(listener).toHaveBeenCalledTimes(1);
+      expect(runtime.store.getSnapshot()).toBe(runtime.store.peek());
+      expect(runtime.store.getSnapshot()).not.toBe(before);
+      expect(runtime.store.getSnapshot().adapterErrors).toEqual({
+        feature: expect.stringContaining("adapter still unavailable"),
+      });
+      runtime.store.destroy();
     });
-    expect(listener).not.toHaveBeenCalled();
-    expect(runtime.store.getSnapshot()).toBe(before);
-    runtime.store.destroy();
-  });
-});
+
+    it("publishes a cleared adapter error after successfully applying the same override", () => {
+      const { runtime, onOverride } = setup();
+      runtime.setOverride("feature", "a");
+      const before = runtime.store.getSnapshot();
+      const listener = vi.fn();
+      runtime.store.subscribe(listener);
+      onOverride.mockImplementation(() => {});
+      runtime.setOverride("feature", "a");
+      expect(listener).toHaveBeenCalledTimes(1);
+      expect(runtime.store.getSnapshot()).toBe(runtime.store.peek());
+      expect(runtime.store.getSnapshot()).not.toBe(before);
+      expect(runtime.store.getSnapshot().adapterErrors).toEqual({});
+      expect(Object.keys(runtime.store.getSnapshot().adapterErrors)).toEqual([]);
+      runtime.store.destroy();
+    });
+
+    it("does not publish unchanged adapter errors on refresh or repeated failure", () => {
+      const { runtime } = setup();
+      runtime.setOverride("feature", "a");
+      const before = runtime.store.getSnapshot();
+      const listener = vi.fn();
+      runtime.store.subscribe(listener);
+      runtime.refresh();
+      runtime.store.flush();
+      runtime.setOverride("feature", "a");
+      expect(runtime.store.peek().revision).toBeGreaterThan(before.revision);
+      expect(runtime.store.peek().adapterErrors).toEqual(before.adapterErrors);
+      expect(listener).not.toHaveBeenCalled();
+      expect(runtime.store.getSnapshot()).toBe(before);
+      runtime.store.destroy();
+    });
+  },
+);
 
 describe("published flag ordering", () => {
   it("publishes a recentlyUsed change when it changes the visible row order", () => {
