@@ -51,7 +51,11 @@ export interface CollapseReading {
   readonly barWidth?: number;
   /** The bar's horizontal padding, both sides summed. */
   readonly padding?: number;
-  /** The gap between items and between the two regions. */
+  /**
+   * The gap between items and between the two regions.
+   * A CSS gap-only change may leave observed boxes unchanged; the DOM adapter
+   * picks it up on the next full bar reading, not necessarily immediately.
+   */
   readonly gap?: number;
   /** The `⋮` button's width. Ignored unless positive: the button is only rendered once something has collapsed. */
   readonly buttonWidth?: number;

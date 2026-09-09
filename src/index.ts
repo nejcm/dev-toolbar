@@ -53,6 +53,8 @@ export {
 
 export { CORE_CSS, ensureStyles } from "./core/styles";
 
+export { ITEM_SELECTOR } from "./core/measurer";
+
 export { DEFAULT_SHORTCUT } from "./core/shortcut";
 
 export { DEFAULT_PANEL_HEIGHT, MAX_PANEL_HEIGHT, MIN_PANEL_HEIGHT } from "./core/store";

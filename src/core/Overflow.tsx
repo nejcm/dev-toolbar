@@ -4,6 +4,8 @@ import { CollapseMachine } from "./collapse";
 import type { CollapseItem, CollapseReading } from "./collapse";
 import type { DevToolbarClassNames, DevToolbarExtension } from "./contract";
 import { cx } from "./context";
+import { domMeasurer, ITEM_SELECTOR } from "./measurer";
+import type { MeasurementObserver } from "./measurer";
 
 export interface OverflowBarProps {
   startItems: readonly DevToolbarExtension[];
@@ -17,65 +19,6 @@ export interface OverflowBarProps {
 /** Fallbacks used only until the DOM has been measured. */
 const DEFAULT_GAP = 10;
 const DEFAULT_OVERFLOW_BUTTON_WIDTH = 28;
-
-function readPx(raw: string | undefined): number | undefined {
-  const parsed = Number.parseFloat(raw ?? "");
-  return Number.isFinite(parsed) ? parsed : undefined;
-}
-
-/**
- * The gap and padding the bar was styled with, read back out of the DOM so
- * overriding `--dtb-item-gap` or `--dtb-padding-x` keeps the collapse math
- * honest. Either is left out where it cannot be read, and the machine keeps
- * the value it has.
- */
-function readSpacing(bar: HTMLElement): Pick<CollapseReading, "gap" | "padding"> {
-  if (typeof getComputedStyle !== "function") return {};
-  const region = bar.querySelector<HTMLElement>('[data-dtb-part="region"]');
-  const regionStyle = region ? getComputedStyle(region) : undefined;
-  const barStyle = getComputedStyle(bar);
-  return {
-    gap: regionStyle ? readPx(regionStyle.columnGap || regionStyle.gap) : undefined,
-    padding: (readPx(barStyle.paddingLeft) ?? 0) + (readPx(barStyle.paddingRight) ?? 0),
-  };
-}
-
-/**
- * The item hosts the bar measures. The direct-child `>` combinator is
- * load-bearing: it structurally excludes the copies rendered inside the `⋮`
- * popup, whose hosts carry `data-dtb-part="overflow-menu-item"` but whose
- * *contents* may nest anything. One selector, used by every caller, so no
- * second one can drift away from it.
- */
-const ITEM_SELECTOR = '[data-dtb-part="region"] > [data-dtb-part="item"][data-dtb-ext-id]';
-
-/**
- * Brings `observed` in line with `nodes`, observing and unobserving only the
- * difference. Re-`observe()`ing an already-observed element is specified to
- * drop and re-add the observation, which queues a fresh initial notification —
- * a cheap way to spin the ResizeObserver loop, so it is avoided here.
- */
-function syncObserved(
-  observer: ResizeObserver,
-  observed: Set<Element>,
-  nodes: ArrayLike<Element>,
-): void {
-  const next = new Set<Element>();
-  for (let index = 0; index < nodes.length; index += 1) {
-    const node = nodes[index];
-    if (node) next.add(node);
-  }
-  for (const node of observed) {
-    if (next.has(node)) continue;
-    observer.unobserve(node);
-    observed.delete(node);
-  }
-  for (const node of next) {
-    if (observed.has(node)) continue;
-    observer.observe(node);
-    observed.add(node);
-  }
-}
 
 /**
  * What can take focus inside the `⋮` popup. Deliberately shallow: the popup
@@ -100,8 +43,7 @@ export function OverflowBar({
   const barRef = useRef<HTMLDivElement | null>(null);
   const menuRef = useRef<HTMLDivElement | null>(null);
   const buttonRef = useRef<HTMLButtonElement | null>(null);
-  const itemObserverRef = useRef<ResizeObserver | null>(null);
-  const observedItemsRef = useRef(new Set<Element>());
+  const itemObserverRef = useRef<MeasurementObserver | null>(null);
   // The decision and everything it depends on live in the machine, which is
   // only ever fed from committed contexts — effects and observer callbacks,
   // never render — so what it holds is the committed decision and React state
@@ -130,12 +72,12 @@ export function OverflowBar({
   const measureWidths = useCallback((bar: HTMLElement): [string, number][] => {
     const nodes = bar.querySelectorAll<HTMLElement>(ITEM_SELECTOR);
     const observer = itemObserverRef.current;
-    if (observer) syncObserved(observer, observedItemsRef.current, nodes);
+    observer?.sync(nodes);
 
     const widths: [string, number][] = [];
     for (const node of nodes) {
       const id = node.dataset["dtbExtId"];
-      if (id) widths.push([id, node.offsetWidth]);
+      if (id) widths.push([id, domMeasurer.itemWidth(node)]);
     }
     return widths;
   }, []);
@@ -143,9 +85,10 @@ export function OverflowBar({
   /** Everything the bar can report about itself, as one reading. */
   const readBar = useCallback(
     (bar: HTMLElement): CollapseReading => ({
-      barWidth: bar.clientWidth,
-      ...readSpacing(bar),
-      buttonWidth: buttonRef.current?.offsetWidth ?? 0,
+      barWidth: domMeasurer.barWidth(bar),
+      gap: domMeasurer.regionGap(bar),
+      padding: domMeasurer.padding(bar),
+      buttonWidth: domMeasurer.buttonWidth(buttonRef.current),
       widths: measureWidths(bar),
     }),
     [measureWidths],
@@ -177,6 +120,7 @@ export function OverflowBar({
     // new width here is the honest signal that forgets any cycle the items got
     // into. `readBar` carries the padding and gap too, so a `--dtb-padding-x`
     // or `--dtb-item-gap` override applied later is picked up here as well.
+    // Gap-only changes are picked up on the next bar reading, not necessarily a resize.
     const read = () => {
       if (machine.measure(readBar(bar))) sync();
     };
@@ -186,41 +130,30 @@ export function OverflowBar({
     // No ResizeObserver: fall back to window resize only. Polling would burn a
     // timer forever in every host that lacks the API, for a bar that is mostly
     // static — the collapse simply stays as measured until the window changes.
-    if (typeof ResizeObserver === "undefined") {
+    const barObserver = domMeasurer.observe(read);
+    if (!barObserver) {
       if (typeof window === "undefined") return;
       window.addEventListener("resize", read);
       return () => window.removeEventListener("resize", read);
     }
 
-    const barObserver = new ResizeObserver(read);
-    barObserver.observe(bar);
-
-    /**
-     * Item hosts are `flex: 0 0 auto; max-width: 100%` (`src/styles.css`), so
-     * unlike the flex-constrained regions they really do resize with their
-     * content: this is what notices a chip re-rendering wider on its own store
-     * change, which no render of *this* component would otherwise measure.
-     */
-    // Copied out of the ref so the cleanup below closes over this effect's own
-    // set rather than reading `.current` after a later effect replaced it.
-    const observedItems = observedItemsRef.current;
+    barObserver.sync([bar]);
 
     // Every delivery reaches the machine, latched or not: a chip cycling with
     // the decision is refused inside it, and a chip that genuinely grows past
     // the cycle must still be heard — which is what the cycle detection is for.
-    const itemObserver = new ResizeObserver(() => {
+    const itemObserver = domMeasurer.observe(() => {
       const node = barRef.current;
       if (!node) return;
       if (machine.measure({ widths: measureWidths(node) })) sync();
     });
-    itemObserverRef.current = itemObserver;
-    syncObserved(itemObserver, observedItems, bar.querySelectorAll<HTMLElement>(ITEM_SELECTOR));
+    itemObserverRef.current = itemObserver ?? null;
+    itemObserver?.sync(bar.querySelectorAll<HTMLElement>(ITEM_SELECTOR));
 
     return () => {
       barObserver.disconnect();
-      itemObserver.disconnect();
+      itemObserver?.disconnect();
       itemObserverRef.current = null;
-      observedItems.clear();
     };
   }, [machine, readBar, measureWidths, sync]);
 

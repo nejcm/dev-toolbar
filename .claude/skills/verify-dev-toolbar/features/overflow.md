@@ -105,6 +105,23 @@ Everything here is `read().shell` — `bar` (what is still in the regions) and
   in the bar. For the loop check, capture the `__dtbErrors` array with the viewport sequence that
   produced it.
 
+## Isolated geometry proof
+
+`/?geometry` mounts three fixed-width hosts and the real agent bridge, without live
+metrics that could trigger unrelated reads. `e2e/overflow.spec.ts` proves:
+
+- Viewport 320 → 299 → 320 px collapses `low` and restores it.
+- At 500 px, clicking `Grow chip` changes only the chip's own React state and width,
+  collapsing `low` while the bar's box stays unchanged. `Shrink chip` leaves it
+  collapsed: the cycle latch refuses the previously seen decision. A resize to
+  501 px restores it.
+- At 320 px, changing only `--dtb-item-gap` from 10 to 40 px leaves the decision
+  unchanged for 500 ms. Resizing to 319 px picks up the gap and collapses `low`.
+  Changing padding triggers a reading without a viewport resize.
+
+Successful runs attach screenshots for the threshold, chip growth, and gap before
+and after the next bar reading. All collapse assertions use the agent bridge.
+
 ## Gotchas
 
 - **A collapsed extension is removed from its region and re-rendered inside the

@@ -1,4 +1,5 @@
 import { expect, test } from "./fixtures";
+import type { Page, TestInfo } from "@playwright/test";
 
 // Recipe: .claude/skills/verify-dev-toolbar/features/overflow.md
 
@@ -107,4 +108,79 @@ test("stepping the viewport never trips a ResizeObserver loop", async ({ toolbar
     await settled();
   }
   expect(await page.evaluate(() => (window as any).__dtbErrors)).toEqual([]);
+});
+
+async function capture(page: Page, info: TestInfo, name: string) {
+  const path = info.outputPath(`${name}.png`);
+  await page.screenshot({ path });
+  await info.attach(name, { path, contentType: "image/png" });
+}
+
+test("geometry: crosses the collapse threshold in both directions", async ({ toolbar, page }, info) => {
+  await page.setViewportSize({ width: 320, height: 800 });
+  await toolbar.goto("/?geometry");
+  await expect.poll(() => toolbar.read().then((s) => s.shell.overflow.present)).toBe(false);
+
+  await page.setViewportSize({ width: 299, height: 800 });
+  await expect.poll(() => toolbar.read().then((s) => s.shell.bar.map((b) => b.id)))
+    .toEqual(["growing", "agent"]);
+  await toolbar.overflowButton.click();
+  await expect.poll(() => toolbar.read().then((s) => s.shell.overflow.items)).toEqual(["low"]);
+  await capture(page, info, "threshold-collapsed");
+
+  await page.setViewportSize({ width: 320, height: 800 });
+  await expect.poll(() => toolbar.read().then((s) => s.shell.overflow.present)).toBe(false);
+  expect((await toolbar.read()).shell.bar.map((b) => b.id)).toEqual(["growing", "low", "agent"]);
+  await capture(page, info, "threshold-expanded");
+});
+
+test("geometry: a chip resizes itself without resizing the bar", async ({ toolbar, page }, info) => {
+  await page.setViewportSize({ width: 500, height: 800 });
+  await toolbar.goto("/?geometry");
+  await expect.poll(() => toolbar.read().then((s) => s.shell.overflow.present)).toBe(false);
+  const barBefore = await toolbar.bar.boundingBox();
+  await page.getByRole("button", { name: "Grow chip", exact: true }).click();
+  await expect.poll(() => toolbar.read().then((s) => s.shell.bar.map((b) => b.id)))
+    .toEqual(["growing", "agent"]);
+  expect(await toolbar.bar.boundingBox()).toEqual(barBefore);
+  await capture(page, info, "self-resized-chip");
+
+  await page.getByRole("button", { name: "Shrink chip", exact: true }).click();
+  await expect.poll(async () => (await page.getByRole("button", { name: "Grow chip", exact: true }).boundingBox())?.width).toBe(100);
+  await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+  // Phase 3A's latch rejects this return to a seen decision until the bar changes.
+  expect((await toolbar.read()).shell.bar.map((b) => b.id)).toEqual(["growing", "agent"]);
+  expect(await toolbar.bar.boundingBox()).toEqual(barBefore);
+  await capture(page, info, "self-shrunk-latched");
+  await page.setViewportSize({ width: 501, height: 800 });
+  await expect.poll(() => toolbar.read().then((s) => s.shell.overflow.present)).toBe(false);
+  expect((await toolbar.read()).shell.bar.map((b) => b.id)).toEqual(["growing", "low", "agent"]);
+});
+
+test("geometry: a gap-only override waits for a bar reading; padding triggers one", async ({ toolbar, page }, info) => {
+  await page.setViewportSize({ width: 320, height: 800 });
+  await toolbar.goto("/?geometry");
+  await expect.poll(() => toolbar.read().then((s) => s.shell.overflow.present)).toBe(false);
+  // Drain initial observer deliveries before changing only the gap.
+  await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+  await page.locator('[data-dtb-part="root"]').evaluate((root) => {
+    root.style.setProperty("--dtb-item-gap", "40px");
+  });
+  // A bounded negative observation: no box resize should refresh the decision.
+  await page.waitForTimeout(500);
+  expect((await toolbar.read()).shell.bar.map((b) => b.id)).toEqual(["growing", "low", "agent"]);
+  expect((await toolbar.read()).shell.overflow.present).toBe(false);
+  await capture(page, info, "gap-only-stale");
+
+  await page.setViewportSize({ width: 319, height: 800 });
+  await expect.poll(() => toolbar.read().then((s) => s.shell.bar.map((b) => b.id)))
+    .toEqual(["growing", "agent"]);
+  await capture(page, info, "gap-after-bar-resize");
+
+  await page.locator('[data-dtb-part="root"]').evaluate((root) => {
+    root.style.setProperty("--dtb-item-gap", "0px");
+    root.style.setProperty("--dtb-padding-x", "11px");
+  });
+  await expect.poll(() => toolbar.read().then((s) => s.shell.overflow.present)).toBe(false);
+  expect((await toolbar.read()).shell.bar.map((b) => b.id)).toEqual(["growing", "low", "agent"]);
 });

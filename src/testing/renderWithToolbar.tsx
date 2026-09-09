@@ -6,6 +6,7 @@ import type { ReactNode } from "react";
 import {
   DevToolbar,
   HEIGHT_VARIABLE,
+  ITEM_SELECTOR,
   createMemoryStorage,
   useDevToolbar,
 } from "@nejcm/dev-toolbar";
@@ -305,12 +306,7 @@ export function renderWithToolbar(
         .filter((id) => !inBar.has(id));
     },
     isOverflowed: (id) => toolbar.overflowedIds().includes(id),
-    barIds: () =>
-      idsOf([
-        ...(root()?.querySelectorAll<HTMLElement>(
-          '[data-dtb-part="region"] > [data-dtb-part="item"]',
-        ) ?? []),
-      ]),
+    barIds: () => idsOf([...(root()?.querySelectorAll<HTMLElement>(ITEM_SELECTOR) ?? [])]),
     openOverflow() {
       const button = toolbar.overflowButton();
       if (!button) {
