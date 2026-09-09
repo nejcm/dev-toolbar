@@ -546,18 +546,24 @@ describe("OverflowBar per-item width observation", () => {
     expect(document.querySelector('[data-dtb-part="overflow-button"]')).not.toBeNull();
   });
 
-  it("observes the item hosts rather than the regions — a flex-constrained region does not resize when a child grows", () => {
+  it("observes the item hosts and both regions — neither box alone sees every change", () => {
     setUp(1000);
     renderBar();
     const item = observerOf("item");
     const bar = observerOf("bar");
 
+    // The hosts, because a flex-constrained region does not resize when a
+    // child grows. The regions, because the gap is taken out of them: an item
+    // is `max-width: 100%` of its region, so several hosts sharing one keep
+    // their widths while a wider gap shrinks the region under them.
     const hosts = [
       ...document.querySelectorAll('[data-dtb-part="region"] > [data-dtb-part="item"]'),
     ];
+    const regions = [...document.querySelectorAll('[data-dtb-part="region"]')];
     expect(hosts).toHaveLength(3);
-    expect([...item.getTargets()]).toEqual(hosts);
-    expect([...item.getTargets()].map(part)).toEqual(["item", "item", "item"]);
+    expect(regions).toHaveLength(2);
+    expect([...item.getTargets()]).toEqual([...hosts, ...regions]);
+    expect([...item.getTargets()].map(part)).toEqual(["item", "item", "item", "region", "region"]);
     expect([...bar.getTargets()].map(part)).toEqual(["bar"]);
   });
 
@@ -568,15 +574,21 @@ describe("OverflowBar per-item width observation", () => {
     const bar = observerOf("bar");
 
     // b and c collapsed into the popup; only `a` is still an item host in a
-    // region, and the popup copies carry a different part name.
+    // region, and the popup copies carry a different part name. The two
+    // regions stay observed throughout — they are not roster-dependent.
     const observed = () =>
-      [...item.getTargets()].map((node) => (node as HTMLElement).dataset["dtbExtId"]);
+      [...item.getTargets()]
+        .filter((node) => part(node) === "item")
+        .map((node) => (node as HTMLElement).dataset["dtbExtId"]);
+    const regionsObserved = () => [...item.getTargets()].filter((n) => part(n) === "region").length;
     expect(observed()).toEqual(["a"]);
+    expect(regionsObserved()).toBe(2);
 
     layout!.resize(1000, false);
     act(() => bar.flush());
 
     expect(observed()).toEqual(["a", "b", "c"]);
+    expect(regionsObserved()).toBe(2);
   });
 
   it("settles a chip sized by its own collapse on the decision that fits, and still hears it grow for real", () => {

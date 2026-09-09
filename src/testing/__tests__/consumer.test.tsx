@@ -230,22 +230,27 @@ describe("@nejcm/dev-toolbar/testing", () => {
     const observers = layout.getObservers();
     const items = observers.find((observer) => observer.getTargets().includes(toolbar.item("a")!))!;
     const bar = observers.find((observer) => observer.getTargets().includes(toolbar.bar()!))!;
-    const hosts = () =>
-      Array.from(
-        toolbar.bar()!.querySelectorAll('[data-dtb-part="region"] > [data-dtb-part="item"]'),
-      );
-    expect(items.getTargets()).toEqual(hosts());
-    expect(items.getTargets()).toHaveLength(3);
+    // The hosts currently in a region, then the two regions themselves — the
+    // regions are what a gap-only change resizes, so they are observed too.
+    const hosts = () => [
+      ...toolbar.bar()!.querySelectorAll('[data-dtb-part="region"] > [data-dtb-part="item"]'),
+      ...toolbar.bar()!.querySelectorAll('[data-dtb-part="region"]'),
+    ];
+    // As a set: the regions stay observed across a re-sync, so a returning
+    // host is appended after them rather than back in document order.
+    const observed = () => new Set(items.getTargets());
+    expect(observed()).toEqual(new Set(hosts()));
+    expect(items.getTargets()).toHaveLength(5);
     expect(bar.getTargets()).toEqual([toolbar.bar()]);
 
     layout.resize(100, false);
     act(() => bar.flush());
-    expect(items.getTargets()).toEqual([toolbar.item("a")]);
-    expect(items.getTargets()).toEqual(hosts());
+    expect(observed()).toEqual(new Set(hosts()));
+    expect(items.getTargets()).toHaveLength(3);
     layout.resize(1000, false);
     act(() => bar.flush());
-    expect(items.getTargets()).toEqual(hosts());
-    expect(items.getTargets()).toHaveLength(3);
+    expect(observed()).toEqual(new Set(hosts()));
+    expect(items.getTargets()).toHaveLength(5);
 
     unmount();
     expect(items.getTargets()).toEqual([]);

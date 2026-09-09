@@ -228,79 +228,155 @@ async function changeSpacing(page: Page, property: string, value: string) {
   );
 }
 
-for (const gap of [40, 140]) {
-  test(`geometry: known limitation, ${gap}px gap leaves collapse stale until a bar resize`, async ({
-    toolbar,
-    page,
-  }, info) => {
-    await recordResizes(page);
-    await page.setViewportSize({ width: 320, height: 800 });
-    await toolbar.goto("/?geometry");
-    await expect
-      .poll(() => resizeEntries(page))
-      .toEqual(
-        expect.arrayContaining([
-          expect.objectContaining({ part: "bar", width: 300 }),
-          expect.objectContaining({ part: "item", id: "agent", width: 80 }),
-        ]),
-      );
-    await page.evaluate(
-      () => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))),
-    );
-    const before = { shell: (await toolbar.read()).shell, geometry: await geometry(page) };
-    expect(before.shell.bar.map((item) => item.id)).toEqual(["growing", "low", "agent"]);
-    expect(before.shell.overflow.present).toBe(false);
-    expect(before.geometry.gap).toBe("10px");
-    await capture(page, info, "gap-before");
+/**
+ * A gap-only change resizes no box of the bar's own, so the bar's observer
+ * never fires for it. What does fire depends on the roster, which is why both
+ * are here: an item host is `max-width: 100%` of its *region*, so the split
+ * roster's lone end item narrows with the gap and delivers an `item` callback,
+ * while three hosts sharing one region each keep their own width and deliver
+ * nothing. The region is the box that moves either way — the gap is taken out
+ * of it — and it is observed alongside the hosts, which is what makes the
+ * all-start roster reach the machine at all. Every delivery takes a full bar
+ * reading, gap included, not widths alone.
+ */
+const ROSTERS = {
+  split: {
+    path: "/?geometry",
+    // A gap-only change narrows this roster's end item, so `item` fires too.
+    itemDeliveries: true,
+    40: { bar: ["growing", "agent"], overflow: ["low"] },
+    140: { bar: ["growing"], overflow: ["low", "agent"] },
+  },
+  "all-start": {
+    path: "/?geometry&roster=all-start",
+    // Three hosts capped against one region: at gap 140 the region goes
+    // 280 → 160px while all three stay 100/80/80, their sum overruns the
+    // 320px bar, and no item host resizes. Before the region was observed
+    // this delivered nothing at all and the bar clipped with no `⋮`.
+    itemDeliveries: false,
+    40: { bar: ["growing"], overflow: ["low", "agent"] },
+    140: { bar: [], overflow: ["growing", "low", "agent"] },
+  },
+} as const;
 
-    // Pins a known limitation: item callbacks do not refresh gap; clipping can persist without ⋮.
-    const observation = await changeSpacing(page, "--dtb-item-gap", `${gap}px`);
-    expect(observation.frames).toBeGreaterThan(2);
-    const entries = await resizeEntries(page);
-    expect(entries).not.toEqual(expect.arrayContaining([expect.objectContaining({ part: "bar" })]));
-    expect(entries).toEqual(expect.arrayContaining([expect.objectContaining({ part: "item" })]));
-    const after = { shell: (await toolbar.read()).shell, geometry: await geometry(page) };
-    expect(after.shell.bar).toEqual(before.shell.bar);
-    expect(after.shell.overflow.present).toBe(false);
-    expect(after.geometry.box).toEqual(before.geometry.box);
-    expect(after.geometry.padding).toBe(before.geometry.padding);
-    expect(after.geometry.gap).toBe(`${gap}px`);
-    if (gap === 140) {
+for (const [name, roster] of Object.entries(ROSTERS)) {
+  for (const gap of [40, 140] as const) {
+    test(`geometry: a ${gap}px gap-only override reaches the collapse decision (${name} roster)`, async ({
+      toolbar,
+      page,
+    }, info) => {
+      await recordResizes(page);
+      await page.setViewportSize({ width: 320, height: 800 });
+      await toolbar.goto(roster.path);
+      await expect
+        .poll(() => resizeEntries(page))
+        .toEqual(expect.arrayContaining([expect.objectContaining({ part: "bar", width: 300 })]));
+      await page.evaluate(
+        () => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))),
+      );
+      const before = { shell: (await toolbar.read()).shell, geometry: await geometry(page) };
+      expect(before.shell.bar.map((item) => item.id)).toEqual(["growing", "low", "agent"]);
+      expect(before.shell.overflow.present).toBe(false);
+      expect(before.geometry.gap).toBe("10px");
+      await capture(page, info, `gap-before-${name}`);
+
+      const observation = await changeSpacing(page, "--dtb-item-gap", `${gap}px`);
+      expect(observation.frames).toBeGreaterThan(2);
+      const entries = await resizeEntries(page);
+      const parts = (part: string) => entries.filter((entry: any) => entry.part === part);
+      expect(parts("bar"), "the bar's own box never resizes").toEqual([]);
+      expect(parts("region").length, "region deliveries").toBeGreaterThan(0);
+      expect(parts("item").length > 0, "item deliveries").toBe(roster.itemDeliveries);
+      const after = { shell: (await toolbar.read()).shell, geometry: await geometry(page) };
+      expect(after.geometry.box).toEqual(before.geometry.box);
+      expect(after.geometry.padding).toBe(before.geometry.padding);
+      expect(after.geometry.gap).toBe(`${gap}px`);
+      // The decision moved without a bar resize, which is the whole fix.
+      expect(after.shell.bar.map((item) => item.id)).toEqual(roster[gap].bar);
+      expect(after.shell.overflow.present).toBe(true);
+      // Inverted from the limitation this used to pin: `low` used to overrun
+      // the bar and clip under `overflow: hidden` with no `⋮` to reach it.
+      // Nothing overruns now, and every collapsed chip is in the `⋮`.
       expect(after.geometry.overflow).toBe("hidden");
-      expect(after.geometry.scrollWidth).toBeGreaterThan(after.geometry.clientWidth);
-      expect(after.geometry.items.find((item) => item.id === "low")!.box.right).toBeGreaterThan(
-        after.geometry.box.right,
-      );
-    } else {
       expect(after.geometry.scrollWidth).toBe(after.geometry.clientWidth);
-    }
-    await capture(page, info, "gap-only-stale");
-
-    await page.evaluate(() => {
-      (window as any).__dtbResizes = [];
+      for (const item of after.geometry.items) {
+        expect(item.box.right, `${item.id} within the bar`).toBeLessThanOrEqual(
+          after.geometry.box.right,
+        );
+      }
+      await capture(page, info, `gap-only-collapsed-${name}`);
+      await toolbar.overflowButton.click();
+      await expect
+        .poll(() => toolbar.read().then((s) => s.shell.overflow.items))
+        .toEqual(roster[gap].overflow);
+      await toolbar.overflowButton.click();
+      await info.attach(`gap-observation-${name}`, {
+        body: JSON.stringify({ before, observation, after }, null, 2),
+        contentType: "application/json",
+      });
     });
-    await page.setViewportSize({ width: 319, height: 800 });
-    const remaining = gap === 40 ? ["growing", "agent"] : ["growing"];
-    await expect
-      .poll(() => toolbar.read().then((s) => s.shell.bar.map((item) => item.id)))
-      .toEqual(remaining);
-    expect(await resizeEntries(page)).toEqual(
-      expect.arrayContaining([expect.objectContaining({ part: "bar", width: 299 })]),
-    );
-    expect((await toolbar.read()).shell.overflow.present).toBe(true);
-    const recovered = { shell: (await toolbar.read()).shell, geometry: await geometry(page) };
-    expect(recovered.geometry.scrollWidth).toBe(recovered.geometry.clientWidth);
-    await capture(page, info, "gap-after-bar-resize");
-    await toolbar.overflowButton.click();
-    await expect
-      .poll(() => toolbar.read().then((s) => s.shell.overflow.items))
-      .toEqual(gap === 40 ? ["low"] : ["low", "agent"]);
-    await info.attach("gap-observation", {
-      body: JSON.stringify({ before, observation, after, recovered }, null, 2),
-      contentType: "application/json",
-    });
-  });
+  }
 }
+
+/**
+ * The caveat, asserted rather than described. Lowering the gap from an
+ * already-collapsed state resizes nothing when the surviving layout has no box
+ * the gap sizes: the collapsed hosts are gone, and the one that is left is
+ * narrower than its region. So no observer fires, the machine keeps deciding
+ * from the wider gap, and the bar stays more collapsed than it needs to be —
+ * safely, with nothing clipped and every chip in the `⋮`. It is the next
+ * commit that repairs it, which is what the last third of this test pins.
+ * No `--dtb-padding-x` change anywhere in here: padding is the bar's own
+ * content box, so it reaches the machine through the bar's observer and would
+ * hide the whole effect.
+ */
+test("geometry: a gap-only decrease leaves the bar over-collapsed until the next commit", async ({
+  toolbar,
+  page,
+}, info) => {
+  await recordResizes(page);
+  await page.setViewportSize({ width: 320, height: 800 });
+  await toolbar.goto(ROSTERS["all-start"].path);
+  await changeSpacing(page, "--dtb-item-gap", "40px");
+  await expect.poll(() => toolbar.read().then((s) => s.shell.overflow.present)).toBe(true);
+  const collapsed = (await toolbar.read()).shell;
+  expect(collapsed.bar.map((item) => item.id)).toEqual(["growing"]);
+
+  const observation = await changeSpacing(page, "--dtb-item-gap", "0px");
+  expect(observation.frames).toBeGreaterThan(2);
+  expect(await resizeEntries(page), "a gap decrease resizes no observed box").toEqual([]);
+
+  const after = { shell: (await toolbar.read()).shell, geometry: await geometry(page) };
+  // Over-collapsed: at gap 0 all three fit, and the decision has not moved.
+  expect(after.shell.bar.map((item) => item.id)).toEqual(["growing"]);
+  expect(after.shell.overflow.present).toBe(true);
+  expect(after.geometry.gap).toBe("0px");
+  // Safe, not broken: nothing clipped, and the `⋮` is there to reach the rest.
+  expect(after.geometry.scrollWidth).toBe(after.geometry.clientWidth);
+  for (const item of after.geometry.items) {
+    expect(item.box.right, `${item.id} within the bar`).toBeLessThanOrEqual(
+      after.geometry.box.right,
+    );
+  }
+  await expect(toolbar.overflowButton).toBeVisible();
+  await capture(page, info, "gap-decrease-over-collapsed");
+
+  // Opening the `⋮` is a commit, and every commit re-reads the bar — so the
+  // click that goes looking for the collapsed chips is also what brings them
+  // back, and the menu closes itself because nothing is collapsed any more.
+  await toolbar.overflowButton.click();
+  await expect.poll(() => toolbar.read().then((s) => s.shell.overflow.present)).toBe(false);
+  expect((await toolbar.read()).shell.bar.map((item) => item.id)).toEqual([
+    "growing",
+    "low",
+    "agent",
+  ]);
+  await capture(page, info, "gap-decrease-repaired-by-commit");
+  await info.attach("gap-decrease-observation", {
+    body: JSON.stringify({ collapsed, observation, after }, null, 2),
+    contentType: "application/json",
+  });
+});
 
 test("geometry: padding alone delivers a bar resize and updates collapse", async ({
   toolbar,
