@@ -115,12 +115,38 @@ metrics that could trigger unrelated reads. `e2e/overflow.spec.ts` proves:
   collapsing `low` while the bar's box stays unchanged. `Shrink chip` leaves it
   collapsed: the cycle latch refuses the previously seen decision. A resize to
   501 px restores it.
-- At 320 px, changing only `--dtb-item-gap` from 10 to 40 px leaves the decision
-  unchanged for 500 ms. Resizing to 319 px picks up the gap and collapses `low`.
-  Changing padding triggers a reading without a viewport resize.
+- Chromium 153, viewport 320×800: changing only `--dtb-item-gap` from 10 to
+  40 or 140 px delivers an item observer callback as the Bridge host shrinks,
+  but no bar observer callback. All three ids remain in the bar, with no `⋮`,
+  throughout a 1-second observation with active animation frames.
+- At 140 px gap, `low` reaches x=330 in the 320 px bar and overlaps Bridge.
+  `overflow: hidden` clips the chip, with no menu to reach it. This is a
+  latent defect, pinned without a behavior fix.
+- Resizing to 319 px delivers a bar callback and recovers: 40 px gap collapses
+  `low`; 140 px gap collapses `low` and `agent`. The menu appears and clipping ends.
+- On a fresh page, changing only horizontal padding from 10 to 30 px per side
+  leaves gap at 10 px and the bar's outer width at 320 px. The bar observer reports
+  content width 300 → 260 px; `low` collapses and `⋮` appears within the observation.
 
-Successful runs attach screenshots for the threshold, chip growth, and gap before
-and after the next bar reading. All collapse assertions use the agent bridge.
+The item signal is incidental to core's `max-width: 100%` item cap within
+`min-width: 0` regions; a gap change need not deliver any observer callback if
+no observed box resizes. Item callbacks supply widths only. In these cases the
+smaller widths fit under the cached gap, so collapse does not change, `sync()`
+does not run, and no commit from that callback refreshes gap.
+
+Reachability is low: first-party extensions do not change this gap at runtime,
+and the theme editor rejects toolbar tokens. Initial CSS and density prop changes
+are read on commits. The stale decision heals on the next commit involving
+`OverflowBar`, including a panel toggle, or bar resize. The 40 px gap did not clip;
+the 140 px gap on a 320 px viewport did. This latent defect does not block merging
+this docs and tests change. See `docs/architecture.md` §5 for the mechanism.
+
+Successful runs attach before/after bridge state, native observer callback logs,
+geometry and screenshots. The geometry page does not install the app's HTTP
+reporter, so these tests use its in-page agent bridge. Native `ResizeObserver`
+callbacks are wrapped before mount and forwarded unchanged. The negative gap
+observation is bounded to one second; it does not prove that no later event can
+recover the bar.
 
 ## Gotchas
 

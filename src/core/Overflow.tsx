@@ -65,7 +65,7 @@ export function OverflowBar({
   ];
 
   /**
-   * The natural width of every rendered item host, and — as a side effect of
+   * The CSS-constrained width of every rendered item host, and — as a side effect of
    * walking the same `NodeList` — the item `ResizeObserver` brought in line
    * with it.
    */
@@ -114,13 +114,8 @@ export function OverflowBar({
     const bar = barRef.current;
     if (!bar) return;
 
-    // The bar's own geometry. It is fixed-height and full-width, so this fires
-    // for a viewport or container change and essentially nothing else — which
-    // is exactly why it cannot see a chip growing on its own tick, and why a
-    // new width here is the honest signal that forgets any cycle the items got
-    // into. `readBar` carries the padding and gap too, so a `--dtb-padding-x`
-    // or `--dtb-item-gap` override applied later is picked up here as well.
-    // Gap-only changes are picked up on the next bar reading, not necessarily a resize.
+    // Padding changes resize the bar's content box; gap alone can leave collapse stale and chips clipped.
+    // Item callbacks do not refresh gap; a full bar reading (e.g. on resize) does.
     const read = () => {
       if (machine.measure(readBar(bar))) sync();
     };

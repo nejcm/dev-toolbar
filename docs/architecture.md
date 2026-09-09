@@ -392,7 +392,7 @@ Set them on `[data-dev-toolbar]`, or on any ancestor. Unlayered CSS wins.
 | `--dtb-bar-height` | `32px` | Bar row height (`38px` when comfortable) |
 | `--dtb-radius` | `5px` | Corner radius on triggers, menu, chips |
 | `--dtb-gap` | `5px` | Gap between the `⋮` popup's rows (`7px` when comfortable) |
-| `--dtb-item-gap` | `18px` | Gap between bar items (`24px` when comfortable); read back for collapse math on the next bar reading — see below. A divider is drawn centred in it |
+| `--dtb-item-gap` | `18px` | Gap between bar items (`24px` when comfortable), with a centred divider. A CSS-only change after mount can leave collapse stale and chips clipped without `⋮` until an `OverflowBar` commit or bar resize; see §5 |
 | `--dtb-chip-gap` | `6px` | Label-to-value gap inside one chip, and between two controls one extension renders |
 | `--dtb-padding-x` | `8px` | Bar's horizontal padding. The panel body takes `--dtb-panel-padding-x` |
 | `--dtb-item-padding-x` | `7px` | Trigger padding (`9px` when comfortable) |
@@ -605,12 +605,49 @@ The Measurer's observer subscriptions reconcile target differences, so
 an unchanged host never receives another initial notification from re-observation.
 `ITEM_SELECTOR` is exported from the package root and shared with `/testing`.
 
-A `--dtb-item-gap` override is read on the next full bar reading. A gap-only change can
-leave every observed box unchanged, so it does **not** guarantee an immediate collapse
-update. Chromium's isolated geometry fixture keeps the old decision for the 500 ms
-observation window, then updates after a 1 px viewport resize. A `--dtb-padding-x`
-change changes the bar's content box and triggers its observer. Item-only notifications
-read widths; they only lead to a full bar reading if they cause a React commit.
+A CSS-only `--dtb-item-gap` change after mount can leave collapse stale and chips
+clipped without `⋮`. There is no scheduled gap refresh: recovery requires another
+full reading, triggered by a commit involving `OverflowBar` or a bar resize.
+
+In Chromium 153 at 320×800, the isolated geometry fixture starts with gap 10 px,
+padding 10 px per side, and `[growing, low, agent]` in the bar. Changing only gap
+to 40 or 140 px leaves that decision unchanged throughout a 1-second observation
+with active animation frames. No bar observer callback fires, but an item callback
+does: the Bridge host shrinks from 80 px to about 69.33 or 32 px respectively.
+This signal is incidental to core's stylesheet: regions have `min-width: 0` and
+items have `max-width: 100%`. It is not guaranteed by a gap change itself; removing
+the cap can leave every observed box unchanged, with no observer delivery.
+
+The item callback supplies only `machine.measure({ widths: measureWidths(node) })`.
+With no `gap` field, `CollapseMachine` retains its cached gap and the reading stays
+non-honest. In these cases the smaller item widths still fit under the old gap,
+so the decision stays unchanged, `measure()` returns `false`, and the callback
+skips `sync()`. No `OverflowBar` commit follows from that callback, so its layout
+effect never runs the full `readBar()` that would discover the gap. The defect is
+self-sealing in these cases: the gap increase squeezes the measured widths, which
+suppresses the commit that would catch the increased gap. Item notifications lead
+to that full reading only when they change the collapse decision and trigger a
+commit; an independent `OverflowBar` commit also reads the gap.
+
+The 40 px gap causes no edge clipping in this fixture. At 140 px, `low` spans
+x=250…330 in a 320 px bar, overlaps Bridge, and is clipped by `overflow: hidden`,
+with no overflow menu to reach it. Resizing the viewport to 319 px delivers a bar
+callback and recovers: gap 40 px collapses `[low]`; gap 140 px collapses
+`[low, agent]`. The menu appears and clipping ends. As a separate control, changing
+only padding from 10 to 30 px per side keeps gap at 10 px and outer width at
+320 px; the bar observer reports content width 300 → 260 px, and `low` collapses
+within the observation window.
+
+This is a latent defect with low reachability, not a merge blocker for this docs
+and tests change. No first-party extension changes this gap at runtime, and the
+theme editor refuses the `--dtb-` and `--dev-toolbar` namespaces. CSS set before
+mount is read by the initial layout effect. Changing the `density` prop commits
+and reads the gap too. A subsequent commit involving `OverflowBar`, including
+opening or closing a toolbar panel, or a bar resize refreshes the gap and heals
+this stale decision. A child-only commit need not involve `OverflowBar`. The
+measured clipping required a 10 → 140 px override on a 320 px viewport; the
+10 → 40 px case remained unclipped. The browser tests pin both cases and recovery;
+no behavior fix is included here.
 
 The `⋮` popup is a **disclosure, not an ARIA menu**. Its entries are extensions'
 compact slots, which usually render their own buttons, and a `menuitem` may not contain
