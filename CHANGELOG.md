@@ -14,6 +14,13 @@
   style break at the boundary is accepted, not an oversight.
 -->
 
+## [0.7.1](https://github.com/nejcm/dev-toolbar/compare/v0.7.0...v0.7.1) (2026-09-09)
+
+
+### Bug Fixes
+
+* **ext:** publish the flag snapshot when an adapter fails ([#81](https://github.com/nejcm/dev-toolbar/issues/81)) ([5e1ac89](https://github.com/nejcm/dev-toolbar/commit/5e1ac89f43f8332617f604b6ad12b7f9f8f8cd03))
+
 ## [0.7.0](https://github.com/nejcm/dev-toolbar/compare/v0.6.0...v0.7.0) (2026-09-09)
 
 
