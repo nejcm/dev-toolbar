@@ -1,48 +1,9 @@
 import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
+import { CollapseMachine } from "./collapse";
+import type { CollapseItem, CollapseReading } from "./collapse";
 import type { DevToolbarClassNames, DevToolbarExtension } from "./contract";
 import { cx } from "./context";
-
-export interface MeasuredItem {
-  id: string;
-  priority: number;
-  width: number;
-}
-
-/**
- * Decides which item ids collapse into the overflow menu.
- *
- * Lowest `priority` collapses first; ties break toward the later item. Returns
- * an empty set when `available` is not a positive number, so a non-measuring
- * environment (SSR, jsdom without a ResizeObserver) renders everything.
- */
-export function computeOverflow(
-  items: readonly MeasuredItem[],
-  available: number,
-  overflowButtonWidth: number,
-  gap: number,
-): Set<string> {
-  const overflow = new Set<string>();
-  if (!(available > 0) || items.length === 0) return overflow;
-
-  const widthOf = (list: readonly MeasuredItem[]) =>
-    list.reduce((sum, item) => sum + item.width, 0) + Math.max(0, list.length - 1) * gap;
-
-  if (widthOf(items) <= available) return overflow;
-
-  const candidates = items
-    .map((item, index) => ({ item, index }))
-    .sort((a, b) => a.item.priority - b.item.priority || b.index - a.index);
-
-  for (const candidate of candidates) {
-    overflow.add(candidate.item.id);
-    const remaining = items.filter((item) => !overflow.has(item.id));
-    const needed = widthOf(remaining) + (remaining.length > 0 ? gap : 0) + overflowButtonWidth;
-    if (needed <= available) break;
-  }
-
-  return overflow;
-}
 
 export interface OverflowBarProps {
   startItems: readonly DevToolbarExtension[];
@@ -57,53 +18,26 @@ export interface OverflowBarProps {
 const DEFAULT_GAP = 10;
 const DEFAULT_OVERFLOW_BUTTON_WIDTH = 28;
 
-function readPx(raw: string | undefined, fallback: number): number {
+function readPx(raw: string | undefined): number | undefined {
   const parsed = Number.parseFloat(raw ?? "");
-  return Number.isFinite(parsed) ? parsed : fallback;
-}
-
-function readGap(element: HTMLElement, fallback: number): number {
-  if (typeof getComputedStyle !== "function") return fallback;
-  const style = getComputedStyle(element);
-  return readPx(style.columnGap || style.gap, fallback);
+  return Number.isFinite(parsed) ? parsed : undefined;
 }
 
 /**
- * Width of the bar that items may not fill: its horizontal padding (included
- * in `clientWidth`) plus any inter-region gap the item math doesn't already
- * charge for. `computeOverflow` charges one gap per adjacent item pair plus
- * one before the `⋮` button, which undercounts when the start region has no
- * items or the end region has none — both still reserve a gap, since the
- * (empty) region elements are always present.
- *
- * The two emptiness tests are read from different places on purpose, and the
- * asymmetry is the point:
- *
- * - `startRegionEmpty` is read from the *rendered* children, because the start
- *   region really is empty exactly when every start item has collapsed.
- * - `endItemsEmpty` is read from the *props*, because the end region also
- *   hosts the `⋮` button: once anything collapses it is never empty, so
- *   rendered children would report "not empty" for a region that holds nothing
- *   but the button whose width `computeOverflow` already charges separately.
- *
- * Both directions therefore only ever *shrink* available width as items
- * collapse, which is what stops recompute oscillating: the start term can flip
- * 0 → gap once, and the end term is fixed for a given `endItems` array. The
- * cost is one gap of hysteresis — a bar whose start region has collapsed empty
- * is charged a gap that the flattened item math would already have covered had
- * anything come back, so re-expansion needs one gap more room than the
- * collapse gave up.
+ * The gap and padding the bar was styled with, read back out of the DOM so
+ * overriding `--dtb-item-gap` or `--dtb-padding-x` keeps the collapse math
+ * honest. Either is left out where it cannot be read, and the machine keeps
+ * the value it has.
  */
-function readReserved(
-  bar: HTMLElement,
-  gap: number,
-  startRegionEmpty: boolean,
-  endItemsEmpty: boolean,
-): number {
-  const interRegionGaps = (startRegionEmpty ? gap : 0) + (endItemsEmpty ? gap : 0);
-  if (typeof getComputedStyle !== "function") return interRegionGaps;
-  const style = getComputedStyle(bar);
-  return readPx(style.paddingLeft, 0) + readPx(style.paddingRight, 0) + interRegionGaps;
+function readSpacing(bar: HTMLElement): Pick<CollapseReading, "gap" | "padding"> {
+  if (typeof getComputedStyle !== "function") return {};
+  const region = bar.querySelector<HTMLElement>('[data-dtb-part="region"]');
+  const regionStyle = region ? getComputedStyle(region) : undefined;
+  const barStyle = getComputedStyle(bar);
+  return {
+    gap: regionStyle ? readPx(regionStyle.columnGap || regionStyle.gap) : undefined,
+    padding: (readPx(barStyle.paddingLeft) ?? 0) + (readPx(barStyle.paddingRight) ?? 0),
+  };
 }
 
 /**
@@ -144,29 +78,6 @@ function syncObserved(
 }
 
 /**
- * How many times item resizes may flip the collapsed set before the bar stops
- * listening to them, until its own width changes again.
- *
- * The case this guards is a chip that re-renders to a width that depends on the
- * collapse state — one rendering wider in the bar than in the `⋮` popup, say.
- * Collapsing it changes its width, which changes the collapse decision, so
- * there is no fixed point to settle on and no amount of debouncing converges
- * it. A hard bound terminates it instead. Four leaves room for the legitimate
- * multi-step settling of several chips measuring at once.
- *
- * Scope, precisely: this bounds the *observer* path only. A chip whose width
- * changes **synchronously** with the collapse — measurably different on the
- * very next layout, without a ResizeObserver delivery in between — loops
- * through the dependency-less layout effect below, which measures and
- * recomputes on every render and is not latched. That loop ends in React's
- * "Maximum update depth exceeded", and it predates this observer: the layout
- * effect behaved this way before per-item observation existed, so nothing here
- * made it newly reachable. Fixing it would mean latching the render path too,
- * which is a larger change than this one.
- */
-const MAX_ITEM_DRIVEN_FLIPS = 4;
-
-/**
  * What can take focus inside the `⋮` popup. Deliberately shallow: the popup
  * holds extensions' compact slots, and the first thing in the first of them is
  * where a keyboard user expects to land.
@@ -189,103 +100,71 @@ export function OverflowBar({
   const barRef = useRef<HTMLDivElement | null>(null);
   const menuRef = useRef<HTMLDivElement | null>(null);
   const buttonRef = useRef<HTMLButtonElement | null>(null);
-  const widthsRef = useRef(new Map<string, number>());
-  // Read back out of the DOM so overriding --dtb-item-gap or restyling the ⋮
-  // button keeps the collapse math honest.
-  const gapRef = useRef(gap);
-  const buttonWidthRef = useRef(DEFAULT_OVERFLOW_BUTTON_WIDTH);
-  const reservedRef = useRef(0);
-  // Last measured `clientWidth` (padding box). Reserved width is applied at
-  // use, so a collapse that changes it takes effect without waiting for resize.
-  const [available, setAvailable] = useState(0);
-  // The same value, readable from a ResizeObserver callback without closing
-  // over the state — the callbacks are created once and must not go stale.
-  const availableRef = useRef(0);
-  const [overflowIds, setOverflowIds] = useState<Set<string>>(() => new Set<string>());
-  // Mirrors the committed `overflowIds`, so `recompute` can report whether it
-  // actually flipped the set. Re-synced from committed state at the top of the
-  // layout effect below, which is the only place a discarded render can be
-  // told apart from a committed one.
-  const overflowIdsRef = useRef(overflowIds);
-  // Item-driven flips since the bar's own observer last reported a new width.
-  const itemFlipsRef = useRef(0);
   const itemObserverRef = useRef<ResizeObserver | null>(null);
   const observedItemsRef = useRef(new Set<Element>());
+  // The decision and everything it depends on live in the machine, which is
+  // only ever fed from committed contexts — effects and observer callbacks,
+  // never render — so what it holds is the committed decision and React state
+  // follows it below. Created once; `gap` seeds it until the DOM reports one.
+  const [machine] = useState(
+    () => new CollapseMachine({ gap, buttonWidth: DEFAULT_OVERFLOW_BUTTON_WIDTH }),
+  );
+  const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(machine.collapsed);
+  // React follows the machine, never the other way round: a render React
+  // discarded cannot leave the two disagreeing, because the next commit's
+  // layout effect syncs again. Same instance means React has nothing to do.
+  const sync = useCallback(() => setCollapsed(machine.collapsed), [machine]);
   const [menuOpen, setMenuOpen] = useState(false);
   const menuId = `dtb-overflow-menu-${useId()}`;
 
-  const all = [...startItems, ...endItems];
-  // Read through a ref so `recompute` (and the ResizeObserver effect) stays
-  // stable across renders that only rebuild the item arrays.
-  const listRef = useRef(all);
-  // oxlint-disable-next-line react/refs -- written in render on purpose, above.
-  listRef.current = all;
-
-  /** A measured padding-box width minus everything that is not item space. */
-  const contentWidth = (barWidth: number) => Math.max(0, barWidth - reservedRef.current);
-
-  /** @returns whether the collapsed set changed. */
-  const recompute = useCallback((width: number): boolean => {
-    const items: MeasuredItem[] = listRef.current.map((extension) => ({
-      id: extension.id,
-      priority: extension.priority ?? 0,
-      width: widthsRef.current.get(extension.id) ?? 0,
-    }));
-    const next = computeOverflow(items, width, buttonWidthRef.current, gapRef.current);
-    if (sameSet(overflowIdsRef.current, next)) return false;
-    overflowIdsRef.current = next;
-    setOverflowIds(next);
-    return true;
-  }, []);
+  const roster: CollapseItem[] = [
+    ...startItems.map((extension) => rosterItem(extension, "start")),
+    ...endItems.map((extension) => rosterItem(extension, "end")),
+  ];
 
   /**
-   * Caches the natural width of every rendered item host and brings the item
-   * `ResizeObserver` in line with the same `NodeList`.
-   *
-   * @returns whether any cached width changed.
+   * The natural width of every rendered item host, and — as a side effect of
+   * walking the same `NodeList` — the item `ResizeObserver` brought in line
+   * with it.
    */
-  const measureWidths = useCallback((bar: HTMLElement): boolean => {
+  const measureWidths = useCallback((bar: HTMLElement): [string, number][] => {
     const nodes = bar.querySelectorAll<HTMLElement>(ITEM_SELECTOR);
     const observer = itemObserverRef.current;
     if (observer) syncObserved(observer, observedItemsRef.current, nodes);
 
-    let changed = false;
+    const widths: [string, number][] = [];
     for (const node of nodes) {
       const id = node.dataset["dtbExtId"];
-      if (!id) continue;
-      const width = node.offsetWidth;
-      if (width <= 0 || widthsRef.current.get(id) === width) continue;
-      widthsRef.current.set(id, width);
-      changed = true;
+      if (id) widths.push([id, node.offsetWidth]);
     }
-    return changed;
+    return widths;
   }, []);
 
-  // Cache natural widths of whatever is currently rendered, then recompute.
-  // Widths are sticky, so a collapsed item can expand again.
+  /** Everything the bar can report about itself, as one reading. */
+  const readBar = useCallback(
+    (bar: HTMLElement): CollapseReading => ({
+      barWidth: bar.clientWidth,
+      ...readSpacing(bar),
+      buttonWidth: buttonRef.current?.offsetWidth ?? 0,
+      widths: measureWidths(bar),
+    }),
+    [measureWidths],
+  );
+
+  // Every commit is a chance to measure what it rendered — a returning item,
+  // the ⋮ button appearing, a start region emptying — and to feed the roster.
+  // Sticky widths inside the machine are what let a collapsed item come back.
   useLayoutEffect(() => {
     const bar = barRef.current;
     if (!bar) return;
-
-    const region = bar.querySelector<HTMLElement>('[data-dtb-part="region"]');
-    if (region) gapRef.current = readGap(region, gap);
-    const startRegion = bar.querySelector<HTMLElement>(
-      '[data-dtb-part="region"][data-dtb-align="start"]',
-    );
-    reservedRef.current = readReserved(
-      bar,
-      gapRef.current,
-      !startRegion?.querySelector('[data-dtb-part="item"]'),
-      endItems.length === 0,
-    );
-    const buttonWidth = buttonRef.current?.offsetWidth ?? 0;
-    if (buttonWidth > 0) buttonWidthRef.current = buttonWidth;
-
-    // Only a committed render reaches here, so this is where the mirror is
-    // guaranteed to agree with the state React actually rendered.
-    overflowIdsRef.current = overflowIds;
-    measureWidths(bar);
-    recompute(contentWidth(available || bar.clientWidth));
+    const reading = readBar(bar);
+    machine.measure({
+      items: roster,
+      ...reading,
+      // The prop is the fallback for a host whose computed style has no gap.
+      gap: reading.gap ?? gap,
+    });
+    sync();
   });
 
   useEffect(() => {
@@ -295,16 +174,11 @@ export function OverflowBar({
     // The bar's own geometry. It is fixed-height and full-width, so this fires
     // for a viewport or container change and essentially nothing else — which
     // is exactly why it cannot see a chip growing on its own tick, and why a
-    // new width here is the honest signal that the item latch may reopen.
+    // new width here is the honest signal that forgets any cycle the items got
+    // into. `readBar` carries the padding and gap too, so a `--dtb-padding-x`
+    // or `--dtb-item-gap` override applied later is picked up here as well.
     const read = () => {
-      const width = bar.clientWidth;
-      if (width !== availableRef.current) {
-        availableRef.current = width;
-        itemFlipsRef.current = 0;
-        setAvailable(width);
-      }
-      measureWidths(bar);
-      recompute(contentWidth(width));
+      if (machine.measure(readBar(bar))) sync();
     };
 
     read();
@@ -331,18 +205,13 @@ export function OverflowBar({
     // set rather than reading `.current` after a later effect replaced it.
     const observedItems = observedItemsRef.current;
 
+    // Every delivery reaches the machine, latched or not: a chip cycling with
+    // the decision is refused inside it, and a chip that genuinely grows past
+    // the cycle must still be heard — which is what the cycle detection is for.
     const itemObserver = new ResizeObserver(() => {
       const node = barRef.current;
       if (!node) return;
-      // Latched: past the bound, item resizes stop driving the collapse until
-      // the bar's own observer reports a different width. Returning before any
-      // state or DOM is touched is what makes the loop terminate rather than
-      // merely slow down.
-      if (itemFlipsRef.current >= MAX_ITEM_DRIVEN_FLIPS) return;
-      if (!measureWidths(node)) return;
-      if (recompute(contentWidth(availableRef.current || node.clientWidth))) {
-        itemFlipsRef.current += 1;
-      }
+      if (machine.measure({ widths: measureWidths(node) })) sync();
     });
     itemObserverRef.current = itemObserver;
     syncObserved(itemObserver, observedItems, bar.querySelectorAll<HTMLElement>(ITEM_SELECTOR));
@@ -353,14 +222,14 @@ export function OverflowBar({
       itemObserverRef.current = null;
       observedItems.clear();
     };
-  }, [recompute, measureWidths]);
+  }, [machine, readBar, measureWidths, sync]);
 
   // Nothing overflows any more, so close the menu. Deriving this during
   // render instead would silently reopen it the next time the bar narrows.
   useEffect(() => {
     // oxlint-disable-next-line react/set-state-in-effect
-    if (overflowIds.size === 0) setMenuOpen(false);
-  }, [overflowIds]);
+    if (collapsed.size === 0) setMenuOpen(false);
+  }, [collapsed]);
 
   // Move focus into the ⋮ popup when it opens, so a keyboard user reaches
   // the collapsed items. Falls back to the popup itself if nothing inside
@@ -401,8 +270,8 @@ export function OverflowBar({
     };
   }, [menuOpen]);
 
-  const isOverflowed = (extension: DevToolbarExtension) => overflowIds.has(extension.id);
-  const overflowed = all.filter(isOverflowed);
+  const isOverflowed = (extension: DevToolbarExtension) => collapsed.has(extension.id);
+  const overflowed = [...startItems, ...endItems].filter(isOverflowed);
   const visibleStart = startItems.filter((item) => !isOverflowed(item));
   const visibleEnd = endItems.filter((item) => !isOverflowed(item));
 
@@ -465,8 +334,6 @@ export function OverflowBar({
   );
 }
 
-function sameSet(a: Set<string>, b: Set<string>): boolean {
-  if (a.size !== b.size) return false;
-  for (const value of a) if (!b.has(value)) return false;
-  return true;
+function rosterItem(extension: DevToolbarExtension, region: CollapseItem["region"]): CollapseItem {
+  return { id: extension.id, priority: extension.priority ?? 0, region };
 }

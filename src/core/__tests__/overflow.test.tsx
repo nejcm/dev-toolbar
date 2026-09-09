@@ -2,37 +2,8 @@ import { act, fireEvent, render, screen } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { DevToolbarExtension } from "../contract";
-import { OverflowBar, computeOverflow } from "../Overflow";
+import { OverflowBar } from "../Overflow";
 import { installToolbarLayout, type ToolbarLayoutHandle } from "@nejcm/dev-toolbar/testing";
-
-describe("computeOverflow", () => {
-  const items = [
-    { id: "a", priority: 3, width: 60 },
-    { id: "b", priority: 1, width: 60 },
-    { id: "c", priority: 2, width: 60 },
-  ];
-
-  it("collapses nothing when everything fits", () => {
-    expect([...computeOverflow(items, 1000, 28, 2)]).toEqual([]);
-  });
-
-  it("collapses nothing when the container has not been measured", () => {
-    expect([...computeOverflow(items, 0, 28, 2)]).toEqual([]);
-  });
-
-  it("collapses the lowest priority first, and only as far as needed", () => {
-    expect([...computeOverflow(items, 160, 28, 2)]).toEqual(["b"]);
-    expect([...computeOverflow(items, 100, 28, 2)].sort()).toEqual(["b", "c"]);
-  });
-
-  it("breaks priority ties toward the later item", () => {
-    const tied = [
-      { id: "a", priority: 0, width: 60 },
-      { id: "b", priority: 0, width: 60 },
-    ];
-    expect([...computeOverflow(tied, 100, 28, 2)]).toEqual(["b"]);
-  });
-});
 
 const part = (node: Element) => (node as HTMLElement).dataset["dtbPart"];
 let layout: ToolbarLayoutHandle | undefined;
@@ -338,6 +309,53 @@ describe("OverflowBar available width", () => {
     expect(menuIds()).toEqual(["b", "d"]);
   });
 
+  it("recollapses when --dtb-padding-x is overridden after mount, because the bar's own reading carries it", () => {
+    // The bar's padding is read back out of the DOM on every reading of the
+    // bar, not once at mount: a `--dtb-padding-x` override applied later is
+    // the bar's own box changing, and the collapse math has to follow it.
+    //   200 − 2 (the empty end region's gap) = 198 ≥ 3×60 + 2×2 = 184
+    layout = layoutOf(200);
+    renderBar();
+    expect(regionIds("start")).toEqual(["a", "b", "c"]);
+
+    // 40 a side. Nothing resizes an item and the padding box is unchanged, so
+    // the only reading that can see this is the bar's own — which now reports
+    // its padding alongside its width.
+    //   200 − 80 (padding) − 2 = 118 < 184
+    //   drop b:       2×60 + 2 + 2 + 28 = 152 > 118, so one item is not enough
+    //   drop b and c: 60 + 2 + 28 = 90 ≤ 118
+    act(() => layout!.setPaddingX(40));
+
+    expect(regionIds("start")).toEqual(["a"]);
+    fireEvent.click(screen.getByRole("button", { name: "More developer toolbar items" }));
+    expect(menuIds()).toEqual(["b", "c"]);
+
+    // And back: the override is a live reading, not a one-way ratchet.
+    act(() => layout!.setPaddingX(0));
+    expect(regionIds("start")).toEqual(["a", "b", "c"]);
+    expect(document.querySelector('[data-dtb-part="overflow-button"]')).toBeNull();
+  });
+
+  it("recollapses when --dtb-item-gap is overridden after mount", () => {
+    layout = layoutOf(200);
+    renderBar();
+    expect(regionIds("start")).toEqual(["a", "b", "c"]);
+
+    // A wider gap costs the items twice over: once between each adjacent pair,
+    // and once for the gap the empty end region still takes.
+    //   200 − 30 = 170 < 3×60 + 2×30 = 240
+    //   drop b:       2×60 + 30 + 30 + 28 = 208 > 170
+    //   drop b and c: 60 + 30 + 28 = 118 ≤ 170
+    act(() => layout!.setGap(30));
+
+    expect(regionIds("start")).toEqual(["a"]);
+    fireEvent.click(screen.getByRole("button", { name: "More developer toolbar items" }));
+    expect(menuIds()).toEqual(["b", "c"]);
+
+    act(() => layout!.setGap(2));
+    expect(regionIds("start")).toEqual(["a", "b", "c"]);
+  });
+
   it("charges the gap the empty region still takes between the two regions", () => {
     // End-only bar, no padding this time. `computeOverflow` charges one gap
     // between adjacent items — which covers the gap *between* the regions only
@@ -561,7 +579,7 @@ describe("OverflowBar per-item width observation", () => {
     expect(observed()).toEqual(["a", "b", "c"]);
   });
 
-  it("stops letting item resizes drive the collapse after four flips — a chip sized by its container must not loop", () => {
+  it("settles a chip sized by its own collapse on the decision that fits, and still hears it grow for real", () => {
     setUp(1000);
     renderBar();
     const item = observerOf("item");
@@ -569,31 +587,82 @@ describe("OverflowBar per-item width observation", () => {
     expect(idsInBar()).toEqual(["a", "b", "c"]);
 
     // A chip whose width depends on whether it is collapsed: the pathological
-    // case the latch exists for. Only the *item* observer fires, because the
-    // bar's own box is unchanged throughout — which is the whole premise.
+    // case cycle detection exists for, with no fixed point to settle on. Only
+    // the *item* observer fires, because the bar's own box is unchanged
+    // throughout — which is the whole premise.
+    //   available: 1000 − 2 (the empty end region's gap) = 998
+    //   a at 900, everything in the bar: 900 + 60 + 60 + 2×2 = 1024 > 998
+    //   a at 900, b collapsed:          900 + 60 + 2 + 2 + 28 = 992 ≤ 998
     const flip = (width: number) => {
       layout!.setItemWidth("a", width, false);
       act(() => item.flush());
       return idsInBar();
     };
 
-    expect(flip(900)).toEqual(["a", "c"]); // flip 1
-    expect(flip(60)).toEqual(["a", "b", "c"]); // flip 2
-    expect(flip(900)).toEqual(["a", "c"]); // flip 3
-    expect(flip(60)).toEqual(["a", "b", "c"]); // flip 4 — the bound
+    expect(flip(900)).toEqual(["a", "c"]);
 
-    // Latched: the callback returns *before* `measureWidths`, so past the bound
-    // an item resize costs no DOM read at all, let alone a recompute.
-    expect(flip(900)).toEqual(["a", "b", "c"]);
-    expect(flip(60)).toEqual(["a", "b", "c"]);
+    // The other half of the 2-cycle is a *return* to a decision already held
+    // since the bar last reported its own width, while the one in hand fits.
+    // That is the cycle, and it is refused — so the bar settles on the side
+    // that fits rather than on whichever side a flip count happened to land
+    // on, and no further delivery moves it.
+    expect(flip(60)).toEqual(["a", "c"]);
+    expect(flip(900)).toEqual(["a", "c"]);
+    expect(flip(60)).toEqual(["a", "c"]);
 
-    // The bar's own observer reporting a *new* width reopens the latch. Its
-    // `read()` re-measures, which is where the width set during the latched
-    // passes is finally picked up — the latched callbacks never read it.
+    // Settled is not frozen. A chip that genuinely *grows* never returns to a
+    // decision already held, so it is heard even mid-cycle — the case a flat
+    // flip count could not tell from the cycle, and where it left 314px of
+    // chips clipped in a bar with no `⋮` to reach them.
+    //   a at 950, b collapsed:      950 + 60 + 2 + 2 + 28 = 1042 > 998
+    //   a at 950, b and c collapsed: 950 + 2 + 28 = 980 ≤ 998
+    expect(flip(950)).toEqual(["a"]);
+
+    // The bar's own observer reporting a new width forgets the cycle outright,
+    // and its `read()` re-measures — which is where a width set during the
+    // refused passes is finally acted on.
     layout!.resize(999, false);
     layout!.setItemWidth("a", 900, false);
     act(() => bar.flush());
     expect(idsInBar()).toEqual(["a", "c"]);
+  });
+
+  it("terminates on the decision that fits when a chip's width changes synchronously with the collapse — the case no observer delivery separates", () => {
+    setUp(1000);
+    renderBar();
+    const item = observerOf("item");
+    const bar = observerOf("bar");
+    expect(idsInBar()).toEqual(["a", "b", "c"]);
+
+    // `a` is 900 wide exactly while `b` is in the bar and 60 once `b` has
+    // collapsed: measurably different on the very next layout, with no
+    // ResizeObserver delivery in between. Before the layout effect's readings
+    // were filtered too this looped straight into React's "Maximum update
+    // depth exceeded" and an unmounted tree. An instance getter, so the fake
+    // layout in `src/testing/layout.ts` is untouched.
+    const host = document.querySelector<HTMLElement>('[data-dtb-ext-id="a"]')!;
+    Object.defineProperty(host, "offsetWidth", {
+      configurable: true,
+      get: () =>
+        document.querySelector('[data-dtb-part="region"] > [data-dtb-ext-id="b"]') ? 900 : 60,
+    });
+
+    // One delivery starts it, and it converges inside the act: ∅ → {b} → ∅ →
+    // {b}, and the next return to ∅ is refused because ∅ was already held and
+    // {b} fits (992 ≤ 998, against 1024 > 998 for everything in the bar).
+    act(() => item.flush());
+    expect(idsInBar()).toEqual(["a", "c"]);
+
+    // Settled: more deliveries change nothing, and the tree is still mounted.
+    act(() => item.flush());
+    expect(idsInBar()).toEqual(["a", "c"]);
+
+    // The bar's own observer forgets the cycle, so the loop runs again — and
+    // lands on the fitting side again (992 ≤ 997 at the narrower bar).
+    layout!.resize(999, false);
+    act(() => bar.flush());
+    expect(idsInBar()).toEqual(["a", "c"]);
+    expect(document.querySelector('[data-dtb-part="bar"]')).not.toBeNull();
   });
 
   it("disconnects both observers on unmount", () => {
