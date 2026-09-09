@@ -30,6 +30,13 @@ export interface MetricsRuntime {
   readonly order: readonly CollectorId[];
   /** `null` until `start(api)` runs. */
   storage(): ToolbarStorage | null;
+  /**
+   * The persisted panel tab, fail-safe: `null` when nothing valid is stored or
+   * the adapter throws. Only an id in `order` is returned.
+   */
+  readTab(): CollectorId | null;
+  /** Persists the panel tab; a throwing adapter costs the preference, not the panel. */
+  writeTab(id: CollectorId): void;
   start(api: ExtensionRuntimeApi): () => void;
   reset(): void;
   diagnostics(): unknown;
@@ -79,6 +86,8 @@ function signature(snapshot: MetricsSnapshot): string {
   }`;
   return out;
 }
+
+const TAB_KEY = "tab";
 
 export function createMetricsRuntime(options: MetricsRuntimeOptions): MetricsRuntime {
   const { collectors, updateHz = 2 } = options;
@@ -132,11 +141,33 @@ export function createMetricsRuntime(options: MetricsRuntimeOptions): MetricsRun
     });
   };
 
+  // The stored value is the raw id, not JSON: a consumer's persisted tab from
+  // before this moved behind the runtime must still read back.
+  const readTab = (): CollectorId | null => {
+    let stored: string | null = null;
+    try {
+      stored = storage?.getItem(TAB_KEY) ?? null;
+    } catch {
+      stored = null;
+    }
+    return stored !== null && order.includes(stored) ? stored : null;
+  };
+
+  const writeTab = (id: CollectorId): void => {
+    try {
+      storage?.setItem(TAB_KEY, id);
+    } catch {
+      // Ignore: the tab still applies for this session.
+    }
+  };
+
   return {
     store,
     collectors,
     order,
     storage: () => storage,
+    readTab,
+    writeTab,
     start(api: ExtensionRuntimeApi) {
       storage = api.storage;
       const context = { signal: api.signal, now, invalidate };

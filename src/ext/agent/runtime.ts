@@ -207,19 +207,47 @@ function isAgentRegistry(value: unknown): value is AgentRegistry {
   );
 }
 
+const UNREADABLE = "[unreadable]";
+
+/** One guarded property read: a hostile getter yields the placeholder, not a throw. */
+const readString = (read: () => unknown): string | undefined => {
+  try {
+    const value = read();
+    return typeof value === "string" ? value : undefined;
+  } catch {
+    return UNREADABLE;
+  }
+};
+
+/** `instanceof` walks the prototype chain, which a revoked proxy refuses: `undefined` when it throws. */
+const asError = (value: unknown): Error | null | undefined => {
+  try {
+    return value instanceof Error ? value : null;
+  } catch {
+    return undefined;
+  }
+};
+
 const describeError = (error: unknown, options: RedactOptions): AgentRunResult => {
   // Message and name are redacted separately and never pre-joined: the
   // redactors match value shapes anchored to the whole string, so a message
   // that *is* a credential-carrying URL stops being maskable the moment
-  // `"TypeError: "` sits in front of it (`core/contract.ts`).
-  const message = error instanceof Error ? error.message : String(error);
+  // `"TypeError: "` sits in front of it (`core/contract.ts`). Every read is
+  // guarded, classification included: `runCommand()` promises a value.
+  const thrown = asError(error);
+  if (thrown === undefined) return { ok: false, reason: "threw", error: UNREADABLE };
+  const message =
+    thrown === null
+      ? (readString(() => String(error)) ?? UNREADABLE)
+      : (readString(() => thrown.message) ?? UNREADABLE);
   const result: AgentRunResult = {
     ok: false,
     reason: "threw",
     error: redact(message, options),
   };
-  if (error instanceof Error && typeof error.name === "string") {
-    result.errorName = redact(error.name, options);
+  if (thrown !== null) {
+    const name = readString(() => thrown.name);
+    if (name !== undefined) result.errorName = redact(name, options);
   }
   return result;
 };
