@@ -8,7 +8,7 @@
  * substrings of an error message, goes through `redactUrl()` before retention;
  * headers and bodies are never read.
  */
-import { createRingBuffer, createTimeSeries, redactUrl } from "../../../runtime";
+import { UNREADABLE, createRingBuffer, createTimeSeries, redactUrl } from "../../../runtime";
 // Through the published specifier, not `../../../runtime`: a relative value
 // import would inline a second copy of the interceptor's patch state into
 // dist/ext/metrics.cjs (docs/architecture.md § "external"). Everything else
@@ -93,6 +93,13 @@ export type { NetworkSink, NetworkSinkResult } from "../../../runtime";
 // alphanumeric run (e.g. base64) is quadratic to fail on — measured at 5.4s
 // for 200k letters. Cost: a URL glued to a preceding digit/`.`/`-`/`+` with no
 // separator is not matched; do not remove the lookbehind to catch that case.
+//
+// Byte-identical to `TEXT_URL` in `src/runtime/redact.ts`; keep them in step.
+// This is the one URL scanner outside `/runtime`, kept on purpose: the error
+// column is the panel's own sentence about a request, and `redactProse()`'s
+// whitespace-delimited sweep would (a) pull sentence punctuation into the mask
+// and (b) read two URLs glued together by a `,` or `"` as one, leaving the
+// second one's credential in place — both pinned in `network.test.ts`.
 const URL_IN_TEXT =
   /(?<![A-Za-z0-9+.-])[A-Za-z][A-Za-z0-9+.-]*:\/\/[^\s"'`<>]*[^\s"'`<>)\].,;:!?]/g;
 
@@ -128,8 +135,32 @@ export function createNetworkCollector(options: NetworkCollectorOptions = {}): N
 
   // Error text is foreign (a rejection routinely names the failed request's
   // URL), so only URL-shaped substrings are rewritten — `redactUrl()` on the
-  // whole sentence would resolve it against a base and mangle the message.
-  const cleanErrorText = (text: string) => text.replace(URL_IN_TEXT, (url) => clean(url));
+  // whole sentence would resolve it against a base and mangle the message, and
+  // `redactText()`'s JWT rule would mask a three-label hostname like
+  // `frontend.production.internal`, the one thing this column is for. Nothing
+  // else in the text is judged: a message that *is* a bare credential stays as
+  // written (pinned). Each match is guarded, because `redactUrl()` throws on
+  // its fallback path for an unparseable URL under a mask
+  // `encodeURIComponent()` rejects; unguarded, that throw escaped `finish()`
+  // after `completedAt` was set and before the totals moved, leaving the entry
+  // `ok` with no error and nothing counted. A URL that could not be inspected
+  // is replaced in place — never handed back raw — while the words around it
+  // and any other URL in the sentence are kept and masked as usual. Only text
+  // *outside* a match survives a failure, and that text is retained on the
+  // non-throwing path too. The outer guard is for `replace` itself failing.
+  const cleanErrorText = (text: string): string => {
+    try {
+      return text.replace(URL_IN_TEXT, (url) => {
+        try {
+          return clean(url);
+        } catch {
+          return UNREADABLE;
+        }
+      });
+    } catch {
+      return UNREADABLE;
+    }
+  };
 
   const begin = (now: number, method: string, rawUrl: string, id?: string): NetworkEntry | null => {
     // Paused records nothing new; what is already retained stays readable, and

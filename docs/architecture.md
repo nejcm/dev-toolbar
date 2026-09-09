@@ -1009,7 +1009,7 @@ the console carries no hydration warning.
 
 | Not in core | Where it goes |
 | --- | --- |
-| Event bus, ring buffers, throttled store, `redact()` and `redactText()` | `./runtime` |
+| Event bus, ring buffers, throttled store, `redact()`, `redactProse()`, `redactText()` and `describeError()` | `./runtime` |
 | Metrics, environment, flags, overlays, diagnostics, theme editor | `./ext/*` |
 | Any design system, colour model or palette generator | `./ext/theme-editor` edits the tokens *you* publish — core has no `ctx` and neither does it |
 | Environment, build and session context, and any redaction of it | `./ext/environment` — core has no `ctx` to hand anybody |
@@ -1050,17 +1050,40 @@ is blocking; all were found by building an extension against the contract.
   never pushed. It costs nothing today because capture is on demand, but a reader that
   wanted to *watch* an aggregation would have to poll.
 - **`ExtensionDiagnostics` splits `error` and `errorName` on purpose,** so each half can
-  be matched by an anchored redactor. A reader that renders only `error` shows messages
-  with no name in front of them; joining them is one template literal, after masking
-  both halves.
-- **`redact()`'s value pass only inspects bare absolute URLs** (`scheme://…`). A
-  relative reference (`/cb?access_token=…`) or a URL-shaped string sitting in a header
-  value is not rewritten unless the caller runs `redactUrl()` — or `redactText()` with
-  `url: true`, which tries the whole value as a URL, relative references included, and
-  scans for embedded `scheme://…` runs as well — on it explicitly. The
-  environment extension does this for `location.href` and `document.referrer`, but a
-  custom diagnostics source that dumps a relative route or a header bag must do the
-  same for those fields.
+  be masked before anything joins them. A reader that renders only `error` shows
+  messages with no name in front of them; joining them is one template literal, after
+  masking both halves — which is what `/runtime`'s `formatError()` does for a thrown
+  value (`describeError()` returns the halves; `formatError()` joins them). Now that a
+  prose masker exists (`redactProse()`, below), the split is no longer needed for
+  the **embedded-URL** case alone: a reader that masked the joined `"Error:
+  https://x/?token=…"` would still find the URL. It is still needed for everything
+  else `redact()` catches only as a whole value — `describeError(new Error("Bearer
+  secret"))` masks the message, `redactProse("Error: Bearer secret")` does not — so
+  preserving whole-value credential detection still requires masking the parts
+  before joining. The halves are *values* — a name is a class identifier or a
+  credential, never prose — and a value is what the anchored `redact()` judges
+  exactly, where a prose sweep can only look for URLs inside it.
+- **`redact()`'s value pass only inspects bare absolute URLs** (`scheme://…`) — a
+  string that *is* one, not one that *contains* one. Free text on its way out of the
+  page (an error message, an axe failure summary, a console line) is not a value, so
+  the reader runs `redactProse()` on it: the same whole-value pass, then every
+  `scheme://…` run inside the text through `redactUrl()`. `/ext/a11y` (selectors,
+  summaries, rule ids, help text, a thrown reason), `/ext/diagnostics` (console
+  messages and names, roster errors, long-task attribution) and `/ext/agent` (a
+  command's throw) all use it; `/ext/metrics`' network error column keeps a private
+  URL-only scanner whose match stops at a closing delimiter, because its sentences
+  and quote-glued URL pairs need that ([runtime.md](./runtime.md)). A relative
+  reference (`/cb?access_token=…`) has no scheme, so neither `redact()` nor
+  `redactProse()` rewrites it; an absolute URL embedded in a header value is
+  rewritten by `redactProse()` but not by `redact()`, whose value pass judges the
+  whole header as one value. Either way, a caller that knows a value *is* a URL runs
+  `redactUrl()` — or `redactText()` with `url: true`, which tries the whole value as
+  a URL, relative references included, and scans for embedded `scheme://…` runs as
+  well — on it explicitly. The environment extension does this for `location.href` and
+  `document.referrer`, but a custom diagnostics source that dumps a relative route or a
+  header bag must do the same for those fields. And `redactProse()` is defence in depth,
+  not a guarantee: a credential in prose with no URL and no assignment syntax
+  (`Authorization: hunter2`) is not found — see [runtime.md](./runtime.md).
 
 Three hardening gaps of the form *a hostile host global makes a guarded path fail* are
 known and deliberately unfixed, because each costs more than it buys:

@@ -276,9 +276,8 @@ describe("allowRun", () => {
           label: "Explode",
           run: () => {
             // The message *is* the URL, which is what `fetch` and axios
-            // throw: `redact()` anchors its value matching to the whole
-            // string, so a credential mid-sentence is not maskable and the
-            // bridge deliberately does not pretend otherwise.
+            // throw. Kept separate from the name so `/runtime`'s describer
+            // can mask it before anything joins them.
             throw new TypeError("https://api.example.com/v1?access_token=sk-live-abc");
           },
         },
@@ -404,20 +403,29 @@ describe("allowRun", () => {
     });
   });
 
-  // `instanceof` is a read too: a revoked proxy, or one whose `getPrototypeOf`
-  // trap throws, must not reject before the message is ever looked at.
-  it.each(["jobs.revoked", "jobs.hostile-prototype"])(
-    "resolves a value when classifying the thrown value throws (%s)",
-    async (id) => {
-      renderWithToolbar(undefined, { extensions: [agentBridge({ allowRun: true }), runnable()] });
+  // `instanceof` is a read too, and one the describer never performs: a
+  // revoked proxy refuses every read and is one `[unreadable]`; a proxy whose
+  // `getPrototypeOf` trap throws is never asked, so its message is legible.
+  it("resolves a value for a revoked proxy, which refuses every read", async () => {
+    renderWithToolbar(undefined, { extensions: [agentBridge({ allowRun: true }), runnable()] });
 
-      await expect(registry().default.runCommand?.(id)).resolves.toEqual({
-        ok: false,
-        reason: "threw",
-        error: "[unreadable]",
-      });
-    },
-  );
+    await expect(registry().default.runCommand?.("jobs.revoked")).resolves.toEqual({
+      ok: false,
+      reason: "threw",
+      error: "[unreadable]",
+    });
+  });
+
+  it("resolves the message for a proxy whose getPrototypeOf trap throws", async () => {
+    renderWithToolbar(undefined, { extensions: [agentBridge({ allowRun: true }), runnable()] });
+
+    await expect(registry().default.runCommand?.("jobs.hostile-prototype")).resolves.toEqual({
+      ok: false,
+      reason: "threw",
+      error: "trap",
+      errorName: "Error",
+    });
+  });
 
   it("falls back per property: an unreadable name keeps the readable message", async () => {
     renderWithToolbar(undefined, { extensions: [agentBridge({ allowRun: true }), runnable()] });
@@ -433,10 +441,13 @@ describe("allowRun", () => {
   it("resolves a value when a non-Error throw cannot be stringified", async () => {
     renderWithToolbar(undefined, { extensions: [agentBridge({ allowRun: true }), runnable()] });
 
+    // The describer never calls the thrown value's own `toString` — an object
+    // with no string `message` is named by its tag — so a `toString` that
+    // throws is simply never reached.
     await expect(registry().default.runCommand?.("jobs.unstringable")).resolves.toEqual({
       ok: false,
       reason: "threw",
-      error: "[unreadable]",
+      error: "[object Object]",
     });
   });
 });

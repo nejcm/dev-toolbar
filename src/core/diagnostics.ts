@@ -32,12 +32,11 @@ export function resetDiagnosticsWarnings(): void {
 
 /**
  * Splits a thrown value into its name and message, **unjoined** — joining is
- * the reader's job. `redact()`'s value matching is anchored: it masks a
- * string that **is** a credential-carrying URL, not one that contains one, so
- * a `` `${name}: ${message}` `` join previously shipped here hid errors like
- * `new Error("https://api.test/refresh?refresh_token=…")` behind the `"Error:
- * "` prefix, past the anchor. Core cannot redact (may not import `/runtime`),
- * so it hands over the parts and lets the downstream reader redact them.
+ * the reader's job, after masking each half (`ExtensionDiagnostics.error` in
+ * `contract.ts` has the rule). Core cannot redact (may not import `/runtime`),
+ * so it hands over the parts; `/runtime`'s `describeError()` is the shared
+ * describer for everything outside core, and this stays only because of that
+ * import rule.
  */
 function describe(error: unknown): { name?: string; message: string } {
   try {

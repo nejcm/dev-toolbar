@@ -379,9 +379,14 @@ const TEXT_DIGEST = /\bdigest\s+(?=[a-z-]+=)/gi;
 const TEXT_JWT =
   /(?<![A-Za-z0-9_-])[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}(?![A-Za-z0-9_-])/g;
 // An absolute-URL substring inside free text (unanchored, unlike `ABSOLUTE_URL`).
-// Byte-identical to `URL_IN_TEXT` in `ext/metrics/collectors/network.ts`, which
-// explains the lookbehind (linear time) and the punctuation tail; keep them in
-// step until Phase 1 removes the copy there.
+// The lookbehind keeps it linear on a long alphanumeric run (a URL glued to a
+// preceding letter/digit/`.`/`-`/`+` is the accepted cost); closing delimiters
+// `)`/`]` and `.,;:!?` end the match only as its last character, so a wrapped
+// URL stops cleanly without truncating `?ids[]=1&token=…` at the first `]`.
+// `PROSE_URL` below runs to whitespace instead, for the reason given there.
+// Byte-identical to `URL_IN_TEXT` in `ext/metrics/collectors/network.ts`, the
+// one URL scanner kept outside `/runtime` (its punctuation tail is tested there,
+// the exception Phase 1 allowed for); keep the two in step.
 const TEXT_URL = /(?<![A-Za-z0-9+.-])[A-Za-z][A-Za-z0-9+.-]*:\/\/[^\s"'`<>]*[^\s"'`<>)\].,;:!?]/g;
 
 export interface RedactTextOptions extends RedactOptions {
@@ -1032,8 +1037,8 @@ function redactHeadersResolved(
  * - The lookbehind means only the *start* of a run of scheme characters is
  *   tried. Without it, every letter in a 40k-character blob with no `://`
  *   started a scan that ran to the end of the run before failing (quadratic:
- *   224 ms at 40k letters, 5.3 s at 200k). This is the fix `TEXT_URL` and the
- *   network collector's `URL_IN_TEXT` already carry.
+ *   224 ms at 40k letters, 5.3 s at 200k). This is the fix `TEXT_URL` already
+ *   carries.
  * - Group 1 is the run's leading non-letters, kept *outside* the URL. The
  *   original had no lookbehind, so in `500https://x/?token=abc` it started at
  *   the first letter and masked the URL, leaving `500` alone. A lookbehind on

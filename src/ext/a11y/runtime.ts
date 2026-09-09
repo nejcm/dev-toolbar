@@ -8,17 +8,20 @@
  * axe's results are foreign data on their way into a bug report, so every
  * string that reaches the report gets credential and URL masking. Snippet
  * text uses `redactText()` to find credentials within prose; other fields
- * retain whole-value `redact()` matching. An element's HTML snippet is
+ * (selectors, summaries, rule ids, help text, a thrown reason) go through
+ * `redactProse()` — the whole-value pass plus a URL sweep, owned by
+ * `/runtime`. An element's HTML snippet is
  * the sharpest edge of that — a `<input type="password" value="...">` is
  * exactly the markup axe flags — so attribute values survive only for the
  * attributes accessibility is about.
  */
 import {
+  UNREADABLE,
   createThrottledStore,
+  formatError,
   isSensitiveKey,
-  redact,
+  redactProse,
   redactText,
-  redactUrl,
 } from "@nejcm/dev-toolbar/runtime";
 import { A11Y_MARKER, IMPACTS, NO_COUNTS, emptyReport, isImpact, selectionKey } from "./types";
 import type { RedactOptions, RedactTextOptions, ThrottledStore } from "@nejcm/dev-toolbar/runtime";
@@ -39,8 +42,6 @@ export const DEFAULT_NODE_LIMIT = 5;
 
 /** Everything the toolbar draws, and the toolbar itself, is not the app's markup. */
 export const TOOLBAR_EXCLUDE = "[data-dev-toolbar]";
-
-const URL_LIKE = /[a-z][a-z0-9+.-]*:\/\/\S+/gi;
 
 // Kept verbatim: the attributes a11y is about. Everything else — `value`,
 // every `data-*`, anything a framework invented — is masked, because the
@@ -88,8 +89,6 @@ const asRecord = (value: unknown): Readonly<Record<string, unknown>> =>
   typeof value === "object" && value !== null ? (value as Record<string, unknown>) : {};
 
 const asText = (value: unknown): string | null => (typeof value === "string" ? value : null);
-
-const UNREADABLE = "[unreadable]";
 
 // axe truncates its own snippets, but only to the element's own start tag plus
 // a little; a single attribute can still carry a hundred kilobytes into the
@@ -368,27 +367,10 @@ export function createA11yRuntime(options: A11yRuntimeOptions = {}): A11yRuntime
     if (immediate) store.flush();
   };
 
-  const maskUrls = (text: string): string => {
-    try {
-      return text.replace(URL_LIKE, (match) => {
-        try {
-          return redactUrl(match, redactOptions);
-        } catch {
-          return match;
-        }
-      });
-    } catch {
-      return text;
-    }
-  };
-
-  const maskString = (value: string): string => {
-    try {
-      return maskUrls(String(redact(value, redactOptions)));
-    } catch {
-      return UNREADABLE;
-    }
-  };
+  // Everything that is not markup: the anchored pass, then every `scheme://…`
+  // run — `/runtime`'s `redactProse()`, which never throws and never returns a
+  // non-string, so nothing here wraps it.
+  const maskProse = (value: string): string => redactProse(value, redactOptions);
 
   const keepsValue = (name: string): boolean => {
     const lower = name.toLowerCase();
@@ -422,20 +404,9 @@ export function createA11yRuntime(options: A11yRuntimeOptions = {}): A11yRuntime
     }
   };
 
-  // A getter on a foreign object can throw, and this is the one place whose job
-  // is to turn a throw into a string.
-  const describe = (error: unknown): string => {
-    try {
-      if (error instanceof Error) {
-        const name = maskString(error.name);
-        const message = maskString(error.message);
-        return message === "" ? name : `${name}: ${message}`;
-      }
-      return maskString(typeof error === "string" ? error : String(error));
-    } catch {
-      return UNREADABLE;
-    }
-  };
+  // A thrown value for the report: `/runtime`'s describer — duck-typed, every
+  // read guarded, name and message masked separately before the join.
+  const describe = (error: unknown): string => formatError(error, redactOptions);
 
   const unsupported = (reason: string): void => {
     report = { ...report, status: "unsupported", running: false, unsupportedReason: reason };
@@ -514,11 +485,11 @@ export function createA11yRuntime(options: A11yRuntimeOptions = {}): A11yRuntime
         targets.set(key, { path: first, impact, label: rule });
       }
       nodes.push({
-        target: maskText(selector, maskString),
+        target: maskText(selector, maskProse),
         html: maskHtml(asText(node["html"]) ?? ""),
         summary: (() => {
           const text = asText(node["failureSummary"]);
-          return text === null ? null : maskText(text, maskString);
+          return text === null ? null : maskText(text, maskProse);
         })(),
       });
     }
@@ -529,20 +500,20 @@ export function createA11yRuntime(options: A11yRuntimeOptions = {}): A11yRuntime
     const violations: A11yViolationView[] = [];
     for (const entry of raw) {
       const record = asRecord(entry);
-      const rule = maskString(asText(record["id"]) ?? "unknown");
+      const rule = maskProse(asText(record["id"]) ?? "unknown");
       const impact = isImpact(record["impact"]) ? record["impact"] : "minor";
       const { nodes, count } = toNodes(rule, impact, asArray(record["nodes"]));
       violations.push({
         rule,
         impact,
-        help: maskString(asText(record["help"]) ?? rule),
+        help: maskProse(asText(record["help"]) ?? rule),
         helpUrl: (() => {
           const url = asText(record["helpUrl"]);
-          return url === null ? null : maskUrls(url);
+          return url === null ? null : maskProse(url);
         })(),
         tags: asArray(record["tags"])
           .filter((tag): tag is string => typeof tag === "string")
-          .map((tag) => maskString(tag)),
+          .map((tag) => maskProse(tag)),
         nodeCount: count,
         nodes,
         truncated: nodes.length < count,

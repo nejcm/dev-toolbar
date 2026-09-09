@@ -14,7 +14,7 @@
  * throw there), and `observe()` is attempted per entry type in its own `try`
  * so one unsupported type doesn't cost the others.
  */
-import { createRingBuffer, redact, redactUrl } from "../../runtime";
+import { createRingBuffer, describeError, redact, redactUrl } from "../../runtime";
 import { describeSupport } from "./types";
 import type {
   InteractionReport,
@@ -122,15 +122,6 @@ const part = (value: string): string => {
     return redact(value);
   } catch {
     return "[unreadable]";
-  }
-};
-
-/** `String(value)` on a hostile object can itself throw. */
-const safeString = (value: unknown): string => {
-  try {
-    return String(value);
-  } catch {
-    return "a value that could not be described";
   }
 };
 
@@ -305,10 +296,9 @@ export function createResponsivenessMonitor(
       support[entryType] = "supported";
     } catch (error) {
       support[entryType] = "failed";
-      // Message reaches a `note`/ticket, so it's masked (same pattern as
-      // runtime.ts). `safeString` first since `error.message` isn't reliably
-      // a string on a hostile subclass.
-      detail[entryType] = part(safeString(error instanceof Error ? error.message : error));
+      // The message reaches a `note`/ticket, so it is masked: `/runtime`'s
+      // describer reads it once, guarded, and masks it as prose.
+      detail[entryType] = describeError(error).message;
     }
   };
 

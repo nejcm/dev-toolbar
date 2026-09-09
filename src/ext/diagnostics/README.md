@@ -56,7 +56,8 @@ itself only what no other extension owns — page facts and the
 
 ## Two redactors, deliberately different
 
-`entries[].message` is judged by `redact()`, which matches **whole values**.
+`entries[].message` is judged by the runtime's `redactProse()` — `redact()`'s
+**whole-value** matching plus a URL sweep, never a substring scan.
 `entries[].stack` goes through `redactText()`, which scans for the same
 credential shapes *anywhere inside* the text and masks the matched spans in
 place. A stack is exactly the case anchored matching cannot serve — its

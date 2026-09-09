@@ -24,7 +24,9 @@
  */
 import {
   REDACTED,
+  formatError,
   redact,
+  redactProse,
   redactUrl,
   writeClipboardText,
   writeClipboardTextOrThrow,
@@ -306,44 +308,17 @@ export function createDiagnosticsRuntime(
   let revocations: Revoker[] = [];
 
   /**
-   * A foreign string on its way into a ticket. `redact()`'s value matching is
-   * **anchored** — it masks a string that *is* a `Bearer …` header or JWT, not
-   * one embedded in a sentence ("refresh failed for Bearer abc…" survives).
-   * Corollary: **never assemble a sentence from foreign parts and then redact
-   * the sentence** — redact the parts first. See `describeAttribution` in
-   * `responsiveness.ts`.
+   * A foreign string on its way into a ticket: `/runtime`'s `redactProse()` —
+   * the whole-value pass plus every `scheme://…` run, never a throw, never a
+   * non-string (callers pass a *declared* string that may be foreign data).
+   * Corollary still holds: **never assemble a sentence from foreign parts and
+   * then redact the sentence** — mask the parts first. See
+   * `describeAttribution` in `responsiveness.ts`.
    */
-  const redactText = (value: string): string => {
-    try {
-      // Callers pass a *declared* string that may actually be foreign data
-      // (error.name/message off a hostile subclass, core's entry.error) — an
-      // object can arrive where the type says string, and redact() would then
-      // return a walked record that reaches React as a child. Do not remove the wrap.
-      return String(redact(value, redactOptions));
-    } catch {
-      // Only reachable via hostile redactOptions, but the failure path may not fail.
-      return "[unreadable]";
-    }
-  };
+  const maskProse = (value: string): string => redactProse(value, redactOptions);
 
-  /**
-   * A thrown value rendered for the snapshot: message redacted, *then* joined
-   * to the name — never the other way round (see `describeParts`). The
-   * message can still hide a credential mid-sentence (anchored-matching
-   * limit, pinned by its own test); this only guarantees the package's own
-   * prefix isn't what defeated the matcher.
-   */
-  const describeSafely = (error: unknown): string => {
-    const { name, message } = describeParts(error);
-    const masked = message === "" ? "" : redactText(message);
-    if (name === undefined) {
-      return masked === "" ? "an error with no message" : masked;
-    }
-    // `error.name` is a writable own property, not a guaranteed class
-    // identifier, so it's foreign too — must be masked like the message.
-    const maskedName = redactText(name);
-    return masked === "" ? maskedName : `${maskedName}: ${masked}`;
-  };
+  /** A thrown value for the snapshot: `formatError()` masks the halves, then joins. */
+  const describeSafely = (error: unknown): string => formatError(error, redactOptions);
 
   /**
    * The one place a raw foreign value is touched. Order is load-bearing:
@@ -430,8 +405,8 @@ export function createDiagnosticsRuntime(
       if (entry.status === "failed") {
         // Core hands message and name over separately so this can mask the
         // message *before* prefixing it — joining first is the leak.
-        const message = redactText(entry.error ?? "diagnostics() threw.");
-        const name = entry.errorName === undefined ? undefined : redactText(entry.errorName);
+        const message = maskProse(entry.error ?? "diagnostics() threw.");
+        const name = entry.errorName === undefined ? undefined : maskProse(entry.errorName);
         contributions.push({
           id: entry.id,
           label: entry.label,
@@ -486,7 +461,7 @@ export function createDiagnosticsRuntime(
     const report = monitor.report();
     const clean = (sample: LongTaskSample): LongTaskSample => ({
       ...sample,
-      attribution: sample.attribution === null ? null : redactText(sample.attribution),
+      attribution: sample.attribution === null ? null : maskProse(sample.attribution),
     });
     return {
       ...report,
@@ -1190,18 +1165,11 @@ export function countOccurrences(haystack: string, needle: string): number {
 }
 
 /**
- * Splits a thrown value into name and message, **unjoined** (same split as
- * core's `describe`, same reason): joining before redacting is the leak,
- * since `redact()`'s anchored matching won't catch a credential mid-sentence.
+ * `String(value)` on a hostile object can itself throw. Only for the two
+ * serialisation-failure notes below, which report the *engine's* own message
+ * (`docs/architecture.md` §10) — a thrown value on its way into the snapshot
+ * goes through `/runtime`'s `formatError()` instead.
  */
-function describeParts(error: unknown): { name?: string; message: string } {
-  if (error instanceof Error) {
-    return { name: error.name, message: error.message };
-  }
-  return { message: safeDescribe(error) };
-}
-
-/** `String(value)` on a hostile object can itself throw. */
 function safeDescribe(value: unknown): string {
   try {
     return String(value);

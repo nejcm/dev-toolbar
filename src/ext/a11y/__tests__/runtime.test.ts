@@ -718,23 +718,6 @@ describe("a peer object that fights back", () => {
     expect(report.status).toBe("ok");
     expect(report.axeVersion).toBeNull();
   });
-
-  it("describes a rejection whose own `name` throws", async () => {
-    const nasty = Object.create(Error.prototype, {
-      name: {
-        get() {
-          throw new Error("name boom");
-        },
-      },
-      message: { value: "x" },
-    }) as Error;
-    const report = await createA11yRuntime({
-      load: () => Promise.resolve({ run: () => Promise.reject(nasty) } as AxeLike),
-    }).scan();
-
-    expect(report.status).toBe("failed");
-    expect(report.error).toContain("[unreadable]");
-  });
 });
 
 describe("two runtimes over one engine", () => {

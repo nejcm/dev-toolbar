@@ -14,18 +14,22 @@ import {
   createDerivedStore,
   ensureStyleSheet,
   redact,
+  redactProse,
   redactText,
   redactUrl,
   redactHeaders,
+  describeError,
+  formatError,
   writeClipboardText,
   instrumentFetch,
   instrumentXhr,
 } from "@nejcm/dev-toolbar/runtime";
 ```
 
-Also exported: `REDACTED` (the mask string), `DEFAULT_SENSITIVE_KEYS` and
-`isSensitiveKey()` for reusing the word list, `STYLE_ATTRIBUTE` for finding an
-injected sheet, and `writeClipboardTextOrThrow()`.
+Also exported: `REDACTED` (the mask string), `UNREADABLE` (what `redactProse()` and
+`describeError()` write for a value they could not read), `DEFAULT_SENSITIVE_KEYS`
+and `isSensitiveKey()` for reusing the word list, `describeErrorUnmasked()`,
+`STYLE_ATTRIBUTE` for finding an injected sheet, and `writeClipboardTextOrThrow()`.
 
 - **`createEventBus<Events>()`** — typed pub/sub, one per instance (never a
   singleton). `on(type, handler, { signal })` unsubscribes on the `AbortSignal`
@@ -91,6 +95,74 @@ injected sheet, and `writeClipboardTextOrThrow()`.
     Pass `url: true` when the whole input is known to be a URL, including a
     relative one; embedded `scheme://…` runs are scanned either way. `redact()`
     keeps its anchored semantics — reach for `redactText()` deliberately.
+  - **Which one, and why — the invariants, not the signatures.** Ask what the
+    string *is*:
+    - **A value** — a header, an object leaf, a query parameter, an error's
+      `name` — is judged whole by **`redact()`**. It masks a value that *is* a
+      credential and leaves a value that merely resembles one alone; it does
+      not scan arbitrary prose for embedded credential shapes (a bare URL's
+      query *is* rewritten, because the whole value is the URL). That exactness is why the
+      extension contract hands over `error` and `errorName` unjoined: each half
+      is a value until a reader joins them.
+    - **Free text about to leave the page** — an error message, a failure
+      summary, a console line, a status note — goes through
+      **`redactProse(text)`**: the whole-value pass, then every `scheme://…` run
+      inside the text through `redactUrl()`, so `failed for
+      https://x/?token=abc` comes back `…?token=[redacted]` and `Unexpected
+      token export` comes back untouched. It **never throws and never returns
+      anything but a string** — a non-string where the type says string, or
+      options that throw when read, come back as `UNREADABLE` — so a caller
+      stops wrapping it. The first-party surfaces that emit prose use it —
+      a11y, the diagnostics snapshot and console tail, the agent bridge — with
+      one exception: `/ext/metrics`' network error column keeps its own
+      URL-only scanner, because its sentence punctuation and quote-glued URL
+      pairs (`"…?ok=1","https://y/?token=…"`) need a match that stops at a
+      delimiter, which the whitespace-delimited sweep does not (see the limits
+      below; both are pinned in its tests).
+    - **A thrown value** — anything out of a `catch` — goes through
+      **`describeError(error)`**, which returns `{ name?, message }` with each
+      half masked by `redactProse()` **separately, never as a joined sentence**;
+      `formatError()` joins them the way `Error.prototype.toString` does, after
+      masking. It is duck-typed (an error from another realm, or a revoked
+      `Proxy`, is described, not `instanceof`-tested), reads `name` and
+      `message` **exactly once each**, guarded, and never calls the value's own
+      `toString` — an object with no string `message` is named by its tag,
+      `[object Object]`. `describeErrorUnmasked()` is the same extraction with
+      no mask, for the developer's own console, where a failure path logs the
+      raw thrown value by design (`architecture.md` §10); anything that leaves
+      the page uses the masked one.
+    - **Multi-line or structured text whose credentials sit inside longer
+      runs** — a stack trace, an element's markup — is **`redactText()`**'s job,
+      the substring scan above. It finds `Bearer …`, JWTs and Digest parameters
+      mid-line, which `redactProse()` does not, and pays for that with its
+      over-masking rules (a Digest match masks to the end of the text; three
+      dotted runs of eight word characters look like a JWT, so a hostname like
+      `frontend.production.internal` is masked). That trade is right for a
+      stack and wrong for a status line, which is why the two exist.
+  - **`redactProse()` is defence in depth for outbound text, not a guarantee.**
+    It masks the shapes above and nothing else, and each limit is pinned by a
+    test so a change is visible:
+    - A credential in prose with **no URL and no assignment syntax** is not
+      found: `auth failed: Bearer secret rejected`, `Authorization: hunter2`,
+      `X-Api-Key: sk-test-…`, `password: hunter2` and `error: {"token":"abc"}`
+      all come back unchanged. No text-only rule tells a secret from an
+      identical English word, so this is a stated limit, not a heuristic to add.
+    - **Adjacent URLs with no whitespace between them are one URL**:
+      `"https://x/?ok=1","https://y/?token=abc"` is parsed as the first, whose
+      `ok` value happens to contain the second, and `abc` survives.
+    - **The sweep runs to the next whitespace**, so a closing `"`, `]`, `)` or
+      `.` glued to a masked credential goes into the mask with it, and one
+      after a later parameter survives, percent-encoded by the parser.
+    - **Masking is per match.** A URL the parser rejects is rewritten as a raw
+      query string, and that fallback percent-encodes the mask — so a mask
+      `encodeURIComponent()` rejects (a lone surrogate) throws there, and that
+      one URL is **handed back as written** while an earlier well-formed URL
+      in the same text is masked. The output can be partially masked, and a
+      caller who supplies an unencodable mask has opted out of the rewrite for
+      unparseable URLs.
+    - A JWT glued to punctuation (`eyJ…sig.`) is not a bare JWT and is not
+      masked. The panel shows you the text before you share it; **you** are
+      the last check.
   - **Inside a URL the mask is written literally** — `?token=[redacted]`, not
     `%5Bredacted%5D` — so the URL stays readable, still parses, and still
     contains the exported `REDACTED`. A custom `mask` carrying a URL delimiter

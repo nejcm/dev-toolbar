@@ -20,11 +20,12 @@
  * forwarding past 20,000 under Bun 1.4.0 (docs/ext/diagnostics.md § "before
  * you ship two copies").
  *
- * Stacks use `redactText()` on the original text, then a cap.
- * Messages retain whole-value `redact()` semantics. A transparent `Proxy`
+ * Stacks use `redactText()` on the original text, then a cap. Messages,
+ * names and string arguments go through `redactProse()` — the whole-value
+ * pass plus a URL sweep, owned by `/runtime`. A transparent `Proxy`
  * over `console` remains a distinct patch owner; see the documented limit.
  */
-import { redact, redactText, redactUrl } from "../../runtime";
+import { describeError, redact, redactProse, redactText } from "../../runtime";
 import type { RedactOptions } from "../../runtime";
 // The real clamp, not a copy of it: a restatement that matches today drifts
 // tomorrow, and `size` has always produced the numbers every other ring does.
@@ -285,12 +286,6 @@ function attach(method: PatchedMethod, listener: ConsoleListener): Attachment | 
 /* Formatting, redacted argument by argument                                   */
 /* -------------------------------------------------------------------------- */
 
-// Every `scheme://…` run in a line is masked on its own, since `redact()`
-// only matches a whole-string URL and a console message rarely is one. The
-// run stops at whitespace only, never at a wrapping quote — stopping at a
-// quote would hand `redactUrl()` a truncated URL and leak the query value.
-const URL_LIKE = /[a-z][a-z0-9+.-]*:\/\/\S+/gi;
-
 const defaultNow = (): number => {
   try {
     if (typeof performance !== "undefined" && typeof performance.now === "function") {
@@ -307,7 +302,10 @@ const defaultNow = (): number => {
 };
 
 // A snapshot, not the live object: reading `name`/`message`/`stack` twice
-// would let a hostile getter answer differently the second time.
+// would let a hostile getter answer differently the second time. This stays
+// beside `/runtime`'s `describeError()` rather than being replaced by it
+// because the tail also needs `stack`, and because a value with a `message`
+// but neither `name` nor `stack` is an ordinary object here, not an error.
 interface ErrorSnapshot {
   name: string | null;
   message: string | null;
@@ -386,40 +384,22 @@ export function createConsoleTail(
   /* Masking                                                                 */
   /* ---------------------------------------------------------------------- */
 
-  // `URL_LIKE` runs to the next delimiter, so adjacent non-whitespace text is
-  // consumed into the match and masked with the URL.
-  const maskUrls = (text: string): string => {
-    try {
-      return text.replace(URL_LIKE, (match) => {
-        try {
-          return redactUrl(match, redactOptions);
-        } catch {
-          return match;
-        }
-      });
-    } catch {
-      return text;
-    }
-  };
-
-  // Whole-value shape matching, then the URL pass. This is what `message` gets;
-  // stacks take `redactText()` instead, for the reason in the module docblock.
-  const maskString = (value: string): string => {
-    try {
-      return maskUrls(redact(value, redactOptions));
-    } catch {
-      return "[unreadable]";
-    }
-  };
+  // Whole-value shape matching, then the URL pass — `/runtime`'s
+  // `redactProse()`, which never throws. This is what a message gets; stacks
+  // take `redactText()` instead, for the reason in the module docblock.
+  const maskString = (value: string): string => redactProse(value, redactOptions);
 
   const prepareError = (value: unknown): MaskedErrorSnapshot | null => {
     const error = readErrorLike(value);
     if (error === null) return null;
-    return {
-      ...error,
-      maskedName: error.name === null ? "" : maskString(error.name),
-      maskedMessage: maskString(error.message ?? ""),
-    };
+    // Masked by `/runtime`'s describer over the *snapshot*, not the live
+    // object: its properties were each read exactly once above, and
+    // `describeError()` masks name and message separately, never the join.
+    const described = describeError(
+      { name: error.name ?? undefined, message: error.message ?? "" },
+      redactOptions,
+    );
+    return { ...error, maskedName: described.name ?? "", maskedMessage: described.message };
   };
 
   const maskStack = (error: MaskedErrorSnapshot): string | null => {
@@ -457,10 +437,10 @@ export function createConsoleTail(
     try {
       const redacted = redact(value, redactOptions);
       if (redacted === undefined) return "undefined";
-      if (typeof redacted === "string") return cap(maskUrls(redacted), ARGUMENT_CHARS);
+      if (typeof redacted === "string") return cap(maskString(redacted), ARGUMENT_CHARS);
       if (typeof redacted === "object" && redacted !== null) {
         const json = JSON.stringify(maskLeaves(redacted));
-        return cap(json === undefined ? "[unserialisable]" : maskUrls(json), ARGUMENT_CHARS);
+        return cap(json === undefined ? "[unserialisable]" : maskString(json), ARGUMENT_CHARS);
       }
       return cap(maskString(String(redacted)), ARGUMENT_CHARS);
     } catch {
@@ -660,7 +640,7 @@ export function createConsoleTail(
     if (filename !== "") {
       const line = typeof lineno === "number" ? `:${lineno}` : "";
       const column = typeof colno === "number" ? `:${colno}` : "";
-      parts.push(`(${maskUrls(filename)}${line}${column})`);
+      parts.push(`(${maskString(filename)}${line}${column})`);
     }
 
     record(

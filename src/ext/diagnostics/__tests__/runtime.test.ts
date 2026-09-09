@@ -380,8 +380,10 @@ describe("redaction on the way in", () => {
   });
 
   it("does not pretend to find a credential embedded in a sentence", () => {
-    // The other half of the anchored-matching limit, pinned so nobody reads the
-    // test above as a guarantee that error text is scrubbed.
+    // The prose masker's documented limit (`redactProse()` masks a whole-value
+    // credential and every `scheme://…` run, not a bare `Bearer …` inside a
+    // sentence), pinned so nobody reads the test above as a guarantee that
+    // error text is scrubbed.
     const { runtime, stop } = started({}, [
       {
         id: "net",

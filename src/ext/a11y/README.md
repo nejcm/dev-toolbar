@@ -55,7 +55,8 @@ the markup axe flags. So:
 - **Kept attribute values and snippet text go through `redactText()`**, which
   scans for credential shapes and `scheme://…` runs anywhere inside the value.
   `href` and `src` are known to *be* URLs, so the whole value is tried as one
-  first. Selectors and axe's failure summaries keep whole-value `redact()`.
+  first. Selectors, axe's failure summaries, rule ids, help text and a thrown
+  reason go through the runtime's `redactProse()` / `formatError()`.
 - **The markup is parsed, not pattern-matched.** A tag ends at the first `>`
   *outside* an attribute value. A comment is dropped whole; a declaration, CDATA
   section or processing instruction makes the whole snippet `[unreadable]`.

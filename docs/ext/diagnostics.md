@@ -152,13 +152,15 @@ diagnostics({
   status says `disabled` — never a zero that reads as "nothing went wrong".
 
 What it masks, and what it cannot: every argument is redacted **before** the line is
-assembled — objects walked by `redact()` (where key-name matching works), strings
-matched by value shape, and every `scheme://…` run in a string or a stack put
-through `redactUrl()`, because a credential-carrying URL in the middle of a sentence is
-the shape a console message actually has and anchored matching cannot see it.
+assembled — objects walked by `redact()` (where key-name matching works), and every
+string, message and error name put through the runtime's `redactProse()`: the
+whole-value shape pass, then every `scheme://…` run through `redactUrl()`, because a
+credential-carrying URL in the middle of a sentence is the shape a console message
+actually has and anchored matching cannot see it.
 
-Two judges, deliberately different. `entries[].message` is judged by `redact()`, which
-matches **whole values**. `entries[].stack` goes through `redactText()`, which scans for
+Two judges, deliberately different. `entries[].message` is judged by `redactProse()` —
+`redact()`'s **whole-value** matching plus a URL sweep, never a substring scan for
+`Bearer …` mid-sentence. `entries[].stack` goes through `redactText()`, which scans for
 credential *shapes* anywhere inside the text. The distinction is not arbitrary: a stack
 is a multi-line string whose credentials arrive inside longer lines, and every earlier
 attempt to handle that by classifying lines — a frame classifier, a header classifier,
@@ -288,10 +290,10 @@ Core calls it, contains a throw, and hands the result to whatever is reading. If
 `/ext/diagnostics` is not mounted, nothing calls it and it costs nothing.
 
 If it throws, core reports the error's message and its name **separately**, never
-pre-joined — the reader has to mask the message before prefixing it, because the
-redactors match value shapes anchored to the whole string and a message that *is* a
-credential-carrying URL (what `fetch` and axios throw) stops being maskable the moment
-`"Error: "` is in front of it.
+pre-joined — the reader masks each half and then joins them, the rule the runtime's
+`describeError()` implements for a thrown value, so a message that *is* a
+credential-carrying URL (what `fetch` and axios throw) is judged as the value it is
+rather than as a sentence with `"Error: "` in front of it.
 
 
 ---
