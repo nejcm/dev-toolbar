@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef } from "react";
 import type { RefObject } from "react";
 import type { ToolbarPosition } from "./contract";
+import { domMeasurer } from "./measurer";
 
 /**
  * CSS custom property published on `document.documentElement` while the bar is
@@ -66,12 +67,12 @@ export function useHeightVariables(options: {
       return clear;
     }
 
-    const publish = () => write(`${Math.round(node.getBoundingClientRect().height)}px`);
+    const publish = () => write(`${Math.round(domMeasurer.height(node))}px`);
     publish();
 
-    if (typeof ResizeObserver === "undefined") return clear;
-    const observer = new ResizeObserver(publish);
-    observer.observe(node);
+    const observer = domMeasurer.observe(publish);
+    if (!observer) return clear;
+    observer.sync([node]);
     return () => {
       observer.disconnect();
       clear();

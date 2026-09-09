@@ -145,15 +145,19 @@ const widthOf = (element: Element): number => {
   return 0;
 };
 
+function rectOf(element: Element): DOMRectReadOnly {
+  return new DOMRectReadOnly(
+    0,
+    0,
+    widthOf(element),
+    element.getAttribute("data-dtb-part") === "root" ? (current()?.rootHeight ?? 0) : 0,
+  );
+}
+
 function deliver(observer: Observer): void {
   const entries = Array.from(observer.targets, (target): ResizeObserverEntry => ({
     target,
-    contentRect: new DOMRectReadOnly(
-      0,
-      0,
-      widthOf(target),
-      target.getAttribute("data-dtb-part") === "root" ? (current()?.rootHeight ?? 0) : 0,
-    ),
+    contentRect: rectOf(target),
     borderBoxSize: [],
     contentBoxSize: [],
     devicePixelContentBoxSize: [],
@@ -217,19 +221,7 @@ function patch(): void {
     if (!install || this.dataset["dtbPart"] !== "root") {
       return previousRect.call(this);
     }
-    const width = install.barWidth;
-    const height = install.rootHeight;
-    return {
-      x: 0,
-      y: 0,
-      top: 0,
-      left: 0,
-      right: width,
-      bottom: height,
-      width,
-      height,
-      toJSON: () => ({}),
-    } as DOMRect;
+    return DOMRect.fromRect(rectOf(this));
   };
 }
 
@@ -289,6 +281,13 @@ const installs = new WeakMap<ToolbarLayoutHandle, Install>();
  *
  * The fake `ResizeObserver` reports each target with its fake width and root
  * height (zero height for other targets). Box-size arrays are empty.
+ * The root's `getBoundingClientRect()` returns a native `DOMRect`: `toJSON()`
+ * and JSON serialization include geometry, but `Object.keys(rect)` is empty
+ * and `{ ...rect }` yields `{}` because geometry uses prototype accessors.
+ * Mutating width or height updates derived edges, as in a browser. Consumers
+ * asserting own properties or spreading the previous plain object must adapt.
+ * The host DOM must now provide `DOMRect.fromRect`; verified in jsdom,
+ * unverified in happy-dom.
  */
 export function installToolbarLayout(
   options: InstallToolbarLayoutOptions = {},

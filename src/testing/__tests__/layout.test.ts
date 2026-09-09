@@ -408,7 +408,10 @@ describe("installToolbarLayout", () => {
 
   it("leaves getBoundingClientRect alone for anything but the root", () => {
     const handle = installToolbarLayout({ barWidth: 640, rootHeight: 42 });
-    expect(root().getBoundingClientRect().height).toBe(42);
+    const rect = root().getBoundingClientRect();
+    expect(rect).toBeInstanceOf(DOMRect);
+    expect(rect.height).toBe(42);
+    expect(rect.toJSON()).toMatchObject({ width: 640, height: 42, right: 640, bottom: 42 });
     // A plain element still gets jsdom's own zero rect, not the fake one.
     expect(document.createElement("div").getBoundingClientRect().height).toBe(0);
     handle.restore();

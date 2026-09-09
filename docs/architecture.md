@@ -392,7 +392,7 @@ Set them on `[data-dev-toolbar]`, or on any ancestor. Unlayered CSS wins.
 | `--dtb-bar-height` | `32px` | Bar row height (`38px` when comfortable) |
 | `--dtb-radius` | `5px` | Corner radius on triggers, menu, chips |
 | `--dtb-gap` | `5px` | Gap between the `⋮` popup's rows (`7px` when comfortable) |
-| `--dtb-item-gap` | `18px` | Gap between bar items (`24px` when comfortable); read back for collapse math. A divider is drawn centred in it |
+| `--dtb-item-gap` | `18px` | Gap between bar items (`24px` when comfortable); read back for collapse math on the next bar reading — see below. A divider is drawn centred in it |
 | `--dtb-chip-gap` | `6px` | Label-to-value gap inside one chip, and between two controls one extension renders |
 | `--dtb-padding-x` | `8px` | Bar's horizontal padding. The panel body takes `--dtb-panel-padding-x` |
 | `--dtb-item-padding-x` | `7px` | Trigger padding (`9px` when comfortable) |
@@ -584,15 +584,33 @@ formatter so the bytes stay identical.
 and `priority` decides what collapses when the bar is too narrow — **lowest priority
 collapses first**, ties break toward the later item.
 
-The bar measures itself with a `ResizeObserver`, caches each item's natural width, and
-recomputes on every resize. Cached widths are sticky, which is what lets a collapsed
-item come back when the width returns even though it was not in the bar to be measured.
-The gap and the `⋮` button width are read back out of the DOM, so overriding
-`--dtb-item-gap` or restyling the button keeps the math honest. The width items may fill is
-the bar's `clientWidth` less its own horizontal padding, and less a gap for each side
-whose gap the item math does not already charge: one when the start region renders no
-items, one when there are no end items at all. A region that renders empty still takes
-its gap.
+`OverflowBar` feeds committed readings to the framework-free `CollapseMachine`, which
+owns cached widths, priority order, region-emptiness hysteresis and cycle detection.
+Cached widths are sticky: only positive readings replace them, so a collapsed item can
+return even though its host is absent from the bar. Cycle detection can also delay a
+genuine shrink: a chip growing from 100 to 320 px and back at a fixed 500 px bar returns
+to a previously seen decision, so re-expansion waits for a bar or roster change.
+
+The internal `domMeasurer` in `src/core/measurer.ts` owns all pixel reads for overflow
+and height publication. Bar width remains the padding-box width; subtracting `domMeasurer.padding(bar)`, the measured
+horizontal padding gives the content width. Item and button widths retain layout sizing,
+unaffected by CSS transforms. Root height retains the bounding-rectangle measurement.
+The machine also reserves gaps for empty regions; the Measurer does not duplicate that
+state-dependent arithmetic. The width items may fill is the bar's `clientWidth` less
+its horizontal padding and one gap for each side whose gap the item math does not
+already charge: one when the start region renders no items, one when there are no
+end items at all. A region that renders empty still takes its gap.
+
+The Measurer's observer subscriptions reconcile target differences, so
+an unchanged host never receives another initial notification from re-observation.
+`ITEM_SELECTOR` is exported from the package root and shared with `/testing`.
+
+A `--dtb-item-gap` override is read on the next full bar reading. A gap-only change can
+leave every observed box unchanged, so it does **not** guarantee an immediate collapse
+update. Chromium's isolated geometry fixture keeps the old decision for the 500 ms
+observation window, then updates after a 1 px viewport resize. A `--dtb-padding-x`
+change changes the bar's content box and triggers its observer. Item-only notifications
+read widths; they only lead to a full bar reading if they cause a React commit.
 
 The `⋮` popup is a **disclosure, not an ARIA menu**. Its entries are extensions'
 compact slots, which usually render their own buttons, and a `menuitem` may not contain
@@ -605,8 +623,8 @@ returns focus to the button; a click outside closes it and leaves focus where th
 put it. Escape is handled on `document`, so an extension whose own surface closes on
 Escape must call `stopPropagation()` — `/ext/command-menu` does.
 
-Where there is no `ResizeObserver` (SSR, a bare jsdom), nothing collapses — the bar
-renders everything rather than guessing. `@nejcm/dev-toolbar/testing` ships
+Where there is no `ResizeObserver`, the bar measures on commits and window resize.
+SSR and bare jsdom report no positive bar width, so the machine renders everything. `@nejcm/dev-toolbar/testing` ships
 `installToolbarLayout()` to make the collapse testable under jsdom. Its fake
 `ResizeObserver` delivers one entry per observed target with a synthetic
 `contentRect`, while core re-measures from the DOM regardless.

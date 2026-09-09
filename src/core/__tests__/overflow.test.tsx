@@ -336,7 +336,7 @@ describe("OverflowBar available width", () => {
     expect(document.querySelector('[data-dtb-part="overflow-button"]')).toBeNull();
   });
 
-  it("recollapses when --dtb-item-gap is overridden after mount", () => {
+  it("recollapses when a bar reading sees a --dtb-item-gap override after mount", () => {
     layout = layoutOf(200);
     renderBar();
     expect(regionIds("start")).toEqual(["a", "b", "c"]);
