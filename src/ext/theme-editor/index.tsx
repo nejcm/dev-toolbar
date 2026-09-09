@@ -104,12 +104,11 @@ export function themeEditor(options: ThemeEditorOptions = {}): DevToolbarExtensi
     keepMounted = true,
     injectStyles = true,
     styleNonce: optionNonce,
-    ...runtimeOptions
   } = options;
 
   // Built here, not in start(api): slot functions run during the toolbar's
   // first render, which is before any effect fires.
-  const runtime = createThemeEditorRuntime(runtimeOptions);
+  const runtime = createThemeEditorRuntime(options);
 
   /**
    * Enumerated on every aggregation pass, not once in the factory — the

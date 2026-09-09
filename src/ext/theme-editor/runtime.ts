@@ -185,6 +185,31 @@ export interface ThemeEditorRuntime {
 /* Small guards                                                                */
 /* -------------------------------------------------------------------------- */
 
+/**
+ * Reads one consumer redaction property once; a throw yields the default.
+ * A getter may depend on state not ready yet: inside `themeEditor()`, before
+ * core mounts, a throw takes down the host app's render, not an error chip.
+ * Guard the property read so unrelated bugs in the surrounding block surface.
+ * Snapshot each property once: changing getters must not make the panel
+ * disagree with itself. Previously `maskText` and `redact()`'s own resolve
+ * each read `mask`, so the panel could use two different masks.
+ */
+function readRedactionProperty<T, K extends keyof T>(
+  options: T | undefined,
+  key: K,
+): T[K] | undefined {
+  try {
+    return options?.[key];
+  } catch (error) {
+    // eslint-disable-next-line no-console
+    console.error(
+      `[dev-toolbar/ext/theme-editor] the supplied ${String(key)} getter threw. Using the default.`,
+      error,
+    );
+    return undefined;
+  }
+}
+
 const nowIso = (at: number): string => {
   // A patched/broken `Date` must not turn "the export failed" into a throw
   // out of a click handler.
@@ -272,8 +297,8 @@ export function readStoredThemeOverrides(
     storage,
     themeParam = DEFAULT_THEME_PARAM,
     tokens,
-    mask,
   } = options;
+  const mask = readRedactionProperty(options, "mask") ?? MASK_SENTINEL;
   try {
     const declared = declaredTypesOf(tokens);
     // The kit owns the key template, the kill switch and the read; the entry
@@ -420,7 +445,6 @@ export function createThemeEditorRuntime(
     presets: presetOption,
     mode,
     pollMs = 1000,
-    redactOptions,
     themeParam = DEFAULT_THEME_PARAM,
     persist = true,
     now = Date.now,
@@ -431,7 +455,18 @@ export function createThemeEditorRuntime(
   const surfaces: readonly ThemeSurface[] =
     surfaceOption && surfaceOption.length > 0 ? surfaceOption : [DEFAULT_SURFACE];
 
-  const maskText = redactOptions?.mask ?? MASK_SENTINEL;
+  const suppliedRedactOptions = readRedactionProperty(options, "redactOptions");
+  const redactOptions: RedactOptions = {
+    mask: readRedactionProperty(suppliedRedactOptions, "mask") ?? MASK_SENTINEL,
+    keys: readRedactionProperty(suppliedRedactOptions, "keys"),
+    extraKeys: readRedactionProperty(suppliedRedactOptions, "extraKeys"),
+    allowKeys: readRedactionProperty(suppliedRedactOptions, "allowKeys"),
+    maxDepth: readRedactionProperty(suppliedRedactOptions, "maxDepth"),
+    maxArrayLength: readRedactionProperty(suppliedRedactOptions, "maxArrayLength"),
+    maxNodes: readRedactionProperty(suppliedRedactOptions, "maxNodes"),
+    values: readRedactionProperty(suppliedRedactOptions, "values"),
+  };
+  const maskText = redactOptions.mask ?? MASK_SENTINEL;
 
   let storage: ToolbarStorage | null = null;
   let overrides = emptyMap();
