@@ -1,3 +1,9 @@
+// The type import sits above the docblock on purpose: tsup's declaration
+// rollup emits that docblock as `InstallToolbarLayoutOptions`'s JSDoc in
+// `dist/testing.d.ts`, and only while nothing separates the two. Its bytes
+// are published; the measurer notes live on the declarations below instead.
+import type { Measurer } from "../core/measurer";
+
 /**
  * jsdom reports every element as 0x0 and ships no `ResizeObserver`, so overflow
  * collapse can never trigger there on its own. This installs a fake layout the
@@ -9,7 +15,6 @@
  * non-empty and unpatched once it empties. Per-install capture would only be
  * correct if installs always restored in exact reverse order.
  */
-
 export interface InstallToolbarLayoutOptions {
   /** Width reported for the bar element. Default `800`. */
   barWidth?: number;
@@ -82,6 +87,8 @@ interface Install {
 }
 
 interface Baseline {
+  /** The slot's own descriptor before the first install patched it, if any. */
+  measurer: PropertyDescriptor | undefined;
   proto: HTMLElement & Record<string, unknown>;
   offsetWidth: PropertyDescriptor | undefined;
   clientWidth: PropertyDescriptor | undefined;
@@ -95,7 +102,31 @@ interface Baseline {
 const stack: Install[] = [];
 let baseline: Baseline | null = null;
 
-const globals = globalThis as { ResizeObserver?: typeof ResizeObserver };
+/**
+ * Core's measurer slot, and how it joins the install stack above.
+ *
+ * The key is re-derived rather than imported: the symbol lives in the global
+ * registry precisely so a second copy of a module can reach the same slot,
+ * which is what lets this file name it without a relative value import into
+ * `../core/*` (AGENTS.md) and without core publishing an export for it.
+ *
+ * The slot is another process-wide global, so it follows the same cycle as the
+ * prototype patches rather than getting bookkeeping of its own: one `Measurer`
+ * is registered when the stack becomes non-empty and the descriptor captured
+ * in `baseline` comes back once it empties. That is not per-install capture —
+ * it is per patch cycle, exactly like `offsetWidth`'s descriptor, so an
+ * out-of-order `restore()` cannot put back a stale value. Nesting needs
+ * nothing from the slot at all: the registered object holds no state and reads
+ * `current()` per call, as the prototype getters do, so pushing an install
+ * redirects patches and measurer together and restoring any install hands
+ * both to whatever is topmost afterwards. A `Measurer` a test registered
+ * before the first install is therefore restored, not clobbered.
+ */
+const MEASURER_SLOT = Symbol.for("@nejcm/dev-toolbar.measurer");
+const globals = globalThis as {
+  ResizeObserver?: typeof ResizeObserver;
+  [MEASURER_SLOT]?: Measurer;
+};
 
 const current = (): Install | undefined => stack[stack.length - 1];
 
@@ -131,6 +162,93 @@ class FakeResizeObserver implements ResizeObserver {
     this.owner?.observers.delete(this.entry);
   }
 }
+
+function readPx(raw: string): number | undefined {
+  const parsed = Number.parseFloat(raw);
+  return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+/**
+ * What core measures through while an install is live: the same install state
+ * the prototype patches below read, reached the same way — `current()` per
+ * call, never captured. `barWidth` and `height` ignore their argument because
+ * an install reports one bar width and one root height, as its options say.
+ */
+const measurer: Measurer = {
+  barWidth: () => current()?.barWidth ?? 0,
+  itemWidth(host) {
+    // An own `offsetWidth` on the host wins, because it wins for the patched
+    // prototype getter too: an instance accessor shadows a prototype one. That
+    // is how a test gives one chip a width that changes with the layout
+    // (`src/core/__tests__/overflow.test.tsx`) without reaching in here.
+    if (Object.hasOwn(host, "offsetWidth")) return host.offsetWidth;
+    const install = current();
+    // The published `itemWidths` option is keyed by extension id, and the
+    // attribute carrying it is documented contract (docs/architecture.md).
+    const id = host.dataset["dtbExtId"];
+    return install && id ? (install.itemWidths.get(id) ?? install.defaultItemWidth) : 0;
+  },
+  buttonWidth: (button) => (button ? (current()?.overflowButtonWidth ?? 0) : 0),
+  regionGap(bar) {
+    // Still gated on a region existing, so a bar without one reads as "no gap"
+    // exactly as it does through `getComputedStyle`.
+    const region = bar.querySelector<HTMLElement>('[data-dtb-part="region"]');
+    if (!region) return undefined;
+    const gap = current()?.gap;
+    // The `Number.isFinite` checks here and below are the parse the patched
+    // path performs: the Proxy hands `${gap}px` to `Number.parseFloat`, which
+    // turns a non-finite override into "unresolved" rather than a pixel count.
+    if (gap !== undefined) return Number.isFinite(gap) ? gap : undefined;
+    // The same guard `domMeasurer` puts on this read, for the same reason: a
+    // host DOM without `getComputedStyle` must read as "unresolved" so core
+    // keeps the value its collapse machine already has, rather than throwing.
+    // It sits at the fallthrough rather than at the top of the method because
+    // a configured `gap` is an answer this fake owns and can still give.
+    if (typeof getComputedStyle !== "function") return undefined;
+    const style = getComputedStyle(region);
+    return readPx(style.columnGap || style.gap);
+  },
+  padding(bar) {
+    const paddingX = current()?.paddingX;
+    // `paddingX` is per side; core wants both, as `paddingLeft + paddingRight`.
+    if (paddingX !== undefined) return (Number.isFinite(paddingX) ? paddingX : 0) * 2;
+    // As in `regionGap()` above, and in `domMeasurer.padding()`.
+    if (typeof getComputedStyle !== "function") return undefined;
+    const style = getComputedStyle(bar);
+    return (readPx(style.paddingLeft) ?? 0) + (readPx(style.paddingRight) ?? 0);
+  },
+  height: () => current()?.rootHeight ?? 0,
+  observe(notify) {
+    // Load-bearing, not defensive: a test that stubs `ResizeObserver` away
+    // under a live install is asserting core observes nothing and falls back
+    // to `window.resize`, so the fake must report the absence too.
+    if (typeof ResizeObserver === "undefined") return undefined;
+    // A `FakeResizeObserver`, so this observer is one of the install's
+    // `getObservers()` handles: `flush()` on that handle fires this `notify`
+    // and no other, and a deferred width setter reaches neither until asked.
+    // The callback takes the entries a real one would and drops them — core's
+    // `notify` is zero-argument and re-reads through the measurer instead.
+    const observer = new FakeResizeObserver(() => notify());
+    let observed = new Set<Element>();
+    return {
+      sync(nodes) {
+        const next = new Set(nodes);
+        for (const node of observed) {
+          if (!next.has(node)) observer.unobserve(node);
+        }
+        for (const node of next) {
+          // Re-observing an unchanged target would re-register it for nothing.
+          if (!observed.has(node)) observer.observe(node);
+        }
+        observed = next;
+      },
+      disconnect() {
+        observer.disconnect();
+        observed.clear();
+      },
+    };
+  },
+};
 
 const widthOf = (element: Element): number => {
   const install = current();
@@ -168,6 +286,7 @@ function deliver(observer: Observer): void {
 function patch(): void {
   const proto = HTMLElement.prototype as HTMLElement & Record<string, unknown>;
   baseline = {
+    measurer: Object.getOwnPropertyDescriptor(globals, MEASURER_SLOT),
     proto,
     offsetWidth: Object.getOwnPropertyDescriptor(proto, "offsetWidth"),
     clientWidth: Object.getOwnPropertyDescriptor(proto, "clientWidth"),
@@ -177,6 +296,11 @@ function patch(): void {
     getComputedStyle: globalThis.getComputedStyle,
   };
 
+  Object.defineProperty(globals, MEASURER_SLOT, {
+    configurable: true,
+    writable: true,
+    value: measurer,
+  });
   globals.ResizeObserver = FakeResizeObserver as unknown as typeof ResizeObserver;
 
   const previousStyle = baseline.getComputedStyle;
@@ -229,6 +353,11 @@ function unpatch(): void {
   if (!baseline) return;
   const { proto, offsetWidth, clientWidth, rect, resizeObserver, hadResizeObserver } = baseline;
   globalThis.getComputedStyle = baseline.getComputedStyle;
+  if (baseline.measurer) {
+    Object.defineProperty(globals, MEASURER_SLOT, baseline.measurer);
+  } else {
+    delete globals[MEASURER_SLOT];
+  }
   baseline = null;
 
   if (hadResizeObserver) {
