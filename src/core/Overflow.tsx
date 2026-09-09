@@ -4,7 +4,7 @@ import { CollapseMachine } from "./collapse";
 import type { CollapseItem, CollapseReading } from "./collapse";
 import type { DevToolbarClassNames, DevToolbarExtension } from "./contract";
 import { cx } from "./context";
-import { ITEM_SELECTOR, resolveMeasurer } from "./measurer";
+import { ITEM_SELECTOR, REGION_SELECTOR, resolveMeasurer } from "./measurer";
 import type { MeasurementObserver } from "./measurer";
 
 export interface OverflowBarProps {
@@ -73,7 +73,7 @@ export function OverflowBar({
     const measurer = resolveMeasurer();
     const nodes = bar.querySelectorAll<HTMLElement>(ITEM_SELECTOR);
     const observer = itemObserverRef.current;
-    observer?.sync(nodes);
+    observer?.sync(measuredBoxes(bar, nodes));
 
     const widths: [string, number][] = [];
     for (const node of nodes) {
@@ -123,8 +123,10 @@ export function OverflowBar({
     // which resolve per call — the slot can change between two deliveries.
     const measurer = resolveMeasurer();
 
-    // Padding changes resize the bar's content box; gap alone can leave collapse stale and chips clipped.
-    // Item callbacks do not refresh gap; a full bar reading (e.g. on resize) does.
+    // The bar is fixed-height and full-width, so a new width here means the
+    // viewport moved, never a chip — which is why it is the honest signal that
+    // forgets a cycle. A gap-only change resizes no box of the bar's own, so it
+    // arrives through the observer below instead.
     const read = () => {
       if (machine.measure(readBar(bar))) sync();
     };
@@ -143,16 +145,26 @@ export function OverflowBar({
 
     barObserver.sync([bar]);
 
-    // Every delivery reaches the machine, latched or not: a chip cycling with
-    // the decision is refused inside it, and a chip that genuinely grows past
-    // the cycle must still be heard — which is what the cycle detection is for.
+    // Every delivery reaches the machine, latched or not: a cycling chip is
+    // refused inside it, and one that genuinely grows must still be heard.
+    // A full reading, not just widths, so a `--dtb-item-gap` change picked up
+    // here carries the new gap; deciding from a stale gap clips chips under
+    // `overflow: hidden` with no `⋮`. The `offsetWidth` recalc already paid for
+    // dominates the extra `getComputedStyle`, and deliveries are one a frame.
+    //
+    // Safe only because `barWidth` is viewport-driven here — the root is
+    // `position: fixed; inset-inline: 0` and the bar `flex: 0 0 auto`, so the
+    // bar stretches and its width cannot move because a chip collapsed. A host
+    // that makes the root content-sized would make every reading honest, clear
+    // `#seen`, and stop `CollapseMachine` terminating a chip whose width
+    // depends on its own collapse.
     const itemObserver = measurer.observe(() => {
       const node = barRef.current;
       if (!node) return;
-      if (machine.measure({ widths: measureWidths(node) })) sync();
+      if (machine.measure(readBar(node))) sync();
     });
     itemObserverRef.current = itemObserver ?? null;
-    itemObserver?.sync(bar.querySelectorAll<HTMLElement>(ITEM_SELECTOR));
+    itemObserver?.sync(measuredBoxes(bar, bar.querySelectorAll<HTMLElement>(ITEM_SELECTOR)));
 
     return () => {
       barObserver.disconnect();
@@ -269,6 +281,17 @@ export function OverflowBar({
       ) : null}
     </div>
   );
+}
+
+/**
+ * Every box whose size can move the collapse decision: the item hosts, and the
+ * two regions because a gap-only change may resize nothing else. An item is
+ * `max-width: 100%` of its *region*, so one host alone in a region narrows
+ * with a wider gap, but several keep their widths while their sum overruns the
+ * bar. The region is the box that always moves.
+ */
+function measuredBoxes(bar: HTMLElement, items: Iterable<Element>): Element[] {
+  return [...items, ...bar.querySelectorAll<HTMLElement>(REGION_SELECTOR)];
 }
 
 function rosterItem(extension: DevToolbarExtension, region: CollapseItem["region"]): CollapseItem {

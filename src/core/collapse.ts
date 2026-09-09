@@ -54,12 +54,14 @@ export interface CollapseReading {
   /** The bar's horizontal padding, both sides summed. */
   readonly padding?: number;
   /**
-   * The gap between items and between the two regions.
-   * Known limitation: a CSS gap-only change can leave collapse stale and chips
-   * clipped without ⋮ until an OverflowBar commit or bar resize refreshes gap.
-   * Incidental item callbacks from CSS width caps read only widths, not gap.
-   * Chromium stayed stale for 1 second and recovered on a 1px bar resize.
-   * See docs/architecture.md §5 and the playground overflow browser tests.
+   * The gap between items and between the two regions. A gap-only change
+   * resizes no box of the bar's own, so the DOM adapter reports it from the
+   * region observer's reading, which carries the whole bar and not only
+   * widths. A gap *increase* always arrives, because it narrows the regions; a
+   * gap *decrease* while the content already fits resizes nothing, so it can
+   * wait for the next bar reading — leaving the bar more collapsed than it
+   * needs to be, with every item still reachable through the button.
+   * See docs/architecture.md §5.
    */
   readonly gap?: number;
   /** The `⋮` button's width. Ignored unless positive: the button is only rendered once something has collapsed. */

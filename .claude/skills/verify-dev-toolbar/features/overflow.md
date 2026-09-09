@@ -115,38 +115,51 @@ metrics that could trigger unrelated reads. `e2e/overflow.spec.ts` proves:
   collapsing `low` while the bar's box stays unchanged. `Shrink chip` leaves it
   collapsed: the cycle latch refuses the previously seen decision. A resize to
   501 px restores it.
-- Chromium 153, viewport 320×800: changing only `--dtb-item-gap` from 10 to
-  40 or 140 px delivers an item observer callback as the Bridge host shrinks,
-  but no bar observer callback. All three ids remain in the bar, with no `⋮`,
-  throughout a 1-second observation with active animation frames.
-- At 140 px gap, `low` reaches x=330 in the 320 px bar and overlaps Bridge.
-  `overflow: hidden` clips the chip, with no menu to reach it. This is a
-  latent defect, pinned without a behavior fix.
-- Resizing to 319 px delivers a bar callback and recovers: 40 px gap collapses
-  `low`; 140 px gap collapses `low` and `agent`. The menu appears and clipping ends.
+- Chromium 153, viewport 320×800, roster **split** across the regions
+  (`/?geometry`): changing only `--dtb-item-gap` from 10 to 40 or 140 px
+  delivers an item observer callback as the lone end-region host shrinks
+  (80 → about 69.33 px at 40, 80 → about 32 px at 140) plus region callbacks,
+  and no bar observer callback — a gap resizes no box of the bar's own. 40 px
+  collapses `low`, 140 px collapses `low` and `agent`, and `⋮` appears.
+- Same viewport, roster **all in the start region**
+  (`/?geometry&roster=all-start`): the same change to 140 px delivers **no item
+  callback at all**. All three hosts stay at 100/80/80 px, because
+  `max-width: 100%` caps each against the whole region; the start region goes
+  280 → 160 px and their contents overrun to `scrollWidth` 550 px in a 320 px
+  bar. The region callback is what reaches the machine here, and everything
+  collapses into the `⋮`. Before the regions were observed this delivered
+  nothing and the bar clipped with no `⋮` — the limitation this file used to
+  pin, on the roster that actually reaches it.
+- At 140 px gap on either roster nothing overruns: `scrollWidth` equals
+  `clientWidth`, every item's box stays inside the bar's, and every collapsed
+  chip is reachable in the `⋮`.
+- The gap route is guaranteed only in the direction that clips. A gap *increase*
+  takes width from the regions, so a region shrinks and the delivery arrives. A
+  gap *decrease* from an already-collapsed state can resize nothing: on the
+  all-start fixture, after 40 px settles on `[growing]`, setting the gap to 0 px
+  alone delivers no callback of any kind and the bar stays on `[growing]` —
+  over-collapsed, nothing clipped, every chip in the `⋮`. The next commit
+  repairs it, and opening the `⋮` is such a commit. Padding is the direct route
+  either way; do not change it in the same step as the gap or it hides the
+  effect through the bar's own observer.
 - On a fresh page, changing only horizontal padding from 10 to 30 px per side
   leaves gap at 10 px and the bar's outer width at 320 px. The bar observer reports
   content width 300 → 260 px; `low` collapses and `⋮` appears within the observation.
 
-The item signal is incidental to core's `max-width: 100%` item cap within
-`min-width: 0` regions; a gap change need not deliver any observer callback if
-no observed box resizes. Item callbacks supply widths only. In these cases the
-smaller widths fit under the cached gap, so collapse does not change, `sync()`
-does not run, and no commit from that callback refreshes gap.
-
-Reachability is low: first-party extensions do not change this gap at runtime,
-and the theme editor rejects toolbar tokens. Initial CSS and density prop changes
-are read on commits. The stale decision heals on the next commit involving
-`OverflowBar`, including a panel toggle, or bar resize. The 40 px gap did not clip;
-the 140 px gap on a 320 px viewport did. This latent defect does not block merging
-this docs and tests change. See `docs/architecture.md` §5 for the mechanism.
+The signal comes from core's own stylesheet — the `max-width: 100%` item cap inside
+`min-width: 0` regions, and the gap being taken out of the regions — so the observed
+set has to be the hosts *and* both regions. Every delivery carries the whole bar
+reading, gap included, not widths alone; before that, the narrowed widths still fit
+under the cached gap, so collapse did not change, `sync()` did not run, and the gap
+increase suppressed the very reading that would have caught it.
+See `docs/architecture.md` §5 for the mechanism and the measurements.
 
 Successful runs attach before/after bridge state, native observer callback logs,
 geometry and screenshots. The geometry page does not install the app's HTTP
 reporter, so these tests use its in-page agent bridge. Native `ResizeObserver`
-callbacks are wrapped before mount and forwarded unchanged. The negative gap
-observation is bounded to one second; it does not prove that no later event can
-recover the bar.
+callbacks are wrapped before mount and forwarded unchanged. The bar-callback
+assertion is a bounded negative over one second; it says no bar delivery arrived
+in the window, not that none ever can.
 
 ## Gotchas
 

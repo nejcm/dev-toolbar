@@ -1,6 +1,9 @@
 /** Item hosts directly in bar regions, excluding overflow copies and unowned markup. */
 export const ITEM_SELECTOR = '[data-dtb-part="region"] > [data-dtb-part="item"][data-dtb-ext-id]';
 
+/** The two bar regions. Observed as well as the items: see `OverflowBar`. */
+export const REGION_SELECTOR = '[data-dtb-part="region"]';
+
 export interface MeasurementObserver {
   sync(nodes: Iterable<Element>): void;
   disconnect(): void;
@@ -27,7 +30,7 @@ export const domMeasurer: Measurer = {
   buttonWidth: (button) => button?.offsetWidth ?? 0,
   regionGap(bar) {
     if (typeof getComputedStyle !== "function") return undefined;
-    const region = bar.querySelector<HTMLElement>('[data-dtb-part="region"]');
+    const region = bar.querySelector<HTMLElement>(REGION_SELECTOR);
     if (!region) return undefined;
     const style = getComputedStyle(region);
     return readPx(style.columnGap || style.gap);

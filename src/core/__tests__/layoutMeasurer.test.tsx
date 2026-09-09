@@ -295,14 +295,24 @@ describe("the published layout fake's measurer", () => {
       observers.map((observer) =>
         observer.getTargets().map((node) => (node as HTMLElement).dataset["dtbPart"]),
       ),
-    ).toEqual([["bar"], ["item", "item", "item"], ["root"]]);
+      // The middle observer holds the item hosts *and* both regions: the hosts
+      // catch a chip resizing itself, the regions catch a gap-only change,
+      // which resizes no host when several share a region.
+    ).toEqual([["bar"], ["item", "item", "item", "region", "region"], ["root"]]);
     const [bar, items, height] = observers;
     expect(visibleIds()).toEqual(["a", "b", "c"]);
     layout.resize(100, false);
+    // The height observer is the isolated one: it feeds `--dev-toolbar-height`
+    // and nothing the collapse machine reads.
     act(() => height!.flush());
     expect(visibleIds()).toEqual(["a", "b", "c"]);
+    // The item observer is not isolated from the bar's width, and deliberately
+    // so: its callback takes a *full* bar reading, so it sees the new
+    // `barWidth` and collapses on this flush rather than waiting for the bar's
+    // own. That is what stops a gap-only change deciding from a stale gap.
     act(() => items!.flush());
-    expect(visibleIds()).toEqual(["a", "b", "c"]);
+    expect(visibleIds()).toEqual(["a"]);
+    // The bar's own delivery then has nothing left to change.
     act(() => bar!.flush());
     expect(visibleIds()).toEqual(["a"]);
     act(() => layout.setRootHeight(57));

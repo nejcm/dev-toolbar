@@ -392,7 +392,7 @@ Set them on `[data-dev-toolbar]`, or on any ancestor. Unlayered CSS wins.
 | `--dtb-bar-height` | `32px` | Bar row height (`38px` when comfortable) |
 | `--dtb-radius` | `5px` | Corner radius on triggers, menu, chips |
 | `--dtb-gap` | `5px` | Gap between the `⋮` popup's rows (`7px` when comfortable) |
-| `--dtb-item-gap` | `18px` | Gap between bar items (`24px` when comfortable), with a centred divider. A CSS-only change after mount can leave collapse stale and chips clipped without `⋮` until an `OverflowBar` commit or bar resize; see §5 |
+| `--dtb-item-gap` | `18px` | Gap between bar items (`24px` when comfortable), with a centred divider. Read back for collapse math; an override applied after mount reaches the decision — when it widens the gap, on the next bar reading or commit when it narrows one. See §5 |
 | `--dtb-chip-gap` | `6px` | Label-to-value gap inside one chip, and between two controls one extension renders |
 | `--dtb-padding-x` | `8px` | Bar's horizontal padding. The panel body takes `--dtb-panel-padding-x` |
 | `--dtb-item-padding-x` | `7px` | Trigger padding (`9px` when comfortable) |
@@ -604,51 +604,54 @@ end items at all. A region that renders empty still takes its gap.
 
 The Measurer's observer subscriptions reconcile target differences, so
 an unchanged host never receives another initial notification from re-observation.
-`ITEM_SELECTOR` is exported from the package root and shared with `/testing`.
+`ITEM_SELECTOR` is exported from the package root and shared with `/testing`; the
+regions are observed alongside the hosts (see the gap discussion below).
 
-A CSS-only `--dtb-item-gap` change after mount can leave collapse stale and chips
-clipped without `⋮`. There is no scheduled gap refresh: recovery requires another
-full reading, triggered by a commit involving `OverflowBar` or a bar resize.
+A `--dtb-item-gap` override applied after mount updates the collapse decision. It has
+to arrive by an indirect route: a gap-only change resizes no box of the bar's own, so
+the bar's own observer never fires for it. Two things make it arrive anyway. Every
+delivery takes a full bar reading — gap and padding included, not widths alone — and
+the observed set is the item hosts **and both regions**. A `--dtb-padding-x` change
+also changes the bar's own content box, so it triggers the bar's observer directly.
 
-In Chromium 153 at 320×800, the isolated geometry fixture starts with gap 10 px,
-padding 10 px per side, and `[growing, low, agent]` in the bar. Changing only gap
-to 40 or 140 px leaves that decision unchanged throughout a 1-second observation
-with active animation frames. No bar observer callback fires, but an item callback
-does: the Bridge host shrinks from 80 px to about 69.33 or 32 px respectively.
-This signal is incidental to core's stylesheet: regions have `min-width: 0` and
-items have `max-width: 100%`. It is not guaranteed by a gap change itself; removing
-the cap can leave every observed box unchanged, with no observer delivery.
+The regions are in the set because the item hosts are not enough. An item is
+`max-width: 100%` of its *region*, so a host alone in a region narrows when the gap
+widens, while several hosts sharing one region each keep their own width and their sum
+overruns instead. The region is the box that moves either way, because the gap between
+the two regions is taken out of them.
 
-The item callback supplies only `machine.measure({ widths: measureWidths(node) })`.
-With no `gap` field, `CollapseMachine` retains its cached gap and the reading stays
-non-honest. In these cases the smaller item widths still fit under the old gap,
-so the decision stays unchanged, `measure()` returns `false`, and the callback
-skips `sync()`. No `OverflowBar` commit follows from that callback, so its layout
-effect never runs the full `readBar()` that would discover the gap. The defect is
-self-sealing in these cases: the gap increase squeezes the measured widths, which
-suppresses the commit that would catch the increased gap. Item notifications lead
-to that full reading only when they change the collapse decision and trigger a
-commit; an independent `OverflowBar` commit also reads the gap.
+Both were measured in Chromium 153 at 320×800, where the fixture starts with gap 10 px,
+padding 10 px per side, and `[growing, low, agent]` in the bar. With the roster split
+across the regions (`/?geometry`), changing only the gap to 40 px shrinks the lone
+end-region host from 80 px to about 69.33 px, and to 140 px shrinks it to about 32 px —
+an item callback, and no bar callback. With all three in the start region
+(`/?geometry&roster=all-start`), the same change to 140 px leaves all three at
+100/80/80 px and delivers **no item callback at all**; the start region goes 280 → 160 px
+and their contents overrun to `scrollWidth` 550 px in a 320 px bar. That case is why the
+regions are observed: before they were, it delivered nothing, the decision kept the
+cached gap, and `low` and Bridge clipped under `overflow: hidden` with no `⋮` to reach
+them — the exact symptom this section used to record as a limitation. With the regions
+observed, the region callback arrives, everything collapses into the `⋮`, and
+`scrollWidth` equals `clientWidth`. As a control, changing only padding from 10 to 30 px
+per side keeps the gap at 10 px and the outer width at 320 px, while the bar observer
+reports content width 300 → 260 px.
 
-The 40 px gap causes no edge clipping in this fixture. At 140 px, `low` spans
-x=250…330 in a 320 px bar, overlaps Bridge, and is clipped by `overflow: hidden`,
-with no overflow menu to reach it. Resizing the viewport to 319 px delivers a bar
-callback and recovers: gap 40 px collapses `[low]`; gap 140 px collapses
-`[low, agent]`. The menu appears and clipping ends. As a separate control, changing
-only padding from 10 to 30 px per side keeps gap at 10 px and outer width at
-320 px; the bar observer reports content width 300 → 260 px, and `low` collapses
-within the observation window.
+The route is guaranteed in the direction that clips, and only in that direction. A gap
+*increase* takes width from the regions, so a region shrinks and the delivery arrives.
+A gap *decrease* from an already-collapsed state can resize nothing at all: the
+collapsed hosts are gone, and neither the surviving host nor its region is sized by the
+gap any more. Measured on the all-start fixture: after gap 40 px settles on
+`[growing]`, changing only the gap to 0 px delivers no callback of any kind and the bar
+stays on `[growing]` — more collapsed than it needs to be, with nothing clipped and
+every chip in the `⋮`. The next commit repairs it, because every commit re-reads the
+bar; opening the `⋮` is such a commit. A `--dtb-padding-x` change is the direct route
+either way. Chromium's isolated geometry fixture asserts all of this, on both rosters.
 
-This is a latent defect with low reachability, not a merge blocker for this docs
-and tests change. No first-party extension changes this gap at runtime, and the
-theme editor refuses the `--dtb-` and `--dev-toolbar` namespaces. CSS set before
-mount is read by the initial layout effect. Changing the `density` prop commits
-and reads the gap too. A subsequent commit involving `OverflowBar`, including
-opening or closing a toolbar panel, or a bar resize refreshes the gap and heals
-this stale decision. A child-only commit need not involve `OverflowBar`. The
-measured clipping required a 10 → 140 px override on a 320 px viewport; the
-10 → 40 px case remained unclipped. The browser tests pin both cases and recovery;
-no behavior fix is included here.
+Feeding the whole reading from these observers is safe only because the bar's width
+is viewport-driven: the root is `position: fixed; inset-inline: 0` and the bar is
+`flex: 0 0 auto` in that column flex, so the bar's width cannot change *because* a chip
+collapsed. A host that makes the root content-sized would make every such delivery an
+honest reading and defeat the cycle detection above.
 
 The `⋮` popup is a **disclosure, not an ARIA menu**. Its entries are extensions'
 compact slots, which usually render their own buttons, and a `menuitem` may not contain
