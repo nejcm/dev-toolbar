@@ -14,6 +14,21 @@
   style break at the boundary is accepted, not an oversight.
 -->
 
+## [0.7.0](https://github.com/nejcm/dev-toolbar/compare/v0.6.0...v0.7.0) (2026-09-09)
+
+
+### Features
+
+* **kit:** a named, validated, persisted preference ([#76](https://github.com/nejcm/dev-toolbar/issues/76)) ([777d0e6](https://github.com/nejcm/dev-toolbar/commit/777d0e6ecf56ba49560d3ae415073f48804e2ff6))
+* **runtime:** one owner for masking prose and describing a thrown value ([#72](https://github.com/nejcm/dev-toolbar/issues/72)) ([c642e7e](https://github.com/nejcm/dev-toolbar/commit/c642e7e1bfe94577b93161318fde278079edac27))
+
+
+### Bug Fixes
+
+* **core:** settle the collapse decision on a state that fits ([#78](https://github.com/nejcm/dev-toolbar/issues/78)) ([745f6c3](https://github.com/nejcm/dev-toolbar/commit/745f6c3d6e43d09c7ea0469583c50bc25564653a))
+* **ext:** guard the paths a throwing host can break ([#71](https://github.com/nejcm/dev-toolbar/issues/71)) ([25330d7](https://github.com/nejcm/dev-toolbar/commit/25330d702831d0984996baa9d07e5b5aaa715bd1))
+* **ext:** mask a thrown error before it leaves the extension ([#74](https://github.com/nejcm/dev-toolbar/issues/74)) ([2a3f0ce](https://github.com/nejcm/dev-toolbar/commit/2a3f0ce5d201eb08bcfcb13cc031ab1db2178ce1))
+
 ## [0.6.0](https://github.com/nejcm/dev-toolbar/compare/v0.5.0...v0.6.0) (2026-09-08)
 
 
