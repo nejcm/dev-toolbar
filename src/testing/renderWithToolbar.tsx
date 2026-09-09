@@ -28,7 +28,8 @@ export interface RenderWithToolbarOptions extends Omit<DevToolbarProps, "childre
    * Install the fake layout so overflow collapse and `--dev-toolbar-height`
    * work under jsdom. `true` uses the defaults. Its lifetime is the rendered
    * tree's — `unmount()`, Testing Library's `cleanup()`, and RTL auto-cleanup
-   * all tear it down, leaving nothing on `HTMLElement.prototype`.
+   * all tear it down, leaving neither a registered measurer nor the
+   * `ResizeObserver` stub behind.
    */
   layout?: boolean | InstallToolbarLayoutOptions;
   /** Passed straight through to Testing Library's `render`. */
@@ -151,8 +152,8 @@ export interface RenderWithToolbarResult extends RenderResult {
  * Ties the fake layout's lifetime to the React tree. Testing Library exposes
  * no hook into `cleanup()`, but it does unmount every tree it rendered, so an
  * effect cleanup here *is* that hook — it's what makes `cleanup()` (and RTL
- * auto-cleanup) restore the prototype instead of leaving the fake installed
- * for the rest of the file.
+ * auto-cleanup) unregister the fake instead of leaving it installed for the
+ * rest of the file.
  *
  * Re-installs on mount because StrictMode invokes effects mount → cleanup →
  * mount, and a cleanup-only owner would leave the layout restored mid-test.

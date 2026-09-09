@@ -591,8 +591,9 @@ return even though its host is absent from the bar. Cycle detection can also del
 genuine shrink: a chip growing from 100 to 320 px and back at a fixed 500 px bar returns
 to a previously seen decision, so re-expansion waits for a bar or roster change.
 
-The internal `domMeasurer` in `src/core/measurer.ts` owns all pixel reads for overflow
-and height publication. Bar width remains the padding-box width; subtracting `domMeasurer.padding(bar)`, the measured
+The internal `domMeasurer` in `src/core/measurer.ts` is the default adapter for every pixel
+read behind overflow and height publication; a measurer registered for a test owns those
+reads instead while it is installed. Bar width remains the padding-box width; subtracting `domMeasurer.padding(bar)`, the measured
 horizontal padding gives the content width. Item and button widths retain layout sizing,
 unaffected by CSS transforms. Root height retains the bounding-rectangle measurement.
 The machine also reserves gaps for empty regions; the Measurer does not duplicate that
@@ -664,7 +665,8 @@ Where there is no `ResizeObserver`, the bar measures on commits and window resiz
 SSR and bare jsdom report no positive bar width, so the machine renders everything. `@nejcm/dev-toolbar/testing` ships
 `installToolbarLayout()` to make the collapse testable under jsdom. Its fake
 `ResizeObserver` delivers one entry per observed target with a synthetic
-`contentRect`, while core re-measures from the DOM regardless.
+`contentRect`, and core reads its pixels through the resolved measurer, which
+under a live install is the fake's rather than the DOM.
 Core's own overflow tests use the published fake, so consumers and core test the
 same measurement seam.
 
@@ -842,19 +844,22 @@ Testing it: [`@nejcm/dev-toolbar/testing`](./testing.md) is the whole surface �
 `fakeExtensionApi`, `createMockBus`, `installClipboard` and `installToolbarLayout`.
 That page is the reference; three things about it are architecture rather than API.
 
-**The fake layout is global state, made safe twice over.** It patches
-`HTMLElement.prototype`, `globalThis.ResizeObserver` and
-`globalThis.getComputedStyle`, which the whole file shares.
-`installToolbarLayout()` therefore keeps a module-level *stack* of live
-installs rather than each install remembering "the previous value" — the newest
-install measures, the prototype is patched once when the stack fills and
-unpatched once when it empties, so `restore()` is idempotent and
-order-independent. (Per-install capture was correct only in exact reverse order;
-drained in insertion order it left one fake on the prototype permanently.) And
+**The fake layout is global state, made safe twice over.** It answers core
+through the measurer slot — `Symbol.for("@nejcm/dev-toolbar.measurer")`, the
+same registry key `resolveMeasurer()` reads — and installs
+`globalThis.ResizeObserver`, which jsdom does not have. Both are shared by the
+whole file, and no DOM read is patched: a consumer's own `offsetWidth` or
+`getComputedStyle` stub is untouched by a live install.
+`installToolbarLayout()` keeps a module-level *stack* of live installs rather
+than each install remembering "the previous value" — the newest install
+measures, the globals are written once when the stack fills and put back once
+when it empties, so `restore()` is idempotent and order-independent.
+(Per-install capture was correct only in exact reverse order; drained in
+insertion order it left one fake installed permanently.) And
 `renderWithToolbar({ layout })` owns the teardown from *inside* the rendered
 tree, as an effect cleanup: Testing Library exposes no hook into `cleanup()`, but
 it does unmount every tree it rendered, so `cleanup()`, RTL auto-cleanup and
-`unmount()` all restore the prototype whether or not the test remembered to.
+`unmount()` all unregister the fake whether or not the test remembered to.
 
 **`mountToolbar()`'s tracked list is ours, and nothing tells it about RTL's
 auto-cleanup**, so `afterEach(cleanupToolbar)` is required rather than tidy —

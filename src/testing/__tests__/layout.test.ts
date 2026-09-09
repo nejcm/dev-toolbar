@@ -1,11 +1,18 @@
 /**
  * The fake layout's measurements, observer delivery and install lifetime.
  *
- * The patches are on shared objects (`HTMLElement.prototype`, `globalThis`), so
- * the only thing that makes them safe is that installing and restoring is
- * disciplined. Each case here is a way that discipline used to break: an
- * install that captured a *previous* value which was itself a fake, and then
- * put it back.
+ * The two things an install owns are `globalThis` state — the measurer slot
+ * core reads through, and the `ResizeObserver` jsdom lacks — so the only thing
+ * that makes them safe is that installing and restoring is disciplined. Each
+ * case here is a way that discipline used to break: an install that captured a
+ * *previous* value which was itself a fake, and then put it back.
+ *
+ * Measurements are asserted through the registered `Measurer`, because that is
+ * now the only way core sees them: nothing is patched onto the element
+ * prototype or `getComputedStyle` any more. The complementary assertion — that
+ * a live install leaves every DOM read at jsdom's own answer, prototype spies
+ * included — lives in `src/core/__tests__/layoutMeasurer.test.tsx`, next to
+ * the `domMeasurer` it is about.
  */
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Measurer } from "../../core/measurer";
@@ -16,27 +23,17 @@ import { installToolbarLayout, restoreToolbarLayouts } from "../layout";
 const MEASURER_SLOT = Symbol.for("@nejcm/dev-toolbar.measurer");
 type Slot = { [MEASURER_SLOT]?: Measurer };
 
+// Captured before this file installs anything, so "restored" means restored to
+// what the runner started with rather than to some earlier fake.
+const nativeSlot = Object.getOwnPropertyDescriptor(globalThis, MEASURER_SLOT);
+const hadResizeObserver = "ResizeObserver" in globalThis;
+
 /** The measurer a live install registered. Throws if nothing is installed. */
 const measurer = (): Measurer => {
   const registered = (globalThis as Slot)[MEASURER_SLOT];
   if (!registered) throw new Error("no measurer registered");
   return registered;
 };
-
-// Captured before this file installs anything, so "restored" means restored to
-// jsdom's own implementations rather than to some earlier fake. Descriptors are
-// freshly allocated objects on every read, so the getter is what to compare.
-const nativeOffsetWidth = Object.getOwnPropertyDescriptor(
-  HTMLElement.prototype,
-  "offsetWidth",
-)?.get;
-const nativeClientWidth = Object.getOwnPropertyDescriptor(
-  HTMLElement.prototype,
-  "clientWidth",
-)?.get;
-const nativeGetComputedStyle = globalThis.getComputedStyle;
-const nativeRect = HTMLElement.prototype.getBoundingClientRect;
-const hadResizeObserver = "ResizeObserver" in globalThis;
 
 const bar = () => {
   const element = document.createElement("div");
@@ -57,6 +54,12 @@ const root = () => {
   return element;
 };
 
+const overflowButton = () => {
+  const element = document.createElement("button");
+  element.dataset["dtbPart"] = "overflow-button";
+  return element;
+};
+
 /** A bar with a region inside it, which is what `regionGap()` looks for. */
 const barWithRegion = () => {
   const element = bar();
@@ -66,15 +69,13 @@ const barWithRegion = () => {
   return element;
 };
 
-/** Every patch this module makes, back the way jsdom had it. */
+/** Both globals this module writes, back the way the runner had them. */
 const isPristine = () =>
-  Object.getOwnPropertyDescriptor(HTMLElement.prototype, "offsetWidth")?.get ===
-    nativeOffsetWidth &&
-  Object.getOwnPropertyDescriptor(HTMLElement.prototype, "clientWidth")?.get ===
-    nativeClientWidth &&
-  HTMLElement.prototype.getBoundingClientRect === nativeRect &&
-  globalThis.getComputedStyle === nativeGetComputedStyle &&
+  Object.getOwnPropertyDescriptor(globalThis, MEASURER_SLOT)?.value === nativeSlot?.value &&
   "ResizeObserver" in globalThis === hadResizeObserver;
+
+/** Reported padding on one side, from the `paddingX` the measurer doubles. */
+const paddingX = (target: HTMLElement) => (measurer().padding(target) ?? 0) / 2;
 
 describe("installToolbarLayout", () => {
   afterEach(restoreToolbarLayouts);
@@ -122,33 +123,38 @@ describe("installToolbarLayout", () => {
 
   it("reports explicit zero padding and gap", () => {
     installToolbarLayout({ paddingX: 0, gap: 0 });
-    expect(getComputedStyle(bar())).toMatchObject({
-      paddingLeft: "0px",
-      paddingRight: "0px",
-      columnGap: "0px",
-      gap: "0px",
-    });
+    const target = barWithRegion();
+    // An explicit `0` is an override, not an omission: it must report `0`
+    // rather than fall through to the element's own computed style.
+    target.style.cssText = "padding: 3px 5px";
+    document.body.append(target);
+    try {
+      expect(measurer().padding(target)).toBe(0);
+      expect(measurer().regionGap(target)).toBe(0);
+    } finally {
+      target.remove();
+    }
   });
 
   it("preserves computed styles when padding and gap are omitted", () => {
-    const target = bar();
-    target.style.cssText = "padding: 3px 5px; gap: 7px; column-gap: 9px";
-    const nativeStyle = getComputedStyle(target);
-    const handle = installToolbarLayout();
-    expect(getComputedStyle(target)).toMatchObject({
-      paddingLeft: nativeStyle.paddingLeft,
-      paddingRight: nativeStyle.paddingRight,
-      gap: nativeStyle.gap,
-      columnGap: nativeStyle.columnGap,
-    });
-    handle.setGap(0);
-    expect(getComputedStyle(target)).toMatchObject({
-      gap: "0px",
-      columnGap: "0px",
-      paddingLeft: "5px",
-    });
-    handle.setPaddingX(0);
-    expect(getComputedStyle(target).paddingLeft).toBe("0px");
+    const target = barWithRegion();
+    const region = target.firstElementChild as HTMLElement;
+    target.style.cssText = "padding: 3px 5px";
+    region.style.cssText = "gap: 7px; column-gap: 9px";
+    document.body.append(target);
+    try {
+      const handle = installToolbarLayout();
+      // Core's own fallback, still in play: the numbers are the element's.
+      expect(measurer().padding(target)).toBe(10);
+      expect(measurer().regionGap(target)).toBe(9);
+      handle.setGap(0);
+      expect(measurer().regionGap(target)).toBe(0);
+      expect(paddingX(target)).toBe(5);
+      handle.setPaddingX(0);
+      expect(measurer().padding(target)).toBe(0);
+    } finally {
+      target.remove();
+    }
   });
 
   it("missing getComputedStyle preserves fallback", () => {
@@ -175,25 +181,29 @@ describe("installToolbarLayout", () => {
   });
 
   it("does not inherit an outer install's style overrides when options are omitted", () => {
-    const target = bar();
-    const nativeStyle = getComputedStyle(target);
-    installToolbarLayout({ paddingX: 12, gap: 8 });
-    const inner = installToolbarLayout();
-    expect(getComputedStyle(target)).toMatchObject({
-      paddingLeft: nativeStyle.paddingLeft,
-      gap: nativeStyle.gap,
-    });
-    inner.restore();
-    expect(getComputedStyle(target)).toMatchObject({ paddingLeft: "12px", gap: "8px" });
+    const target = barWithRegion();
+    target.style.cssText = "padding: 3px 5px";
+    (target.firstElementChild as HTMLElement).style.cssText = "column-gap: 9px";
+    document.body.append(target);
+    try {
+      installToolbarLayout({ paddingX: 12, gap: 8 });
+      const inner = installToolbarLayout();
+      expect(paddingX(target)).toBe(5);
+      expect(measurer().regionGap(target)).toBe(9);
+      inner.restore();
+      expect(paddingX(target)).toBe(12);
+      expect(measurer().regionGap(target)).toBe(8);
+    } finally {
+      target.remove();
+    }
   });
 
-  it("sets padding and gap and notifies observers with the updated style", () => {
+  it("sets padding and gap and notifies observers with the updated measurements", () => {
     const handle = installToolbarLayout({ paddingX: 12, gap: 8 });
-    const target = bar();
-    const seen: string[][] = [];
+    const target = barWithRegion();
+    const seen: number[][] = [];
     const observer = new ResizeObserver(() => {
-      const style = getComputedStyle(target);
-      seen.push([style.paddingLeft, style.paddingRight, style.columnGap, style.gap]);
+      seen.push([paddingX(target), measurer().regionGap(target) ?? -1]);
     });
     observer.observe(target);
 
@@ -201,15 +211,15 @@ describe("installToolbarLayout", () => {
     handle.setPaddingX(6);
     handle.setGap(2);
     expect(seen).toEqual([
-      ["12px", "12px", "8px", "8px"],
-      ["6px", "6px", "8px", "8px"],
-      ["6px", "6px", "2px", "2px"],
+      [12, 8],
+      [6, 8],
+      [6, 2],
     ]);
   });
 
-  it("leaves unrelated computed styles untouched and restores toolbar styles", () => {
+  it("leaves getComputedStyle itself alone, for toolbar parts as much as anything else", () => {
     const unrelated = document.createElement("div");
-    const target = bar();
+    const target = barWithRegion();
     for (const element of [unrelated, target]) {
       element.style.cssText = "padding: 3px 5px; gap: 7px; column-gap: 9px; color: red";
       document.body.append(element);
@@ -217,26 +227,20 @@ describe("installToolbarLayout", () => {
     try {
       const before = getComputedStyle(unrelated).cssText;
       const handle = installToolbarLayout({ paddingX: 12, gap: 8 });
-      expect(getComputedStyle(unrelated).cssText).toBe(before);
-      expect(getComputedStyle(unrelated)).toMatchObject({
+      // The whole reason the interception went away: a live install must not
+      // be able to fight a consumer's own styles or style stubs. The override
+      // reaches core through the measurer and nowhere else.
+      expect(getComputedStyle(target).cssText).toBe(before);
+      expect(getComputedStyle(target)).toMatchObject({
         paddingLeft: "5px",
         paddingRight: "5px",
         columnGap: "9px",
         gap: "7px",
       });
-      expect(getComputedStyle(target)).toMatchObject({
-        paddingLeft: "12px",
-        paddingRight: "12px",
-        columnGap: "8px",
-        gap: "8px",
-        paddingTop: "3px",
-      });
-      expect(getComputedStyle(target).getPropertyValue("color")).toBe("rgb(255, 0, 0)");
+      expect(getComputedStyle(unrelated).cssText).toBe(before);
+      expect(paddingX(target)).toBe(12);
       handle.restore();
-      expect(globalThis.getComputedStyle).toBe(nativeGetComputedStyle);
-      expect(getComputedStyle(target).cssText).toBe(before);
       expect(getComputedStyle(target).paddingLeft).toBe("5px");
-      expect(getComputedStyle(target).gap).toBe("7px");
       expect(getComputedStyle(unrelated).cssText).toBe(before);
     } finally {
       unrelated.remove();
@@ -244,17 +248,18 @@ describe("installToolbarLayout", () => {
     }
   });
 
-  it.each(["inner", "outer", "all"])("restores stacked styles via %s", (first) => {
+  it.each(["inner", "outer", "all"])("restores stacked spacing via %s", (first) => {
+    const target = barWithRegion();
     const outer = installToolbarLayout({ paddingX: 6, gap: 2 });
     const inner = installToolbarLayout({ paddingX: 12, gap: 8 });
-    expect(getComputedStyle(bar())).toMatchObject({ paddingLeft: "12px", gap: "8px" });
+    expect([paddingX(target), measurer().regionGap(target)]).toEqual([12, 8]);
     if (first === "inner") {
       inner.restore();
-      expect(getComputedStyle(bar())).toMatchObject({ paddingLeft: "6px", gap: "2px" });
+      expect([paddingX(target), measurer().regionGap(target)]).toEqual([6, 2]);
       outer.restore();
     } else if (first === "outer") {
       outer.restore();
-      expect(getComputedStyle(bar())).toMatchObject({ paddingLeft: "12px", gap: "8px" });
+      expect([paddingX(target), measurer().regionGap(target)]).toEqual([12, 8]);
       inner.restore();
     } else {
       restoreToolbarLayouts();
@@ -262,29 +267,64 @@ describe("installToolbarLayout", () => {
     expect(isPristine()).toBe(true);
   });
 
-  it("delivers measured rectangles for every target and updates them on setters", () => {
-    const handle = installToolbarLayout({ barWidth: 500, itemWidths: { a: 123 }, rootHeight: 42 });
-    const targets = [bar(), item("a"), root(), document.createElement("div")];
+  it("delivers a measured rectangle per target, and never rewrites a delivered entry", () => {
+    const handle = installToolbarLayout({
+      barWidth: 500,
+      itemWidths: { a: 123 },
+      overflowButtonWidth: 29,
+      rootHeight: 42,
+    });
+    const targets = [bar(), item("a"), root(), overflowButton(), document.createElement("div")];
     const callback = vi.fn<ResizeObserverCallback>();
     const observer = new ResizeObserver(callback);
     for (const target of targets) observer.observe(target);
     handle.flush();
     const entries = callback.mock.lastCall![0];
     expect(entries.map((entry) => entry.target)).toEqual(targets);
+    // Synthesized per target through the registered measurer, dispatched on
+    // the part name. Core's `notify` takes no arguments, but the fake owns
+    // `globalThis.ResizeObserver` and a consumer's own observer reads these:
+    // a zero rectangle would send `if (width < 500)` down the wrong branch
+    // with nothing to notice.
     expect(entries.map((entry) => [entry.contentRect.width, entry.contentRect.height])).toEqual([
       [500, 0],
       [123, 0],
       [500, 42],
+      [29, 0],
       [0, 0],
     ]);
-    expect(entries[1]?.contentRect.toJSON()).toMatchObject({ x: 0, y: 0, right: 123, bottom: 0 });
+    expect(entries.map((entry) => entry.borderBoxSize)).toEqual([[], [], [], [], []]);
+
+    // The shape a real entry hands over: a `DOMRectReadOnly`, not the mutable
+    // `DOMRect` subclass, whose derived edges show up in `toJSON()` while own
+    // keys and a spread stay empty because geometry is prototype accessors.
+    const itemRect = entries[1]!.contentRect;
+    expect(itemRect).toBeInstanceOf(DOMRectReadOnly);
+    expect(itemRect).not.toBeInstanceOf(DOMRect);
+    expect(itemRect.toJSON()).toMatchObject({ x: 0, y: 0, right: 123, bottom: 0 });
+    expect(Object.keys(itemRect)).toEqual([]);
+    expect({ ...itemRect }).toEqual({});
+
+    const [barTarget, itemTarget, rootTarget] = targets as (HTMLElement | undefined)[];
+    expect(measurer().barWidth(barTarget!)).toBe(500);
+    expect(measurer().itemWidth(itemTarget!)).toBe(123);
+    expect(measurer().height(rootTarget!)).toBe(42);
+
     handle.setItemWidth("a", 150);
     expect(callback.mock.lastCall?.[0][1]?.contentRect.width).toBe(150);
+    expect(measurer().itemWidth(itemTarget!)).toBe(150);
     handle.resize(600);
     expect(callback.mock.lastCall?.[0][0]?.contentRect.width).toBe(600);
     handle.setRootHeight(64);
     expect(callback.mock.lastCall?.[0][2]?.contentRect.height).toBe(64);
-    expect(entries[1]?.contentRect.width).toBe(123);
+    expect(callback).toHaveBeenCalledTimes(4);
+
+    // A fresh instance per entry, per delivery: the entries captured at the
+    // first flush still read what they were delivered with, three setters
+    // later. This is the invariant `deliver()`'s comment claims.
+    expect(itemRect.width).toBe(123);
+    expect(entries[0]?.contentRect.width).toBe(500);
+    expect(entries[2]?.contentRect.height).toBe(42);
   });
 
   it("defers width notifications and lets a selected observer deliver its own entries", () => {
@@ -303,18 +343,19 @@ describe("installToolbarLayout", () => {
 
     handle.setItemWidth("a", 900, false);
     handle.resize(999, false);
-    expect(itemTarget.offsetWidth).toBe(900);
-    expect(barTarget.clientWidth).toBe(999);
+    // Measured immediately, delivered to nobody: that is what `false` buys.
+    expect(measurer().itemWidth(itemTarget)).toBe(900);
+    expect(measurer().barWidth(barTarget)).toBe(999);
     expect(barCallback).not.toHaveBeenCalled();
     expect(itemCallback).not.toHaveBeenCalled();
     itemHandle.flush();
     expect(barCallback).not.toHaveBeenCalled();
     expect(itemCallback).toHaveBeenCalledTimes(1);
-    expect(itemCallback.mock.lastCall?.[0][0]?.contentRect.width).toBe(900);
+    expect(itemCallback.mock.lastCall?.[0].map((entry) => entry.target)).toEqual([itemTarget]);
     barHandle.flush();
     expect(barCallback).toHaveBeenCalledTimes(1);
     expect(itemCallback).toHaveBeenCalledTimes(1);
-    expect(barCallback.mock.lastCall?.[0][0]?.contentRect.width).toBe(999);
+    expect(barCallback.mock.lastCall?.[0].map((entry) => entry.target)).toEqual([barTarget]);
 
     itemObserver.disconnect();
     itemHandle.flush();
@@ -353,29 +394,32 @@ describe("installToolbarLayout", () => {
 
   it("keeps observer inspection and selective delivery owned by their install", () => {
     const outer = installToolbarLayout();
-    const callback = vi.fn<ResizeObserverCallback>();
-    const observer = new ResizeObserver(callback);
-    observer.observe(bar());
+    const target = bar();
+    const seen: number[] = [];
+    const observer = new ResizeObserver(() => seen.push(measurer().barWidth(target)));
+    observer.observe(target);
     const outerObserver = outer.getObservers()[0]!;
     const inner = installToolbarLayout({ barWidth: 222 });
     expect(inner.getObservers()).toEqual([]);
     outerObserver.flush();
-    expect(callback.mock.lastCall?.[0][0]?.contentRect.width).toBe(222);
+    // Fired by the outer handle, measured by the inner install: the topmost
+    // one answers, whoever delivered.
+    expect(seen).toEqual([222]);
     outer.restore();
     outerObserver.flush();
-    expect(callback).toHaveBeenCalledTimes(1);
+    expect(seen).toEqual([222]);
     expect(outer.getObservers()).toEqual([]);
     inner.restore();
   });
 
-  it("starts from, and returns to, jsdom's own implementations", () => {
+  it("starts from, and returns to, the globals the runner had", () => {
     expect(isPristine()).toBe(true);
     const handle = installToolbarLayout({ barWidth: 123 });
-    expect(bar().offsetWidth).toBe(123);
+    expect(measurer().barWidth(bar())).toBe(123);
     expect(isPristine()).toBe(false);
     handle.restore();
     expect(isPristine()).toBe(true);
-    expect(bar().offsetWidth).toBe(0);
+    expect((globalThis as Slot)[MEASURER_SLOT]).toBeUndefined();
   });
 
   it("restores in any order, not only the reverse of installation", () => {
@@ -383,12 +427,11 @@ describe("installToolbarLayout", () => {
     const b = installToolbarLayout({ barWidth: 222 });
 
     // Insertion order — what a shared `unmountAll` array drains in, and what
-    // used to leave `a`'s fake getter on the prototype for good.
+    // used to leave `a`'s fake measurements registered for good.
     a.restore();
     b.restore();
 
     expect(isPristine()).toBe(true);
-    expect(bar().offsetWidth).toBe(0);
   });
 
   it("treats a second restore() as a no-op, not as a second unpatch", () => {
@@ -397,10 +440,10 @@ describe("installToolbarLayout", () => {
     a.restore();
     expect(isPristine()).toBe(true);
 
-    // And a stale restore cannot take a *live* install's patches away.
+    // And a stale restore cannot take a *live* install's registration away.
     const b = installToolbarLayout({ barWidth: 222 });
     a.restore();
-    expect(bar().offsetWidth).toBe(222);
+    expect(measurer().barWidth(bar())).toBe(222);
     b.restore();
     expect(isPristine()).toBe(true);
   });
@@ -408,10 +451,12 @@ describe("installToolbarLayout", () => {
   it("stacks: the newest install measures, and restoring it hands back", () => {
     const outer = installToolbarLayout({ barWidth: 111, itemWidth: 11 });
     const inner = installToolbarLayout({ barWidth: 222, itemWidth: 22 });
-    expect(bar().offsetWidth).toBe(222);
+    expect(measurer().barWidth(bar())).toBe(222);
+    expect(measurer().itemWidth(item("a"))).toBe(22);
 
     inner.restore();
-    expect(bar().offsetWidth).toBe(111);
+    expect(measurer().barWidth(bar())).toBe(111);
+    expect(measurer().itemWidth(item("a"))).toBe(11);
     expect(isPristine()).toBe(false);
 
     outer.restore();
@@ -421,12 +466,12 @@ describe("installToolbarLayout", () => {
   it("keeps each install's observers, and each install's widths, separate", () => {
     const outer = installToolbarLayout({ barWidth: 111 });
     const outerSeen: number[] = [];
-    const outerObserver = new ResizeObserver(() => outerSeen.push(bar().offsetWidth));
+    const outerObserver = new ResizeObserver(() => outerSeen.push(measurer().barWidth(bar())));
     outerObserver.observe(document.body);
 
     const inner = installToolbarLayout({ barWidth: 222 });
     const innerSeen: number[] = [];
-    const innerObserver = new ResizeObserver(() => innerSeen.push(bar().offsetWidth));
+    const innerObserver = new ResizeObserver(() => innerSeen.push(measurer().barWidth(bar())));
     innerObserver.observe(document.body);
 
     // `outer.flush()` fires only what was constructed while `outer` was on top,
@@ -451,13 +496,27 @@ describe("installToolbarLayout", () => {
     expect(isPristine()).toBe(true);
   });
 
-  it("leaves getBoundingClientRect alone for anything but the root", () => {
+  it("never touches an element's own rectangle, root or not", () => {
     const handle = installToolbarLayout({ barWidth: 640, rootHeight: 42 });
-    const rect = root().getBoundingClientRect();
-    expect(rect).toBeInstanceOf(DOMRect);
-    expect(rect.height).toBe(42);
-    expect(rect.toJSON()).toMatchObject({ width: 640, height: 42, right: 640, bottom: 42 });
-    // A plain element still gets jsdom's own zero rect, not the fake one.
+    const rootTarget = root();
+    // The root's height reaches core through `Measurer.height`; the element's
+    // own `getBoundingClientRect()` is jsdom's, unpatched, as is a plain
+    // element's. The patched-rectangle path lives on only as a repo-internal
+    // fixture (`src/test-utils/dom-layout.ts`), where `domMeasurer`'s own test
+    // needs something to read.
+    expect(measurer().height(rootTarget)).toBe(42);
+    const rect = rootTarget.getBoundingClientRect();
+    expect(rect.height).toBe(0);
+    expect(rect.width).toBe(0);
+    // Positively jsdom's own zero rectangle rather than a synthesized one:
+    // jsdom hands back a plain object, so it is neither a `DOMRect` nor does
+    // it carry `toJSON()`. The patched path used to return
+    // `DOMRect.fromRect(...)` here, which is exactly what those two used to
+    // pin; the real Web IDL shape — `DOMRectReadOnly`, `toJSON()` with the
+    // derived edges, no own keys — is asserted where the fake still builds a
+    // rectangle, on a delivered `contentRect` above.
+    expect(rect).not.toBeInstanceOf(DOMRect);
+    expect((rect as { toJSON?: unknown }).toJSON).toBeUndefined();
     expect(document.createElement("div").getBoundingClientRect().height).toBe(0);
     handle.restore();
   });
@@ -465,37 +524,37 @@ describe("installToolbarLayout", () => {
   it("setItemWidth() overrides one item's measured width and notifies observers", () => {
     const handle = installToolbarLayout({ itemWidth: 80 });
     const seen: number[] = [];
-    const observer = new ResizeObserver(() => seen.push(item("a").offsetWidth));
+    const observer = new ResizeObserver(() => seen.push(measurer().itemWidth(item("a"))));
     observer.observe(document.body);
 
     // Items without an override still read the default.
-    expect(item("a").offsetWidth).toBe(80);
-    expect(item("b").offsetWidth).toBe(80);
+    expect(measurer().itemWidth(item("a"))).toBe(80);
+    expect(measurer().itemWidth(item("b"))).toBe(80);
 
     handle.setItemWidth("a", 150);
 
-    expect(item("a").offsetWidth).toBe(150);
+    expect(measurer().itemWidth(item("a"))).toBe(150);
     // Unrelated items are untouched.
-    expect(item("b").offsetWidth).toBe(80);
+    expect(measurer().itemWidth(item("b"))).toBe(80);
     // And every observer under this install fired, exactly like resize().
     expect(seen).toEqual([150]);
 
     handle.restore();
   });
 
-  it("setRootHeight() changes the height getBoundingClientRect() reports for the root", () => {
+  it("setRootHeight() changes the height the measurer reports for the root", () => {
     const handle = installToolbarLayout({ barWidth: 700, rootHeight: 30 });
     const seen: number[] = [];
-    const observer = new ResizeObserver(() => seen.push(root().getBoundingClientRect().height));
+    const observer = new ResizeObserver(() => seen.push(measurer().height(root())));
     observer.observe(document.body);
 
-    expect(root().getBoundingClientRect().height).toBe(30);
+    expect(measurer().height(root())).toBe(30);
 
     handle.setRootHeight(64);
 
-    expect(root().getBoundingClientRect().height).toBe(64);
-    // The width reported alongside it is unaffected.
-    expect(root().getBoundingClientRect().width).toBe(700);
+    expect(measurer().height(root())).toBe(64);
+    // The bar width reported alongside it is unaffected.
+    expect(measurer().barWidth(bar())).toBe(700);
     expect(seen).toEqual([64]);
 
     handle.restore();
@@ -504,7 +563,7 @@ describe("installToolbarLayout", () => {
   it("flush() fires every observer without changing any measurement", () => {
     const handle = installToolbarLayout({ barWidth: 500 });
     const seen: number[] = [];
-    const observer = new ResizeObserver(() => seen.push(bar().offsetWidth));
+    const observer = new ResizeObserver(() => seen.push(measurer().barWidth(bar())));
     observer.observe(document.body);
 
     expect(seen).toEqual([]);
@@ -512,7 +571,7 @@ describe("installToolbarLayout", () => {
     expect(seen).toEqual([500]);
     handle.flush();
     expect(seen).toEqual([500, 500]);
-    expect(bar().offsetWidth).toBe(500);
+    expect(measurer().barWidth(bar())).toBe(500);
 
     handle.restore();
   });

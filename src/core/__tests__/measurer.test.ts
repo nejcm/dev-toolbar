@@ -1,9 +1,32 @@
+/**
+ * `domMeasurer` against a DOM that actually reports sizes.
+ *
+ * The widths come from `src/test-utils/dom-layout.ts`, a repo-internal fixture
+ * that patches the very reads this file is testing — `clientWidth`,
+ * `offsetWidth`, `getComputedStyle`, `getBoundingClientRect`. The *published*
+ * fake (`installToolbarLayout()`) cannot serve here any more: it answers core
+ * through the measurer slot and patches no DOM read, so measuring it with
+ * `domMeasurer` would measure jsdom's zeros and assert nothing. It is still
+ * used below for the one thing it does provide the DOM — a `ResizeObserver`.
+ */
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { installToolbarLayout, cleanupToolbar } from "@nejcm/dev-toolbar/testing";
 import { ITEM_SELECTOR as publishedSelector } from "@nejcm/dev-toolbar";
+import { patchDomLayout } from "../../test-utils/dom-layout";
+import type { DomLayoutHandle, DomLayoutOptions } from "../../test-utils/dom-layout";
 import { domMeasurer, ITEM_SELECTOR } from "../measurer";
 
+let patched: DomLayoutHandle | undefined;
+
+/** Installs the patching fixture for one test; the `afterEach` unpatches. */
+const patchLayout = (options: DomLayoutOptions): DomLayoutHandle => {
+  patched = patchDomLayout(options);
+  return patched;
+};
+
 afterEach(() => {
+  patched?.restore();
+  patched = undefined;
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
   cleanupToolbar();
@@ -17,8 +40,8 @@ function element(part: string, id?: string): HTMLElement {
 }
 
 describe("domMeasurer", () => {
-  it("reads the published layout fake through the same DOM operations as production", () => {
-    const layout = installToolbarLayout({
+  it("reads widths, spacing and height through the same DOM operations as production", () => {
+    const layout = patchLayout({
       barWidth: 320,
       itemWidths: { a: 101 },
       overflowButtonWidth: 29,
@@ -37,8 +60,8 @@ describe("domMeasurer", () => {
     expect(domMeasurer.regionGap(bar)).toBe(12.5);
     expect(domMeasurer.padding(bar)).toBe(13);
     expect(domMeasurer.height(root)).toBe(40.5);
-    layout.resize(400, false);
-    layout.setItemWidth("a", 0, false);
+    layout.resize(400);
+    layout.setItemWidth("a", 0);
     expect(domMeasurer.barWidth(bar)).toBe(400);
     expect(domMeasurer.itemWidth(item)).toBe(0);
     expect(domMeasurer.buttonWidth(null)).toBe(0);

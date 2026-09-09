@@ -7,13 +7,15 @@ import type { Measurer } from "../core/measurer";
 /**
  * jsdom reports every element as 0x0 and ships no `ResizeObserver`, so overflow
  * collapse can never trigger there on its own. This installs a fake layout the
- * bar can measure, plus a `ResizeObserver` whose callbacks fire on `resize()`.
+ * bar measures *through core's measurer slot* — no DOM read is patched, so a
+ * consumer's own `offsetWidth` or `getComputedStyle` stub is left alone — plus
+ * a `ResizeObserver` whose callbacks fire on `resize()`, since jsdom has none.
  *
- * The patches live on `HTMLElement.prototype` and `globalThis`, shared process-
- * wide, so installs are tracked as a stack rather than each capturing "the
- * previous value": the prototype is patched once when the stack becomes
- * non-empty and unpatched once it empties. Per-install capture would only be
- * correct if installs always restored in exact reverse order.
+ * Both of those are `globalThis` state, shared process-wide, so installs are
+ * tracked as a stack rather than each capturing "the previous value": the
+ * globals are written once when the stack becomes non-empty and put back once
+ * it empties. Per-install capture would only be correct if installs always
+ * restored in exact reverse order.
  */
 export interface InstallToolbarLayoutOptions {
   /** Width reported for the bar element. Default `800`. */
@@ -59,10 +61,9 @@ export interface ToolbarLayoutHandle {
    * Retires this install.
    *
    * Idempotent and order-independent: calling it twice is a no-op, and the
-   * real prototypes come back when the *last* live install is restored, in
-   * whatever order that happens. While another install is still live the
-   * prototype stays patched and the next install down the stack answers
-   * measurements again.
+   * globals come back when the *last* live install is restored, in whatever
+   * order that happens. While another install is still live the measurer stays
+   * registered and the next install down the stack answers measurements again.
    */
   restore(): void;
 }
@@ -87,15 +88,10 @@ interface Install {
 }
 
 interface Baseline {
-  /** The slot's own descriptor before the first install patched it, if any. */
+  /** The slot's own descriptor before the first install wrote to it, if any. */
   measurer: PropertyDescriptor | undefined;
-  proto: HTMLElement & Record<string, unknown>;
-  offsetWidth: PropertyDescriptor | undefined;
-  clientWidth: PropertyDescriptor | undefined;
-  rect: () => DOMRect;
   resizeObserver: typeof ResizeObserver | undefined;
   hadResizeObserver: boolean;
-  getComputedStyle: typeof getComputedStyle;
 }
 
 /** Live installs, most recent last. The topmost one answers every measurement. */
@@ -110,17 +106,15 @@ let baseline: Baseline | null = null;
  * which is what lets this file name it without a relative value import into
  * `../core/*` (AGENTS.md) and without core publishing an export for it.
  *
- * The slot is another process-wide global, so it follows the same cycle as the
- * prototype patches rather than getting bookkeeping of its own: one `Measurer`
- * is registered when the stack becomes non-empty and the descriptor captured
- * in `baseline` comes back once it empties. That is not per-install capture —
- * it is per patch cycle, exactly like `offsetWidth`'s descriptor, so an
- * out-of-order `restore()` cannot put back a stale value. Nesting needs
- * nothing from the slot at all: the registered object holds no state and reads
- * `current()` per call, as the prototype getters do, so pushing an install
- * redirects patches and measurer together and restoring any install hands
- * both to whatever is topmost afterwards. A `Measurer` a test registered
- * before the first install is therefore restored, not clobbered.
+ * The slot is process-wide global state, like `globalThis.ResizeObserver`
+ * alongside it, so it gets no bookkeeping of its own: one `Measurer` is
+ * registered when the stack becomes non-empty and the descriptor captured in
+ * `baseline` comes back once it empties. That is not per-install capture — it
+ * is per install cycle, so an out-of-order `restore()` cannot put back a stale
+ * value. Nesting needs nothing from the slot at all: the registered object
+ * holds no state and reads `current()` per call, so restoring any install
+ * hands measurement to whatever is topmost afterwards. A `Measurer` a test
+ * registered before the first install is therefore restored, not clobbered.
  */
 const MEASURER_SLOT = Symbol.for("@nejcm/dev-toolbar.measurer");
 const globals = globalThis as {
@@ -169,24 +163,41 @@ function readPx(raw: string): number | undefined {
 }
 
 /**
- * What core measures through while an install is live: the same install state
- * the prototype patches below read, reached the same way — `current()` per
- * call, never captured. `barWidth` and `height` ignore their argument because
- * an install reports one bar width and one root height, as its options say.
+ * The install's own width for an item host, keyed by its extension id.
+ *
+ * Shared by `measurer.itemWidth()` and `rectOf()` below so a delivered
+ * rectangle reports the *configured* number. The own-`offsetWidth` preference
+ * stays in `itemWidth()` alone and deliberately does not live here: it exists
+ * so a test can give one chip a width that changes with its own collapse, and
+ * routing delivery through it would leak that preference into an entry's
+ * geometry — a host with a configured `123` and an own getter returning `999`
+ * would deliver `999`, and invoke the getter, where the DOM-patching fake
+ * delivered `123` and never touched it.
+ */
+const configuredItemWidth = (host: HTMLElement): number => {
+  const install = current();
+  // The published `itemWidths` option is keyed by extension id, and the
+  // attribute carrying it is documented contract (docs/architecture.md).
+  const id = host.dataset["dtbExtId"];
+  return install && id ? (install.itemWidths.get(id) ?? install.defaultItemWidth) : 0;
+};
+
+/**
+ * What core measures through while an install is live: the topmost install's
+ * state, read `current()` per call and never captured. `barWidth` and `height`
+ * ignore their argument because an install reports one bar width and one root
+ * height, as its options say.
  */
 const measurer: Measurer = {
   barWidth: () => current()?.barWidth ?? 0,
   itemWidth(host) {
-    // An own `offsetWidth` on the host wins, because it wins for the patched
-    // prototype getter too: an instance accessor shadows a prototype one. That
-    // is how a test gives one chip a width that changes with the layout
-    // (`src/core/__tests__/overflow.test.tsx`) without reaching in here.
+    // An own `offsetWidth` on the host wins over the install's widths. That is
+    // how a test gives one chip a width that changes with the layout
+    // (`src/core/__tests__/overflow.test.tsx`) without reaching in here, and
+    // it is what an instance accessor did back when a prototype getter
+    // answered this — an own property shadows a prototype one.
     if (Object.hasOwn(host, "offsetWidth")) return host.offsetWidth;
-    const install = current();
-    // The published `itemWidths` option is keyed by extension id, and the
-    // attribute carrying it is documented contract (docs/architecture.md).
-    const id = host.dataset["dtbExtId"];
-    return install && id ? (install.itemWidths.get(id) ?? install.defaultItemWidth) : 0;
+    return configuredItemWidth(host);
   },
   buttonWidth: (button) => (button ? (current()?.overflowButtonWidth ?? 0) : 0),
   regionGap(bar) {
@@ -195,9 +206,10 @@ const measurer: Measurer = {
     const region = bar.querySelector<HTMLElement>('[data-dtb-part="region"]');
     if (!region) return undefined;
     const gap = current()?.gap;
-    // The `Number.isFinite` checks here and below are the parse the patched
-    // path performs: the Proxy hands `${gap}px` to `Number.parseFloat`, which
-    // turns a non-finite override into "unresolved" rather than a pixel count.
+    // The `Number.isFinite` checks here and below keep a non-finite override
+    // reading as "unresolved" rather than as a pixel count — what
+    // `Number.parseFloat("NaNpx")` gave when this went through a computed
+    // style, and what core's own `readPx` still does for a real one.
     if (gap !== undefined) return Number.isFinite(gap) ? gap : undefined;
     // The same guard `domMeasurer` puts on this read, for the same reason: a
     // host DOM without `getComputedStyle` must read as "unresolved" so core
@@ -250,31 +262,46 @@ const measurer: Measurer = {
   },
 };
 
-const widthOf = (element: Element): number => {
-  const install = current();
-  if (!install) return 0;
-  const part = element.getAttribute("data-dtb-part");
-  if (part === "bar" || part === "root") return install.barWidth;
-  if (part === "overflow-button") return install.overflowButtonWidth;
-  const id = element.getAttribute("data-dtb-ext-id");
-  if (part === "item" && id) {
-    return install.itemWidths.get(id) ?? install.defaultItemWidth;
+/**
+ * The rectangle an entry carries for one target, answered through the measurer.
+ *
+ * Core's `notify` is zero-argument, so the shell never reads this — but the
+ * fake owns `globalThis.ResizeObserver`, and a *consumer's* own mount effect
+ * constructs one under a live install (`__tests__/lifecycle.test.tsx` pins
+ * that). A zero rectangle there is silently wrong rather than loudly absent:
+ * `if (entry.contentRect.width < 500) collapse()` takes the wrong branch with
+ * no error to read. So the geometry stays synthesized.
+ *
+ * Nothing here reads DOM geometry. `getAttribute` is a part name, not a
+ * measurement, and the widths come from the same `measurer` object literal
+ * above — reached directly, because `deliver()` is module-local in this file
+ * and never routes through core's `MeasurementObserver`. The `item` branch
+ * takes the shared `configuredItemWidth()` rather than `measurer.itemWidth()`
+ * so the own-`offsetWidth` preference stays out of delivery.
+ *
+ * `DOMRectReadOnly`, because that is what a real `ResizeObserverEntry` hands
+ * over: `toJSON()` and JSON serialization include the derived edges, while
+ * `Object.keys(rect)` is empty and `{ ...rect }` yields `{}` because geometry
+ * lives on prototype accessors.
+ */
+const rectOf = (target: Element): DOMRectReadOnly => {
+  const part = target.getAttribute("data-dtb-part");
+  const host = target as HTMLElement;
+  if (part === "root") {
+    return new DOMRectReadOnly(0, 0, measurer.barWidth(host), measurer.height(host));
   }
-  return 0;
+  if (part === "bar") return new DOMRectReadOnly(0, 0, measurer.barWidth(host), 0);
+  if (part === "overflow-button") return new DOMRectReadOnly(0, 0, measurer.buttonWidth(host), 0);
+  if (part === "item") return new DOMRectReadOnly(0, 0, configuredItemWidth(host), 0);
+  return new DOMRectReadOnly(0, 0, 0, 0);
 };
 
-function rectOf(element: Element): DOMRectReadOnly {
-  return new DOMRectReadOnly(
-    0,
-    0,
-    widthOf(element),
-    element.getAttribute("data-dtb-part") === "root" ? (current()?.rootHeight ?? 0) : 0,
-  );
-}
-
+/** Fires one observer with one measured entry per target. */
 function deliver(observer: Observer): void {
   const entries = Array.from(observer.targets, (target): ResizeObserverEntry => ({
     target,
+    // A fresh instance per entry, evaluated at delivery: an entry a consumer
+    // captured at one flush keeps the numbers it was delivered with.
     contentRect: rectOf(target),
     borderBoxSize: [],
     contentBoxSize: [],
@@ -283,17 +310,12 @@ function deliver(observer: Observer): void {
   if (entries.length > 0) observer.callback(entries, observer.instance);
 }
 
+/** Claims the two globals an install answers through, saving what was there. */
 function patch(): void {
-  const proto = HTMLElement.prototype as HTMLElement & Record<string, unknown>;
   baseline = {
     measurer: Object.getOwnPropertyDescriptor(globals, MEASURER_SLOT),
-    proto,
-    offsetWidth: Object.getOwnPropertyDescriptor(proto, "offsetWidth"),
-    clientWidth: Object.getOwnPropertyDescriptor(proto, "clientWidth"),
-    rect: proto.getBoundingClientRect,
     resizeObserver: globals.ResizeObserver,
     hadResizeObserver: "ResizeObserver" in globals,
-    getComputedStyle: globalThis.getComputedStyle,
   };
 
   Object.defineProperty(globals, MEASURER_SLOT, {
@@ -302,57 +324,11 @@ function patch(): void {
     value: measurer,
   });
   globals.ResizeObserver = FakeResizeObserver as unknown as typeof ResizeObserver;
-
-  const previousStyle = baseline.getComputedStyle;
-  globalThis.getComputedStyle = (element, pseudo) => {
-    const style = previousStyle.call(globalThis, element, pseudo);
-    const install = current();
-    if (
-      !install ||
-      !element.hasAttribute("data-dtb-part") ||
-      (install.paddingX === undefined && install.gap === undefined)
-    )
-      return style;
-    return new Proxy(style, {
-      get(target, property, receiver) {
-        if (
-          install.paddingX !== undefined &&
-          (property === "paddingLeft" || property === "paddingRight")
-        ) {
-          return `${install.paddingX}px`;
-        }
-        if (install.gap !== undefined && (property === "columnGap" || property === "gap")) {
-          return `${install.gap}px`;
-        }
-        const value = Reflect.get(target, property, receiver);
-        return typeof value === "function" ? value.bind(target) : value;
-      },
-    });
-  };
-
-  for (const name of ["offsetWidth", "clientWidth"] as const) {
-    Object.defineProperty(proto, name, {
-      configurable: true,
-      get(this: HTMLElement) {
-        return widthOf(this);
-      },
-    });
-  }
-
-  const previousRect = baseline.rect;
-  proto.getBoundingClientRect = function getBoundingClientRect(this: HTMLElement): DOMRect {
-    const install = current();
-    if (!install || this.dataset["dtbPart"] !== "root") {
-      return previousRect.call(this);
-    }
-    return DOMRect.fromRect(rectOf(this));
-  };
 }
 
 function unpatch(): void {
   if (!baseline) return;
-  const { proto, offsetWidth, clientWidth, rect, resizeObserver, hadResizeObserver } = baseline;
-  globalThis.getComputedStyle = baseline.getComputedStyle;
+  const { resizeObserver, hadResizeObserver } = baseline;
   if (baseline.measurer) {
     Object.defineProperty(globals, MEASURER_SLOT, baseline.measurer);
   } else {
@@ -365,17 +341,6 @@ function unpatch(): void {
   } else {
     delete globals.ResizeObserver;
   }
-  for (const [name, descriptor] of [
-    ["offsetWidth", offsetWidth],
-    ["clientWidth", clientWidth],
-  ] as const) {
-    if (descriptor) {
-      Object.defineProperty(proto, name, descriptor);
-    } else {
-      delete proto[name];
-    }
-  }
-  proto.getBoundingClientRect = rect;
 }
 
 function activate(install: Install): void {
@@ -408,15 +373,22 @@ const installs = new WeakMap<ToolbarLayoutHandle, Install>();
  * it hands measurement back to the one underneath. `restore()` is idempotent
  * and order-independent.
  *
- * The fake `ResizeObserver` reports each target with its fake width and root
- * height (zero height for other targets). Box-size arrays are empty.
- * The root's `getBoundingClientRect()` returns a native `DOMRect`: `toJSON()`
- * and JSON serialization include geometry, but `Object.keys(rect)` is empty
- * and `{ ...rect }` yields `{}` because geometry uses prototype accessors.
- * Mutating width or height updates derived edges, as in a browser. Consumers
- * asserting own properties or spreading the previous plain object must adapt.
- * The host DOM must now provide `DOMRect.fromRect`; verified in jsdom,
- * unverified in happy-dom.
+ * No DOM read is patched — not the element width getters, not
+ * `getComputedStyle`: core reads the fake through its measurer slot instead,
+ * so your own components' width and style stubs keep working under a live
+ * install. The `ResizeObserver` stub stays, because jsdom ships none at all
+ * and ordinary consumer code constructs one.
+ *
+ * The fake `ResizeObserver` reports one entry per observed target with a
+ * synthetic `contentRect` — the bar's width for a bar, that width and the root
+ * height for the root, the `⋮` width for the overflow button, the configured
+ * width for an item, zero for anything else — answered through the same
+ * measurer, so no DOM read happens in delivery either. Box-size arrays are
+ * empty. Each `contentRect` is a `DOMRectReadOnly`, as a real entry's is:
+ * `toJSON()` and JSON serialization include the derived edges, but
+ * `Object.keys(rect)` is empty and `{ ...rect }` yields `{}` because geometry
+ * uses prototype accessors, and an entry already delivered is never rewritten
+ * by a later setter.
  */
 export function installToolbarLayout(
   options: InstallToolbarLayoutOptions = {},
