@@ -8,7 +8,20 @@
  * put it back.
  */
 import { afterEach, describe, expect, it, vi } from "vitest";
+import type { Measurer } from "../../core/measurer";
 import { installToolbarLayout, restoreToolbarLayouts } from "../layout";
+
+// The same well-known key `../layout` registers under, re-derived rather than
+// imported: `Symbol.for` is the whole point of the seam.
+const MEASURER_SLOT = Symbol.for("@nejcm/dev-toolbar.measurer");
+type Slot = { [MEASURER_SLOT]?: Measurer };
+
+/** The measurer a live install registered. Throws if nothing is installed. */
+const measurer = (): Measurer => {
+  const registered = (globalThis as Slot)[MEASURER_SLOT];
+  if (!registered) throw new Error("no measurer registered");
+  return registered;
+};
 
 // Captured before this file installs anything, so "restored" means restored to
 // jsdom's own implementations rather than to some earlier fake. Descriptors are
@@ -41,6 +54,15 @@ const item = (id: string) => {
 const root = () => {
   const element = document.createElement("div");
   element.dataset["dtbPart"] = "root";
+  return element;
+};
+
+/** A bar with a region inside it, which is what `regionGap()` looks for. */
+const barWithRegion = () => {
+  const element = bar();
+  const region = document.createElement("div");
+  region.dataset["dtbPart"] = "region";
+  element.append(region);
   return element;
 };
 
@@ -127,6 +149,29 @@ describe("installToolbarLayout", () => {
     });
     handle.setPaddingX(0);
     expect(getComputedStyle(target).paddingLeft).toBe("0px");
+  });
+
+  it("missing getComputedStyle preserves fallback", () => {
+    // docs/testing.md: omitting `paddingX`/`gap` leaves the original computed
+    // styles unchanged, "preserving core's fallback when jsdom cannot resolve
+    // them". A host with no `getComputedStyle` at all is the sharpest case of
+    // "cannot resolve": `domMeasurer` guards both of its reads and answers
+    // `undefined`, which a `CollapseReading` treats as "keep what the machine
+    // already has". The registered measurer has to answer the same rather than
+    // throw, or core loses a fallback it still guards for.
+    const native = globalThis.getComputedStyle;
+    installToolbarLayout();
+    const target = barWithRegion();
+    // Deleted, not set to `undefined`: that is why both guards are written as
+    // `typeof`, which is the one read of an absent binding that is not a
+    // `ReferenceError`.
+    Reflect.deleteProperty(globalThis, "getComputedStyle");
+    try {
+      expect(measurer().padding(target)).toBeUndefined();
+      expect(measurer().regionGap(target)).toBeUndefined();
+    } finally {
+      globalThis.getComputedStyle = native;
+    }
   });
 
   it("does not inherit an outer install's style overrides when options are omitted", () => {
