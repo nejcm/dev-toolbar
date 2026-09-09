@@ -14,12 +14,18 @@ import {
   // types
   type Severity,
   type SeverityWithOverride,
+  type Readable,
+  type Input,
   // helpers, no React
   parseRecord,
   parseList,
   readJson,
   writeJson,
   createPoller,
+  createSource,
+  derive,
+  isReadable,
+  readInput,
   createStyleInjector,
   ensureKitStyles,
   resolveStyleNonce,
@@ -28,6 +34,7 @@ import {
   // React
   embed,
   useExtensionSurface,
+  useSource,
   useCopyStatus,
   Action,
   Banner,
@@ -73,6 +80,7 @@ of the exact kit specifier, not same-name locals:
 | Copy actions | `CopyButton`: 2; `useCopyStatus`: 2 | `CopyButton` owns the button/status-region pairing. `useCopyStatus` is the shared status state for panels with several copy buttons. |
 | Filtering | `matchesQuery`: 2 | It is the string-level predicate shared by the flags and theme-editor view wrappers. |
 | Labelled control | `Field`: 1 | It names the wrapping-label pattern that associates a control without generating or synchronising an `id`. |
+| Live input | `isReadable`: 2; `readInput`: 2; `createSource`: 0; `derive`: 0; `useSource`: 0 | Admitted on the *third party asking* half of the bar: the first real integration hand-rolled a module-scope holder, reader functions and an effect to bridge React-owned state into `environment()` and `flags()`. `isReadable`/`readInput` are what those two runtimes use to accept the result; `createSource`, `derive` and `useSource` are the consumer's end of the same bridge and have no first-party caller by construction — no first-party extension owns app state. |
 
 One helper is admitted as an explicit exception to that bar rather than on either half
 of it: `embed()`, below, has **zero** first-party users by construction — it frames
@@ -199,6 +207,68 @@ Anything a guard cannot express — theme-editor trims accepted values, and its 
 returns a *reason* rather than a boolean — stays in the caller as a pass over the
 returned map; the reader vets and reads, nothing more.
 
+### Live input
+
+```ts
+interface Readable<T> {
+  read(): T;
+  subscribe(listener: () => void): () => void; // returns unsubscribe
+}
+interface ReadableStore<T> { getState(): T; subscribe(listener: () => void): () => void }
+type Input<T> = T | (() => T) | Readable<T> | ReadableStore<T>;
+
+createSource<T>(initial: T): Readable<T> & { set(next: T): void };
+derive<T>(inputs: readonly (Readable<unknown> | ReadableStore<unknown>)[], compute: () => T): Readable<T>;
+isReadable<T>(input: Input<T>): input is Readable<T> | ReadableStore<T>;
+readInput<T>(input: Input<T>): T;
+```
+
+An extension is built once, at module scope, before React mounts anything, so it
+cannot read a hook. That left two ways to feed it a value that changes: a getter
+polled on a timer — a redact-and-diff pass per tick for nothing, and up to a poll of
+staleness after the change — or a module-scope variable an effect keeps current. A
+`Readable` is the third: the value *plus* a notification, so the runtime subscribes
+once and rebuilds its snapshot exactly when the app says so. The rebuild is
+synchronous; publishing it to the bar still goes through the snapshot store's 250 ms
+throttle.
+
+`Input<T>` is the type an option takes when it accepts all three.
+`/ext/environment`'s `context` and `/ext/flags`' `flags` are `Input`s; a plain value
+and a getter behave exactly as before, and a `Readable` is re-read on notify instead of
+on the timer. `readInput` resolves whichever was passed, `isReadable` is the branch a
+runtime takes to decide between subscribing and polling.
+
+A Zustand or Redux store already has this shape up to naming, so
+`{ getState, subscribe }` is accepted as-is — a Zustand *bound hook* included, which
+carries `getState`/`subscribe` on the function. That last case is why the store shape
+is recognised rather than left to an adapter: a bound hook is also a function, and
+treating it as a getter would call a hook outside a component. The structural check is
+safe wherever `T` itself cannot carry a `subscribe` method beside `read` or `getState`;
+a fixed-key options object and an array cannot. Do not declare an `Input<T>` over a
+`T` that could.
+
+```ts
+// app/dev-toolbar.ts — module scope, like the extensions it feeds
+const user = createSource<User | undefined>(undefined);
+const session = derive([user, useAppStore], () => ({
+  environment: config.env,
+  userId: user.read()?.id,
+  region: useAppStore.getState().region,
+}));
+
+export const extensions = [environment({ context: session }), flags({ flags: useFlagStore })];
+```
+
+`createSource` is the writable end for state that lives in React (below). `set()` is
+free when the value is unchanged by `Object.is`, so assigning from every render is
+fine. `derive` fans one subscription out over several inputs; `compute` reads them
+itself and runs on every `read()` — the runtime redacts and diffs the result, so
+nothing is memoised here.
+
+A store that notifies on every dispatch costs one rebuild per notification. That is
+the honest rate for "publish when the app changes"; a store noisier than the panel
+wants can be wrapped in a `Readable` that debounces `subscribe`.
+
 ### Polling
 
 ```ts
@@ -302,7 +372,7 @@ useExtensionSurface<T>(
 ): T;
 ```
 
-The one hook. It subscribes a component to a
+The extension author's hook. It subscribes a component to a
 [`createThrottledStore`](./runtime.md) snapshot through `useSyncExternalStore` and, when
 `inject` is true, ensures the stylesheet from an effect. `getSnapshot` is passed as the
 server snapshot too, because extension stores are created eagerly from the same inputs —
@@ -323,6 +393,36 @@ export function BuildChip({ runtime, injectStyles, styleNonce }: BuildChipProps)
   return <Chip label="build" value={snapshot.commit} severity={snapshot.severity} />;
 }
 ```
+
+```ts
+useSource<T>(source: { set(next: T): void }, value: T): void;
+```
+
+The host application's hook, and the one place the kit is called from a component that
+is not a slot. It assigns a React-owned value — the signed-in user, a router's
+location, a query result — into a module-scope [`createSource`](#live-input) from a
+layout effect, so every extension subscribed to that source rebuilds its snapshot in
+the same commit rather than on its next poll. Publication is still the extension
+store's: `/ext/environment` and `/ext/flags` write through a 250 ms
+[throttle](./runtime.md), so a change landing inside that window shows on the trailing
+edge, not before the paint.
+
+```tsx
+const user = createSource<User | undefined>(undefined); // module scope, next to the extensions
+
+function DevToolbarHost() {
+  const currentUser = useCurrentUser();
+  useSource(user, currentUser);
+  return <DevToolbar extensions={extensions} />;
+}
+```
+
+It clears **nothing** on unmount, deliberately. The module-scope-mutable pattern it
+replaces reset its holder in a cleanup, and under StrictMode's mount → cleanup → mount
+the toolbar briefly reported "nobody signed in" to whichever poll landed in between.
+The source, like the extension it feeds, outlives any one component; a value that
+should be absent is assigned as absent by the component that knows so. On a server the
+effect never runs, and the source keeps its initial value.
 
 ### `embed`
 

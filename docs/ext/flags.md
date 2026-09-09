@@ -36,6 +36,21 @@ the value *before* the override to be able to show both. If you do fold them int
 one store nothing breaks — the override badge comes from the extension's own map,
 never from comparing values.
 
+`flags` takes an array, a **function** re-read every `pollMs` (default 1 s) and on
+demand, or anything with `read()`/`subscribe()` — a
+[`Readable`](../kit.md#live-input) from `@nejcm/dev-toolbar/kit`, or a Zustand/Redux
+store's `{ getState, subscribe }` as-is — which is re-read **when it notifies** and
+never polled. Server-resolved flags that arrive after mount, or a catalogue kept in a
+store, belong in that third shape: the panel follows the store instead of catching up
+on the next tick.
+
+```ts
+const catalogue = createSource<readonly FlagReading[]>([]);
+const extensions = [flags({ flags: catalogue, onOverride })];
+// wherever the resolved flags land:
+catalogue.set(readings);
+```
+
 **Omit `onOverride` and the panel is read-only**: it lists, searches and copies, and
 changes nothing. That is the honest answer for a consumer with nowhere to put an
 override.

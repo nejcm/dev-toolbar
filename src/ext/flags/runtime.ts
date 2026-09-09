@@ -20,7 +20,14 @@
  * raw flag value skips it.
  */
 import { createDerivedStore, describeError, redact } from "../../runtime";
-import { createPoller, parseRecord, readPreference, writePreference } from "@nejcm/dev-toolbar/kit";
+import {
+  createPoller,
+  isReadable,
+  parseRecord,
+  readInput,
+  readPreference,
+  writePreference,
+} from "@nejcm/dev-toolbar/kit";
 import type { Preference } from "@nejcm/dev-toolbar/kit";
 import type { RedactOptions, ThrottledStore } from "../../runtime";
 import type { ExtensionRuntimeApi, ToolbarStorage } from "../../core/contract";
@@ -59,9 +66,11 @@ export interface FlagsRuntimeOptions {
    * What your application resolved, **before local overrides**.
    *
    * Pass a function for values that change; it's re-read every `pollMs` and on
-   * demand. If you fold the toolbar's overrides back into the same store you
-   * read this from, nothing breaks: the override badge comes from this
-   * extension's own map, not from comparing values.
+   * demand. Pass a `Readable` or a `{ getState, subscribe }` store and it is
+   * re-read when that notifies instead, with no timer. If you fold the
+   * toolbar's overrides back into the same store you read this from, nothing
+   * breaks: the override badge comes from this extension's own map, not from
+   * comparing values.
    */
   flags?: FlagsInput;
   /**
@@ -72,7 +81,7 @@ export interface FlagsRuntimeOptions {
    * editors. The honest degradation for a consumer with nowhere to put one.
    */
   onOverride?(key: string, value: FlagValue | undefined): void;
-  /** Re-read a function `flags` this often, in ms. Default `1000`. */
+  /** Re-read a function `flags` this often, in ms. Default `1000`. Unused for a `Readable`. */
   pollMs?: number;
   /** Flags pinned into the bar as their own controls. */
   promoted?: PromotedFlag | readonly PromotedFlag[];
@@ -301,7 +310,7 @@ export function createFlagsRuntime(options: FlagsRuntimeOptions = {}): FlagsRunt
 
   const readFlags = (): readonly FlagReading[] => {
     try {
-      const value = typeof flags === "function" ? flags() : flags;
+      const value = readInput(flags);
       if (value === undefined || value === null) return [];
       if (!Array.isArray(value)) return [];
       return value as readonly FlagReading[];
@@ -755,8 +764,11 @@ export function createFlagsRuntime(options: FlagsRuntimeOptions = {}): FlagsRunt
         }
       }
 
+      // A `Readable` says when it changed; only a bare getter needs the timer.
+      const live = isReadable(flags);
+      const stopListening = live ? flags.subscribe(() => publish()) : () => {};
       const stopPolling =
-        typeof flags === "function"
+        typeof flags === "function" && !live
           ? createPoller(publish, {
               intervalMs: pollMs,
               fallbackMs: 1000,
@@ -770,9 +782,20 @@ export function createFlagsRuntime(options: FlagsRuntimeOptions = {}): FlagsRunt
       // The store belongs to the runtime, not to one start/stop cycle: React
       // StrictMode runs mount -> cleanup -> mount, and destroying it on the
       // first cleanup would drop React's subscription and freeze the panel.
+      let disposed = false;
       const dispose = () => {
+        // Idempotent: core aborts the signal and then calls the returned cleanup,
+        // and a consumer's unsubscribe need not tolerate a second call.
+        if (disposed) return;
+        disposed = true;
         stopPolling();
         stopWatching();
+        try {
+          stopListening();
+        } catch (error) {
+          // eslint-disable-next-line no-console
+          console.error("[dev-toolbar/ext/flags] the supplied flags' unsubscribe threw.", error);
+        }
       };
       api.signal.addEventListener("abort", dispose, { once: true });
       return dispose;

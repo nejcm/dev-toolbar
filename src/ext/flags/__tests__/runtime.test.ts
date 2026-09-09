@@ -3,6 +3,7 @@
  * redaction pass and the fail-closed guarantees.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { createSource } from "@nejcm/dev-toolbar/kit";
 import { fakeExtensionApi } from "@nejcm/dev-toolbar/testing";
 import type { Mock } from "vitest";
 import { createMemoryStorage } from "../../../core/storage";
@@ -1517,5 +1518,114 @@ describe("recording a hostile adapter failure", () => {
     const recorded = runtime.store.getSnapshot().adapterErrors["ui-facelift"];
     expect(recorded).toContain("[unreadable]");
     expect(recorded).not.toContain("abc");
+  });
+});
+
+describe("a Readable catalogue", () => {
+  const keys = (runtime: ReturnType<typeof createFlagsRuntime>) =>
+    runtime.store.getSnapshot().flags.map((view) => view.key);
+
+  it("republishes on notify and never starts the poller", () => {
+    vi.useFakeTimers();
+    try {
+      const source = createSource<readonly FlagReading[]>(CATALOGUE);
+      const read = vi.spyOn(source, "read");
+      const runtime = createFlagsRuntime({ flags: source, pollMs: 250 });
+      const { api, abort } = fakeApi(createMemoryStorage());
+      const dispose = runtime.start(api);
+      const afterStart = read.mock.calls.length;
+
+      vi.advanceTimersByTime(60_000);
+      expect(read.mock.calls.length).toBe(afterStart);
+
+      source.set([...CATALOGUE, { key: "late-arrival", type: "boolean", value: true }]);
+      runtime.store.flush();
+      expect(keys(runtime)).toContain("late-arrival");
+
+      dispose();
+      abort();
+      source.set([]);
+      runtime.store.flush();
+      // Unsubscribed: the last published catalogue stands.
+      expect(keys(runtime)).toContain("late-arrival");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("unsubscribes exactly once when core aborts and then calls the cleanup", () => {
+    const source = createSource<readonly FlagReading[]>(CATALOGUE);
+    const unsubscribe = vi.fn(source.subscribe(() => {}));
+    const subscribe = vi.fn(() => unsubscribe);
+    const runtime = createFlagsRuntime({ flags: { getState: source.read, subscribe } });
+    const { api, abort } = fakeApi(createMemoryStorage());
+    const dispose = runtime.start(api);
+    expect(subscribe).toHaveBeenCalledTimes(1);
+
+    // The order core's stopExtension uses: abort the signal, then the returned cleanup.
+    abort();
+    dispose();
+    expect(unsubscribe).toHaveBeenCalledTimes(1);
+  });
+
+  it("finishes tearing down when the unsubscribe throws", () => {
+    const source = createSource<readonly FlagReading[]>(CATALOGUE);
+    const read = vi.fn(source.read);
+    const runtime = createFlagsRuntime({
+      flags: {
+        read,
+        subscribe: (listener) => {
+          source.subscribe(listener);
+          return () => {
+            throw new Error("released twice");
+          };
+        },
+      },
+    });
+    const { api, setVisible } = fakeApi(createMemoryStorage());
+    const dispose = runtime.start(api);
+    const afterStart = read.mock.calls.length;
+
+    expect(() => dispose()).not.toThrow();
+    expect(consoleError).toHaveBeenCalledWith(
+      expect.stringContaining("unsubscribe threw"),
+      expect.any(Error),
+    );
+
+    // The visibility subscription was still released: a flip no longer re-reads.
+    setVisible(false);
+    expect(read.mock.calls.length).toBe(afterStart);
+  });
+
+  it("vets stored overrides against what the readable holds at start", () => {
+    const storage = createMemoryStorage();
+    const runtime = createFlagsRuntime({ flags: CATALOGUE, onOverride: () => {} });
+    runtime.start(fakeApi(storage).api);
+    runtime.setOverride("ui-facelift", true);
+    runtime.setOverride("checkout.copy", "new");
+
+    const applied: [string, FlagValue | undefined][] = [];
+    const second = createFlagsRuntime({
+      flags: createSource<readonly FlagReading[]>([CATALOGUE[0] as FlagReading]),
+      onOverride: (key, value) => applied.push([key, value]),
+    });
+    second.start(fakeApi(storage).api);
+    // Both replay — the orphan too, so a renamed flag is still applied and clearable —
+    // and the row for the missing key is the orphan tag, not a dropped override.
+    expect(applied.map(([key]) => key).sort()).toEqual(["checkout.copy", "ui-facelift"]);
+    const view = second.store.getSnapshot().flags.find((entry) => entry.key === "checkout.copy");
+    expect(view?.orphaned).toBe(true);
+  });
+
+  it("accepts a { getState, subscribe } store as-is", () => {
+    const source = createSource<readonly FlagReading[]>(CATALOGUE);
+    const runtime = createFlagsRuntime({
+      flags: { getState: source.read, subscribe: source.subscribe },
+    });
+    runtime.start(fakeApi(createMemoryStorage()).api);
+    expect(keys(runtime)).toHaveLength(4);
+    source.set([]);
+    runtime.store.flush();
+    expect(keys(runtime)).toHaveLength(0);
   });
 });

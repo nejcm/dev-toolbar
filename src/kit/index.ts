@@ -36,7 +36,7 @@ export type {
 } from "./CopyButton";
 export { embed } from "./embed";
 export type { EmbedOptions } from "./embed";
-export { useExtensionSurface } from "./hooks";
+export { useExtensionSurface, useSource } from "./hooks";
 export {
   extensionStorageKey,
   parseList,
@@ -53,5 +53,7 @@ export type { Preference, PreferenceEncoding, StoredRecordOptions } from "./pref
 export { resolveStyleNonce } from "./nonce";
 export { createPoller } from "./poller";
 export { matchesQuery } from "./query";
+export { createSource, derive, isReadable, readInput } from "./source";
+export type { Input, Readable, ReadableStore, Source } from "./source";
 export { createStyleInjector, ensureKitStyles } from "./styles";
 export type { Severity, SeverityWithOverride } from "./types";

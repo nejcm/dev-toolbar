@@ -10,7 +10,8 @@
  * nothing else in the app knows about — persisted via `api.storage` and
  * re-applied through your adapter.
  */
-import { matchesQuery as matchesKitQuery, type SeverityWithOverride } from "@nejcm/dev-toolbar/kit";
+import { matchesQuery as matchesKitQuery } from "@nejcm/dev-toolbar/kit";
+import type { Input, SeverityWithOverride } from "@nejcm/dev-toolbar/kit";
 
 /** `null` is a real value ("unset variant"), not "no value". */
 export type FlagValue = boolean | string | number | null;
@@ -73,7 +74,12 @@ export interface FlagReading extends FeatureFlagDefinition {
   recentlyUsed?: boolean;
 }
 
-export type FlagsInput = readonly FlagReading[] | (() => readonly FlagReading[]);
+/**
+ * The catalogue as an array, a getter (re-read every `pollMs`), or a `Readable`
+ * / `{ getState, subscribe }` store (re-read when it notifies, never polled).
+ * See `createSource` and `useSource` in `@nejcm/dev-toolbar/kit`.
+ */
+export type FlagsInput = Input<readonly FlagReading[]>;
 
 /**
  * One flag pinned into the bar as its own control.
