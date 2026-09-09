@@ -182,16 +182,16 @@ export interface ExtensionDiagnostics {
   data?: unknown;
   /**
    * The thrown error's message alone, unjoined and unredacted, when `status` is
-   * `"failed"`. Kept separate (not prefixed as `"TypeError: ..."`) so the `/runtime`
-   * redactors — which match value shapes anchored to the whole string — can still
-   * mask a credential-carrying URL message. Core cannot redact it itself (may not
-   * import `/runtime`).
+   * `"failed"`. Kept separate from `errorName` (not prefixed as `"TypeError: ..."`)
+   * so a reader can mask each half before joining them — the rule `/runtime`'s
+   * `describeError()` implements for a thrown value. Core cannot redact it itself
+   * (may not import `/runtime`).
    */
   error?: string;
   /**
    * The thrown error's `name`, e.g. `"TypeError"`. Absent for a non-`Error` throw.
-   * Unverified — `name` is a writable own property, not a guaranteed class
-   * identifier — so a reader must redact it before joining it to anything.
+   * Unverified — a writable own property, not a class identifier — so a reader
+   * masks it like `error` before joining.
    */
   errorName?: string;
 }

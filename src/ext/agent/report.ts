@@ -4,7 +4,7 @@
  * server has no channel back; queued commands run on the next check-in.
  * `allowRun` still gates command execution, and no global is touched here.
  */
-import { createThrottledStore } from "../../runtime";
+import { createThrottledStore, describeErrorUnmasked } from "../../runtime";
 import { AGENT_MARKER, AGENT_PROTOCOL_VERSION } from "./types";
 import type { AgentHandle, AgentRunResult, AgentSnapshot } from "./types";
 
@@ -206,12 +206,19 @@ export function createAgentReporter(
       return parsed !== null && typeof parsed === "object" ? (parsed as AgentReportResponse) : null;
     } catch (error) {
       // Report a missing or restarting dev server once; the poll would repeat
-      // the same failure every 500 ms.
+      // the same failure every 500 ms. Unmasked on purpose: this is the
+      // developer's own console, which logs the raw thrown value on a failure
+      // path by design (`docs/architecture.md` §10). If the diagnostics console
+      // tail captures this line it runs `redactProse()` over it, which finds a
+      // URL inside the sentence but not a bare credential sitting mid-sentence
+      // — so a `fetch` rejection whose message *is* a credential would reach
+      // an exported tail as written. That is the raw-console policy's cost,
+      // accepted here as everywhere else it applies.
       failures += 1;
       if (failures === 1) {
         warn(
           `could not reach the reporter endpoint "${url}" (${
-            error instanceof Error ? error.message : String(error)
+            describeErrorUnmasked(error).message
           }). Is the dev-server middleware installed? Further failures are silent.`,
         );
       }

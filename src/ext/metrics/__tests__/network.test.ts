@@ -4,7 +4,7 @@ import { instrumentFetch } from "@nejcm/dev-toolbar/runtime";
 import type { BusLike, ToolbarEventMap } from "../../../runtime";
 import { createMockBus } from "../../../testing";
 import { createNetworkCollector } from "../collectors/network";
-import { REDACTED } from "../../../runtime";
+import { REDACTED, UNREADABLE } from "../../../runtime";
 
 const originalFetch = globalThis.fetch;
 
@@ -199,6 +199,112 @@ describe("network collector — fetch present", () => {
     expect(collector.entries?.(0)[0]?.error).toBe(
       `Failed to fetch https://a.test/?access_token=${REDACTED}. Then gave up.`,
     );
+    controller.abort();
+  });
+
+  it("masks the second of two URLs glued together by a quote — why this is not redactProse()", async () => {
+    // `redactProse()`'s sweep runs to the next whitespace, so `"…?ok=1","https://y/?token=abc"`
+    // is one URL to it — the first, whose `ok` value happens to contain the
+    // second — and `abc` survives. This column's own scanner stops at the
+    // quote, so both URLs are rewritten. Pinned so the private scanner is not
+    // swapped for the shared one again without this failing.
+    globalThis.fetch = vi.fn(async () => {
+      throw new Error('failed "https://x/?ok=1","https://y/?token=abc"');
+    }) as unknown as typeof fetch;
+    const collector = createNetworkCollector({ patchXhr: false });
+    const controller = new AbortController();
+    collector.start(context(controller, { t: 0 }));
+    await expect(globalThis.fetch("/api/x")).rejects.toThrow();
+    expect(collector.entries?.(0)[0]?.error).toBe(
+      `failed "https://x/?ok=1","https://y/?token=${REDACTED}"`,
+    );
+    controller.abort();
+  });
+
+  it("rewrites URLs and nothing else: a bare credential message stays as written", async () => {
+    // The stated limit of a URL-only rewrite, pinned so the test above is not
+    // read as a guarantee that error text is scrubbed: a message that *is* a
+    // credential, or carries one mid-sentence with no URL around it, is kept.
+    // The panel shows the text; the reader is the last check.
+    const thrown = ["Bearer super-secret-token", "auth failed: Bearer super-secret-token rejected"];
+    let index = 0;
+    globalThis.fetch = vi.fn(async () => {
+      throw new Error(thrown[index++]);
+    }) as unknown as typeof fetch;
+    const collector = createNetworkCollector({ patchXhr: false });
+    const controller = new AbortController();
+    collector.start(context(controller, { t: 0 }));
+    await expect(globalThis.fetch("/api/x")).rejects.toThrow();
+    await expect(globalThis.fetch("/api/y")).rejects.toThrow();
+    // Newest first.
+    const errors = (collector.entries?.(0) ?? []).map((entry) => entry.error);
+    expect(errors).toEqual([
+      "auth failed: Bearer super-secret-token rejected",
+      "Bearer super-secret-token",
+    ]);
+    controller.abort();
+  });
+
+  it("keeps a hostname of three dotted labels readable — why this is not redactText()", async () => {
+    // `redactText()`'s JWT rule masks any three dotted runs of eight or more
+    // word characters, and `frontend.production.internal` is one. That is
+    // acceptable inside a stack trace; in the column whose whole purpose is to
+    // say which host the request failed against, it is not.
+    globalThis.fetch = vi.fn(async () => {
+      throw new Error("Failed to fetch https://frontend.production.internal/api?token=abc");
+    }) as unknown as typeof fetch;
+    const collector = createNetworkCollector({ patchXhr: false });
+    const controller = new AbortController();
+    collector.start(context(controller, { t: 0 }));
+    await expect(globalThis.fetch("/api/x")).rejects.toThrow();
+    expect(collector.entries?.(0)[0]?.error).toBe(
+      `Failed to fetch https://frontend.production.internal/api?token=${REDACTED}`,
+    );
+    controller.abort();
+  });
+
+  it("finishes and counts the entry even when a URL in the message cannot be rewritten", async () => {
+    // A mask `encodeURIComponent()` rejects (a lone surrogate) makes
+    // `redactUrl()` throw on the fallback path for a URL the parser rejects.
+    // Unguarded, that throw escaped `finish()` after `completedAt` was set and
+    // before the totals moved: the interceptor swallowed it, and the entry was
+    // left `ok` with no `error` and no failure counted. Each match is now
+    // guarded — the URL that could not be inspected is replaced in place,
+    // never handed back with its credential, and the words around it stay —
+    // and the entry is finished.
+    globalThis.fetch = vi.fn(async () => {
+      throw new Error("failed http://[?token=secret");
+    }) as unknown as typeof fetch;
+    const collector = createNetworkCollector({ patchXhr: false, redact: { mask: "\uD800" } });
+    const controller = new AbortController();
+    collector.start(context(controller, { t: 0 }));
+    await expect(globalThis.fetch("/api/x")).rejects.toThrow();
+    const [entry] = collector.entries?.(0) ?? [];
+    expect(entry?.error).toBe(`failed ${UNREADABLE}`);
+    expect(entry?.error).not.toContain("secret");
+    expect(entry?.state).toBe("failed");
+    expect(detailOf(collector.read(0))["Failed (session)"]).toBe("1");
+    controller.abort();
+  });
+
+  it("replaces only the URL it could not rewrite, and still masks the next one", async () => {
+    // The guard is per match, not per sentence: a wide guard turned this whole
+    // message into `[unreadable]`, discarding the host of the second URL — the
+    // one thing the column is for — when only the first URL was the problem.
+    // The second URL parses, so `redactUrl()` masks it normally; the lone
+    // surrogate mask is serialised by the URL parser as U+FFFD, hence
+    // `%EF%BF%BD`. Nothing inside either URL survives unmasked.
+    globalThis.fetch = vi.fn(async () => {
+      throw new Error("bad http://[?token=secret and https://y/?token=abc");
+    }) as unknown as typeof fetch;
+    const collector = createNetworkCollector({ patchXhr: false, redact: { mask: "\uD800" } });
+    const controller = new AbortController();
+    collector.start(context(controller, { t: 0 }));
+    await expect(globalThis.fetch("/api/x")).rejects.toThrow();
+    const [entry] = collector.entries?.(0) ?? [];
+    expect(entry?.error).toBe(`bad ${UNREADABLE} and https://y/?token=%EF%BF%BD`);
+    expect(entry?.error).not.toContain("secret");
+    expect(entry?.error).not.toContain("abc");
     controller.abort();
   });
 

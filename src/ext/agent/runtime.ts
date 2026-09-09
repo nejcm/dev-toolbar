@@ -7,7 +7,7 @@
  * Phase 0, decision 6). Installation happens from client-only `start(api)`,
  * not at module evaluation, so importing this module during SSR is inert.
  */
-import { redact } from "../../runtime";
+import { describeError, redact } from "../../runtime";
 import type { RedactOptions } from "../../runtime";
 import { startAgentReporter } from "./report";
 import type { AgentReportOptions } from "./report";
@@ -207,49 +207,12 @@ function isAgentRegistry(value: unknown): value is AgentRegistry {
   );
 }
 
-const UNREADABLE = "[unreadable]";
-
-/** One guarded property read: a hostile getter yields the placeholder, not a throw. */
-const readString = (read: () => unknown): string | undefined => {
-  try {
-    const value = read();
-    return typeof value === "string" ? value : undefined;
-  } catch {
-    return UNREADABLE;
-  }
-};
-
-/** `instanceof` walks the prototype chain, which a revoked proxy refuses: `undefined` when it throws. */
-const asError = (value: unknown): Error | null | undefined => {
-  try {
-    return value instanceof Error ? value : null;
-  } catch {
-    return undefined;
-  }
-};
-
-const describeError = (error: unknown, options: RedactOptions): AgentRunResult => {
-  // Message and name are redacted separately and never pre-joined: the
-  // redactors match value shapes anchored to the whole string, so a message
-  // that *is* a credential-carrying URL stops being maskable the moment
-  // `"TypeError: "` sits in front of it (`core/contract.ts`). Every read is
-  // guarded, classification included: `runCommand()` promises a value.
-  const thrown = asError(error);
-  if (thrown === undefined) return { ok: false, reason: "threw", error: UNREADABLE };
-  const message =
-    thrown === null
-      ? (readString(() => String(error)) ?? UNREADABLE)
-      : (readString(() => thrown.message) ?? UNREADABLE);
-  const result: AgentRunResult = {
-    ok: false,
-    reason: "threw",
-    error: redact(message, options),
-  };
-  if (thrown !== null) {
-    const name = readString(() => thrown.name);
-    if (name !== undefined) result.errorName = redact(name, options);
-  }
-  return result;
+/** A command's throw as a value: `describeError()`'s halves, handed over unjoined (`ExtensionDiagnostics.error`). */
+const threw = (error: unknown, options: RedactOptions): AgentRunResult => {
+  const { name, message } = describeError(error, options);
+  return name === undefined
+    ? { ok: false, reason: "threw", error: message }
+    : { ok: false, reason: "threw", error: message, errorName: name };
 };
 
 /** Builds the handle for one mounted toolbar from the runtime API. */
@@ -344,7 +307,7 @@ export function createAgentHandle(
       } catch (error) {
         // Turn command throws, including input refusals, into values for the
         // agent.
-        return describeError(error, redactOptions);
+        return threw(error, redactOptions);
       }
     };
   }
