@@ -14,7 +14,8 @@
  * listed, all shown in the palette rather than thrown at the host app.
  */
 import { createThrottledStore, describeError } from "../../runtime";
-import { parseList } from "@nejcm/dev-toolbar/kit";
+import { parseList, readPreference, writePreference } from "@nejcm/dev-toolbar/kit";
+import type { Preference } from "@nejcm/dev-toolbar/kit";
 import type { ThrottledStore } from "../../runtime";
 import type { AnyToolbarCommand, ExtensionRuntimeApi } from "../../core/contract";
 import { filterCommands } from "./types";
@@ -22,6 +23,18 @@ import type { CommandMatch } from "./types";
 
 /** Storage key holding the recently-run ids, most recent first. */
 export const RECENT_KEY = "recent";
+
+/**
+ * The recents list as it is laid down in storage: this extension's own JSON,
+ * stored byte-for-byte. The serialised empty list is the fallback, so a list
+ * pruned to nothing removes the key.
+ */
+const RECENT_PREFERENCE: Preference<string> = {
+  key: RECENT_KEY,
+  encoding: "string",
+  fallback: "[]",
+  isValue: (value): value is string => typeof value === "string",
+};
 /** How many recents are remembered. */
 export const RECENT_LIMIT = 6;
 
@@ -321,11 +334,7 @@ export function createCommandMenuRuntime(
 
   const persistRecent = (ids: readonly string[]) => {
     if (!rememberRecent || !api) return;
-    try {
-      api.storage.setItem(RECENT_KEY, JSON.stringify(ids));
-    } catch {
-      /* storage is best-effort; a palette must not fail because it is full */
-    }
+    writePreference(api.storage, RECENT_PREFERENCE, JSON.stringify(ids));
   };
 
   const open = () => {
@@ -415,14 +424,9 @@ export function createCommandMenuRuntime(
 
     start(runtimeApi) {
       api = runtimeApi;
-      let recent: string[] = [];
-      if (rememberRecent) {
-        try {
-          recent = readRecent(runtimeApi.storage.getItem(RECENT_KEY));
-        } catch {
-          recent = [];
-        }
-      }
+      const recent = rememberRecent
+        ? readRecent(readPreference(runtimeApi.storage, RECENT_PREFERENCE))
+        : [];
       store.set({ ...store.peek(), ready: true, recent });
 
       const onKeyDown = (event: KeyboardEvent) => {

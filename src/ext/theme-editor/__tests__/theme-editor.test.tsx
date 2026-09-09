@@ -372,6 +372,35 @@ describe("the panel", () => {
 /* -------------------------------------------------------------------------- */
 
 describe("the shell contract", () => {
+  it("keeps the panel and an edit working over a throwing storage adapter", () => {
+    const broken: ToolbarStorage = {
+      getItem: () => {
+        throw new Error("site data blocked");
+      },
+      setItem: () => {
+        throw new Error("site data blocked");
+      },
+      removeItem: () => {
+        throw new Error("site data blocked");
+      },
+    };
+    const { toolbar } = mount({}, broken);
+    expect(() => act(() => toolbar.openPanel("theme-editor"))).not.toThrow();
+    const input = row(
+      toolbar.panel("theme-editor"),
+      "--radius-md",
+    )?.querySelector<HTMLInputElement>('input[data-dtb-part="thm-input"]');
+    expect(() =>
+      act(() => {
+        fireEvent.change(input as HTMLInputElement, { target: { value: "12px" } });
+        fireEvent.keyDown(input as HTMLInputElement, { key: "Enter" });
+      }),
+    ).not.toThrow();
+    // The edit reached the surface; only its persistence was lost.
+    expect(app().style.getPropertyValue("--radius-md")).toBe("12px");
+    expect(toolbar.errorChip("theme-editor")).toBeNull();
+  });
+
   it("contains a throwing catalogue itself rather than degrading to a chip", () => {
     const spy = vi.spyOn(console, "error").mockImplementation(() => {});
     const { toolbar } = mount({

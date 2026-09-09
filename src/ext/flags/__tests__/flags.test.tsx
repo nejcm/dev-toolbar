@@ -416,6 +416,32 @@ describe("persistence across a reload", () => {
 });
 
 describe("failing closed", () => {
+  it("keeps the panel and a toggle working over a throwing storage adapter", () => {
+    const broken: ToolbarStorage = {
+      getItem: () => {
+        throw new Error("site data blocked");
+      },
+      setItem: () => {
+        throw new Error("site data blocked");
+      },
+      removeItem: () => {
+        throw new Error("site data blocked");
+      },
+    };
+    const { toolbar } = mount({ onOverride: record }, broken);
+    expect(() => act(() => toolbar.openPanel("flags"))).not.toThrow();
+    expect(() =>
+      act(() => {
+        row(toolbar.panel("flags"), "ui-facelift")
+          ?.querySelector<HTMLButtonElement>('[data-dtb-part="flag-switch"]')
+          ?.click();
+      }),
+    ).not.toThrow();
+    // The override reached the app; only its persistence was lost.
+    expect(applied).toEqual([["ui-facelift", true]]);
+    expect(toolbar.errorChip("flags")).toBeNull();
+  });
+
   it("shows a throwing adapter instead of degrading to an error chip", () => {
     const spy = vi.spyOn(console, "error").mockImplementation(() => {});
     try {

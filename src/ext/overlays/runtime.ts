@@ -27,6 +27,8 @@ import {
   describeError,
   ensureStyleSheet,
 } from "../../runtime";
+import { readPreference, writePreference } from "@nejcm/dev-toolbar/kit";
+import type { Preference } from "@nejcm/dev-toolbar/kit";
 import type { ThrottledStore } from "../../runtime";
 import type { ExtensionRuntimeApi, ToolbarStorage } from "../../core/contract";
 import {
@@ -254,8 +256,30 @@ export function createOverlaysRuntime(options: OverlaysRuntimeOptions = {}): Ove
   const rawLimit = Number.isFinite(focusLimit) ? focusLimit : DEFAULT_FOCUS_LIMIT;
   const limit = Math.max(1, Math.min(1000, Math.round(rawLimit)));
 
-  let flags: OverlayFlags = { ...NO_OVERLAYS, ...defaults };
+  /** What a mount starts from when nothing is stored: the consumer's `defaults`. */
+  const initialFlags: OverlayFlags = { ...NO_OVERLAYS, ...defaults };
+  let flags: OverlayFlags = { ...initialFlags };
   let storage: ToolbarStorage | null = null;
+  /**
+   * The toggle map as this extension serialises it, stored byte-for-byte.
+   *
+   * `fallback: null` is the kit's "nothing chosen yet" (the shape metrics' `tab`
+   * uses), and it is deliberate: the fallback is *not* the serialised
+   * `defaults`. `writePreference` removes the key when a value equals the
+   * fallback, and `serializeFlags` never yields `null`, so every write here
+   * persists — all-off included. The map records that the developer chose,
+   * not merely what they chose: with no `defaults` configured, all-off *is*
+   * the default, and had that removed the key, a consumer later adding
+   * `defaults: { grid: true }` would revive the grid for someone who had
+   * explicitly turned everything off. Nothing stored reads back as `null`,
+   * and `start()` maps that to `initialFlags`.
+   */
+  const enabledPreference: Preference<string | null> = {
+    key: ENABLED_KEY,
+    encoding: "string",
+    fallback: null,
+    isValue: (value): value is string => typeof value === "string",
+  };
   let ready = false;
   let active = false;
   let error: string | null = null;
@@ -832,13 +856,8 @@ export function createOverlaysRuntime(options: OverlaysRuntimeOptions = {}): Ove
   /* ------------------------------------------------------------------ */
 
   function persistFlags(): void {
-    if (!persist || storage === null) return;
-    try {
-      storage.setItem(ENABLED_KEY, serializeFlags(flags));
-    } catch {
-      // A custom adapter is consumer code; losing persistence is survivable,
-      // throwing out of a click handler is not.
-    }
+    if (!persist) return;
+    writePreference(storage, enabledPreference, serializeFlags(flags));
   }
 
   const write = (next: OverlayFlags) => {
@@ -901,15 +920,20 @@ export function createOverlaysRuntime(options: OverlaysRuntimeOptions = {}): Ove
     start(api: ExtensionRuntimeApi) {
       storage = persist ? api.storage : null;
       if (persist) {
-        let raw: string | null = null;
-        try {
-          raw = api.storage.getItem(ENABLED_KEY);
-        } catch {
-          raw = null;
-        }
-        // Stored map wins over `defaults` where present; parseFlags fails
-        // closed, so an unreadable blob means every overlay off.
-        if (raw !== null) flags = parseFlags(raw);
+        let readable = false;
+        const stored = readPreference(
+          {
+            getItem(key) {
+              const raw = api.storage.getItem(key);
+              readable = true;
+              return raw;
+            },
+          },
+          enabledPreference,
+        );
+        // A failed read must preserve session choices; a missing key restores defaults.
+        // parseFlags fails closed, so an unreadable blob means every overlay off.
+        if (readable) flags = stored === null ? { ...initialFlags } : parseFlags(stored);
       }
 
       ready = true;

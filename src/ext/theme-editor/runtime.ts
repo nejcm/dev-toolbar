@@ -26,7 +26,14 @@
  * application every time you press the hide shortcut would be unusable.
  */
 import { createDerivedStore, describeError, redact } from "../../runtime";
-import { createPoller, parseRecord } from "@nejcm/dev-toolbar/kit";
+import {
+  createPoller,
+  parseRecord,
+  readPreference,
+  readStoredRecord,
+  writePreference,
+} from "@nejcm/dev-toolbar/kit";
+import type { Preference } from "@nejcm/dev-toolbar/kit";
 import type { RedactOptions, ThrottledStore } from "../../runtime";
 import type { ExtensionRuntimeApi, ToolbarStorage } from "../../core/contract";
 import {
@@ -55,6 +62,27 @@ import type {
 export const OVERRIDES_KEY = "overrides";
 export const SURFACE_KEY = "surface";
 export const PREVIEW_KEY = "preview";
+
+/**
+ * The edit map as it is laid down in storage: this extension's own JSON, stored
+ * byte-for-byte, so the raw-string encoding never changes what a consumer
+ * already has persisted. The serialised empty map is the fallback, which is
+ * what makes "no edits left" remove the key.
+ */
+const OVERRIDES_PREFERENCE: Preference<string> = {
+  key: OVERRIDES_KEY,
+  encoding: "string",
+  fallback: "{}",
+  isValue: (value): value is string => typeof value === "string",
+};
+
+/** `"0"` is the only value that turns preview off; anything else reads as on. */
+const PREVIEW_PREFERENCE: Preference<"0" | "1"> = {
+  key: PREVIEW_KEY,
+  encoding: "string",
+  fallback: "1",
+  isValue: (value): value is "0" | "1" => value === "0" || value === "1",
+};
 
 /** Query parameter carrying a shared recipe, or the word `reset`. */
 export const DEFAULT_THEME_PARAM = "dtb-theme";
@@ -111,7 +139,15 @@ export interface ThemeEditorRuntimeOptions {
 
 export interface ThemeEditorRuntime {
   readonly store: ThrottledStore<ThemeSnapshot>;
-  /** `null` until `start(api)` runs. */
+  /**
+   * `null` until `start(api)` runs.
+   *
+   * @deprecated Nothing in the package reads it any more: every persisted
+   * preference goes through `readPreference`/`writePreference` from
+   * `@nejcm/dev-toolbar/kit`, which guard the adapter for you. Use those with
+   * `api.storage` instead. Removal is a published-API change and waits for the
+   * next major.
+   */
   storage(): ToolbarStorage | null;
   start(api: ExtensionRuntimeApi): () => void;
   /** Re-read the tokens and publish. */
@@ -238,23 +274,23 @@ export function readStoredThemeOverrides(
     tokens,
     mask,
   } = options;
-  if (resetRequested(themeParam)) return {};
-  const key = `dtb:v1:${instanceId}:ext:${id}:${OVERRIDES_KEY}`;
   try {
-    const source = storage ?? (typeof localStorage === "undefined" ? null : localStorage);
-    if (source === null) return {};
     const declared = declaredTypesOf(tokens);
-    // A plain object, never the null-prototype map: that would break
-    // `result.hasOwnProperty(...)` for every consumer.
+    // The kit owns the key template, the kill switch and the read; the entry
+    // guard closes this extension's own policy over it — the same one
+    // `start()` applies to the same bytes. This helper used to hand back raw
+    // storage, so an app seeding its own theme provider from it disagreed
+    // with the panel about exactly the entries the panel had refused.
+    const accepted = readStoredRecord(
+      { instanceId, extensionId: id, key: OVERRIDES_KEY, storage, resetParam: themeParam },
+      (value, name): value is string =>
+        typeof value === "string" &&
+        checkStoredEntry(name, value, { type: declared.get(name), mask }) === null,
+    );
+    // `checkStoredEntry` accepts a value the panel would store trimmed, so the
+    // trim is a transform on top of the guard, not part of it.
     const output: Record<string, string> = {};
-    for (const [name, value] of Object.entries(parseOverrides(source.getItem(key)))) {
-      // The same policy `start()` applies to the same bytes. This helper used
-      // to hand back raw storage, so an app seeding its own theme provider
-      // from it disagreed with the panel about exactly the entries the panel
-      // had refused.
-      if (checkStoredEntry(name, value, { type: declared.get(name), mask }) !== null) continue;
-      define(output, name, value.trim());
-    }
+    for (const [name, value] of Object.entries(accepted)) define(output, name, value.trim());
     return output;
   } catch {
     return {};
@@ -942,27 +978,32 @@ export function createThemeEditorRuntime(
   /* Persistence                                                          */
   /* ------------------------------------------------------------------ */
 
-  const persistOverrides = () => {
-    if (!persist || storage === null) return;
-    try {
-      if (Object.keys(overrides).length === 0) {
-        storage.removeItem(OVERRIDES_KEY);
-      } else {
-        storage.setItem(OVERRIDES_KEY, JSON.stringify(overrides));
-      }
-    } catch {
-      // A custom adapter is consumer code. Losing persistence is survivable;
-      // throwing out of a click handler is not.
-    }
+  // The default surface is whatever the consumer lists first, so the fallback
+  // is `null` ("nothing chosen yet"), not that id: an explicit pick of the
+  // first surface has to persist too, or a later reorder of `surfaces` would
+  // silently move a developer who chose `root` onto the new first entry.
+  // `null` is never written, so every selection is stored; an id no longer in
+  // the list fails `isValue` and reads as the default.
+  const surfacePreference: Preference<string | null> = {
+    key: SURFACE_KEY,
+    encoding: "string",
+    fallback: null,
+    isValue: (value): value is string => surfaces.some((candidate) => candidate.id === value),
   };
 
-  const persistScalar = (key: string, value: string) => {
-    if (!persist || storage === null) return;
-    try {
-      storage.setItem(key, value);
-    } catch {
-      /* see above */
-    }
+  const persistOverrides = () => {
+    if (!persist) return;
+    writePreference(storage, OVERRIDES_PREFERENCE, JSON.stringify(overrides));
+  };
+
+  const persistPreview = (on: boolean) => {
+    if (!persist) return;
+    writePreference(storage, PREVIEW_PREFERENCE, on ? "1" : "0");
+  };
+
+  const persistSurface = (id: string) => {
+    if (!persist) return;
+    writePreference(storage, surfacePreference, id);
   };
 
   /* ------------------------------------------------------------------ */
@@ -1297,7 +1338,7 @@ export function createThemeEditorRuntime(
   const setPreview = (on: boolean): void => {
     if (preview === on) return;
     preview = on;
-    persistScalar(PREVIEW_KEY, on ? "1" : "0");
+    persistPreview(on);
     if (on) applyAll();
     else releaseAll();
     notice = on
@@ -1375,7 +1416,7 @@ export function createThemeEditorRuntime(
       releaseAll();
       surface = next;
       capturedBase.clear();
-      persistScalar(SURFACE_KEY, next.id);
+      persistSurface(next.id);
       applyAll();
       notice = `Surface: ${next.label ?? next.id}.`;
       publish();
@@ -1451,13 +1492,9 @@ export function createThemeEditorRuntime(
         persistOverrides();
         notice = `Every theme edit was cleared by ?${themeParam ?? ""}=reset.`;
       } else {
-        let raw: string | null = null;
-        try {
-          raw = persist ? api.storage.getItem(OVERRIDES_KEY) : null;
-        } catch {
-          raw = null;
-        }
-        const vetted = vetStored(parseOverrides(raw));
+        const vetted = vetStored(
+          parseOverrides(persist ? readPreference(storage, OVERRIDES_PREFERENCE) : null),
+        );
         overrides = vetted.accepted;
         if (vetted.dropped.length > 0) {
           // Persist the cleaned map rather than leaving the refused entries to
@@ -1468,13 +1505,23 @@ export function createThemeEditorRuntime(
           } dropped as unusable: ${vetted.dropped.join(", ")}.`;
         }
 
-        try {
-          const storedSurface = persist ? api.storage.getItem(SURFACE_KEY) : null;
+        if (persist) {
+          const storedSurface = readPreference(storage, surfacePreference);
           const found = surfaces.find((candidate) => candidate.id === storedSurface);
           if (found) surface = found;
-          preview = persist ? api.storage.getItem(PREVIEW_KEY) !== "0" : true;
-        } catch {
-          /* defaults stand */
+          let readable = false;
+          const storedPreview = readPreference(
+            {
+              getItem(key) {
+                const raw = api.storage.getItem(key);
+                readable = true;
+                return raw;
+              },
+            },
+            PREVIEW_PREFERENCE,
+          );
+          // A failed read must preserve session choices; a missing key restores preview on.
+          if (readable) preview = storedPreview !== "0";
         }
 
         // Re-apply on every mount: the page reloaded with the application's own

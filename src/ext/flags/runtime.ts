@@ -20,7 +20,8 @@
  * raw flag value skips it.
  */
 import { createDerivedStore, describeError, redact } from "../../runtime";
-import { createPoller, parseRecord } from "@nejcm/dev-toolbar/kit";
+import { createPoller, parseRecord, readPreference, writePreference } from "@nejcm/dev-toolbar/kit";
+import type { Preference } from "@nejcm/dev-toolbar/kit";
 import type { RedactOptions, ThrottledStore } from "../../runtime";
 import type { ExtensionRuntimeApi, ToolbarStorage } from "../../core/contract";
 import { formatValue, inferType } from "./types";
@@ -36,6 +37,19 @@ import type {
 
 /** The key, inside the extension's own storage scope, the override map lives at. */
 export const OVERRIDES_KEY = "overrides";
+
+/**
+ * The override map as it is laid down in storage: the extension's own JSON,
+ * stored byte-for-byte, so the raw-string encoding never changes what a
+ * consumer already has persisted. The serialised empty map is the fallback,
+ * which is what makes "no overrides left" remove the key.
+ */
+const OVERRIDES_PREFERENCE: Preference<string> = {
+  key: OVERRIDES_KEY,
+  encoding: "string",
+  fallback: "{}",
+  isValue: (value): value is string => typeof value === "string",
+};
 
 /** Query parameter that clears every override before it is applied. */
 export const DEFAULT_RESET_PARAM = "dtb-flags";
@@ -81,7 +95,15 @@ export interface FlagsRuntimeOptions {
 
 export interface FlagsRuntime {
   readonly store: ThrottledStore<FlagsSnapshot>;
-  /** `null` until `start(api)` runs. */
+  /**
+   * `null` until `start(api)` runs.
+   *
+   * @deprecated Nothing in the package reads it any more: every persisted
+   * preference goes through `readPreference`/`writePreference` from
+   * `@nejcm/dev-toolbar/kit`, which guard the adapter for you. Use those with
+   * `api.storage` instead. Removal is a published-API change and waits for the
+   * next major.
+   */
   storage(): ToolbarStorage | null;
   start(api: ExtensionRuntimeApi): () => void;
   /** Re-read the flags and publish. */
@@ -134,7 +156,7 @@ function parseDate(value: string | undefined): number | null {
   return Number.isNaN(parsed) ? null : parsed;
 }
 
-function isFlagValue(value: unknown): value is FlagValue {
+export function isFlagValue(value: unknown): value is FlagValue {
   return (
     value === null ||
     typeof value === "boolean" ||
@@ -551,17 +573,7 @@ export function createFlagsRuntime(options: FlagsRuntimeOptions = {}): FlagsRunt
   /* Mutation */
 
   const persist = () => {
-    if (storage === null) return;
-    try {
-      if (Object.keys(overrides).length === 0) {
-        storage.removeItem(OVERRIDES_KEY);
-      } else {
-        storage.setItem(OVERRIDES_KEY, JSON.stringify(overrides));
-      }
-    } catch {
-      // Storage is consumer code. Losing persistence is survivable; throwing
-      // out of a click handler is not.
-    }
+    writePreference(storage, OVERRIDES_PREFERENCE, JSON.stringify(overrides));
   };
 
   /**
@@ -730,13 +742,10 @@ export function createFlagsRuntime(options: FlagsRuntimeOptions = {}): FlagsRunt
         overrides = emptyOverrides();
         persist();
       } else if (writable) {
-        let raw: string | null = null;
-        try {
-          raw = api.storage.getItem(OVERRIDES_KEY);
-        } catch {
-          raw = null;
-        }
-        overrides = vetOverrides(parseOverrides(raw), readFlags());
+        overrides = vetOverrides(
+          parseOverrides(readPreference(storage, OVERRIDES_PREFERENCE)),
+          readFlags(),
+        );
         // Re-apply on every mount — this is what makes an override outlive
         // the tab. Applying the same value twice is fine; setting a flag is
         // inherently idempotent.

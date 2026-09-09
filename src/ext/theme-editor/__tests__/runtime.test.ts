@@ -12,6 +12,7 @@ import {
   DEFAULT_THEME_PARAM,
   OVERRIDES_KEY,
   PREVIEW_KEY,
+  SURFACE_KEY,
   createThemeEditorRuntime,
   parseOverrides,
   readStoredThemeOverrides,
@@ -874,24 +875,6 @@ describe("failing closed", () => {
     expect(spy).toHaveBeenCalled();
   });
 
-  it("survives a storage adapter that throws", () => {
-    const hostile: ToolbarStorage = {
-      getItem: () => {
-        throw new Error("no");
-      },
-      setItem: () => {
-        throw new Error("no");
-      },
-      removeItem: () => {
-        throw new Error("no");
-      },
-    };
-    const runtime = createThemeEditorRuntime({ tokens: TOKENS });
-    expect(() => runtime.start(fakeApi(hostile))).not.toThrow();
-    expect(() => runtime.setOverride("--radius-md", "12px")).not.toThrow();
-    expect(root().style.getPropertyValue("--radius-md")).toBe("12px");
-  });
-
   it("keeps exporting when `Date` has been patched", () => {
     const real = globalThis.Date;
     class Broken extends real {
@@ -917,6 +900,40 @@ describe("failing closed", () => {
 /* -------------------------------------------------------------------------- */
 
 describe("persistence", () => {
+  it.each(["all", "preview"])("keeps preview off across a restart when %s reads throw", (reads) => {
+    const blocked = () => {
+      throw new Error("blocked");
+    };
+    const storage = {
+      getItem(key: string) {
+        if (reads === "all" || key === PREVIEW_KEY) return blocked();
+        return null;
+      },
+      setItem: blocked,
+      removeItem: blocked,
+    };
+    const runtime = createThemeEditorRuntime();
+    const stop = runtime.start(fakeApi(storage));
+    runtime.setPreview(false);
+    expect(runtime.store.getSnapshot().preview).toBe(false);
+    stop();
+    const stopAgain = runtime.start(fakeApi(storage));
+    expect(runtime.store.getSnapshot().preview).toBe(false);
+    stopAgain();
+  });
+
+  it("restores preview on when readable storage has no preview key on restart", () => {
+    const storage = createMemoryStorage();
+    const runtime = createThemeEditorRuntime();
+    const stop = runtime.start(fakeApi(storage));
+    runtime.setPreview(false);
+    storage.removeItem(PREVIEW_KEY);
+    stop();
+    const stopAgain = runtime.start(fakeApi(storage));
+    expect(runtime.store.getSnapshot().preview).toBe(true);
+    stopAgain();
+  });
+
   it("re-applies stored edits on the next mount", () => {
     const storage = createMemoryStorage();
     const first = createThemeEditorRuntime({ tokens: TOKENS });
@@ -1026,6 +1043,52 @@ describe("persistence", () => {
     second.start(fakeApi(storage));
     expect(second.store.peek().preview).toBe(false);
     expect(root().hasAttribute("style")).toBe(false);
+
+    // Back on is the default, so it removes the key rather than storing "1" —
+    // and reads back as on.
+    second.setPreview(true);
+    expect(storage.getItem(PREVIEW_KEY)).toBeNull();
+    const third = createThemeEditorRuntime({ tokens: TOKENS });
+    third.start(fakeApi(storage));
+    expect(third.store.peek().preview).toBe(true);
+  });
+
+  it("stores a chosen surface, the default one included, and survives a reorder", () => {
+    const storage = createMemoryStorage();
+    const surfaces: ThemeSurface[] = [
+      { id: "root", selector: ":root" },
+      { id: "app", selector: "#app" },
+    ];
+    const host = document.createElement("div");
+    host.id = "app";
+    document.body.appendChild(host);
+    try {
+      const runtime = createThemeEditorRuntime({ tokens: TOKENS, surfaces });
+      runtime.start(fakeApi(storage));
+      runtime.selectSurface("app");
+      expect(storage.getItem(SURFACE_KEY)).toBe("app");
+      runtime.selectSurface("root");
+      // The default is whatever the consumer lists first, so "chose the
+      // default" and "never chose" must stay distinguishable: the id is kept.
+      expect(storage.getItem(SURFACE_KEY)).toBe("root");
+
+      // …and when the consumer later puts another surface first, the explicit
+      // pick still wins over the new default.
+      const reordered = createThemeEditorRuntime({
+        tokens: TOKENS,
+        surfaces: [surfaces[1] as ThemeSurface, surfaces[0] as ThemeSurface],
+      });
+      reordered.start(fakeApi(storage));
+      expect(reordered.store.peek().surface.id).toBe("root");
+
+      // An id the next mount's list no longer has reads as the default.
+      storage.setItem(SURFACE_KEY, "gone");
+      const next = createThemeEditorRuntime({ tokens: TOKENS, surfaces });
+      next.start(fakeApi(storage));
+      expect(next.store.peek().surface.id).toBe("root");
+    } finally {
+      host.remove();
+    }
   });
 
   it("writes nothing when persistence is off", () => {

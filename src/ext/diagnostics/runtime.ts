@@ -33,6 +33,8 @@ import {
 } from "../../runtime";
 import type { RedactOptions, ThrottledStore } from "../../runtime";
 import { createThrottledStore } from "../../runtime";
+import { readPreference, writePreference } from "@nejcm/dev-toolbar/kit";
+import type { Preference } from "@nejcm/dev-toolbar/kit";
 import type {
   ExtensionDiagnostics,
   ExtensionRuntimeApi,
@@ -92,7 +94,15 @@ export interface DiagnosticsRuntimeOptions extends ResponsivenessOptions {
 
 export interface DiagnosticsRuntime {
   readonly store: ThrottledStore<DiagnosticsSnapshotState>;
-  /** `null` until `start(api)` runs. */
+  /**
+   * `null` until `start(api)` runs.
+   *
+   * @deprecated Nothing in the package reads it any more: every persisted
+   * preference goes through `readPreference`/`writePreference` from
+   * `@nejcm/dev-toolbar/kit`, which guard the adapter for you. Use those with
+   * `api.storage` instead. Removal is a published-API change and waits for the
+   * next major.
+   */
   storage(): ToolbarStorage | null;
   start(api: ExtensionRuntimeApi): () => void;
   /** Builds a fresh snapshot, publishes it, and returns it. Never throws. */
@@ -716,21 +726,17 @@ export function createDiagnosticsRuntime(
     format === "json" ? renderJson(ensure()) : renderMarkdown(ensure(), mask);
 
   /**
-   * The persisted panel format, fail-safe. `storage` may throw (a browser with
+   * The persisted panel format, fail-safe: `storage` may throw (a browser with
    * site data blocked), and neither the panel nor `summary()` may fail over a
-   * preference.
+   * preference. The kit's preference module owns that guard.
    */
-  const readFormat = (): SnapshotFormat => {
-    let stored: string | null = null;
-    try {
-      stored = storage?.getItem(FORMAT_KEY) ?? null;
-    } catch {
-      stored = null;
-    }
-    return SNAPSHOT_FORMATS.includes(stored as SnapshotFormat)
-      ? (stored as SnapshotFormat)
-      : "markdown";
+  const formatPreference: Preference<SnapshotFormat> = {
+    key: FORMAT_KEY,
+    encoding: "string",
+    fallback: "markdown",
+    isValue: (value): value is SnapshotFormat => SNAPSHOT_FORMATS.includes(value as SnapshotFormat),
   };
+  const readFormat = (): SnapshotFormat => readPreference(storage, formatPreference);
 
   const filename = (format: SnapshotFormat): string => {
     // `:`/`.` are illegal or awkward in a filename; the failure path's literal
@@ -821,14 +827,8 @@ export function createDiagnosticsRuntime(
 
     readFormat,
 
-    writeFormat(format) {
-      // Same adapter as `readFormat`: losing persistence is survivable, a
-      // throw out of a preference is not.
-      try {
-        storage?.setItem(FORMAT_KEY, format);
-      } catch {
-        // Ignore: the format still applies for this session.
-      }
+    writeFormat(next) {
+      writePreference(storage, formatPreference, next);
     },
 
     start(runtimeApi: ExtensionRuntimeApi) {

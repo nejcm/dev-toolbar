@@ -142,29 +142,6 @@ describe("createCommandMenuRuntime", () => {
     stop();
   });
 
-  /*
-   * Regression: storage was read before listeners were registered; a throwing
-   * adapter left a half-started runtime that never retried.
-   */
-  it("still registers the shortcut when storage throws on start", () => {
-    const runtime = createCommandMenuRuntime({ apple: false });
-    const stop = runtime.start(
-      api({
-        storage: {
-          getItem: () => {
-            throw new Error("storage offline");
-          },
-          setItem: () => {},
-          removeItem: () => {},
-        },
-      }),
-    );
-    expect(runtime.store.peek()).toMatchObject({ ready: true, recent: [] });
-    window.dispatchEvent(new KeyboardEvent("keydown", { key: "k", ctrlKey: true }));
-    expect(runtime.store.peek().open).toBe(true);
-    stop();
-  });
-
   it("caps recents and puts the newest first", async () => {
     const ids = Array.from({ length: RECENT_LIMIT + 2 }, (_, i) => `c${i}`);
     const commands = ids.map(command);

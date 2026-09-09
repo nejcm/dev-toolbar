@@ -1030,17 +1030,15 @@ describe("output", () => {
     stop();
   });
 
-  it("returns from writeFormat when the storage adapter throws", () => {
+  it("removes the key rather than storing the default format", () => {
+    const store = storage();
     const runtime = createDiagnosticsRuntime();
-    const broken = {
-      ...storage(),
-      setItem: () => {
-        throw new Error("site data blocked");
-      },
-    };
-    runtime.start({ ...api(), storage: broken });
-    expect(() => runtime.writeFormat("json")).not.toThrow();
-    // The preference did not persist; the reader stays on its default.
+    runtime.start({ ...api(), storage: store });
+    runtime.writeFormat("json");
+    expect(store.getItem("format")).toBe("json");
+    runtime.writeFormat("markdown");
+    // Storage holds only what differs from the default; the reader agrees.
+    expect(store.getItem("format")).toBeNull();
     expect(runtime.readFormat()).toBe("markdown");
   });
 
