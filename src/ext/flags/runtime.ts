@@ -551,6 +551,7 @@ export function createFlagsRuntime(options: FlagsRuntimeOptions = {}): FlagsRunt
 
   const signature = (snapshot: FlagsSnapshot): string =>
     `${snapshot.readError ?? ""}|${snapshot.reloadPending.join(",")}|` +
+    `${JSON.stringify(snapshot.adapterErrors)}|` +
     `${snapshot.maskedCount}|${snapshot.supplied ? 1 : 0}|` +
     snapshot.flags
       .map(
