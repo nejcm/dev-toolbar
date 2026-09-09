@@ -14,6 +14,26 @@ import type { ThemeEditorOptions } from "../index";
 import type { DesignTokenDefinition } from "../types";
 import type { ToolbarStorage } from "../../../core/contract";
 
+it("constructs before mount when the redaction options getter throws", () => {
+  const error = new Error("not mounted");
+  const report = vi.spyOn(console, "error").mockImplementation(() => {});
+  const getter = vi.fn(() => {
+    throw error;
+  });
+  expect(() =>
+    themeEditor({
+      get redactOptions() {
+        return getter();
+      },
+    }),
+  ).not.toThrow();
+  expect(getter).toHaveBeenCalledTimes(1);
+  expect(report).toHaveBeenCalledExactlyOnceWith(
+    expect.stringContaining("[dev-toolbar/ext/theme-editor]"),
+    error,
+  );
+});
+
 const TOKENS: DesignTokenDefinition[] = [
   {
     name: "--brand-500",

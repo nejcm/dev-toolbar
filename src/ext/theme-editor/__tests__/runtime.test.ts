@@ -19,6 +19,7 @@ import {
   resetRequested,
 } from "../runtime";
 import {
+  MASK_SENTINEL,
   RESERVED_PREFIXES,
   checkTokenName,
   checkTokenValue,
@@ -57,6 +58,109 @@ afterEach(() => {
 });
 
 /* -------------------------------------------------------------------------- */
+
+describe("consumer redaction getters", () => {
+  const properties = [
+    "mask",
+    "keys",
+    "extraKeys",
+    "allowKeys",
+    "maxDepth",
+    "maxArrayLength",
+    "maxNodes",
+    "values",
+  ] as const;
+  const tokens: DesignTokenDefinition[] = [
+    { name: "--private", type: "string", value: "secret", sensitive: true },
+    { name: "--api-token", type: "string", value: "secret" },
+    { name: "--header", type: "string", value: "Bearer secret" },
+  ];
+
+  it.each([...properties, "redactOptions"])("survives a throwing %s getter", (property) => {
+    const error = new Error("not ready");
+    const report = vi.spyOn(console, "error").mockImplementation(() => {});
+    const getter = vi.fn(() => {
+      throw error;
+    });
+    const redactOptions =
+      property === "redactOptions"
+        ? undefined
+        : Object.defineProperty({}, property, { get: getter });
+    const options = { tokens, redactOptions };
+    if (property === "redactOptions") Object.defineProperty(options, property, { get: getter });
+    const runtime = createThemeEditorRuntime(options);
+    runtime.start(fakeApi(null));
+    runtime.refresh();
+    expect(runtime.store.peek().tokens).toHaveLength(3);
+    for (const token of runtime.store.peek().tokens) {
+      expect(token.effectiveText).toBe(
+        token.name === "--header" ? `Bearer ${MASK_SENTINEL}` : MASK_SENTINEL,
+      );
+      expect(token.masked).toBe(true);
+    }
+    expect(
+      runtime.importRecipe(
+        JSON.stringify({ schemaVersion: 1, overrides: { "--private": MASK_SENTINEL } }),
+      ).applied,
+    ).toBe(0);
+    expect(JSON.stringify(runtime.diagnostics())).not.toContain("secret");
+    expect(runtime.cssText()).not.toContain("secret");
+    expect(runtime.recipeText()).not.toContain("secret");
+    expect(runtime.figmaText()).not.toContain("secret");
+    expect(getter).toHaveBeenCalledTimes(1);
+    expect(report).toHaveBeenCalledExactlyOnceWith(
+      expect.stringContaining("[dev-toolbar/ext/theme-editor]"),
+      error,
+    );
+  });
+
+  it("uses one snapshot for sensitive values, redaction and stored validation", () => {
+    const getters = properties.map(
+      (property) =>
+        [
+          property,
+          vi
+            .fn()
+            .mockReturnValueOnce(property === "mask" ? "***" : undefined)
+            .mockImplementation(() => {
+              throw new Error("read twice");
+            }),
+        ] as const,
+    );
+    const redactOptions = Object.defineProperties(
+      {},
+      Object.fromEntries(getters.map(([property, get]) => [property, { get }])),
+    );
+    const readOptions = vi
+      .fn()
+      .mockReturnValueOnce(redactOptions)
+      .mockImplementation(() => {
+        throw new Error("read twice");
+      });
+    const runtime = createThemeEditorRuntime({
+      tokens,
+      get redactOptions() {
+        return readOptions();
+      },
+    });
+    const storage = createMemoryStorage();
+    storage.setItem(OVERRIDES_KEY, JSON.stringify({ "--private": "***", "--ordinary": "ok" }));
+    runtime.start(fakeApi(storage));
+    runtime.refresh();
+    expect(runtime.overrides()).toEqual({ "--ordinary": "ok" });
+    for (const token of runtime.store.peek().tokens.filter((token) => !token.orphaned)) {
+      expect(token.effectiveText).toBe(token.name === "--header" ? "Bearer ***" : "***");
+    }
+    expect(
+      runtime.importRecipe(JSON.stringify({ schemaVersion: 1, overrides: { "--private": "***" } }))
+        .applied,
+    ).toBe(0);
+    runtime.diagnostics();
+    runtime.recipeText();
+    expect(readOptions).toHaveBeenCalledTimes(1);
+    for (const [, getter] of getters) expect(getter).toHaveBeenCalledTimes(1);
+  });
+});
 
 describe("name validation — the guard that keeps the toolbar out of it", () => {
   it("refuses every reserved prefix, whatever case it is written in", () => {
@@ -1299,6 +1403,39 @@ describe("`readStoredThemeOverrides` — the pre-mount door", () => {
     expect(result).toEqual({ "--radius-md": "wide" });
   });
 
+  it("guards and snapshots the supplied mask before checking stored entries", () => {
+    const error = new Error("not ready");
+    const report = vi.spyOn(console, "error").mockImplementation(() => {});
+    const getter = vi.fn(() => {
+      throw error;
+    });
+    expect(
+      readStoredThemeOverrides({
+        instanceId: "test",
+        storage: reader({ "--masked": MASK_SENTINEL, "--good": "#fff" }),
+        get mask() {
+          return getter();
+        },
+      }),
+    ).toEqual({ "--good": "#fff" });
+    expect(getter).toHaveBeenCalledTimes(1);
+    expect(report).toHaveBeenCalledExactlyOnceWith(
+      expect.stringContaining("[dev-toolbar/ext/theme-editor]"),
+      error,
+    );
+    const changing = vi.fn().mockReturnValueOnce("***").mockReturnValue("different");
+    expect(
+      readStoredThemeOverrides({
+        instanceId: "test",
+        storage: reader({ "--a": "***", "--b": "***", "--good": "#fff" }),
+        get mask() {
+          return changing();
+        },
+      }),
+    ).toEqual({ "--good": "#fff" });
+    expect(changing).toHaveBeenCalledTimes(1);
+  });
+
   it("honours a custom mask", () => {
     expect(
       readStoredThemeOverrides({
@@ -2100,7 +2237,7 @@ describe("a failure's error text reaches the row", () => {
       runtime.start(fakeApi(null));
       expect(() => runtime.setOverride("--brand-500", "#ff0000")).not.toThrow();
       const recorded = runtime.store.peek().applyErrors["--brand-500"];
-      expect(recorded).toContain("[unreadable]");
+      expect(recorded).toContain("failed for https://x/?token=[redacted]");
       expect(recorded).not.toContain("abc");
     });
   });
@@ -2162,7 +2299,7 @@ describe("a failure's error text reaches the row", () => {
       });
       expect(() => runtime.setOverride("--brand-500", "#ff0000")).not.toThrow();
       const recorded = runtime.store.peek().applyErrors["--brand-500"];
-      expect(recorded).toContain("[unreadable]");
+      expect(recorded).toContain("failed for https://x/?token=[redacted]");
       expect(recorded).not.toContain("abc");
     });
   });
