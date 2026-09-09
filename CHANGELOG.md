@@ -14,6 +14,15 @@
   style break at the boundary is accepted, not an oversight.
 -->
 
+## [0.8.1](https://github.com/nejcm/dev-toolbar/compare/v0.8.0...v0.8.1) (2026-09-09)
+
+
+### Bug Fixes
+
+* **core:** observe the regions, so a gap change reaches the decision ([#92](https://github.com/nejcm/dev-toolbar/issues/92)) ([4762ab5](https://github.com/nejcm/dev-toolbar/commit/4762ab5d4f2bd0a793ab8650af4badfb051468f1))
+* **ext:** keep theme edits a restart cannot read from storage ([#91](https://github.com/nejcm/dev-toolbar/issues/91)) ([4560ada](https://github.com/nejcm/dev-toolbar/commit/4560adaa5704257665140ac6d220d9ff631114ca))
+* **testing:** finish tearing down when an unmount throws ([#93](https://github.com/nejcm/dev-toolbar/issues/93)) ([d11ebcb](https://github.com/nejcm/dev-toolbar/commit/d11ebcb5d72f1e5861035e94023d0a0922394e76))
+
 ## [0.8.0](https://github.com/nejcm/dev-toolbar/compare/v0.7.1...v0.8.0) (2026-09-09)
 
 
