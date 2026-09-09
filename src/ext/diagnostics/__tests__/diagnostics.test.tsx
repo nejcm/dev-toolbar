@@ -134,6 +134,30 @@ describe("the panel", () => {
     expect(storage.getItem(`dtb:v1:test:ext:diagnostics:${FORMAT_KEY}`)).toBe("json");
   });
 
+  it("keeps the panel and the format switch working over a throwing storage adapter", () => {
+    const broken: ToolbarStorage = {
+      getItem: () => {
+        throw new Error("site data blocked");
+      },
+      setItem: () => {
+        throw new Error("site data blocked");
+      },
+      removeItem: () => {
+        throw new Error("site data blocked");
+      },
+    };
+    const { toolbar } = mount({}, [], broken);
+    expect(() => act(() => toolbar.openPanel("diagnostics"))).not.toThrow();
+    expect(preview()?.getAttribute("data-dtb-format")).toBe("markdown");
+    const json = document.querySelector<HTMLButtonElement>(
+      '[data-dtb-part="diag-format"][data-dtb-format="json"]',
+    );
+    expect(() => act(() => fireEvent.click(json as HTMLButtonElement))).not.toThrow();
+    // The choice applies for this session; only its persistence was lost.
+    expect(preview()?.getAttribute("data-dtb-format")).toBe("json");
+    expect(toolbar.errorChip("diagnostics")).toBeNull();
+  });
+
   it("copies exactly what it displays", async () => {
     const clipboard = installClipboard();
     try {

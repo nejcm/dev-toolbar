@@ -13,6 +13,8 @@
  * returns.
  */
 import { createThrottledStore, redact, redactUrl } from "../../runtime";
+import { readPreference, writePreference } from "@nejcm/dev-toolbar/kit";
+import type { Preference } from "@nejcm/dev-toolbar/kit";
 import type { ThrottledStore } from "../../runtime";
 import type { ExtensionRuntimeApi, ToolbarStorage } from "../../core/contract";
 import { isMetricId, metricView } from "./types";
@@ -28,7 +30,15 @@ export interface MetricsRuntime {
   readonly store: ThrottledStore<MetricsSnapshot>;
   readonly collectors: readonly Collector[];
   readonly order: readonly CollectorId[];
-  /** `null` until `start(api)` runs. */
+  /**
+   * `null` until `start(api)` runs.
+   *
+   * @deprecated Nothing in the package reads it any more: every persisted
+   * preference goes through `readPreference`/`writePreference` from
+   * `@nejcm/dev-toolbar/kit`, which guard the adapter for you. Use those with
+   * `api.storage` instead. Removal is a published-API change and waits for the
+   * next major.
+   */
   storage(): ToolbarStorage | null;
   /**
    * The persisted panel tab, fail-safe: `null` when nothing valid is stored or
@@ -143,23 +153,14 @@ export function createMetricsRuntime(options: MetricsRuntimeOptions): MetricsRun
 
   // The stored value is the raw id, not JSON: a consumer's persisted tab from
   // before this moved behind the runtime must still read back.
-  const readTab = (): CollectorId | null => {
-    let stored: string | null = null;
-    try {
-      stored = storage?.getItem(TAB_KEY) ?? null;
-    } catch {
-      stored = null;
-    }
-    return stored !== null && order.includes(stored) ? stored : null;
+  const tab: Preference<CollectorId | null> = {
+    key: TAB_KEY,
+    encoding: "string",
+    fallback: null,
+    isValue: (value): value is CollectorId => typeof value === "string" && order.includes(value),
   };
-
-  const writeTab = (id: CollectorId): void => {
-    try {
-      storage?.setItem(TAB_KEY, id);
-    } catch {
-      // Ignore: the tab still applies for this session.
-    }
-  };
+  const readTab = (): CollectorId | null => readPreference(storage, tab);
+  const writeTab = (id: CollectorId): void => writePreference(storage, tab, id);
 
   return {
     store,

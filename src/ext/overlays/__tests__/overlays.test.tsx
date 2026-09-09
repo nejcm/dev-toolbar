@@ -197,6 +197,83 @@ describe("toggling, off and on, from every surface", () => {
     expect(boxesSheets()).toHaveLength(1);
   });
 
+  it("keeps the stored map when every toggle is back at the configured default", () => {
+    const storage = createMemoryStorage();
+    const { toolbar } = mount({}, storage);
+    act(() => toolbar.openPanel("overlays"));
+    toggleRow("grid");
+    expect(storage.getItem(STORAGE_KEY)).not.toBeNull();
+    toggleRow("grid");
+    // All off *is* the default here, and the entry stays anyway: the map
+    // records that the developer chose, not merely what they chose. Without
+    // it, a consumer adding `defaults: { grid: true }` later would revive the
+    // grid for someone who had explicitly turned it off.
+    expect(JSON.parse(storage.getItem(STORAGE_KEY) as string)).toEqual({
+      boxes: false,
+      grid: false,
+      inspect: false,
+      focus: false,
+    });
+  });
+
+  it("persists disableAll with no defaults configured, and no later default revives a layer", async () => {
+    // The playground's configuration: `overlays({ grid })`, no `defaults`. All
+    // off is then indistinguishable from "never touched" by value alone — the
+    // stored entry is what makes the explicit choice outlive a reload.
+    const storage = createMemoryStorage();
+    const first = mount({}, storage);
+    await first.toolbar.runCommand("overlays.toggle.grid");
+    await first.toolbar.runCommand("overlays.toggle.focus");
+    await first.toolbar.runCommand("overlays.disableAll");
+    const stored = storage.getItem(STORAGE_KEY);
+    expect(stored).not.toBeNull();
+    expect(JSON.parse(stored as string)).toEqual({
+      boxes: false,
+      grid: false,
+      inspect: false,
+      focus: false,
+    });
+    first.unmount();
+
+    mount({ defaults: { grid: true } }, storage);
+    expect(document.querySelector('[data-dtb-part="ovl-grid"]')).toBeNull();
+    expect(surface()).toBeNull();
+  });
+
+  it("stores all-off when the consumer's defaults turn something on", () => {
+    // The default worth comparing against is the *configured* one: with
+    // `defaults: { boxes: true }`, "everything off" differs from it and has to
+    // survive a remount, or the next mount would revive the boxes.
+    const storage = createMemoryStorage();
+    const first = mount({ defaults: { boxes: true } }, storage);
+    expect(boxesSheets()).toHaveLength(1);
+    act(() => first.toolbar.openPanel("overlays"));
+    toggleRow("boxes");
+    expect(JSON.parse(storage.getItem(STORAGE_KEY) as string)).toEqual({
+      boxes: false,
+      grid: false,
+      inspect: false,
+      focus: false,
+    });
+    first.unmount();
+
+    mount({ defaults: { boxes: true } }, storage);
+    expect(boxesSheets()).toHaveLength(0);
+
+    // …and turning boxes back on equals the default again, yet the entry stays:
+    // the choice is what is persisted, whatever it happens to equal.
+    cleanupToolbar();
+    const third = mount({ defaults: { boxes: true } }, storage);
+    act(() => third.toolbar.openPanel("overlays"));
+    toggleRow("boxes");
+    expect(JSON.parse(storage.getItem(STORAGE_KEY) as string)).toEqual({
+      boxes: true,
+      grid: false,
+      inspect: false,
+      focus: false,
+    });
+  });
+
   it("lets a corrupted stored map turn nothing on", () => {
     const storage = createMemoryStorage();
     storage.setItem(STORAGE_KEY, "{not json");

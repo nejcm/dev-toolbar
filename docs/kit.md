@@ -67,7 +67,7 @@ of the exact kit specifier, not same-name locals:
 
 | Interface | Production imports | Why it stays |
 | --- | --- | --- |
-| Persisted state | `readPreference`/`writePreference`/`removePreference`: 0 until the extensions adopt them; `readJson`: 0; `writeJson`: 0; `parseList`: 1; `parseRecord`: 2 | The preference module is the one owner of the storage guard and failure policy — the four hand-written `try { setItem } catch {}` blocks in the extensions are what it replaces. `parseList` serves the command menu's persisted recents; `parseRecord` serves the flag and theme-editor override maps. |
+| Persisted state | `readPreference`: 6; `writePreference`: 6; `removePreference`: 0; `readStoredRecord`: 2; `readJson`: 0; `writeJson`: 0; `parseList`: 1; `parseRecord`: 2 | The preference module is the one owner of the storage guard and failure policy: every first-party extension that persists anything — flags, theme-editor, overlays, command-menu, diagnostics, metrics — reads and writes through it, and no extension touches `api.storage` directly any more. `removePreference` has no first-party caller because writing the fallback already removes the key. `parseList` serves the command menu's persisted recents; `parseRecord` serves the flag and theme-editor override maps. |
 | Key/value readout | `Rows`: 2; `Row`: 2 | `Rows` is `Row`'s container half. The `<dl>` grid needs the fragment-shaped `<dt>`/`<dd>` pair to be usable. |
 | Inputs | `SearchField`: 2; `TextInput`: 2; `Select`: 2 | They are the kit's input set. Core's `:where(input, select, textarea)` rule supplies field geometry, while the `field` and `search` kinds give authors a stable pair of hooks covering all three. |
 | Copy actions | `CopyButton`: 2; `useCopyStatus`: 2 | `CopyButton` owns the button/status-region pairing. `useCopyStatus` is the shared status state for panels with several copy buttons. |
@@ -136,13 +136,15 @@ resetRequested(param: string | null | undefined): boolean;
 A **preference** is a named, validated, persisted value: three operations and two
 encodings, deliberately nothing more. `readPreference` returns the stored value when
 it passes `isValue`, else `fallback`. `writePreference` stores the value — or removes
-the key when the value equals the fallback, so storage holds only what differs from
-the default. `removePreference` drops the key. `storage` is `api.storage` from
-`start(api)`, or `null`/`undefined` before `start()` has run; every operation
-tolerates that and a throwing adapter alike — a browser with site data blocked, a full
-quota, a sandboxed iframe — by returning the fallback or doing nothing. A storage
-adapter is consumer code, and a preference must never take down a panel or a click
-handler.
+the key when the value equals `fallback`, so storage holds only what differs from the
+fallback. A preference whose default is consumer-configurable — overlay toggles under
+`defaults`, the theme editor's `surfaces[0]` — sets `fallback: null`, so an explicit
+choice persists even when it matches that default. `removePreference` drops the key.
+`storage` is `api.storage` from `start(api)`, or `null`/`undefined` before `start()`
+has run; every operation tolerates that and a throwing adapter alike — a browser with
+site data blocked, a full quota, a sandboxed iframe — by returning the fallback or
+doing nothing. A storage adapter is consumer code, and a preference must never take
+down a panel or a click handler.
 
 The two encodings are both first-class. `"string"` stores the value byte-for-byte —
 what a tab id, a snapshot format or an override map the extension serialises itself
@@ -190,10 +192,12 @@ copy of core's prefix, asserted equal to core's `STORAGE_PREFIX` in the kit's te
 `resetRequested`, vets every entry by value *and* name through the validator you hand
 it, and returns a plain object. The kill switch is off until you pass `resetParam`.
 The flags and theme-editor pre-mount readers (`readStoredOverrides`,
-`readStoredThemeOverrides`) still rebuild the key and the switch themselves; they are
-the callers this is written for, and adopt it when the extensions migrate. Pass the
-mounted runtime's own validator and the app seeds itself with exactly the entries the
-panel will accept.
+`readStoredThemeOverrides`) are built on it: each passes its own `resetParam` default
+and closes its runtime's entry guard over `isEntry`. Pass the mounted runtime's own
+validator and the app seeds itself with exactly the entries the panel will accept.
+Anything a guard cannot express — theme-editor trims accepted values, and its checker
+returns a *reason* rather than a boolean — stays in the caller as a pass over the
+returned map; the reader vets and reads, nothing more.
 
 ### Polling
 

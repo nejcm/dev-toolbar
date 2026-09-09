@@ -140,6 +140,42 @@ describe("the catalogue", () => {
 });
 
 describe("persistence", () => {
+  it("keeps session choices across a restart when storage throws", () => {
+    const blocked = () => {
+      throw new Error("blocked");
+    };
+    const { api } = fakeExtensionApi({
+      storage: { getItem: blocked, setItem: blocked, removeItem: blocked },
+    });
+    const runtime = createOverlaysRuntime({ defaults: { boxes: true } });
+    const stop = runtime.start(api);
+    expect(runtime.enabled().boxes).toBe(true);
+    runtime.disableAll();
+    expect(runtime.enabled()).toEqual(NO_OVERLAYS);
+    stop();
+    const stopAgain = runtime.start(api);
+    try {
+      expect(runtime.enabled()).toEqual(NO_OVERLAYS);
+    } finally {
+      stopAgain();
+    }
+  });
+
+  it("restores configured defaults when readable storage is empty on restart", () => {
+    const { api } = fakeExtensionApi();
+    const runtime = createOverlaysRuntime({ defaults: { boxes: true } });
+    const stop = runtime.start(api);
+    runtime.disableAll();
+    api.storage.removeItem("enabled");
+    stop();
+    const stopAgain = runtime.start(api);
+    try {
+      expect(runtime.enabled()).toEqual({ ...NO_OVERLAYS, boxes: true });
+    } finally {
+      stopAgain();
+    }
+  });
+
   it("round-trips the flag map", () => {
     const flags = { ...NO_OVERLAYS, grid: true, inspect: true };
     expect(parseFlags(serializeFlags(flags))).toEqual(flags);

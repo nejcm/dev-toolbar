@@ -474,6 +474,46 @@ describe("recents", () => {
     expect(labels()?.[0]).toBe("Reset metrics");
   });
 
+  it("removes the key rather than storing an empty list", async () => {
+    const storage = createMemoryStorage();
+    const key = `dtb:v1:test:ext:command-menu:${RECENT_KEY}`;
+    storage.setItem(key, '["renamed.away"]');
+    mount({}, producers(), storage);
+    hotkey();
+    // Every recent was pruned: storage holds only what differs from "none".
+    expect(storage.getItem(key)).toBeNull();
+    expect(document.querySelector('[role="group"][aria-label="Recent"]')).toBeNull();
+  });
+
+  /*
+   * Regression, kept at the panel: storage was once read before the shortcut
+   * listener was registered, so a throwing adapter left a half-started palette
+   * that never opened.
+   */
+  it("opens, runs and remembers for the session over a throwing storage adapter", async () => {
+    const broken: ToolbarStorage = {
+      getItem: () => {
+        throw new Error("site data blocked");
+      },
+      setItem: () => {
+        throw new Error("site data blocked");
+      },
+      removeItem: () => {
+        throw new Error("site data blocked");
+      },
+    };
+    mount({}, producers(), broken);
+    expect(() => hotkey()).not.toThrow();
+    expect(dialog()).not.toBeNull();
+    await act(async () => {
+      press("Enter");
+    });
+    expect(ran).toHaveLength(1);
+    // Reopens: the palette is intact, only the recents did not persist.
+    hotkey();
+    expect(dialog()).not.toBeNull();
+  });
+
   it("remembers nothing when asked not to", async () => {
     const storage = createMemoryStorage();
     mount({ rememberRecent: false }, producers(), storage);

@@ -328,26 +328,6 @@ describe("persistence", () => {
     expect(view?.masked).toBe(false);
     expect(({} as Record<string, unknown>)["x"]).toBeUndefined();
   });
-
-  it("survives a storage adapter that throws on every method", () => {
-    const hostile: ToolbarStorage = {
-      getItem: () => {
-        throw new Error("nope");
-      },
-      setItem: () => {
-        throw new Error("nope");
-      },
-      removeItem: () => {
-        throw new Error("nope");
-      },
-    };
-    const runtime = createFlagsRuntime({
-      flags: CATALOGUE,
-      onOverride: () => {},
-    });
-    expect(() => runtime.start(fakeApi(hostile).api)).not.toThrow();
-    expect(() => runtime.setOverride("ui-facelift", true)).not.toThrow();
-  });
 });
 
 describe("orphaned overrides", () => {

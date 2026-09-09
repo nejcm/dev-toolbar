@@ -53,16 +53,10 @@
  * `redact()` once on the way in. The panel and the copy commands read the
  * same redacted snapshot; there's no unmasked path.
  */
-import {
-  createFlagsRuntime,
-  DEFAULT_RESET_PARAM,
-  OVERRIDES_KEY,
-  parseOverrides,
-  resetRequested,
-} from "./runtime";
+import { createFlagsRuntime, DEFAULT_RESET_PARAM, OVERRIDES_KEY, isFlagValue } from "./runtime";
 import { writeClipboardTextOrThrow } from "../../runtime";
 import { FlagsChip, FlagsPanel } from "./ui";
-import { resolveStyleNonce } from "@nejcm/dev-toolbar/kit";
+import { readStoredRecord, resolveStyleNonce } from "@nejcm/dev-toolbar/kit";
 import type { FlagsRuntimeOptions } from "./runtime";
 import type { FlagValue } from "./types";
 import type {
@@ -334,17 +328,14 @@ export function readStoredOverrides(
     storage,
     resetParam = DEFAULT_RESET_PARAM,
   } = options;
-  if (resetRequested(resetParam)) return {};
-  const key = `dtb:v1:${instanceId}:ext:${id}:${OVERRIDES_KEY}`;
-  try {
-    const source = storage ?? (typeof localStorage === "undefined" ? null : localStorage);
-    if (source === null) return {};
-    // A spread copy, not the internal null-prototype map: handing that across
-    // a public API means `.hasOwnProperty()` on the result would throw.
-    return { ...parseOverrides(source.getItem(key)) };
-  } catch {
-    return {};
-  }
+  // The kit owns the key template, the kill switch and the plain-object copy;
+  // `isFlagValue` is the same entry guard `start()` parses the map with. The
+  // catalogue-aware pass (`vetOverrides`) needs the mounted runtime's flags
+  // and stays there.
+  return readStoredRecord(
+    { instanceId, extensionId: id, key: OVERRIDES_KEY, storage, resetParam },
+    isFlagValue,
+  );
 }
 
 export { FLAGS_CSS, ensureFlagsStyles } from "./css";
