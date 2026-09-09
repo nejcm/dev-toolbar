@@ -67,7 +67,7 @@ of the exact kit specifier, not same-name locals:
 
 | Interface | Production imports | Why it stays |
 | --- | --- | --- |
-| Persisted state | `readJson`: 0; `writeJson`: 0; `parseList`: 1; `parseRecord`: 2 | The JSON helpers keep guarded parsing and the storage guard and failure policy in one place. `parseList` serves the command menu's persisted recents; `parseRecord` serves the flag and theme-editor override maps. |
+| Persisted state | `readPreference`/`writePreference`/`removePreference`: 0 until the extensions adopt them; `readJson`: 0; `writeJson`: 0; `parseList`: 1; `parseRecord`: 2 | The preference module is the one owner of the storage guard and failure policy — the four hand-written `try { setItem } catch {}` blocks in the extensions are what it replaces. `parseList` serves the command menu's persisted recents; `parseRecord` serves the flag and theme-editor override maps. |
 | Key/value readout | `Rows`: 2; `Row`: 2 | `Rows` is `Row`'s container half. The `<dl>` grid needs the fragment-shaped `<dt>`/`<dd>` pair to be usable. |
 | Inputs | `SearchField`: 2; `TextInput`: 2; `Select`: 2 | They are the kit's input set. Core's `:where(input, select, textarea)` rule supplies field geometry, while the `field` and `search` kinds give authors a stable pair of hooks covering all three. |
 | Copy actions | `CopyButton`: 2; `useCopyStatus`: 2 | `CopyButton` owns the button/status-region pairing. `useCopyStatus` is the shared status state for panels with several copy buttons. |
@@ -113,10 +113,51 @@ extension's own `severityFor(...)` is a judgement about its own data.
 ### Persisted state
 
 ```ts
-parseRecord<T>(raw: string | null, isValue: (v: unknown) => v is T): Record<string, T>;
+interface Preference<T> {
+  key: string;
+  encoding: "string" | "json"; // "string" only when T is string | null
+  fallback: T;
+  isValue: (v: unknown) => v is T;
+}
+readPreference<T>(storage, preference: Preference<T>): T;
+writePreference<T>(storage, preference: Preference<T>, value: T): void;
+removePreference(storage, preference: { key: string }): void;
+
+parseRecord<T>(raw: string | null, isValue: (v: unknown, name: string) => v is T): Record<string, T>;
 parseList<T>(raw: string | null, isValue: (v: unknown) => v is T, limit?: number): T[];
 readJson<T>(storage, key, fallback: T, guard: (v: unknown) => v is T): T;
 writeJson(storage, key, value: unknown): void;
+
+extensionStorageKey(instanceId, extensionId, key): string;
+readStoredRecord<T>(options, isEntry: (v: unknown, name: string) => v is T): Record<string, T>;
+resetRequested(param: string | null | undefined): boolean;
+```
+
+A **preference** is a named, validated, persisted value: three operations and two
+encodings, deliberately nothing more. `readPreference` returns the stored value when
+it passes `isValue`, else `fallback`. `writePreference` stores the value — or removes
+the key when the value equals the fallback, so storage holds only what differs from
+the default. `removePreference` drops the key. `storage` is `api.storage` from
+`start(api)`, or `null`/`undefined` before `start()` has run; every operation
+tolerates that and a throwing adapter alike — a browser with site data blocked, a full
+quota, a sandboxed iframe — by returning the fallback or doing nothing. A storage
+adapter is consumer code, and a preference must never take down a panel or a click
+handler.
+
+The two encodings are both first-class. `"string"` stores the value byte-for-byte —
+what a tab id, a snapshot format or an override map the extension serialises itself
+write — and never JSON-wraps it, so a value persisted before an extension adopted this
+module still reads back. `"json"` runs a whole value through `JSON`.
+
+```ts
+const tab: Preference<CollectorId | null> = {
+  key: "tab",
+  encoding: "string",
+  fallback: null,
+  isValue: (v): v is CollectorId | null => v === null || ORDER.includes(v as CollectorId),
+};
+const current = readPreference(storage, tab); // "vitals" — the raw id, not '"vitals"'
+writePreference(storage, tab, "network");
 ```
 
 `parseRecord` is the "read a map of overrides back out of storage" function
@@ -124,12 +165,13 @@ writeJson(storage, key, value: unknown): void;
 its array form: try/parse, reject `null`, arrays and non-objects, keep only guarded
 values, and hand back a **null-prototype** object. That last part is the decision
 worth centralising — a persisted `__proto__` key has to round-trip as data,
-and `in` and lookup have to behave the same on every path.
+and `in` and lookup have to behave the same on every path. The guard sees each entry's
+name as well as its value, so a validator that depends on the key — a token's declared
+type, say — fits without a second pass.
 
 `parseList` is the array form, with an optional `limit` applied after filtering.
-`readJson`/`writeJson` sit one level up, over a `ToolbarStorage` — `api.storage` from
-`start(api)` is one — and never throw: a full quota, a serialisation cycle or a
-storage adapter that refuses all return the fallback or do nothing.
+`readJson`/`writeJson` are the un-named forms of the JSON preference, for a caller that
+holds only a key; they never throw either.
 
 ```ts
 const isFlagValue = (v: unknown): v is FlagValue =>
@@ -137,6 +179,21 @@ const isFlagValue = (v: unknown): v is FlagValue =>
 
 const overrides = parseRecord(storage.getItem("overrides"), isFlagValue);
 ```
+
+**Before mount.** Core scopes an extension's storage to
+`dtb:v1:<instanceId>:ext:<extensionId>:`; an app that has to agree with the panel on
+first paint reads the same bytes before `start()` has run and there is no
+`api.storage` yet. `extensionStorageKey` builds that key — the kit's one hand-maintained
+copy of core's prefix, asserted equal to core's `STORAGE_PREFIX` in the kit's tests.
+`readStoredRecord` reads a persisted map through it from `localStorage` (or the
+`storage` you pass), honours the `?<resetParam>=reset` kill switch through
+`resetRequested`, vets every entry by value *and* name through the validator you hand
+it, and returns a plain object. The kill switch is off until you pass `resetParam`.
+The flags and theme-editor pre-mount readers (`readStoredOverrides`,
+`readStoredThemeOverrides`) still rebuild the key and the switch themselves; they are
+the callers this is written for, and adopt it when the extensions migrate. Pass the
+mounted runtime's own validator and the app seeds itself with exactly the entries the
+panel will accept.
 
 ### Polling
 

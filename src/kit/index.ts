@@ -37,7 +37,19 @@ export type {
 export { embed } from "./embed";
 export type { EmbedOptions } from "./embed";
 export { useExtensionSurface } from "./hooks";
-export { parseList, parseRecord, readJson, writeJson } from "./json";
+export {
+  extensionStorageKey,
+  parseList,
+  parseRecord,
+  readJson,
+  readPreference,
+  readStoredRecord,
+  removePreference,
+  resetRequested,
+  writeJson,
+  writePreference,
+} from "./preference";
+export type { Preference, PreferenceEncoding, StoredRecordOptions } from "./preference";
 export { resolveStyleNonce } from "./nonce";
 export { createPoller } from "./poller";
 export { matchesQuery } from "./query";

@@ -788,14 +788,20 @@ if (built || !mustBeBuilt) {
         "createStyleInjector",
         "embed",
         "ensureKitStyles",
+        "extensionStorageKey",
         "matchesQuery",
         "parseList",
         "parseRecord",
         "readJson",
+        "readPreference",
+        "readStoredRecord",
+        "removePreference",
+        "resetRequested",
         "resolveStyleNonce",
         "useCopyStatus",
         "useExtensionSurface",
         "writeJson",
+        "writePreference",
       ]);
       expect(ext("metrics")).toEqual(expect.arrayContaining(["metrics", "createMetricsRuntime"]));
       expect(ext("environment")).toEqual(
