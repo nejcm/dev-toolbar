@@ -1038,6 +1038,46 @@ describe("persistence", () => {
     stopAgain();
   });
 
+  it("keeps a session edit across a restart when every storage call throws", () => {
+    // The read fallback is the serialised *empty* map, so a throw and "nothing
+    // stored" arrive at `start` looking identical. Overwriting the session map
+    // with that fallback loses an edit that only ever lived in memory, because
+    // the throwing adapter never let it be persisted in the first place.
+    const blocked = () => {
+      throw new Error("blocked");
+    };
+    const storage = { getItem: blocked, setItem: blocked, removeItem: blocked };
+    const runtime = createThemeEditorRuntime({ tokens: TOKENS });
+    const stop = runtime.start(fakeApi(storage));
+    runtime.setOverride("--brand-500", "#ff0000");
+    expect(runtime.store.getSnapshot().overriddenCount).toBe(1);
+    stop();
+
+    const stopAgain = runtime.start(fakeApi(storage));
+    const snapshot = runtime.store.getSnapshot();
+    expect(snapshot.overriddenCount).toBe(1);
+    expect(snapshot.tokens.find((view) => view.name === "--brand-500")?.overridden).toBe(true);
+    // The retained map is re-applied to the page, not merely remembered.
+    expect(root().style.getPropertyValue("--brand-500")).toBe("#ff0000");
+    stopAgain();
+  });
+
+  it("clears the session map on a restart when readable storage has no edits", () => {
+    // The other half of the guard above: storage that answers, with the key
+    // gone, is a real "no edits stored" and must still win over the session.
+    const storage = createMemoryStorage();
+    const runtime = createThemeEditorRuntime({ tokens: TOKENS });
+    const stop = runtime.start(fakeApi(storage));
+    runtime.setOverride("--brand-500", "#ff0000");
+    storage.removeItem(OVERRIDES_KEY);
+    stop();
+
+    const stopAgain = runtime.start(fakeApi(storage));
+    expect(runtime.store.getSnapshot().overriddenCount).toBe(0);
+    expect(root().style.getPropertyValue("--brand-500")).toBe("");
+    stopAgain();
+  });
+
   it("re-applies stored edits on the next mount", () => {
     const storage = createMemoryStorage();
     const first = createThemeEditorRuntime({ tokens: TOKENS });

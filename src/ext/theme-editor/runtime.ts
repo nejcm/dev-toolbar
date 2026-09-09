@@ -1527,11 +1527,32 @@ export function createThemeEditorRuntime(
         persistOverrides();
         notice = `Every theme edit was cleared by ?${themeParam ?? ""}=reset.`;
       } else {
+        // `readPreference` returns the empty-map fallback from its own catch,
+        // so a read that *threw* looks like "nothing stored" — and assigning it
+        // wipes the session map a throwing adapter never let us persist. The
+        // flag is set only after `getItem` returns (same wrapper as `preview`
+        // below); `!persist` starts readable so that branch still resets.
+        let overridesReadable = !persist;
         const vetted = vetStored(
-          parseOverrides(persist ? readPreference(storage, OVERRIDES_PREFERENCE) : null),
+          parseOverrides(
+            persist
+              ? readPreference(
+                  {
+                    getItem(key) {
+                      const raw = api.storage.getItem(key);
+                      overridesReadable = true;
+                      return raw;
+                    },
+                  },
+                  OVERRIDES_PREFERENCE,
+                )
+              : null,
+          ),
         );
-        overrides = vetted.accepted;
-        if (vetted.dropped.length > 0) {
+        if (overridesReadable) overrides = vetted.accepted;
+        // Gated with the assignment: with no readable bytes `vetStored` was
+        // handed `{}`, so nothing was dropped and there is nothing to report.
+        if (overridesReadable && vetted.dropped.length > 0) {
           // Persist the cleaned map rather than leaving the refused entries to
           // be re-read — and re-refused — on every load.
           persistOverrides();
