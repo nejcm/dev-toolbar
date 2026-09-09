@@ -1966,3 +1966,141 @@ describe("apply-error publication without token rows", () => {
     log.mockRestore();
   });
 });
+
+/* -------------------------------------------------------------------------- */
+
+describe("a failure's error text reaches the row", () => {
+  const hostileGetter = () =>
+    Object.defineProperty(new Error("x"), "message", {
+      get() {
+        throw new Error("no");
+      },
+    });
+
+  describe("from the consumer's onApply", () => {
+    it("masks a credential-carrying URL with the extension's own redactOptions", () => {
+      vi.spyOn(console, "error").mockImplementation(() => {});
+      const runtime = createThemeEditorRuntime({
+        tokens: TOKENS,
+        // `ticket` is not a default sensitive key: only the consumer's options mask it.
+        redactOptions: { extraKeys: ["ticket"] },
+        onApply: () => {
+          throw new Error("failed for https://x/?ticket=abc");
+        },
+      });
+      runtime.start(fakeApi(null));
+      runtime.setOverride("--brand-500", "#ff0000");
+      const recorded = runtime.store.peek().applyErrors["--brand-500"];
+      expect(recorded).toContain("failed for https://x/?ticket=[redacted]");
+      expect(recorded).not.toContain("abc");
+    });
+
+    it("records a message getter that throws instead of throwing out of setOverride()", () => {
+      vi.spyOn(console, "error").mockImplementation(() => {});
+      const runtime = createThemeEditorRuntime({
+        tokens: TOKENS,
+        onApply: () => {
+          throw hostileGetter();
+        },
+      });
+      runtime.start(fakeApi(null));
+      expect(() => runtime.setOverride("--brand-500", "#ff0000")).not.toThrow();
+      expect(runtime.store.peek().applyErrors["--brand-500"]).toContain("[unreadable]");
+    });
+
+    it("describes a non-string message by its tag, as a string", () => {
+      vi.spyOn(console, "error").mockImplementation(() => {});
+      const runtime = createThemeEditorRuntime({
+        tokens: TOKENS,
+        onApply: () => {
+          throw Object.assign(new Error("x"), { message: 42 });
+        },
+      });
+      runtime.start(fakeApi(null));
+      expect(() => runtime.setOverride("--brand-500", "#ff0000")).not.toThrow();
+      expect(runtime.store.peek().applyErrors["--brand-500"]).toContain("[object Error]");
+    });
+
+    it("records the failure when the consumer's redactOptions throw on read", () => {
+      vi.spyOn(console, "error").mockImplementation(() => {});
+      const runtime = createThemeEditorRuntime({
+        tokens: TOKENS,
+        redactOptions: {
+          get extraKeys(): string[] {
+            throw new Error("no");
+          },
+        },
+        onApply: () => {
+          throw new Error("failed for https://x/?token=abc");
+        },
+      });
+      runtime.start(fakeApi(null));
+      expect(() => runtime.setOverride("--brand-500", "#ff0000")).not.toThrow();
+      const recorded = runtime.store.peek().applyErrors["--brand-500"];
+      expect(recorded).toContain("[unreadable]");
+      expect(recorded).not.toContain("abc");
+    });
+  });
+
+  describe("from the surface write", () => {
+    it("masks a credential-carrying URL with the extension's own redactOptions", () => {
+      vi.spyOn(console, "error").mockImplementation(() => {});
+      const runtime = createThemeEditorRuntime({
+        tokens: TOKENS,
+        // `ticket` is not a default sensitive key: only the consumer's options mask it.
+        redactOptions: { extraKeys: ["ticket"] },
+      });
+      runtime.start(fakeApi(null));
+      vi.spyOn(root().style, "setProperty").mockImplementation(() => {
+        throw new Error("failed for https://x/?ticket=abc");
+      });
+      expect(runtime.setOverride("--brand-500", "#ff0000")).toBeNull();
+      const recorded = runtime.store.peek().applyErrors["--brand-500"];
+      expect(recorded).toContain("failed for https://x/?ticket=[redacted]");
+      expect(recorded).toContain("the page did not take this value");
+      expect(recorded).not.toContain("abc");
+    });
+
+    it("records a message getter that throws instead of throwing out of setOverride()", () => {
+      vi.spyOn(console, "error").mockImplementation(() => {});
+      const runtime = createThemeEditorRuntime({ tokens: TOKENS });
+      runtime.start(fakeApi(null));
+      vi.spyOn(root().style, "setProperty").mockImplementation(() => {
+        throw hostileGetter();
+      });
+      expect(() => runtime.setOverride("--brand-500", "#ff0000")).not.toThrow();
+      expect(runtime.store.peek().applyErrors["--brand-500"]).toContain("[unreadable]");
+    });
+
+    it("describes a non-string message by its tag, as a string", () => {
+      vi.spyOn(console, "error").mockImplementation(() => {});
+      const runtime = createThemeEditorRuntime({ tokens: TOKENS });
+      runtime.start(fakeApi(null));
+      vi.spyOn(root().style, "setProperty").mockImplementation(() => {
+        throw Object.assign(new Error("x"), { message: 42 });
+      });
+      expect(() => runtime.setOverride("--brand-500", "#ff0000")).not.toThrow();
+      expect(runtime.store.peek().applyErrors["--brand-500"]).toContain("[object Error]");
+    });
+
+    it("records the failure when the consumer's redactOptions throw on read", () => {
+      vi.spyOn(console, "error").mockImplementation(() => {});
+      const runtime = createThemeEditorRuntime({
+        tokens: TOKENS,
+        redactOptions: {
+          get extraKeys(): string[] {
+            throw new Error("no");
+          },
+        },
+      });
+      runtime.start(fakeApi(null));
+      vi.spyOn(root().style, "setProperty").mockImplementation(() => {
+        throw new Error("failed for https://x/?token=abc");
+      });
+      expect(() => runtime.setOverride("--brand-500", "#ff0000")).not.toThrow();
+      const recorded = runtime.store.peek().applyErrors["--brand-500"];
+      expect(recorded).toContain("[unreadable]");
+      expect(recorded).not.toContain("abc");
+    });
+  });
+});

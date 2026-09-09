@@ -25,7 +25,7 @@
  * override is a state the developer chose, not a drawing — repainting the
  * application every time you press the hide shortcut would be unusable.
  */
-import { createDerivedStore, redact } from "../../runtime";
+import { createDerivedStore, describeError, redact } from "../../runtime";
 import { createPoller, parseRecord } from "@nejcm/dev-toolbar/kit";
 import type { RedactOptions, ThrottledStore } from "../../runtime";
 import type { ExtensionRuntimeApi, ToolbarStorage } from "../../core/contract";
@@ -572,11 +572,11 @@ export function createThemeEditorRuntime(
     try {
       onApply(name, value);
     } catch (error) {
+      // Rendered as a row `title`, so the thrown text is masked — under the
+      // consumer's own `redactOptions` — before this sentence is built.
       applyErrors.set(
         name,
-        `${
-          error instanceof Error ? error.message : String(error)
-        } — your application's own onApply did not accept this edit.`,
+        `${describeError(error, redactOptions).message} — your application's own onApply did not accept this edit.`,
       );
       // eslint-disable-next-line no-console
       console.error(
@@ -646,7 +646,7 @@ export function createThemeEditorRuntime(
     } catch (error) {
       applyErrors.set(
         name,
-        `${error instanceof Error ? error.message : String(error)} — the page did not take this value.`,
+        `${describeError(error, redactOptions).message} — the page did not take this value.`,
       );
       // eslint-disable-next-line no-console
       console.error(

@@ -596,3 +596,49 @@ describe("modifier glyphs in shortcut hints", () => {
     expect(glyphs(hints[1]!)).toEqual([]);
   });
 });
+
+describe("a failed command's error text is outbound", () => {
+  const failWith = async (thrown: unknown) => {
+    const { extension } = mount({}, [
+      makeExtension({
+        id: "throwing",
+        commands: [
+          command("bad.one", "Explodes", "Bad", () => {
+            throw thrown;
+          }),
+        ],
+      }),
+    ]);
+    hotkey();
+    await act(async () => {
+      press("Enter");
+    });
+    return {
+      snapshot: extension.diagnostics?.() as { error: unknown },
+      alert: document.querySelector('[role="alert"]')?.textContent ?? null,
+    };
+  };
+
+  it("masks a credential-carrying URL before it reaches the snapshot", async () => {
+    const { snapshot, alert } = await failWith(new Error("failed for https://x/?token=abc"));
+    expect(snapshot.error).toBe("failed for https://x/?token=[redacted]");
+    expect(snapshot.error).not.toContain("abc");
+    expect(alert).not.toContain("abc");
+  });
+
+  it("records a message getter that throws instead of throwing itself", async () => {
+    const hostile = Object.defineProperty(new Error("x"), "message", {
+      get() {
+        throw new Error("no");
+      },
+    });
+    const { snapshot } = await failWith(hostile);
+    expect(snapshot.error).toBe("[unreadable]");
+    expect(dialog()).not.toBeNull();
+  });
+
+  it("describes a non-string message by its tag, as a string", async () => {
+    const { snapshot } = await failWith(Object.assign(new Error("x"), { message: 42 }));
+    expect(snapshot.error).toBe("[object Error]");
+  });
+});

@@ -868,3 +868,53 @@ describe("styleNonce", () => {
     expect(sheet()?.nonce).toBe("abc");
   });
 });
+
+/* -------------------------------------------------------------------------- */
+
+describe("a failed measurement's error text is outbound", () => {
+  /**
+   * `diagnostics().error` leaves the page through the agent bridge, so the
+   * thrown message is masked *before* `fail()` writes its sentence — a URL
+   * carrying a credential must not survive into the snapshot, or the alert.
+   */
+  const failWith = async (thrown: unknown) => {
+    const { toolbar, extension } = mount({ defaults: { inspect: true } });
+    const target = document.querySelector('[data-testid="named"]') as Element;
+    target.getBoundingClientRect = () => {
+      throw thrown;
+    };
+    pointAt(target);
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    fireEvent.pointerMove(window, { clientX: 20, clientY: 50 });
+    await frame();
+    act(() => toolbar.openPanel("overlays"));
+    return {
+      snapshot: extension.diagnostics?.() as { error: unknown; on: string[] },
+      alert: document.querySelector('[role="alert"]')?.textContent ?? null,
+    };
+  };
+
+  it("masks a credential-carrying URL before it reaches the snapshot", async () => {
+    const { snapshot, alert } = await failWith(new Error("failed for https://x/?token=abc"));
+    expect(snapshot.error).toContain("failed for https://x/?token=[redacted]");
+    expect(snapshot.error).not.toContain("abc");
+    expect(alert).not.toContain("abc");
+  });
+
+  it("still fails closed when the message getter throws", async () => {
+    const hostile = Object.defineProperty(new Error("x"), "message", {
+      get() {
+        throw new Error("no");
+      },
+    });
+    const { snapshot } = await failWith(hostile);
+    expect(snapshot.error).toContain("[unreadable]");
+    expect(snapshot.on).toEqual([]);
+  });
+
+  it("describes a non-string message by its tag, as a string", async () => {
+    const { snapshot } = await failWith(Object.assign(new Error("x"), { message: 42 }));
+    expect(snapshot.error).toContain("[object Error]");
+    expect(snapshot.on).toEqual([]);
+  });
+});

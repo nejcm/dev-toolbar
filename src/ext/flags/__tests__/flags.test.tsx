@@ -769,3 +769,31 @@ describe("styleNonce", () => {
     expect(flagsStyle()).toBeNull();
   });
 });
+
+describe("a failed adapter's error text reaches the row", () => {
+  it("masks a credential-carrying URL before it becomes the title", () => {
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const { toolbar } = mount({
+        onOverride: () => {
+          throw new Error("failed for https://x/?token=abc");
+        },
+      });
+      act(() => {
+        toolbar.openPanel("flags");
+      });
+      act(() => {
+        row(toolbar.panel("flags"), "ui-facelift")
+          ?.querySelector<HTMLButtonElement>('[data-dtb-part="flag-switch"]')
+          ?.click();
+      });
+      const title = row(toolbar.panel("flags"), "ui-facelift")
+        ?.querySelector('[data-dtb-tag="not-applied"]')
+        ?.getAttribute("title");
+      expect(title).toContain("failed for https://x/?token=[redacted]");
+      expect(title).not.toContain("abc");
+    } finally {
+      spy.mockRestore();
+    }
+  });
+});
