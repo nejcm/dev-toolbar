@@ -14,6 +14,22 @@
   style break at the boundary is accepted, not an oversight.
 -->
 
+## [0.8.0](https://github.com/nejcm/dev-toolbar/compare/v0.7.1...v0.8.0) (2026-09-09)
+
+
+### ⚠ BREAKING CHANGES
+
+* **testing:** `installToolbarLayout()` no longer patches `HTMLElement.prototype.offsetWidth` or `clientWidth`, `getBoundingClientRect`, or `getComputedStyle`. A test that measured a toolbar element through those getters, or that relied on the fake's values reaching its own components, must read through the toolbar's own API instead. Delivered `ResizeObserverEntry.contentRect` is unchanged, and `ResizeObserver` is still provided.
+
+### Bug Fixes
+
+* **ext:** survive a theme editor consumer whose options throw on read ([#82](https://github.com/nejcm/dev-toolbar/issues/82)) ([8278b7e](https://github.com/nejcm/dev-toolbar/commit/8278b7e7b09135c3045bb8872e73477d42b9c06d))
+
+
+### Code Refactoring
+
+* **testing:** measure through core's measurer slot instead of patching the DOM ([#88](https://github.com/nejcm/dev-toolbar/issues/88)) ([4d57c73](https://github.com/nejcm/dev-toolbar/commit/4d57c73328dd248a78ce6b82a9e3f6a049ec376d))
+
 ## [0.7.1](https://github.com/nejcm/dev-toolbar/compare/v0.7.0...v0.7.1) (2026-09-09)
 
 
