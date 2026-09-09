@@ -157,30 +157,186 @@ test("geometry: a chip resizes itself without resizing the bar", async ({ toolba
   expect((await toolbar.read()).shell.bar.map((b) => b.id)).toEqual(["growing", "low", "agent"]);
 });
 
-test("geometry: a gap-only override waits for a bar reading; padding triggers one", async ({ toolbar, page }, info) => {
+async function recordResizes(page: Page) {
+  await page.addInitScript(() => {
+    (window as any).__dtbResizes = [];
+    const NativeResizeObserver = window.ResizeObserver;
+    window.ResizeObserver = class extends NativeResizeObserver {
+      constructor(callback: ResizeObserverCallback) {
+        super((entries, observer) => {
+          (window as any).__dtbResizes.push({
+            time: performance.now(),
+            entries: entries.map(({ target, contentRect }) => ({
+              part: target.getAttribute("data-dtb-part"),
+              id: target.getAttribute("data-dtb-ext-id"),
+              width: contentRect.width,
+            })),
+          });
+          callback(entries, observer);
+        });
+      }
+    };
+  });
+}
+
+async function geometry(page: Page) {
+  return page.getByRole("toolbar", { name: "Developer toolbar" }).evaluate((bar) => {
+    const style = getComputedStyle(bar);
+    return {
+      box: bar.getBoundingClientRect().toJSON(),
+      clientWidth: bar.clientWidth,
+      scrollWidth: bar.scrollWidth,
+      gap: style.columnGap,
+      padding: style.padding,
+      overflow: style.overflow,
+      items: [...bar.querySelectorAll<HTMLElement>('[data-dtb-part="item"]')].map((item) => ({
+        id: item.dataset.dtbExtId,
+        box: item.getBoundingClientRect().toJSON(),
+      })),
+    };
+  });
+}
+
+async function resizeEntries(page: Page) {
+  return page.evaluate(() =>
+    (window as any).__dtbResizes.flatMap((delivery: any) => delivery.entries),
+  );
+}
+
+async function changeSpacing(page: Page, property: string, value: string) {
+  return page.locator('[data-dtb-part="root"]').evaluate(
+    async (root, { property, value }) => {
+      (window as any).__dtbResizes = [];
+      const start = performance.now();
+      root.style.setProperty(property, value);
+      let frames = 0;
+      await new Promise<void>((resolve) => {
+        const tick = () => {
+          frames++;
+          if (performance.now() - start >= 1_000) resolve();
+          else requestAnimationFrame(tick);
+        };
+        requestAnimationFrame(tick);
+      });
+      return {
+        frames,
+        elapsedMs: performance.now() - start,
+        callbacks: (window as any).__dtbResizes,
+      };
+    },
+    { property, value },
+  );
+}
+
+for (const gap of [40, 140]) {
+  test(`geometry: known limitation, ${gap}px gap leaves collapse stale until a bar resize`, async ({
+    toolbar,
+    page,
+  }, info) => {
+    await recordResizes(page);
+    await page.setViewportSize({ width: 320, height: 800 });
+    await toolbar.goto("/?geometry");
+    await expect
+      .poll(() => resizeEntries(page))
+      .toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ part: "bar", width: 300 }),
+          expect.objectContaining({ part: "item", id: "agent", width: 80 }),
+        ]),
+      );
+    await page.evaluate(
+      () => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))),
+    );
+    const before = { shell: (await toolbar.read()).shell, geometry: await geometry(page) };
+    expect(before.shell.bar.map((item) => item.id)).toEqual(["growing", "low", "agent"]);
+    expect(before.shell.overflow.present).toBe(false);
+    expect(before.geometry.gap).toBe("10px");
+    await capture(page, info, "gap-before");
+
+    // Pins a known limitation: item callbacks do not refresh gap; clipping can persist without ⋮.
+    const observation = await changeSpacing(page, "--dtb-item-gap", `${gap}px`);
+    expect(observation.frames).toBeGreaterThan(2);
+    const entries = await resizeEntries(page);
+    expect(entries).not.toEqual(expect.arrayContaining([expect.objectContaining({ part: "bar" })]));
+    expect(entries).toEqual(expect.arrayContaining([expect.objectContaining({ part: "item" })]));
+    const after = { shell: (await toolbar.read()).shell, geometry: await geometry(page) };
+    expect(after.shell.bar).toEqual(before.shell.bar);
+    expect(after.shell.overflow.present).toBe(false);
+    expect(after.geometry.box).toEqual(before.geometry.box);
+    expect(after.geometry.padding).toBe(before.geometry.padding);
+    expect(after.geometry.gap).toBe(`${gap}px`);
+    if (gap === 140) {
+      expect(after.geometry.overflow).toBe("hidden");
+      expect(after.geometry.scrollWidth).toBeGreaterThan(after.geometry.clientWidth);
+      expect(after.geometry.items.find((item) => item.id === "low")!.box.right).toBeGreaterThan(
+        after.geometry.box.right,
+      );
+    } else {
+      expect(after.geometry.scrollWidth).toBe(after.geometry.clientWidth);
+    }
+    await capture(page, info, "gap-only-stale");
+
+    await page.evaluate(() => {
+      (window as any).__dtbResizes = [];
+    });
+    await page.setViewportSize({ width: 319, height: 800 });
+    const remaining = gap === 40 ? ["growing", "agent"] : ["growing"];
+    await expect
+      .poll(() => toolbar.read().then((s) => s.shell.bar.map((item) => item.id)))
+      .toEqual(remaining);
+    expect(await resizeEntries(page)).toEqual(
+      expect.arrayContaining([expect.objectContaining({ part: "bar", width: 299 })]),
+    );
+    expect((await toolbar.read()).shell.overflow.present).toBe(true);
+    const recovered = { shell: (await toolbar.read()).shell, geometry: await geometry(page) };
+    expect(recovered.geometry.scrollWidth).toBe(recovered.geometry.clientWidth);
+    await capture(page, info, "gap-after-bar-resize");
+    await toolbar.overflowButton.click();
+    await expect
+      .poll(() => toolbar.read().then((s) => s.shell.overflow.items))
+      .toEqual(gap === 40 ? ["low"] : ["low", "agent"]);
+    await info.attach("gap-observation", {
+      body: JSON.stringify({ before, observation, after, recovered }, null, 2),
+      contentType: "application/json",
+    });
+  });
+}
+
+test("geometry: padding alone delivers a bar resize and updates collapse", async ({
+  toolbar,
+  page,
+}, info) => {
+  await recordResizes(page);
   await page.setViewportSize({ width: 320, height: 800 });
   await toolbar.goto("/?geometry");
-  await expect.poll(() => toolbar.read().then((s) => s.shell.overflow.present)).toBe(false);
-  // Drain initial observer deliveries before changing only the gap.
-  await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
-  await page.locator('[data-dtb-part="root"]').evaluate((root) => {
-    root.style.setProperty("--dtb-item-gap", "40px");
-  });
-  // A bounded negative observation: no box resize should refresh the decision.
-  await page.waitForTimeout(500);
-  expect((await toolbar.read()).shell.bar.map((b) => b.id)).toEqual(["growing", "low", "agent"]);
-  expect((await toolbar.read()).shell.overflow.present).toBe(false);
-  await capture(page, info, "gap-only-stale");
+  await expect
+    .poll(() => resizeEntries(page))
+    .toEqual(expect.arrayContaining([expect.objectContaining({ part: "bar", width: 300 })]));
+  await page.evaluate(
+    () => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))),
+  );
+  const before = { shell: (await toolbar.read()).shell, geometry: await geometry(page) };
+  expect(before.shell.bar.map((item) => item.id)).toEqual(["growing", "low", "agent"]);
+  expect(before.shell.overflow.present).toBe(false);
+  await capture(page, info, "padding-before");
 
-  await page.setViewportSize({ width: 319, height: 800 });
-  await expect.poll(() => toolbar.read().then((s) => s.shell.bar.map((b) => b.id)))
-    .toEqual(["growing", "agent"]);
-  await capture(page, info, "gap-after-bar-resize");
-
-  await page.locator('[data-dtb-part="root"]').evaluate((root) => {
-    root.style.setProperty("--dtb-item-gap", "0px");
-    root.style.setProperty("--dtb-padding-x", "11px");
+  const observation = await changeSpacing(page, "--dtb-padding-x", "30px");
+  expect(observation.frames).toBeGreaterThan(2);
+  expect(await resizeEntries(page)).toEqual(
+    expect.arrayContaining([expect.objectContaining({ part: "bar", width: 260 })]),
+  );
+  const after = { shell: (await toolbar.read()).shell, geometry: await geometry(page) };
+  expect(after.shell.bar.map((item) => item.id)).toEqual(["growing", "agent"]);
+  expect(after.shell.overflow.present).toBe(true);
+  expect(after.geometry.box).toEqual(before.geometry.box);
+  expect(after.geometry.gap).toBe(before.geometry.gap);
+  expect(after.geometry.padding).toBe("0px 30px");
+  expect(after.geometry.scrollWidth).toBe(after.geometry.clientWidth);
+  await capture(page, info, "padding-only-collapsed");
+  await toolbar.overflowButton.click();
+  await expect.poll(() => toolbar.read().then((s) => s.shell.overflow.items)).toEqual(["low"]);
+  await info.attach("padding-observation", {
+    body: JSON.stringify({ before, observation, after }, null, 2),
+    contentType: "application/json",
   });
-  await expect.poll(() => toolbar.read().then((s) => s.shell.overflow.present)).toBe(false);
-  expect((await toolbar.read()).shell.bar.map((b) => b.id)).toEqual(["growing", "low", "agent"]);
 });

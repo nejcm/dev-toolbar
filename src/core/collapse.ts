@@ -55,13 +55,16 @@ export interface CollapseReading {
   readonly padding?: number;
   /**
    * The gap between items and between the two regions.
-   * A CSS gap-only change may leave observed boxes unchanged; the DOM adapter
-   * picks it up on the next full bar reading, not necessarily immediately.
+   * Known limitation: a CSS gap-only change can leave collapse stale and chips
+   * clipped without ⋮ until an OverflowBar commit or bar resize refreshes gap.
+   * Incidental item callbacks from CSS width caps read only widths, not gap.
+   * Chromium stayed stale for 1 second and recovered on a 1px bar resize.
+   * See docs/architecture.md §5 and the playground overflow browser tests.
    */
   readonly gap?: number;
   /** The `⋮` button's width. Ignored unless positive: the button is only rendered once something has collapsed. */
   readonly buttonWidth?: number;
-  /** Natural widths of the item hosts currently in the bar. Each is ignored unless positive. */
+  /** Measured item-host widths, subject to CSS caps such as max-width. Ignored unless positive. */
   readonly widths?: Iterable<readonly [id: string, width: number]>;
 }
 
