@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef } from "react";
 import type { RefObject } from "react";
 import type { ToolbarPosition } from "./contract";
-import { domMeasurer } from "./measurer";
+import { resolveMeasurer } from "./measurer";
 
 /**
  * CSS custom property published on `document.documentElement` while the bar is
@@ -67,10 +67,17 @@ export function useHeightVariables(options: {
       return clear;
     }
 
-    const publish = () => write(`${Math.round(domMeasurer.height(node))}px`);
+    // Resolved inside `publish`, not once above it: the observer keeps this
+    // closure long after the commit that made it, and the slot can be replaced
+    // between two deliveries. A captured measurer would freeze the first
+    // answer for the closure's whole life and keep publishing stale pixels.
+    const publish = () => write(`${Math.round(resolveMeasurer().height(node))}px`);
     publish();
 
-    const observer = domMeasurer.observe(publish);
+    // Whereas this resolution is used immediately, and the subscription it
+    // returns is torn down with the effect — an observer cannot be swapped
+    // retroactively, so the live measurer at setup is the right one to own it.
+    const observer = resolveMeasurer().observe(publish);
     if (!observer) return clear;
     observer.sync([node]);
     return () => {

@@ -4,7 +4,7 @@ import { CollapseMachine } from "./collapse";
 import type { CollapseItem, CollapseReading } from "./collapse";
 import type { DevToolbarClassNames, DevToolbarExtension } from "./contract";
 import { cx } from "./context";
-import { domMeasurer, ITEM_SELECTOR } from "./measurer";
+import { ITEM_SELECTOR, resolveMeasurer } from "./measurer";
 import type { MeasurementObserver } from "./measurer";
 
 export interface OverflowBarProps {
@@ -70,6 +70,7 @@ export function OverflowBar({
    * with it.
    */
   const measureWidths = useCallback((bar: HTMLElement): [string, number][] => {
+    const measurer = resolveMeasurer();
     const nodes = bar.querySelectorAll<HTMLElement>(ITEM_SELECTOR);
     const observer = itemObserverRef.current;
     observer?.sync(nodes);
@@ -77,20 +78,23 @@ export function OverflowBar({
     const widths: [string, number][] = [];
     for (const node of nodes) {
       const id = node.dataset["dtbExtId"];
-      if (id) widths.push([id, domMeasurer.itemWidth(node)]);
+      if (id) widths.push([id, measurer.itemWidth(node)]);
     }
     return widths;
   }, []);
 
   /** Everything the bar can report about itself, as one reading. */
   const readBar = useCallback(
-    (bar: HTMLElement): CollapseReading => ({
-      barWidth: domMeasurer.barWidth(bar),
-      gap: domMeasurer.regionGap(bar),
-      padding: domMeasurer.padding(bar),
-      buttonWidth: domMeasurer.buttonWidth(buttonRef.current),
-      widths: measureWidths(bar),
-    }),
+    (bar: HTMLElement): CollapseReading => {
+      const measurer = resolveMeasurer();
+      return {
+        barWidth: measurer.barWidth(bar),
+        gap: measurer.regionGap(bar),
+        padding: measurer.padding(bar),
+        buttonWidth: measurer.buttonWidth(buttonRef.current),
+        widths: measureWidths(bar),
+      };
+    },
     [measureWidths],
   );
 
@@ -113,6 +117,11 @@ export function OverflowBar({
   useEffect(() => {
     const bar = barRef.current;
     if (!bar) return;
+    // Only to build the subscriptions, which are used here and torn down with
+    // the effect. The two callbacks below deliberately resolve nothing: they
+    // outlive this commit, so they read pixels through `readBar`/`measureWidths`,
+    // which resolve per call — the slot can change between two deliveries.
+    const measurer = resolveMeasurer();
 
     // Padding changes resize the bar's content box; gap alone can leave collapse stale and chips clipped.
     // Item callbacks do not refresh gap; a full bar reading (e.g. on resize) does.
@@ -125,7 +134,7 @@ export function OverflowBar({
     // No ResizeObserver: fall back to window resize only. Polling would burn a
     // timer forever in every host that lacks the API, for a bar that is mostly
     // static — the collapse simply stays as measured until the window changes.
-    const barObserver = domMeasurer.observe(read);
+    const barObserver = measurer.observe(read);
     if (!barObserver) {
       if (typeof window === "undefined") return;
       window.addEventListener("resize", read);
@@ -137,7 +146,7 @@ export function OverflowBar({
     // Every delivery reaches the machine, latched or not: a chip cycling with
     // the decision is refused inside it, and a chip that genuinely grows past
     // the cycle must still be heard — which is what the cycle detection is for.
-    const itemObserver = domMeasurer.observe(() => {
+    const itemObserver = measurer.observe(() => {
       const node = barRef.current;
       if (!node) return;
       if (machine.measure({ widths: measureWidths(node) })) sync();
