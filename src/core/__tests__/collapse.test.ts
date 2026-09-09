@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { CollapseMachine } from "../collapse";
-import type { CollapseItem } from "../collapse";
+import type { CollapseItem, CollapseReading } from "../collapse";
 
 const start = (id: string, priority: number): CollapseItem => ({ id, priority, region: "start" });
 const end = (id: string, priority: number): CollapseItem => ({ id, priority, region: "end" });
@@ -197,6 +197,146 @@ describe("CollapseMachine reserved width", () => {
  * layout effect after a commit, is filtered alike.
  */
 describe("CollapseMachine cycle detection", () => {
+  const overCollapseReadings: CollapseReading[] = [
+    {
+      items,
+      barWidth: 200,
+      widths: [
+        ["a", 60],
+        ["b", 60],
+        ["c", 60],
+      ],
+    },
+    { widths: [["a", 90]] },
+    { widths: [["a", 140]] },
+    { widths: [["a", 90]] },
+  ];
+
+  // ACCEPTED: excess is bounded only by the roster; even when all items fit, the bar may show only ⋮.
+  // Refusing returns ensures termination; every item stays reachable through ⋮, and an honest change clears the refusal.
+  it("retains a nonminimal fitting state after two moves and a refusal on the third item reading", () => {
+    const m = machine();
+    const trace = overCollapseReadings.map((reading) => ({
+      changed: m.measure(reading),
+      collapsed: ids(m),
+      latched: m.latched,
+    }));
+    expect(trace).toEqual([
+      { changed: false, collapsed: [], latched: false },
+      { changed: true, collapsed: ["b"], latched: false },
+      { changed: true, collapsed: ["b", "c"], latched: false },
+      { changed: false, collapsed: ["b", "c"], latched: true },
+    ]);
+
+    const finalWidths: [string, number][] = [
+      ["a", 90],
+      ["b", 60],
+      ["c", 60],
+    ];
+    const fresh = machine();
+    fresh.measure({ items, barWidth: 200, widths: finalWidths });
+    expect(ids(fresh)).toEqual(["b"]);
+    expect(m.collapsed.size - fresh.collapsed.size).toBe(1);
+
+    const visible = finalWidths.filter(([id]) => !m.collapsed.has(id));
+    const needed = visible.reduce((sum, [, width]) => sum + width, 0) + visible.length * 2 + 28;
+    expect(needed).toBe(120);
+    expect(needed).toBeLessThanOrEqual(200 - 2);
+
+    const held = m.collapsed;
+    expect(
+      m.measure({
+        items,
+        barWidth: 200,
+        padding: 0,
+        gap: 2,
+        buttonWidth: 28,
+        widths: [["a", 90]],
+      }),
+    ).toBe(false);
+    expect(m.collapsed).toBe(held);
+    expect(m.latched).toBe(true);
+  });
+
+  it("retains the whole roster behind ⋮ even when every item would fit, until an honest change", () => {
+    const roster = [start("a", 1), start("b", 2), start("c", 3)];
+    const widths: [string, number][] = [
+      ["a", 20],
+      ["b", 20],
+      ["c", 20],
+    ];
+    const readings: CollapseReading[] = [
+      { items: roster, barWidth: 200, widths },
+      { widths: [["c", 175]] },
+      { widths: [["c", 20]] },
+    ];
+    const m = machine();
+    expect(
+      readings.map((reading) => ({
+        changed: m.measure(reading),
+        collapsed: ids(m),
+        latched: m.latched,
+      })),
+    ).toEqual([
+      { changed: false, collapsed: [], latched: false },
+      { changed: true, collapsed: ["a", "b", "c"], latched: false },
+      { changed: false, collapsed: ["a", "b", "c"], latched: true },
+    ]);
+    expect(roster.filter((item) => !m.collapsed.has(item.id))).toEqual([]);
+
+    const fresh = machine();
+    fresh.measure({ items: roster, barWidth: 200, widths });
+    expect(ids(fresh)).toEqual([]);
+    expect(m.collapsed.size - fresh.collapsed.size).toBe(roster.length);
+    const needed = widths.reduce((sum, [, width]) => sum + width, 0) + (roster.length - 1) * 2;
+    expect(needed).toBe(64);
+    expect(needed).toBeLessThanOrEqual(200 - 2);
+
+    expect(m.measure({ barWidth: 201 })).toBe(true);
+    expect(ids(m)).toEqual(ids(fresh));
+    expect(m.latched).toBe(false);
+    expect(m.measure({ items: roster, barWidth: 201, widths })).toBe(false);
+  });
+
+  it.each<[string, CollapseReading]>([
+    ["bar width", { barWidth: 201 }],
+    ["padding", { padding: 1 }],
+    ["gap", { gap: 3 }],
+    ["roster", { items: [start("a", 4), start("b", 1), start("c", 2)] }],
+  ])("an honest %s change recovers minimality and forgets every earlier decision", (_, change) => {
+    const m = machine();
+    overCollapseReadings.forEach((reading) => m.measure(reading));
+    expect(ids(m)).toEqual(["b", "c"]);
+    expect(m.latched).toBe(true);
+
+    expect(m.measure(change)).toBe(true);
+    expect(ids(m)).toEqual(["b"]);
+    expect(m.latched).toBe(false);
+
+    const fullReading: CollapseReading = {
+      items,
+      barWidth: 200,
+      padding: 0,
+      gap: 2,
+      buttonWidth: 28,
+      ...change,
+      widths: [
+        ["a", 60],
+        ["c", 60],
+      ],
+    };
+    // The box and roster now match: returning to the earlier empty set requires its history to have been forgotten.
+    expect(m.measure(fullReading)).toBe(true);
+    expect(ids(m)).toEqual([]);
+    expect(m.latched).toBe(false);
+
+    const fresh = machine();
+    fresh.measure({ ...fullReading, widths: sixty });
+    expect(ids(m)).toEqual(ids(fresh));
+    expect(m.measure(fullReading)).toBe(false);
+    expect(m.latched).toBe(false);
+  });
+
   it("a chip wider in the bar than beside a collapsed neighbour settles on the side that fits, and reports latched", () => {
     const m = machine();
     m.measure({ items, barWidth: 1000, widths: sixty });

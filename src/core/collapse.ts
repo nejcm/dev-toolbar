@@ -27,6 +27,8 @@
  *   depends on the decision: its 2-cycle settles on the side that fits, after
  *   at most one round trip, and `latched` reports the refusal. A chip that
  *   genuinely grows never repeats a state, so it is always heard.
+ *   Refusing a smaller state can retain extra collapsed items that would fit;
+ *   an honest change clears that history and recomputes with cached widths.
  * - No bar width, or one that is not positive, collapses nothing: a
  *   non-measuring host (SSR, jsdom without a fake layout) renders everything.
  */
