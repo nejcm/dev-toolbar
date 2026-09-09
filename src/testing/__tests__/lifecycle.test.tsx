@@ -2,11 +2,12 @@
  * Teardown, from both ends: what Testing Library's own `cleanup()` reaches, and
  * what `cleanupToolbar()` reaches when nothing else does.
  *
- * `renderWithToolbar({ layout })` patches `HTMLElement.prototype`. A test that
- * never called `unmount()` used to leave that patch installed for the rest of
- * the file, because `cleanup()` does not call the handle's `unmount` wrapper —
- * it unmounts the tree it rendered. So the teardown is registered where
- * `cleanup()` will find it: an effect cleanup inside that tree.
+ * `renderWithToolbar({ layout })` writes two `globalThis` slots — core's
+ * measurer and the `ResizeObserver` jsdom lacks. A test that never called
+ * `unmount()` used to leave those installed for the rest of the file, because
+ * `cleanup()` does not call the handle's `unmount` wrapper — it unmounts the
+ * tree it rendered. So the teardown is registered where `cleanup()` will find
+ * it: an effect cleanup inside that tree.
  */
 import { useEffect } from "react";
 import { cleanup } from "@testing-library/react";
@@ -19,20 +20,23 @@ import {
   mountToolbar,
 } from "@nejcm/dev-toolbar/testing";
 
-const nativeOffsetWidth = Object.getOwnPropertyDescriptor(
-  HTMLElement.prototype,
-  "offsetWidth",
-)?.get;
+const MEASURER_SLOT = Symbol.for("@nejcm/dev-toolbar.measurer");
+type Slot = { [MEASURER_SLOT]?: { barWidth(bar: HTMLElement): number } };
 
-const isPristine = () =>
-  Object.getOwnPropertyDescriptor(HTMLElement.prototype, "offsetWidth")?.get ===
-    nativeOffsetWidth && !("ResizeObserver" in globalThis);
+const isPristine = () => !(MEASURER_SLOT in globalThis) && !("ResizeObserver" in globalThis);
 
 const bar = () => {
   const element = document.createElement("div");
   element.dataset["dtbPart"] = "bar";
   return element;
 };
+
+/**
+ * The bar width the live install reports to core. Read through the registered
+ * measurer, since the fake patches no DOM read — `bar().offsetWidth` is
+ * jsdom's zero whether an install is live or not.
+ */
+const measuredBarWidth = () => (globalThis as Slot)[MEASURER_SLOT]?.barWidth(bar());
 
 /**
  * Records what a *consumer's* mount effect sees. `new ResizeObserver()` in an
@@ -63,11 +67,11 @@ describe("Testing Library cleanup()", () => {
   it("restores the fake layout, even though nothing called unmount()", () => {
     expect(isPristine()).toBe(true);
     mountToolbar(null, { layout: { barWidth: 640 } });
-    expect(bar().offsetWidth).toBe(640);
+    expect(measuredBarWidth()).toBe(640);
 
     cleanup();
 
-    expect(bar().offsetWidth).toBe(0);
+    expect(measuredBarWidth()).toBeUndefined();
     expect(isPristine()).toBe(true);
   });
 
@@ -87,8 +91,8 @@ describe("Testing Library cleanup()", () => {
     expect(seen).toEqual(["function", "function"]);
 
     // The owner effect ran mount → cleanup → mount. A cleanup-only owner would
-    // have restored the prototype here, mid-test.
-    expect(bar().offsetWidth).toBe(640);
+    // have unregistered the fake here, mid-test.
+    expect(measuredBarWidth()).toBe(640);
     expect(mounted.toolbar.bar()).not.toBeNull();
 
     // And the collapse still recomputes, which is the whole reason the fake
@@ -132,7 +136,7 @@ describe("mountToolbar / cleanupToolbar", () => {
   it("restores a bare installToolbarLayout() whose restore() was missed", () => {
     installToolbarLayout({ barWidth: 480 });
     installToolbarLayout({ barWidth: 481 });
-    expect(bar().offsetWidth).toBe(481);
+    expect(measuredBarWidth()).toBe(481);
 
     cleanupToolbar();
 

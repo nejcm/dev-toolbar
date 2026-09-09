@@ -200,32 +200,50 @@ alone as a legitimate "never fires" interval rather than treating it as a runawa
 Core's own overflow tests use the published fake layout, so consumers and core test
 the same measurement seam.
 
-One caveat on the fake layout: it patches `HTMLElement.prototype.offsetWidth`,
-`clientWidth`, `getComputedStyle` and `ResizeObserver` for as long as any install
-is live, so it will fight a test that stubs those for its own components.
-`getComputedStyle` is wrapped even when padding and gap are omitted; restoring the
-last live install replaces any stub installed after the fake with the original
-implementation.
+The fake layout patches **no DOM read**. It registers a measurer core resolves
+per measurement — `Symbol.for("@nejcm/dev-toolbar.measurer")`, an internal seam
+— and, because jsdom ships none at all, installs `globalThis.ResizeObserver`.
+So `offsetWidth`, `clientWidth`, `getBoundingClientRect()` and
+`getComputedStyle` all answer exactly what they would with no install live, and
+a stub your own components need is left alone.
+
+One caveat remains, and it is `ResizeObserver`: an install owns that global for
+as long as any install is live, so it will fight a test that stubs
+`ResizeObserver` itself, and restoring the last live install replaces a stub
+installed *after* the fake with the original implementation (or removes it, if
+the host had none). Stubbing it away deliberately is still meaningful — that is
+the documented "host without `ResizeObserver`" path, and the fake reports the
+absence to core rather than papering over it.
 
 `layout: { paddingX: 12, gap: 8 }` reports 12px of padding on **each** horizontal
 side and an 8px gap between items and regions. Omitted options leave the original
 computed styles unchanged, preserving core's fallback when jsdom cannot resolve
-them. Explicit `0` reports `0px`. These options also work with
-`installToolbarLayout()`, whose `setPaddingX(padding)` and `setGap(gap)` setters
-update the measurement and notify every observer. Wrap direct setter calls in
-`act()`, as with `resize()`. Computed-style overrides apply only to elements with
-`data-dtb-part`; other elements retain their original computed style.
-Only the camelCase accessors `paddingLeft`, `paddingRight`, `columnGap` and `gap`
-are intercepted; calls such as `getPropertyValue("padding-left")` still return the
-original computed value.
+them — with padding or gap omitted the fake reads the element's real
+`getComputedStyle`, exactly as core does without it. Explicit `0` reports `0px`.
+These options also work with `installToolbarLayout()`, whose
+`setPaddingX(padding)` and `setGap(gap)` setters update the measurement and
+notify every observer. Wrap direct setter calls in `act()`, as with `resize()`.
+Nothing is written onto a computed style, for a `data-dtb-part` element or any
+other: the override reaches core through the measurer, so
+`getComputedStyle(element).paddingLeft` and
+`getPropertyValue("padding-left")` alike keep reporting the element's own value.
 
 The fake `ResizeObserver` delivers one entry per observed target on `flush()` and
 notifying setter calls. Unlike a real `ResizeObserver`, `observe()` does not deliver
-an initial entry. `contentRect` uses the fake width and, for the root, `rootHeight`;
-other heights are zero. These are synthetic measurements, without CSS box-model
-calculation. Box-size arrays are empty. Unobserved and disconnected targets receive
-no entries. Nested installs report the topmost install's measurements, matching DOM
-reads.
+an initial entry. Each entry carries a synthetic `contentRect`
+built from the install's own measurements, dispatched on the target's
+`data-dtb-part`: the bar width for a `bar`, that width and the root height for
+the `root`, the `⋮` width for an `overflow-button`, the configured width for an
+`item`, and zeros for anything else. Box-size arrays are empty. Core's own
+resize handler takes no arguments and re-reads through the measurer, but a
+`ResizeObserver` your components construct under a live install reads these
+numbers, so they are real ones. Each `contentRect` is a `DOMRectReadOnly`, as a
+real entry's is: `toJSON()` and JSON serialization include the derived edges,
+while `Object.keys(rect)` is empty and `{ ...rect }` yields `{}` because the
+geometry lives on prototype accessors. An entry is built fresh at each
+delivery, so one you captured is not rewritten by a later setter. Unobserved
+and disconnected targets receive no entries. Nested installs report the topmost install's measurements, which is
+what core's own reads would report too.
 
 `resize(width, notify = true)` and `setItemWidth(id, width, notify = true)` accept
 `false` to change a measurement without firing any observer. To deliver only an
@@ -256,7 +274,7 @@ restored. Restoring clears the install's observer list; saved handles remain
 inspectable.
 
 Its teardown is tied to the rendered tree, so `unmount()`, Testing Library's
-`cleanup()` and RTL's auto-cleanup all restore the real prototypes — a test that
+`cleanup()` and RTL's auto-cleanup all unregister the fake — a test that
 renders with `layout` and never unmounts leaves nothing behind for the next one.
 When you drive it yourself, `installToolbarLayout().restore()` does the same;
 `restore()` is idempotent and order-independent, so nested installs and a shared

@@ -58,7 +58,7 @@ const visibleIds = () =>
   );
 
 describe("the published layout fake's measurer", () => {
-  it("shares every option and handle mutation with the DOM patches", () => {
+  it("answers every option and handle mutation, leaving the DOM at jsdom's zeros", () => {
     const layout = installToolbarLayout({
       barWidth: 400,
       itemWidth: 60,
@@ -77,17 +77,33 @@ describe("the published layout fake's measurer", () => {
     const b = part("item", "b");
     const button = part("overflow-button");
     const root = part("root");
+    // The install no longer patches a DOM read, so the DOM stays at jsdom's
+    // zeros while the measurer reports the options — the inverse of what this
+    // asserted when the fake also patched the prototype and the two had to
+    // agree number for number.
+    const untouched = () => {
+      expect(bar.clientWidth).toBe(0);
+      expect(a.offsetWidth).toBe(0);
+      expect(button.offsetWidth).toBe(0);
+      expect(root.getBoundingClientRect().height).toBe(0);
+      // Against a control element rather than a literal: the assertion is
+      // "no interception", not jsdom's particular initial value.
+      expect(getComputedStyle(bar).paddingLeft).toBe(
+        getComputedStyle(document.createElement("div")).paddingLeft,
+      );
+    };
     const check = () => {
-      expect(measurer.barWidth(bar)).toBe(bar.clientWidth);
-      expect(measurer.itemWidth(a)).toBe(a.offsetWidth);
-      expect(measurer.itemWidth(b)).toBe(b.offsetWidth);
-      expect(measurer.buttonWidth(button)).toBe(button.offsetWidth);
       expect(measurer.buttonWidth(null)).toBe(0);
-      expect(measurer.padding(bar)).toBe(domMeasurer.padding(bar));
-      expect(measurer.regionGap(bar)).toBe(domMeasurer.regionGap(bar));
-      expect(measurer.height(root)).toBe(root.getBoundingClientRect().height);
+      untouched();
     };
     check();
+    expect(measurer.barWidth(bar)).toBe(400);
+    expect(measurer.itemWidth(a)).toBe(90);
+    expect(measurer.itemWidth(b)).toBe(60);
+    expect(measurer.buttonWidth(button)).toBe(32);
+    expect(measurer.padding(bar)).toBe(16);
+    expect(measurer.regionGap(bar)).toBe(4);
+    expect(measurer.height(root)).toBe(42);
     layout.resize(210, false);
     layout.setItemWidth("a", 110, false);
     layout.setItemWidth("b", 0, false);
@@ -129,13 +145,13 @@ describe("the published layout fake's measurer", () => {
     }
   });
 
-  it.each(["inner", "outer"])("shares the patch stack when restoring %s first", (first) => {
+  it.each(["inner", "outer"])("shares the install stack when restoring %s first", (first) => {
     const bar = part("bar");
     const outer = installToolbarLayout({ barWidth: 400 });
     const measurer = resolveMeasurer();
     const inner = installToolbarLayout({ barWidth: 200 });
     expect(resolveMeasurer().barWidth(bar)).toBe(200);
-    expect(measurer.barWidth(bar)).toBe(bar.clientWidth);
+    expect(measurer.barWidth(bar)).toBe(200);
     outer.resize(500, false);
     if (first === "inner") {
       inner.restore();
@@ -144,16 +160,17 @@ describe("the published layout fake's measurer", () => {
       outer.restore();
       expect(measurer.barWidth(bar)).toBe(200);
     }
-    expect(measurer.barWidth(bar)).toBe(bar.clientWidth);
     inner.restore();
     outer.restore();
     expect(Object.hasOwn(globalThis, MEASURER_SLOT)).toBe(false);
     expect(resolveMeasurer()).toBe(domMeasurer);
-    expect(bar.clientWidth).toBe(0);
+    // The DOM read core falls back to was never patched, so an emptied stack
+    // means jsdom's own zero, measured through `domMeasurer` itself.
+    expect(domMeasurer.barWidth(bar)).toBe(0);
 
     reinstallToolbarLayout(outer);
     expect(resolveMeasurer().barWidth(bar)).toBe(500);
-    expect(bar.clientWidth).toBe(500);
+    expect(bar.clientWidth).toBe(0);
     outer.restore();
     expect(Object.hasOwn(globalThis, MEASURER_SLOT)).toBe(false);
   });
@@ -169,10 +186,11 @@ describe("the published layout fake's measurer", () => {
     expect(Object.getOwnPropertyDescriptor(globalThis, MEASURER_SLOT)).toEqual(descriptor);
   });
 
-  it("parses a non-finite override away exactly as the patched computed style does", () => {
-    // Not a realistic option value; the point is that the two paths cannot
-    // disagree even here, because the fake performs the same parse the
-    // `getComputedStyle` Proxy forces on the patched path.
+  it("parses a non-finite override away exactly as a computed style would", () => {
+    // Not a realistic option value; the point is that a non-finite override
+    // reads as "unresolved" rather than as a pixel count, which is what
+    // `Number.parseFloat` gave the fake back when the number reached core as
+    // `${gap}px` through a patched computed style.
     const bar = part("bar");
     bar.append(part("region"));
     const layout = installToolbarLayout();
@@ -255,7 +273,7 @@ describe("the published layout fake's measurer", () => {
     expect(widths).toEqual([200, 400]);
   });
 
-  it("drives collapse and height through three independent observers without prototype measurements", () => {
+  it("drives collapse and height through three independent observers without one DOM measurement", () => {
     const layout = installToolbarLayout({ barWidth: 1000, itemWidth: 60, paddingX: 0, gap: 2 });
     const offsetWidth = vi.spyOn(HTMLElement.prototype, "offsetWidth", "get");
     const clientWidth = vi.spyOn(HTMLElement.prototype, "clientWidth", "get");

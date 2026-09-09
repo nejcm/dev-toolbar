@@ -6,10 +6,10 @@
  * and re-exported from no entry point, so reaching them here adds nothing to
  * the published surface (a colocated core test is not a consumer).
  *
- * The slot lives in the *process-wide* symbol registry, exactly like the
- * `HTMLElement.prototype` patches `src/testing/layout.ts` warns about, so
- * every test below leaves it empty again: a leaked fake would silently answer
- * every later suite's measurements.
+ * The slot lives in the *process-wide* symbol registry — the same shared
+ * state `src/testing/layout.ts` installs into, and warns about — so every test
+ * below leaves it empty again: a leaked fake would silently answer every later
+ * suite's measurements.
  */
 import { act, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
