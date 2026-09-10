@@ -21,6 +21,9 @@ broken the app badly enough that the panel is out of reach.
 - `flags-mask` masks a credential-shaped key everywhere, including copies.
 - `flags-clear` drops every override from the panel.
 - `flags-reset` drops every override from a URL, without the panel.
+- `flags-bulk-error` publishes one `bulkError` — one `alert` banner in the
+  panel — and marks no row, when the whole-map `onOverridesChange` adapter
+  throws; it clears again when the adapter recovers.
 
 ## How to get to it (user POV)
 
@@ -175,9 +178,9 @@ masked row, which publishes the same redacted string the panel shows.
   silent pass. Verify this step with the pane displayed, using `computer`
   `type` plus `Enter`, before reporting it either way.
 - **The read-only branch is unreachable in the playground.** `writable` is
-  `typeof onOverride === "function"` in `src/ext/flags/runtime.ts` — it is
-  published, so `ext("flags").writable` answers it directly — and the
-  playground adapter always passes one, so every step above is the writable
+  "either `onOverride` or `onOverridesChange` is a function" in
+  `src/ext/flags/runtime.ts` — it is published, so `ext("flags").writable`
+  answers it directly — and the playground passes both, so every step above is the writable
   path and the `switch` named `Toggle new-header` stays. Without it (pending
   PR stack #21–#28, `fix(ext): stop trusting unvetted overrides …`) a
   promoted boolean drops `role="switch"` and `aria-checked` entirely, its

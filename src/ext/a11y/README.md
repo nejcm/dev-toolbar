@@ -14,12 +14,14 @@ const extensions = [a11y({ rules: { "color-contrast": { enabled: false } } })];
 ## The one optional peer
 
 **`axe-core` is an optional peer, not a dependency.** It is loaded with
-`import("axe-core")` when the extension starts; a consumer who has not installed
-it gets the `"unsupported"` state — the same word `/ext/metrics` uses for a
-missing platform API — and nothing throws. Installing it is not free: axe-core
-is roughly 550 KB and a supply-chain surface of its own, so this is the one
-place in the package where "zero runtime dependencies" is true of the package
-and still costs the consumer something.
+`import("axe-core")` when the extension starts — or, with `loadOn: "scan"`, not
+until the first scan, so a mount costs no download and the panel says axe has
+not been checked yet; a consumer who has not installed it gets the
+`"unsupported"` state — the same word `/ext/metrics` uses for a missing
+platform API — and nothing throws. Installing it is not free: axe-core is
+roughly 550 KB and a supply-chain surface of its own, so this is the one place
+in the package where "zero runtime dependencies" is true of the package and
+still costs the consumer something.
 
 ## Files
 
@@ -78,11 +80,18 @@ would treat a screenshot of that page.
 
 ## Options that change behaviour
 
-`rules`, `axeOptions`, `context`, `nodeLimit`, `scanOnStart`, `load` (supply
-your own axe copy), `redactOptions`.
+`rules`, `axeOptions`, `context`, `nodeLimit`, `scanOnStart`, `loadOn` (import
+the peer at `"start"`, the default, or on the first `"scan"`; `scanOnStart` is
+a scan, so it imports at start either way), `load` (supply your own axe copy),
+`redactOptions`.
 
 ## Tests
 
-`__tests__/runtime.test.ts` for queueing, the markup walk and masking;
-`peer.test.ts` for the missing-`axe-core` path; `a11y.test.tsx` for the panel,
-the highlight surface and the commands.
+`__tests__/runtime.test.ts` for queueing, the markup walk, masking and
+`loadOn`'s branching; `loadOn.test.ts` counts the real `import("axe-core")`
+under a mocked peer, so "not imported at mount" is proven at the module
+boundary; `types.test.ts` pins the exported snapshot shape a consumer can build
+by hand; `peer.test.ts` for the missing-`axe-core` path; `a11y.test.tsx` for
+the panel, the highlight surface and the commands. The download itself — no
+axe-core request until the first scan, through the public extension and the
+real loader — is `examples/playground/e2e/a11y.spec.ts`.

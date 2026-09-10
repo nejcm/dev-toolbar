@@ -1,10 +1,15 @@
 /**
  * `embed()` — the frame around a third-party devtool panel. [dev-toolbar/kit]
  * Core supplies the trigger, single-panel rule and error boundary; this adds
- * only the fiddly parts — a native-looking chip, panel height, deferred
- * `render()`, `keepMounted` — and deliberately does not scope, reset or
- * restyle the embedded subtree (the frame carries `data-dtb-embed`, core's
- * opt-out). See docs/embedding.md for the recipe and the full rationale.
+ * only the fiddly parts — a native-looking chip when asked for one, panel
+ * height, deferred `render()`, `keepMounted` — and deliberately does not
+ * scope, reset or restyle the embedded subtree (the frame carries
+ * `data-dtb-embed`, core's opt-out). See docs/embedding.md for the recipe and
+ * the full rationale.
+ *
+ * Without `value` or `compact` there is no compact slot: core's trigger, no kit
+ * hook on the bar (why that matters under Vite: docs/embedding.md, "Vite and
+ * `/kit`").
  */
 import { useEffect } from "react";
 import type { CSSProperties, ReactNode } from "react";
@@ -38,12 +43,14 @@ export interface EmbedOptions {
    */
   render: (props: PanelSlotProps) => ReactNode;
   /**
-   * Something for the default chip to show beside the label — a count, a
-   * status word. Pass an element that subscribes to the tool's own state for a
-   * live value. Ignored when `compact` is supplied.
+   * Something for the kit's chip to show beside the label — a count, a status
+   * word. Pass an element that subscribes to the tool's own state for a live
+   * value. Giving it is what opts into that chip: without it (and without
+   * `compact`) the extension has no compact slot and core renders its plain
+   * labelled trigger. Ignored when `compact` is supplied.
    */
   value?: ReactNode;
-  /** Replace the default chip with your own compact slot. */
+  /** Replace the trigger — core's, or the kit's chip — with your own compact slot. */
   compact?: (props: CompactSlotProps) => ReactNode;
   /**
    * Keep the embedded tool mounted, hidden, while the panel is closed — for a
@@ -62,8 +69,9 @@ export interface EmbedOptions {
   priority?: number;
   hidden?: boolean;
   /**
-   * Ensure the kit stylesheet for the default chip. Default `true`. This is the
-   * only sheet the helper touches; nothing is injected for the embedded tool.
+   * Ensure the kit stylesheet for the chip `value` opts into. Default `true`.
+   * This is the only sheet the helper touches, and only then; nothing is
+   * injected for core's trigger or for the embedded tool.
    */
   injectStyles?: boolean;
   /** CSP nonce for that sheet. Wins over the `styleNonce` slot prop core forwards. */
@@ -171,18 +179,24 @@ export function embed(options: EmbedOptions): DevToolbarExtension {
     keepMounted,
     ...(hidden === undefined ? {} : { hidden }),
 
-    compact:
-      compact ??
-      (({ isPanelOpen, togglePanel, styleNonce }) => (
-        <EmbedChip
-          label={label}
-          value={value}
-          injectStyles={injectStyles}
-          styleNonce={resolveStyleNonce(optionNonce, styleNonce)}
-          isPanelOpen={isPanelOpen}
-          togglePanel={togglePanel}
-        />
-      )),
+    // Absent, not `undefined`: core renders its own trigger for an extension
+    // with no `compact`, and that trigger is what the no-`value` case wants.
+    ...(compact !== undefined
+      ? { compact }
+      : value !== undefined
+        ? {
+            compact: ({ isPanelOpen, togglePanel, styleNonce }: CompactSlotProps) => (
+              <EmbedChip
+                label={label}
+                value={value}
+                injectStyles={injectStyles}
+                styleNonce={resolveStyleNonce(optionNonce, styleNonce)}
+                isPanelOpen={isPanelOpen}
+                togglePanel={togglePanel}
+              />
+            ),
+          }
+        : {}),
 
     panel: (slot) => <EmbedFrame render={render} slot={slot} style={frameStyle} />,
   };

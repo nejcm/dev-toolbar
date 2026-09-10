@@ -54,8 +54,9 @@ export interface AgentShellView {
   /**
    * The per-instance CSS custom property core publishes on
    * `document.documentElement`, and its current value. The **unsuffixed**
-   * `--dev-toolbar-height` belongs to `instanceId: "default"` only, so it is
-   * deliberately not reported here for any other instance.
+   * `--dev-toolbar-height` is published only while this is the sole mounted
+   * instance, so it is deliberately not reported here: this name is the one
+   * that is always this instance's.
    */
   heightVariable: { name: string; value: string | null };
   /**

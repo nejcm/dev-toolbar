@@ -41,9 +41,6 @@ ones arrive on their own opt-in subpaths, each with its own bundle.
 npm install @nejcm/dev-toolbar
 ```
 
-**Not on npm yet.** The first publish is still outstanding, so that command does not
-resolve today — use a git or `file:` dependency until it does.
-
 React 18 or 19 and `react-dom` 18 or 19 are required peers — the root entry imports
 `react-dom` statically, for portals. `@testing-library/react` is an optional peer,
 needed only by `@nejcm/dev-toolbar/testing`.
@@ -88,7 +85,7 @@ them and you have a bar that hosts only your own tools.
 | [`ext/overlays`](./docs/ext/overlays.md) | Layout boxes, a column grid, an element inspector and focus order — drawn over your page, never intercepting a click | [`src/ext/overlays`](./src/ext/overlays/README.md) |
 | [`ext/diagnostics`](./docs/ext/diagnostics.md) | One snapshot for a bug report: the page, long tasks, a tail of console errors and unhandled rejections, and every other extension's diagnostics. You read the exact text before it goes anywhere | [`src/ext/diagnostics`](./src/ext/diagnostics/README.md) |
 | [`ext/theme-editor`](./docs/ext/theme-editor.md) | Live design-token editing, with the app's own value next to your edit, and CSS, a recipe, a design-tokens export or a link on the way out | [`src/ext/theme-editor`](./src/ext/theme-editor/README.md) |
-| [`ext/a11y`](./docs/ext/a11y.md) | axe-core violations grouped by impact, on demand and never on a timer, with click-to-highlight. The one optional peer: install `axe-core` or the panel says so and nothing breaks | [`src/ext/a11y`](./src/ext/a11y/README.md) |
+| [`ext/a11y`](./docs/ext/a11y.md) | axe-core violations grouped by impact, on demand and never on a timer, with click-to-highlight. The one optional peer: install `axe-core` or the panel says so and nothing breaks. Its 160 KB chunk is fetched at mount by default; `loadOn: "scan"` defers it to the first scan | [`src/ext/a11y`](./src/ext/a11y/README.md) |
 | [`ext/agent`](./docs/ext/agent.md) | The bar's state and commands on a global, for an in-page agent to read from `page.evaluate` rather than scrape. Development builds; running commands is a second opt-in | [`src/ext/agent`](./src/ext/agent/README.md) |
 
 The **Source** column is each extension's own README, next to its code: the files
@@ -145,14 +142,25 @@ import { DevToolbarInset } from "@nejcm/dev-toolbar";
 ```
 
 Or inset by hand — the shell publishes the toolbar's height, bar *plus* any open
-panel, on `<html>`:
+panel, on `<html>`. With one toolbar on the page, which is every ordinary app, it
+is `--dev-toolbar-height`, whether or not you passed `instanceId`:
 
 ```css
 .my-layout { padding-bottom: var(--dev-toolbar-height, 0px); }
 ```
 
-Every instance also publishes `--dev-toolbar-height-<instanceId>`, so two toolbars
-on one page never overwrite each other's value.
+Each instance also publishes its own `--dev-toolbar-height-<instanceId>`. Mount a
+second toolbar and the unsuffixed name is withdrawn until only one is left, so two
+toolbars never overwrite each other's value — inset by the suffixed names then. The
+full rule is in [docs/api.md](./docs/api.md#insetting-your-layout).
+
+> **Changed from earlier releases.** The unsuffixed name used to belong to the
+> `"default"` instance alone. Two setups behave differently now: a page that mounts
+> the default instance *plus* a named one no longer gets the default's height under
+> the unsuffixed name, so `var(--dev-toolbar-height, 0px)` there falls to `0px` —
+> switch to `--dev-toolbar-height-default`; and a lone named toolbar now writes the
+> unsuffixed name, overriding any `--dev-toolbar-height` your own stylesheet set on
+> `<html>`.
 
 ## Configuring it
 
@@ -228,6 +236,32 @@ export function Root() {
 }
 ```
 
+**Whichever you pick, the condition is your own deployment switch, not
+`NODE_ENV`.** A staging build is a production build — `vite build --mode staging`
+sets `NODE_ENV=production` — so `process.env.NODE_ENV !== "production"` drops the
+toolbar from the one deployment that most wants it. Fold on the value that names the
+deployment, not on the one that says "this is a production build". Under Vite the two
+are separate: `import.meta.env.MODE` is the `--mode` you passed, while `PROD` and
+`DEV` follow `NODE_ENV`, so `PROD` is `true` for a staging build too. If your mode
+names *are* your deployment names, `import.meta.env.MODE !== "production"` is enough;
+otherwise define your own variable and expose it with the `VITE_` prefix —
+`import.meta.env.VITE_ENV === "production"`, fed from `.env.staging` and friends.
+Other bundlers have their own inlining; the rule is the same.
+
+The lazy recipe has one more consequence: **the chunk is not there at boot.**
+`lazy()` starts loading when React first tries to render the component, so nothing
+in it can run before the app's own first render — seeding your own store from
+[`readStoredOverrides()`](./docs/ext/flags.md#it-changes-what-your-app-does), say,
+which is exactly the thing that has to happen first. Import that one eagerly from a
+module the gate does not cover, or accept a first render with no overrides applied.
+Note what the eager import costs: `readStoredOverrides` is exported from
+`@nejcm/dev-toolbar/ext/flags`, so importing it puts that entry back into the
+production graph — the one thing this section is otherwise keeping out. The
+package is side-effect-free apart from CSS (`"sideEffects": ["*.css"]`), so a
+tree-shaking bundler should reduce it to that function and its storage helpers
+rather than the panel and the `flags()` extension — but it is no longer zero, so
+check your bundle rather than assuming either way.
+
 Keeping the toolbar in production is a legitimate choice too — it is what makes an
 internal tool useful on staging and for support. If you do, gate it on your own
 authorization *before* rendering `<DevToolbar>` at all: core has no identity and no
@@ -287,11 +321,11 @@ other. The whole surface, and the Jest caveats, are in
 | [docs/adr/](./docs/adr/) | Decision records |
 | [CHANGELOG.md](./CHANGELOG.md) | Every release |
 
-> **Status:** complete, but **not on npm yet** — the first publish is a manual
-> step still outstanding ([CONTRIBUTING](./CONTRIBUTING.md#one-time-bootstrap--not-yet-done)),
-> so `npm install @nejcm/dev-toolbar` does not resolve today. Until it does, use
-> a git or `file:` dependency. The shell, `/runtime` and all nine first-party
-> extensions are implemented and released as tags. `CONTRACT_VERSION` is **2**:
+> **Status:** complete and **on npm** — every `feat:`/`fix:` that lands on `main`
+> ships from CI ([CONTRIBUTING](./CONTRIBUTING.md#releasing)), so
+> `npm install @nejcm/dev-toolbar` resolves to the latest release. The shell,
+> `/runtime` and all nine first-party extensions are implemented and published.
+> `CONTRACT_VERSION` is **2**:
 > commands may declare an `input` schema and resolve a result, which asks nothing
 > of an extension written against v1 — see
 > [contract v2](./docs/extension-contract.md#contract-v2--commands-with-input-and-a-result).
@@ -363,6 +397,7 @@ The article at the bottom is what each chip means.
 
 ```bash
 bun run test:jest-consumer   # builds, then runs Jest against dist/
+bun run test:vite-consumer   # builds, packs, then drives a Vite consumer of the tarball in Chromium
 ```
 
 `test/fixtures/jest-consumer` is a real Jest 30 + CommonJS consumer of the built
@@ -371,9 +406,16 @@ deleting it as redundant, read
 [its README](./test/fixtures/jest-consumer/README.md): this failure class has
 already shipped twice.
 
+`test/fixtures/vite-consumer` is the ESM half: the packed tarball, unpacked into
+a consumer's `node_modules`, served by a cold Vite dev server with the default
+dependency optimizer — the path the playground opts out of. It asserts one
+React across core, `/kit` and `ext/*`;
+[its README](./test/fixtures/vite-consumer/README.md) records the two-React
+report that motivated it.
+
 ## House rules
 
-- **Bun, not npm, for installing anything** — `test/fixtures/jest-consumer`
+- **Bun, not npm, for installing anything** — both `test/fixtures/*` consumers
   included. npm is the publish client, not a package manager choice.
 - **Zero runtime dependencies is a rule.** A new `dependency` needs an answer to
   "why can't the consumer pass this in?".

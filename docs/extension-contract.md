@@ -117,6 +117,20 @@ Two lifecycle rules the metrics extension paid for, so you do not have to:
   per id when it detects this. A hot-module reload of the module that builds your
   extensions does the same thing; reload the page.
 
+  The corollary every real app meets on day one: the object cannot read a hook, yet
+  what it shows — the signed-in user, the workspace, the resolved flags — lives in
+  React or in a store. Do not reach for a module-scope variable that an effect keeps
+  current: reset in a cleanup, it reads as absent between StrictMode's double mount.
+  Give the extension a [`Readable`](./kit.md#live-input) instead — a `createSource()`
+  written from the component through `useSource()`, a Zustand/Redux store passed
+  as-is, or `derive()` over several — and subscribe to it in `start()`, publishing on
+  notify. On teardown core aborts `signal` and *then* calls the cleanup `start()`
+  returned, so a subscription released from both must have an idempotent cleanup —
+  the second call finds nothing left to release. `/ext/environment` and `/ext/flags`
+  accept one directly; `readInput()` and
+  `isReadable()` in the kit are the two lines your own `start()` needs to do the same,
+  while still accepting a plain value or a polled getter.
+
 ## Writing one that looks native
 
 A minimal one:

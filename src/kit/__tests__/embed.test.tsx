@@ -35,10 +35,13 @@ function ThirdParty({ height }: { height: number }): ReactNode {
   );
 }
 
+// With a `value`, so the kit's chip — and the kit sheet the stylesheet tests
+// below walk — are on the page; the no-`value` path has its own test.
 const mount = (
   extension = embed({
     id: "vendor",
     label: "Vendor",
+    value: "3 queries",
     render: (p) => <ThirdParty height={p.height} />,
   }),
 ) =>
@@ -133,13 +136,32 @@ describe("embed()", () => {
       hidden: false,
       keepMounted: true,
     });
-    expect(typeof extension.compact).toBe("function");
     expect(typeof extension.panel).toBe("function");
+    // No `value`, no `compact` option: no compact slot — absent, not `undefined`.
+    expect("compact" in extension).toBe(false);
     // Defaults: `hidden` is absent (not `false`), `keepMounted` is off.
     const bare = embed({ id: "bare", label: "Bare", render: () => null });
     expect("hidden" in bare).toBe(false);
     expect(bare.keepMounted).toBe(false);
     expect(bare.align).toBe("start");
+  });
+
+  it("without a value it has no compact slot: core's trigger, no kit chip, no kit sheet", () => {
+    const { toolbar } = mount(embed({ id: "vendor", label: "Vendor", render: () => null }));
+
+    // Core's own labelled button, exactly what the four-line recipe gets.
+    const trigger = screen.getByRole("button", { name: "Vendor" });
+    expect(trigger.getAttribute("data-dtb-part")).toBe("trigger");
+    expect(trigger.textContent).toBe("Vendor");
+    expect(document.querySelector('[data-dtb-part="embed-chip"]')).toBeNull();
+    // Nothing from the kit ran on the bar, so nothing asked for its sheet.
+    expect(injectedSheets()).toEqual(["core"]);
+
+    fireEvent.click(trigger);
+    expect(toolbar.activePanelId()).toBe("vendor");
+    expect(trigger.getAttribute("aria-expanded")).toBe("true");
+    // Opening the panel does not add the sheet either: the frame is a bare div.
+    expect(injectedSheets()).toEqual(["core"]);
   });
 
   it("does not call render() until the panel first opens", () => {
@@ -225,7 +247,7 @@ describe("embed()", () => {
     expect(render.mock.calls.at(-1)?.[0].isActive).toBe(true);
   });
 
-  it("renders a default chip that reads the label and toggles the panel", () => {
+  it("given a value, renders the kit's chip, which reads the label and toggles the panel", () => {
     const { toolbar } = mount(
       embed({ id: "vendor", label: "Vendor", value: "3 queries", render: () => null }),
     );
@@ -327,7 +349,12 @@ describe("embed()", () => {
 
     const openKitchenSink = () => {
       const mounted = mount(
-        embed({ id: "vendor", label: "Vendor", render: () => <VendorKitchenSink /> }),
+        embed({
+          id: "vendor",
+          label: "Vendor",
+          value: "3 queries",
+          render: () => <VendorKitchenSink />,
+        }),
       );
       mounted.toolbar.openPanel("vendor");
       return mounted;
@@ -433,7 +460,7 @@ describe("embed()", () => {
       // chip's trigger and the retry button on a first-party panel are core's
       // to style, and the same rules that skip the vendor still match them.
       openKitchenSink();
-      const trigger = screen.getByRole("button", { name: "Vendor" });
+      const trigger = screen.getByRole("button", { name: /^Vendor/ });
       const selectors = injectedSelectors();
       const onTrigger = reaching(selectors, [trigger]);
       expect(onTrigger).toContainEqual(expect.stringContaining(":where(button)"));
@@ -448,7 +475,9 @@ describe("embed()", () => {
   it("injectStyles: false skips the kit sheet; a styleNonce option wins over the slot's", () => {
     const { unmount } = mountToolbar(null, {
       instanceId: "embed",
-      extensions: [embed({ id: "quiet", label: "Quiet", injectStyles: false, render: () => null })],
+      extensions: [
+        embed({ id: "quiet", label: "Quiet", value: "1", injectStyles: false, render: () => null }),
+      ],
     });
     expect(injectedSheets()).toEqual(["core"]);
     unmount();
@@ -458,7 +487,13 @@ describe("embed()", () => {
       instanceId: "embed",
       styleNonce: "from-core",
       extensions: [
-        embed({ id: "nonced", label: "Nonced", styleNonce: "mine", render: () => null }),
+        embed({
+          id: "nonced",
+          label: "Nonced",
+          value: "1",
+          styleNonce: "mine",
+          render: () => null,
+        }),
       ],
     });
     const kit = document.head.querySelector(`style[${STYLE_ATTRIBUTE}="kit"]`);

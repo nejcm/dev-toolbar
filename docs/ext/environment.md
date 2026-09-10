@@ -33,12 +33,50 @@ const extensions = [
 ];
 ```
 
-Pass a **function** instead of an object for anything that changes — a sync status, a
-switched workspace — and it is re-read every `pollMs` (default 4 s), plus on
-`online`/`offline`, `resize`, `popstate` and `hashchange`. The same timer runs
-whenever `detect` is on even with a static object, because `history.pushState` — how
-every SPA router navigates — fires no event anyone can listen for, and the Route row
-would otherwise be stale indefinitely.
+`context` takes three shapes. An **object** for what is fixed for the page's life. A
+**function** for anything that changes — a sync status, a switched workspace — re-read
+every `pollMs` (default 4 s), plus on `online`/`offline`, `resize`, `popstate` and
+`hashchange`. Or anything with `read()`/`subscribe()` — a
+[`Readable`](../kit.md#live-input) from `@nejcm/dev-toolbar/kit`, or a Zustand/Redux
+store's `{ getState, subscribe }` as-is — re-read **when it notifies**, with no timer
+of its own. The re-read is synchronous; publication still goes through the snapshot
+store's 250 ms throttle, which publishes the first change of a burst immediately and
+coalesces the rest into one trailing publish at the end of the window, so the bar sees
+at most two updates per 250 ms and never misses the last value:
+
+```tsx
+import { createSource, derive, useSource } from "@nejcm/dev-toolbar/kit";
+
+// Module scope, next to the extensions.
+const user = createSource<User | undefined>(undefined);
+const session = derive([user, useAppStore], () => ({
+  environment: config.env,
+  userId: user.read()?.id,
+  region: useAppStore.getState().region,
+}));
+const extensions = [environment({ context: session })];
+
+// In the component that knows who is signed in.
+useSource(user, currentUser);
+```
+
+**Two values, two panels.** What you put in `context` is what the app is *actually
+doing* — a local flag override included. This panel reports facts, and a fact that
+says `designVersion: v1` while the page renders `v2` is wrong however the `v2` came
+about. The one place that wants the *pre*-override value is
+[`flags()`](./flags.md#two-values-two-panels), because it layers its own overrides on
+top and shows both; feed it the same post-override value and its row can never show
+what the app would do without the override. [`diagnostics()`](./diagnostics.md) follows
+this panel's rule, not that one.
+
+This is how React-owned state reaches an object built at module scope. The same
+`session` can feed [`diagnostics`](./diagnostics.md) too, as a getter — `diagnostics({
+app: () => session.read() })` — because `app` is resolved at capture time, not
+subscribed to; passing the `Readable` itself would capture the object. The detection
+timer still runs whenever
+`detect` is on, whatever shape `context` is, because `history.pushState` — how every
+SPA router navigates — fires no event anyone can listen for, and the Route row would
+otherwise be stale indefinitely.
 
 The compact slot is a dot and the environment name; production is red on purpose, and
 an active impersonation says so in the bar. The panel is the detail table, with three

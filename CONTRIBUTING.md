@@ -110,7 +110,9 @@ implementations of this report are all wrong for a code-split build.
 `bun run test:jest-consumer` is deliberately _not_ part of `bun run test`. It
 builds the package and runs a real jest-based consumer against `dist/`, which is
 slow. Run it when you change the build output, the `exports` map, or anything
-about how the package is packaged.
+about how the package is packaged. `bun run test:vite-consumer` is its ESM twin:
+it packs the tarball and drives a Vite dev server consuming it, dependency
+optimizer and all, in Chromium (needs `bunx playwright install chromium` once).
 
 ### The playground
 
@@ -434,8 +436,9 @@ have to stay. They are not duplicates of each other:
 either. release-please defaults it to **`true`**, and the `node` release type
 derives the component from the package name with the scope stripped — so the
 default would tag releases `dev-toolbar-v0.2.0`, look for previous releases
-under that same shape (never finding the `v0.1.0` bootstrap tag, and so
-summarising the entire history in the first release PR), and name the PR
+under that same shape (never matching the plain `vX.Y.Z` tags this repo
+actually has, and so summarising the entire history in the first release PR),
+and name the PR
 `... release dev-toolbar 0.2.0`. With it `false` the tags are plain `v0.2.0`,
 which is what every `vX.Y.Z` in this document means. `include-v-in-tag` stays
 `true` and is what supplies the `v` itself; the two are independent.
@@ -486,91 +489,97 @@ release already points at it, and release-please relabelled that release PR
 `autorelease: tagged` the moment it tagged, so it will not offer `X.Y.Z` again
 regardless of what you do to the tag.
 
-The last resort is publishing that exact tag by hand
-(`git checkout vX.Y.Z && npm publish --access public`). It works, but trusted
+The last resort is publishing that exact tag by hand. It works, but trusted
 publishing only authenticates from CI, so a manual publish means a credential
-and 2FA prompt — and it re-opens the token path the bootstrap closed. Prefer
-rolling forward.
+and 2FA prompt — and it re-opens the token path trusted publishing exists to
+avoid. Prefer rolling forward. If you must, do it in this order:
 
-### One-time bootstrap — NOT YET DONE
+1. `git checkout vX.Y.Z` in a **clean** checkout — `git status --porcelain` must
+   print nothing — then `bun install --frozen-lockfile`.
+2. `bun run verify`, then the CommonJS packaging check:
+   `bun install --frozen-lockfile --cwd test/fixtures/jest-consumer` — the root
+   install does not reach that standalone fixture and `test:jest-consumer` does
+   not install it — then `bun run test:jest-consumer`.
+3. `npm whoami` (`npm login` opens the browser for the passkey; new TOTP
+   enrolments were disabled in October 2025), then
+   `npm publish --access public --dry-run` and **read the file list** — `dist/`
+   plus `CHANGELOG.md`, `README.md`, `LICENSE` and `package.json`, and nothing
+   from `src/`, `test/` or `examples/`. `prepublishOnly` runs
+   `typecheck && build`, so the dry run rebuilds `dist/` itself.
+4. `npm publish --access public` — the flag explicitly, because a scoped package
+   defaults to restricted — then wait ~5 minutes for npm's publish-time malware
+   scan before expecting the package to be installable.
 
-**This has to happen once before any of the above reaches npm.** npm trusted
-publishing cannot create a package that does not exist yet
-([npm/cli#8544](https://github.com/npm/cli/issues/8544)), and nothing has been
-published: `npm view @nejcm/dev-toolbar` is a 404. So the first version goes out
-**by hand, from a laptop**, and until it does, `release.yml` tags and releases
-versions it cannot publish — which is what `v0.2.0` … `v0.5.0` are.
+### How the first publish happened
 
-That means the first published version is **whatever `main` is at now**, not
-`0.1.0`; substitute it for `X.Y.Z` below. It ships **without provenance**:
-`npm --provenance` only works from CI, and CI cannot publish yet. That is the
-accepted price of never creating a publish token, not an oversight to fix later
-— a version, once published, cannot be re-published with provenance added. Every
-release after it gets provenance automatically through trusted publishing.
+`0.5.0`, on 2026-09-08, is the first version on npm, and it went out **by hand**:
+the registry records its publisher as the `nejcm` account, on npm 11.17.0 and Node
+26.4.0, while every version from `0.6.0` on records
+`GitHub Actions <npm-oidc-no-reply@github.com>` on npm 11.19.0 and Node 24.20.0
+(`npm view @nejcm/dev-toolbar@0.5.0 --json`, field `_npmUser`). That is a person's
+credential rather than CI's OIDC; which machine it was typed on npm does not record.
 
-1. **Confirm the npm account's 2FA is passkey/WebAuthn.** New TOTP enrolments
-   have been disabled since October 2025.
-2. **Confirm the entry-point workflow filename is `release.yml`** and leave it
-   alone. npm's trusted publisher matches on the calling workflow's filename, so
-   this has to be settled before npm is configured, not after. Renaming the file
-   later breaks publishing. It is settled: `release.yml`.
-3. **Skim <https://docs.npmjs.com/policies/dual-use/>.** Almost certainly not
-   applicable, but this package reads runtime diagnostics, and finding out at
-   publish time would be a bad surprise.
-4. **Publish from the tagged release commit.** Do **not** use the `0.0.0`
-   placeholder trick that circulates in npm/cli#8544 — a version number, once
-   used, can never be reused, even after an unpublish.
+It had to be a manual publish because npm trusted publishing cannot create a package
+that does not exist yet ([npm/cli#8544](https://github.com/npm/cli/issues/8544)): an
+initial version has to go out manually or with a token, so it could not take this
+repository's token-free CI path.
 
-   ```sh
-   git switch main && git pull            # must be the commit vX.Y.Z tags
-   git status --porcelain                 # must print nothing
-   bun install --frozen-lockfile
+That bootstrap restriction is why `0.5.0` did not come from `release.yml`. It is
+**not** the whole reason `v0.2.0`, `v0.3.0`, `v0.4.0` and `v0.4.1` are tagged and
+never published: the workflow was still being fixed across those releases, and the
+runs failed in different ways. The run on the `0.4.0` release PR retried `gh pr merge`
+five times against `fatal: not a git repository` and never reached its tag step
+([run 33714746207](https://github.com/nejcm/dev-toolbar/actions/runs/33714746207));
+an earlier run failed inside release-please with "Resource not accessible by
+integration"
+([run 33711560073](https://github.com/nejcm/dev-toolbar/actions/runs/33711560073));
+and `a9c8d05` records that the gate and publish jobs checked out the triggering push
+instead of the release commit, so the `v0.4.0` run's `npm publish` packed `0.3.0`.
+Those tags staying unpublished is the outcome the fix-it-forward rule above
+prescribes anyway — `0.5.0` became the first published version, with no gap to
+explain.
 
-   bun run verify                         # format, typecheck, lint, build, test,
-                                          #   package shape
-   bun install --frozen-lockfile --cwd test/fixtures/jest-consumer
-   bun run test:jest-consumer             # the CommonJS packaging check
+**No published version carries provenance**, and the reason is the repository,
+not the publish path: npm generates a Sigstore provenance attestation only when
+the source repository is **public**, and `nejcm/dev-toolbar` is private. So
+trusted publishing attests nothing, and `--provenance` is not a missing flag to
+add — it is unavailable to a private repository. Checked 2026-09-10: npm's
+attestation endpoint 404s for `0.5.0`, `0.6.0` and `0.8.1` alike — the
+hand-published version and the CI-published ones equally — and no version
+carries `dist.attestations`. Making the repository public would start attesting
+the *next* release; a version, once published, cannot be re-published with
+provenance added, so everything up to that point stays unattested either way.
 
-   npm whoami                             # `npm login` if this fails; it opens
-                                          # the browser for the passkey
-   npm publish --access public --dry-run  # read the file list before committing
-   npm publish --access public
-   ```
+Everything since is automatic. The npm trusted publisher is configured for
+GitHub Actions, repository `nejcm/dev-toolbar`, workflow filename `release.yml`,
+no environment (see the comment in `release.yml`), and the steady state above has
+published every release from `0.6.0` on. Two invariants keep it that way:
 
-   Nothing else is needed before the last line: `prepublishOnly` runs
-   `typecheck && build`, so `npm publish` builds `dist/` itself — verified from a
-   checkout with `dist/` deleted, where the dry run rebuilt it and packed exactly
-   the `files` field — `dist/` plus `CHANGELOG.md`, `README.md`, `LICENSE` and the
-   always-included `package.json` — and nothing from `src/`, `test/` or
-   `examples/`. That file list is what the dry run is for; read it rather than
-   trusting a size quoted here, which drifts every time the bundle changes.
-   `--access public` is passed explicitly even though `publishConfig.access`
-   already says so: a scoped package defaults to restricted, and this is not a
-   place to rely on one file agreeing with another.
+- **Do not rename `.github/workflows/release.yml`.** npm's trusted publisher
+  matches on the calling workflow's filename; renaming the file breaks publishing
+  until it is reconfigured on npmjs.com.
+- **There is no publish token in this repository and there should never be one.**
+  Trusted publishing needs none. What is meant to enforce that is npm's
+  **Publishing access** setting — "Require two-factor authentication and
+  disallow tokens", which trusted publishing is compatible with and tokens are
+  not — together with immutable releases in the GitHub repository settings.
+  Neither is readable from the repository, so both are stated here as the
+  intended configuration; confirm them on npmjs.com and in repo settings rather
+  than trusting this line. Publishing a tag by hand — the last resort above —
+  needs a credential and a 2FA prompt instead, which is the other reason to
+  prefer rolling forward.
 
-   Do **not** use `bun publish`. It supports neither provenance nor OIDC and
-   silently ignores `publishConfig.provenance` ([oven-sh/bun#18611](https://github.com/oven-sh/bun/issues/18611))
-   — a failure that looks like success.
-
-5. **Wait ~5 minutes** for npm's publish-time malware scan before expecting the
-   package to be installable.
-6. **Configure the Trusted Publisher on npmjs.com**: GitHub Actions, repository
-   `nejcm/dev-toolbar`, workflow filename `release.yml`, no environment (see the
-   comment in `release.yml` for why there is no environment).
-7. **Close the token path for good.** Set npm **Publishing access** to "Require
-   two-factor authentication and disallow tokens" — trusted publishing is
-   compatible with that setting, tokens are not — and enable **immutable
-   releases** in the GitHub repository settings. There is no publish token in
-   this repository and there should never be one.
-8. **Update the README's status note**, which says the package is not on npm yet.
-
-Tagging is not a step here: release-please already tags each release, and
+Tagging is not a manual step either: release-please tags each release and
 `.release-please-manifest.json` tracks the current version, so it reads commits
-from the newest tag. (The original bootstrap plan hand-published and hand-tagged
-`0.1.0`; that never happened, and `v0.1.0` does not exist. Nothing depends on it
-now.)
+from the newest tag. (`v0.1.0` does not exist; the original plan to hand-publish
+it never happened, and nothing depends on it.)
 
-Delete this whole "One-time bootstrap" subsection once it is done.
+Do **not** use `bun publish` anywhere. It supports neither OIDC nor provenance,
+and silently ignores `publishConfig.provenance`
+([oven-sh/bun#18611](https://github.com/oven-sh/bun/issues/18611)) — a failure
+that looks like success. OIDC is the half that bites here: without it there is
+no trusted publishing, and CI has no other credential. (Provenance is moot for
+the reason above, and `publishConfig.provenance` is not set.)
 
 ## Further reading
 

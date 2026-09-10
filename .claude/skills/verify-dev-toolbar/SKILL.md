@@ -26,8 +26,9 @@ source for what to drive. Read its README before driving anything, then use the
 matching feature file as the recipe.
 
 Secondary surfaces, out of scope for this skill: `bun run test:jest-consumer`
-(a real CommonJS consumer of `dist/`), `bun run check:package`, and
-`bun run size`. They are commands, not apps — run them directly.
+(a real CommonJS consumer of `dist/`), `bun run test:vite-consumer` (the packed
+tarball through a default Vite dev server, in Chromium), `bun run check:package`,
+and `bun run size`. They are commands, not apps — run them directly.
 
 ## Run the suite first
 
@@ -326,7 +327,7 @@ preference:
 | a command id | `listCommands()` / `runCommand()` | `flags.toggle.new-header`, `overlays.disableAll`, `flags.set` (takes `{key, value?}`) |
 | ARIA role + name | the accessible surface | `toolbar` "Developer toolbar", `switch` "Toggle new-header", `dialog` "Commands" |
 | `data-dtb-part` | core and every first-party extension | `[data-dtb-part="bar"]`, `panel`, `overflow-button`, `cmd-input` |
-| `data-dtb-ext-id` | one per extension, on its bar item, panel and overlay | `[data-dtb-ext-id="flags"]` |
+| `data-dtb-ext-id` | a discriminator, not a unique id: the same value sits on the extension's bar item, `⋮` menu entry, panel, overlay and error chip — always pair it with `data-dtb-part` | `[data-dtb-part="panel"][data-dtb-ext-id="flags"]` |
 | `data-testid` | the playground's own controls only | `toggle-position`, `load-block`, `flag-readout`, `overlay-click-through` |
 | pixel coordinates | last resort | — |
 

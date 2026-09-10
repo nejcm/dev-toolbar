@@ -519,6 +519,19 @@ export function FlagsPanel({ runtime, label, injectStyles, styleNonce }: PanelPr
         </Banner>
       ) : null}
 
+      {snapshot.bulkError === null ? null : (
+        <Banner
+          data-dtb-part="flag-banner"
+          data-dtb-tone="error"
+          data-dtb-role="bulk-error"
+          severity="bad"
+          role="alert"
+        >
+          The override map could not be handed to your application — <code>onOverridesChange</code>{" "}
+          threw: {snapshot.bulkError}
+        </Banner>
+      )}
+
       {pending.size > 0 ? (
         <Banner data-dtb-part="flag-banner" data-dtb-tone="warn" severity="warn" role="status">
           {pending.size} override{pending.size === 1 ? " needs" : "s need"} a reload to take effect:{" "}
@@ -542,8 +555,8 @@ export function FlagsPanel({ runtime, label, injectStyles, styleNonce }: PanelPr
 
       {snapshot.writable ? null : (
         <Note data-dtb-part="flag-note" data-dtb-role="read-only-note">
-          Read-only: no <code>onOverride</code> adapter was supplied to <code>flags()</code>, so
-          this panel lists and copies but changes nothing.
+          Read-only: no <code>onOverride</code> or <code>onOverridesChange</code> adapter was
+          supplied to <code>flags()</code>, so this panel lists and copies but changes nothing.
         </Note>
       )}
 

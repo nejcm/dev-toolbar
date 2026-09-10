@@ -99,13 +99,27 @@ export function A11yChip({
 export interface PanelProps {
   runtime: A11yRuntime;
   label: string;
+  /** The runtime's `loadOn`; the panel words `pending` differently when axe is not fetched until a scan. */
+  loadOn: "start" | "scan";
   injectStyles: boolean;
   styleNonce?: string;
 }
 
-export function A11yPanel({ runtime, label, injectStyles, styleNonce }: PanelProps): ReactNode {
-  const { report } = useExtensionSurface(runtime.store, injectStyles, ensureA11yStyles, styleNonce);
+export function A11yPanel({
+  runtime,
+  label,
+  loadOn,
+  injectStyles,
+  styleNonce,
+}: PanelProps): ReactNode {
+  const { report, axeLoaded } = useExtensionSurface(
+    runtime.store,
+    injectStyles,
+    ensureA11yStyles,
+    styleNonce,
+  );
   const unsupported = report.status === "unsupported";
+  const unchecked = loadOn === "scan" && report.status === "pending" && !axeLoaded;
 
   return (
     <div data-dtb-part="a11y-panel" aria-label={label}>
@@ -130,6 +144,13 @@ export function A11yPanel({ runtime, label, injectStyles, styleNonce }: PanelPro
         <Banner data-dtb-part="a11y-unsupported" severity="unknown" role="status">
           {report.unsupportedReason ?? "axe-core is not installed."}
         </Banner>
+      ) : null}
+
+      {unchecked ? (
+        <Note as="p" data-dtb-part="a11y-unchecked">
+          axe-core has not been checked yet. Scan this page to load it and run the accessibility
+          check.
+        </Note>
       ) : null}
 
       {report.error === null ? null : (

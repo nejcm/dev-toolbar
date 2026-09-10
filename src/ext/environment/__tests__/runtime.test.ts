@@ -1,5 +1,6 @@
 /** The non-React half of `/ext/environment`. */
 import { describe, expect, it, vi } from "vitest";
+import { createSource } from "@nejcm/dev-toolbar/kit";
 import { createNullStorage, fakeExtensionApi } from "@nejcm/dev-toolbar/testing";
 import { createEnvironmentRuntime, maskEmails } from "../runtime";
 import type { EnvironmentContext } from "../types";
@@ -944,5 +945,151 @@ describe("environment field identity publication", () => {
     );
     expect(listener).toHaveBeenCalledTimes(1);
     runtime.store.destroy();
+  });
+});
+
+describe("a Readable context", () => {
+  const api = (signal: AbortSignal) =>
+    fakeExtensionApi({ signal, storage: createNullStorage() }).api;
+  const field = (runtime: ReturnType<typeof createEnvironmentRuntime>, id: string) =>
+    runtime.store.getSnapshot().fields.find((f) => f.id === id)?.value;
+
+  it("republishes when the source notifies, with no timer of its own", () => {
+    vi.useFakeTimers();
+    const controller = new AbortController();
+    try {
+      const source = createSource<EnvironmentContext>({ region: "eu-west-1" });
+      const read = vi.spyOn(source, "read");
+      const runtime = createEnvironmentRuntime({ context: source, detect: false, pollMs: 250 });
+      const stop = runtime.start(api(controller.signal));
+      const afterStart = read.mock.calls.length;
+
+      vi.advanceTimersByTime(60_000);
+      expect(read.mock.calls.length).toBe(afterStart);
+      expect(field(runtime, "region")).toBe("eu-west-1");
+
+      source.set({ region: "ap-southeast-1" });
+      runtime.store.flush();
+      expect(field(runtime, "region")).toBe("ap-southeast-1");
+      stop();
+    } finally {
+      controller.abort();
+      vi.useRealTimers();
+    }
+  });
+
+  it("keeps the detection timer while detect is on", () => {
+    vi.useFakeTimers();
+    const controller = new AbortController();
+    try {
+      const runtime = createEnvironmentRuntime({
+        context: createSource<EnvironmentContext>({ environment: "staging" }),
+        pollMs: 250,
+      });
+      const stop = runtime.start(api(controller.signal));
+      expect(field(runtime, "route")).toBe("/");
+      history.pushState({}, "", "/from/a/readable");
+      vi.advanceTimersByTime(600);
+      runtime.store.flush();
+      expect(field(runtime, "route")).toBe("/from/a/readable");
+      stop();
+    } finally {
+      history.pushState({}, "", "/");
+      controller.abort();
+      vi.useRealTimers();
+    }
+  });
+
+  it("unsubscribes exactly once when core aborts and then calls the cleanup", () => {
+    const controller = new AbortController();
+    const source = createSource<EnvironmentContext>({ region: "eu" });
+    const unsubscribe = vi.fn(source.subscribe(() => {}));
+    const subscribe = vi.fn(() => unsubscribe);
+    const runtime = createEnvironmentRuntime({
+      context: { read: source.read, subscribe },
+      detect: false,
+    });
+    const stop = runtime.start(api(controller.signal));
+    expect(subscribe).toHaveBeenCalledTimes(1);
+
+    // The order core's stopExtension uses: abort the signal, then the returned cleanup.
+    controller.abort();
+    stop();
+    expect(unsubscribe).toHaveBeenCalledTimes(1);
+
+    source.set({ region: "us" });
+    runtime.store.flush();
+    expect(field(runtime, "region")).toBe("eu");
+  });
+
+  it("finishes tearing down when the unsubscribe throws", () => {
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const fake = fakeExtensionApi({ storage: createNullStorage() });
+    try {
+      const source = createSource<EnvironmentContext>({ region: "eu" });
+      const read = vi.fn(source.read);
+      const runtime = createEnvironmentRuntime({
+        detect: false,
+        context: {
+          read,
+          subscribe: (listener) => {
+            source.subscribe(listener);
+            return () => {
+              throw new Error("released twice");
+            };
+          },
+        },
+      });
+      const stop = runtime.start(fake.api);
+      const afterStart = read.mock.calls.length;
+
+      expect(() => stop()).not.toThrow();
+      expect(spy).toHaveBeenCalledWith(
+        expect.stringContaining("unsubscribe threw"),
+        expect.any(Error),
+      );
+
+      // The visibility subscription was still released: a flip no longer re-reads.
+      fake.setVisible(false);
+      expect(read.mock.calls.length).toBe(afterStart);
+    } finally {
+      fake.abort();
+      spy.mockRestore();
+    }
+  });
+
+  it("accepts a { getState, subscribe } store as-is", () => {
+    const controller = new AbortController();
+    try {
+      const source = createSource<EnvironmentContext>({ workspaceId: "ws-1" });
+      const store = { getState: source.read, subscribe: source.subscribe };
+      const runtime = createEnvironmentRuntime({ context: store, detect: false });
+      runtime.start(api(controller.signal));
+      expect(field(runtime, "workspaceId")).toBe("ws-1");
+      source.set({ workspaceId: "ws-2" });
+      runtime.store.flush();
+      expect(field(runtime, "workspaceId")).toBe("ws-2");
+    } finally {
+      controller.abort();
+    }
+  });
+
+  it("degrades to an empty context when read() throws", () => {
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const runtime = createEnvironmentRuntime({
+        detect: false,
+        context: {
+          read: () => {
+            throw new Error("store blew up");
+          },
+          subscribe: () => () => {},
+        },
+      });
+      expect(runtime.store.getSnapshot().supplied).toBe(false);
+      expect(spy).toHaveBeenCalled();
+    } finally {
+      spy.mockRestore();
+    }
   });
 });

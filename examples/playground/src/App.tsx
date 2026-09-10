@@ -302,6 +302,18 @@ function FlagReadout() {
         <button
           type="button"
           className="pg-button"
+          data-testid="flag-break-mirror"
+          title="Makes the whole-map onOverridesChange adapter throw: one banner in the panel, no row marked."
+          onClick={() => {
+            playgroundFlags.breakMirror = !playgroundFlags.breakMirror;
+            force((value) => value + 1);
+          }}
+        >
+          mirror throws: {String(playgroundFlags.breakMirror)}
+        </button>
+        <button
+          type="button"
+          className="pg-button"
           data-testid="flag-orphan"
           title="Simulates a renamed flag: an override whose key the catalogue no longer lists. It is still applied on every mount, so it still gets a row."
           onClick={() => {

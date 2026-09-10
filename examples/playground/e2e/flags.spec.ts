@@ -17,6 +17,7 @@ interface FlagsState {
   flags: FlagRow[];
   overriddenCount: number;
   maskedCount: number;
+  bulkError: string | null;
 }
 
 const flag = (state: FlagsState | null, key: string) => state?.flags.find((f) => f.key === key);
@@ -125,4 +126,23 @@ test("?dtb-flags=reset clears overrides without the panel ever opening", async (
   expect((await toolbar.storage())["ext:flags:overrides"]).toBeUndefined();
   await expect(page.locator(readout("new-header"))).toHaveText(/new-header = true$/);
   expect((await toolbar.read()).shell.activePanel).toBeNull();
+});
+
+test("a throwing whole-map adapter is one bulkError, not a marked row, and recovers", async ({
+  toolbar,
+  page,
+}) => {
+  expect((await toolbar.ext<FlagsState>("flags"))?.bulkError).toBeNull();
+  await page.getByTestId("flag-break-mirror").click();
+  expect(await toolbar.run("flags.toggle.new-header")).toEqual({ ok: true });
+  await expect
+    .poll(() => toolbar.ext<FlagsState>("flags").then((f) => f?.bulkError))
+    .toMatch(/override mirror is offline/);
+  const row = flag(await toolbar.ext<FlagsState>("flags"), "new-header");
+  expect(row?.overridden).toBe(true);
+  expect(row?.tags).not.toContain("not-applied");
+
+  await page.getByTestId("flag-break-mirror").click();
+  expect(await toolbar.run("flags.toggle.new-header")).toEqual({ ok: true });
+  await expect.poll(() => toolbar.ext<FlagsState>("flags").then((f) => f?.bulkError)).toBeNull();
 });

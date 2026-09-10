@@ -4,12 +4,14 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, fireEvent } from "@testing-library/react";
+import { createSource } from "@nejcm/dev-toolbar/kit";
 import { cleanupToolbar, installClipboard, mountToolbar } from "@nejcm/dev-toolbar/testing";
 import type { ClipboardStub } from "@nejcm/dev-toolbar/testing";
 import { collectCommands } from "../../../core/commands";
 import { createMemoryStorage } from "../../../core/storage";
-import { flags, readStoredOverrides } from "../index";
-import { OVERRIDES_KEY } from "../runtime";
+import { withLocation } from "../../../test-utils/location";
+import { flags, readStoredOverrides, vetOverrides } from "../index";
+import { OVERRIDES_KEY, vetOverrides as runtimeVetOverrides } from "../runtime";
 import type { FlagsOptions } from "../index";
 import type { FlagReading, FlagValue } from "../types";
 import type { ToolbarStorage } from "../../../core/contract";
@@ -329,6 +331,68 @@ describe("the panel", () => {
   });
 });
 
+describe("a bulk-only adapter", () => {
+  it("makes the panel writable and receives the whole map from a click", () => {
+    const maps: Record<string, FlagValue>[] = [];
+    const { toolbar } = mount({ onOverridesChange: (overrides) => maps.push({ ...overrides }) });
+    act(() => {
+      toolbar.openPanel("flags");
+    });
+    const panel = toolbar.panel("flags");
+    expect(panel?.querySelector('[data-dtb-role="read-only-note"]')).toBeNull();
+    act(() => {
+      row(panel, "ui-facelift")
+        ?.querySelector<HTMLButtonElement>('[data-dtb-part="flag-switch"]')
+        ?.click();
+    });
+    expect(maps.at(-1)).toEqual({ "ui-facelift": true });
+    expect(applied).toEqual([]);
+  });
+
+  it("shows one alert, and marks no row, when it throws — and drops it when it recovers", () => {
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+    let down = true;
+    try {
+      const { toolbar } = mount({
+        onOverridesChange: () => {
+          if (down) throw new Error("mirror is down");
+        },
+      });
+      act(() => {
+        toolbar.openPanel("flags");
+      });
+      const panel = toolbar.panel("flags");
+      const flip = () =>
+        act(() => {
+          row(panel, "ui-facelift")
+            ?.querySelector<HTMLButtonElement>('[data-dtb-part="flag-switch"]')
+            ?.click();
+        });
+      flip();
+      const banner = panel?.querySelector('[data-dtb-role="bulk-error"]');
+      expect(banner?.getAttribute("role")).toBe("alert");
+      expect(text(banner)).toContain("onOverridesChange threw");
+      expect(text(banner)).toContain("mirror is down");
+      expect(panel?.querySelectorAll('[role="alert"]')).toHaveLength(1);
+      expect(row(panel, "ui-facelift")?.querySelector('[data-dtb-tag="not-applied"]')).toBeNull();
+
+      down = false;
+      flip();
+      expect(panel?.querySelector('[data-dtb-role="bulk-error"]')).toBeNull();
+      expect(panel?.querySelectorAll('[role="alert"]')).toHaveLength(0);
+    } finally {
+      consoleError.mockRestore();
+    }
+  });
+});
+
+describe("the public surface", () => {
+  it("exports the runtime's vetOverrides, for a catalogue that arrives after the read", () => {
+    expect(vetOverrides).toBe(runtimeVetOverrides);
+    expect(vetOverrides({ "ui-facelift": "true", orphan: 1 }, CATALOGUE)).toEqual({ orphan: 1 });
+  });
+});
+
 describe("read-only mode", () => {
   it("offers no editors and says why", () => {
     const { toolbar } = mount({});
@@ -398,6 +462,65 @@ describe("persistence across a reload", () => {
     expect(() => result.hasOwnProperty("a")).not.toThrow();
     expect(Object.keys(result).sort()).toEqual(["__proto__", "a"]);
     expect(({} as Record<string, unknown>)["x"]).toBeUndefined();
+  });
+
+  it("readStoredOverrides() vets against the catalogue when given one", () => {
+    const storage = createMemoryStorage({
+      "dtb:v1:test:ext:flags:overrides": JSON.stringify({
+        "ui-facelift": "true",
+        "checkout.copy": "new",
+        orphan: 1,
+      }),
+    });
+    expect(readStoredOverrides({ instanceId: "test", storage })).toEqual({
+      "ui-facelift": "true",
+      "checkout.copy": "new",
+      orphan: 1,
+    });
+    const vetted = { "checkout.copy": "new", orphan: 1 };
+    expect(readStoredOverrides({ instanceId: "test", storage, flags: CATALOGUE })).toEqual(vetted);
+    expect(readStoredOverrides({ instanceId: "test", storage, flags: () => CATALOGUE })).toEqual(
+      vetted,
+    );
+    expect(
+      readStoredOverrides({ instanceId: "test", storage, flags: createSource(CATALOGUE) }),
+    ).toEqual(vetted);
+    const result = readStoredOverrides({ instanceId: "test", storage, flags: CATALOGUE });
+    expect(Object.getPrototypeOf(result)).toBe(Object.prototype);
+  });
+
+  it("readStoredOverrides() returns {} while the reset param is in the URL", () => {
+    // Same answer as start(), which is about to drop the stored map.
+    const storage = createMemoryStorage({
+      "dtb:v1:test:ext:flags:overrides": '{"ui-facelift":true}',
+    });
+    withLocation({ search: "?dtb-flags=reset" }, () => {
+      expect(readStoredOverrides({ instanceId: "test", storage })).toEqual({});
+      expect(readStoredOverrides({ instanceId: "test", storage, resetParam: null })).toEqual({
+        "ui-facelift": true,
+      });
+    });
+  });
+
+  it("readStoredOverrides() treats a throwing catalogue getter as an empty one", () => {
+    const storage = createMemoryStorage({
+      "dtb:v1:test:ext:flags:overrides": '{"ui-facelift":"true"}',
+    });
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      expect(
+        readStoredOverrides({
+          instanceId: "test",
+          storage,
+          flags: () => {
+            throw new Error("not yet");
+          },
+        }),
+      ).toEqual({ "ui-facelift": "true" });
+      expect(consoleError).toHaveBeenCalledTimes(1);
+    } finally {
+      consoleError.mockRestore();
+    }
   });
 
   it("persists nothing when the toolbar's storage is disabled", () => {

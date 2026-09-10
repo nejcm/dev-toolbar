@@ -29,11 +29,13 @@ const extensions = [
 ## What it owns, and what it does not
 
 It owns **no flag store** and integrates no provider — the same rule
-`/ext/environment` follows. You hand it what your application resolved, and
-optionally a typed `onOverride` adapter it calls when somebody asks for a local
-override. Omit `onOverride` and the panel is read-only: it lists, searches and
-copies, and changes nothing. That is the honest degradation, not a reason to
-invent a store.
+`/ext/environment` follows. You hand it what your application resolved, **before
+any local override**, and optionally an adapter it calls when somebody asks for
+one: `onOverride(key, value)` per key, or `onOverridesChange(map)` with the
+whole vetted map after each change (called after the per-key calls of the same
+change). Omit both and the panel is read-only: it lists, searches and copies,
+and changes nothing. That is the honest degradation, not a reason to invent a
+store.
 
 This is the first extension that **mutates the application** rather than
 observing it, which is why three rules hold:
@@ -44,7 +46,10 @@ observing it, which is why three rules hold:
   `readStoredOverrides()` before you render if you need them earlier.
 - **There is a kill switch.** `?dtb-flags=reset` drops every stored override
   before it is applied — the override that breaks the app is the one you cannot
-  reach the panel to remove.
+  reach the panel to remove. The adapter hears about every dropped key. It is
+  honoured on every `start()`, so a remount while the param is still in the
+  URL drops the overrides set since the reset — a known limitation; strip the
+  param from the URL after using it.
 - **An override is never quiet.** The bar counts them, every overridden row is
   marked, and the app's own value stays on screen next to the override.
 
@@ -55,8 +60,9 @@ observing it, which is why three rules hold:
 
 ## Options that change behaviour
 
-`flags`, `onOverride`, `promoted`, `audience`, `resetParam`, `storage`,
-`pollMs`, `redactOptions`.
+`flags`, `onOverride`, `onOverridesChange`, `promoted`, `audience`,
+`resetParam`, `pollMs`, `redactOptions`. `readStoredOverrides({ flags })` vets
+the pre-mount read against the catalogue with the exported `vetOverrides`.
 
 ## Tests
 

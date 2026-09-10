@@ -104,7 +104,7 @@ export interface ToolbarHandle {
   /**
    * The height this instance publishes, e.g. `"30px"` — read from
    * `--dev-toolbar-height-<instanceId>`, falling back to the unsuffixed
-   * `--dev-toolbar-height` the default instance also writes.
+   * `--dev-toolbar-height` a lone instance also writes.
    */
   height(): string;
   /** Layout handle, when `layout` was requested. */

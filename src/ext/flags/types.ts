@@ -10,7 +10,8 @@
  * nothing else in the app knows about — persisted via `api.storage` and
  * re-applied through your adapter.
  */
-import { matchesQuery as matchesKitQuery, type SeverityWithOverride } from "@nejcm/dev-toolbar/kit";
+import { matchesQuery as matchesKitQuery } from "@nejcm/dev-toolbar/kit";
+import type { Input, SeverityWithOverride } from "@nejcm/dev-toolbar/kit";
 
 /** `null` is a real value ("unset variant"), not "no value". */
 export type FlagValue = boolean | string | number | null;
@@ -73,7 +74,12 @@ export interface FlagReading extends FeatureFlagDefinition {
   recentlyUsed?: boolean;
 }
 
-export type FlagsInput = readonly FlagReading[] | (() => readonly FlagReading[]);
+/**
+ * The catalogue as an array, a getter (re-read every `pollMs`), or a `Readable`
+ * / `{ getState, subscribe }` store (re-read when it notifies, never polled).
+ * See `createSource` and `useSource` in `@nejcm/dev-toolbar/kit`.
+ */
+export type FlagsInput = Input<readonly FlagReading[]>;
 
 /**
  * One flag pinned into the bar as its own control.
@@ -169,7 +175,7 @@ export interface FlagsSnapshot {
   maskedCount: number;
   /** True when the consumer supplied no flags at all. */
   supplied: boolean;
-  /** False when no `onOverride` adapter was supplied — the panel is read-only. */
+  /** False when neither `onOverride` nor `onOverridesChange` was supplied — the panel is read-only. */
   writable: boolean;
   /**
    * Keys whose override is waiting on a reload/route refresh. Cleared by
@@ -182,6 +188,11 @@ export interface FlagsSnapshot {
    * success erase a still-failing row's error banner.
    */
   adapterErrors: Readonly<Record<string, string>>;
+  /**
+   * Set when the last `onOverridesChange` call threw — the app may be running a
+   * stale map. Cleared by the next call that returns; independent of `adapterErrors`.
+   */
+  bulkError: string | null;
   /** Set when the flag list itself could not be read. Distinct from an adapter failure. */
   readError: string | null;
 }

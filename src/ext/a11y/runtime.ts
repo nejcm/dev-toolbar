@@ -40,6 +40,9 @@ import type {
 
 export const DEFAULT_NODE_LIMIT = 5;
 
+/** `loadOn`'s default: import the peer when the toolbar mounts. */
+export const DEFAULT_LOAD_ON: NonNullable<A11yRuntimeOptions["loadOn"]> = "start";
+
 /** Everything the toolbar draws, and the toolbar itself, is not the app's markup. */
 export const TOOLBAR_EXCLUDE = "[data-dev-toolbar]";
 
@@ -282,6 +285,20 @@ export interface A11yRuntimeOptions {
    * expensive and the first paint is the worst moment to spend it.
    */
   scanOnStart?: boolean;
+  /**
+   * When the axe-core peer is imported. `"start"` (default) imports it when the
+   * toolbar mounts, so the panel can say "not installed" before anybody clicks
+   * a button that cannot work — at the price of the peer's chunk (~160 KB
+   * gzipped) on every page load. `"scan"` defers the import to the first
+   * `scan()`; until then the panel says axe has not been checked yet, and a
+   * missing peer surfaces as `"unsupported"` from that first scan instead.
+   *
+   * `scanOnStart: true` is a request for a scan at start, and a scan needs
+   * axe, so with `loadOn: "scan"` it imports at start too — because a scan was
+   * asked for, not ahead of one. Leave `scanOnStart` off if the point is a
+   * cheap mount.
+   */
+  loadOn?: "start" | "scan";
 }
 
 export interface A11yRuntime {
@@ -323,6 +340,7 @@ export function createA11yRuntime(options: A11yRuntimeOptions = {}): A11yRuntime
     nodeLimit = DEFAULT_NODE_LIMIT,
     now = defaultNow,
     scanOnStart = false,
+    loadOn = DEFAULT_LOAD_ON,
   } = options;
 
   // Snapshotted on first use rather than at construction: `redactOptions` is the
@@ -354,7 +372,7 @@ export function createA11yRuntime(options: A11yRuntimeOptions = {}): A11yRuntime
   let targets = new Map<string, { path: readonly string[]; impact: Impact; label: string }>();
 
   const store = createThrottledStore<A11ySnapshot>(
-    { revision, report, highlight },
+    { revision, report, highlight, axeLoaded: false },
     { intervalMs: 100 },
   );
 
@@ -363,7 +381,7 @@ export function createA11yRuntime(options: A11yRuntimeOptions = {}): A11yRuntime
   // as a broken button.
   const publish = (immediate = false): void => {
     revision += 1;
-    store.set({ revision, report, highlight });
+    store.set({ revision, report, highlight, axeLoaded: axe !== null });
     if (immediate) store.flush();
   };
 
@@ -748,14 +766,20 @@ export function createA11yRuntime(options: A11yRuntimeOptions = {}): A11yRuntime
     start(api: ExtensionRuntimeApi) {
       disownScan();
       const mine = generation;
-      // The import — not a scan — happens here, so the panel can say "not
-      // installed" before anybody clicks a button that cannot work.
-      void ensureAxe().then(
-        (loaded) => {
-          if (loaded !== null && scanOnStart && generation === mine) void scan();
-        },
-        () => {},
-      );
+      if (loadOn === "scan") {
+        // Nothing is imported for a scan nobody asked for. `scanOnStart` asks
+        // for one, and `scan()` itself goes through `ensureAxe()`.
+        if (scanOnStart) void scan();
+      } else {
+        // The import — not a scan — happens here, so the panel can say "not
+        // installed" before anybody clicks a button that cannot work.
+        void ensureAxe().then(
+          (loaded) => {
+            if (loaded !== null && scanOnStart && generation === mine) void scan();
+          },
+          () => {},
+        );
+      }
       const stopVisibility = api.subscribeVisibility((visible) => {
         if (!visible) select(null);
       });

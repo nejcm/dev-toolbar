@@ -288,6 +288,10 @@ export const playgroundFlags = {
   },
   /** Set on the window by App, so the adapter can be made to throw on demand. */
   breakAdapter: false,
+  /** Same for the whole-map mirror below — the panel's one `bulkError` banner. */
+  breakMirror: false,
+  /** The last map `onOverridesChange` handed over; the mirror keeps it and applies nothing. */
+  mirrored: {} as Readonly<Record<string, FlagValue>>,
 };
 
 const CATALOGUE: Omit<FlagReading, "value">[] = [
@@ -344,6 +348,13 @@ const runtimeFlags = flags({
     if (value === undefined) delete flagOverrides[key];
     else flagOverrides[key] = value;
     flagListeners.forEach((listener) => listener());
+  },
+  // Records only, so `flag-break-adapter` keeps meaning "accepted but not applied".
+  onOverridesChange: (overrides) => {
+    if (playgroundFlags.breakMirror) {
+      throw new Error("playground: the override mirror is offline");
+    }
+    playgroundFlags.mirrored = overrides;
   },
   promoted: {
     flagKey: "ui-facelift",
@@ -627,11 +638,18 @@ const runtimeThemeEditor = themeEditor({
  * shows the `unsupported` state instead, which is the state most consumers see. `region` is
  * off because the playground's demo cards are deliberately unlandmarked scaffolding, and
  * turning it off is what "rule configuration passed through" looks like.
+ *
+ * `/?a11y-load-on=scan` selects the deferred import for one page load, so the browser suite
+ * can watch the network for the peer's chunk without moving the baseline everybody else
+ * measures against, which keeps the eager default.
  */
 const runtimeA11y = a11y({
   order: 18,
   priority: 25,
   rules: { region: { enabled: false } },
+  ...(new URLSearchParams(location.search).get("a11y-load-on") === "scan"
+    ? { loadOn: "scan" as const }
+    : {}),
 });
 
 /** Built once at module scope — calling `metrics()` inside a component would hand the bar a new object every render while collectors stayed with the first one; core warns about this. */

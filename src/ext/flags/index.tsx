@@ -32,9 +32,10 @@
  * ];
  * ```
  *
- * Omit `onOverride` and the panel is read-only — it lists, searches and copies
- * and changes nothing. That's the honest degradation, not a reason to invent
- * a store.
+ * Omit `onOverride` (and `onOverridesChange`, which hands you the whole vetted
+ * map after every change instead) and the panel is read-only — it lists,
+ * searches and copies and changes nothing. That's the honest degradation, not
+ * a reason to invent a store.
  *
  * This is the first extension that **mutates the application** rather than
  * observing it, which is why:
@@ -53,12 +54,18 @@
  * `redact()` once on the way in. The panel and the copy commands read the
  * same redacted snapshot; there's no unmasked path.
  */
-import { createFlagsRuntime, DEFAULT_RESET_PARAM, OVERRIDES_KEY, isFlagValue } from "./runtime";
+import {
+  createFlagsRuntime,
+  DEFAULT_RESET_PARAM,
+  OVERRIDES_KEY,
+  isFlagValue,
+  vetOverrides,
+} from "./runtime";
 import { writeClipboardTextOrThrow } from "../../runtime";
 import { FlagsChip, FlagsPanel } from "./ui";
-import { readStoredRecord, resolveStyleNonce } from "@nejcm/dev-toolbar/kit";
+import { readInput, readStoredRecord, resolveStyleNonce } from "@nejcm/dev-toolbar/kit";
 import type { FlagsRuntimeOptions } from "./runtime";
-import type { FlagValue } from "./types";
+import type { FlagReading, FlagValue, FlagsInput } from "./types";
 import type {
   CommandInputSchema,
   DevToolbarExtension,
@@ -72,6 +79,7 @@ export interface FlagsOptions extends Pick<
   FlagsRuntimeOptions,
   | "flags"
   | "onOverride"
+  | "onOverridesChange"
   | "pollMs"
   | "promoted"
   | "audience"
@@ -307,6 +315,13 @@ export interface ReadStoredOverridesOptions {
   storage?: ToolbarStorage;
   /** Reset query parameter, matching what you passed to `flags()`. `null` disables it. */
   resetParam?: string | null;
+  /**
+   * The catalogue, in any shape `flags()` accepts. When given, the map is
+   * vetted the way `start()` vets it, so a value its flag's declared type
+   * rejects is dropped here as the panel would drop it. Omit it and the map
+   * is returned as parsed.
+   */
+  flags?: FlagsInput;
 }
 
 /**
@@ -317,7 +332,11 @@ export interface ReadStoredOverridesOptions {
  * before that is unoverridden. Call this at the top of your entry point and
  * seed your own override store from it so first paint agrees with the panel.
  *
- * Honours `?dtb-flags=reset`, same as `start()`.
+ * Honours `?dtb-flags=reset`, same as `start()`: while the param is in the URL
+ * this returns `{}` — the mounted runtime is about to clear the stored map and
+ * tell your adapter about every key it dropped — and keeps returning `{}` for
+ * as long as the param stays there. Pass `flags` and the result is vetted
+ * against the catalogue too, so what you seed is what the panel will accept.
  */
 export function readStoredOverrides(
   options: ReadStoredOverridesOptions = {},
@@ -327,15 +346,33 @@ export function readStoredOverrides(
     id = "flags",
     storage,
     resetParam = DEFAULT_RESET_PARAM,
+    flags,
   } = options;
   // The kit owns the key template, the kill switch and the plain-object copy;
-  // `isFlagValue` is the same entry guard `start()` parses the map with. The
-  // catalogue-aware pass (`vetOverrides`) needs the mounted runtime's flags
-  // and stays there.
-  return readStoredRecord(
+  // `isFlagValue` is the same entry guard `start()` parses the map with.
+  const parsed = readStoredRecord(
     { instanceId, extensionId: id, key: OVERRIDES_KEY, storage, resetParam },
     isFlagValue,
   );
+  if (flags === undefined) return parsed;
+  // `vetOverrides` builds a null-prototype map; copied back before it crosses the public API.
+  return { ...vetOverrides(parsed, readCatalogue(flags)) };
+}
+
+// Mirrors the runtime's `readFlags()`: a throwing or non-array catalogue vets nothing out.
+function readCatalogue(flags: FlagsInput): readonly FlagReading[] {
+  try {
+    const value = readInput(flags);
+    return Array.isArray(value) ? (value as readonly FlagReading[]) : [];
+  } catch (error) {
+    // eslint-disable-next-line no-console
+    console.error(
+      "[dev-toolbar/ext/flags] the flags getter passed to readStoredOverrides() threw. " +
+        "Returning the stored map unvetted.",
+      error,
+    );
+    return [];
+  }
 }
 
 export { FLAGS_CSS, ensureFlagsStyles } from "./css";
@@ -345,6 +382,7 @@ export {
   OVERRIDES_KEY,
   parseOverrides,
   resetRequested,
+  vetOverrides,
 } from "./runtime";
 export type { FlagsRuntime, FlagsRuntimeOptions } from "./runtime";
 export { formatValue, inferType, matchesQuery, parseValue, severityFor } from "./types";

@@ -10,7 +10,8 @@
  * clipboard read the same redacted snapshot, and the raw bag is never stored.
  */
 import { createDerivedStore, redact, redactUrl } from "../../runtime";
-import { createPoller } from "@nejcm/dev-toolbar/kit";
+import { createPoller, isReadable, readInput } from "@nejcm/dev-toolbar/kit";
+import type { Input } from "@nejcm/dev-toolbar/kit";
 import type { RedactOptions, ThrottledStore } from "../../runtime";
 import type { ExtensionRuntimeApi, ToolbarStorage } from "../../core/contract";
 import { FIELD_SPECS, normaliseKind, severityForKind } from "./types";
@@ -22,11 +23,20 @@ import type {
   ImpersonationContext,
 } from "./types";
 
-export type EnvironmentContextInput = EnvironmentContext | (() => EnvironmentContext);
+/**
+ * The context as an object, a getter (re-read every `pollMs`), or a `Readable`
+ * / `{ getState, subscribe }` store (re-read when it notifies). See
+ * `createSource` and `useSource` in `@nejcm/dev-toolbar/kit`.
+ */
+export type EnvironmentContextInput = Input<EnvironmentContext>;
 
 export interface EnvironmentRuntimeOptions {
   context?: EnvironmentContextInput;
-  /** Re-read a function `context` this often, in ms. Default `4000`. */
+  /**
+   * Re-read a function `context` this often, in ms. Default `4000`. A
+   * `Readable` context is not polled for its own sake — it notifies — but the
+   * same timer still runs while `detect` is on, for the route.
+   */
   pollMs?: number;
   /**
    * Restrict the panel to these fields (allowlist) — everything else is
@@ -315,18 +325,16 @@ export function createEnvironmentRuntime(
   let storage: ToolbarStorage | null = null;
 
   const readContext = (): EnvironmentContext => {
-    if (typeof context === "function") {
-      try {
-        return context() ?? {};
-      } catch (error) {
-        // A consumer's getter throwing must not take down the bar: the slot is
-        // inside an error boundary, but start()'s interval is not.
-        // eslint-disable-next-line no-console
-        console.error("[dev-toolbar/ext/environment] the supplied context getter threw.", error);
-        return {};
-      }
+    try {
+      return readInput(context) ?? {};
+    } catch (error) {
+      // A consumer's getter (or `read()`) throwing must not take down the bar:
+      // the slot is inside an error boundary, but start()'s interval and a
+      // store's notification are not.
+      // eslint-disable-next-line no-console
+      console.error("[dev-toolbar/ext/environment] the supplied context getter threw.", error);
+      return {};
     }
-    return context ?? {};
   };
 
   const buildSnapshot = (revision: number): EnvironmentSnapshot => {
@@ -500,9 +508,12 @@ export function createEnvironmentRuntime(
       // A getter context and the detected facts both go stale. The route matters
       // most: SPA routers navigate via `history.pushState`, which fires no
       // listenable event, so without this timer the Route row could be wrong
-      // indefinitely.
+      // indefinitely. A `Readable` context tells us when it changed instead,
+      // so on its own it needs no timer at all.
+      const live = isReadable(context);
+      const stopListening = live ? context.subscribe(() => publish()) : () => {};
       const stopPolling =
-        typeof context === "function" || detect
+        (typeof context === "function" && !live) || detect
           ? createPoller(publish, {
               intervalMs: pollMs,
               fallbackMs: DEFAULT_POLL_MS,
@@ -524,7 +535,12 @@ export function createEnvironmentRuntime(
 
       // Store belongs to the runtime, not one start/stop cycle: destroying it on
       // React StrictMode's first cleanup would drop the subscription and freeze the panel.
+      let disposed = false;
       const dispose = () => {
+        // Idempotent: core aborts the signal and then calls the returned cleanup,
+        // and a consumer's unsubscribe need not tolerate a second call.
+        if (disposed) return;
+        disposed = true;
         stopPolling();
         target?.removeEventListener("online", onChange);
         target?.removeEventListener("offline", onChange);
@@ -532,6 +548,15 @@ export function createEnvironmentRuntime(
         target?.removeEventListener("popstate", onChange);
         target?.removeEventListener("hashchange", onChange);
         stopWatching();
+        try {
+          stopListening();
+        } catch (error) {
+          // eslint-disable-next-line no-console
+          console.error(
+            "[dev-toolbar/ext/environment] the supplied context's unsubscribe threw.",
+            error,
+          );
+        }
       };
       api.signal.addEventListener("abort", dispose, { once: true });
       return dispose;

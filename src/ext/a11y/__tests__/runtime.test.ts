@@ -113,6 +113,99 @@ describe("the optional peer", () => {
   });
 });
 
+describe("loadOn", () => {
+  const settle = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
+
+  it('"start" is the default and imports at start', async () => {
+    const load = vi.fn(() => Promise.resolve(stubAxe({ violations: [] }).stub));
+    const runtime = createA11yRuntime({ load, loadOn: "start" });
+    const stop = runtime.start(fakeExtensionApi().api);
+    await vi.waitFor(() => expect(load).toHaveBeenCalledTimes(1));
+    expect(runtime.store.getSnapshot().axeLoaded).toBe(true);
+    expect(runtime.report().status).toBe("pending");
+    stop();
+  });
+
+  it('"scan" imports nothing at start and everything on the first scan', async () => {
+    const { run, stub } = stubAxe({ violations: [] });
+    const load = vi.fn(() => Promise.resolve(stub));
+    const runtime = createA11yRuntime({ load, loadOn: "scan" });
+    const stop = runtime.start(fakeExtensionApi().api);
+    await settle();
+
+    expect(load).not.toHaveBeenCalled();
+    expect(runtime.store.getSnapshot().axeLoaded).toBe(false);
+    expect(runtime.report()).toEqual(emptyReport("pending"));
+
+    const report = await runtime.scan();
+    expect(load).toHaveBeenCalledTimes(1);
+    expect(run).toHaveBeenCalledTimes(1);
+    expect(report.status).toBe("ok");
+    expect(report.axeVersion).toBe("4.10.0");
+    expect(runtime.store.getSnapshot().axeLoaded).toBe(true);
+
+    await runtime.scan();
+    expect(load).toHaveBeenCalledTimes(1);
+    stop();
+  });
+
+  it('"scan" surfaces a missing peer from the first scan, not before', async () => {
+    const load = vi.fn(() => Promise.reject(new Error("Cannot find module 'axe-core'")));
+    const runtime = createA11yRuntime({ load, loadOn: "scan" });
+    const stop = runtime.start(fakeExtensionApi().api);
+    await settle();
+    expect(load).not.toHaveBeenCalled();
+    expect(runtime.report().status).toBe("pending");
+
+    const report = await runtime.scan();
+    expect(report.status).toBe("unsupported");
+    expect(report.unsupportedReason).toContain("npm install --save-dev axe-core");
+    stop();
+  });
+
+  it('"scan" with scanOnStart imports at start because a scan was asked for', async () => {
+    const { run, stub } = stubAxe({ violations: [] });
+    const load = vi.fn(() => Promise.resolve(stub));
+    const runtime = createA11yRuntime({ load, loadOn: "scan", scanOnStart: true });
+    const stop = runtime.start(fakeExtensionApi().api);
+    await vi.waitFor(() => expect(run).toHaveBeenCalledTimes(1));
+    expect(load).toHaveBeenCalledTimes(1);
+    expect(runtime.report().status).toBe("ok");
+    expect(runtime.report().scans).toBe(1);
+    stop();
+  });
+
+  it("keeps axeLoaded true when a versionless engine's only scan is disowned by clear()", async () => {
+    let finish: (results: unknown) => void = () => {};
+    const run = vi.fn(() => new Promise<unknown>((resolve) => (finish = resolve)));
+    const runtime = createA11yRuntime({ load: () => Promise.resolve({ run }), loadOn: "scan" });
+    const stop = runtime.start(fakeExtensionApi().api);
+
+    const scanning = runtime.scan();
+    await vi.waitFor(() => expect(run).toHaveBeenCalledTimes(1));
+    runtime.clear();
+    finish({ violations: [], passes: [], incomplete: [] });
+    await scanning;
+
+    // Nothing in the report says axe is here — no version, no scan, pending —
+    // yet it is, and the panel must not invite a load that already happened.
+    expect(runtime.report()).toMatchObject({ status: "pending", axeVersion: null, scans: 0 });
+    expect(runtime.store.getSnapshot().axeLoaded).toBe(true);
+    stop();
+  });
+
+  it('"scan" stays unloaded across a teardown and a remount', async () => {
+    const load = vi.fn(() => Promise.resolve(stubAxe({ violations: [] }).stub));
+    const runtime = createA11yRuntime({ load, loadOn: "scan" });
+    runtime.start(fakeExtensionApi().api)();
+    const stop = runtime.start(fakeExtensionApi().api);
+    await settle();
+    expect(load).not.toHaveBeenCalled();
+    expect(runtime.store.getSnapshot().axeLoaded).toBe(false);
+    stop();
+  });
+});
+
 describe("grouping and counts", () => {
   it("groups violations by impact, worst first, and counts elements exactly", async () => {
     const { load } = stubAxe({

@@ -184,6 +184,70 @@ describe("the panel", () => {
     expect(toolbar.errorChip("a11y")).toBeNull();
   });
 
+  it("does not claim axe was checked when it is not loaded until a scan", async () => {
+    const load = vi.fn(() => Promise.resolve(stub()));
+    const { toolbar } = mount({ load, loadOn: "scan" });
+    act(() => toolbar.openPanel("a11y"));
+
+    expect(load).not.toHaveBeenCalled();
+    expect(part("a11y-unchecked")?.textContent).toContain("has not been checked yet");
+    expect(part("a11y-unchecked")?.textContent).toContain("Scan this page to load it");
+    expect(part("a11y-unsupported")).toBeNull();
+    expect(part("a11y-scan")).toHaveProperty("disabled", false);
+    expect(toolbar.item("a11y")?.textContent).toContain("scan");
+
+    await act(async () => {
+      fireEvent.click(part("a11y-scan") as HTMLElement);
+    });
+    expect(load).toHaveBeenCalledTimes(1);
+    expect(part("a11y-unchecked")).toBeNull();
+    expect(parts("a11y-rule-id").map((rule) => rule.textContent)).toEqual(["label", "region"]);
+
+    // Cleared is not unchecked: axe stayed loaded, so the invitation must not come back.
+    act(() => {
+      fireEvent.click(part("a11y-clear") as HTMLElement);
+    });
+    expect(part("a11y-unchecked")).toBeNull();
+    expect(toolbar.item("a11y")?.textContent).toContain("scan");
+  });
+
+  it("keeps the default panel free of the unchecked note, even while the import is in flight", async () => {
+    let resolve: (axe: AxeLike) => void = () => {};
+    const load = () =>
+      new Promise<AxeLike>((done) => {
+        resolve = done;
+      });
+    const { toolbar } = mount({ load });
+    act(() => toolbar.openPanel("a11y"));
+
+    // Pending and not yet loaded, exactly the state the note is for — but the
+    // check is under way, not deferred, so claiming otherwise would be wrong.
+    expect(part("a11y-unchecked")).toBeNull();
+
+    await act(async () => {
+      resolve(stub());
+      await Promise.resolve();
+    });
+    expect(part("a11y-unchecked")).toBeNull();
+  });
+
+  it("shows the missing peer only once a scan looked for it, under loadOn: scan", async () => {
+    const { toolbar } = mount({
+      load: () => Promise.reject(new Error("Cannot find module 'axe-core'")),
+      loadOn: "scan",
+    });
+    act(() => toolbar.openPanel("a11y"));
+    expect(part("a11y-unsupported")).toBeNull();
+    expect(part("a11y-unchecked")).not.toBeNull();
+
+    await act(async () => {
+      await toolbar.invokeCommand("a11y.scan");
+    });
+    expect(part("a11y-unchecked")).toBeNull();
+    expect(part("a11y-unsupported")?.textContent).toContain("axe-core is not installed");
+    expect(part("a11y-scan")).toHaveProperty("disabled", true);
+  });
+
   it("clears back to pending", async () => {
     const { toolbar } = mount();
     act(() => toolbar.openPanel("a11y"));

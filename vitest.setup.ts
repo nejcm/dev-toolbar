@@ -17,6 +17,9 @@ if (typeof document !== "undefined") {
   // one, live in one tested place — this hook runs last and is the only thing
   // that resets the DOM and `localStorage` for any test file.
   const { resetToolbarTestEnvironment } = await import("./src/test-utils/teardown");
+  // The mounted-toolbar set effect cleanup normally empties; this is for the
+  // unmount that threw and left its registration behind.
+  const { resetMountedInstances } = await import("./src/core/useHeightVariables");
 
   /**
    * Install a minimal in-memory Storage, unconditionally: Node 22+'s
@@ -58,6 +61,6 @@ if (typeof document !== "undefined") {
   }
 
   afterEach(() => {
-    resetToolbarTestEnvironment({ cleanupToolbar, cleanup });
+    resetToolbarTestEnvironment({ cleanupToolbar, cleanup, resetMountedInstances });
   });
 }

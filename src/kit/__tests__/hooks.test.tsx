@@ -1,7 +1,9 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, renderHook } from "@testing-library/react";
+import { StrictMode, useEffect, useLayoutEffect } from "react";
 import { createThrottledStore } from "../../runtime";
-import { useExtensionSurface } from "../hooks";
+import { useExtensionSurface, useSource } from "../hooks";
+import { createSource } from "../source";
 
 afterEach(() => {
   cleanup();
@@ -95,5 +97,63 @@ describe("useExtensionSurface", () => {
     rerender({ nonce: "b" });
     expect(ensureStyles).toHaveBeenCalledTimes(2);
     expect(ensureStyles).toHaveBeenLastCalledWith(undefined, "b");
+  });
+});
+
+describe("useSource", () => {
+  it("assigns from a layout effect, so a later layout effect already reads it", () => {
+    const source = createSource<string | undefined>(undefined);
+    const seenInLayout: (string | undefined)[] = [];
+    const seenInEffect: (string | undefined)[] = [];
+    const { rerender } = renderHook(
+      ({ value }: { value: string | undefined }) => {
+        useSource(source, value);
+        // Layout effects run in declaration order, before any passive effect. If
+        // `useSource` fell back to `useEffect` this would still see the previous value.
+        useLayoutEffect(() => {
+          seenInLayout.push(source.read());
+        });
+        useEffect(() => {
+          seenInEffect.push(source.read());
+        });
+      },
+      { initialProps: { value: "first" } },
+    );
+    expect(seenInLayout).toEqual(["first"]);
+    expect(seenInEffect).toEqual(["first"]);
+
+    rerender({ value: "second" });
+    expect(seenInLayout).toEqual(["first", "second"]);
+    expect(source.read()).toBe("second");
+  });
+
+  it("notifies subscribers exactly once per changed value", () => {
+    const source = createSource(0);
+    const listener = vi.fn();
+    source.subscribe(listener);
+    const { rerender } = renderHook(({ value }: { value: number }) => useSource(source, value), {
+      initialProps: { value: 1 },
+    });
+    rerender({ value: 1 });
+    rerender({ value: 2 });
+    expect(listener).toHaveBeenCalledTimes(2);
+  });
+
+  it("clears nothing on unmount", () => {
+    const source = createSource<string | undefined>(undefined);
+    const { unmount } = renderHook(() => useSource(source, "signed-in"));
+    unmount();
+    expect(source.read()).toBe("signed-in");
+  });
+
+  it("never reads as absent across a StrictMode double mount", () => {
+    // The module-scope-mutable pattern reset its holder in a cleanup; StrictMode's
+    // mount → cleanup → mount then reported "nobody signed in" in between.
+    const source = createSource<string | undefined>("stale");
+    const seen: (string | undefined)[] = [];
+    source.subscribe(() => seen.push(source.read()));
+    renderHook(() => useSource(source, "signed-in"), { wrapper: StrictMode });
+    expect(source.read()).toBe("signed-in");
+    expect(seen).toEqual(["signed-in"]);
   });
 });

@@ -183,6 +183,7 @@
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
     "test:jest-consumer": "bun run build && bun run --cwd test/fixtures/jest-consumer test",
+    "test:vite-consumer": "bun run build && bun run --cwd test/fixtures/vite-consumer test",
     "test:e2e": "bun run build && bun run --cwd examples/playground test:e2e",
     "lint": "oxlint --max-warnings=0",
     "lint:fix": "oxlint --fix",
