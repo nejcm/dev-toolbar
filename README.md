@@ -145,14 +145,25 @@ import { DevToolbarInset } from "@nejcm/dev-toolbar";
 ```
 
 Or inset by hand — the shell publishes the toolbar's height, bar *plus* any open
-panel, on `<html>`:
+panel, on `<html>`. With one toolbar on the page, which is every ordinary app, it
+is `--dev-toolbar-height`, whether or not you passed `instanceId`:
 
 ```css
 .my-layout { padding-bottom: var(--dev-toolbar-height, 0px); }
 ```
 
-Every instance also publishes `--dev-toolbar-height-<instanceId>`, so two toolbars
-on one page never overwrite each other's value.
+Each instance also publishes its own `--dev-toolbar-height-<instanceId>`. Mount a
+second toolbar and the unsuffixed name is withdrawn until only one is left, so two
+toolbars never overwrite each other's value — inset by the suffixed names then. The
+full rule is in [docs/api.md](./docs/api.md#insetting-your-layout).
+
+> **Changed after 0.8.0.** The unsuffixed name used to belong to the `"default"`
+> instance alone. Two setups behave differently now: a page that mounts the default
+> instance *plus* a named one no longer gets the default's height under the
+> unsuffixed name, so `var(--dev-toolbar-height, 0px)` there falls to `0px` — switch
+> to `--dev-toolbar-height-default`; and a lone named toolbar now writes the
+> unsuffixed name, overriding any `--dev-toolbar-height` your own stylesheet set on
+> `<html>`.
 
 ## Configuring it
 

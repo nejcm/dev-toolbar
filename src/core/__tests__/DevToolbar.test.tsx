@@ -1,5 +1,5 @@
 import { act, fireEvent, render, screen } from "@testing-library/react";
-import { Suspense, startTransition, useEffect, useState } from "react";
+import { StrictMode, Suspense, startTransition, useEffect, useState } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ReactNode } from "react";
 import type { Mock } from "vitest";
@@ -17,6 +17,7 @@ import { useDevToolbar, useToolbarCommands } from "../context";
 import { runCommand } from "../commands";
 import { isApplePlatform } from "../shortcut";
 import { createMemoryStorage, STORAGE_PREFIX } from "../storage";
+import { resetMountedInstances } from "../useHeightVariables";
 
 const panelExtension = (
   id: string,
@@ -1091,8 +1092,8 @@ describe("lifecycle", () => {
     );
 
     // The instance's own name is the one it would have written; the unsuffixed
-    // name is not `t`'s to write at all, and is asserted only so a future
-    // default-instance regression cannot hide here.
+    // name is what it would have taken as the only toolbar on the page, had it
+    // been enabled — a disabled instance is not mounted for that purpose.
     expect(document.documentElement.style.getPropertyValue("--dev-toolbar-height-t")).toBe("");
     expect(document.documentElement.style.getPropertyValue("--dev-toolbar-height")).toBe("");
     expect(warn).not.toHaveBeenCalled();
@@ -1275,7 +1276,7 @@ describe("the height variable", () => {
     rect.mockRestore();
   });
 
-  it("keeps a non-default instance out of the unsuffixed variable", () => {
+  it("publishes the unsuffixed variable for a lone instance whatever its id", () => {
     const rect = stubHeights({ alpha: 24 });
     render(
       <DevToolbar instanceId="alpha" extensions={[]}>
@@ -1284,8 +1285,216 @@ describe("the height variable", () => {
     );
 
     expect(read("--dev-toolbar-height-alpha")).toBe("24px");
-    expect(read("--dev-toolbar-height")).toBe("");
+    expect(read("--dev-toolbar-height")).toBe("24px");
     rect.mockRestore();
+  });
+
+  /**
+   * The unsuffixed name belongs to whichever instance is the *only* one mounted
+   * and enabled, and to nobody while there are two. `docs/api.md` states it;
+   * these pin it across every order two toolbars can come and go in, because
+   * React promises nothing about effect order across components.
+   */
+  describe("the unsuffixed variable with two instances", () => {
+    const mount = (instanceId: string, props: { enabled?: boolean } = {}) =>
+      render(
+        <DevToolbar instanceId={instanceId} extensions={[]} {...props}>
+          <div />
+        </DevToolbar>,
+      );
+
+    it("is dropped when a second instance mounts, in either order", () => {
+      const rect = stubHeights({ alpha: 24, beta: 36 });
+      const alpha = mount("alpha");
+      expect(read("--dev-toolbar-height")).toBe("24px");
+      const beta = mount("beta");
+      expect(read("--dev-toolbar-height")).toBe("");
+      expect(read("--dev-toolbar-height-alpha")).toBe("24px");
+      expect(read("--dev-toolbar-height-beta")).toBe("36px");
+      alpha.unmount();
+      beta.unmount();
+
+      mount("beta");
+      expect(read("--dev-toolbar-height")).toBe("36px");
+      mount("alpha");
+      expect(read("--dev-toolbar-height")).toBe("");
+      rect.mockRestore();
+    });
+
+    it("returns to the survivor, with the survivor's height, and leaves with it", () => {
+      const rect = stubHeights({ alpha: 24, beta: 36 });
+      const alpha = mount("alpha");
+      const beta = mount("beta");
+      expect(read("--dev-toolbar-height")).toBe("");
+
+      alpha.unmount();
+      expect(read("--dev-toolbar-height")).toBe("36px");
+      expect(read("--dev-toolbar-height-alpha")).toBe("");
+      expect(read("--dev-toolbar-height-beta")).toBe("36px");
+
+      beta.unmount();
+      expect(read("--dev-toolbar-height")).toBe("");
+      expect(read("--dev-toolbar-height-beta")).toBe("");
+      rect.mockRestore();
+    });
+
+    it("returns to the first-mounted survivor too", () => {
+      const rect = stubHeights({ alpha: 24, beta: 36 });
+      mount("alpha");
+      const beta = mount("beta");
+      beta.unmount();
+      expect(read("--dev-toolbar-height")).toBe("24px");
+      rect.mockRestore();
+    });
+
+    it("follows the survivor's later measurements", () => {
+      const heights = { alpha: 24, beta: 36 };
+      const rect = stubHeights(heights);
+      const alpha = mount("alpha");
+      mount("beta");
+      alpha.unmount();
+      expect(read("--dev-toolbar-height")).toBe("36px");
+
+      // Hiding and re-showing re-runs beta's measuring effect, and the root
+      // now measures taller; the unsuffixed name must track that rather than
+      // freeze at the value it carried when alpha left.
+      const toggle = () =>
+        act(() => {
+          fireEvent.keyDown(window, {
+            key: ".",
+            code: "Period",
+            shiftKey: true,
+            ...(isApplePlatform() ? { metaKey: true } : { ctrlKey: true }),
+          });
+        });
+      toggle();
+      expect(read("--dev-toolbar-height-beta")).toBe("0px");
+      expect(read("--dev-toolbar-height")).toBe("0px");
+      heights.beta = 300;
+      toggle();
+      expect(read("--dev-toolbar-height-beta")).toBe("300px");
+      expect(read("--dev-toolbar-height")).toBe("300px");
+      rect.mockRestore();
+    });
+
+    it("does not count a disabled instance", () => {
+      const rect = stubHeights({ alpha: 24, beta: 36 });
+      mount("alpha");
+      const beta = mount("beta", { enabled: false });
+      expect(read("--dev-toolbar-height")).toBe("24px");
+      expect(read("--dev-toolbar-height-beta")).toBe("");
+
+      // Enabling it later is a second mount for this purpose.
+      beta.rerender(
+        <DevToolbar instanceId="beta" extensions={[]} enabled>
+          <div />
+        </DevToolbar>,
+      );
+      expect(read("--dev-toolbar-height")).toBe("");
+      rect.mockRestore();
+    });
+
+    it("withdraws it from the default instance too, once a named one mounts", () => {
+      // Through 0.8.0 the unsuffixed name was the default instance's whatever
+      // else was mounted; unsuffixed inset CSS on a default-plus-named page now
+      // reads `0px` until it switches to the suffixed name (docs/api.md).
+      const rect = stubHeights({ default: 24, admin: 36 });
+      render(
+        <DevToolbar extensions={[]}>
+          <div />
+        </DevToolbar>,
+      );
+      expect(read("--dev-toolbar-height")).toBe("24px");
+      const admin = mount("admin");
+      expect(read("--dev-toolbar-height")).toBe("");
+      expect(read("--dev-toolbar-height-default")).toBe("24px");
+      expect(read("--dev-toolbar-height-admin")).toBe("36px");
+      admin.unmount();
+      expect(read("--dev-toolbar-height")).toBe("24px");
+      rect.mockRestore();
+    });
+
+    it("publishes on re-enable, when registration and measurement share one commit", () => {
+      // On first mount `shouldRender` is still false, so measurement re-runs in
+      // a later commit and would find the token whatever order the effects ran
+      // in. Re-enabling an already-mounted toolbar re-runs both effects in the
+      // same commit, so this is the case that fails if `useHeightVariables`
+      // declares its measuring effect before its registering one.
+      const rect = stubHeights({ alpha: 24 });
+      const alpha = mount("alpha", { enabled: false });
+      expect(read("--dev-toolbar-height")).toBe("");
+      alpha.rerender(
+        <DevToolbar instanceId="alpha" extensions={[]} enabled>
+          <div />
+        </DevToolbar>,
+      );
+      expect(read("--dev-toolbar-height-alpha")).toBe("24px");
+      expect(read("--dev-toolbar-height")).toBe("24px");
+      rect.mockRestore();
+    });
+
+    it("counts a hidden instance, which publishes 0px like the default always did", () => {
+      const rect = stubHeights({ alpha: 24 });
+      mount("alpha", {});
+      act(() => {
+        fireEvent.keyDown(window, {
+          key: ".",
+          code: "Period",
+          shiftKey: true,
+          ...(isApplePlatform() ? { metaKey: true } : { ctrlKey: true }),
+        });
+      });
+      expect(read("--dev-toolbar-height-alpha")).toBe("0px");
+      expect(read("--dev-toolbar-height")).toBe("0px");
+      rect.mockRestore();
+    });
+
+    it("counts toolbars, not ids: two instances sharing an id are still two", () => {
+      // Sharing an id is the consumer's mistake (architecture.md §3), and the
+      // suffixed name collides as documented. What must not happen is the
+      // registry forgetting the second when the first leaves.
+      const rect = stubHeights({ twin: 24 });
+      const first = mount("twin");
+      mount("twin");
+      expect(read("--dev-toolbar-height")).toBe("");
+      first.unmount();
+      expect(read("--dev-toolbar-height")).toBe("24px");
+      rect.mockRestore();
+    });
+
+    it("comes back after an unmount and remount", () => {
+      const rect = stubHeights({ alpha: 24 });
+      mount("alpha").unmount();
+      expect(read("--dev-toolbar-height")).toBe("");
+      mount("alpha");
+      expect(read("--dev-toolbar-height")).toBe("24px");
+      rect.mockRestore();
+    });
+
+    it("survives StrictMode's double-invoked mount as one instance", () => {
+      const rect = stubHeights({ alpha: 24 });
+      render(
+        <StrictMode>
+          <DevToolbar instanceId="alpha" extensions={[]}>
+            <div />
+          </DevToolbar>
+        </StrictMode>,
+      );
+      expect(read("--dev-toolbar-height-alpha")).toBe("24px");
+      expect(read("--dev-toolbar-height")).toBe("24px");
+      rect.mockRestore();
+    });
+
+    it("is forgotten by the test seam, which the harness runs after every test", () => {
+      const rect = stubHeights({ alpha: 24, beta: 36 });
+      mount("alpha");
+      // Simulates a registration an interrupted unmount leaked: the next
+      // toolbar must count as alone.
+      resetMountedInstances();
+      mount("beta");
+      expect(read("--dev-toolbar-height")).toBe("36px");
+      rect.mockRestore();
+    });
   });
 
   it("reduces an instanceId to characters a custom property can carry", () => {

@@ -35,8 +35,9 @@ The root entry is chrome plus hosting, and nothing else. It:
   width, and lets them back out when the width returns;
 - hosts at most one panel at a time, resizable and persisted;
 - renders every extension's `overlay` slot, uncollapsed, for modal surfaces;
-- publishes `--dev-toolbar-height`, and `--dev-toolbar-height-<instanceId>` per
-  instance, and ships an opt-in `<DevToolbarInset>`;
+- publishes `--dev-toolbar-height-<instanceId>` per instance, and the unsuffixed
+  `--dev-toolbar-height` while exactly one is mounted, and ships an opt-in
+  `<DevToolbarInset>`;
 - owns the token set, the `data-dtb-part` attributes and the `classNames` map;
 - persists visibility, position, active panel and panel height through an injectable
   storage adapter;
@@ -172,16 +173,40 @@ one would:
 Two toolbars on one page therefore have to share the one thing core does write
 globally: the height custom property on `<html>`. Each instance owns
 `--dev-toolbar-height-<instanceId>` (the id folded to `A-Za-z0-9_-`) and removes only
-that on unmount; the unsuffixed `--dev-toolbar-height` is the `"default"` instance's,
-which is what a consumer who never set `instanceId` already reads. `<DevToolbarInset>`
+that on unmount. The unsuffixed `--dev-toolbar-height` — what a consumer who never
+thought about instances reads — is published while exactly one instance is mounted
+and enabled, whichever it is, and withdrawn while there are two. `<DevToolbarInset>`
 pads by its own instance's name and falls back to the unsuffixed one. Two instances
-sharing an `instanceId` still collide — the same reason they may not share one for
-persisted preferences (§3).
+sharing an `instanceId` still collide on the suffixed name — the same reason they may
+not share one for persisted preferences (§3).
 
-The one module-level structure in core is the command *host* set in
-`src/core/commands.ts`. It is not a registry: entries are added on mount and removed
-on unmount, and it exists only so the context-free `runCommand(id)` can reach a
-mounted toolbar. Inside React, prefer `useDevToolbar().runCommand`.
+Core therefore keeps two module-level structures, neither of them a registry of
+extensions:
+
+- **The command *host* set** in `src/core/commands.ts`. Entries are added on mount
+  and removed on unmount, and it exists only so the context-free `runCommand(id)`
+  can reach a mounted toolbar. Inside React, prefer `useDevToolbar().runCommand`.
+- **The mounted-instance set** in `src/core/useHeightVariables.ts`, which decides
+  who owns the unsuffixed height name. It holds one token per mounted, enabled
+  toolbar — tokens, not ids, so two instances wrongly sharing an id still count as
+  two — and lives on `globalThis` under a `Symbol.for` key, like the measurer slot,
+  so two copies of core on one page (the dual-package hazard, or a duplicated
+  dependency) share one count instead of each believing itself alone. That makes the
+  token's shape a small compatibility protocol between copies: compatible copies
+  agree; a copy from before this rule does not participate. The unsuffixed name is
+  re-derived from the whole set after every registration, removal and measurement,
+  so the order React runs *different instances'* effects in cannot matter — no
+  instance decides at its own mount whether it is alone, and none removes the name
+  on its own account. *Within* an instance the order is load-bearing: the
+  registering effect is declared before the measuring one, because React runs a
+  component's effects in declaration order and the first measurement reports to the
+  token registration created. Swapping them loses the publication whenever both
+  effects re-run in one commit (re-enabling a mounted toolbar); the `"publishes on
+  re-enable"` case in `DevToolbar.test.tsx` fails if they are swapped.
+
+Both survive SSR because neither is touched during render, only from effects, and
+both are emptied by effect cleanup; the test harness additionally clears the
+instance set after every test, for the mount whose unmount threw.
 
 Recorded, with the contract shape it follows from, as
 [ADR-001](./adr/ADR-001-extensions-are-plain-objects.md).

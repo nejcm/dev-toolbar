@@ -7,7 +7,7 @@
 import { describe, expect, it } from "vitest";
 import { resetToolbarTestEnvironment } from "../teardown";
 
-/** Everything the hook is responsible for undoing, other than the two callables. */
+/** Everything the hook is responsible for undoing, other than the injected callables. */
 function dirty(): void {
   document.documentElement.style.setProperty("--probe", "1");
   const style = document.createElement("style");
@@ -32,11 +32,13 @@ describe("resetToolbarTestEnvironment", () => {
     resetToolbarTestEnvironment({
       cleanupToolbar: () => ran.push("cleanupToolbar"),
       cleanup: () => ran.push("cleanup"),
+      resetMountedInstances: () => ran.push("resetMountedInstances"),
     });
 
     // Toolbar mounts go first: RTL's `cleanup()` unmounts the trees the tracked
-    // list would otherwise still be holding `unmount` functions for.
-    expect(ran).toEqual(["cleanupToolbar", "cleanup"]);
+    // list would otherwise still be holding `unmount` functions for. The
+    // registry reset follows the unmounts so it forgets only what they leaked.
+    expect(ran).toEqual(["cleanupToolbar", "cleanup", "resetMountedInstances"]);
     expect(world()).toEqual(clean);
   });
 
@@ -50,10 +52,11 @@ describe("resetToolbarTestEnvironment", () => {
           throw new Error("unmount blew up");
         },
         cleanup: () => ran.push("cleanup"),
+        resetMountedInstances: () => ran.push("resetMountedInstances"),
       }),
     ).toThrow("unmount blew up");
 
-    expect(ran).toEqual(["cleanup"]);
+    expect(ran).toEqual(["cleanup", "resetMountedInstances"]);
     expect(world()).toEqual(clean);
   });
 
@@ -66,6 +69,7 @@ describe("resetToolbarTestEnvironment", () => {
         cleanup: () => {
           throw new Error("cleanup blew up");
         },
+        resetMountedInstances: () => {},
       }),
     ).toThrow("cleanup blew up");
 
@@ -84,6 +88,7 @@ describe("resetToolbarTestEnvironment", () => {
         cleanup: () => {
           throw new Error("cleanup blew up");
         },
+        resetMountedInstances: () => {},
       });
     } catch (error) {
       caught = error;

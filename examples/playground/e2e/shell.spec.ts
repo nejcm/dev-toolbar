@@ -50,6 +50,35 @@ test("the height variable and the inset follow the panel", async ({ toolbar, pag
   expect(insetBottom).toBe(after.shell.heightVariable.value);
 });
 
+test("a lone instance publishes the unsuffixed height variable too", async ({ toolbar, page }) => {
+  // The header pill reads `--dev-toolbar-height`, not the instance-scoped name
+  // the bridge reports, and this app's toolbar is `"playground"`, not
+  // `"default"`. Under `<StrictMode>` its mount effects run twice — the one
+  // place a double-counted registration would show up as `(unset)`.
+  const readout = page.getByTestId("height-readout").locator("strong");
+  const at = async () => (await toolbar.read()).shell.heightVariable.value;
+  const atPx = () => toolbar.read().then((s) => parseFloat(s.shell.heightVariable.value ?? "0"));
+  const restHeight = await atPx();
+  expect(restHeight).toBeGreaterThan(0);
+  await expect(readout).toHaveText((await at()) ?? "");
+
+  // The baseline is read before the click, so equality below cannot be met by
+  // a readout that never moved.
+  await page.getByRole("button", { name: "Flags" }).click();
+  await expect.poll(atPx).toBeGreaterThan(restHeight);
+  const expanded = await at();
+  expect(parseFloat(expanded ?? "0")).toBeGreaterThan(restHeight);
+  await expect(readout).toHaveText(expanded ?? "");
+
+  // `enabled={false}` unmounts the shell: nothing is left to own the name.
+  await page.getByTestId("toggle-enabled").click();
+  await expect(readout).toHaveText("(unset)");
+  await page.getByTestId("toggle-enabled").click();
+  await toolbar.ready();
+  await expect(readout).not.toHaveText("(unset)");
+  await expect(readout).toHaveText((await at()) ?? "");
+});
+
 test("moves to the top and survives a reload", async ({ toolbar, page }) => {
   await page.getByTestId("toggle-position").click();
   await expect.poll(() => toolbar.read().then((s) => s.shell.position)).toBe("top");

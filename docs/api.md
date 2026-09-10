@@ -53,13 +53,34 @@ own `injectStyles` switch.
 
 ## Insetting your layout
 
-The shell publishes `--dev-toolbar-height` on `<html>` — the whole toolbar, bar *plus*
-any open panel. Every instance also publishes `--dev-toolbar-height-<instanceId>`
-(anything outside `A-Za-z0-9_-` folded to `_`), and the unsuffixed name belongs to the
-`"default"` instance alone — so two toolbars never overwrite or remove each other's
-value. Inset by the suffixed name when you mount more than one;
-`<DevToolbarInset>` already pads by its own instance's, falling back to the
-unsuffixed one.
+The shell publishes the toolbar's height on `<html>` — the whole toolbar, bar *plus*
+any open panel — under two names:
+
+- `--dev-toolbar-height-<instanceId>` (anything outside `A-Za-z0-9_-` folded to
+  `_`), published by every enabled instance and removed only by it;
+- `--dev-toolbar-height`, published while **exactly one** instance is mounted and
+  enabled, whatever its `instanceId`. A second instance mounting withdraws it; the
+  last one left takes it back with its own height. A disabled instance
+  (`enabled={false}`) does not count; a hidden one does, and publishes `0px`.
+
+So the unsuffixed name is the one to inset by in an app with one toolbar, and two
+toolbars never overwrite or remove each other's value. Inset by the suffixed name
+when you mount more than one; `<DevToolbarInset>` already pads by its own
+instance's, falling back to the unsuffixed one.
+
+**Migrating from 0.8.0 and earlier**, where the unsuffixed name was the `"default"`
+instance's alone, whatever else was mounted:
+
+- A page mounting the default instance **and** a named one kept
+  `--dev-toolbar-height` at the default's height. It is now withdrawn while both are
+  mounted, so unsuffixed inset CSS on such a page reads `0px`; inset by
+  `--dev-toolbar-height-default` (or let `<DevToolbarInset>` do it — it already
+  prefers the suffixed name).
+- A lone **named** toolbar never wrote the unsuffixed name, so a host stylesheet could
+  own it. It now writes it as an inline style on `<html>`, which wins over a
+  stylesheet rule; a host value that must survive needs its own property name.
+
+Everything with a single default toolbar, or with `<DevToolbarInset>`, is unchanged.
 
 ## Toggle shortcut
 
@@ -139,7 +160,7 @@ hatches; everything here is public and covered by the package's versioning.
 | `invokeCommand(id, options?)` | `runCommand` that resolves **what the command returned**: `{ ok: true, result }`, or `{ ok: false, reason: "unknown-command" }`. `options` is `{ input?, scope? }` — an object rather than a third positional argument, so no existing `runCommand(id, scope)` call changes meaning. Rejects with `run()`'s own error, like `runCommand`. |
 | `CONTRACT_VERSION` | The extension contract's version, currently `2`. See [contract v2](./extension-contract.md#contract-v2--commands-with-input-and-a-result) and [ADR-003](./adr/ADR-003-contract-version-policy.md). |
 | `ITEM_SELECTOR` | Selector for identified item hosts directly inside bar regions. Excludes popup copies and nested item markup. Exported so core and `/testing` share one string; use `renderWithToolbar().barIds()` for consumer assertions, not this selector. Its declaration has a string-literal type, so changing the selector is a type-level breaking change. |
-| `HEIGHT_VARIABLE` | The name of the CSS variable the shell publishes — `"--dev-toolbar-height"` — so a CSS-in-JS host need not retype the string. It is the `"default"` instance's; every instance also publishes `<HEIGHT_VARIABLE>-<instanceId>`. |
+| `HEIGHT_VARIABLE` | The name of the CSS variable the shell publishes — `"--dev-toolbar-height"` — so a CSS-in-JS host need not retype the string. Present while exactly one instance is mounted and enabled; every instance also publishes `<HEIGHT_VARIABLE>-<instanceId>`. |
 | `createLocalStorage()` | The default adapter: `localStorage`, but it never throws. Useful as the base of your own wrapper. |
 | `createMemoryStorage(seed?)` | In-memory adapter for tests and non-browser hosts. `seed` is a plain key/value map of already-persisted JSON. |
 | `createNullStorage()` | Swallows every write and reads `null` — what `storage={null}` installs. |

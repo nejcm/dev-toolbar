@@ -13,7 +13,8 @@ the open panel back after a reload.
 - `shell-position` moves the bar between `bottom` and `top` after mount.
 - `shell-visible` hides and shows the bar, including from the keyboard.
 - `shell-height` publishes `--dev-toolbar-height-playground` on `<html>`,
-  covering bar *plus* open panel, and `DevToolbarInset` pads by it.
+  covering bar *plus* open panel, and `DevToolbarInset` pads by it. As the only
+  toolbar on the page it publishes the unsuffixed `--dev-toolbar-height` too.
 - `shell-persist` restores position, visibility, active panel and panel height
   from `dtb:v1:playground:*` after a reload.
 - `shell-isolate` keeps a throwing extension (`boom`) inside one error chip.
@@ -65,9 +66,10 @@ Preconditions:
   `{name: "--dev-toolbar-height-playground", value: "30px"}` at rest and grows
   to the bar-plus-panel height (`350px` at the default panel height); the page
   read's `inset.bottom` equals it exactly. The bridge reports only the
-  instance-scoped name — the unsuffixed `--dev-toolbar-height` belongs to
-  `instanceId: "default"` and this app is `"playground"`, so it stays unset;
-  read it from the page if you want to assert that.
+  instance-scoped name; the unsuffixed `--dev-toolbar-height` is published as
+  well because this is the page's only toolbar, and the header's
+  `height-readout` shows it — it should read the same value as the bridge.
+  `toggle-enabled` off sets the readout to `(unset)`; on again brings it back.
 - **Move the bar.** Click `[data-testid="toggle-position"]`. Bridge read:
   `shell.position` is `"top"`. Page read: `inset.position` is `"top"`,
   `inset.top` carries the height, `inset.bottom` is `0px`, and
@@ -125,10 +127,10 @@ Preconditions:
   check ran screenshot-flushed: the observer then sees one coalesced size
   change instead of the stream a visible resize produces, so it is a weaker
   test of anything that guards against oscillation.
-- The height variable is instance-scoped: `--dev-toolbar-height-playground`,
-  which is the name `shell.heightVariable.name` reports. The playground's own
-  `height-readout` control reads the *unsuffixed* name and therefore always
-  shows `(unset)`; that readout is stale, not a regression.
+- `shell.heightVariable.name` reports the instance-scoped
+  `--dev-toolbar-height-playground`. The playground's `height-readout` reads the
+  *unsuffixed* name, which a lone instance also publishes; it shows `(unset)`
+  only while the toolbar is disabled or a second instance is mounted.
 - Position, visibility and the active panel are store state, not props.
   Re-rendering `<DevToolbar>` with a different `defaultPosition` will not move
   a bar that already has a stored position.
