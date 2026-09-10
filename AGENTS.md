@@ -25,6 +25,7 @@ The contract an extension is written against is the real public API.
 | `src/testing/` | `renderWithToolbar`, `makeExtension`, `mockBus`, fake layout | React + optional `@testing-library/react` peer | core's *types* relatively, core's *values* through `@nejcm/dev-toolbar` |
 | `examples/playground/` | Vite app consuming the built package via `file:../..` | Vite, React | `dist/`, as a real consumer does |
 | `test/fixtures/jest-consumer/` | A real Jest 30 + CommonJS consumer of `dist/` | Jest, bun | `dist/`, as a CommonJS consumer does |
+| `test/fixtures/vite-consumer/` | The packed tarball through a default Vite dev server and its dependency optimizer, in Chromium | Vite, Playwright, bun | the tarball `bun pm pack` produces, as an npm consumer does |
 | `docs/` | The reference: one page per entry point and per first-party extension, plus `architecture.md` and the ADRs | Markdown | — |
 | `scripts/` | Repo tooling with no home in `src/`: currently the per-entrypoint size report | Plain ESM `.mjs`, no deps | `dist/`, `package.json` `exports` |
 | `.github/actions/` | Composite actions the workflows share: `setup-job`, `report-bundle-size`, `knip-check` | GitHub Actions | `.github/workflows/` |
@@ -60,6 +61,7 @@ bun run check:package        # publint + attw over a packed tarball (needs dist/
 bun run knip                 # unused files, exports and deps — a gate, inside `verify`
 bun run size                 # builds, then a per-entrypoint size table
 bun run test:jest-consumer   # builds, then runs Jest against dist/ — not part of `test`
+bun run test:vite-consumer   # builds, packs, then Playwright drives a cold Vite consumer of the tarball — not part of `test`
 bun run test:e2e             # builds, then Playwright drives the playground in Chromium — not part of `test`
 bun run playground           # builds, then Vite on :5273
 ```
@@ -81,12 +83,12 @@ to write the readable report to the job summary — the gate is the `knip` insid
 `.github/workflows/audit.yml`, daily and on demand: its answer depends on the
 advisory database rather than the diff, and it takes minutes. High and critical
 findings fail it; anything lower is a job-summary report. It audits the root
-`bun.lock` only — the playground and jest-consumer lockfiles are dev-only trees
-that ship nothing.
+`bun.lock` only — the playground, jest-consumer and vite-consumer lockfiles are
+dev-only trees that ship nothing.
 
 ## Conventions
 
-- **Bun, not npm, for installing anything** — `test/fixtures/jest-consumer` included.
+- **Bun, not npm, for installing anything** — both `test/fixtures/*` consumers included.
   (Publishing is still `npm publish`; that is the registry client, not a package
   manager choice.) Why the fixture stopped using `npm ci`, and what it is still a
   real consumer *of*, is in

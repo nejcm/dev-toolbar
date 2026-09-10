@@ -374,6 +374,7 @@ The article at the bottom is what each chip means.
 
 ```bash
 bun run test:jest-consumer   # builds, then runs Jest against dist/
+bun run test:vite-consumer   # builds, packs, then drives a Vite consumer of the tarball in Chromium
 ```
 
 `test/fixtures/jest-consumer` is a real Jest 30 + CommonJS consumer of the built
@@ -382,9 +383,16 @@ deleting it as redundant, read
 [its README](./test/fixtures/jest-consumer/README.md): this failure class has
 already shipped twice.
 
+`test/fixtures/vite-consumer` is the ESM half: the packed tarball, unpacked into
+a consumer's `node_modules`, served by a cold Vite dev server with the default
+dependency optimizer — the path the playground opts out of. It asserts one
+React across core, `/kit` and `ext/*`;
+[its README](./test/fixtures/vite-consumer/README.md) records the two-React
+report that motivated it.
+
 ## House rules
 
-- **Bun, not npm, for installing anything** — `test/fixtures/jest-consumer`
+- **Bun, not npm, for installing anything** — both `test/fixtures/*` consumers
   included. npm is the publish client, not a package manager choice.
 - **Zero runtime dependencies is a rule.** A new `dependency` needs an answer to
   "why can't the consumer pass this in?".

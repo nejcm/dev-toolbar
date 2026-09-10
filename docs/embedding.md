@@ -147,25 +147,31 @@ interface EmbedOptions {
   id: string;
   label: string;
   render: (props: PanelSlotProps) => ReactNode;   // called only once the panel first opens
-  value?: ReactNode;                              // shown beside the label on the default chip
-  compact?: (props: CompactSlotProps) => ReactNode;   // replaces the default chip
+  value?: ReactNode;                              // opts into the kit's chip; shown beside the label
+  compact?: (props: CompactSlotProps) => ReactNode;   // replaces the trigger entirely
   keepMounted?: boolean;                          // default false
   minHeight?: number;                             // the frame's floor, px — default 240
   align?: ToolbarAlign; order?: number; priority?: number; hidden?: boolean;
-  injectStyles?: boolean;                         // the kit sheet, for the chip — default true
+  injectStyles?: boolean;                         // the kit sheet, for that chip — default true
   styleNonce?: string;                            // for that sheet; wins over the slot prop
 }
 ```
 
 What it does, and all it does:
 
-- **A native-looking chip.** A `data-dtb-part="trigger"` button with `aria-expanded`,
-  wrapping the kit's [`Chip`](./kit.md#chip): a dot, the label, and `value` if you
-  give one. For a live value, pass an element that subscribes to the tool's own state
-  — `examples/playground/src/embedDemo.tsx` shows the query-cache count. It ensures
-  the kit stylesheet for that chip, through its own `injectStyles` switch like every
-  first-party extension; that is the only sheet it touches. Pass `compact` to replace
-  the chip entirely.
+- **Core's trigger by default; the kit's chip when asked.** With neither `value` nor
+  `compact`, the extension has no `compact` slot at all: core renders the same plain
+  labelled button it renders for the four-line recipe, and nothing from `/kit` runs on
+  the bar. Pass `value` and the trigger becomes a `data-dtb-part="trigger"` button with
+  `aria-expanded` wrapping the kit's [`Chip`](./kit.md#chip) — a dot, the label and the
+  value, carrying `data-dtb-part="embed-chip"`. For a live value, pass an element that
+  subscribes to the tool's own state — `examples/playground/src/embedDemo.tsx` shows
+  the query-cache count. That chip is what the kit stylesheet is ensured for, through
+  the `injectStyles` switch every first-party extension has; it is the only sheet the
+  helper touches, and without `value` it touches none. Pass `compact` to replace the
+  trigger entirely. (Earlier releases always rendered the kit chip, so the no-`value`
+  markup has changed — `embed-chip` is gone from it; pass `value={null}` to keep it, or target
+  the instance's `trigger`. *Vite and `/kit`* below is why.)
 - **`height` handed through, with a floor.** `render` receives the live
   `PanelSlotProps` — `height` in pixels, `close()`, `isActive`, `density`,
   `styleNonce`. The frame is a bare `<div data-dtb-part="embed-frame" data-dtb-embed>`
@@ -183,6 +189,45 @@ It adds no containment (core's boundary is already around the slot), no styleshe
 the embedded subtree, no wrapper with a class on it. The frame carries two attributes —
 its part name and the `data-dtb-embed` opt-out above — and two inline sizes, and the
 tool's root is its only child.
+
+### Vite and `/kit`: a subpath added to a running dev server
+
+If you add `import { embed } from "@nejcm/dev-toolbar/kit"` — or any other subpath of
+this package — while `vite dev` is already running with the page open, the console may
+show **"Invalid hook call … more than one copy of React"** from the first component in
+that subpath, and the bar an error chip for it. One mechanism for that is reproduced in
+`test/fixtures/vite-consumer`: a dependency Vite's optimizer did not see at its first
+scan is pre-bundled on discovery against a fresh `react.js?v=<new>`, and for one hot
+update the page's already-loaded modules still hold `react.js?v=<old>`. Vite logs
+`dependency optimized: @nejcm/dev-toolbar/kit` and `optimized dependencies changed.
+reloading`; in the fixture, the reload that follows serves everything under one hash
+again and the error is gone. The fixture's automated spec covers the other side — a
+cold start with the import already in place is clean. It does not explain an error
+that *survives* that reload: the report that motivated this section described one, and
+it has not been reproduced. If yours persists, check for a second `react` in your tree
+first (`npm ls react`, `bun pm ls react`).
+
+Whatever the cause, telling the optimizer about the subpaths up front removes the
+late-discovery re-optimization — Vite's own recipe for dependencies it would otherwise
+find late:
+
+```ts
+// vite.config.ts
+export default defineConfig({
+  optimizeDeps: {
+    include: [
+      "@nejcm/dev-toolbar",
+      "@nejcm/dev-toolbar/kit",
+      "@nejcm/dev-toolbar/ext/flags", // and every other `ext/*` you mount
+    ],
+  },
+});
+```
+
+With that in place, adding the import in the fixture is an ordinary hot update: no
+re-optimization, no reload, no second `react.js`. And `embed()` without `value` renders
+no kit code on the bar, so its trigger cannot be the first hook to trip over whatever a
+late discovery does.
 
 ## Loading the tool lazily too
 

@@ -1,0 +1,27 @@
+{
+  "name": "dtb-vite-consumer-fixture",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "description": "Vite dev-server consumer fixture for @nejcm/dev-toolbar: the packed tarball through a default dependency optimizer. Not published; see README.md in this directory.",
+  "scripts": {
+    "sync": "node sync-package.mjs",
+    "test": "node sync-package.mjs && playwright test",
+    "typecheck": "tsc --noEmit",
+    "dev": "node sync-package.mjs && vite"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.63.0",
+    "@types/node": "^26.4.0",
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.5",
+    "@vitejs/plugin-react": "^6.1.1",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8",
+    "typescript": "^5.9.3",
+    "vite": "^8.2.2"
+  },
+  "engines": {
+    "node": ">=24"
+  }
+}

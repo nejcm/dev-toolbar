@@ -431,14 +431,14 @@ embed(options: EmbedOptions): DevToolbarExtension;
 ```
 
 The frame for a third-party devtool panel — TanStack Query's, React Hook Form's, a Redux
-monitor. It returns an ordinary extension: a `Chip`-based trigger reading `label` (and
-`value`, if given), a `panel` that renders `options.render(props)` inside a bare
+monitor. It returns an ordinary extension: core's own trigger — or, given `value`, a
+`Chip`-based one reading `label` and `value` — a `panel` that renders `options.render(props)` inside a bare
 `<div data-dtb-part="embed-frame">` with `height: 100%` and a `min-height` floor
 (default 240px), `keepMounted` passed through, and `render()` left uncalled until the
 panel first opens. It scopes, resets and injects **nothing** for the embedded subtree —
 the frame carries core's `data-dtb-embed` opt-out, which keeps core's element-level
 defaults (the button face, field geometry, box-sizing) off the tool, and the only sheet
-the helper ensures is this kit's, for its own chip. The plain `{ id, label, panel }` object works without it; the helper is
+the helper ensures is this kit's, for that chip, and only when `value` asks for one. The plain `{ id, label, panel }` object works without it; the helper is
 for the fiddly parts. [embedding.md](./embedding.md) is the recipe and the reference for
 `EmbedOptions`.
 

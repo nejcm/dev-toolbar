@@ -70,11 +70,12 @@ describe("package.json exports", () => {
     expect(Object.keys(pkg.exports).some((key) => key.includes("*"))).toBe(false);
   });
 
-  it("publishes neither the playground nor the Jest consumer fixture", () => {
+  it("publishes neither the playground nor the consumer fixtures", () => {
     expect(pkg.files).not.toContain("examples");
     expect(pkg.files).not.toContain("test");
     expect(existsSync(`${root}examples/playground/package.json`)).toBe(true);
     expect(existsSync(`${root}test/fixtures/jest-consumer/package.json`)).toBe(true);
+    expect(existsSync(`${root}test/fixtures/vite-consumer/package.json`)).toBe(true);
   });
 });
 

@@ -26,8 +26,9 @@ source for what to drive. Read its README before driving anything, then use the
 matching feature file as the recipe.
 
 Secondary surfaces, out of scope for this skill: `bun run test:jest-consumer`
-(a real CommonJS consumer of `dist/`), `bun run check:package`, and
-`bun run size`. They are commands, not apps — run them directly.
+(a real CommonJS consumer of `dist/`), `bun run test:vite-consumer` (the packed
+tarball through a default Vite dev server, in Chromium), `bun run check:package`,
+and `bun run size`. They are commands, not apps — run them directly.
 
 ## Run the suite first
 

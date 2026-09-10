@@ -110,7 +110,9 @@ implementations of this report are all wrong for a code-split build.
 `bun run test:jest-consumer` is deliberately _not_ part of `bun run test`. It
 builds the package and runs a real jest-based consumer against `dist/`, which is
 slow. Run it when you change the build output, the `exports` map, or anything
-about how the package is packaged.
+about how the package is packaged. `bun run test:vite-consumer` is its ESM twin:
+it packs the tarball and drives a Vite dev server consuming it, dependency
+optimizer and all, in Chromium (needs `bunx playwright install chromium` once).
 
 ### The playground
 

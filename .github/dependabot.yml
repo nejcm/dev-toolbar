@@ -57,6 +57,22 @@ updates:
         patterns: ["*"]
         update-types: [minor, patch]
 
+  # Same again for the Vite consumer fixture. It pins `@playwright/test`
+  # exactly, like the playground, and CI installs and caches a Chromium for
+  # each pin from its own directory — so a bump here that lands ahead of the
+  # playground's costs a second browser download, not a missing executable.
+  - package-ecosystem: bun
+    directory: "/test/fixtures/vite-consumer"
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 2
+    open-pull-requests-limit: 5
+    groups:
+      minor-and-patch:
+        patterns: ["*"]
+        update-types: [minor, patch]
+
   # The playground pins `@playwright/test` exactly (the browser build must match
   # the package) and carries the TanStack devtools packages; without this entry
   # neither would ever be bumped, since the root `bun.lock` does not cover them.

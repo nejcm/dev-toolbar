@@ -916,6 +916,11 @@ not exist. Failing both, `setTestingLibrary(module)` supplies it by hand —
 `require("@testing-library/react")` under Jest, `await import(...)` in ESM. The
 `test/fixtures/jest-consumer` fixture exists to exercise the CommonJS half.
 
+A different identity question — one React across core, `/kit` and `ext/*` when the
+packed tarball goes through Vite's dependency optimizer — has its own fixture,
+`test/fixtures/vite-consumer`. It does not import `/testing` and says nothing about
+the resolver above; its README has what it does cover.
+
 ### 7.1 Contract v2 — commands with input and a result
 
 `CONTRACT_VERSION` is **2**. Two things a command could not do before:

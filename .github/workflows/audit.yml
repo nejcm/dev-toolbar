@@ -8,8 +8,8 @@ name: Audit
 # `bun audit` takes minutes even on a warm machine, so `timeout-minutes` below
 # is a real guard, not a formality.
 #
-# Only the root `bun.lock` is audited — the playground and jest-consumer
-# lockfiles are dev-only trees that nothing ships from, so an advisory against
+# Only the root `bun.lock` is audited — the playground, jest-consumer and
+# vite-consumer lockfiles are dev-only trees that nothing ships from, so an advisory against
 # one is not a finding about this package. The lockfile cache key in
 # `setup-job` is about restoring an install, not audit scope.
 on:
