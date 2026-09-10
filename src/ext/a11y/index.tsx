@@ -13,12 +13,13 @@
  * ```
  *
  * **axe-core is an optional peer, not a dependency.** It is loaded with
- * `import("axe-core")` when the extension starts; a consumer who has not
- * installed it gets the `"unsupported"` state — the same word `/ext/metrics`
- * uses for a missing platform API — and nothing throws. Installing it is not
- * free: axe-core is roughly 550 KB and a supply-chain surface of its own, so
- * this is the one place in the package where "zero runtime dependencies" is
- * true of the package and still costs the consumer something.
+ * `import("axe-core")` when the extension starts — or, with `loadOn: "scan"`,
+ * not until the first scan; a consumer who has not installed it gets the
+ * `"unsupported"` state — the same word `/ext/metrics` uses for a missing
+ * platform API — and nothing throws. Installing it is not free: axe-core is
+ * roughly 550 KB and a supply-chain surface of its own, so this is the one
+ * place in the package where "zero runtime dependencies" is true of the
+ * package and still costs the consumer something.
  *
  * **Nothing runs on a timer.** A full-document axe pass is expensive, so it
  * happens on a click, a command, or an agent call — never on an interval, and
@@ -29,7 +30,7 @@
  */
 import { writeClipboardTextOrThrow } from "@nejcm/dev-toolbar/runtime";
 import { resolveStyleNonce } from "@nejcm/dev-toolbar/kit";
-import { createA11yRuntime } from "./runtime";
+import { DEFAULT_LOAD_ON, createA11yRuntime } from "./runtime";
 import { A11yChip, A11yPanel, A11ySurface } from "./ui";
 import type { A11yRuntimeOptions } from "./runtime";
 import type { A11yReport } from "./types";
@@ -88,6 +89,7 @@ export function a11y(options: A11yOptions = {}): DevToolbarExtension {
   } = options;
 
   const runtime = createA11yRuntime(runtimeOptions);
+  const loadOn = runtimeOptions.loadOn ?? DEFAULT_LOAD_ON;
 
   const scanCommand: ToolbarCommand<void, A11yReport> = {
     id: `${id}.scan`,
@@ -232,6 +234,7 @@ export function a11y(options: A11yOptions = {}): DevToolbarExtension {
       <A11yPanel
         runtime={runtime}
         label={label}
+        loadOn={loadOn}
         injectStyles={injectStyles}
         styleNonce={resolveStyleNonce(optionNonce, styleNonce)}
       />

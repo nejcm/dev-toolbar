@@ -24,7 +24,12 @@ export const IMPACT_SEVERITY: Readonly<Record<Impact, Severity>> = {
 export type ScanStatus =
   /** axe-core is not installed, or its module failed to load. */
   | "unsupported"
-  /** axe is available and nothing has been scanned yet. */
+  /**
+   * No scan result is held: nothing has been scanned yet, or the last scan was
+   * cleared. Says nothing about axe itself — the import may be in flight, not
+   * yet requested (`loadOn: "scan"`), or long done; `A11ySnapshot.axeLoaded`
+   * is where that lives.
+   */
   | "pending"
   | "ok"
   /** A scan ran and threw. `A11yReport.error` says what. */
@@ -130,6 +135,17 @@ export interface A11ySnapshot {
    * and `report.selected` already says which element it belongs to.
    */
   highlight: readonly A11yHighlightView[];
+  /**
+   * axe has been imported and exposes `run()`. Not part of the report —
+   * `status` already says `"unsupported"` when the import failed — but under
+   * `loadOn: "scan"` a `"pending"` report exists before axe has been looked
+   * for at all, and the panel needs to say so rather than imply it was found.
+   *
+   * The runtime always supplies it. Optional so a snapshot built by hand — a
+   * consumer's fixture, say — stays valid; a reader treats `undefined` as
+   * "not known to be loaded".
+   */
+  axeLoaded?: boolean;
 }
 
 export const NO_COUNTS: Readonly<Record<Impact, number>> = {
