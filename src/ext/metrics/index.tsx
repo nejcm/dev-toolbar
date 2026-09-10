@@ -42,7 +42,10 @@ import type { NetworkEntryView, NetworkExport } from "./types";
 export interface MetricsOptions {
   /** Extension id. Change it to mount two independent metric groups. Default `"metrics"`. */
   id?: string;
-  /** Bar label, used by the error chip and the panel's accessible name. Default `"Metrics"`. */
+  /**
+   * Bar label, used by the error chip, the bar trigger's accessible name and
+   * the panel's accessible name. Default `"Metrics"`.
+   */
   label?: string;
   align?: ToolbarAlign;
   order?: number;
@@ -333,6 +336,7 @@ export function metrics(options: MetricsOptions = {}): DevToolbarExtension {
     compact: ({ isOverflowed, isPanelOpen, togglePanel, styleNonce }) => (
       <MetricsChips
         runtime={runtime}
+        label={label}
         isOverflowed={isOverflowed}
         isPanelOpen={isPanelOpen}
         injectStyles={injectStyles}

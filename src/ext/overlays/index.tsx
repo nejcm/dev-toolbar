@@ -63,7 +63,10 @@ export interface OverlaysOptions extends Omit<
 > {
   /** Extension id. Default `"overlays"`. */
   id?: string;
-  /** Bar label, used by the error chip and the panel's accessible name. Default `"Overlays"`. */
+  /**
+   * Bar label, used by the error chip, the bar trigger's accessible name and
+   * the panel's accessible name. Default `"Overlays"`.
+   */
   label?: string;
   align?: ToolbarAlign;
   order?: number;

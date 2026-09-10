@@ -56,22 +56,32 @@ export function OverlaysChip({
   const names = OVERLAY_IDS.filter((id) => snapshot.enabled[id]).map(
     (id) => OVERLAY_META[id].label,
   );
+  // One word for the state, painted by the chip, spoken by the name and
+  // explained by the title — so a voice-control user can say what they see.
+  const state = on ? `${snapshot.activeCount} on` : "off";
+  // The chip text is the whole name today, so the button is announced as its
+  // readout. Name it after the extension and keep the state the chip shows —
+  // the error tag included, since that is the part worth hearing.
+  const accessibleLabel = [label, state, snapshot.error === null ? null : "error"]
+    .filter((part) => part !== null)
+    .join(", ");
 
   return (
     <button
       type="button"
       data-dtb-part="trigger"
       aria-expanded={isPanelOpen}
+      aria-label={accessibleLabel}
       onClick={onToggle}
       title={
         on
           ? `${label}: ${names.join(", ")} — click to choose overlays`
-          : `${label}: none on — click to choose overlays`
+          : `${label}: ${state} — click to choose overlays`
       }
     >
       <Chip
         label={isOverflowed ? label : "overlays"}
-        value={on ? `${snapshot.activeCount} on` : "off"}
+        value={state}
         data-dtb-part="ovl-chip"
         data-dtb-active={on ? "true" : "false"}
         dotProps={{ "data-dtb-part": "ovl-dot" }}

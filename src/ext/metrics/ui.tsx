@@ -26,6 +26,7 @@ import type { CollectorId, MetricsSnapshot } from "./types";
 
 export interface ChipsProps {
   runtime: MetricsRuntime;
+  label: string;
   isOverflowed: boolean;
   isPanelOpen: boolean;
   injectStyles: boolean;
@@ -35,6 +36,7 @@ export interface ChipsProps {
 
 export function MetricsChips({
   runtime,
+  label,
   isOverflowed,
   isPanelOpen,
   injectStyles,
@@ -90,6 +92,12 @@ export function MetricsChips({
       type="button"
       data-dtb-part="trigger"
       aria-expanded={isPanelOpen}
+      // Named after the extension, not the readout: the bar chips are the only
+      // thing naming this button today, so a screen reader hears the numbers
+      // and never the control. A name that churns with the values would also
+      // re-speak on every focus. The values stay the chips' visible text and
+      // the panel's. `title` explains; it does not name.
+      aria-label={label}
       onClick={onToggle}
       title="Runtime performance — click for details"
     >

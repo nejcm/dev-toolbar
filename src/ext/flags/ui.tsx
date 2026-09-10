@@ -61,12 +61,19 @@ function PromotedControl({
     .filter(Boolean)
     .join(" · ");
 
+  // The dot is aria-hidden and the icon is decorative, so the label span is the
+  // only thing naming this control. Name it explicitly and keep the value a
+  // non-boolean paints — a switch already announces its own on/off state, so
+  // repeating it there would be noise. `title` explains; it does not name.
+  const accessibleLabel = view.type === "boolean" ? label : `${label}, ${view.effectiveText}`;
+
   return (
     <button
       type="button"
       data-dtb-part="flag-promoted"
       data-dtb-flag={view.key}
       data-dtb-overridden={view.overridden ? "true" : "false"}
+      aria-label={accessibleLabel}
       {...(toggleable ? { role: "switch", "aria-checked": on } : {})}
       onClick={toggleable ? onToggle : onOpen}
       title={title}

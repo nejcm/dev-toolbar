@@ -57,6 +57,11 @@ export function EnvironmentChip({
   const title = snapshot.supplied
     ? `${label}: ${kind} — click for the full context`
     : `${label}: unknown — no context supplied to environment()`;
+  // The chip paints "env" plus the kind, so without a name of its own the
+  // button is announced as its own readout. `title` explains; it does not name.
+  const accessibleLabel = [label, kind, snapshot.impersonating ? "impersonating" : null]
+    .filter((part) => part !== null)
+    .join(", ");
 
   const inner = (
     <Chip
@@ -75,7 +80,13 @@ export function EnvironmentChip({
 
   if (isOverflowed) {
     return (
-      <button type="button" data-dtb-part="env-overflow" onClick={onToggle} title={title}>
+      <button
+        type="button"
+        data-dtb-part="env-overflow"
+        aria-label={accessibleLabel}
+        onClick={onToggle}
+        title={title}
+      >
         {inner}
       </button>
     );
@@ -86,6 +97,7 @@ export function EnvironmentChip({
       type="button"
       data-dtb-part="trigger"
       aria-expanded={isPanelOpen}
+      aria-label={accessibleLabel}
       onClick={onToggle}
       title={title}
     >

@@ -50,7 +50,7 @@ export interface EnvironmentOptions extends Pick<
 > {
   /** Extension id. Default `"environment"`. */
   id?: string;
-  /** Bar label, used by the chip. Default `"Environment"`. */
+  /** Bar label, used by the chip and its accessible name. Default `"Environment"`. */
   label?: string;
   align?: ToolbarAlign;
   order?: number;
