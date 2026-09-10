@@ -117,7 +117,7 @@
 
 ### ⚠ BREAKING CHANGES
 
-* **ext/metrics:** `metrics({ network: { bus } })` now disables the fetch and XMLHttpRequest patches by default, because a bus and a patch recorded the same request twice under unrelated ids — patched requests were keyed `r${sequence}` and bus requests by `payload.requestId`, with nothing correlating them. Pass `patchFetch: true` and/or `patchXhr: true` alongside `bus` to keep patching. Consumers already passing
+* **ext/metrics:** `metrics({ network: { bus } })` now disables the fetch and XMLHttpRequest patches by default, because a bus and a patch recorded the same request twice under unrelated ids — patched requests were keyed `r${sequence}` and bus requests by `payload.requestId`, with nothing correlating them. Pass `patchFetch: true` and/or `patchXhr: true` alongside `bus` to keep patching. Consumers already passing `patchFetch: false, patchXhr: false` (the README recipe) are unaffected.
 
 ### Features
 
