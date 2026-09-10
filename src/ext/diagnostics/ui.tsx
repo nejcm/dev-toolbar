@@ -5,9 +5,9 @@ import {
   Banner,
   Chip,
   EmptyState,
-  Glyph,
   Note,
   renderCompact,
+  renderCompactParts,
   resolveAccessibleName,
   resolveCompactControl,
   useExtensionSurface,
@@ -91,22 +91,23 @@ const DEFAULTS: CompactDefaults = {
  * reason is recorded in
  * `docs/adr/ADR-004-per-extension-bar-presentation.md`. `Chip` renders its
  * children straight after the dot, in the slots' own position, so nothing
- * about today's output moves.
+ * about the surrounding output moves. The fragment itself is kit's
+ * `renderCompactParts` — six extensions wrote it identically once the text
+ * span was named here, so it is one function now.
  */
-function iconAndText(
-  label: string,
-  { icon: paintIcon, text }: CompactParts,
-  icon: ReactNode,
-): ReactNode {
-  return (
-    <>
-      {paintIcon ? <Glyph data-dtb-part="diag-icon">{icon}</Glyph> : null}
-      {/* A bare `<span>`, which is what `Chip`'s `label` slot wrote before this
-          moved into the chip's children — no `data-dtb-part`, because adding
-          one would change today's bytes. */}
-      {text === "none" ? null : <span>{text === "full" ? label : SHORT_LABEL}</span>}
-    </>
-  );
+function iconAndText(label: string, parts: CompactParts, icon: ReactNode): ReactNode {
+  return renderCompactParts({
+    parts,
+    icon,
+    iconProps: { "data-dtb-part": "diag-icon" },
+    short: SHORT_LABEL,
+    full: label,
+    // `data-dtb-part` only. The kit's `[data-dtb-kind="label"]` rule tints a
+    // labelled span with `--dtb-muted`; this chip has never been tinted, and
+    // whether it should be is a visual decision, not a side effect of naming
+    // the span.
+    textProps: { "data-dtb-part": "diag-label" },
+  });
 }
 
 export interface ChipProps {

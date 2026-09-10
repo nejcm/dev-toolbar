@@ -4,16 +4,22 @@
  *
  * Every extension that lets a consumer restyle its bar control resolves that
  * option through these pure helpers, so the two guarantees below hold once
- * rather than nine times. Nothing here paints: `resolveCompactControl` answers
- * *which parts* to paint and the extension paints them, because the nine bar
- * controls do not share a DOM shape (three of them are hand-written on purpose).
- * `renderCompact` is the one exception in spirit only — it invokes the
+ * rather than nine times. Almost nothing here paints: `resolveCompactControl`
+ * answers *which parts* to paint and the extension paints them, because the
+ * nine bar controls do not share a DOM shape (three of them are hand-written
+ * on purpose). `renderCompact` is an exception in spirit only — it invokes the
  * consumer's callback and returns its node, still without a tree of its own.
+ * `renderCompactParts` is the one real exception, and it earned it: six of the
+ * nine wrote the *same* icon-plus-text fragment, so the shared shape is a fact
+ * about them rather than a shape imposed on them. It stops at the icon and the
+ * text; the value span and the state children stay each extension's own.
  *
  * Provenance: `plans/bar-presentation-icons-v1.md`, "Design"; the decision and
  * its rejected alternatives are `docs/adr/ADR-004-per-extension-bar-presentation.md`.
  */
 import type { ReactNode } from "react";
+import { Glyph } from "./controls";
+import type { SpanProps } from "./controls";
 
 /**
  * How a bar control presents itself.
@@ -260,6 +266,64 @@ export function resolveCompactControl<TView>(
     isOverflowed,
   });
   return { icon, parts: parts ?? (isOverflowed ? defaults.overflow : defaults.bar) };
+}
+
+/**
+ * The icon and the text of one bar control, as `Chip` children.
+ *
+ * Six first-party extensions wrote the same six-line fragment: paint the
+ * `Glyph` when `parts.icon`, and paint one `<span>` carrying either the short
+ * bar word or the full identity when `parts.text` is not `"none"`. The
+ * divergence that kept it six copies was the text span's attributes — four
+ * chips wrote a bare `<span>` and two wrote a named one — and that is gone now
+ * that all six name theirs, leaving `textProps` as an ordinary prop bag rather
+ * than a shape parameter.
+ *
+ * `parts.value` is deliberately not read here: every site paints its own value
+ * span, with its own part, its own `data-dtb-severity` and — for the two that
+ * have one — its own state child after it. Kit answers *which parts*; the
+ * extension still owns the DOM (ADR-004).
+ */
+export interface CompactPartsContent {
+  /** Which parts to paint: `resolveCompactControl(...).parts`. */
+  parts: CompactParts;
+  /** The resolved icon node, as `resolveCompactControl` returned it. */
+  icon: ReactNode;
+  /** Attributes for the `Glyph` — in practice this extension's `data-dtb-part`. */
+  iconProps?: SpanProps;
+  /** The short bar word, painted when `parts.text` is `"short"`. */
+  short: ReactNode;
+  /** The extension's full identity, painted when `parts.text` is `"full"`. */
+  full: ReactNode;
+  /** Attributes for the text `<span>`. Omitted entirely, it writes a bare one. */
+  textProps?: SpanProps;
+}
+
+/**
+ * Paints the icon and the text of one bar control.
+ *
+ * A plain function returning a fragment rather than a component, for the same
+ * reason `resolveIcon` is a call and not `<Icon />`: a component declared or
+ * chosen per render is what `react/no-unstable-nested-components` rejects, and
+ * the result here is `Chip`'s children, which every site then concatenates its
+ * own value and state children onto.
+ */
+export function renderCompactParts({
+  parts,
+  icon,
+  iconProps,
+  short,
+  full,
+  textProps,
+}: CompactPartsContent): ReactNode {
+  return (
+    <>
+      {parts.icon ? <Glyph {...iconProps}>{icon}</Glyph> : null}
+      {parts.text === "none" ? null : (
+        <span {...textProps}>{parts.text === "full" ? full : short}</span>
+      )}
+    </>
+  );
 }
 
 /** Where a `render` callback is being invoked, for the context it is handed. */

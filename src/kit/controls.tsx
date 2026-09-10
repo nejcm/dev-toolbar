@@ -18,7 +18,17 @@ import type {
 import type { SeverityWithOverride } from "./types";
 
 type DataAttributes = { [name: `data-${string}`]: string | undefined };
-type SpanProps = HTMLAttributes<HTMLSpanElement> & DataAttributes;
+
+/**
+ * Everything a `<span>` takes, plus `data-*`.
+ *
+ * Named and exported because it is the shape of every span-shaped slot in the
+ * kit — `Chip`'s `dotProps` / `labelProps` / `valueProps`, `Glyph`, `Tag`, and
+ * `renderCompactParts`' two prop bags — and an extension passing one around
+ * should not have to spell it out. `GlyphProps` and `TagProps` are aliases of
+ * it, kept so each component still names its own props type.
+ */
+export type SpanProps = HTMLAttributes<HTMLSpanElement> & DataAttributes;
 
 /** Props for the shared button reset. Everything a `<button>` takes. */
 export type ActionProps = ButtonHTMLAttributes<HTMLButtonElement> & DataAttributes;

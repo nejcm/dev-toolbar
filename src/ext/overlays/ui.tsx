@@ -3,10 +3,10 @@ import type { CSSProperties, ReactNode } from "react";
 import {
   Banner,
   Chip,
-  Glyph,
   Note,
   Tag,
   renderCompact,
+  renderCompactParts,
   resolveAccessibleName,
   resolveCompactControl,
   useExtensionSurface,
@@ -92,22 +92,24 @@ const DEFAULTS: CompactDefaults = {
  * reason is recorded in
  * `docs/adr/ADR-004-per-extension-bar-presentation.md`. `Chip` renders its
  * children straight after the dot, in the slots' own position, so nothing
- * about today's output moves.
+ * about the surrounding output moves. The fragment itself is kit's
+ * `renderCompactParts` — six extensions wrote it identically once the text
+ * span was named here, so it is one function now.
  */
-function iconAndText(
-  label: string,
-  { icon: paintIcon, text }: CompactParts,
-  icon: ReactNode,
-): ReactNode {
-  return (
-    <>
-      {paintIcon ? <Glyph data-dtb-part="ovl-icon">{icon}</Glyph> : null}
-      {/* A bare `<span>`, which is what `Chip`'s `label` slot wrote before this
-          moved into the chip's children — no `data-dtb-part`, because adding
-          one would change today's bytes. */}
-      {text === "none" ? null : <span>{text === "full" ? label : SHORT_LABEL}</span>}
-    </>
-  );
+function iconAndText(label: string, parts: CompactParts, icon: ReactNode): ReactNode {
+  return renderCompactParts({
+    parts,
+    icon,
+    iconProps: { "data-dtb-part": "ovl-icon" },
+    short: SHORT_LABEL,
+    full: label,
+    // `ovl-chip-label`, not `ovl-label`: this extension already owns
+    // `data-dtb-part="ovl-label"` for the inspector's floating hover label, and
+    // `css.ts` styles it `position: absolute` with a panel background. Reusing
+    // the name would have moved the chip's word out of the bar. The other three
+    // chips named in this commit have no such clash and are `<prefix>-label`.
+    textProps: { "data-dtb-part": "ovl-chip-label" },
+  });
 }
 
 export interface ChipProps {

@@ -79,19 +79,17 @@ const overflowChip = (options: A11yOptions = {}): HTMLElement =>
   overflowTrigger(options).querySelector('[data-dtb-part="a11y-chip"]') as HTMLElement;
 
 /**
- * The chip's text span. It carries no `data-dtb-part`, deliberately: it is a
- * bare `<span>` because that is what `Chip`'s `label` slot wrote before the
- * parts moved into the chip's children, and naming it would have changed
- * today's bytes. So it is identified structurally — the one child span with no
- * kind of its own.
+ * The chip's text span, selected by the `data-dtb-part` it now carries.
+ *
+ * It used to be a bare `<span>` located structurally — the one child span with
+ * no kind and no part of its own — because naming it would have changed the
+ * bytes below. Naming it *is* the deliberate change this commit makes, so the
+ * structural stand-in is gone and the selector says what it always meant.
+ * There is deliberately no `data-dtb-kind="label"`: that is what the kit sheet
+ * tints with `--dtb-muted`, and recolouring this chip is a separate decision.
  */
-const text = (chip: Element): string | null => {
-  const spans = [...chip.children].filter(
-    (node) => node.tagName === "SPAN" && !node.hasAttribute("data-dtb-kind"),
-  );
-  expect(spans.length).toBeLessThanOrEqual(1);
-  return spans[0]?.textContent ?? null;
-};
+const text = (chip: Element): string | null =>
+  chip.querySelector('[data-dtb-part="a11y-label"]')?.textContent ?? null;
 
 const value = (chip: Element): string | null =>
   chip.querySelector('[data-dtb-part="a11y-value"]')?.textContent ?? null;
@@ -118,15 +116,15 @@ describe("the default presentation", () => {
     '<span data-dtb-part="a11y-chip" data-dtb-status="pending" data-dtb-kind="chip">' +
     '<span data-dtb-kind="dot" data-dtb-severity="unknown" aria-hidden="true"' +
     ' data-dtb-part="a11y-dot"></span>' +
-    "<span>a11y</span>" +
+    '<span data-dtb-part="a11y-label">a11y</span>' +
     '<span data-dtb-kind="value" data-dtb-severity="unknown" data-dtb-part="a11y-value">' +
     "scan</span></span></button>";
 
   // The same tree with the full label — the only thing the `⋮` menu changes,
   // which is the swing this chip used to write by hand.
   const DEFAULT_OVERFLOW_TRIGGER = DEFAULT_TRIGGER.replace(
-    "<span>a11y</span>",
-    "<span>Accessibility</span>",
+    '<span data-dtb-part="a11y-label">a11y</span>',
+    '<span data-dtb-part="a11y-label">Accessibility</span>',
   );
 
   it("paints the bar byte-identically with no option at all", () => {

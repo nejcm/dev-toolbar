@@ -81,22 +81,20 @@ const overflowChip = (options: OverlaysOptions = {}): HTMLElement =>
   overflowTrigger(options).querySelector('[data-dtb-part="ovl-chip"]') as HTMLElement;
 
 /**
- * The chip's text span. It carries no `data-dtb-part`, deliberately: it is a
- * bare `<span>` because that is what `Chip`'s `label` slot wrote before the
- * parts moved into the chip's children, and naming it would have changed
- * today's bytes. So it is identified structurally — the one child span with no
- * kind and no part of its own.
+ * The chip's text span, selected by the `data-dtb-part` it now carries.
+ *
+ * `ovl-chip-label` rather than `ovl-label`: that name was already this
+ * extension's floating inspector label, and `css.ts` positions it absolutely.
+ *
+ * It used to be a bare `<span>` located structurally — the one child span with
+ * no kind and no part of its own — because naming it would have changed the
+ * bytes below. Naming it *is* the deliberate change this commit makes, so the
+ * structural stand-in is gone and the selector says what it always meant.
+ * There is deliberately no `data-dtb-kind="label"`: that is what the kit sheet
+ * tints with `--dtb-muted`, and recolouring this chip is a separate decision.
  */
-const text = (chip: Element): string | null => {
-  const spans = [...chip.children].filter(
-    (node) =>
-      node.tagName === "SPAN" &&
-      !node.hasAttribute("data-dtb-kind") &&
-      !node.hasAttribute("data-dtb-part"),
-  );
-  expect(spans.length).toBeLessThanOrEqual(1);
-  return spans[0]?.textContent ?? null;
-};
+const text = (chip: Element): string | null =>
+  chip.querySelector('[data-dtb-part="ovl-chip-label"]')?.textContent ?? null;
 
 const value = (chip: Element): string | null =>
   chip.querySelector('[data-dtb-part="ovl-value"]')?.textContent ?? null;
@@ -157,15 +155,15 @@ describe("the default presentation", () => {
     ' aria-label="Overlays, off" title="Overlays: off — click to choose overlays">' +
     '<span data-dtb-part="ovl-chip" data-dtb-active="false" data-dtb-kind="chip">' +
     '<span data-dtb-kind="dot" aria-hidden="true" data-dtb-part="ovl-dot"></span>' +
-    "<span>overlays</span>" +
+    '<span data-dtb-part="ovl-chip-label">overlays</span>' +
     '<span data-dtb-kind="value" data-dtb-part="ovl-value">off</span>' +
     "</span></button>";
 
   // The same tree with the full label — the only thing the `⋮` menu changes,
   // which is the swing this chip used to write by hand.
   const DEFAULT_OVERFLOW_TRIGGER = DEFAULT_TRIGGER.replace(
-    "<span>overlays</span>",
-    "<span>Overlays</span>",
+    '<span data-dtb-part="ovl-chip-label">overlays</span>',
+    '<span data-dtb-part="ovl-chip-label">Overlays</span>',
   );
 
   it("paints the bar byte-identically with no option at all", () => {
@@ -196,13 +194,16 @@ describe("the default presentation", () => {
       ' aria-label="Overlays, 1 on" title="Overlays: Column grid — click to choose overlays">' +
       '<span data-dtb-part="ovl-chip" data-dtb-active="true" data-dtb-kind="chip">' +
       '<span data-dtb-kind="dot" aria-hidden="true" data-dtb-part="ovl-dot"></span>' +
-      "<span>overlays</span>" +
+      '<span data-dtb-part="ovl-chip-label">overlays</span>' +
       '<span data-dtb-kind="value" data-dtb-part="ovl-value">1 on</span>' +
       "</span></button>";
 
     expect(barTrigger({ defaults: { grid: true } }).outerHTML).toBe(ON_TRIGGER);
     expect(overflowTrigger({ defaults: { grid: true } }).outerHTML).toBe(
-      ON_TRIGGER.replace("<span>overlays</span>", "<span>Overlays</span>"),
+      ON_TRIGGER.replace(
+        '<span data-dtb-part="ovl-chip-label">overlays</span>',
+        '<span data-dtb-part="ovl-chip-label">Overlays</span>',
+      ),
     );
   });
 
@@ -212,7 +213,7 @@ describe("the default presentation", () => {
       ' aria-label="Overlays, off, error" title="Overlays: off — click to choose overlays">' +
       '<span data-dtb-part="ovl-chip" data-dtb-active="false" data-dtb-kind="chip">' +
       '<span data-dtb-kind="dot" aria-hidden="true" data-dtb-part="ovl-dot"></span>' +
-      "<span>overlays</span>" +
+      '<span data-dtb-part="ovl-chip-label">overlays</span>' +
       '<span data-dtb-kind="value" data-dtb-part="ovl-value">off</span>' +
       '<span data-dtb-part="ovl-tag" data-dtb-kind="tag">error</span>' +
       "</span></button>";
@@ -226,7 +227,12 @@ describe("the default presentation", () => {
     toolbar.openOverflow();
     expect(
       toolbar.overflowMenu()?.querySelector<HTMLElement>('[data-dtb-part="trigger"]')?.outerHTML,
-    ).toBe(ERROR_TRIGGER.replace("<span>overlays</span>", "<span>Overlays</span>"));
+    ).toBe(
+      ERROR_TRIGGER.replace(
+        '<span data-dtb-part="ovl-chip-label">overlays</span>',
+        '<span data-dtb-part="ovl-chip-label">Overlays</span>',
+      ),
+    );
   });
 });
 

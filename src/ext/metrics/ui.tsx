@@ -5,11 +5,11 @@ import {
   Action,
   Chip,
   CopyButton,
-  Glyph,
   Note,
   Row,
   Rows,
   renderCompact,
+  renderCompactParts,
   resolveAccessibleName,
   resolveCompactControl,
   useExtensionSurface,
@@ -72,19 +72,20 @@ const DEFAULTS: CompactDefaults = {
  * `render` callback as `ctx.fallback` and rendered when there is none, so
  * deferring to the preset is exact by construction instead of by two pieces of
  * markup kept in step. `Chip` renders its children straight after the dot, in
- * the slots' own position, so nothing about today's output moves.
+ * the slots' own position, so nothing about the surrounding output moves. The
+ * fragment itself is kit's `renderCompactParts` — six extensions wrote it
+ * identically, so it is one function now, and the `(short, full)` pair it takes
+ * is this extension's per-metric `label`/`title` rather than a module constant.
  */
-function iconAndText(view: MetricView, { icon: paintIcon, text }: CompactParts, icon: ReactNode) {
-  return (
-    <>
-      {paintIcon ? <Glyph data-dtb-part="metrics-icon">{icon}</Glyph> : null}
-      {text === "none" ? null : (
-        <span data-dtb-part="metrics-label" data-dtb-kind="label">
-          {text === "full" ? view.title : view.label}
-        </span>
-      )}
-    </>
-  );
+function iconAndText(view: MetricView, parts: CompactParts, icon: ReactNode): ReactNode {
+  return renderCompactParts({
+    parts,
+    icon,
+    iconProps: { "data-dtb-part": "metrics-icon" },
+    short: view.label,
+    full: view.title,
+    textProps: { "data-dtb-part": "metrics-label", "data-dtb-kind": "label" },
+  });
 }
 
 export interface ChipsProps {

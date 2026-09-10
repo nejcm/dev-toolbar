@@ -104,23 +104,17 @@ const overflowChip = (options: ThemeEditorOptions = {}): HTMLElement =>
   overflowTrigger(options).querySelector('[data-dtb-part="thm-chip"]') as HTMLElement;
 
 /**
- * The chip's text span. It carries no `data-dtb-part`, deliberately: it is a
- * bare `<span>` because that is what `Chip`'s `label` slot wrote before the
- * parts moved into the chip's children, and naming it would have changed
- * today's bytes. So it is identified structurally — the one child span with
- * neither a kind nor a part, which is what separates it from the count span
- * that has opted out of the kit's `value` kind.
+ * The chip's text span, selected by the `data-dtb-part` it now carries.
+ *
+ * It used to be a bare `<span>` located structurally — the one child span with
+ * no kind and no part of its own — because naming it would have changed the
+ * bytes below. Naming it *is* the deliberate change this commit makes, so the
+ * structural stand-in is gone and the selector says what it always meant.
+ * There is deliberately no `data-dtb-kind="label"`: that is what the kit sheet
+ * tints with `--dtb-muted`, and recolouring this chip is a separate decision.
  */
-const text = (chip: Element): string | null => {
-  const spans = [...chip.children].filter(
-    (node) =>
-      node.tagName === "SPAN" &&
-      !node.hasAttribute("data-dtb-kind") &&
-      !node.hasAttribute("data-dtb-part"),
-  );
-  expect(spans.length).toBeLessThanOrEqual(1);
-  return spans[0]?.textContent ?? null;
-};
+const text = (chip: Element): string | null =>
+  chip.querySelector('[data-dtb-part="thm-label"]')?.textContent ?? null;
 
 const value = (chip: Element): string | null =>
   chip.querySelector('[data-dtb-part="thm-count"]')?.textContent ?? null;
@@ -148,7 +142,7 @@ describe("the default presentation", () => {
     '<span data-dtb-part="thm-chip" data-dtb-edited="false" data-dtb-preview="true"' +
     ' data-dtb-kind="chip">' +
     '<span data-dtb-kind="dot" aria-hidden="true" data-dtb-part="thm-dot"></span>' +
-    "<span>theme</span>" +
+    '<span data-dtb-part="thm-label">theme</span>' +
     '<span data-dtb-part="thm-count">1</span></span></button>';
 
   // The `⋮` row renames the part and keeps everything else, short word
@@ -169,7 +163,7 @@ describe("the default presentation", () => {
     '<span data-dtb-part="thm-chip" data-dtb-edited="true" data-dtb-preview="false"' +
     ' data-dtb-kind="chip">' +
     '<span data-dtb-kind="dot" aria-hidden="true" data-dtb-part="thm-dot"></span>' +
-    "<span>theme</span>" +
+    '<span data-dtb-part="thm-label">theme</span>' +
     '<span data-dtb-part="thm-count">paused</span></span></button>';
 
   const EDITED_OVERFLOW_TRIGGER = EDITED_TRIGGER.replace(

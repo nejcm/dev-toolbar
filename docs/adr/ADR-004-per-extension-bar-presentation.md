@@ -162,6 +162,23 @@ here rather than in a comment in `src/ext/a11y/ui.tsx`.
   badge, environment's `impersonating`, overlays' error `Tag` — render outside both the
   preset and `render`, under every preset including `"icon"`. Consumer CSS and the
   Playwright specs select on those hooks.
+- **Every Group A text span is named**, and the icon-plus-text fragment lives in kit.
+  The four chips that put their parts into `Chip`'s children first — a11y, diagnostics,
+  overlays, theme-editor — wrote a bare `<span>` to keep their bytes identical, while
+  environment and metrics already wrote a named one. That divergence was resolved by
+  naming the four rather than un-naming the two: `data-dtb-part` is additive public API,
+  and `preset: "icon-label"` is precisely the option that makes a consumer want a CSS
+  hook on the word. The four carry a `data-dtb-part` and deliberately **no**
+  `data-dtb-kind="label"` — the kit sheet tints `[data-dtb-kind="label"]` with
+  `--dtb-muted`, so adding it would recolour four chips, and whether they should be
+  tinted is a separate visual decision. Overlays is named `ovl-chip-label`, not
+  `ovl-label`: that part was already its inspector's floating hover label, which
+  `css.ts` positions absolutely. With the divergence gone the fragment reduced to one
+  function, `renderCompactParts` in `/kit`, taking a `(short, full)` text pair and a
+  `textProps` bag; the value span and the severity children stay each extension's own,
+  which is what keeps the "kit answers which parts, the extension paints" line intact.
+  The promotion was gated on the byte-identity literals passing unchanged after the
+  swap, not on the shape looking right.
 - Every new preset value costs tests. Nine preset branches plus seven callbacks is
   exactly the shape that drains the `branches` and `functions` coverage floors, and the
   floors are a ratchet.

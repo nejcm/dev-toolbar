@@ -802,6 +802,7 @@ if (built || !mustBeBuilt) {
         "readStoredRecord",
         "removePreference",
         "renderCompact",
+        "renderCompactParts",
         "resetRequested",
         "resolveAccessibleName",
         "resolveCompactControl",

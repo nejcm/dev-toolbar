@@ -4,12 +4,12 @@ import {
   Banner,
   Chip,
   EmptyState,
-  Glyph,
   Note,
   Row,
   Rows,
   Tag,
   renderCompact,
+  renderCompactParts,
   resolveAccessibleName,
   resolveCompactControl,
   useCopyStatus,
@@ -87,32 +87,29 @@ const DEFAULTS: CompactDefaults = {
  * `/ext/overlays` and `/ext/metrics` made, and the reason is recorded in
  * `docs/adr/ADR-004-per-extension-bar-presentation.md`. `Chip` renders its
  * children straight after the dot, in the slots' own position, so nothing
- * about today's output moves.
+ * about the surrounding output moves. The fragment itself is kit's
+ * `renderCompactParts` — six extensions wrote it identically, so it is one
+ * function now, and `textProps` is what lets each keep its own attributes.
  *
- * One deliberate difference from the other four: this text span is **not** a
- * bare `<span>`. Environment already passed `labelProps` before this change,
- * so `data-dtb-part="env-label"` and `data-dtb-kind="label"` are today's
- * bytes. `/ext/environment`'s own sheet selects on neither; what tints the
- * word is the kit sheet's `[data-dtb-kind="label"] { color: var(--dtb-muted) }`
- * (`src/kit/css.ts`). Dropping either to match the others would be the
- * regression, not the cleanup — the `kind` recolours the chip, and the `part`
- * is public API.
+ * One deliberate difference from the four chips that only carry a
+ * `data-dtb-part`: this text span also carries `data-dtb-kind="label"`.
+ * Environment already passed `labelProps` before any of this, so both are
+ * today's bytes. `/ext/environment`'s own sheet selects on neither; what tints
+ * the word is the kit sheet's
+ * `[data-dtb-kind="label"] { color: var(--dtb-muted) }` (`src/kit/css.ts`).
+ * Dropping the `kind` to match the others would be the regression, not the
+ * cleanup — and adding it to the others would recolour four chips, which is
+ * why they were named without it.
  */
-function iconAndText(
-  label: string,
-  { icon: paintIcon, text }: CompactParts,
-  icon: ReactNode,
-): ReactNode {
-  return (
-    <>
-      {paintIcon ? <Glyph data-dtb-part="env-icon">{icon}</Glyph> : null}
-      {text === "none" ? null : (
-        <span data-dtb-part="env-label" data-dtb-kind="label">
-          {text === "full" ? label : SHORT_LABEL}
-        </span>
-      )}
-    </>
-  );
+function iconAndText(label: string, parts: CompactParts, icon: ReactNode): ReactNode {
+  return renderCompactParts({
+    parts,
+    icon,
+    iconProps: { "data-dtb-part": "env-icon" },
+    short: SHORT_LABEL,
+    full: label,
+    textProps: { "data-dtb-part": "env-label", "data-dtb-kind": "label" },
+  });
 }
 
 export interface ChipProps {

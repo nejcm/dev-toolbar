@@ -26,6 +26,7 @@ export type {
   RowsProps,
   SearchFieldProps,
   SelectProps,
+  SpanProps,
   TagProps,
   TextInputProps,
 } from "./controls";
@@ -55,6 +56,7 @@ export type { Preference, PreferenceEncoding, StoredRecordOptions } from "./pref
 export { resolveStyleNonce } from "./nonce";
 export {
   renderCompact,
+  renderCompactParts,
   resolveAccessibleName,
   resolveCompactControl,
   resolveCompactParts,
@@ -66,6 +68,7 @@ export type {
   CompactControlOptions,
   CompactDefaults,
   CompactParts,
+  CompactPartsContent,
   CompactPartsOptions,
   CompactPlace,
   CompactPreset,

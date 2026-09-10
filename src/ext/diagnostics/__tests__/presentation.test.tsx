@@ -77,22 +77,17 @@ const overflowChip = (options: DiagnosticsOptions = {}): HTMLElement =>
   overflowTrigger(options).querySelector('[data-dtb-part="diag-chip"]') as HTMLElement;
 
 /**
- * The chip's text span. It carries no `data-dtb-part`, deliberately: it is a
- * bare `<span>` because that is what `Chip`'s `label` slot wrote before the
- * parts moved into the chip's children, and naming it would have changed
- * today's bytes. So it is identified structurally — the one child span with no
- * kind and no part of its own.
+ * The chip's text span, selected by the `data-dtb-part` it now carries.
+ *
+ * It used to be a bare `<span>` located structurally — the one child span with
+ * no kind and no part of its own — because naming it would have changed the
+ * bytes below. Naming it *is* the deliberate change this commit makes, so the
+ * structural stand-in is gone and the selector says what it always meant.
+ * There is deliberately no `data-dtb-kind="label"`: that is what the kit sheet
+ * tints with `--dtb-muted`, and recolouring this chip is a separate decision.
  */
-const text = (chip: Element): string | null => {
-  const spans = [...chip.children].filter(
-    (node) =>
-      node.tagName === "SPAN" &&
-      !node.hasAttribute("data-dtb-kind") &&
-      !node.hasAttribute("data-dtb-part"),
-  );
-  expect(spans.length).toBeLessThanOrEqual(1);
-  return spans[0]?.textContent ?? null;
-};
+const text = (chip: Element): string | null =>
+  chip.querySelector('[data-dtb-part="diag-label"]')?.textContent ?? null;
 
 const value = (chip: Element): string | null =>
   chip.querySelector('[data-dtb-part="diag-value"]')?.textContent ?? null;
@@ -199,15 +194,15 @@ describe("the default presentation", () => {
     ' title="Diagnostics: click to capture a snapshot for a bug report">' +
     '<span data-dtb-part="diag-chip" data-dtb-incomplete="false" data-dtb-kind="chip">' +
     '<span data-dtb-kind="dot" aria-hidden="true" data-dtb-part="diag-dot"></span>' +
-    "<span>diagnostics</span>" +
+    '<span data-dtb-part="diag-label">diagnostics</span>' +
     '<span data-dtb-kind="value" data-dtb-part="diag-value">capture</span>' +
     "</span></button>";
 
   // The same tree with the full label — the only thing the `⋮` menu changes,
   // which is the swing this chip used to write by hand.
   const DEFAULT_OVERFLOW_TRIGGER = DEFAULT_TRIGGER.replace(
-    "<span>diagnostics</span>",
-    "<span>Diagnostics</span>",
+    '<span data-dtb-part="diag-label">diagnostics</span>',
+    '<span data-dtb-part="diag-label">Diagnostics</span>',
   );
 
   it("paints the bar byte-identically with no option at all", () => {
@@ -246,14 +241,17 @@ describe("the default presentation", () => {
       ' title="Diagnostics: snapshot taken, 1 omission — click to review, copy or download it">' +
       '<span data-dtb-part="diag-chip" data-dtb-incomplete="true" data-dtb-kind="chip">' +
       '<span data-dtb-kind="dot" aria-hidden="true" data-dtb-part="diag-dot"></span>' +
-      "<span>diagnostics</span>" +
+      '<span data-dtb-part="diag-label">diagnostics</span>' +
       '<span data-dtb-kind="value" data-dtb-part="diag-value">1 missing</span>' +
       "</span></button>";
 
     const toolbar = withOmission();
     expect(omissionTrigger(toolbar).outerHTML).toBe(OMISSION_BAR);
     expect(omissionMenuRow(toolbar).outerHTML).toBe(
-      OMISSION_BAR.replace("<span>diagnostics</span>", "<span>Diagnostics</span>"),
+      OMISSION_BAR.replace(
+        '<span data-dtb-part="diag-label">diagnostics</span>',
+        '<span data-dtb-part="diag-label">Diagnostics</span>',
+      ),
     );
   });
 
@@ -265,7 +263,7 @@ describe("the default presentation", () => {
       `1 error, 1 warning captured since load; the snapshot lists them.">` +
       '<span data-dtb-part="diag-chip" data-dtb-incomplete="false" data-dtb-kind="chip">' +
       '<span data-dtb-kind="dot" aria-hidden="true" data-dtb-part="diag-dot"></span>' +
-      "<span>diagnostics</span>" +
+      '<span data-dtb-part="diag-label">diagnostics</span>' +
       '<span data-dtb-kind="value" data-dtb-part="diag-value">capture</span>' +
       '<span data-dtb-part="diag-errors" data-dtb-tone="error" data-dtb-errors="1"' +
       ' data-dtb-warnings="1" aria-hidden="true">2</span>' +
@@ -281,7 +279,12 @@ describe("the default presentation", () => {
     toolbar.openOverflow();
     expect(
       toolbar.overflowMenu()?.querySelector<HTMLElement>('[data-dtb-part="trigger"]')?.outerHTML,
-    ).toBe(CAUGHT_BAR.replace("<span>diagnostics</span>", "<span>Diagnostics</span>"));
+    ).toBe(
+      CAUGHT_BAR.replace(
+        '<span data-dtb-part="diag-label">diagnostics</span>',
+        '<span data-dtb-part="diag-label">Diagnostics</span>',
+      ),
+    );
   });
 });
 
