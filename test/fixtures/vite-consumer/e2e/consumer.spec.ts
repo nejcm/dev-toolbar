@@ -5,7 +5,6 @@ import type { Page } from "@playwright/test";
 // second React is exactly the failure that makes a bridge read untrustworthy.
 // The parts used are documented styling hooks. Rationale in ../README.md.
 
-/** Optimized-dep URLs the page loaded, `path` without the query and its `?v=` hash. */
 function collectOptimizedDeps(page: Page): { path: string; hash: string | null }[] {
   const deps: { path: string; hash: string | null }[] = [];
   page.on("request", (request) => {
@@ -39,8 +38,6 @@ test("one React across core, /kit and ext/* under the optimizer", async ({ page 
   const errorChips = root.locator('[data-dtb-part="error-chip"]');
   const panel = root.locator('[data-dtb-part="panel"][data-dtb-active="true"]');
 
-  // All four triggers: the two first-party chips, the kit's chip for the embed
-  // with a `value`, core's own trigger for the one without.
   const env = page.getByRole("button", { name: /^env/ });
   const flags = page.getByRole("button", { name: /^Flags/ });
   const vendorLive = page.getByRole("button", { name: /^vendor-live/ });
@@ -56,9 +53,8 @@ test("one React across core, /kit and ext/* under the optimizer", async ({ page 
   await expect(errorChips).toHaveCount(0);
   expectNoErrors();
 
-  // Each panel runs that entry's panel-side hooks inside core's boundary; the
-  // embeds also run `render()` and the vendor's own state. `aria-expanded`, not
-  // the panel's absence: flags keeps its panel mounted while closed.
+  // `aria-expanded`, not the panel's absence: flags keeps its panel mounted while
+  // closed. Opening one is what runs that entry's panel-side hooks.
   for (const trigger of [vendorLive, vendor]) {
     await trigger.click();
     await expect(trigger).toHaveAttribute("aria-expanded", "true");
@@ -78,9 +74,8 @@ test("one React across core, /kit and ext/* under the optimizer", async ({ page 
     await expect(trigger).toHaveAttribute("aria-expanded", "false");
   }
 
-  // Identity on the wire: the package's entries came from the pre-bundle (the
-  // optimizer, not a bypass), React was served once, and every optimized file
-  // under one `?v=` hash — a re-optimize mid-page is the same file twice.
+  // A re-optimize mid-page serves the same file under a second `?v=` hash, which
+  // is how a second React reaches the page without any import changing.
   await page.waitForLoadState("networkidle");
   expectNoErrors();
   await expect(errorChips).toHaveCount(0);

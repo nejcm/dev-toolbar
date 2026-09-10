@@ -496,8 +496,10 @@ avoid. Prefer rolling forward. If you must, do it in this order:
 
 1. `git checkout vX.Y.Z` in a **clean** checkout — `git status --porcelain` must
    print nothing — then `bun install --frozen-lockfile`.
-2. `bun run verify`, then the CommonJS packaging check
-   (`bun run test:jest-consumer`).
+2. `bun run verify`, then the CommonJS packaging check:
+   `bun install --frozen-lockfile --cwd test/fixtures/jest-consumer` — the root
+   install does not reach that standalone fixture and `test:jest-consumer` does
+   not install it — then `bun run test:jest-consumer`.
 3. `npm whoami` (`npm login` opens the browser for the passkey; new TOTP
    enrolments were disabled in October 2025), then
    `npm publish --access public --dry-run` and **read the file list** — `dist/`
@@ -510,12 +512,32 @@ avoid. Prefer rolling forward. If you must, do it in this order:
 
 ### How the first publish happened
 
-`0.5.0` went out **by hand, from a laptop**, on 2026-09-08: npm trusted
-publishing cannot create a package that does not exist yet
-([npm/cli#8544](https://github.com/npm/cli/issues/8544)), so the first version
-could not come from CI. That is why `v0.2.0`, `v0.3.0`, `v0.4.0` and `v0.4.1`
-are tagged and never published — `release.yml` tagged versions it could not yet
-publish.
+`0.5.0`, on 2026-09-08, is the first version on npm, and it went out **by hand**:
+the registry records its publisher as the `nejcm` account, on npm 11.17.0 and Node
+26.4.0, while every version from `0.6.0` on records
+`GitHub Actions <npm-oidc-no-reply@github.com>` on npm 11.19.0 and Node 24.20.0
+(`npm view @nejcm/dev-toolbar@0.5.0 --json`, field `_npmUser`). That is a person's
+credential rather than CI's OIDC; which machine it was typed on npm does not record.
+
+It had to be a manual publish because npm trusted publishing cannot create a package
+that does not exist yet ([npm/cli#8544](https://github.com/npm/cli/issues/8544)): an
+initial version has to go out manually or with a token, so it could not take this
+repository's token-free CI path.
+
+That bootstrap restriction is why `0.5.0` did not come from `release.yml`. It is
+**not** the whole reason `v0.2.0`, `v0.3.0`, `v0.4.0` and `v0.4.1` are tagged and
+never published: the workflow was still being fixed across those releases, and the
+runs failed in different ways. The run on the `0.4.0` release PR retried `gh pr merge`
+five times against `fatal: not a git repository` and never reached its tag step
+([run 33714746207](https://github.com/nejcm/dev-toolbar/actions/runs/33714746207));
+an earlier run failed inside release-please with "Resource not accessible by
+integration"
+([run 33711560073](https://github.com/nejcm/dev-toolbar/actions/runs/33711560073));
+and `a9c8d05` records that the gate and publish jobs checked out the triggering push
+instead of the release commit, so the `v0.4.0` run's `npm publish` packed `0.3.0`.
+Those tags staying unpublished is the outcome the fix-it-forward rule above
+prescribes anyway — `0.5.0` became the first published version, with no gap to
+explain.
 
 **No published version carries provenance**, and the reason is the repository,
 not the publish path: npm generates a Sigstore provenance attestation only when

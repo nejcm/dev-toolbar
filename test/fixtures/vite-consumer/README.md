@@ -104,10 +104,19 @@ To see the mitigation, add the `optimizeDeps.include` list from `docs/embedding.
 
 ## Running it
 
+On a fresh checkout, in this order — the first two once per machine, in **this**
+directory, because the root install covers neither. This fixture is not a workspace,
+and the root has no `@playwright/test` of its own for `bunx` to resolve:
+
 ```bash
-bun run test:vite-consumer     # from the repo root; builds first
-bunx playwright install chromium   # once, on a fresh machine
+bun install --frozen-lockfile         # in test/fixtures/vite-consumer
+bunx playwright install chromium      # in test/fixtures/vite-consumer, so it is this
+                                      #   directory's exact pin that picks the build
+bun run test:vite-consumer            # from the repo root; builds and packs first
 ```
+
+`ci.yml` installs, then Chromium, then runs, in that order and from that directory,
+with `sync` and a `typecheck` in between; the `test` script syncs again itself.
 
 It is a **standalone script, deliberately outside `bun run test`**: it needs a fresh
 `dist/`, a tarball, a browser and a dev server — none of which belongs inside a vitest

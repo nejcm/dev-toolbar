@@ -30,7 +30,7 @@ jobs:
     outputs:
       # Not `releases_created` — that's always set, to the *string* "false" (truthy). `tag` fires in steady state, `release` only if a release PR was merged by hand; unset outputs are '' so all fall back together.
       release_created: ${{ steps.tag.outputs.release_created || steps.release.outputs.release_created }}
-      # `vX.Y.Z` via `include-component-in-tag: false`, or the `node` release type would tag `dev-toolbar-vX.Y.Z` and miss the hand-pushed `v0.1.0`.
+      # `vX.Y.Z` via `include-component-in-tag: false`, or the `node` release type would tag `dev-toolbar-vX.Y.Z` and miss the existing plain `vX.Y.Z` tags.
       tag_name: ${{ steps.tag.outputs.tag_name || steps.release.outputs.tag_name }}
       version: ${{ steps.tag.outputs.version || steps.release.outputs.version }}
     steps:

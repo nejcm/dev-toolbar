@@ -239,18 +239,21 @@ export function Root() {
 **Whichever you pick, the condition is your own deployment switch, not
 `NODE_ENV`.** A staging build is a production build — `vite build --mode staging`
 sets `NODE_ENV=production` — so `process.env.NODE_ENV !== "production"` drops the
-toolbar from the one deployment that most wants it. Fold on the variable that names
-the deployment. Under Vite that means a variable you define yourself and expose
-with the `VITE_` prefix — `import.meta.env.VITE_ENV === "production"`, fed from
-`.env.staging` and friends; Vite's own built-ins (`MODE`, `PROD`, `DEV`) are
-derived from the build mode, and `PROD` is `true` for a staging build too. Other
-bundlers have their own inlining; the rule is the same.
+toolbar from the one deployment that most wants it. Fold on the value that names the
+deployment, not on the one that says "this is a production build". Under Vite the two
+are separate: `import.meta.env.MODE` is the `--mode` you passed, while `PROD` and
+`DEV` follow `NODE_ENV`, so `PROD` is `true` for a staging build too. If your mode
+names *are* your deployment names, `import.meta.env.MODE !== "production"` is enough;
+otherwise define your own variable and expose it with the `VITE_` prefix —
+`import.meta.env.VITE_ENV === "production"`, fed from `.env.staging` and friends.
+Other bundlers have their own inlining; the rule is the same.
 
-The lazy recipe has one more consequence: the chunk arrives **after first paint**.
-Anything that has to be in place at boot has that gap too — seeding your own store
-from [`readStoredOverrides()`](./docs/ext/flags.md#it-changes-what-your-app-does),
-say, which then cannot run before the app's first render. Import that one eagerly
-from a module the gate does not cover, or accept an un-overridden first paint.
+The lazy recipe has one more consequence: **the chunk is not there at boot.**
+`lazy()` starts loading when React first tries to render the component, so nothing
+in it can run before the app's own first render — seeding your own store from
+[`readStoredOverrides()`](./docs/ext/flags.md#it-changes-what-your-app-does), say,
+which is exactly the thing that has to happen first. Import that one eagerly from a
+module the gate does not cover, or accept a first render with no overrides applied.
 Note what the eager import costs: `readStoredOverrides` is exported from
 `@nejcm/dev-toolbar/ext/flags`, so importing it puts that entry back into the
 production graph — the one thing this section is otherwise keeping out. The

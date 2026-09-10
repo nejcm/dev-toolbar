@@ -10,7 +10,6 @@ import { flags } from "@nejcm/dev-toolbar/ext/flags";
 // `vendor-live` has a `value` (the kit's chip, a hook on the bar); `vendor` has
 // none (core's trigger). What this page is for: ../README.md.
 
-/** Stands in for a third-party devtool: its own DOM, its own state. */
 function VendorPanel({ height }: { height: number }): ReactNode {
   const [count, setCount] = useState(0);
   return (
@@ -22,7 +21,6 @@ function VendorPanel({ height }: { height: number }): ReactNode {
   );
 }
 
-/** A live value for the chip — an element that subscribes to something. */
 function Ticks(): ReactNode {
   const [ticks, setTicks] = useState(0);
   useEffect(() => {
