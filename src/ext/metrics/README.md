@@ -52,7 +52,19 @@ so the panel, the cURL export and `/ext/diagnostics` all read one masked copy.
 `priority`, `hidden`, `injectStyles`, `styleNonce`) are the shell's usual
 placement and styling controls.
 
+`presentation` changes how the bar control looks, not what it measures: a
+`CompactPreset`, your own `ReactNode` icon (or `(view) => ReactNode`, so N
+metrics need no icon map), a `render` callback over `MetricView` and an
+accessible-name override. It resolves through `/kit`'s `resolveCompactParts`,
+so `"default"` is byte-identical to what shipped before the option existed and
+the `⋮` menu always paints the full title. Nothing configured here reaches the
+store — a `ReactNode` cannot be signed, so the icon and the callbacks stay in
+the factory closure and travel as props.
+[ADR-004](../../../docs/adr/ADR-004-per-extension-bar-presentation.md).
+
 ## Tests
 
 `__tests__/` covers each collector in isolation, the runtime's scheduling, the
 network commands, the cURL formatter and the documented examples.
+`presentation.test.tsx` pins the default bar and `⋮` markup as literal strings,
+every preset in both places, and the three callbacks.

@@ -44,7 +44,8 @@ while the extension keeps the trigger element, its `data-dtb-*` state attributes
 its accessible name.
 
 The vocabulary — `CompactPreset`, `CompactPresentation<TView>`, a `Glyph` control and
-the pure `resolveCompactParts` / `resolvePresentation` helpers — lives in `src/kit/`,
+the `resolveCompactParts` / `resolvePresentation` / `resolveCompactControl` /
+`renderCompact` helpers — lives in `src/kit/`,
 which is where shared extension glue belongs and which is already a published subpath.
 `src/core/` gains nothing, `CONTRACT_VERSION` does not move, and no icon asset enters
 the package.
@@ -83,10 +84,20 @@ enforced for `render`: a callback is honoured in the bar and in the menu alike, 
 This is a knowing inconsistency. A preset is the library's opinion and should be safe
 by construction; a callback is the consumer taking the wheel, and silently discarding
 their output in one of two locations is a worse surprise than a documented sharp edge.
-Residual harm is bounded: the menu row is still a `<button>` carrying the extension's
-`aria-label`, so it is announced correctly and is only visually bare. Reversing this —
-ignoring `render` when overflowed — is a two-line change if the guarantee is later
-preferred over the consistency.
+
+The residual harm is **not** bounded to "only visually bare", and an earlier draft of
+this record said it was. A menu row keeps the element the extension gave it — its
+`<button>`, its `onClick` and its `title` — but not every row carries an
+`aria-label`: `/ext/metrics`' per-metric `⋮` rows are named by their content, with
+`title` as the fallback, because a row named after the metric alone would replace the
+announced *"Memory 48 MB"* with *"Memory"*. So a callback that paints no text in the
+menu leaves that row named by its `title` and nothing else — the weak fallback the
+accessible-names step removed from the four unnamed triggers, reintroduced by consumer
+choice on one row. Naming those rows outright is a separate decision, deferred to the
+docs step, because it changes the default DOM and the announced name.
+
+Reversing the deviation itself — ignoring `render` when overflowed — is a two-line
+change if the guarantee is later preferred over the consistency.
 
 ### Alternatives considered
 
@@ -106,7 +117,7 @@ preferred over the consistency.
 | Risk | Likelihood | Impact | Mitigation |
 | --- | --- | --- | --- |
 | **Contravariance.** A view type that is only *read* may gain and lose optional fields freely; as a `render`/`icon`/`name` parameter it becomes contravariant, so renaming a field breaks consumer callbacks, not just consumer readers | High — these types change often | A field rename becomes a breaking change for seven extensions at once | Pass an existing view type only where it genuinely *is* a display type (`MetricView`, `FlagView`); purpose-build a narrow one otherwise, as `DiagnosticsBarView` does rather than welding `DiagnosticsSnapshotState` into the API |
-| A `render` callback paints an icon-only control in the `⋮` menu, giving a visually blank row | Medium — it is what the deviation above permits | A menu row with no visible text | The row keeps its `aria-label`, so it is announced; documented as a sharp edge with `ctx.isOverflowed` as the escape hatch |
+| A `render` callback paints an icon-only control in the `⋮` menu, giving a visually blank row | Medium — it is what the deviation above permits | A menu row with no visible text, and — on a row named by its content, as `/ext/metrics`' per-metric rows are — named by its `title` alone | The row keeps its `<button>`, its `onClick` and its `title`, so it stays operable and explained; documented as a sharp edge with `ctx.isOverflowed` as the escape hatch. Whether such rows should carry an `aria-label` of their own is deferred: it changes the default DOM and the announced name |
 | A future refactor widens something into a snapshot that carries a `ReactNode` | Low, but silent until it throws | A circular-structure throw inside a click handler, or a store that republishes every 250 ms | The hard rule above, plus a serialisation test that promotes a flag with a JSX icon and asserts `JSON.stringify(runtime.diagnostics())` succeeds and contains no React element |
 | Collapse settling. `"icon"` can be ~4× narrower than `"default"`, so nine extensions can each swing tens of pixels between bar and overflow | Medium at one specific window width | Chips appear to flicker, or more items stay in `⋮` than need to | The collapse machine terminates the 2-cycle by design and reports `latched`; a `collapse.test.ts` case drives a 4× swing on one id and asserts it settles |
 | An icon-only preset on a trigger with no `aria-label` leaves a button named only by `title` | Certain, on the four triggers that have none today | An unnamed control — which `/ext/a11y` would flag on the toolbar's own bar | Accessible names are fixed **first**, as their own step with no new API, and a test asserts a non-empty computed name for every trigger across all nine |

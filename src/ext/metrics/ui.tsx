@@ -5,16 +5,25 @@ import {
   Action,
   Chip,
   CopyButton,
+  Glyph,
   Note,
   Row,
   Rows,
+  renderCompact,
+  resolveAccessibleName,
+  resolveCompactControl,
   useExtensionSurface,
+} from "@nejcm/dev-toolbar/kit";
+import type {
+  CompactDefaults,
+  CompactParts,
+  ResolvedCompactPresentation,
 } from "@nejcm/dev-toolbar/kit";
 import { ensureMetricsStyles } from "./css";
 import { formatBytes, formatMs, shortenUrl } from "./format";
 import type { MetricsRuntime } from "./runtime";
 import { metricView } from "./types";
-import type { CollectorId, MetricsSnapshot } from "./types";
+import type { CollectorId, MetricView, MetricsSnapshot } from "./types";
 
 /**
  * The rendered surface. [dev-toolbar/ext/metrics]
@@ -22,11 +31,67 @@ import type { CollectorId, MetricsSnapshot } from "./types";
  * Slot functions must be cheap, so they just return these components, which
  * subscribe to the metrics store themselves and re-render only when it
  * publishes (at most `updateHz` times a second).
+ *
+ * `presentation` arrives already resolved and is read through `/kit`'s
+ * `resolveCompactControl` and `renderCompact`, so the `hasIcon` guard, the
+ * `"default"` fallback, the `CompactRenderContext` and the `undefined`
+ * fall-through live in one place for all nine extensions rather than nine.
+ * What stays here is the DOM: a consumer's `render` supplies the children of
+ * the element carrying that metric's `data-dtb-metric` and
+ * `data-dtb-severity` — the chip in the bar, the row `<button>` in the `⋮`
+ * menu — so no callback can cost a control its state attributes. In the bar
+ * that also keeps the chip's dot, which in a `⋮` row lives inside the replaced
+ * content and so is the callback's to paint (it is in `ctx.fallback`). Both
+ * halves are pinned in `__tests__/presentation.test.tsx`.
  */
+
+/**
+ * Today's two trees, expressed as parts.
+ *
+ * `resolveCompactControl` answers the preset's parts, or these when the preset
+ * is `"default"` — which is why they are handed in rather than known to kit:
+ * `"default"` means *whatever this extension renders today*, and that differs
+ * across the nine. Metrics' defaults happen to be exactly expressible as parts
+ * — the bar paints the short label and the value, a `⋮` row the full title and
+ * the value, and neither paints an icon — so the fork is a fallback rather than
+ * a second tree, and "the default output is byte-identical" stays a structural
+ * property rather than a claim.
+ */
+const DEFAULTS: CompactDefaults = {
+  bar: { icon: false, text: "short", value: true },
+  overflow: { icon: false, text: "full", value: true },
+};
+
+/**
+ * The icon and the text — the two parts the bar chip and the `⋮` row paint
+ * identically. Only the value node differs between them, so only it is written
+ * twice.
+ *
+ * These are the chip's *children* rather than `Chip`'s `icon` / `label` /
+ * `value` slots, and deliberately: it is the one construction, handed to a
+ * `render` callback as `ctx.fallback` and rendered when there is none, so
+ * deferring to the preset is exact by construction instead of by two pieces of
+ * markup kept in step. `Chip` renders its children straight after the dot, in
+ * the slots' own position, so nothing about today's output moves.
+ */
+function iconAndText(view: MetricView, { icon: paintIcon, text }: CompactParts, icon: ReactNode) {
+  return (
+    <>
+      {paintIcon ? <Glyph data-dtb-part="metrics-icon">{icon}</Glyph> : null}
+      {text === "none" ? null : (
+        <span data-dtb-part="metrics-label" data-dtb-kind="label">
+          {text === "full" ? view.title : view.label}
+        </span>
+      )}
+    </>
+  );
+}
 
 export interface ChipsProps {
   runtime: MetricsRuntime;
   label: string;
+  /** Already through `resolvePresentation`, in the factory closure. */
+  presentation: ResolvedCompactPresentation<MetricView>;
   isOverflowed: boolean;
   isPanelOpen: boolean;
   injectStyles: boolean;
@@ -37,6 +102,7 @@ export interface ChipsProps {
 export function MetricsChips({
   runtime,
   label,
+  presentation,
   isOverflowed,
   isPanelOpen,
   injectStyles,
@@ -50,12 +116,47 @@ export function MetricsChips({
     styleNonce,
   );
 
-  // In the ⋮ menu there's vertical room, so spell metrics out instead of shrinking them.
+  const named = snapshot.order[0];
+  const triggerName =
+    named === undefined
+      ? label
+      : resolveAccessibleName(presentation.name, metricView(snapshot, named), label);
+
+  // In the ⋮ menu there's vertical room, so spell metrics out instead of
+  // shrinking them — which is what the overflow rule already forces on every
+  // preset, so this branch differs from the bar only in its DOM.
   if (isOverflowed) {
     return (
       <div data-dtb-part="metrics-overflow-list">
         {snapshot.order.map((id) => {
           const view = metricView(snapshot, id);
+          const control = resolveCompactControl(presentation, view, {
+            isOverflowed: true,
+            defaults: DEFAULTS,
+          });
+          const fallback = (
+            <>
+              <Chip
+                severity={view.severity}
+                data-dtb-part="metrics-chip"
+                dotProps={{ "data-dtb-part": "metrics-dot" }}
+              >
+                {iconAndText(view, control.parts, control.icon)}
+              </Chip>
+              {/* Attribute order is what this row shipped with, which is not the
+                  bar chip's order below — both are pinned as literal strings in
+                  `__tests__/presentation.test.tsx`. */}
+              {control.parts.value ? (
+                <span
+                  data-dtb-part="metrics-value"
+                  data-dtb-kind="value"
+                  data-dtb-severity={view.severity}
+                >
+                  {view.display}
+                </span>
+              ) : null}
+            </>
+          );
           return (
             <button
               key={id}
@@ -66,20 +167,12 @@ export function MetricsChips({
               onClick={onToggle}
               title={view.hint}
             >
-              <Chip
-                label={view.title}
-                severity={view.severity}
-                data-dtb-part="metrics-chip"
-                dotProps={{ "data-dtb-part": "metrics-dot" }}
-                labelProps={{ "data-dtb-part": "metrics-label", "data-dtb-kind": "label" }}
-              />
-              <span
-                data-dtb-part="metrics-value"
-                data-dtb-kind="value"
-                data-dtb-severity={view.severity}
-              >
-                {view.display}
-              </span>
+              {renderCompact(
+                presentation,
+                view,
+                { icon: control.icon, isOverflowed: true, isPanelOpen },
+                fallback,
+              )}
             </button>
           );
         })}
@@ -97,26 +190,55 @@ export function MetricsChips({
       // and never the control. A name that churns with the values would also
       // re-speak on every focus. The values stay the chips' visible text and
       // the panel's. `title` explains; it does not name.
-      aria-label={label}
+      // `presentation.name` overrides it, and a whitespace-only override is
+      // ignored so no override can leave the trigger unnamed. One button names N
+      // metrics, so the override is invoked with the first metric in bar order —
+      // it names the control, and the argument is there for symmetry with the
+      // other three knobs. With no metrics at all there is no view to pass, and
+      // `label` stands.
+      aria-label={triggerName}
       onClick={onToggle}
       title="Runtime performance — click for details"
     >
       <span data-dtb-part="metrics-chips">
         {snapshot.order.map((id) => {
           const view = metricView(snapshot, id);
+          const control = resolveCompactControl(presentation, view, {
+            isOverflowed: false,
+            defaults: DEFAULTS,
+          });
+          const fallback = (
+            <>
+              {iconAndText(view, control.parts, control.icon)}
+              {/* The order `Chip`'s own value slot wrote before this moved into
+                  the chip's children: kind, severity, then the site's props. */}
+              {control.parts.value ? (
+                <span
+                  data-dtb-kind="value"
+                  data-dtb-severity={view.severity}
+                  data-dtb-part="metrics-value"
+                >
+                  {view.display}
+                </span>
+              ) : null}
+            </>
+          );
           return (
             <Chip
               key={id}
-              label={view.label}
-              value={view.display}
               severity={view.severity}
               data-dtb-part="metrics-chip"
               data-dtb-metric={id}
               data-dtb-severity={view.severity}
               dotProps={{ "data-dtb-part": "metrics-dot" }}
-              labelProps={{ "data-dtb-part": "metrics-label", "data-dtb-kind": "label" }}
-              valueProps={{ "data-dtb-part": "metrics-value" }}
-            />
+            >
+              {renderCompact(
+                presentation,
+                view,
+                { icon: control.icon, isOverflowed: false, isPanelOpen },
+                fallback,
+              )}
+            </Chip>
           );
         })}
       </span>

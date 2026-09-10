@@ -3,10 +3,12 @@
  * callback and an accessible-name override. [dev-toolbar/kit]
  *
  * Every extension that lets a consumer restyle its bar control resolves that
- * option through these four pure helpers, so the two guarantees below hold once
- * rather than nine times. Nothing here renders: `resolveCompactParts` answers
+ * option through these pure helpers, so the two guarantees below hold once
+ * rather than nine times. Nothing here paints: `resolveCompactControl` answers
  * *which parts* to paint and the extension paints them, because the nine bar
  * controls do not share a DOM shape (three of them are hand-written on purpose).
+ * `renderCompact` is the one exception in spirit only — it invokes the
+ * consumer's callback and returns its node, still without a tree of its own.
  *
  * Provenance: `plans/bar-presentation-icons-v1.md`, "Design"; the decision and
  * its rejected alternatives are `docs/adr/ADR-004-per-extension-bar-presentation.md`.
@@ -200,6 +202,117 @@ export function resolveIcon<TView>(
   data: TView,
 ): ReactNode {
   return typeof icon === "function" ? icon(data) : icon;
+}
+
+/**
+ * The parts an extension paints under `"default"`, in each of the two places a
+ * bar control appears.
+ *
+ * Passed in rather than known here: `"default"` means *whatever this extension
+ * renders today*, and that differs across the nine. Group A happening to share
+ * a shape is not a licence to hardcode it in kit.
+ */
+export interface CompactDefaults {
+  /** What `"default"` paints in the bar. */
+  bar: CompactParts;
+  /** What `"default"` paints in the `⋮` overflow menu. */
+  overflow: CompactParts;
+}
+
+/** Where a control is painting, and what `"default"` means there. */
+export interface CompactControlOptions {
+  /** True in the `⋮` overflow menu rather than the bar. */
+  isOverflowed: boolean;
+  /** This extension's own default parts. */
+  defaults: CompactDefaults;
+}
+
+/** One control's resolved icon and the parts to paint for it. */
+export interface CompactControl {
+  /** The icon, already resolved through a function `icon`. */
+  icon: ReactNode;
+  /** Which parts to paint — the preset's, or this extension's defaults. */
+  parts: CompactParts;
+}
+
+/**
+ * One control's icon and parts, with the `hasIcon` guard and the
+ * `"default"` fallback in one place.
+ *
+ * The guard is the same `undefined | null` test the kit `Chip` applies to its
+ * slots, and it has to happen here rather than in `resolveCompactParts`: a
+ * function `icon` can return nothing for one control and a node for the next,
+ * so guarantee 1 applies per control, not per extension.
+ *
+ * The other half of the point is `defaults`: `resolveCompactParts` answers
+ * `null` for `"default"`, and every caller then owes the same
+ * `isOverflowed ? overflow : bar` choice. Nine copies of that choice is nine
+ * places for the byte-identity property to rot.
+ */
+export function resolveCompactControl<TView>(
+  presentation: ResolvedCompactPresentation<TView>,
+  view: TView,
+  { isOverflowed, defaults }: CompactControlOptions,
+): CompactControl {
+  const icon = resolveIcon(presentation.icon, view);
+  const parts = resolveCompactParts(presentation.preset, {
+    hasIcon: icon !== undefined && icon !== null,
+    isOverflowed,
+  });
+  return { icon, parts: parts ?? (isOverflowed ? defaults.overflow : defaults.bar) };
+}
+
+/** Where a `render` callback is being invoked, for the context it is handed. */
+export interface CompactPlace {
+  /** True in the `⋮` overflow menu rather than the bar. */
+  isOverflowed: boolean;
+  /** True while this extension's panel is the open one. */
+  isPanelOpen: boolean;
+  /**
+   * The resolved icon, as `resolveCompactControl` returned it. Required rather
+   * than optional so a caller cannot silently drop it from the context.
+   */
+  icon: ReactNode;
+}
+
+/**
+ * Invokes a `render` callback for one control, or returns the preset's node.
+ *
+ * The `CompactRenderContext` is assembled here and nowhere else, so the seven
+ * value-bearing extensions cannot drift on which fields it carries — and
+ * neither can they drift on the `undefined` rule: a callback returning
+ * `undefined` falls through to `fallback`, so a consumer opts out per control
+ * rather than per extension.
+ *
+ * `fallback` is an element tree the caller has already built, not a rendered
+ * result, so handing it out costs nothing when the callback ignores it. It is
+ * also the *same* construction the extension paints when there is no callback,
+ * which is what makes `render: (_, ctx) => ctx.fallback` exact by construction
+ * rather than by two pieces of markup kept in step.
+ *
+ * The callback is honoured in the bar and in the `⋮` menu alike, with
+ * `ctx.isOverflowed` as the hook. That is the deliberate deviation from the
+ * "the menu always paints text" guarantee that ADR-004 records: the guarantee
+ * holds by construction for every preset, and a callback is the consumer taking
+ * the wheel.
+ */
+export function renderCompact<TView>(
+  presentation: ResolvedCompactPresentation<TView>,
+  view: TView,
+  { icon, isOverflowed, isPanelOpen }: CompactPlace,
+  fallback: ReactNode,
+): ReactNode {
+  if (presentation.render === undefined) {
+    return fallback;
+  }
+  const rendered = presentation.render(view, {
+    preset: presentation.preset,
+    icon,
+    isOverflowed,
+    isPanelOpen,
+    fallback,
+  });
+  return rendered === undefined ? fallback : rendered;
 }
 
 /**

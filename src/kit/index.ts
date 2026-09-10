@@ -54,14 +54,20 @@ export {
 export type { Preference, PreferenceEncoding, StoredRecordOptions } from "./preference";
 export { resolveStyleNonce } from "./nonce";
 export {
+  renderCompact,
   resolveAccessibleName,
+  resolveCompactControl,
   resolveCompactParts,
   resolveIcon,
   resolvePresentation,
 } from "./presentation";
 export type {
+  CompactControl,
+  CompactControlOptions,
+  CompactDefaults,
   CompactParts,
   CompactPartsOptions,
+  CompactPlace,
   CompactPreset,
   CompactPresentation,
   CompactPresentationInput,

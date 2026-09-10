@@ -24,8 +24,9 @@ import { writeClipboardTextOrThrow } from "../../runtime";
 import { createMetricsRuntime } from "./runtime";
 import { MetricsChips, MetricsPanel } from "./ui";
 import { METRIC_IDS, isMetricId } from "./types";
-import { resolveStyleNonce } from "@nejcm/dev-toolbar/kit";
-import type { Collector, CollectorId, MetricId } from "./types";
+import { resolvePresentation, resolveStyleNonce } from "@nejcm/dev-toolbar/kit";
+import type { CompactPresentationInput } from "@nejcm/dev-toolbar/kit";
+import type { Collector, CollectorId, MetricId, MetricView } from "./types";
 import type { MemoryCollectorOptions } from "./collectors/memory";
 import type { DelayCollectorOptions } from "./collectors/delay";
 import type { JankCollectorOptions } from "./collectors/jank";
@@ -68,6 +69,32 @@ export interface MetricsOptions {
    * slot prop core forwards from `<DevToolbar>`.
    */
   styleNonce?: string;
+  /**
+   * How the bar control presents itself: a preset, your own icon, a render
+   * callback and an accessible-name override. A bare preset is the shorthand —
+   * `presentation: "icon-value"`.
+   *
+   * The callback knobs are invoked **once per metric per render**, in bar
+   * order, in the bar and in the `⋮` menu alike, and the `MetricView` they
+   * receive says which metric it is: `icon: (m) => ICONS[m.id]` needs no icon
+   * map. `render` supplies the children of the element carrying that metric's
+   * `data-dtb-metric` — the chip in the bar, the row `<button>` in the menu —
+   * so the state attributes and `title` stay the extension's; returning
+   * `undefined` falls through to the preset. `name` overrides the `aria-label`
+   * and is invoked with the first metric in bar order, since one trigger names
+   * the whole readout; a whitespace-only return is ignored. Return something
+   * that does not change with the metric's *value*: the `MetricView` carries
+   * `display`, so `(m) => \`Memory ${m.display}\`` renames the control on every
+   * publish and a screen reader re-announces it — the churn the comment on the
+   * trigger's `aria-label` in `ui.tsx` exists to avoid.
+   *
+   * Nothing here reaches the store: the icon and the callbacks are held in this
+   * closure and passed as props, because a `ReactNode` cannot be signed and the
+   * metrics store republishes on a signature change.
+   *
+   * `docs/adr/ADR-004-per-extension-bar-presentation.md`.
+   */
+  presentation?: CompactPresentationInput<MetricView>;
   /** `false` switches a metric off entirely; an object configures it. */
   memory?: boolean | MemoryCollectorOptions;
   delay?: boolean | DelayCollectorOptions;
@@ -100,6 +127,10 @@ export function metrics(options: MetricsOptions = {}): DevToolbarExtension {
     injectStyles = true,
     styleNonce: optionNonce,
   } = options;
+
+  // Resolved once, here, rather than per render: this is the closure the icon
+  // and the callbacks live in, exactly as `label` and `injectStyles` do.
+  const presentation = resolvePresentation(options.presentation);
 
   const custom = new Map<CollectorId, Collector>();
   for (const collector of customCollectors) {
@@ -337,6 +368,7 @@ export function metrics(options: MetricsOptions = {}): DevToolbarExtension {
       <MetricsChips
         runtime={runtime}
         label={label}
+        presentation={presentation}
         isOverflowed={isOverflowed}
         isPanelOpen={isPanelOpen}
         injectStyles={injectStyles}
