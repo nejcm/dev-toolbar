@@ -9,6 +9,7 @@ import { cleanupToolbar, installClipboard, mountToolbar } from "@nejcm/dev-toolb
 import type { ClipboardStub } from "@nejcm/dev-toolbar/testing";
 import { collectCommands } from "../../../core/commands";
 import { createMemoryStorage } from "../../../core/storage";
+import { withLocation } from "../../../test-utils/location";
 import { flags, readStoredOverrides, vetOverrides } from "../index";
 import { OVERRIDES_KEY, vetOverrides as runtimeVetOverrides } from "../runtime";
 import type { FlagsOptions } from "../index";
@@ -489,25 +490,16 @@ describe("persistence across a reload", () => {
   });
 
   it("readStoredOverrides() returns {} while the reset param is in the URL", () => {
-    // Same answer as start(), which is about to drop the stored map. The stub is
-    // inlined rather than shared with runtime.test.ts's `withResetParam`: importing
-    // one test file from another registers its suite twice.
+    // Same answer as start(), which is about to drop the stored map.
     const storage = createMemoryStorage({
       "dtb:v1:test:ext:flags:overrides": '{"ui-facelift":true}',
     });
-    const original = window.location;
-    Object.defineProperty(window, "location", {
-      configurable: true,
-      value: { ...original, search: "?dtb-flags=reset" },
-    });
-    try {
+    withLocation({ search: "?dtb-flags=reset" }, () => {
       expect(readStoredOverrides({ instanceId: "test", storage })).toEqual({});
       expect(readStoredOverrides({ instanceId: "test", storage, resetParam: null })).toEqual({
         "ui-facelift": true,
       });
-    } finally {
-      Object.defineProperty(window, "location", { configurable: true, value: original });
-    }
+    });
   });
 
   it("readStoredOverrides() treats a throwing catalogue getter as an empty one", () => {

@@ -7,6 +7,7 @@ import { createSource } from "@nejcm/dev-toolbar/kit";
 import { fakeExtensionApi } from "@nejcm/dev-toolbar/testing";
 import type { Mock } from "vitest";
 import { createMemoryStorage } from "../../../core/storage";
+import { withLocation } from "../../../test-utils/location";
 import {
   createFlagsRuntime,
   OVERRIDES_KEY,
@@ -418,16 +419,7 @@ describe("orphaned overrides", () => {
 });
 
 function withResetParam<T>(fn: () => T): T {
-  const original = window.location;
-  Object.defineProperty(window, "location", {
-    configurable: true,
-    value: { ...original, search: "?dtb-flags=reset" },
-  });
-  try {
-    return fn();
-  } finally {
-    Object.defineProperty(window, "location", { configurable: true, value: original });
-  }
+  return withLocation({ search: "?dtb-flags=reset" }, fn);
 }
 
 describe("the kill switch", () => {

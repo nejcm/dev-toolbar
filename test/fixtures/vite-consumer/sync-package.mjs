@@ -4,8 +4,10 @@
  * `node_modules` as `@nejcm/dev-toolbar`: the same `files` filter, the same
  * `package.json`, the same set of files `npm publish` would ship, in a real
  * directory rather than a link. Not *byte*-identical to `npm pack` output —
- * two packers, and nothing here depends on the bytes. `check:package` is what
- * holds npm's own tarball to publint and attw.
+ * two packers, and nothing here depends on the bytes. In `check:package`, attw's
+ * `--pack` is the one thing in this repo that runs `npm pack`; publint packs with
+ * bun there too, its `--pack auto` default detecting bun from `packageManager`
+ * and `bun.lock`.
  *
  * Not `file:../..`: a linked package is a symlink, and Vite's optimizer treats
  * a symlinked dependency as source (it is left out of the pre-bundle and

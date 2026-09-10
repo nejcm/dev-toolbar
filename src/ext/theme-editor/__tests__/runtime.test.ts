@@ -8,6 +8,7 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { fakeExtensionApi } from "@nejcm/dev-toolbar/testing";
+import { withLocation } from "../../../test-utils/location";
 import {
   DEFAULT_THEME_PARAM,
   OVERRIDES_KEY,
@@ -846,21 +847,8 @@ describe("foreign recipes", () => {
 /* -------------------------------------------------------------------------- */
 
 describe("the URL", () => {
-  const withSearch = (search: string, run: () => void) => {
-    const original = window.location.search;
-    Object.defineProperty(window, "location", {
-      configurable: true,
-      value: { ...window.location, search, href: `http://localhost/${search}` },
-    });
-    try {
-      run();
-    } finally {
-      Object.defineProperty(window, "location", {
-        configurable: true,
-        value: { ...window.location, search: original },
-      });
-    }
-  };
+  const withSearch = (search: string, run: () => void) =>
+    withLocation({ search, href: `http://localhost/${search}` }, run);
 
   it("clears every stored edit before any of them is applied", () => {
     const storage = createMemoryStorage();
