@@ -60,6 +60,15 @@ const extensions = [environment({ context: session })];
 useSource(user, currentUser);
 ```
 
+**Two values, two panels.** What you put in `context` is what the app is *actually
+doing* — a local flag override included. This panel reports facts, and a fact that
+says `designVersion: v1` while the page renders `v2` is wrong however the `v2` came
+about. The one place that wants the *pre*-override value is
+[`flags()`](./flags.md#two-values-two-panels), because it layers its own overrides on
+top and shows both; feed it the same post-override value and its row can never show
+what the app would do without the override. [`diagnostics()`](./diagnostics.md) follows
+this panel's rule, not that one.
+
 This is how React-owned state reaches an object built at module scope. The same
 `session` can feed [`diagnostics`](./diagnostics.md) too, as a getter — `diagnostics({
 app: () => session.read() })` — because `app` is resolved at capture time, not

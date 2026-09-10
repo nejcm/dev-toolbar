@@ -51,9 +51,41 @@ const extensions = [flags({ flags: catalogue, onOverride })];
 catalogue.set(readings);
 ```
 
-**Omit `onOverride` and the panel is read-only**: it lists, searches and copies, and
-changes nothing. That is the honest answer for a consumer with nowhere to put an
-override.
+If your app keeps the whole map in one place — a store it mirrors, a context it
+republishes — implement `onOverridesChange` instead of, or as well as, `onOverride`. It
+is handed the **complete, vetted map** after every change: the replay on mount, a
+`?dtb-flags=reset` load (an empty map), each edit in the panel, *Clear all* and the
+`flags.set` command. When both adapters are supplied, the per-key `onOverride` calls
+of a change run first and `onOverridesChange` follows in the same synchronous change,
+so the two agree unless one of them throws. Ordering cannot promise more than that: a
+throw is caught and shown in the panel instead — per row for `onOverride`, cleared by
+that key's next success; as one banner for `onOverridesChange`, cleared by its next
+call that returns — and the panel's own map still changed and was persisted. Either
+adapter makes the panel writable.
+
+```ts
+flags({
+  flags: () => readings,
+  onOverridesChange: (overrides) => overrideStore.replace(overrides),
+});
+```
+
+**Omit both `onOverride` and `onOverridesChange` and the panel is read-only**: it
+lists, searches and copies, and changes nothing. That is the honest answer for a
+consumer with nowhere to put an override.
+
+### Two values, two panels
+
+The `value` you hand `flags()` is the application's answer **with no override
+applied** — the extension layers its own override map on top, and that is what lets a
+row show the effective value next to the app's own. Feed it a value your override
+already changed and the row can never show what the app would do without it.
+
+The opposite holds for everything that reports facts. [`environment()`](./environment.md)
+and [`diagnostics()`](./diagnostics.md) want **what the app is actually doing, override
+included** — a panel of facts that says `designVersion: v1` while the page renders `v2`
+is wrong, however the `v2` came about. Pre-override into `flags()`, post-override into
+everything else.
 
 Each row shows the effective value, **the application's own value** and the default
 side by side, plus the evaluation source, the owner, an expiry and a project link.
@@ -73,14 +105,31 @@ outlives the tab — so:
 
   ```ts
   import { readStoredOverrides } from "@nejcm/dev-toolbar/ext/flags";
-  const overrides = readStoredOverrides({ instanceId: "app" });
+  const overrides = readStoredOverrides({ instanceId: "app", flags: () => readings });
   ```
+
+  Pass `flags` — the catalogue, in any shape `flags()` accepts — and the map is vetted
+  against it with the same `vetOverrides` pass `start()` runs, so an override whose
+  value no longer matches its flag's declared type is dropped here exactly as the
+  panel would drop it; an override for a key the catalogue no longer lists is kept,
+  as the panel keeps it (see the ghost rule below). Without `flags` you get the map as
+  parsed: every entry that is a flag value. `vetOverrides` is exported too, for a
+  catalogue that arrives after the read. The result is always a plain object.
 
 - **`?dtb-flags=reset` is the kill switch.** Loading any page with it drops every
   stored override *before* any of them is applied — the override that breaks the app
   is the one you cannot reach the panel to remove. `=clear` and `=off` do the same
-  thing. `readStoredOverrides()` honours it too. `resetParam: null` disables it,
-  `resetParam: "my-flags"` renames it.
+  thing. Your adapter is told: `onOverride(key, undefined)` for every key that was
+  stored, then `onOverridesChange({})`, so a mirror the app persisted on its own is
+  emptied too. `readStoredOverrides()` honours it too: while the param is in the URL
+  it returns `{}`. `resetParam: null` disables it, `resetParam: "my-flags"` renames it.
+
+  **Known limitation.** The param is honoured on every `start()`, not once per page
+  load. While it is still in the URL, any remount — StrictMode, an `enabled` toggle, a
+  `hidden` flip, a lazily mounted route building its own `flags()` — drops the
+  overrides you set since the reset, and `readStoredOverrides()` keeps returning `{}`.
+  Strip the param from the URL after using it (`history.replaceState`, or a plain
+  navigation) before setting new overrides.
 - **A renamed flag does not leave a ghost.** An override whose key is no longer in
   your catalogue is still being applied to your app, so it still gets a row — tagged
   *no longer in the catalogue*, counted, and clearable.

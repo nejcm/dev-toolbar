@@ -417,33 +417,90 @@ describe("orphaned overrides", () => {
   });
 });
 
+function withResetParam<T>(fn: () => T): T {
+  const original = window.location;
+  Object.defineProperty(window, "location", {
+    configurable: true,
+    value: { ...original, search: "?dtb-flags=reset" },
+  });
+  try {
+    return fn();
+  } finally {
+    Object.defineProperty(window, "location", { configurable: true, value: original });
+  }
+}
+
 describe("the kill switch", () => {
   it("drops every stored override when the URL asks", () => {
     const storage = createMemoryStorage({
       [OVERRIDES_KEY]: JSON.stringify({ "ui-facelift": true }),
     });
-    const applied: string[] = [];
+    const applied: [string, FlagValue | undefined][] = [];
     const runtime = createFlagsRuntime({
       flags: CATALOGUE,
-      onOverride: (key) => applied.push(key),
+      onOverride: (key, value) => applied.push([key, value]),
     });
-    const original = window.location.search;
-    Object.defineProperty(window, "location", {
-      configurable: true,
-      value: { ...window.location, search: "?dtb-flags=reset" },
+    withResetParam(() => runtime.start(fakeApi(storage).api));
+    expect(runtime.overrides()).toEqual({});
+    expect(storage.getItem(OVERRIDES_KEY)).toBeNull();
+    // No *value* was applied — the wedging override never reached the app.
+    expect(applied.filter(([, value]) => value !== undefined)).toEqual([]);
+  });
+
+  it("tells the adapter about every override it drops", () => {
+    const storage = createMemoryStorage({
+      [OVERRIDES_KEY]: JSON.stringify({ "ui-facelift": true, "checkout.copy": "new" }),
     });
+    const applied: [string, FlagValue | undefined][] = [];
+    const runtime = createFlagsRuntime({
+      flags: CATALOGUE,
+      onOverride: (key, value) => applied.push([key, value]),
+    });
+    withResetParam(() => runtime.start(fakeApi(storage).api));
+    expect(applied.sort()).toEqual([
+      ["checkout.copy", undefined],
+      ["ui-facelift", undefined],
+    ]);
+    expect(storage.getItem(OVERRIDES_KEY)).toBeNull();
+  });
+
+  it("hands a bulk mirror the empty map, after the per-key clears", () => {
+    const storage = createMemoryStorage({
+      [OVERRIDES_KEY]: JSON.stringify({ "ui-facelift": true }),
+    });
+    const events: string[] = [];
+    const runtime = createFlagsRuntime({
+      flags: CATALOGUE,
+      onOverride: (key, value) => events.push(`${key}=${String(value)}`),
+      onOverridesChange: (overrides) => events.push(`all:${JSON.stringify(overrides)}`),
+    });
+    withResetParam(() => runtime.start(fakeApi(storage).api));
+    expect(events).toEqual(["ui-facelift=undefined", "all:{}"]);
+  });
+
+  it("still clears the store when no adapter was supplied", () => {
+    const storage = createMemoryStorage({
+      [OVERRIDES_KEY]: JSON.stringify({ "ui-facelift": true }),
+    });
+    const runtime = createFlagsRuntime({ flags: CATALOGUE });
+    withResetParam(() => runtime.start(fakeApi(storage).api));
+    expect(storage.getItem(OVERRIDES_KEY)).toBeNull();
+  });
+
+  it("does nothing on a server", () => {
+    // `location` is read defensively; a missing one is "no reset asked for".
+    const runtime = createFlagsRuntime({ flags: CATALOGUE, onOverride: () => {} });
+    const storage = createMemoryStorage({
+      [OVERRIDES_KEY]: JSON.stringify({ "ui-facelift": true }),
+    });
+    const original = window.location;
+    Object.defineProperty(window, "location", { configurable: true, value: undefined });
     try {
       runtime.start(fakeApi(storage).api);
     } finally {
-      Object.defineProperty(window, "location", {
-        configurable: true,
-        value: { ...window.location, search: original },
-      });
+      Object.defineProperty(window, "location", { configurable: true, value: original });
     }
-    expect(runtime.overrides()).toEqual({});
-    expect(storage.getItem(OVERRIDES_KEY)).toBeNull();
-    // Nothing was applied — the wedging override never reached the app.
-    expect(applied).toEqual([]);
+    expect(runtime.overrides()).toEqual({ "ui-facelift": true });
   });
 });
 
@@ -1627,5 +1684,189 @@ describe("a Readable catalogue", () => {
     source.set([]);
     runtime.store.flush();
     expect(keys(runtime)).toHaveLength(0);
+  });
+});
+
+describe("onOverridesChange", () => {
+  const stored = () =>
+    createMemoryStorage({
+      [OVERRIDES_KEY]: JSON.stringify({ "ui-facelift": true, "checkout.copy": "new" }),
+    });
+
+  it("is an adapter on its own: the panel is writable without onOverride", () => {
+    const maps: Record<string, FlagValue>[] = [];
+    const runtime = createFlagsRuntime({
+      flags: CATALOGUE,
+      onOverridesChange: (overrides) => maps.push({ ...overrides }),
+    });
+    expect(runtime.store.getSnapshot().writable).toBe(true);
+    runtime.start(fakeApi(createMemoryStorage()).api);
+    runtime.setOverride("ui-facelift", true);
+    runtime.setOverride("checkout.copy", "new");
+    runtime.clearOverride("ui-facelift");
+    runtime.toggle("new-header");
+    runtime.applyOverride("search.rank", 5);
+    runtime.applyOverride("search.rank");
+    runtime.clearAll();
+    expect(maps).toEqual([
+      {}, // the start() replay of an empty store
+      { "ui-facelift": true },
+      { "ui-facelift": true, "checkout.copy": "new" },
+      { "checkout.copy": "new" },
+      { "checkout.copy": "new", "new-header": false },
+      { "checkout.copy": "new", "new-header": false, "search.rank": 5 },
+      { "checkout.copy": "new", "new-header": false },
+      {},
+    ]);
+  });
+
+  it("hands the start() replay the vetted map, after the per-key calls", () => {
+    const storage = createMemoryStorage({
+      [OVERRIDES_KEY]: JSON.stringify({
+        "ui-facelift": "true", // a string for a boolean flag — vetted out
+        "checkout.copy": "new",
+        orphan: 1,
+      }),
+    });
+    const events: string[] = [];
+    const runtime = createFlagsRuntime({
+      flags: CATALOGUE,
+      onOverride: (key, value) => events.push(`${key}=${String(value)}`),
+      onOverridesChange: (overrides) => events.push(`all:${JSON.stringify(overrides)}`),
+    });
+    runtime.start(fakeApi(storage).api);
+    expect(events).toEqual([
+      "checkout.copy=new",
+      "orphan=1",
+      'all:{"checkout.copy":"new","orphan":1}',
+    ]);
+  });
+
+  it("follows every per-key call of the same change, for clearAll too", () => {
+    const events: string[] = [];
+    const runtime = createFlagsRuntime({
+      flags: CATALOGUE,
+      onOverride: (key, value) => events.push(`${key}=${String(value)}`),
+      onOverridesChange: (overrides) => events.push(`all:${Object.keys(overrides).length}`),
+    });
+    runtime.start(fakeApi(stored()).api);
+    events.length = 0;
+    runtime.clearAll();
+    expect(events).toEqual(["ui-facelift=undefined", "checkout.copy=undefined", "all:0"]);
+  });
+
+  it("is not called when nothing changed", () => {
+    const onOverridesChange = vi.fn();
+    const runtime = createFlagsRuntime({ flags: CATALOGUE, onOverridesChange });
+    runtime.start(fakeApi(createMemoryStorage()).api);
+    onOverridesChange.mockClear();
+    runtime.clearOverride("ui-facelift");
+    runtime.clearAll();
+    runtime.applyOverride("ui-facelift");
+    expect(onOverridesChange).not.toHaveBeenCalled();
+  });
+
+  it("hands over an ordinary, detached copy", () => {
+    let received: Record<string, FlagValue> | null = null;
+    const runtime = createFlagsRuntime({
+      flags: CATALOGUE,
+      onOverridesChange: (overrides) => {
+        received = overrides as Record<string, FlagValue>;
+      },
+    });
+    runtime.start(fakeApi(createMemoryStorage()).api);
+    runtime.setOverride("ui-facelift", true);
+    expect(Object.getPrototypeOf(received)).toBe(Object.prototype);
+    (received as unknown as Record<string, FlagValue>)["ui-facelift"] = false;
+    expect(runtime.overrides()).toEqual({ "ui-facelift": true });
+  });
+
+  it("records a throw as one map-wide error, not against the rows it touched", () => {
+    const runtime = createFlagsRuntime({
+      flags: CATALOGUE,
+      onOverride: () => {},
+      onOverridesChange: () => {
+        throw new Error("mirror is down");
+      },
+    });
+    runtime.start(fakeApi(createMemoryStorage()).api);
+    runtime.setOverride("ui-facelift", true);
+    const snapshot = runtime.store.getSnapshot();
+    expect(snapshot.bulkError).toMatch(/mirror is down/);
+    // A whole-map failure is not a fact about any one row.
+    expect(snapshot.adapterErrors).toEqual({});
+    expect(snapshot.flags.find((entry) => entry.key === "ui-facelift")?.applyError).toBeUndefined();
+    expect(consoleError).toHaveBeenCalled();
+    // The map still changed and was persisted: the panel says so.
+    expect(runtime.overrides()).toEqual({ "ui-facelift": true });
+    expect(runtime.diagnostics()).toMatchObject({
+      bulkError: expect.stringMatching(/mirror is down/),
+    });
+  });
+
+  it("clears the map-wide error when a later delivery succeeds through another key", () => {
+    // The successful call received the whole map, `ui-facelift` included, so
+    // nothing about `ui-facelift` is still unapplied.
+    let failing = true;
+    const runtime = createFlagsRuntime({
+      flags: CATALOGUE,
+      onOverride: () => {},
+      onOverridesChange: () => {
+        if (failing) throw new Error("mirror is down");
+      },
+    });
+    runtime.start(fakeApi(createMemoryStorage()).api);
+    runtime.setOverride("ui-facelift", true);
+    expect(runtime.store.getSnapshot().bulkError).toMatch(/mirror is down/);
+
+    failing = false;
+    runtime.setOverride("checkout.copy", "new");
+    const snapshot = runtime.store.getSnapshot();
+    expect(snapshot.bulkError).toBeNull();
+    expect(snapshot.adapterErrors).toEqual({});
+    expect(snapshot.flags.find((entry) => entry.key === "ui-facelift")?.applyError).toBeUndefined();
+  });
+
+  it("keeps an unresolved per-key failure when the map-wide one recovers", () => {
+    let bulkFailing = true;
+    const runtime = createFlagsRuntime({
+      flags: CATALOGUE,
+      onOverride: (key) => {
+        if (key === "ui-facelift") throw new Error("provider is offline");
+      },
+      onOverridesChange: () => {
+        if (bulkFailing) throw new Error("mirror is down");
+      },
+    });
+    runtime.start(fakeApi(createMemoryStorage()).api);
+    runtime.setOverride("ui-facelift", true);
+    let snapshot = runtime.store.getSnapshot();
+    expect(snapshot.adapterErrors["ui-facelift"]).toMatch(/provider is offline/);
+    expect(snapshot.bulkError).toMatch(/mirror is down/);
+
+    bulkFailing = false;
+    runtime.setOverride("checkout.copy", "new");
+    snapshot = runtime.store.getSnapshot();
+    expect(snapshot.bulkError).toBeNull();
+    expect(snapshot.adapterErrors).toEqual({
+      "ui-facelift": expect.stringMatching(/provider is offline/),
+    });
+    expect(snapshot.flags.find((entry) => entry.key === "ui-facelift")?.applyError).toMatch(
+      /provider is offline/,
+    );
+  });
+
+  it("surfaces a throw on the empty start() replay", () => {
+    // Nothing was touched, but a mirror that failed to receive `{}` may still
+    // be applying a map the panel says is empty.
+    const runtime = createFlagsRuntime({
+      flags: CATALOGUE,
+      onOverridesChange: () => {
+        throw new Error("mirror is down");
+      },
+    });
+    runtime.start(fakeApi(createMemoryStorage()).api);
+    expect(runtime.store.getSnapshot().bulkError).toMatch(/mirror is down/);
+    expect(runtime.store.getSnapshot().adapterErrors).toEqual({});
   });
 });

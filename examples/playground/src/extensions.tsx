@@ -288,6 +288,10 @@ export const playgroundFlags = {
   },
   /** Set on the window by App, so the adapter can be made to throw on demand. */
   breakAdapter: false,
+  /** Same for the whole-map mirror below — the panel's one `bulkError` banner. */
+  breakMirror: false,
+  /** The last map `onOverridesChange` handed over; the mirror keeps it and applies nothing. */
+  mirrored: {} as Readonly<Record<string, FlagValue>>,
 };
 
 const CATALOGUE: Omit<FlagReading, "value">[] = [
@@ -344,6 +348,13 @@ const runtimeFlags = flags({
     if (value === undefined) delete flagOverrides[key];
     else flagOverrides[key] = value;
     flagListeners.forEach((listener) => listener());
+  },
+  // Records only, so `flag-break-adapter` keeps meaning "accepted but not applied".
+  onOverridesChange: (overrides) => {
+    if (playgroundFlags.breakMirror) {
+      throw new Error("playground: the override mirror is offline");
+    }
+    playgroundFlags.mirrored = overrides;
   },
   promoted: {
     flagKey: "ui-facelift",

@@ -77,10 +77,22 @@ export interface FlagsRuntimeOptions {
    * Apply an override to your own flag state. `value === undefined` means the
    * flag no longer has a local override — fall back to your own resolution.
    *
-   * Omit it and the panel is **read-only**: lists, searches and copies, no
-   * editors. The honest degradation for a consumer with nowhere to put one.
+   * Omit it *and* `onOverridesChange` and the panel is **read-only**: lists,
+   * searches and copies, no editors. The honest degradation for a consumer
+   * with nowhere to put one.
    */
   onOverride?(key: string, value: FlagValue | undefined): void;
+  /**
+   * The complete, vetted override map after any change — the `start()` replay,
+   * a `?dtb-flags=reset` load (an empty map), every edit and the `flags.set`
+   * command. Called **after** the per-key `onOverride` calls of the same
+   * synchronous change; a throw here is recorded as one map-wide `bulkError`.
+   * Either adapter alone makes the panel writable: a consumer that mirrors the
+   * whole map implements this and drops `onOverride`.
+   *
+   * A fresh copy every time — mutating it changes nothing.
+   */
+  onOverridesChange?(overrides: Readonly<Record<string, FlagValue>>): void;
   /** Re-read a function `flags` this often, in ms. Default `1000`. Unused for a `Readable`. */
   pollMs?: number;
   /** Flags pinned into the bar as their own controls. */
@@ -285,6 +297,7 @@ export function createFlagsRuntime(options: FlagsRuntimeOptions = {}): FlagsRunt
   const {
     flags,
     onOverride,
+    onOverridesChange,
     pollMs = 1000,
     promoted,
     audience,
@@ -294,7 +307,7 @@ export function createFlagsRuntime(options: FlagsRuntimeOptions = {}): FlagsRunt
   } = options;
 
   const promotions = toArray(promoted);
-  const writable = typeof onOverride === "function";
+  const writable = typeof onOverride === "function" || typeof onOverridesChange === "function";
 
   let storage: ToolbarStorage | null = null;
   let overrides: Record<string, FlagValue> = emptyOverrides();
@@ -302,6 +315,8 @@ export function createFlagsRuntime(options: FlagsRuntimeOptions = {}): FlagsRunt
   // Per key, not one slot — a single `adapterError` would be erased by the
   // next successful call on any *other* key, hiding a still-failing row.
   const adapterErrors = new Map<string, string>();
+  // The whole-map adapter fails or recovers as a whole, so it gets its own slot.
+  let bulkError: string | null = null;
   let readError: string | null = null;
 
   /* ------------------------------------------------------------------ */
@@ -522,6 +537,7 @@ export function createFlagsRuntime(options: FlagsRuntimeOptions = {}): FlagsRunt
       writable,
       reloadPending: [...reloadPending],
       adapterErrors: Object.fromEntries(adapterErrors),
+      bulkError,
       readError,
     };
   };
@@ -553,6 +569,7 @@ export function createFlagsRuntime(options: FlagsRuntimeOptions = {}): FlagsRunt
         writable,
         reloadPending: [],
         adapterErrors: Object.fromEntries(adapterErrors),
+        bulkError,
         readError: "The flag list could not be read — it threw. See the console.",
       };
     }
@@ -560,7 +577,7 @@ export function createFlagsRuntime(options: FlagsRuntimeOptions = {}): FlagsRunt
 
   const signature = (snapshot: FlagsSnapshot): string =>
     `${snapshot.readError ?? ""}|${snapshot.reloadPending.join(",")}|` +
-    `${JSON.stringify(snapshot.adapterErrors)}|` +
+    `${JSON.stringify(snapshot.adapterErrors)}|${snapshot.bulkError ?? ""}|` +
     `${snapshot.maskedCount}|${snapshot.supplied ? 1 : 0}|` +
     snapshot.flags
       .map(
@@ -609,6 +626,18 @@ export function createFlagsRuntime(options: FlagsRuntimeOptions = {}): FlagsRunt
     }
   };
 
+  const notifyOverrides = (): void => {
+    if (typeof onOverridesChange !== "function") return;
+    try {
+      onOverridesChange({ ...overrides });
+      bulkError = null;
+    } catch (error) {
+      bulkError = `${describeError(error, redactOptions).message} — your application may not have picked the override map up.`;
+      // eslint-disable-next-line no-console
+      console.error("[dev-toolbar/ext/flags] the onOverridesChange adapter threw.", error);
+    }
+  };
+
   const markReload = (key: string) => {
     const view = store.peek().flags.find((candidate) => candidate.key === key);
     const behavior = view?.reloadBehavior ?? "live";
@@ -621,6 +650,7 @@ export function createFlagsRuntime(options: FlagsRuntimeOptions = {}): FlagsRunt
     overrides[key] = value;
     persist();
     apply(key, value);
+    notifyOverrides();
     markReload(key);
     publish();
     store.flush();
@@ -634,6 +664,7 @@ export function createFlagsRuntime(options: FlagsRuntimeOptions = {}): FlagsRunt
     overrides = next;
     persist();
     apply(key, undefined);
+    notifyOverrides();
     markReload(key);
     publish();
     store.flush();
@@ -660,6 +691,7 @@ export function createFlagsRuntime(options: FlagsRuntimeOptions = {}): FlagsRunt
         apply(key, undefined);
         markReload(key);
       }
+      notifyOverrides();
       publish();
       store.flush();
     },
@@ -670,8 +702,8 @@ export function createFlagsRuntime(options: FlagsRuntimeOptions = {}): FlagsRunt
       }
       if (!writable) {
         throw new Error(
-          `This toolbar's flags are read-only — no \`onOverride\` adapter was supplied, ` +
-            `so "${key}" cannot be overridden.`,
+          `This toolbar's flags are read-only — no \`onOverride\` or \`onOverridesChange\` ` +
+            `adapter was supplied, so "${key}" cannot be overridden.`,
         );
       }
       if (value === undefined) {
@@ -746,11 +778,13 @@ export function createFlagsRuntime(options: FlagsRuntimeOptions = {}): FlagsRunt
     start(api: ExtensionRuntimeApi) {
       storage = api.storage;
 
-      // The kill switch runs before anything is applied, so a wedging
-      // override never reaches the app on the reset load.
+      // Before anything is applied, so a wedging override never reaches the app on the reset load.
       if (resetRequested(resetParam)) {
+        const previous = parseOverrides(readPreference(storage, OVERRIDES_PREFERENCE));
         overrides = emptyOverrides();
+        for (const key of Object.keys(previous)) apply(key, undefined);
         persist();
+        notifyOverrides();
       } else if (writable) {
         overrides = vetOverrides(
           parseOverrides(readPreference(storage, OVERRIDES_PREFERENCE)),
@@ -762,6 +796,7 @@ export function createFlagsRuntime(options: FlagsRuntimeOptions = {}): FlagsRunt
         for (const [key, value] of Object.entries(overrides)) {
           apply(key, value);
         }
+        notifyOverrides();
       }
 
       // A `Readable` says when it changed; only a bare getter needs the timer.
@@ -827,6 +862,7 @@ export function createFlagsRuntime(options: FlagsRuntimeOptions = {}): FlagsRunt
         maskedCount: snapshot.maskedCount,
         reloadPending: snapshot.reloadPending,
         readError: snapshot.readError,
+        bulkError: snapshot.bulkError,
         /** Every catalogued row, so a reader can compare base and effective values. */
         flags: snapshot.flags.map((view) => ({
           key: view.key,
