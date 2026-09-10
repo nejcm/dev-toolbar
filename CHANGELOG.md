@@ -14,6 +14,13 @@
   style break at the boundary is accepted, not an oversight.
 -->
 
+## [0.9.0](https://github.com/nejcm/dev-toolbar/compare/v0.8.1...v0.9.0) (2026-09-10)
+
+
+### Features
+
+* subscribe to live app state, and prove the package through a real bundler ([#96](https://github.com/nejcm/dev-toolbar/issues/96)) ([3129fa8](https://github.com/nejcm/dev-toolbar/commit/3129fa85b7205b6ab4d1193e4b779322e6b0fe7c))
+
 ## [0.8.1](https://github.com/nejcm/dev-toolbar/compare/v0.8.0...v0.8.1) (2026-09-09)
 
 
