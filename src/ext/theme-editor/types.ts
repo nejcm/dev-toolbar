@@ -442,6 +442,47 @@ export interface ThemeSnapshot {
   notice: string | null;
 }
 
+/**
+ * What a consumer's `presentation` callbacks are told about the bar control.
+ *
+ * Deliberately *not* `ThemeSnapshot`: `revision` is a store change signal,
+ * `groups` is documented "panel rendering only", and `applyErrors`, `notice`,
+ * `readError`, `surfaces` and the whole `TokenView[]` are the editor's working
+ * state. A view type that is only *read* can gain and lose fields freely, but
+ * as a callback parameter it is contravariant — every field here is a field
+ * that cannot be renamed without breaking consumer callbacks — so this carries
+ * the facts the chip paints and nothing else
+ * (`plans/bar-presentation-icons-v1.md`, "The callback goes on all seven";
+ * `/ext/diagnostics` narrowed the same way, for the same reason).
+ *
+ * Why each field is here:
+ *
+ * - `tokenCount`, `overriddenCount`, `preview` — between them they *are* the
+ *   chip: the value word is `!preview ? "paused" : overriddenCount > 0 ?
+ *   "N edited" : tokenCount`, `data-dtb-edited` is `overriddenCount > 0` and
+ *   `data-dtb-preview` is `preview`.
+ * - `supplied`, `writable` — the two states in which the chip is saying it can
+ *   do nothing, and the two an icon would most want to draw differently. They
+ *   are already spelled out in the control's `title`.
+ *
+ * Anything derivable is left out: `edited` is `overriddenCount > 0`, and the
+ * value word follows from the three above. `surface` is left out too — it is a
+ * nested object whose shape would then be contravariant as well, and the chip
+ * only ever quotes its id inside a sentence.
+ */
+export interface ThemeEditorBarView {
+  /** How many design tokens the catalogue declares. The value word when nothing is edited. */
+  tokenCount: number;
+  /** How many carry a local edit. Drives `data-dtb-edited` and the value word. */
+  overriddenCount: number;
+  /** False while edits are held back so you can see the application untouched. Drives `data-dtb-preview`. */
+  preview: boolean;
+  /** False when the consumer supplied no tokens at all. */
+  supplied: boolean;
+  /** False when there is nowhere to write — no document, or no element matches the surface. */
+  writable: boolean;
+}
+
 /** Chip/row colour. Same vocabulary the other extensions use. */
 export type TokenSeverity = Exclude<SeverityWithOverride, "ok">;
 

@@ -47,8 +47,10 @@ import { createThemeEditorRuntime } from "./runtime";
 import { writeClipboardTextOrThrow } from "../../runtime";
 import { describeValueRefusal } from "./types";
 import { ThemeChip, ThemePanel } from "./ui";
-import { resolveStyleNonce } from "@nejcm/dev-toolbar/kit";
+import { resolvePresentation, resolveStyleNonce } from "@nejcm/dev-toolbar/kit";
+import type { CompactPresentationInput } from "@nejcm/dev-toolbar/kit";
 import type { ThemeEditorRuntimeOptions } from "./runtime";
+import type { ThemeEditorBarView } from "./types";
 import type {
   DevToolbarExtension,
   ExtensionRuntimeApi,
@@ -87,6 +89,33 @@ export interface ThemeEditorOptions extends ThemeEditorRuntimeOptions {
    * slot prop core forwards from `<DevToolbar>`.
    */
   styleNonce?: string;
+  /**
+   * How the bar control presents itself: a preset, your own icon, a render
+   * callback and an accessible-name override. A bare preset is the shorthand —
+   * `presentation: "icon-value"`.
+   *
+   * One control, so each knob is invoked once per render, in the bar and in the
+   * `⋮` row alike, with a narrow `ThemeEditorBarView` rather than the whole
+   * `ThemeSnapshot` — the editor's token list, groups and apply errors are
+   * working state, and a callback parameter cannot be renamed later without
+   * breaking your code. The presets operate on the **short bar word**
+   * (`"theme"`): `label` stays the accessible-name identity, so `"icon-label"`
+   * paints `"theme"` in the bar and `"Theme"` in the `⋮` menu.
+   *
+   * `render` supplies the children of the chip carrying `data-dtb-edited` and
+   * `data-dtb-preview`, and this chip colours its own dot from exactly those
+   * two, so no preset and no callback can change what colour the bar is
+   * showing you — only what words sit next to it. Returning `undefined` falls
+   * through to the preset. `name` overrides the `aria-label`, and a
+   * whitespace-only return is ignored; `title` is not overridable.
+   *
+   * Nothing here reaches the store or the runtime: the icon and the callbacks
+   * are held in this closure and passed as props, because a `ReactNode` cannot
+   * be signed and the theme store republishes on a signature change.
+   *
+   * `docs/adr/ADR-004-per-extension-bar-presentation.md`.
+   */
+  presentation?: CompactPresentationInput<ThemeEditorBarView>;
 }
 
 /**
@@ -104,10 +133,24 @@ export function themeEditor(options: ThemeEditorOptions = {}): DevToolbarExtensi
     keepMounted = true,
     injectStyles = true,
     styleNonce: optionNonce,
+    // Named here rather than read off `options` below, for the same reason
+    // every other extension-level field is.
+    presentation: presentationOption,
   } = options;
+
+  // Resolved once, here, rather than per render: this is the closure the icon
+  // and the callbacks live in, exactly as `label` and `injectStyles` do.
+  const presentation = resolvePresentation(presentationOption);
 
   // Built here, not in start(api): slot functions run during the toolbar's
   // first render, which is before any effect fires.
+  //
+  // `options` in full, deliberately, where the other extensions hand over a
+  // `...runtimeOptions` rest: a rest element *reads every own property*, and
+  // `redactOptions` may be a getter that throws before mount — the whole point
+  // of `readRedactionProperty` inside the runtime. Nothing is lost by it. The
+  // runtime destructures the fields it names and never touches `presentation`,
+  // so no `ReactNode` reaches the signature-based store either way.
   const runtime = createThemeEditorRuntime(options);
 
   /**
@@ -209,6 +252,7 @@ export function themeEditor(options: ThemeEditorOptions = {}): DevToolbarExtensi
       <ThemeChip
         runtime={runtime}
         label={label}
+        presentation={presentation}
         isOverflowed={isOverflowed}
         isPanelOpen={isPanelOpen}
         injectStyles={injectStyles}
@@ -340,6 +384,7 @@ export {
 export type {
   DesignTokenDefinition,
   RecipeParse,
+  ThemeEditorBarView,
   ThemeRecipe,
   ThemeSnapshot,
   ThemeSurface,

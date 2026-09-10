@@ -5,13 +5,22 @@ import {
   Banner,
   Chip,
   Field,
+  Glyph,
   Note,
   SearchField,
   Select,
   Tag,
   TextInput,
+  renderCompact,
+  resolveAccessibleName,
+  resolveCompactControl,
   useCopyStatus,
   useExtensionSurface,
+} from "@nejcm/dev-toolbar/kit";
+import type {
+  CompactDefaults,
+  CompactParts,
+  ResolvedCompactPresentation,
 } from "@nejcm/dev-toolbar/kit";
 import { ensureThemeEditorStyles } from "./css";
 import {
@@ -22,7 +31,7 @@ import {
   severityFor,
   toColorInputValue,
 } from "./types";
-import type { TokenView } from "./types";
+import type { ThemeEditorBarView, TokenView } from "./types";
 import type { ThemeEditorRuntime } from "./runtime";
 
 /**
@@ -32,15 +41,83 @@ import type { ThemeEditorRuntime } from "./runtime";
  * subscribe to the extension's own store. Everything rendered comes from the
  * snapshot, already redacted — no component here has access to a raw token
  * value.
+ *
+ * `presentation` arrives already resolved and is read through `/kit`'s
+ * `resolveCompactControl` and `renderCompact`, so the `hasIcon` guard, the
+ * `"default"` fallback, the `CompactRenderContext` and the `undefined`
+ * fall-through live in one place for all nine extensions rather than nine.
+ * What stays here is the DOM: a consumer's `render` supplies the children of
+ * the chip carrying `data-dtb-edited` and `data-dtb-preview`, and `Chip`
+ * paints the dot before them, so no callback can cost the control its state
+ * attributes or its dot — which matters more here than anywhere else in Group
+ * A, because this chip colours its own dot from those two attributes rather
+ * than from a `severity`
+ * (`plans/bar-presentation-icons-v1.md`, invariant 1).
  */
 
 /* -------------------------------------------------------------------------- */
 /* Bar                                                                         */
 /* -------------------------------------------------------------------------- */
 
+/**
+ * The short word the bar paints, and the reason there is one.
+ *
+ * `label` is the extension's identity — the panel's accessible name, the
+ * trigger's `aria-label` — and the chip has always painted this lowercase word
+ * instead, in the bar *and* in the `⋮` row. Presets operate on *this* word;
+ * `label` stays the accessible-name identity, which is what makes the text
+ * axis `"none" | "short" | "full"` rather than a boolean
+ * (`plans/bar-presentation-icons-v1.md`, "Which text").
+ */
+const SHORT_LABEL = "theme";
+
+/**
+ * Today's tree, expressed as parts.
+ *
+ * `resolveCompactControl` answers the preset's parts, or these when the preset
+ * is `"default"` — handed in rather than known to kit, because `"default"`
+ * means *whatever this extension renders today* and that differs across the
+ * nine. Like `/ext/environment` and unlike the other three Group A chips, this
+ * one paints the same short word in both places, so `overflow.text` is
+ * `"short"`. A preset still forces `"full"` in the menu; only `"default"` is
+ * pinned to what shipped.
+ */
+const DEFAULTS: CompactDefaults = {
+  bar: { icon: false, text: "short", value: true },
+  overflow: { icon: false, text: "short", value: true },
+};
+
+/**
+ * The icon and the text.
+ *
+ * These are the chip's *children* rather than `Chip`'s `icon` / `label` /
+ * `value` slots — the same call the rest of Group A and `/ext/metrics` made,
+ * and the reason is recorded in
+ * `docs/adr/ADR-004-per-extension-bar-presentation.md`. `Chip` renders its
+ * children straight after the dot, in the slots' own position, so nothing
+ * about today's output moves.
+ */
+function iconAndText(
+  label: string,
+  { icon: paintIcon, text }: CompactParts,
+  icon: ReactNode,
+): ReactNode {
+  return (
+    <>
+      {paintIcon ? <Glyph data-dtb-part="thm-icon">{icon}</Glyph> : null}
+      {/* A bare `<span>`, which is what `Chip`'s `label` slot wrote before this
+          moved into the chip's children — no `data-dtb-part`, because adding
+          one would change today's bytes. */}
+      {text === "none" ? null : <span>{text === "full" ? label : SHORT_LABEL}</span>}
+    </>
+  );
+}
+
 export interface ChipProps {
   runtime: ThemeEditorRuntime;
   label: string;
+  /** Already through `resolvePresentation`, in the factory closure. */
+  presentation: ResolvedCompactPresentation<ThemeEditorBarView>;
   isOverflowed: boolean;
   isPanelOpen: boolean;
   injectStyles: boolean;
@@ -51,6 +128,7 @@ export interface ChipProps {
 export function ThemeChip({
   runtime,
   label,
+  presentation,
   isOverflowed,
   isPanelOpen,
   injectStyles,
@@ -83,27 +161,58 @@ export function ThemeChip({
     : "Design tokens: none supplied to themeEditor()";
   const accessibleLabel = edited ? `${label}, ${snapshot.overriddenCount} edited` : label;
 
+  // The narrow view the consumer's knobs see — the facts the chip paints, not
+  // the editor's working state behind them. See `ThemeEditorBarView`.
+  const view: ThemeEditorBarView = {
+    tokenCount: snapshot.tokens.length,
+    overriddenCount: snapshot.overriddenCount,
+    preview: snapshot.preview,
+    supplied: snapshot.supplied,
+    writable: snapshot.writable,
+  };
+  const control = resolveCompactControl(presentation, view, { isOverflowed, defaults: DEFAULTS });
+  const fallback = (
+    <>
+      {iconAndText(label, control.parts, control.icon)}
+      {/* The order `Chip`'s own value slot wrote before this moved into the
+          chip's children — with the kit's `value` kind opted *out* of, which is
+          what `valueProps={{ "data-dtb-kind": undefined }}` did before: the
+          count is unstyled here, and the chip's colour comes from
+          `data-dtb-edited`/`-preview` rather than from a `severity`. */}
+      {control.parts.value ? <span data-dtb-part="thm-count">{summary}</span> : null}
+    </>
+  );
+
   return (
     <button
       type="button"
       data-dtb-part={isOverflowed ? "thm-overflow-trigger" : "trigger"}
       aria-expanded={isPanelOpen}
-      aria-label={accessibleLabel}
+      // `presentation.name` overrides it, and a whitespace-only override is
+      // ignored so no override can leave the trigger unnamed. `title`
+      // explains; it does not name, so it is not overridable.
+      aria-label={resolveAccessibleName(presentation.name, view, accessibleLabel)}
       onClick={onToggle}
       title={title}
     >
       {/* The chip colours its own dot from data-dtb-edited/-preview, and the
           label and count are unstyled here, so the kit adds no kind or
-          severity to those two slots. */}
+          severity to those two slots. Invariant 1: those two attributes are
+          state, and no preset and no `render` can move them — they are written
+          on the `Chip` itself, above the children a consumer supplies. */}
       <Chip
         data-dtb-part="thm-chip"
         data-dtb-edited={edited ? "true" : "false"}
         data-dtb-preview={snapshot.preview ? "true" : "false"}
-        label="theme"
-        value={summary}
         dotProps={{ "data-dtb-part": "thm-dot" }}
-        valueProps={{ "data-dtb-part": "thm-count", "data-dtb-kind": undefined }}
-      />
+      >
+        {renderCompact(
+          presentation,
+          view,
+          { icon: control.icon, isOverflowed, isPanelOpen },
+          fallback,
+        )}
+      </Chip>
     </button>
   );
 }
