@@ -55,7 +55,8 @@
  */
 import { createDiagnosticsRuntime } from "./runtime";
 import { DiagnosticsChip, DiagnosticsPanel } from "./ui";
-import { resolveStyleNonce } from "@nejcm/dev-toolbar/kit";
+import { resolvePresentation, resolveStyleNonce } from "@nejcm/dev-toolbar/kit";
+import type { CompactPresentationInput } from "@nejcm/dev-toolbar/kit";
 import type { DiagnosticsRuntimeOptions } from "./runtime";
 import type {
   AnyToolbarCommand,
@@ -64,7 +65,7 @@ import type {
   ToolbarAlign,
   ToolbarCommand,
 } from "../../core/contract";
-import type { ConsoleTailReport, DiagnosticSnapshot } from "./types";
+import type { ConsoleTailReport, DiagnosticSnapshot, DiagnosticsBarView } from "./types";
 
 export interface DiagnosticsOptions extends Omit<DiagnosticsRuntimeOptions, "id"> {
   /** Extension id. Default `"diagnostics"`. */
@@ -97,6 +98,37 @@ export interface DiagnosticsOptions extends Omit<DiagnosticsRuntimeOptions, "id"
    * slot prop core forwards from `<DevToolbar>`.
    */
   styleNonce?: string;
+  /**
+   * How the bar control presents itself: a preset, your own icon, a render
+   * callback and an accessible-name override. A bare preset is the shorthand —
+   * `presentation: "icon-value"`.
+   *
+   * One control, so each knob is invoked once per render, in the bar and in the
+   * `⋮` menu alike, with a narrow {@link DiagnosticsBarView} rather than the
+   * store state behind it — four facts the chip paints, kept deliberately
+   * minimal because a callback parameter is contravariant and every field here
+   * is one that cannot be renamed later. The presets operate on the **short bar
+   * word** (`"diagnostics"`): `label` stays the overflow and accessible-name
+   * identity, so `"icon-label"` paints `"diagnostics"` in the bar and
+   * `"Diagnostics"` in the menu.
+   *
+   * **The error/warning badge is not yours to restyle.** It sits outside both
+   * the preset and `render`, after the contents, under every preset including
+   * `"icon"` — it is live state, and the one thing on the chip that says
+   * something is wrong. `render` supplies the children of the chip carrying
+   * `data-dtb-incomplete` and the dot, so the state attributes,
+   * `aria-expanded` and `title` stay the extension's; returning `undefined`
+   * falls through to the preset. `name` overrides the `aria-label`, and a
+   * whitespace-only return is ignored. Prefer a name that does not change with
+   * the *counts* — `(v) => \`Diagnostics ${v.errors}\`` renames the control on
+   * every caught error and a screen reader re-announces it.
+   *
+   * Nothing here reaches the store: the icon and the callbacks are held in this
+   * closure and passed as props, because a `ReactNode` cannot be signed.
+   *
+   * `docs/adr/ADR-004-per-extension-bar-presentation.md`.
+   */
+  presentation?: CompactPresentationInput<DiagnosticsBarView>;
 }
 
 /**
@@ -114,8 +146,16 @@ export function diagnostics(options: DiagnosticsOptions = {}): DevToolbarExtensi
     keepMounted = false,
     injectStyles = true,
     styleNonce: optionNonce,
+    // Destructured out rather than read off `options`: everything this factory
+    // does not name is spread into `createDiagnosticsRuntime` below, and an
+    // icon or a callback has no business reaching the runtime.
+    presentation: presentationOption,
     ...runtimeOptions
   } = options;
+
+  // Resolved once, here, rather than per render: this is the closure the icon
+  // and the callbacks live in, exactly as `label` and `injectStyles` do.
+  const presentation = resolvePresentation(presentationOption);
 
   // Built here, not in start(api): slot functions run on the toolbar's first
   // render, before any effect fires, and a persisted open panel needs it then.
@@ -194,6 +234,7 @@ export function diagnostics(options: DiagnosticsOptions = {}): DevToolbarExtensi
       <DiagnosticsChip
         runtime={runtime}
         label={label}
+        presentation={presentation}
         isOverflowed={isOverflowed}
         isPanelOpen={isPanelOpen}
         injectStyles={injectStyles}
@@ -333,6 +374,7 @@ export type {
   DiagnosticOmission,
   DiagnosticSnapshot,
   DiagnosticSource,
+  DiagnosticsBarView,
   DiagnosticsSnapshotState,
   InteractionReport,
   LayoutShiftReport,

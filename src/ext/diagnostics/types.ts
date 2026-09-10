@@ -332,6 +332,33 @@ export interface DiagnosticsSnapshotState {
   warnings: number;
 }
 
+/**
+ * What a consumer's `presentation` callbacks are told about the bar control.
+ *
+ * Deliberately *not* `DiagnosticsSnapshotState`: `revision` is a store change
+ * signal, `capturedAt` a `performance.now()` reading and `snapshot` the whole
+ * `DiagnosticSnapshot`, and all three read as implementation detail. A view
+ * type that is only *read* can gain and lose fields freely, but as a callback
+ * parameter it is contravariant — every field here is a field that cannot be
+ * renamed without breaking consumer callbacks — so this carries the four facts
+ * the chip actually paints and nothing else
+ * (`plans/bar-presentation-icons-v1.md`, "The callback goes on all seven").
+ *
+ * Anything derivable is left out: the value word (`"capture"` / `"ready"` /
+ * `"N missing"`) follows from `captured` and `omissions`, and the badge's count
+ * is `errors + warnings`.
+ */
+export interface DiagnosticsBarView {
+  /** Whether a snapshot has been captured. The dot's and the value's binary state. */
+  captured: boolean;
+  /** How many things the last capture could not include. Drives `data-dtb-incomplete`. */
+  omissions: number;
+  /** Errors seen so far — live, not as of the last capture, like the badge. */
+  errors: number;
+  /** Warnings seen so far, on the same live basis. */
+  warnings: number;
+}
+
 /** A consumer-supplied section, treated exactly like an extension contribution. */
 export interface DiagnosticSource {
   id: string;

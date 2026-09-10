@@ -83,8 +83,38 @@ because **you** are the last check before it reaches a ticket.
 
 `app`, `sources`, `console`, `recentSize`, `redactOptions`.
 
+`presentation` changes how the bar control looks, not what it captures: a
+`CompactPreset`, your own `ReactNode` icon (or `(view) => ReactNode`), a
+`render` callback and an accessible-name override. It resolves through `/kit`'s
+`resolveCompactControl`, so `"default"` is byte-identical to what shipped
+before the option existed and the `⋮` menu always paints the full `label`.
+**Presets operate on the short bar word (`"diagnostics"`)**, which is the swing
+`ui.tsx` used to write by hand as `isOverflowed ? label : "diagnostics"`;
+`label` stays the overflow and accessible-name identity.
+
+The callbacks receive a narrow **`DiagnosticsBarView`** — `captured`,
+`omissions`, `errors`, `warnings` — and not `DiagnosticsSnapshotState`, whose
+`revision`, `capturedAt` and `snapshot` read as implementation detail. A view
+type that is only read can gain and lose fields freely; as a callback parameter
+it is contravariant, so every field there is one that cannot be renamed later.
+
+**The error/warning badge is not yours to restyle.** It sits outside both the
+preset and `render`, after the contents, under every preset including `"icon"`
+— it is live state, and the one thing on the chip that says something is wrong.
+The parts go in as the kit `Chip`'s *children* rather than its
+`icon` / `label` / `value` slots, so `render` replaces them and never the
+`Chip` — the dot, `data-dtb-incomplete` and the `aria-label` are not a
+callback's to lose. Nothing configured here reaches the store: a `ReactNode`
+cannot be signed, so the icon and the callbacks stay in the factory closure and
+travel as props.
+[ADR-004](../../../docs/adr/ADR-004-per-extension-bar-presentation.md).
+
 ## Tests
 
 `__tests__/console.test.tsx` for the tail and its masking,
 `responsiveness.test.ts` for the observer data, `runtime.test.ts` for the
 snapshot and its exports, `diagnostics.test.tsx` for the panel and commands.
+`presentation.test.tsx` pins the default bar and `⋮` markup as literal strings
+— in the empty state *and* with a caught error and warning, so the badge's
+hand-written attributes are covered — plus every preset in both places and the
+three callbacks.
