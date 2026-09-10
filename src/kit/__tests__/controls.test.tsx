@@ -7,6 +7,7 @@ import {
   Chip,
   EmptyState,
   Field,
+  Glyph,
   Note,
   Row,
   Rows,
@@ -96,6 +97,79 @@ describe("Chip", () => {
     expect(chip.children).toHaveLength(2);
     expect(chip.children[0]?.getAttribute("data-dtb-kind")).toBe("dot");
     expect(chip.children[1]?.hasAttribute("data-dtb-kind")).toBe(false);
+  });
+
+  it("renders the icon after the dot and before the label", () => {
+    const { container } = render(
+      <Chip icon={<svg data-dtb-part="example-icon" />} label="metrics" value="42" />,
+    );
+
+    const chip = container.firstElementChild as HTMLSpanElement;
+    expect(Array.from(chip.children, (child) => child.getAttribute("data-dtb-kind"))).toEqual([
+      "dot",
+      "glyph",
+      null,
+      "value",
+    ]);
+    expect(chip.children[1]?.firstElementChild?.getAttribute("data-dtb-part")).toBe("example-icon");
+  });
+
+  it("takes props for the icon wrapper", () => {
+    const { container } = render(
+      <Chip icon="*" iconProps={{ "data-dtb-part": "example-icon" }} label="metrics" />,
+    );
+
+    const glyph = container.querySelector('[data-dtb-kind="glyph"]');
+    expect(glyph?.getAttribute("data-dtb-part")).toBe("example-icon");
+  });
+
+  it.each([undefined, null])(
+    "omits the label node entirely for %s, so the gap does not shift an icon-only chip",
+    (label) => {
+      const { container } = render(<Chip icon="*" label={label} value="42" />);
+
+      const chip = container.firstElementChild as HTMLSpanElement;
+      expect(Array.from(chip.children, (child) => child.getAttribute("data-dtb-kind"))).toEqual([
+        "dot",
+        "glyph",
+        "value",
+      ]);
+    },
+  );
+
+  it("omits the icon node entirely when no icon is supplied", () => {
+    const { container } = render(<Chip label="metrics" />);
+
+    const chip = container.firstElementChild as HTMLSpanElement;
+    expect(chip.querySelector('[data-dtb-kind="glyph"]')).toBeNull();
+    expect(chip.children).toHaveLength(2);
+  });
+});
+
+describe("Glyph", () => {
+  it("hides itself from assistive technology by default and forwards its ref", () => {
+    const ref = createRef<HTMLSpanElement>();
+    const { container } = render(
+      <Glyph ref={ref} data-dtb-part="example-icon">
+        <svg />
+      </Glyph>,
+    );
+
+    const glyph = container.firstElementChild as HTMLSpanElement;
+    expect(ref.current).toBe(glyph);
+    expect(glyph.getAttribute("data-dtb-kind")).toBe("glyph");
+    expect(glyph.getAttribute("aria-hidden")).toBe("true");
+    expect(glyph.getAttribute("data-dtb-part")).toBe("example-icon");
+  });
+
+  it("lets a site that names the icon itself opt out of aria-hidden", () => {
+    const { getByRole } = render(
+      <Glyph aria-hidden={false} role="img" aria-label="memory">
+        <svg />
+      </Glyph>,
+    );
+
+    expect(getByRole("img", { name: "memory" }).getAttribute("data-dtb-kind")).toBe("glyph");
   });
 });
 

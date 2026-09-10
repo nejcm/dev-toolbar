@@ -7,6 +7,7 @@ const KINDS = [
   "action",
   "chip",
   "dot",
+  "glyph",
   "tag",
   "row",
   "list",

@@ -31,9 +31,47 @@ export const Action = forwardRef<HTMLButtonElement, ActionProps>(function Action
   return <button {...rest} ref={ref} type={type} data-dtb-kind="action" />;
 });
 
-/** Props for a bar chip: a decorative dot, a label and an optional value. */
+/** Props for a small inline icon wrapper. Everything a `<span>` takes. */
+export type GlyphProps = SpanProps;
+
+/**
+ * A consumer-supplied icon, hidden from assistive technology and clamped.
+ *
+ * Two reasons nine call sites should not each solve: it is `aria-hidden` by
+ * default, because the name belongs to the control and an announced icon
+ * duplicates it — pass `aria-hidden={false}` with a `role`/`aria-label` where
+ * the icon *is* the name — and it clamps its direct child, because a 24px
+ * `<svg>` handed to an 11px bar would otherwise set the bar's height. The clamp
+ * is `--dtb-glyph-size`, defaulting to `1.15em`, so it tracks density for free.
+ *
+ * It is a standalone control, not just a `Chip` slot, because three of the nine
+ * first-party bar controls are hand-written and cannot route through `Chip`.
+ */
+export const Glyph = forwardRef<HTMLSpanElement, GlyphProps>(function Glyph(
+  { "aria-hidden": ariaHidden = "true", ...rest },
+  ref,
+) {
+  return <span {...rest} ref={ref} aria-hidden={ariaHidden} data-dtb-kind="glyph" />;
+});
+
+/**
+ * Props for a bar chip: a decorative dot, an optional icon, an optional label
+ * and an optional value.
+ */
 export interface ChipProps extends SpanProps {
-  label: ReactNode;
+  /**
+   * Optional, and `undefined | null` renders nothing at all rather than an
+   * empty span — the chip is `inline-flex` with a `gap`, so an empty span would
+   * still consume one and leave an icon-only or value-only chip off-centre.
+   */
+  label?: ReactNode;
+  /**
+   * A consumer-supplied icon, rendered after the dot inside a `Glyph`. Same
+   * `undefined | null` guard, for the same gap reason.
+   */
+  icon?: ReactNode;
+  /** Props for the icon's `Glyph` wrapper. */
+  iconProps?: GlyphProps;
   value?: ReactNode;
   /**
    * Colours the dot and the value, never the chip or anything else inside it:
@@ -53,22 +91,32 @@ export interface ChipProps extends SpanProps {
 }
 
 /**
- * A dot, a label, an optional value and whatever else the site appends.
+ * A dot, an optional icon, an optional label, an optional value and whatever
+ * else the site appends.
  *
- * The three slots take their own props so a site keeps its `data-dtb-part`
- * names. The dot and the value carry a `data-dtb-kind` by default; the label
- * does not, because most sites leave it unstyled — pass
+ * The slots take their own props so a site keeps its `data-dtb-part` names. The
+ * dot and the value carry a `data-dtb-kind` by default; the label does not,
+ * because most sites leave it unstyled — pass
  * `labelProps={{ "data-dtb-kind": "label" }}` to opt into the kit's label
- * treatment, or `"data-dtb-kind": undefined` on the other slots to opt out.
+ * treatment, or `"data-dtb-kind": undefined` on the dot or the value to opt out
+ * of theirs.
+ *
+ * The icon slot is the exception, and deliberately: `Glyph` writes its kind
+ * after its own props, so `iconProps` cannot drop it. The clamp keyed on that
+ * kind is the reason `Glyph` exists — an unclamped 24px `<svg>` would set the
+ * bar's height — so opting out of it would defeat the control. Style the icon
+ * through the element you hand to `icon`, or keep the kind and add your own
+ * `data-dtb-part` alongside it.
  */
 export const Chip = forwardRef<HTMLSpanElement, ChipProps>(function Chip(
-  { children, dotProps, label, labelProps, severity, value, valueProps, ...rest },
+  { children, dotProps, icon, iconProps, label, labelProps, severity, value, valueProps, ...rest },
   ref,
 ) {
   return (
     <span {...rest} ref={ref} data-dtb-kind="chip">
       <span data-dtb-kind="dot" data-dtb-severity={severity} aria-hidden="true" {...dotProps} />
-      <span {...labelProps}>{label}</span>
+      {icon === undefined || icon === null ? null : <Glyph {...iconProps}>{icon}</Glyph>}
+      {label === undefined || label === null ? null : <span {...labelProps}>{label}</span>}
       {value === undefined || value === null ? null : (
         <span data-dtb-kind="value" data-dtb-severity={severity} {...valueProps}>
           {value}

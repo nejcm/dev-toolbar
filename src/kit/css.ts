@@ -14,6 +14,26 @@ export const KIT_CSS = String.raw`@layer dev-toolbar {
     flex: 0 0 auto;
   }
 
+  [data-dev-toolbar] [data-dtb-kind="glyph"] {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 auto;
+    line-height: 0;
+    color: inherit;
+  }
+
+  /* Clamp the icon itself, not the wrapper, and only the direct child: a 24px
+     <svg> handed to an 11px bar would otherwise set the bar's height. The size
+     is an em length, so it inherits --dtb-font-size and tracks the density
+     block's 11px -> 12px switch with no token of its own. Spacing is the gap. */
+  [data-dev-toolbar] [data-dtb-kind="glyph"] > * {
+    display: block;
+    width: var(--dtb-glyph-size, 1.15em);
+    height: var(--dtb-glyph-size, 1.15em);
+    flex: 0 0 auto;
+  }
+
   [data-dev-toolbar] [data-dtb-kind="label"] {
     color: var(--dtb-muted);
   }

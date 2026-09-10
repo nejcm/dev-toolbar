@@ -5,6 +5,7 @@ export {
   Chip,
   EmptyState,
   Field,
+  Glyph,
   Note,
   Row,
   Rows,
@@ -19,6 +20,7 @@ export type {
   ChipProps,
   EmptyStateProps,
   FieldProps,
+  GlyphProps,
   NoteProps,
   RowProps,
   RowsProps,
@@ -51,6 +53,22 @@ export {
 } from "./preference";
 export type { Preference, PreferenceEncoding, StoredRecordOptions } from "./preference";
 export { resolveStyleNonce } from "./nonce";
+export {
+  resolveAccessibleName,
+  resolveCompactParts,
+  resolveIcon,
+  resolvePresentation,
+} from "./presentation";
+export type {
+  CompactParts,
+  CompactPartsOptions,
+  CompactPreset,
+  CompactPresentation,
+  CompactPresentationInput,
+  CompactRenderContext,
+  CompactText,
+  ResolvedCompactPresentation,
+} from "./presentation";
 export { createPoller } from "./poller";
 export { matchesQuery } from "./query";
 export { createSource, derive, isReadable, readInput } from "./source";

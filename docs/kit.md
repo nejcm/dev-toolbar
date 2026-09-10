@@ -82,6 +82,7 @@ of the exact kit specifier, not same-name locals:
 | Copy actions | `CopyButton`: 2; `useCopyStatus`: 2 | `CopyButton` owns the button/status-region pairing. `useCopyStatus` is the shared status state for panels with several copy buttons. |
 | Filtering | `matchesQuery`: 2 | It is the string-level predicate shared by the flags and theme-editor view wrappers. |
 | Labelled control | `Field`: 1 | It names the wrapping-label pattern that associates a control without generating or synchronising an `id`. |
+| Bar presentation | `Glyph`: 0; `resolveCompactParts`: 0; `resolvePresentation`: 0; `resolveIcon`: 0; `resolveAccessibleName`: 0 | Every bar control a consumer can restyle resolves its `presentation` option through the same four pure helpers, so the two guarantees — an icon-only preset with no icon paints text, and the `⋮` menu always paints full text — hold once rather than nine times. `Glyph` is a standalone control rather than only a `Chip` slot because three of the nine bar controls are hand-written on purpose and cannot route through `Chip`; it owns the `aria-hidden` default and the direct-child clamp that keeps a 24px `<svg>` from setting the bar's height. `resolveIcon` and `resolveAccessibleName` serve the seven value-bearing extensions; agent and command-menu take an icon only. Third-party authors are the other half of the point: the vocabulary is what lets somebody else's extension present like a first-party one. Every count is **0** today, and honestly so: the vocabulary landed first, on its own, so the resolver's truth table could be pinned before any extension read it. The counts here are measured, never predicted, and get their real values as the rollout wires each bar control up. |
 | Live input | `isReadable`: 2; `readInput`: 2; `createSource`: 0; `derive`: 0; `useSource`: 0 | Admitted on the *third party asking* half of the bar: the first real integration hand-rolled a module-scope holder, reader functions and an effect to bridge React-owned state into `environment()` and `flags()`. `isReadable`/`readInput` are what those two runtimes use to accept the result; `createSource`, `derive` and `useSource` are the consumer's end of the same bridge and have no first-party caller by construction — no first-party extension owns app state. |
 
 One helper is admitted as an explicit exception to that bar rather than on either half
@@ -480,6 +481,7 @@ lets one stylesheet serve every extension. An element usually carries both:
 | --- | --- | --- |
 | `chip` | inline flex row, `--dtb-chip-gap`, no wrapping | `<Chip>` |
 | `dot` | a 6px round status dot, muted by default | `<Chip>`'s dot slot |
+| `glyph` | a centring inline-flex box with `line-height: 0`, clamping its direct child to `--dtb-glyph-size` | `<Glyph>`, `<Chip>`'s icon slot |
 | `label` | muted text | `<Row>`'s `<dt>`, opt-in on `<Chip>` |
 | `value` | the mono font | `<Chip>`'s value slot, `<Row>`'s `<dd>` |
 | `action` | the ten-declaration button reset, plus `:hover:not(:disabled)` | `<Action>`, `<CopyButton>` |
@@ -495,7 +497,7 @@ lets one stylesheet serve every extension. An element usually carries both:
 | `stack` | a panel root: a flex column with the first-party section gap, filling the body | — (hand-written) |
 | `field` | **nothing** — a hook only, see below | `<TextInput>`, `<Select>` |
 
-Sixteen kinds, and `field` is the one the kit styles nothing for; the other fifteen
+Seventeen kinds, and `field` is the one the kit styles nothing for; the other sixteen
 each get rules from `KIT_CSS`.
 
 `row`, `list`, `toolbar` and `stack` have no control because there is nothing for one to
