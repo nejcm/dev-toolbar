@@ -43,8 +43,10 @@
 import { createOverlaysRuntime } from "./runtime";
 import { OverlaysChip, OverlaysPanel, OverlaysSurface } from "./ui";
 import { OVERLAY_IDS, OVERLAY_META } from "./types";
-import { resolveStyleNonce } from "@nejcm/dev-toolbar/kit";
+import { resolvePresentation, resolveStyleNonce } from "@nejcm/dev-toolbar/kit";
+import type { CompactPresentationInput } from "@nejcm/dev-toolbar/kit";
 import type { OverlaysRuntimeOptions } from "./runtime";
+import type { OverlaysSnapshot } from "./types";
 import type {
   DevToolbarExtension,
   ExtensionRuntimeApi,
@@ -91,6 +93,35 @@ export interface OverlaysOptions extends Omit<
    * from `<DevToolbar>`.
    */
   styleNonce?: string;
+  /**
+   * How the bar control presents itself: a preset, your own icon, a render
+   * callback and an accessible-name override. A bare preset is the shorthand —
+   * `presentation: "icon-value"`.
+   *
+   * One control, so each knob is invoked once per render, in the bar and in the
+   * `⋮` menu alike, with the same `OverlaysSnapshot` the panel and the overlay
+   * surface read — which layers are on, the hover target, the focus scan and
+   * any error. The presets operate on the **short bar word** (`"overlays"`):
+   * `label` stays the overflow and accessible-name identity, so `"icon-label"`
+   * paints `"overlays"` in the bar and `"Overlays"` in the menu.
+   *
+   * **The error tag is not yours to restyle.** It sits outside both the preset
+   * and `render`, after the contents, under every preset including `"icon"` —
+   * a measurement that threw switched every overlay off, and that is state
+   * rather than presentation. `render` supplies the children of the chip
+   * carrying `data-dtb-active` and the dot, so the state attributes,
+   * `aria-expanded` and `title` stay the extension's; returning `undefined`
+   * falls through to the preset. `name` overrides the `aria-label`, and a
+   * whitespace-only return is ignored. Prefer a name that does not change with
+   * the *count* — `(s) => \`Overlays ${s.activeCount}\`` renames the control on
+   * every toggle and a screen reader re-announces it.
+   *
+   * Nothing here reaches the store: the icon and the callbacks are held in this
+   * closure and passed as props, because a `ReactNode` cannot be signed.
+   *
+   * `docs/adr/ADR-004-per-extension-bar-presentation.md`.
+   */
+  presentation?: CompactPresentationInput<OverlaysSnapshot>;
 }
 
 /**
@@ -108,8 +139,16 @@ export function overlays(options: OverlaysOptions = {}): DevToolbarExtension {
     keepMounted = false,
     injectStyles = true,
     styleNonce: optionNonce,
+    // Destructured out rather than read off `options`: everything this factory
+    // does not name is spread into `createOverlaysRuntime` below, and an icon
+    // or a callback has no business reaching the runtime.
+    presentation: presentationOption,
     ...runtimeOptions
   } = options;
+
+  // Resolved once, here, rather than per render: this is the closure the icon
+  // and the callbacks live in, exactly as `label` and `injectStyles` do.
+  const presentation = resolvePresentation(presentationOption);
 
   // Built here, not in start(api): slot functions run during the toolbar's
   // first render, which is before any effect fires.
@@ -161,6 +200,7 @@ export function overlays(options: OverlaysOptions = {}): DevToolbarExtension {
       <OverlaysChip
         runtime={runtime}
         label={label}
+        presentation={presentation}
         isOverflowed={isOverflowed}
         isPanelOpen={isPanelOpen}
         injectStyles={injectStyles}

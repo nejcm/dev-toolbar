@@ -1,9 +1,24 @@
 import { useLayoutEffect } from "react";
 import type { CSSProperties, ReactNode } from "react";
-import { Banner, Chip, Note, Tag, useExtensionSurface } from "@nejcm/dev-toolbar/kit";
+import {
+  Banner,
+  Chip,
+  Glyph,
+  Note,
+  Tag,
+  renderCompact,
+  resolveAccessibleName,
+  resolveCompactControl,
+  useExtensionSurface,
+} from "@nejcm/dev-toolbar/kit";
+import type {
+  CompactDefaults,
+  CompactParts,
+  ResolvedCompactPresentation,
+} from "@nejcm/dev-toolbar/kit";
 import { ensureOverlaysStyles } from "./css";
 import { OVERLAY_IDS, OVERLAY_META } from "./types";
-import type { FocusItem, GridSettings, HoverTarget, RectLike } from "./types";
+import type { FocusItem, GridSettings, HoverTarget, OverlaysSnapshot, RectLike } from "./types";
 import type { OverlaysRuntime } from "./runtime";
 
 /**
@@ -14,6 +29,17 @@ import type { OverlaysRuntime } from "./runtime";
  * and hot reload all restore the page by construction. The one exception, the
  * host-outline stylesheet, lives in `runtime.ts` and tears down with the
  * listeners.
+ *
+ * `presentation` arrives already resolved and is read through `/kit`'s
+ * `resolveCompactControl` and `renderCompact`, so the `hasIcon` guard, the
+ * `"default"` fallback, the `CompactRenderContext` and the `undefined`
+ * fall-through live in one place for all nine extensions rather than nine.
+ * What stays here is the DOM: a consumer's `render` supplies the children of
+ * the chip carrying `data-dtb-active`, and `Chip` paints the dot before them,
+ * so no callback can cost the control its state attributes or its dot. The
+ * error `Tag` is rendered *after* those children under every preset and under
+ * a `render` callback alike — a measurement that threw is state, not
+ * presentation (`plans/bar-presentation-icons-v1.md`, invariant 2).
  */
 
 const box = (rect: RectLike): CSSProperties => ({
@@ -27,9 +53,68 @@ const box = (rect: RectLike): CSSProperties => ({
 /* Bar chip                                                                    */
 /* -------------------------------------------------------------------------- */
 
+/**
+ * The short word the bar paints, and the reason there is one.
+ *
+ * `label` is the extension's identity — the panel's accessible name, the `⋮`
+ * row — and the bar has always painted this instead. Presets operate on *this*
+ * word; `label` stays the overflow and accessible-name identity, which is what
+ * makes the text axis `"none" | "short" | "full"` rather than a boolean
+ * (`plans/bar-presentation-icons-v1.md`, "Which text").
+ */
+const SHORT_LABEL = "overlays";
+
+/**
+ * Today's tree, expressed as parts.
+ *
+ * `resolveCompactControl` answers the preset's parts, or these when the preset
+ * is `"default"` — handed in rather than known to kit, because `"default"`
+ * means *whatever this extension renders today* and that differs across the
+ * nine. Overlays' default is exactly expressible as parts (short word plus
+ * value in the bar, full label plus value in the `⋮` menu, no icon in either),
+ * so "the default output is byte-identical" is a structural property rather
+ * than a claim — and the hand-rolled `isOverflowed ? label : "overlays"` swing
+ * this chip used to write is now just `parts.text`.
+ *
+ * The error `Tag` is not in here, and cannot be: it is state the extension
+ * paints after the parts under every preset.
+ */
+const DEFAULTS: CompactDefaults = {
+  bar: { icon: false, text: "short", value: true },
+  overflow: { icon: false, text: "full", value: true },
+};
+
+/**
+ * The icon and the text.
+ *
+ * These are the chip's *children* rather than `Chip`'s `icon` / `label` /
+ * `value` slots — the same call `/ext/a11y` and `/ext/metrics` made, and the
+ * reason is recorded in
+ * `docs/adr/ADR-004-per-extension-bar-presentation.md`. `Chip` renders its
+ * children straight after the dot, in the slots' own position, so nothing
+ * about today's output moves.
+ */
+function iconAndText(
+  label: string,
+  { icon: paintIcon, text }: CompactParts,
+  icon: ReactNode,
+): ReactNode {
+  return (
+    <>
+      {paintIcon ? <Glyph data-dtb-part="ovl-icon">{icon}</Glyph> : null}
+      {/* A bare `<span>`, which is what `Chip`'s `label` slot wrote before this
+          moved into the chip's children — no `data-dtb-part`, because adding
+          one would change today's bytes. */}
+      {text === "none" ? null : <span>{text === "full" ? label : SHORT_LABEL}</span>}
+    </>
+  );
+}
+
 export interface ChipProps {
   runtime: OverlaysRuntime;
   label: string;
+  /** Already through `resolvePresentation`, in the factory closure. */
+  presentation: ResolvedCompactPresentation<OverlaysSnapshot>;
   isOverflowed: boolean;
   isPanelOpen: boolean;
   injectStyles: boolean;
@@ -40,6 +125,7 @@ export interface ChipProps {
 export function OverlaysChip({
   runtime,
   label,
+  presentation,
   isOverflowed,
   isPanelOpen,
   injectStyles,
@@ -66,12 +152,33 @@ export function OverlaysChip({
     .filter((part) => part !== null)
     .join(", ");
 
+  const control = resolveCompactControl(presentation, snapshot, {
+    isOverflowed,
+    defaults: DEFAULTS,
+  });
+  const fallback = (
+    <>
+      {iconAndText(label, control.parts, control.icon)}
+      {/* The order `Chip`'s own value slot wrote before this moved into the
+          chip's children: kind, then the site's props. This chip passes no
+          `severity`, so no `data-dtb-severity` is written — it never did. */}
+      {control.parts.value ? (
+        <span data-dtb-kind="value" data-dtb-part="ovl-value">
+          {state}
+        </span>
+      ) : null}
+    </>
+  );
+
   return (
     <button
       type="button"
       data-dtb-part="trigger"
       aria-expanded={isPanelOpen}
-      aria-label={accessibleLabel}
+      // `presentation.name` overrides it, and a whitespace-only override is
+      // ignored so no override can leave the trigger unnamed. `title`
+      // explains; it does not name, so it is not overridable.
+      aria-label={resolveAccessibleName(presentation.name, snapshot, accessibleLabel)}
       onClick={onToggle}
       title={
         on
@@ -80,13 +187,21 @@ export function OverlaysChip({
       }
     >
       <Chip
-        label={isOverflowed ? label : "overlays"}
-        value={state}
         data-dtb-part="ovl-chip"
         data-dtb-active={on ? "true" : "false"}
         dotProps={{ "data-dtb-part": "ovl-dot" }}
-        valueProps={{ "data-dtb-part": "ovl-value" }}
       >
+        {renderCompact(
+          presentation,
+          snapshot,
+          { icon: control.icon, isOverflowed, isPanelOpen },
+          fallback,
+        )}
+        {/* Invariant 2: a measurement that threw is state, not presentation.
+            The tag sits outside both the preset and `render`, after the
+            contents, under every preset including `"icon"` — a consumer
+            restyling the chip cannot hide the fact that every overlay was
+            switched off. */}
         {snapshot.error === null ? null : <Tag data-dtb-part="ovl-tag">error</Tag>}
       </Chip>
     </button>
