@@ -116,6 +116,10 @@ outlives the tab — so:
   parsed: every entry that is a flag value. `vetOverrides` is exported too, for a
   catalogue that arrives after the read. The result is always a plain object.
 
+  **Seed by replacing your map, not by merging into it.** The result is the whole
+  stored map, and under the reset param below it is `{}` — a merge would keep exactly
+  the overrides the reset was asked to drop.
+
 - **`?dtb-flags=reset` is the kill switch.** Loading any page with it drops every
   stored override *before* any of them is applied — the override that breaks the app
   is the one you cannot reach the panel to remove. `=clear` and `=off` do the same

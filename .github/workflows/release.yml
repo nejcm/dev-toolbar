@@ -141,7 +141,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      # Mints the OIDC token for npm's publish credential and Sigstore provenance; auth itself is npmjs.com's trusted publisher config.
+      # Mints the OIDC token that is npm's publish credential; auth itself is npmjs.com's trusted publisher config. No provenance is produced: npm attests only a public source repository, and this one is private.
       id-token: write
     timeout-minutes: 20
     steps:
@@ -188,6 +188,6 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
-      # Lifecycle scripts stay on so prepublishOnly (typecheck && build) rebuilds dist/ at pack time, not from leftovers. No --provenance (trusted publishing attaches it); npm not `bun publish` — bun supports neither OIDC nor provenance (oven-sh/bun#18611).
+      # Lifecycle scripts stay on so prepublishOnly (typecheck && build) rebuilds dist/ at pack time, not from leftovers. No --provenance: provenance needs a public source repo, so nothing here is attested and the flag would not change that (see CONTRIBUTING, "How the first publish happened"). npm not `bun publish` — bun supports no OIDC (oven-sh/bun#18611).
       - name: Publish to npm
         run: npm publish --access public

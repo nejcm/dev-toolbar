@@ -56,7 +56,7 @@ Preconditions:
   the matching `shell.bar` entry has `panelOpen: true`, and (page read)
   `storage["dtb:v1:playground:activePanel"]` is `"\"flags\""`.
 - **One panel at a time.** Click the environment chip, by CSS selector:
-  `[data-dtb-ext-id="environment"] [data-dtb-part="trigger"]`. It has no
+  `[data-dtb-part="item"][data-dtb-ext-id="environment"] [data-dtb-part="trigger"]`. It has no
   `aria-label`, so `find` by role `button` name `Environment` matches nothing —
   its accessible name is its text content, `envstaging`. Bridge read:
   `shell.activePanel` is `"environment"` and no other `shell.bar` entry reports

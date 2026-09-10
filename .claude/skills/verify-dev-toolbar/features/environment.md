@@ -45,7 +45,7 @@ run-together problem and no marker to strip out of the text.
 - **Read it with the panel shut.** `env.environment` is `"staging"`,
   `env.severity` is `"warn"`, `env.supplied` is `true`, and `env.fields` has 20
   entries across groups `build`, `session` and `client`. Then click
-  `[data-dtb-ext-id="environment"] [data-dtb-part="trigger"]` to prove the
+  `[data-dtb-part="item"][data-dtb-ext-id="environment"] [data-dtb-part="trigger"]` to prove the
   panel opens — that CSS selector, because the chip carries no `aria-label` and
   a `find` for role `button` name `Environment` matches nothing; its accessible
   name is its own text, `envstaging`. `shell.activePanel` becomes

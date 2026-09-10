@@ -1,9 +1,9 @@
 # AGENTS.md
 
 `@nejcm/dev-toolbar` is a React library: an extensible, low-overhead in-app
-developer toolbar. It is versioned and tagged here but **not on npm yet** — the
-first publish is a manual step still outstanding
-([CONTRIBUTING](./CONTRIBUTING.md#one-time-bootstrap--not-yet-done)).
+developer toolbar. It is **published on npm** as `@nejcm/dev-toolbar`: release-please
+tags each release and `.github/workflows/release.yml` publishes it from CI on merge
+([CONTRIBUTING](./CONTRIBUTING.md#releasing)).
 
 The package is a **shell** — chrome plus hosting. It renders a fixed bar, sorts
 and collapses the items it is given, hosts one panel at a time, persists
@@ -134,6 +134,14 @@ dev-only trees that ship nothing.
   belongs there, asserted through the agent bridge, never a selector. Run it before
   claiming a change to `src/core` or `src/ext` works; drive the browser by hand only
   for what it does not cover. Conventions in [its README](./examples/playground/e2e/README.md).
+- **`data-dtb-ext-id` is a discriminator, not a unique id.** Five parts carry the
+  same value — `item`, `overflow-menu-item`, `overlay`, `panel` and `error-chip`
+  (the parts table in [docs/architecture.md](./docs/architecture.md) is the list) —
+  so any selector using it pairs it with `data-dtb-part` on the *same* element:
+  `[data-dtb-part="panel"][data-dtb-ext-id="x"]`, as
+  `src/testing/renderWithToolbar.tsx` does. An unpaired ancestor selector like
+  `[data-dtb-ext-id="x"] [data-dtb-part="trigger"]` is ambiguous the moment that
+  extension is also in the overflow menu.
 - **Tests are colocated** in `__tests__/` next to what they cover. New behaviour needs
   a test; a bug fix needs a test that fails before the fix. `src/testing/` is both the
   published test helper surface and what the internal tests use — if you are writing

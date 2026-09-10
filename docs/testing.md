@@ -44,6 +44,12 @@ opens, so `item(id)` returns `null` for one until you call `toolbar.openOverflow
 `expect(toolbar.panel(id)).not.toBeNull()` keeps passing for one even while it is
 closed. Ask `activePanelId()` when the question is really whether the panel is open.
 
+Querying by hand instead? `data-dtb-ext-id` is a discriminator, not a unique id — the
+same value sits on the item, the panel, the overlay, the `⋮` menu entry and an error
+chip — so always pair it with `data-dtb-part`:
+`[data-dtb-part="panel"][data-dtb-ext-id="my-extension"]`, which is what these helpers
+do.
+
 Every `toolbar` method that changes state is `act()`-wrapped for you — including
 `runCommand(id)`, which is `async` because the command it runs may be, so it is the
 one you await instead of wrapping again:

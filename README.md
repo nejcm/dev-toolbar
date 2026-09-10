@@ -41,9 +41,6 @@ ones arrive on their own opt-in subpaths, each with its own bundle.
 npm install @nejcm/dev-toolbar
 ```
 
-**Not on npm yet.** The first publish is still outstanding, so that command does not
-resolve today — use a git or `file:` dependency until it does.
-
 React 18 or 19 and `react-dom` 18 or 19 are required peers — the root entry imports
 `react-dom` statically, for portals. `@testing-library/react` is an optional peer,
 needed only by `@nejcm/dev-toolbar/testing`.
@@ -239,6 +236,29 @@ export function Root() {
 }
 ```
 
+**Whichever you pick, the condition is your own deployment switch, not
+`NODE_ENV`.** A staging build is a production build — `vite build --mode staging`
+sets `NODE_ENV=production` — so `process.env.NODE_ENV !== "production"` drops the
+toolbar from the one deployment that most wants it. Fold on the variable that names
+the deployment. Under Vite that means a variable you define yourself and expose
+with the `VITE_` prefix — `import.meta.env.VITE_ENV === "production"`, fed from
+`.env.staging` and friends; Vite's own built-ins (`MODE`, `PROD`, `DEV`) are
+derived from the build mode, and `PROD` is `true` for a staging build too. Other
+bundlers have their own inlining; the rule is the same.
+
+The lazy recipe has one more consequence: the chunk arrives **after first paint**.
+Anything that has to be in place at boot has that gap too — seeding your own store
+from [`readStoredOverrides()`](./docs/ext/flags.md#it-changes-what-your-app-does),
+say, which then cannot run before the app's first render. Import that one eagerly
+from a module the gate does not cover, or accept an un-overridden first paint.
+Note what the eager import costs: `readStoredOverrides` is exported from
+`@nejcm/dev-toolbar/ext/flags`, so importing it puts that entry back into the
+production graph — the one thing this section is otherwise keeping out. The
+package is side-effect-free apart from CSS (`"sideEffects": ["*.css"]`), so a
+tree-shaking bundler should reduce it to that function and its storage helpers
+rather than the panel and the `flags()` extension — but it is no longer zero, so
+check your bundle rather than assuming either way.
+
 Keeping the toolbar in production is a legitimate choice too — it is what makes an
 internal tool useful on staging and for support. If you do, gate it on your own
 authorization *before* rendering `<DevToolbar>` at all: core has no identity and no
@@ -298,11 +318,11 @@ other. The whole surface, and the Jest caveats, are in
 | [docs/adr/](./docs/adr/) | Decision records |
 | [CHANGELOG.md](./CHANGELOG.md) | Every release |
 
-> **Status:** complete, but **not on npm yet** — the first publish is a manual
-> step still outstanding ([CONTRIBUTING](./CONTRIBUTING.md#one-time-bootstrap--not-yet-done)),
-> so `npm install @nejcm/dev-toolbar` does not resolve today. Until it does, use
-> a git or `file:` dependency. The shell, `/runtime` and all nine first-party
-> extensions are implemented and released as tags. `CONTRACT_VERSION` is **2**:
+> **Status:** complete and **on npm** — every `feat:`/`fix:` that lands on `main`
+> ships from CI ([CONTRIBUTING](./CONTRIBUTING.md#releasing)), so
+> `npm install @nejcm/dev-toolbar` resolves to the latest release. The shell,
+> `/runtime` and all nine first-party extensions are implemented and published.
+> `CONTRACT_VERSION` is **2**:
 > commands may declare an `input` schema and resolve a result, which asks nothing
 > of an extension written against v1 — see
 > [contract v2](./docs/extension-contract.md#contract-v2--commands-with-input-and-a-result).
