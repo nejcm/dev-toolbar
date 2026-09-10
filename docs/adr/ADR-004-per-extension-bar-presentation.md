@@ -1,0 +1,136 @@
+# ADR-004 — Per-extension bar presentation
+
+**Status:** Proposed. The design is settled; the code does not do this yet. Nothing
+here is in force until the extension factories ship the option, at which point the
+status flips to `Accepted`.
+
+## Context
+
+Every first-party extension hand-writes its bar control, and how that control is
+presented is baked into the extension. `/ext/a11y` picks its own bar text
+(`label={isOverflowed ? label : "a11y"}`), `/ext/metrics` always paints short-label
+plus value, and the only thing in the package resembling an icon is
+`PromotedFlag.icon?: string` — documented as *"a short glyph rendered before the label.
+Text, not an asset."*
+
+So a consumer cannot say "icons only", "icon plus value", or "render my memory chip my
+way". The bar cannot be made to look like the host app it is injected into, and a
+third-party extension author's only route to a native-looking control is copying JSX
+out of the docs — the playground itself hand-rolls a local `Chip` for exactly that
+reason.
+
+This is hard to reverse. Presentation is configured through the **factory options** of
+nine published subpath entry points, and those option bags are the published API a
+consumer writes against just as much as `DevToolbarExtension` is. A shape chosen wrong
+here is nine simultaneous deprecations later.
+
+Two constraints bound the answer before any design starts:
+
+- **Zero runtime dependencies is a rule** (`AGENTS.md`). Whatever ships must not bundle,
+  vendor or peer-depend on an icon library. Icons are the consumer's assets, passed in.
+- **`src/core/` is not touched.** A global presentation default on `<DevToolbar>` would
+  need a new field on `CompactSlotProps`, which is a contract change, which reopens the
+  `CONTRACT_VERSION` question [ADR-003](./ADR-003-contract-version-policy.md)
+  deliberately leaves open. That constraint is load-bearing: it is what keeps this
+  change additive and un-versioned.
+
+## Decision
+
+Each extension factory gains **one** option, `presentation`, holding four knobs: a
+`preset`, a consumer-supplied `ReactNode` icon (or a function returning one), an
+optional `render` callback over that extension's own view data, and an optional
+accessible-name override. Presentation becomes the consumer's decision, per extension,
+while the extension keeps the trigger element, its `data-dtb-*` state attributes and
+its accessible name.
+
+The vocabulary — `CompactPreset`, `CompactPresentation<TView>`, a `Glyph` control and
+the pure `resolveCompactParts` / `resolvePresentation` helpers — lives in `src/kit/`,
+which is where shared extension glue belongs and which is already a published subpath.
+`src/core/` gains nothing, `CONTRACT_VERSION` does not move, and no icon asset enters
+the package.
+
+The option is named `presentation`, not `compact`: `compact` already names the slot on
+`DevToolbarExtension`, and two things called `compact` is a vocabulary collision.
+
+`"default"` is a member of the preset enum and resolves to `null`, so each extension
+reads `parts === null ? <today's tree> : <driven tree>`. That makes "today's output is
+byte-identical" a structural property of the resolver rather than a truth-table
+coincidence — which is what makes the compatibility claim provable.
+
+### Hard rule: a `ReactNode` never enters a store snapshot
+
+The extension stores are signature-based — the flags runtime builds a **string**
+signature and republishes only when it changes; environment, metrics and theme-editor
+use the same mechanism. A `ReactNode` cannot be signed: left out of the signature it
+never publishes, `JSON.stringify`'d into it it republishes on every tick.
+
+**Therefore `PromotedFlag.icon` is not widened to `ReactNode`.** It is copied into the
+snapshot as `FlagView.promotedIcon`, so widening it would put a React element inside a
+published snapshot — safe *today* only because `diagnostics()` happens to enumerate
+fields by hand, which is one refactor away from a circular-structure throw inside a
+click handler. Rich icons arrive instead via `PromotedFlag.presentation.icon`, and
+`PromotedFlag` is config held in the factory closure, never a snapshot member. Icons
+and callbacks travel as props, exactly as `label`, `injectStyles` and `styleNonce`
+already do. The existing `icon?: string` stays for back-compat emoji glyphs.
+
+### Deliberate deviation: the `⋮` menu always paints text — except under `render`
+
+The overflow menu paints full text under every **preset**, enforced inside
+`resolveCompactParts` and nowhere else, so it holds by construction. It is **not**
+enforced for `render`: a callback is honoured in the bar and in the menu alike, with
+`ctx.isOverflowed` as the hook.
+
+This is a knowing inconsistency. A preset is the library's opinion and should be safe
+by construction; a callback is the consumer taking the wheel, and silently discarding
+their output in one of two locations is a worse surprise than a documented sharp edge.
+Residual harm is bounded: the menu row is still a `<button>` carrying the extension's
+`aria-label`, so it is announced correctly and is only visually bare. Reversing this —
+ignoring `render` when overflowed — is a two-line change if the guarantee is later
+preferred over the consistency.
+
+### Alternatives considered
+
+| Option | Why not |
+| --- | --- |
+| Bundle an icon set | A runtime dependency, or thousands of inlined glyphs in a package whose whole pitch is that it ships none. |
+| Vendor icon path data into the package | The dependency without the upstream: our bytes, our licence audit, our staleness, and still the wrong icons for somebody's design system. |
+| An optional icon peer dependency | Buys an import the consumer can already write, and adds a third optional peer next to `axe-core` and `@testing-library/react`, which earn their place. Consumers pass `ReactNode`; they need nothing from us. |
+| Four sibling options — `preset` + `icon` + `render` + `name` | Four names × nine extensions is 36 new option-bag entries, and `MetricsOptions` already has 15 fields. The four are meaningless apart: `icon` without a preset that paints it does nothing. Grouping also buys the shorthand — `presentation: "icon"` is the 90% case in one word. |
+| `presentation: CompactPreset \| ((data, ctx) => ReactNode)` | The union cannot express *both*, and both is a real case: "custom when severity is bad, the preset otherwise" needs `preset` and `render` together. It also leaves nowhere to put `icon`. |
+| A composable `{ icon, label, value }` record instead of a preset enum | Reads as more flexible and is worse: three independent axes (`icon` on/off × `label` none/short/full × `value` on/off) is 12 combinations, most meaningless, all of which the resolver and its tests would owe an answer. A closed enum of six is the six that make sense, named. |
+| A global `presentation` default on `<DevToolbar>` | Needs a new `CompactSlotProps` field, so a contract change and the ADR-003 question. Nine per-extension options are more typing and no new versioning debt. |
+| Expose `runtime` on the returned extension object | Would make the callback tier redundant — a consumer with the runtime can render whatever they like. Rejected because it promotes `MetricsRuntime` from "exported type" to "the thing consumers render against", which is a far larger and more permanent published surface than a typed `render` parameter. |
+
+### Risk accepted
+
+| Risk | Likelihood | Impact | Mitigation |
+| --- | --- | --- | --- |
+| **Contravariance.** A view type that is only *read* may gain and lose optional fields freely; as a `render`/`icon`/`name` parameter it becomes contravariant, so renaming a field breaks consumer callbacks, not just consumer readers | High — these types change often | A field rename becomes a breaking change for seven extensions at once | Pass an existing view type only where it genuinely *is* a display type (`MetricView`, `FlagView`); purpose-build a narrow one otherwise, as `DiagnosticsBarView` does rather than welding `DiagnosticsSnapshotState` into the API |
+| A `render` callback paints an icon-only control in the `⋮` menu, giving a visually blank row | Medium — it is what the deviation above permits | A menu row with no visible text | The row keeps its `aria-label`, so it is announced; documented as a sharp edge with `ctx.isOverflowed` as the escape hatch |
+| A future refactor widens something into a snapshot that carries a `ReactNode` | Low, but silent until it throws | A circular-structure throw inside a click handler, or a store that republishes every 250 ms | The hard rule above, plus a serialisation test that promotes a flag with a JSX icon and asserts `JSON.stringify(runtime.diagnostics())` succeeds and contains no React element |
+| Collapse settling. `"icon"` can be ~4× narrower than `"default"`, so nine extensions can each swing tens of pixels between bar and overflow | Medium at one specific window width | Chips appear to flicker, or more items stay in `⋮` than need to | The collapse machine terminates the 2-cycle by design and reports `latched`; a `collapse.test.ts` case drives a 4× swing on one id and asserts it settles |
+| An icon-only preset on a trigger with no `aria-label` leaves a button named only by `title` | Certain, on the four triggers that have none today | An unnamed control — which `/ext/a11y` would flag on the toolbar's own bar | Accessible names are fixed **first**, as their own step with no new API, and a test asserts a non-empty computed name for every trigger across all nine |
+
+## Consequences
+
+- Presentation is configured **per extension, next to the control it presents** —
+  including `PromotedFlag.presentation`, because a promoted flag is its own bar control.
+  There is no one place to restyle the whole bar; that is the price of not touching
+  `src/core/`.
+- The nine factory option bags become a published API surface that changes more often
+  than the contract does. A PR touching them says so in its description even though
+  `CONTRACT_VERSION` has not moved.
+- `data-dtb-part`, `data-dtb-severity`, `data-dtb-status` and the rest **never** depend
+  on the preset: a preset changes text, not state. Severity children — diagnostics'
+  badge, environment's `impersonating`, overlays' error `Tag` — render outside both the
+  preset and `render`, under every preset including `"icon"`. Consumer CSS and the
+  Playwright specs select on those hooks.
+- Every new preset value costs tests. Nine preset branches plus seven callbacks is
+  exactly the shape that drains the `branches` and `functions` coverage floors, and the
+  floors are a ratchet.
+- `--dtb-glyph-size` defaults to `1.15em` inside the kit sheet rather than becoming a
+  token in `src/styles.css`, so glyphs inherit the density font-size switch for free and
+  the byte-identity ritual between `src/styles.css` and `src/core/css.ts` stays out of
+  this change.
+- The `BUG:`-marked flags test pinning "a promoted icon alone does not publish" is now
+  permanent by design rather than a fixable bug, and says so.
