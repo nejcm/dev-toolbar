@@ -5,6 +5,11 @@ import type { Page } from "@playwright/test";
 // second React is exactly the failure that makes a bridge read untrustworthy.
 // The parts used are documented styling hooks. Rationale in ../README.md.
 
+// `node_modules/.vite/deps/`, the mangled `@nejcm_dev-toolbar_kit.js` and `react.js`
+// filenames and the `?v=` hash are Vite optimizer internals, not an API: a Vite
+// upgrade that renames them fails this spec by design, not as a regression. Why the
+// identity proof is taken from the network at all is in ../README.md.
+
 function collectOptimizedDeps(page: Page): { path: string; hash: string | null }[] {
   const deps: { path: string; hash: string | null }[] = [];
   page.on("request", (request) => {

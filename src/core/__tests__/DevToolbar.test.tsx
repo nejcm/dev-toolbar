@@ -1395,7 +1395,7 @@ describe("the height variable", () => {
     });
 
     it("withdraws it from the default instance too, once a named one mounts", () => {
-      // Through 0.8.0 the unsuffixed name was the default instance's whatever
+      // Before this change the unsuffixed name was the default instance's whatever
       // else was mounted; unsuffixed inset CSS on a default-plus-named page now
       // reads `0px` until it switches to the suffixed name (docs/api.md).
       const rect = stubHeights({ default: 24, admin: 36 });

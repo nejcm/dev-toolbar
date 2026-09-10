@@ -15,6 +15,8 @@ import {
   type Severity,
   type SeverityWithOverride,
   type Readable,
+  type ReadableStore,
+  type Source,
   type Input,
   // helpers, no React
   parseRecord,
@@ -215,9 +217,10 @@ interface Readable<T> {
   subscribe(listener: () => void): () => void; // returns unsubscribe
 }
 interface ReadableStore<T> { getState(): T; subscribe(listener: () => void): () => void }
+interface Source<T> extends Readable<T> { set(next: T): void }
 type Input<T> = T | (() => T) | Readable<T> | ReadableStore<T>;
 
-createSource<T>(initial: T): Readable<T> & { set(next: T): void };
+createSource<T>(initial: T): Source<T>;
 derive<T>(inputs: readonly (Readable<unknown> | ReadableStore<unknown>)[], compute: () => T): Readable<T>;
 isReadable<T>(input: Input<T>): input is Readable<T> | ReadableStore<T>;
 readInput<T>(input: Input<T>): T;
@@ -259,7 +262,8 @@ const session = derive([user, useAppStore], () => ({
 export const extensions = [environment({ context: session }), flags({ flags: useFlagStore })];
 ```
 
-`createSource` is the writable end for state that lives in React (below). `set()` is
+`createSource` returns a `Source<T>` — a `Readable<T>` plus `set()` — the writable
+end for state that lives in React (below). `set()` is
 free when the value is unchanged by `Object.is`, so assigning from every render is
 fine. `derive` fans one subscription out over several inputs; `compute` reads them
 itself and runs on every `read()` — the runtime redacts and diffs the result, so
@@ -395,7 +399,7 @@ export function BuildChip({ runtime, injectStyles, styleNonce }: BuildChipProps)
 ```
 
 ```ts
-useSource<T>(source: { set(next: T): void }, value: T): void;
+useSource<T>(source: Pick<Source<T>, "set">, value: T): void;
 ```
 
 The host application's hook, and the one place the kit is called from a component that

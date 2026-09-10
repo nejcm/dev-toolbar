@@ -140,12 +140,8 @@ export interface A11ySnapshot {
    * `status` already says `"unsupported"` when the import failed — but under
    * `loadOn: "scan"` a `"pending"` report exists before axe has been looked
    * for at all, and the panel needs to say so rather than imply it was found.
-   *
-   * The runtime always supplies it. Optional so a snapshot built by hand — a
-   * consumer's fixture, say — stays valid; a reader treats `undefined` as
-   * "not known to be loaded".
    */
-  axeLoaded?: boolean;
+  axeLoaded: boolean;
 }
 
 export const NO_COUNTS: Readonly<Record<Impact, number>> = {

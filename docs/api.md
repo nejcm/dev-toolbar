@@ -68,8 +68,9 @@ toolbars never overwrite or remove each other's value. Inset by the suffixed nam
 when you mount more than one; `<DevToolbarInset>` already pads by its own
 instance's, falling back to the unsuffixed one.
 
-**Migrating from 0.8.0 and earlier**, where the unsuffixed name was the `"default"`
-instance's alone, whatever else was mounted:
+**Migrating from a release before this one**, where the unsuffixed name was the
+`"default"` instance's alone, whatever else was mounted (the CHANGELOG entry naming
+this change says which release that is):
 
 - A page mounting the default instance **and** a named one kept
   `--dev-toolbar-height` at the default's height. It is now withdrawn while both are

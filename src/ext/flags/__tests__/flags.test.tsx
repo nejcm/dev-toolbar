@@ -489,7 +489,9 @@ describe("persistence across a reload", () => {
   });
 
   it("readStoredOverrides() returns {} while the reset param is in the URL", () => {
-    // Same answer as start(), which is about to drop the stored map.
+    // Same answer as start(), which is about to drop the stored map. The stub is
+    // inlined rather than shared with runtime.test.ts's `withResetParam`: importing
+    // one test file from another registers its suite twice.
     const storage = createMemoryStorage({
       "dtb:v1:test:ext:flags:overrides": '{"ui-facelift":true}',
     });

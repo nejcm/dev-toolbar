@@ -36,6 +36,12 @@ in [`docs/ext/`](../../docs/ext/).
   `@nejcm/dev-toolbar/kit` so CommonJS consumers get one instance.
   Measurement primitives — the event bus, ring buffers, the throttled store,
   `redact()` and `redactText()` — live in [`src/runtime/`](../runtime/).
+- **Every field of a `*Snapshot` in `types.ts` is required, new ones included.**
+  The runtime is the only thing that builds a snapshot; a consumer reads one. So
+  optionality would buy compatibility for a caller that does not exist, at the
+  price of every reader having to handle `undefined` — and the type would stop
+  saying what the runtime guarantees. Add the field, give the store's initial
+  value an explicit one, and let a hand-built fixture fail to compile.
 - **Redaction is a per-extension decision**, made on the way *in*, so panel,
   clipboard, exports and `/ext/diagnostics` all read one masked snapshot. There
   is no second, rawer copy anywhere.

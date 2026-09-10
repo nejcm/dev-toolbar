@@ -1,8 +1,11 @@
 /**
- * Packs the repo root exactly as `npm publish` would and unpacks the tarball
- * into this fixture's own `node_modules` as `@nejcm/dev-toolbar` — the same
- * bytes, the same `files` filter, the same `package.json`, in a real
- * directory rather than a link.
+ * Packs the repo root with `bun pm pack` — bun, not npm, like every other
+ * install in this repo — and unpacks the tarball into this fixture's own
+ * `node_modules` as `@nejcm/dev-toolbar`: the same `files` filter, the same
+ * `package.json`, the same set of files `npm publish` would ship, in a real
+ * directory rather than a link. Not *byte*-identical to `npm pack` output —
+ * two packers, and nothing here depends on the bytes. `check:package` is what
+ * holds npm's own tarball to publint and attw.
  *
  * Not `file:../..`: a linked package is a symlink, and Vite's optimizer treats
  * a symlinked dependency as source (it is left out of the pre-bundle and
