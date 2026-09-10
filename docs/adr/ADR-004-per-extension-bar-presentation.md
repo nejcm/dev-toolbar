@@ -99,6 +99,32 @@ docs step, because it changes the default DOM and the announced name.
 Reversing the deviation itself — ignoring `render` when overflowed — is a two-line
 change if the guarantee is later preferred over the consistency.
 
+### Recorded decision: `Chip`'s `icon` / `iconProps` slots stay, with an expected first-party count of zero
+
+The kit `Chip` gained `icon` and `iconProps` because the "Kit surface" section of the
+approved plan specifies them. The Group A extensions — the five that route their bar
+control through `Chip` — then went the other way and paint their icon and text as
+`Chip`'s **children**, so those two props finish the rollout with no first-party
+importer.
+
+That is deliberate, and it is not a slot-versus-children style preference.
+`ctx.fallback` has to be a children tree: it is the one construction, handed to a
+`render` callback and rendered when there is none, so `render: (_, ctx) => ctx.fallback`
+is exact by construction rather than by two pieces of markup kept in step. Building the
+preset path out of `Chip`'s slots would need a second tree just for `fallback`, and
+`render` would then be replacing the whole `Chip` — taking the dot and
+`data-dtb-status` with it, which is precisely what this shape exists to prevent.
+
+So `icon` / `iconProps` remain as **third-party surface**, for an author whose control
+genuinely *is* a plain slotted chip with no `render` to honour. They are kept rather
+than deleted because the approved plan specifies them explicitly, and removing mandated
+API on a zero-count argument is the caller's decision, not the implementer's.
+
+The count is measured, not predicted: the expected first-party importer count is zero,
+and kit's admission bar is "three users, or a third party asking". If no third party
+asks, removal stays a live option — and because that is the standing reason, it belongs
+here rather than in a comment in `src/ext/a11y/ui.tsx`.
+
 ### Alternatives considered
 
 | Option | Why not |

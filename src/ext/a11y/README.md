@@ -85,6 +85,22 @@ the peer at `"start"`, the default, or on the first `"scan"`; `scanOnStart` is
 a scan, so it imports at start either way), `load` (supply your own axe copy),
 `redactOptions`.
 
+`presentation` changes how the bar control looks, not what it scans: a
+`CompactPreset`, your own `ReactNode` icon (or `(report) => ReactNode`), a
+`render` callback over `A11yReport` and an accessible-name override. It
+resolves through `/kit`'s `resolveCompactControl`, so `"default"` is
+byte-identical to what shipped before the option existed and the `⋮` menu
+always paints the full `label`. **Presets operate on the short bar word
+(`"a11y"`)**, which is the swing `ui.tsx` used to write by hand as
+`isOverflowed ? label : "a11y"`; `label` stays the overflow and
+accessible-name identity. The parts go in as the kit `Chip`'s *children*
+rather than its `icon` / `label` / `value` slots, so `render` replaces them
+and never the `Chip` — the dot, `data-dtb-status` and the `aria-label` are not
+a callback's to lose. Nothing configured here reaches the store: a `ReactNode`
+cannot be signed, so the icon and the callbacks stay in the factory closure
+and travel as props.
+[ADR-004](../../../docs/adr/ADR-004-per-extension-bar-presentation.md).
+
 ## Tests
 
 `__tests__/runtime.test.ts` for queueing, the markup walk, masking and
@@ -95,3 +111,5 @@ by hand; `peer.test.ts` for the missing-`axe-core` path; `a11y.test.tsx` for
 the panel, the highlight surface and the commands. The download itself — no
 axe-core request until the first scan, through the public extension and the
 real loader — is `examples/playground/e2e/a11y.spec.ts`.
+`presentation.test.tsx` pins the default bar and `⋮` markup as literal
+strings, every preset in both places, and the three callbacks.
