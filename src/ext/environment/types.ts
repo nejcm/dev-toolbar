@@ -152,6 +152,21 @@ export const GROUP_LABELS: Record<EnvironmentGroup, string> = {
 };
 
 /**
+ * The one word the bar chip paints as its value — `"unknown"` unless the
+ * consumer supplied a kind.
+ *
+ * Exported because `presentation` hands a consumer's `icon` / `render` / `name`
+ * the whole `EnvironmentSnapshot`, and a callback that wants to paint the same
+ * value the preset does should not have to re-derive the
+ * `supplied && kind !== "unknown"` rule and drift from it
+ * (`plans/bar-presentation-icons-v1.md`, "The callback goes on all seven").
+ * It lives here rather than in `ui.tsx` because it is vocabulary, not DOM.
+ */
+export function kindLabel(snapshot: EnvironmentSnapshot): string {
+  return snapshot.supplied && snapshot.kind !== "unknown" ? String(snapshot.kind) : "unknown";
+}
+
+/**
  * Folds real-world spellings (`"Production"`, `" prod "`, `"PROD"`) onto the
  * canonical names, so §6's "mark production conspicuously" isn't missed by a
  * casing mismatch. Anything unrecognised comes back trimmed/lowercased.
