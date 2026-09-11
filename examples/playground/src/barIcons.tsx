@@ -95,6 +95,28 @@ export const FLAGS_ICON: ReactNode = (
   </svg>
 );
 
+/**
+ * The agent bridge: a robot head, antenna up.
+ *
+ * `/ext/agent` takes the narrowed two-knob option (`icon` and `name`, no
+ * preset), so this is passed as `presentation: { icon: AGENT_ICON }` and
+ * **replaces** the word `Agent` in the bar rather than joining it — that chip
+ * is a readout, and the `⋮` row keeps the word. It is also the one chip that
+ * becomes `role="img"` when it has an icon, which is what
+ * `e2e/presentation.spec.ts` drives.
+ *
+ * The eyes are filled and unstroked, the way {@link reactIcon}'s nucleus is:
+ * the shared `stroke` bag is `fill: none`, so a solid dot opts out locally.
+ */
+export const AGENT_ICON: ReactNode = (
+  <svg {...stroke}>
+    <rect x="2.5" y="5" width="11" height="8" rx="2" />
+    <path d="M8 2v3" />
+    <circle cx="5.75" cy="8.75" r="0.9" fill="currentColor" stroke="none" />
+    <circle cx="10.25" cy="8.75" r="0.9" fill="currentColor" stroke="none" />
+  </svg>
+);
+
 /** Accessibility: the standing figure. */
 export const A11Y_ICON: ReactNode = (
   <svg {...stroke}>

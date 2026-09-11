@@ -59,15 +59,29 @@ const DEFAULTS: CompactDefaults = {
  * `value` slots (`docs/adr/ADR-004-per-extension-bar-presentation.md`). Same
  * construction in the bar and the `⋮` menu — only the value node differs, so
  * only it is written twice.
+ *
+ * `labelId` is the bar's alone: the trigger's `aria-describedby` pairs each
+ * chip's label with its value, which needs an `id` to point at. The `⋮` rows
+ * pass none — each row is one metric, named by its own content.
  */
-function iconAndText(view: MetricView, parts: CompactParts, icon: ReactNode): ReactNode {
+function iconAndText(
+  view: MetricView,
+  parts: CompactParts,
+  icon: ReactNode,
+  labelId?: string,
+): ReactNode {
   return renderCompactParts({
     parts,
     icon,
     iconProps: { "data-dtb-part": "metrics-icon" },
     short: view.label,
     full: view.title,
-    textProps: { "data-dtb-part": "metrics-label", "data-dtb-kind": "label" },
+    textProps: {
+      "data-dtb-part": "metrics-label",
+      "data-dtb-kind": "label",
+      // Appended last, so the documented attribute order is untouched.
+      ...(labelId === undefined ? {} : { id: labelId }),
+    },
   });
 }
 
@@ -100,11 +114,28 @@ export function MetricsChips({
     styleNonce,
   );
 
+  // Ids for the spans `aria-describedby` points at, from `useId()` (as
+  // `MetricsPanel` below already does) rather than the extension id — two
+  // `<DevToolbar>` instances on one page would otherwise share ids and
+  // `aria-describedby` would resolve to the other instance's span.
+  const idPrefix = `dtb-metrics-${useId().replace(/:/g, "")}`;
+  const valueId = (id: CollectorId) => `${idPrefix}-value-${id}`;
+  const labelId = (id: CollectorId) => `${idPrefix}-label-${id}`;
+
   const named = snapshot.order[0];
+  // WCAG 2.5.3 Label in Name: the bar paints each collector's short, hardcoded
+  // word (`mem`, `net`), so the name must contain it. Being config-derived
+  // rather than value-derived, the name doesn't churn as the numbers move; the
+  // numbers themselves reach a screen reader through `aria-describedby`
+  // below. With no metrics there is no view, so `label` stands alone.
   const triggerName =
     named === undefined
       ? label
-      : resolveAccessibleName(presentation.name, metricView(snapshot, named), label);
+      : resolveAccessibleName(
+          presentation.name,
+          metricView(snapshot, named),
+          `${label}: ${snapshot.order.map((id) => metricView(snapshot, id).label).join(", ")}`,
+        );
 
   // In the ⋮ menu there's vertical room, so spell metrics out instead of shrinking them.
   if (isOverflowed) {
@@ -173,58 +204,85 @@ export function MetricsChips({
     );
   }
 
+  // Built above the tree, not inside the map, because the button needs to
+  // know which value spans got painted before it can point at them.
+  const chips = snapshot.order.map((id) => {
+    const view = metricView(snapshot, id);
+    const control = resolveCompactControl(presentation, view, {
+      isOverflowed: false,
+      defaults: DEFAULTS,
+    });
+    const fallback = (
+      <>
+        {iconAndText(view, control.parts, control.icon, labelId(id))}
+        {/* The order `Chip`'s own value slot wrote before this moved into
+            the chip's children: kind, severity, then the site's props — with
+            the `aria-describedby` target id appended last, so the documented
+            order is untouched. */}
+        {control.parts.value ? (
+          <span
+            data-dtb-kind="value"
+            data-dtb-severity={view.severity}
+            data-dtb-part="metrics-value"
+            id={valueId(id)}
+          >
+            {view.display}
+          </span>
+        ) : null}
+      </>
+    );
+    const rendered = renderCompact(
+      presentation,
+      view,
+      { icon: control.icon, isOverflowed: false, isPanelOpen },
+      fallback,
+    );
+    return { id, view, control, fallback, rendered };
+  });
+
+  // Pairs each chip's label id with its value id rather than pointing at
+  // values alone: a bare "22 MB — — 0" asks the listener to match numbers
+  // positionally against the name, and a collector this browser can't
+  // support has no number to place at all. Measured against the real bar in
+  // Chromium: pairing reads as "mem 22 MB delay — jank — net 0", the same
+  // utterance as pointing at the chips themselves, but gated by the value
+  // span rather than by whatever a `render` callback painted.
+  const describedBy = chips
+    .flatMap((chip) => {
+      if (chip.rendered !== chip.fallback || !chip.control.parts.value) return [];
+      const value = valueId(chip.id);
+      return chip.control.parts.text === "none" ? [value] : [labelId(chip.id), value];
+    })
+    .join(" ");
+
   return (
     <button
       type="button"
       data-dtb-part="trigger"
       aria-expanded={isPanelOpen}
-      // Named after the extension, not the readout — a name that churns with
-      // the values would re-speak on every focus. `presentation.name`
-      // overrides it, invoked with the first metric in bar order since one
-      // button names N metrics; with no metrics, `label` stands.
+      // Identity plus the visible short words, never the numbers (WCAG
+      // 2.5.3) — a name derived from the values would re-speak on every
+      // focus. The numbers are described instead, by the `aria-describedby`
+      // built above. `presentation.name` overrides this, invoked with the
+      // first metric in bar order; with no metrics, `label` stands.
       aria-label={triggerName}
+      {...(describedBy === "" ? {} : { "aria-describedby": describedBy })}
       onClick={onToggle}
       title="Runtime performance — click for details"
     >
       <span data-dtb-part="metrics-chips">
-        {snapshot.order.map((id) => {
-          const view = metricView(snapshot, id);
-          const control = resolveCompactControl(presentation, view, {
-            isOverflowed: false,
-            defaults: DEFAULTS,
-          });
-          const fallback = (
-            <>
-              {iconAndText(view, control.parts, control.icon)}
-              {control.parts.value ? (
-                <span
-                  data-dtb-kind="value"
-                  data-dtb-severity={view.severity}
-                  data-dtb-part="metrics-value"
-                >
-                  {view.display}
-                </span>
-              ) : null}
-            </>
-          );
-          return (
-            <Chip
-              key={id}
-              severity={view.severity}
-              data-dtb-part="metrics-chip"
-              data-dtb-metric={id}
-              data-dtb-severity={view.severity}
-              dotProps={{ "data-dtb-part": "metrics-dot" }}
-            >
-              {renderCompact(
-                presentation,
-                view,
-                { icon: control.icon, isOverflowed: false, isPanelOpen },
-                fallback,
-              )}
-            </Chip>
-          );
-        })}
+        {chips.map(({ id, view, rendered }) => (
+          <Chip
+            key={id}
+            severity={view.severity}
+            data-dtb-part="metrics-chip"
+            data-dtb-metric={id}
+            data-dtb-severity={view.severity}
+            dotProps={{ "data-dtb-part": "metrics-dot" }}
+          >
+            {rendered}
+          </Chip>
+        ))}
       </span>
     </button>
   );

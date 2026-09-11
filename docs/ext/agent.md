@@ -341,10 +341,17 @@ reload to change it.
   during render, so no `ReactNode` can reach `read()` or the `report` transport — both of
   which must stay JSON.
 
-One caveat worth stating: the `role="img"` path is covered by unit tests
-(`presentation.test.tsx`) but has **no browser proof**. The playground does not opt this
-extension into an icon, so unlike `/ext/metrics`, `/ext/flags` and `/ext/a11y` nothing in
-`examples/playground/e2e/` exercises it against a real accessibility tree.
+The `role="img"` path is proven in a browser as well as in unit tests. The playground
+opts this extension into an icon in both of its non-`default` **Bar icons** modes
+(`examples/playground/src/barIcons.tsx`), and
+`examples/playground/e2e/presentation.spec.ts` pins the fork: exactly one `[role="img"]`
+inside the bar in `icon` mode — this chip, carrying a non-empty `aria-label`, its
+`data-dtb-agent-mode`, one clamped `<svg>` and no text of its own — and none in
+`default`. axe-core 4.13.0 over an include-the-bar context
+(`{ include: [["[data-dev-toolbar]"]] }`, which is what a consumer passes through
+`/ext/a11y`'s `context` option, since its default *excludes* the toolbar) reports the
+node as **passing** `aria-allowed-role`, `aria-roles` and `role-img-alt`; in `default`
+mode `role-img-alt` is inapplicable, because there is no such node.
 
 ---
 

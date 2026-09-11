@@ -39,7 +39,7 @@ env.environment({ context: () => ({ environment: "test" }), presentation: "glyph
 const presentation: kit.CompactPresentation<metrics.MetricView> = {
   preset: "icon-value",
   icon: (view) => (view.severity === "bad" ? icon : null),
-  render: (view, ctx) => (view.id === "fps" ? ctx.fallback : undefined),
+  render: (view, ctx) => (view.id === "network" ? ctx.fallback : undefined),
   name: (view) => `${view.label}: ${view.value}`,
 };
 metrics.metrics({ presentation });

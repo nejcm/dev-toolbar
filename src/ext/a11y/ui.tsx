@@ -146,6 +146,9 @@ export function A11yChip({
       type="button"
       data-dtb-part="trigger"
       aria-expanded={isPanelOpen}
+      // The name contains the bar's visible word for WCAG 2.5.3 Label in Name.
+      // It leads with `label` because a screen reader reads "a11y" as "a
+      // eleven y", while speech-input matching only needs containment.
       // `presentation.name` overrides this; a whitespace-only override is
       // ignored so the trigger is never left unnamed. `title` explains, it
       // does not name, so it's not overridable.
@@ -153,8 +156,8 @@ export function A11yChip({
         presentation.name,
         report,
         report.status === "ok"
-          ? `${label}, ${report.total} violation${report.total === 1 ? "" : "s"}`
-          : `${label}, ${report.status}`,
+          ? `${label} (${SHORT_LABEL}), ${report.total} violation${report.total === 1 ? "" : "s"}`
+          : `${label} (${SHORT_LABEL}), ${report.status}`,
       )}
       onClick={onToggle}
       title={

@@ -6,10 +6,12 @@ import type { Toolbar } from "./fixtures";
 
 /**
  * The playground builds `metrics`, `flags` and `a11y` with a `presentation`
- * preset chosen by its own header toggle, and supplies icons itself as inline
- * `<svg>` (`examples/playground/src/barIcons.tsx`). What's worth a browser is
- * what jsdom measures as zero: real width changes, no change to the bar's own
- * box, and a collapse decision that has to land somewhere stable.
+ * preset chosen by its own header toggle, `agent` with the icon half of the
+ * narrowed pair, and supplies icons itself as inline `<svg>`
+ * (`examples/playground/src/barIcons.tsx`). What's worth a browser is what
+ * jsdom measures as zero: real width changes, no change to the bar's own box, a
+ * collapse decision that has to land somewhere stable — and `role="img"`, a
+ * claim about a browser's accessibility tree.
  */
 
 /**
@@ -31,7 +33,7 @@ async function setMode(page: Page, mode: "default" | "icon-value" | "icon") {
 
 /**
  * Polls until the bar reports the same ids twice running, then returns them.
- * A preset flip remounts three extensions, and their widths arrive as a
+ * A preset flip remounts four extensions, and their widths arrive as a
  * stream of `ResizeObserver` deliveries, not in one go.
  */
 async function settledBar(toolbar: Toolbar): Promise<string[]> {
@@ -65,7 +67,11 @@ interface A11yState {
   axeVersion: string | null;
 }
 
-/** The three ids the playground hands a `presentation`; the other fourteen are untouched. */
+/**
+ * The three ids the playground hands a **preset**; the rest of the roster is
+ * untouched. `agent` is presented too but takes only an icon — no preset, no
+ * value — so it is not held to the preset claims below and has its own case.
+ */
 const PRESENTED = ["metrics", "flags", "a11y"] as const;
 
 /**
@@ -271,6 +277,74 @@ test("an icon preset paints the playground's own <svg> and keeps every control n
       ).toBe("");
     }
   }
+});
+
+/**
+ * `/ext/agent` is the fourth control the toggle reaches, and the only one whose
+ * *role* the option changes: with an icon the chip is `role="img"` with an
+ * `aria-label`, without one it is the role-less `<span>` it has always been,
+ * named by its `title` (`src/ext/agent/index.tsx`, and ADR-004's Group C
+ * subsection). A bare `<span aria-label>` names nothing at all, so the role is
+ * what makes that label count — and a role is a claim about what a browser's
+ * accessibility tree says, which is why it belongs here rather than only in
+ * `src/ext/agent/__tests__/presentation.test.tsx`.
+ *
+ * Agent takes the narrowed two-knob option, so it reads `"icon-value"` and
+ * `"icon"` identically: there is no preset, only an icon. `"default"` is the
+ * mode that passes none.
+ */
+test("an icon gives /ext/agent a role, and no icon leaves it without one", async ({
+  toolbar,
+  page,
+}) => {
+  // Agent's `priority` is -1 — below every other item, so it is the first the
+  // collapse machine takes out and the last to be seated. ALL_IN_BAR is the
+  // width that fits the whole roster; the bridge read below is what proves the
+  // chip is in the bar rather than in the `⋮`, where an icon chip also carries
+  // the role and "exactly one in the bar" would be measuring the wrong node.
+  await page.setViewportSize(ALL_IN_BAR);
+
+  /** Genuinely pixels: a role is an attribute on an element this app's icon created. */
+  const roleImg = page.locator('[data-dtb-part="bar"] [role="img"]');
+
+  await setMode(page, "default");
+  expect(await settledBar(toolbar), "agent is not in the bar to be read").toContain("agent");
+  await expect(roleImg, "a role-less chip must not gain a role").toHaveCount(0);
+
+  await setMode(page, "icon");
+  expect(await settledBar(toolbar), "agent is not in the bar to be read").toContain("agent");
+  // Exactly one: agent is the only control in the package that takes this role,
+  // and the count is what would catch it spreading to the eight that name
+  // themselves with text.
+  await expect(roleImg).toHaveCount(1);
+  const chip = await roleImg.evaluate((node) => ({
+    label: node.getAttribute("aria-label"),
+    extId: node.closest("[data-dtb-ext-id]")?.getAttribute("data-dtb-ext-id") ?? null,
+    part: node.getAttribute("data-dtb-part"),
+    // A preset changes text, not state (ADR-004): the chip's own attribute
+    // survives the icon path, which is a different component from the span.
+    agentMode: node.getAttribute("data-dtb-agent-mode"),
+    glyphs: node.querySelectorAll('[data-dtb-kind="glyph"] > svg').length,
+    textOutsideGlyph: (() => {
+      const clone = node.cloneNode(true) as HTMLElement;
+      clone.querySelectorAll('[data-dtb-kind="glyph"]').forEach((glyph) => glyph.remove());
+      return (clone.textContent ?? "").trim();
+    })(),
+  }));
+  expect(chip.extId, `the role landed on ${JSON.stringify(chip)}`).toBe("agent");
+  expect(chip.part).toBe("trigger");
+  expect(chip.agentMode).toBe("run-enabled");
+  // The whole point of the role: an `aria-label` on a role-less span is ignored,
+  // so this chip would be announced by its `title` or by nothing.
+  expect((chip.label ?? "").trim(), "a role=img chip with no accessible name").not.toBe("");
+  // And the icon is the only thing it paints, which is why the label is the
+  // only thing that can name it — the bar drops the word, the `⋮` row keeps it.
+  expect(chip.glyphs).toBe(1);
+  expect(chip.textOutsideGlyph).toBe("");
+
+  await setMode(page, "default");
+  await settledBar(toolbar);
+  await expect(roleImg).toHaveCount(0);
 });
 
 test("an icon preset narrows the very controls it reaches", async ({ toolbar, page }) => {

@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { cleanupToolbar, mountToolbar } from "@nejcm/dev-toolbar/testing";
 import type { ToolbarHandle } from "@nejcm/dev-toolbar/testing";
 import type { DevToolbarExtension } from "../../core/contract";
+import { describedBy, describedByIds, description } from "../../test-utils/generated-ids";
 import { extensionRoster } from "../../test-utils/extension-roster";
 import { a11y } from "../a11y";
 import { agentBridge } from "../agent";
@@ -62,7 +63,11 @@ interface BarCase {
  * environment kind, an edited token.
  */
 const BAR_CASES: Record<string, BarCase> = {
-  a11y: { id: "a11y", make: () => a11y(), names: ["Accessibility, pending"] },
+  // `Accessibility (a11y)`, not `Accessibility`: the bar paints `a11y`, so
+  // WCAG 2.5.3 needs that word in the name. `label` leads because a screen
+  // reader reads "a11y" as "a eleven y"; the parens still contain the `⋮`
+  // row's full text.
+  a11y: { id: "a11y", make: () => a11y(), names: ["Accessibility (a11y), pending"] },
   agent: {
     id: "agent",
     // With an icon: the only configuration where this puts a *named node* in
@@ -109,7 +114,10 @@ const BAR_CASES: Record<string, BarCase> = {
           }),
         },
       }),
-    names: ["Metrics"],
+    // `Metrics: mem`, not `Metrics`: the bar paints `mem`, so WCAG 2.5.3 needs
+    // that word in the name. It's the collector's hardcoded short word, so
+    // the name doesn't churn with the readout.
+    names: ["Metrics: mem"],
     // The `⋮` rows replace the trigger and are named by their own text, run
     // together since `accessibleName()` concatenates the chip's spans.
     overflowNames: ["Memory48 MB"],
@@ -256,5 +264,170 @@ describe("first-party bar presentation", () => {
         expectNamedIndependently(controls, id);
       });
     });
+  });
+});
+
+/**
+ * WCAG 2.5.3 Label in Name, and where the readout is announced from.
+ *
+ * `NAME_CASES` checks two things per chip: the bar word is a substring of the
+ * accessible name (case-insensitive, the way speech input matches — `Metrics`
+ * and `Accessibility` didn't used to contain `mem`/`a11y`), and the readout
+ * reaches a screen reader from somewhere, since `aria-label` replaces an
+ * element's content rather than adding to it. Six chips already say it: with
+ * no `aria-describedby`, a browser reads `title` as the description, and each
+ * one's `title` states the readout with more context than its span does.
+ * Only `/ext/metrics` doesn't — its title (`Runtime performance — click for
+ * details`) carries no readout at all — which is why it alone gets an
+ * `aria-describedby`.
+ *
+ * `/ext/agent` and `/ext/command-menu` are absent: neither control has a
+ * value (ADR-004, "Group C takes two knobs").
+ */
+interface NameCase {
+  /** The word this chip paints in the bar. The accessible name must contain it. */
+  barWord: string;
+  /** What `aria-describedby` must announce, or `null` for a chip that gets none. */
+  description: string | null;
+  /** For a chip with no description: where its readout is announced instead. */
+  readoutFrom?: "name" | "title";
+  /** The visible readout, which must appear wherever `readoutFrom` says. */
+  readout?: string;
+  /**
+   * The same extension under `preset: "label"`, which paints no value — so
+   * there is nothing for an `aria-describedby` to point at. Only the one chip
+   * that gets a description needs it.
+   */
+  bare?(): DevToolbarExtension;
+}
+
+const LABEL_ONLY = { presentation: "label" } as const;
+
+const NAME_CASES: Record<string, NameCase> = {
+  // `Accessibility: click to scan this page` against a span reading `scan` —
+  // and the *status* the span stands for is in the name already (`, pending`).
+  a11y: { barWord: "a11y", description: null, readoutFrom: "title", readout: "scan" },
+  diagnostics: {
+    barWord: "diagnostics",
+    description: null,
+    readoutFrom: "title",
+    readout: "capture",
+  },
+  environment: {
+    barWord: "env",
+    description: null,
+    readoutFrom: "name",
+    readout: "staging",
+  },
+  // The span paints `2`; the title paints `Feature flags: 2 · 0 locally
+  // overridden`, which is the same number with the context the span drops.
+  flags: { barWord: "flags", description: null, readoutFrom: "title", readout: "2" },
+  metrics: {
+    barWord: "mem",
+    // Metrics paints N readouts in one control, so its `aria-describedby`
+    // names each metric's label span and then its value span — a bare run of
+    // numbers can't be attributed to anything. See `src/ext/metrics/ui.tsx`.
+    description: "mem 48 MB",
+    bare: () =>
+      metrics({
+        ...LABEL_ONLY,
+        only: ["memory"],
+        memory: {
+          read: () => ({
+            usedJSHeapSize: 48 * 1024 * 1024,
+            totalJSHeapSize: 64 * 1024 * 1024,
+            jsHeapSizeLimit: 128 * 1024 * 1024,
+          }),
+        },
+      }),
+  },
+  overlays: {
+    barWord: "overlays",
+    description: null,
+    readoutFrom: "name",
+    readout: "off",
+  },
+  // The span paints `1`; the title paints `Design tokens: 1 · 0 edited
+  // locally`.
+  "theme-editor": { barWord: "theme", description: null, readoutFrom: "title", readout: "1" },
+};
+
+/** The extension's own bar trigger — not a promoted sibling. */
+function trigger(toolbar: ToolbarHandle, id: string): HTMLElement {
+  const element = toolbar.item(id)?.querySelector<HTMLElement>('[data-dtb-part="trigger"]');
+  expect(element, `${id} rendered no bar trigger`).not.toBeNull();
+  return element as HTMLElement;
+}
+
+describe("label in name, and where the readout is announced", () => {
+  const mount = (id: string, extension: DevToolbarExtension) =>
+    mountToolbar(null, { extensions: [extension], layout: { barWidth: 4000, itemWidth: 120 } })
+      .toolbar;
+
+  describe.each(Object.entries(NAME_CASES))("%s", (id, nameCase) => {
+    const make = () => BAR_CASES[id]!.make();
+
+    it("contains the word the bar paints in its accessible name", () => {
+      const control = trigger(mount(id, make()), id);
+      // Case-insensitively, which is how speech input matches: `overlays`
+      // inside `Overlays, off` is a match, and five of the seven rely on it.
+      const name = (accessibleName(control) ?? "").toLowerCase();
+      expect(control.textContent, `${id} stopped painting "${nameCase.barWord}"`).toContain(
+        nameCase.barWord,
+      );
+      expect(name, `${id}: the bar word is not in the accessible name`).toContain(
+        nameCase.barWord.toLowerCase(),
+      );
+    });
+
+    if (nameCase.description === null) {
+      it(`announces its readout from ${nameCase.readoutFrom} rather than a description`, () => {
+        const control = trigger(mount(id, make()), id);
+        const readout = nameCase.readout as string;
+        expect(control.textContent, `${id} stopped painting "${readout}"`).toContain(readout);
+        // The evidence for the exclusion. `title` is the accessible description
+        // when nothing else supplies one, so a chip whose `title` states the
+        // readout needs no `aria-describedby` — and adding one would *displace*
+        // the richer wording rather than add to it.
+        const source =
+          nameCase.readoutFrom === "name"
+            ? (accessibleName(control) ?? "")
+            : (control.getAttribute("title") ?? "");
+        expect(source, `${id}: the readout is not in the ${nameCase.readoutFrom}`).toContain(
+          readout,
+        );
+        expect(describedByIds(control), `${id} would displace its own title`).toEqual([]);
+      });
+    } else {
+      it("describes the visible readout neither its name nor its title carries", () => {
+        const control = trigger(mount(id, make()), id);
+        const readout = nameCase.description as string;
+        expect(
+          accessibleName(control) ?? "",
+          `${id}: the readout is in the name too`,
+        ).not.toContain(readout);
+        // The reason this chip is the exception: its `title` would otherwise be
+        // the description, and it says nothing about the numbers.
+        expect(
+          control.getAttribute("title") ?? "",
+          `${id}: the title carries the readout, so it needs no description`,
+        ).not.toContain(readout);
+        // The assertion with the teeth: a canonicalised DOM literal pins that
+        // the attribute exists, never that it resolves to anything.
+        expect(describedBy(control), `${id}: a dangling aria-describedby`).not.toContain(null);
+        expect(description(control), `${id}: the description is not the readout`).toBe(readout);
+      });
+
+      it("writes no aria-describedby under a preset that paints no value", () => {
+        // `"label"` paints the text alone, so there is no value span to point
+        // at — and a dangling IDREF announces nothing at all.
+        const control = trigger(mount(id, nameCase.bare!()), id);
+        expect(control.querySelector('[data-dtb-kind="value"]')).toBeNull();
+        expect(
+          describedByIds(control),
+          `${id}: an aria-describedby with nothing to point at`,
+        ).toEqual([]);
+      });
+    }
   });
 });
