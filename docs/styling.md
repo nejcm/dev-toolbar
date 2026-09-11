@@ -133,11 +133,51 @@ short bar word; `label` stays the overflow and accessible-name identity.** The a
 `"none" | "short" | "full"`: presets in the bar select `"short"`, and the overflow rule
 forces `"full"`, so a preset can never leave a menu row wordless.
 
+One consequence worth stating: under `"value"` and `"icon-value"` the visible text is
+the **readout alone** — the short bar word is not painted, so it is not in the name a
+speech-input user can match either. That is opt-in, and it is what those two presets are
+for; the readout itself still reaches a screen reader as the chip's description. Set
+`presentation.name` if you want the name to match what those presets paint.
+
 That is the whole rule, and it is stated once here. The preset-by-preset table, the
 sharp edge where a menu row keeps the word but drops the *value*, and what a `render`
 callback may and may not take are in
 [kit.md](./kit.md#presentation); each extension's own page in [ext/](./ext/) names the
 short word it paints and the parts its icon and text land in.
+
+### The name carries the word; `title` carries the readout
+
+Two consequences of that split, both about what gets announced rather than what gets
+painted:
+
+- **The accessible name contains the short bar word.** WCAG 2.5.3 Label in Name wants
+  the word you can see inside the name a speech-input user can say, so `env` sits inside
+  `Environment, staging`, and `/ext/a11y` and `/ext/metrics` name themselves
+  `Accessibility (a11y), pending` and `Metrics: mem, delay, jank, net` for exactly that
+  reason.
+- **The readout is announced by `title`, not by a second attribute.** An `aria-label`
+  *replaces* an element's content, so a chip named `Flags` would leave its visible `6`
+  unannounced if nothing else described the control — but something already does: with
+  no `aria-describedby`, a browser uses `title` as the accessible description, and every
+  first-party chip has a `title`. Measured in Chromium, the `Flags` chip's description is
+  `Feature flags: 6 · 0 locally overridden`, which is the readout *with* the context the
+  `6` on the bar drops. The same holds for `/ext/theme-editor` (`Design tokens: 14 · 0
+  edited locally`), `/ext/a11y` and `/ext/diagnostics`, and for `/ext/environment` and
+  `/ext/overlays`, whose names state the readout outright (`Environment, staging`,
+  `Overlays, off`).
+
+  So **an explicit `aria-describedby` is added only where the `title` does not carry the
+  readout.** It is not additive: pointing one at a value span *displaces* the title, and
+  a bare `6` says less than the sentence it replaced.
+- **One chip overrides it: `/ext/metrics`.** Its title is `Runtime performance — click
+  for details` and states no readout at all, so the numbers really would go unheard.
+  That chip puts an `id` on each painted **label span and value span** and lists them
+  **in pairs** in its `aria-describedby`, so the readout is announced as *"mem 22 MB
+  delay — jank — net 0"* rather than as a run of numbers to be matched against the name
+  positionally. The ids come from React's `useId()`, so **do not write a selector against
+  them**; select on `data-dtb-part` as always. The attribute is absent when there is no
+  value span to point at, which includes every preset that paints none and any `render`
+  callback that replaced it — a dangling IDREF announces nothing.
 
 ## Under a host reset
 

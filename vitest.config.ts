@@ -51,8 +51,8 @@ export default defineConfig({
       // logic and are genuinely tested — don't exclude without measuring
       // coverage both ways first.
       exclude: ["src/**/*.test.{ts,tsx}", "src/test-utils/**"],
-      // Floors, not targets. Measured: statements 95.64, branches 89.80,
-      // functions 97.01, lines 97.32 — the headroom is what lets ordinary work
+      // Floors, not targets. Measured: statements 95.67, branches 89.84,
+      // functions 97.02, lines 97.34 — the headroom is what lets ordinary work
       // land without a coverage argument. `functions` is tightest in practice —
       // if it fires on ordinary work, add tests rather than lowering the number.
       thresholds: {

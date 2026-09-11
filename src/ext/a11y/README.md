@@ -74,6 +74,34 @@ and written out in
 boundary: if a page renders credentials in the DOM, treat the export the way you
 would treat a screenshot of that page.
 
+## `label-content-name-mismatch` will not catch our own chips
+
+WCAG 2.5.3 Label in Name is what says a control's accessible name must contain
+the word you can see on it — the reason the bar trigger is named
+`Accessibility (a11y), …` rather than `Accessibility`, and `/ext/metrics`'
+`Metrics: mem` rather than `Metrics`. axe has a rule for it,
+`label-content-name-mismatch`, and it would not have found either, for two
+independent reasons:
+
+1. **The rule is off by default.** In `axe-core` 4.13.0 it is tagged
+   `experimental` and ships `enabled: false`
+   (`axe.getRules().find((r) => r.ruleId === "label-content-name-mismatch")`
+   reports both). A scan has to ask for it — `rules: {
+   "label-content-name-mismatch": { enabled: true } }` — before it runs at all.
+2. **The default `context` excludes the toolbar.** `createA11yRuntime`'s
+   default is `{ exclude: [[TOOLBAR_EXCLUDE]] }`, and `TOOLBAR_EXCLUDE` is
+   `"[data-dev-toolbar]"` (`runtime.ts`) — everything the toolbar draws,
+   including this extension's own bar chip. Scanning our chrome and reporting
+   on it as if it were the app's markup is the wrong answer, so the exclusion
+   stays.
+
+So this class of finding can only surface for a consumer who overrides **both**:
+passes a `context` that includes `[data-dev-toolbar]` *and* enables the rule.
+Neither is a default worth changing — which is why the Label-in-Name work on
+the bar chips is held by `src/ext/__tests__/presentation.test.tsx` (the word the
+bar paints, inside the name, for all seven chips that paint one) rather than by
+a scan.
+
 ## Commands
 
 `<id>.scan`, `<id>.clear`, `<id>.export`, `<id>.highlight`.

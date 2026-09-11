@@ -104,7 +104,7 @@ describe("the default presentation", () => {
   // only against a deliberate, documented change to a11y's bar DOM.
   const DEFAULT_TRIGGER =
     '<button type="button" data-dtb-part="trigger" aria-expanded="false"' +
-    ' aria-label="Accessibility, pending" title="Accessibility: click to scan this page">' +
+    ' aria-label="Accessibility (a11y), pending" title="Accessibility: click to scan this page">' +
     '<span data-dtb-part="a11y-chip" data-dtb-status="pending" data-dtb-kind="chip">' +
     '<span data-dtb-kind="dot" data-dtb-severity="unknown" aria-hidden="true"' +
     ' data-dtb-part="a11y-dot"></span>' +
@@ -239,7 +239,7 @@ describe("presets", () => {
         chip.querySelector('[data-dtb-part="a11y-dot"]')?.getAttribute("data-dtb-severity"),
       ).toBe("unknown");
       // A preset changes text, not state — and never the trigger's identity.
-      expect(trigger.getAttribute("aria-label")).toBe("Accessibility, pending");
+      expect(trigger.getAttribute("aria-label")).toBe("Accessibility (a11y), pending");
       expect(trigger.getAttribute("aria-expanded")).toBe("false");
       expect(trigger.getAttribute("title")).toBe("Accessibility: click to scan this page");
     }
@@ -303,7 +303,7 @@ describe("a scanned state", () => {
     // Outside `pending`: the preset changed the text, not the state — the
     // status, the dot's severity and the violation count all survive it.
     expect(chip.getAttribute("data-dtb-status")).toBe("ok");
-    expect(trigger.getAttribute("aria-label")).toBe("Accessibility, 1 violation");
+    expect(trigger.getAttribute("aria-label")).toBe("Accessibility (a11y), 1 violation");
     expect(text(chip)).toBeNull();
     expect(icons(chip)).toBe(1);
   });
@@ -350,7 +350,7 @@ describe("the render callback", () => {
     // and state attribute are not the render callback's to lose (see docblock, 1).
     expect(chip.querySelector('[data-dtb-part="a11y-dot"]')).not.toBeNull();
     expect(chip.getAttribute("data-dtb-status")).toBe("pending");
-    expect(trigger.getAttribute("aria-label")).toBe("Accessibility, pending");
+    expect(trigger.getAttribute("aria-label")).toBe("Accessibility (a11y), pending");
     expect(value(chip)).toBeNull();
     expect(contexts[0]?.preset).toBe("icon-value");
     expect(contexts[0]?.isOverflowed).toBe(false);
@@ -363,7 +363,7 @@ describe("the render callback", () => {
     const menu = overflowTrigger({ presentation: { render } });
     expect(menu.querySelector('[data-dtb-part="a11y-custom"]')?.textContent).toBe("pending scan");
     expect(menu.querySelector('[data-dtb-part="a11y-dot"]')).not.toBeNull();
-    expect(menu.getAttribute("aria-label")).toBe("Accessibility, pending");
+    expect(menu.getAttribute("aria-label")).toBe("Accessibility (a11y), pending");
     expect(contexts.at(-1)?.isOverflowed).toBe(true);
   });
 
@@ -418,6 +418,49 @@ describe("the accessible-name override", () => {
     // An icon-only control with no name is exactly what this extension would
     // flag on the toolbar's own bar.
     const trigger = barTrigger({ presentation: { preset: "icon", icon: ICON, name: () => "   " } });
-    expect(trigger.getAttribute("aria-label")).toBe("Accessibility, pending");
+    expect(trigger.getAttribute("aria-label")).toBe("Accessibility (a11y), pending");
+  });
+});
+
+/**
+ * The accessible name, after the Label-in-Name fix.
+ *
+ * The trigger used to be named `"Accessibility, pending"` while the bar
+ * painted `a11y`, matching nothing for a speech-input user (WCAG 2.5.3). The
+ * name is now `${label} (a11y)`, leading with `label` because a screen reader
+ * reads "a11y" as "a eleven y" — the parenthesised form still contains the
+ * `⋮` row's full text.
+ *
+ * No `aria-describedby` came with it: the status the visible `scan` stands
+ * for is already in the name (`, pending`), and with none, `title` is read as
+ * the description. `/ext/metrics` is the one chip that needs the attribute
+ * instead.
+ */
+describe("the accessible name", () => {
+  it("contains the short word the bar paints, led by the label", () => {
+    const trigger = barTrigger();
+    expect(trigger.textContent).toContain("a11y");
+    expect(trigger.getAttribute("aria-label")).toBe("Accessibility (a11y), pending");
+  });
+
+  it("still contains the full word the ⋮ menu paints", () => {
+    const trigger = overflowTrigger();
+    expect(trigger.textContent).toContain("Accessibility");
+    expect(trigger.getAttribute("aria-label")).toContain("Accessibility");
+  });
+
+  it("keeps a consumer's own label", () => {
+    expect(barTrigger({ label: "Axe" }).getAttribute("aria-label")).toBe("Axe (a11y), pending");
+  });
+
+  it("leaves the description to title rather than adding an aria-describedby", () => {
+    const trigger = barTrigger();
+    // The name carries the status the span abbreviates; `title` repeats it
+    // with more context, and a browser reads `title` as the description when
+    // nothing else supplies one.
+    expect(trigger.getAttribute("aria-label")).toContain("pending");
+    expect(trigger.getAttribute("title")).toBe("Accessibility: click to scan this page");
+    expect(trigger.getAttribute("aria-describedby")).toBeNull();
+    expect(trigger.querySelector('[data-dtb-part="a11y-value"]')?.getAttribute("id")).toBeNull();
   });
 });

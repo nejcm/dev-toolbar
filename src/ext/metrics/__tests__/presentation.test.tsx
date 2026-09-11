@@ -15,6 +15,12 @@
  */
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { fireEvent } from "@testing-library/react";
+import {
+  canonicaliseIds,
+  describedBy,
+  describedByIds,
+  description,
+} from "../../../test-utils/generated-ids";
 import { cleanupToolbar, makeExtension, mountToolbar } from "@nejcm/dev-toolbar/testing";
 import type { CompactPreset, CompactRenderContext } from "@nejcm/dev-toolbar/kit";
 import { metrics } from "../index";
@@ -83,19 +89,24 @@ const ICON = (
 afterEach(cleanupToolbar);
 
 describe("the default presentation", () => {
-  // The exact markup that shipped before `presentation` existed. Regenerate
-  // only by capture, never by hand.
+  // The exact markup that shipped before `presentation` existed, plus the
+  // accessible-name repairs since: the `aria-label`, and the generated `id`
+  // on each label/value span the trigger's `aria-describedby` names. The `#`s
+  // are those ids, canonicalised because `useId()`'s format differs between
+  // React 18 and 19 and the peer range is `react: ">=18"`. Regenerate only by
+  // capture, never by hand.
   const DEFAULT_TRIGGER =
-    '<button type="button" data-dtb-part="trigger" aria-expanded="false" aria-label="Metrics"' +
+    '<button type="button" data-dtb-part="trigger" aria-expanded="false"' +
+    ' aria-label="Metrics: mem" aria-describedby="#"' +
     ' title="Runtime performance — click for details">' +
     '<span data-dtb-part="metrics-chips">' +
     '<span data-dtb-part="metrics-chip" data-dtb-metric="memory" data-dtb-severity="ok"' +
     ' data-dtb-kind="chip">' +
     '<span data-dtb-kind="dot" data-dtb-severity="ok" aria-hidden="true"' +
     ' data-dtb-part="metrics-dot"></span>' +
-    '<span data-dtb-part="metrics-label" data-dtb-kind="label">mem</span>' +
-    '<span data-dtb-kind="value" data-dtb-severity="ok" data-dtb-part="metrics-value">' +
-    "48 MB</span></span></span></button>";
+    '<span data-dtb-part="metrics-label" data-dtb-kind="label" id="#">mem</span>' +
+    '<span data-dtb-kind="value" data-dtb-severity="ok" data-dtb-part="metrics-value"' +
+    ' id="#">48 MB</span></span></span></button>';
 
   const DEFAULT_OVERFLOW_ROW =
     '<button type="button" data-dtb-part="metrics-overflow-row" data-dtb-metric="memory"' +
@@ -111,19 +122,21 @@ describe("the default presentation", () => {
   it("paints the bar byte-identically with no option at all", () => {
     const { toolbar } = mount();
     const trigger = toolbar.item("metrics")?.querySelector('[data-dtb-part="trigger"]');
-    expect(trigger?.outerHTML).toBe(DEFAULT_TRIGGER);
+    expect(canonicaliseIds(trigger?.outerHTML ?? "")).toBe(DEFAULT_TRIGGER);
   });
 
   it("paints the ⋮ row byte-identically with no option at all", () => {
-    expect(overflowRow().outerHTML).toBe(DEFAULT_OVERFLOW_ROW);
+    expect(canonicaliseIds(overflowRow().outerHTML)).toBe(DEFAULT_OVERFLOW_ROW);
   });
 
   it('is what an explicit "default" and a bare icon both resolve to', () => {
     const { toolbar } = mount({ presentation: { preset: "default", icon: ICON } });
     const trigger = toolbar.item("metrics")?.querySelector('[data-dtb-part="trigger"]');
     // An icon with no preset that paints it does nothing.
-    expect(trigger?.outerHTML).toBe(DEFAULT_TRIGGER);
-    expect(overflowRow({ presentation: "default" }).outerHTML).toBe(DEFAULT_OVERFLOW_ROW);
+    expect(canonicaliseIds(trigger?.outerHTML ?? "")).toBe(DEFAULT_TRIGGER);
+    expect(canonicaliseIds(overflowRow({ presentation: "default" }).outerHTML)).toBe(
+      DEFAULT_OVERFLOW_ROW,
+    );
   });
 });
 
@@ -344,7 +357,7 @@ describe("the render callback", () => {
         render: (_view: MetricView, ctx: CompactRenderContext) => ctx.fallback,
       },
     });
-    expect(deferred.outerHTML).toBe(presetOnly.outerHTML);
+    expect(canonicaliseIds(deferred.outerHTML)).toBe(canonicaliseIds(presetOnly.outerHTML));
 
     const menuPresetOnly = overflowRow({ presentation: { preset: "icon", icon: ICON } });
     const menuDeferred = overflowRow({
@@ -354,7 +367,7 @@ describe("the render callback", () => {
         render: (_view: MetricView, ctx: CompactRenderContext) => ctx.fallback,
       },
     });
-    expect(menuDeferred.outerHTML).toBe(menuPresetOnly.outerHTML);
+    expect(canonicaliseIds(menuDeferred.outerHTML)).toBe(canonicaliseIds(menuPresetOnly.outerHTML));
   });
 
   it("can paint one metric its own way and defer on the rest", () => {
@@ -390,7 +403,7 @@ describe("the accessible-name override", () => {
       presentation: { preset: "icon", icon: ICON, name: () => "   " },
     });
     const trigger = toolbar.item("metrics")?.querySelector('[data-dtb-part="trigger"]');
-    expect(trigger?.getAttribute("aria-label")).toBe("Metrics");
+    expect(trigger?.getAttribute("aria-label")).toBe("Metrics: mem");
   });
 
   it("reaches every ⋮ row, one override per control", () => {
@@ -516,5 +529,146 @@ describe("a callback that throws", () => {
     expect(toolbar.errorChip("metrics")?.getAttribute("title")).toBe("consumer callback blew up");
     expect(toolbar.item("metrics")?.querySelector('[data-dtb-part="trigger"]')).toBeNull();
     expect(toolbar.item("bystander")?.textContent).toBe("bystander");
+  });
+});
+
+/**
+ * The accessible name and the described readout, after the Label-in-Name fix.
+ *
+ * The trigger used to be named `"Metrics"` while the bar painted `mem 48 MB`:
+ * a speech-input user saying "mem" matched nothing (WCAG 2.5.3), and
+ * `aria-label` replaces content, so a screen reader never heard the numbers.
+ * The name now carries the collectors' hardcoded short words — a function of
+ * configuration, not readout, so it doesn't churn — and `aria-describedby`
+ * carries the numbers.
+ */
+describe("the accessible name and the described readout", () => {
+  const triggerOf = (options: MetricsOptions = {}): HTMLElement => {
+    const { toolbar } = mount(options);
+    const trigger = toolbar
+      .item("metrics")
+      ?.querySelector<HTMLElement>('[data-dtb-part="trigger"]');
+    expect(trigger).not.toBeNull();
+    return trigger as HTMLElement;
+  };
+
+  it("names the trigger after the short words the bar paints", () => {
+    expect(triggerOf().getAttribute("aria-label")).toBe("Metrics: mem");
+  });
+
+  it("lists every collector's short word, in bar order", () => {
+    const trigger = triggerOf({ only: ["memory", "delay"] });
+    expect(trigger.getAttribute("aria-label")).toBe("Metrics: mem, delay");
+  });
+
+  it("does not churn as the readout moves", () => {
+    // The same configuration twice, with the second reading a different heap:
+    // the name is identical, the chip's text is not. A name derived from
+    // `view.display` would re-speak on every focus.
+    const first = triggerOf();
+    const second = triggerOf({
+      memory: {
+        read: () => ({
+          usedJSHeapSize: 96 * 1024 * 1024,
+          totalJSHeapSize: 128 * 1024 * 1024,
+          jsHeapSizeLimit: 256 * 1024 * 1024,
+        }),
+      },
+    });
+    expect(second.getAttribute("aria-label")).toBe(first.getAttribute("aria-label"));
+    expect(second.textContent).not.toBe(first.textContent);
+  });
+
+  it("falls back to the label alone when there are no metrics", () => {
+    const trigger = triggerOf({ only: [] });
+    expect(trigger.getAttribute("aria-label")).toBe("Metrics");
+    expect(describedByIds(trigger)).toEqual([]);
+  });
+
+  it("describes each painted metric as its label span then its value span", () => {
+    const trigger = triggerOf({ only: ["memory", "delay"] });
+    // One control, N metrics, two spans each: pairing label with value turns
+    // "48 MB NA" into "mem 48 MB delay NA". Measured in Chromium; reasoning
+    // at the call site in `ui.tsx`.
+    expect(describedByIds(trigger)).toHaveLength(4);
+    expect(describedBy(trigger), "a dangling aria-describedby").not.toContain(null);
+    expect(describedBy(trigger).map((target) => target?.getAttribute("data-dtb-part"))).toEqual([
+      "metrics-label",
+      "metrics-value",
+      "metrics-label",
+      "metrics-value",
+    ]);
+    // Bar order, and label-before-value within each metric. Written out
+    // rather than derived from a query, so a reversed pair fails here.
+    expect(describedBy(trigger).map((target) => target?.textContent)).toEqual([
+      "mem",
+      "48 MB",
+      "delay",
+      "NA",
+    ]);
+    expect(description(trigger)).toBe("mem 48 MB delay NA");
+  });
+
+  it("says the readout the name deliberately does not, next to the word it belongs to", () => {
+    const trigger = triggerOf();
+    expect(trigger.getAttribute("aria-label")).not.toContain("48 MB");
+    expect(description(trigger)).toBe("mem 48 MB");
+  });
+
+  it("writes no aria-describedby under a preset that paints no value", () => {
+    // `"label"` paints the short word alone. There is no readout to describe,
+    // and a description of the words the name already said would be the name
+    // read back — so the label ids are not written either.
+    const trigger = triggerOf({ presentation: "label" });
+    expect(trigger.querySelector('[data-dtb-part="metrics-value"]')).toBeNull();
+    expect(describedByIds(trigger)).toEqual([]);
+  });
+
+  it("describes the value alone under a preset that paints no label", () => {
+    // `"icon-value"` paints a glyph and the number. There is no word on the
+    // bar to point at, so the description falls back to the unpaired sequence
+    // — the best available, and the name still lists the words in the same
+    // order.
+    const trigger = triggerOf({
+      only: ["memory", "delay"],
+      presentation: { preset: "icon-value", icon: ICON },
+    });
+    expect(trigger.querySelector('[data-dtb-part="metrics-label"]')).toBeNull();
+    expect(describedByIds(trigger)).toHaveLength(2);
+    expect(describedBy(trigger), "a dangling aria-describedby").not.toContain(null);
+    expect(description(trigger)).toBe("48 MB NA");
+  });
+
+  it("writes no aria-describedby when a render callback replaced the value", () => {
+    const trigger = triggerOf({ presentation: { render: () => <b>whatever</b> } });
+    expect(trigger.querySelector('[data-dtb-part="metrics-value"]')).toBeNull();
+    expect(describedByIds(trigger)).toEqual([]);
+  });
+
+  it("leaves the ⋮ rows undescribed — they are named by their own content", () => {
+    const row = overflowRow();
+    expect(describedByIds(row)).toEqual([]);
+  });
+
+  it("keeps the ids distinct across two toolbars on one page", () => {
+    // `useId()` rather than the extension id: `__DEV_TOOLBAR__.instances`
+    // supports two `<DevToolbar>`s, and a duplicate id would make
+    // `aria-describedby` resolve to the other instance's span.
+    const first = triggerOf();
+    const firstIds = describedByIds(first);
+    mountToolbar(null, {
+      extensions: [metrics({ only: ["memory"], memory: { read: memoryRead, sampleMs: 50 } })],
+      layout: { barWidth: 900, itemWidth: 200 },
+    });
+    const other = [
+      ...document.querySelectorAll<HTMLElement>(
+        '[data-dtb-ext-id="metrics"] [data-dtb-part="trigger"]',
+      ),
+    ].filter((node) => node !== first);
+    expect(other.length, "a second toolbar did not mount").toBeGreaterThan(0);
+    for (const node of other) {
+      expect(describedByIds(node)).not.toEqual(firstIds);
+      expect(describedBy(node)).not.toContain(null);
+    }
   });
 });

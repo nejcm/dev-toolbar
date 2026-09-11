@@ -4,11 +4,14 @@ Each extension factory takes one `presentation` option — a preset, an icon the
 *consumer* supplies as a `ReactNode`, a render callback and an accessible-name
 override. The playground exercises it on `metrics`, `flags` and `a11y` with
 inline `<svg>`s it owns itself (`examples/playground/src/barIcons.tsx`), which
-is the proof no icon library is bundled, vendored or peer-depended. Four things
-here are invisible to jsdom: the icon is scaled rather than clipped, an
+is the proof no icon library is bundled, vendored or peer-depended, and on
+`agent` with the icon half of the narrowed two-knob option — no preset, because
+that chip has no value and no short word of its own (ADR-004, "Group C"). Five
+things here are invisible to jsdom: the icon is scaled rather than clipped, an
 icon-only control is several times narrower than the chip it replaced, the
-collapse decision has to settle after that swing, and an icon-only control
-still has to be named.
+collapse decision has to settle after that swing, an icon-only control still
+has to be named, and `agent`'s conditional `role="img"` is a claim about what a
+browser's own accessibility tree says.
 
 ## Sub-features
 
@@ -24,13 +27,22 @@ still has to be named.
   gone.
 - `presentation-text-glyph` is the other kind of icon: a character rather than
   an element, which the clamp does **not** reach.
+- `presentation-role` is `/ext/agent` alone: with an icon its trigger is
+  `role="img"` plus an `aria-label`, and with none it stays the role-less
+  `<span>` it has always been, named by its `title`. A bare `<span aria-label>`
+  names nothing, so the role is what makes that label count.
 
 ## How to get to it (user POV)
 
 - Click **Bar icons** in the playground header. It cycles
-  `default → icon-value → icon`, rebuilding `metrics`, `flags` and `a11y` with
-  that preset and remounting the toolbar (`key`) so the new objects actually
-  start. The other fourteen are the same objects, stopped and started again.
+  `default → icon-value → icon`, rebuilding `metrics`, `flags`, `a11y` and
+  `agent` with that mode and remounting the toolbar (`key`) so the new objects
+  actually start. The rest of the roster is the same objects, stopped and
+  started again. `agent` reads both non-default modes identically — it takes
+  only an icon — so its chip is a glyph in either.
+- `agent`'s `priority` is **-1**, below every other item, so it is the first
+  chip the collapse machine takes out: at 1280 it is in the `⋮` and you have to
+  widen (2600 seats the whole roster) to see its bar chip at all.
 - Watch the bar: short words become icons, then the values go too and the
   chips collapse to glyphs.
 - Narrow the window in each mode — more chips fit once they are icons.
@@ -121,10 +133,35 @@ pixels and come from the page read.
   [["[data-dev-toolbar]"]] }` — which is what a consumer would have to pass
   through the runtime's public `context` option. An unnamed icon-only button is
   its finding.
+- **`/ext/agent` gains a role.** Widen to 2600×800 so the chip is in the bar
+  (its `priority` is -1). In `default` there is **no** `[role="img"]` inside
+  `[data-dtb-part="bar"]`; in `icon` there is **exactly one**, and it is
+  agent's — `data-dtb-part="trigger"`, `data-dtb-agent-mode="run-enabled"`,
+  `aria-label="Agent"`, one clamped `<svg>` inside a glyph and no text of its
+  own. `e2e/presentation.spec.ts` pins that fork.
+- **What axe says about that node.** Point axe at the bar yourself — a stock
+  `/ext/a11y` scan cannot see it (`TOOLBAR_EXCLUDE`, below) — and read the
+  rules that would fire on a `role="img"`. Measured with axe-core 4.13.0 at
+  2600×800, `{ include: [["[data-dev-toolbar]"]] }`, `icon` mode:
+  `aria-allowed-role` **passes** (4 nodes, agent's among them),
+  `aria-roles` **passes** (4 nodes), `role-img-alt` **passes** (1 node — the
+  agent chip). In `default` mode `role-img-alt` is *inapplicable* and
+  `aria-allowed-role` has 3 nodes, so the fork is visible in axe's own output
+  too. Nothing about the role is flagged at any level.
+  The run's two `color-contrast` **violations** —
+  `span[data-dtb-part="env-value"]` (`staging`, 3.79:1) and
+  `button[data-dtb-part="error-retry"]` (the deliberately broken `boom` chip,
+  4.22:1) — are **identical in `default` mode** and belong to the playground's
+  own fixtures, not to this option. Re-measure both modes before reporting one
+  of them as new.
 - **Restore.** Click once more, back to `Bar icons: default`.
 
 ## Gotchas
 
+- **The flip rebuilds the agent bridge too**, since `agent` is now one of the
+  four. The remount tears down its global and installs it again, so a read
+  taken during a flip can find `window.__DEV_TOOLBAR__.instances.playground`
+  momentarily absent — poll, as the spec's helpers do, rather than reading once.
 - `presentation` is a **factory option**, held in the extension's closure, so
   flipping it means handing `<DevToolbar>` a *new extension object* for that id
   — **and remounting the toolbar**. Core never restarts a same-id extension: it
