@@ -33,6 +33,15 @@ runs:
     # would restore a cache missing those packages and decline to save
     # (actions/cache only writes on a primary-key miss), re-fetching forever.
     #
+    # `github.job` is in the key for the same reason, one level up. CI now runs
+    # three lanes in parallel and they install different trees: `unit` installs
+    # only the root, `browser` adds the playground, `package` adds both
+    # fixtures. On one shared key they race — the first to finish reserves it,
+    # the rest log "Unable to reserve cache", and whichever partial tree won
+    # becomes the exact hit every later run restores and never re-saves. Each
+    # lane keeping its own cache is what makes the entry complete for the job
+    # that reads it.
+    #
     # Listed explicitly, not `**/bun.lock`: the post step re-evaluates this key
     # to save, by which point node_modules exists, and the playground's
     # `file:../..` install has mirrored the whole repo root — lockfiles,
@@ -42,9 +51,9 @@ runs:
       uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       with:
         path: ~/.bun/install/cache
-        key: ${{ runner.os }}-bun-${{ hashFiles('bun.lock', 'examples/playground/bun.lock', 'test/fixtures/jest-consumer/bun.lock', 'test/fixtures/vite-consumer/bun.lock') }}
+        key: ${{ runner.os }}-bun-${{ github.job }}-${{ hashFiles('bun.lock', 'examples/playground/bun.lock', 'test/fixtures/jest-consumer/bun.lock', 'test/fixtures/vite-consumer/bun.lock') }}
         restore-keys: |
-          ${{ runner.os }}-bun-
+          ${{ runner.os }}-bun-${{ github.job }}-
 
     # --frozen-lockfile isn't just about speed: oxlint is pinned to exactly
     # one version in bun.lock, which makes the zero-warning `lint` gate

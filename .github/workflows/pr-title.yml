@@ -48,6 +48,8 @@ jobs:
       # longer note in `ci.yml`.
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       # Costs more than a dedicated title-lint action, but applies the exact
       # `.commitlintrc.json` rules the `commit-msg` hook uses — no second rule

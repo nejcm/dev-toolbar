@@ -12,6 +12,14 @@ name: Audit
 # vite-consumer lockfiles are dev-only trees that nothing ships from, so an advisory against
 # one is not a finding about this package. The lockfile cache key in
 # `setup-job` is about restoring an install, not audit scope.
+#
+# One caveat worth knowing rather than working around: GitHub disables
+# scheduled workflows in a repository with no activity for 60 days, and
+# re-enabling is a manual click. For a workflow whose entire premise is "a
+# commit can go vulnerable without anyone pushing", a quiet stretch is exactly
+# when it stops running and exactly when nothing says so. If this repository
+# ever goes quiet for that long, check the Actions tab before reading silence
+# as a clean bill of health.
 on:
   schedule:
     # 06:00 UTC daily. GitHub cron is best-effort; a late run is fine for a report.
@@ -33,6 +41,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       # `bun audit` still wants a resolved tree even though the advisory
       # lookup itself reads bun.lock, not node_modules.

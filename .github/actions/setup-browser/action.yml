@@ -1,0 +1,83 @@
+name: Set up a Playwright browser
+description: Restore the Playwright browser cache and install Chromium for one package.
+
+# Two suites drive a real Chromium — the playground's and the vite-consumer
+# fixture's — from their own `@playwright/test` pins, in two parallel jobs.
+# This is the one place that setup is described.
+#
+# Callers must run `actions/checkout` before it, and must give the `uses:` step
+# a `timeout-minutes` — a composite action cannot set its own, and on a cache
+# miss this reaches the network for ~150 MB. An unbounded network step here is
+# what cancelled the 2026-09-11 run.
+
+inputs:
+  working-directory:
+    description: Package whose `@playwright/test` pin decides the browser build.
+    required: true
+
+runs:
+  using: composite
+  steps:
+    # Read from the package's own manifest rather than hardcoded here, so a
+    # Dependabot bump of that exact pin keys a fresh cache on its own instead
+    # of restoring a browser build that no longer matches. Per-package, not a
+    # combined key: the two suites now run in separate jobs, so neither has to
+    # invalidate for the other's bump.
+    - name: Read the pinned Playwright version
+      id: pin
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      run: |
+        version=$(jq -r '.devDependencies["@playwright/test"]' package.json)
+        if [ -z "$version" ] || [ "$version" = "null" ]; then
+          echo "::error::No exact @playwright/test pin in ${PWD}/package.json"
+          exit 1
+        fi
+        echo "version=${version}" >> "$GITHUB_OUTPUT"
+
+    # Playwright downloads Chromium to ~/.cache/ms-playwright and skips the
+    # download when the build it wants is already there, so a hit saves the
+    # ~150 MB fetch on every run. Same SHA and version as setup-job's cache.
+    #
+    # No `restore-keys`: a near-miss would restore a browser build this pin
+    # cannot use, and Playwright would download the right one on top of it —
+    # leaving both in the tarball the post step saves.
+    #
+    # Unlike setup-job's install cache, this key deliberately has no
+    # `github.job` segment. While both pins match, the `package` and `browser`
+    # lanes race to save one key and the loser logs "Unable to reserve cache" —
+    # harmless, because the two are writing byte-identical browser builds.
+    # Scoping it per job would double a ~271 MB cache to buy nothing.
+    - name: Cache Playwright's browsers
+      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ~/.cache/ms-playwright
+        key: ${{ runner.os }}-playwright-${{ steps.pin.outputs.version }}
+
+    # `install`, not `install --with-deps`. The apt half is gone on purpose.
+    #
+    # On 2026-09-11 `--with-deps` spent 7m20s inside apt on a cache *hit*,
+    # pushed the job past its limit and cancelled the coverage gate. It had
+    # nothing to install: every library Chromium links against was already
+    # `the newest version` in the runner image. What it was fetching was 21 MB
+    # of fallback fonts — `fonts-wqy-zenhei`, `fonts-ipafont-gothic`,
+    # `xfonts-cyrillic` and friends — from an Ubuntu mirror serving at
+    # 48 kB/s. A font mirror was deciding whether coverage ran.
+    #
+    # Keeping it as a bounded best-effort step was the first attempt, and it is
+    # worse than either alternative: the fonts then come and go with the
+    # mirror, so the browser renders in a different environment on a slow day
+    # than on a fast one, and nothing fails to say so. Deterministically
+    # absent beats intermittently present.
+    #
+    # What this gives up is insurance against a future runner image dropping a
+    # shared library. That is a loud failure, not a silent one: Playwright
+    # ldd-checks the browser at launch and refuses to start with a "Host system
+    # is missing dependencies" list naming the library. Note the check is
+    # ldd-only — it never looked at fonts, so `--with-deps` was never buying
+    # safety for the 21 MB it was actually fetching. If that day comes, install
+    # the named package here.
+    - name: Install Chromium
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      run: bunx playwright install chromium
