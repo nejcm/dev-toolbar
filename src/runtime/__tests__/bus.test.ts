@@ -71,13 +71,8 @@ describe("createEventBus", () => {
   });
 
   it("hands back a safe no-op unsubscribe when the signal was already aborted", () => {
-    // `bind()` short-circuits an already-aborted signal to a `() => {}` it
-    // returns without ever calling — the previous test never invokes what it
-    // gets back. It could just as well have returned `unsubscribe` itself and
-    // that test would still pass, since the `live` latch already makes a
-    // second run of `unsubscribe` unobservable. This pins the narrower thing
-    // that actually matters: whatever `bind()` hands back here is callable
-    // and does not throw.
+    // The previous test never calls what `on()` hands back; this pins that it's
+    // safely callable even though `bind()` never actually invokes it.
     const bus = createEventBus<Events>();
     const controller = new AbortController();
     controller.abort();
@@ -274,10 +269,8 @@ describe("createEventBus", () => {
     expect(bus.listenerCount()).toBe(1);
   });
 
-  // These pin the semantics a zero-/one-listener fast path in `emit()` must
-  // preserve: no allocation when nobody is listening, and — for exactly one
-  // handler — the same unsubscribe-mid-dispatch and subscribe-mid-dispatch
-  // behavior the general Array.from snapshot gives you for N handlers.
+  // Pins that the zero-/one-listener fast path in `emit()` keeps the same
+  // mid-dispatch subscribe/unsubscribe semantics as the general N-handler path.
   describe("zero- and single-handler emit semantics", () => {
     it("calls nothing and still returns the event when nobody is listening", () => {
       const bus = createEventBus<Events>();
@@ -342,9 +335,8 @@ describe("createEventBus", () => {
     });
 
     it("drops onAny handlers for the current emit when the sole type handler calls clear() mid-dispatch", () => {
-      // Matches the old two-snapshot semantics: the type loop ran to
-      // completion (as a single call here) before `Array.from(anyHandlers)`
-      // was ever taken, so a clear() during that call left nothing to snapshot.
+      // The type handler runs to completion before onAny's snapshot is taken,
+      // so a clear() during that call leaves nothing to snapshot.
       const bus = createEventBus<Events>();
       const any = vi.fn();
       bus.on("tick", () => {
@@ -359,10 +351,6 @@ describe("createEventBus", () => {
   });
 
   // Type-level guards for the one place a caller has to switch on `event.type`.
-  // Before `BusEvent` carried the name as a second parameter, `type` was
-  // `string` and every `payload` in an `onAny` handler was `unknown` — the
-  // index signature `Events extends Record<string, unknown>` forces onto
-  // `ToolbarEventMap` swallowed the declared names whole.
   describe("event types", () => {
     it("keeps the emitted name as a literal on the returned event", () => {
       const bus = createEventBus<ToolbarEventMap>();
@@ -412,17 +400,9 @@ describe("createEventBus", () => {
   });
 });
 
-/**
- * Original bug: `clear()` emptied `handlers` and `anyHandlers` but left every
- * signal-bound subscription's `abort` listener attached, with its unsubscribe
- * un-run and its `live` latch untripped.
- *
- * The typed path survived by luck — `clear()` drops the whole `Map` entry, so a
- * later `on` builds a fresh `Set` that the stale closure's
- * `handlers.get(type) === set` guard no longer matches. `anyHandlers` has no
- * such luck: it is one `Set` for the life of the bus, so aborting a pre-`clear`
- * signal deleted an `onAny` handler registered *after* the clear.
- */
+// `clear()` used to leave signal-bound subscriptions' abort listeners attached.
+// `anyHandlers` is one `Set` for the bus's whole life, so a pre-clear signal
+// aborting later deleted an `onAny` handler registered *after* the clear.
 describe("clear() and signal-bound subscriptions", () => {
   it("keeps a post-clear onAny subscription alive when a pre-clear signal aborts", () => {
     const bus = createEventBus<{ ping: number }>();
@@ -435,8 +415,7 @@ describe("clear() and signal-bound subscriptions", () => {
     bus.onAny(handler, { signal: controller.signal });
     bus.clear();
 
-    // A fresh registration of the very same function, which is what makes the
-    // stale `anyHandlers.delete(handler)` indistinguishable from a real one.
+    // Same function re-registered, so a stale delete is indistinguishable from a real one.
     bus.onAny(handler);
     expect(bus.listenerCount()).toBe(1);
 
@@ -490,7 +469,6 @@ describe("clear() and signal-bound subscriptions", () => {
     off();
     expect(bus.listenerCount()).toBe(0);
 
-    // Nothing left for clear() to tear down, and the abort must still be inert.
     expect(() => bus.clear()).not.toThrow();
     expect(() => controller.abort()).not.toThrow();
 

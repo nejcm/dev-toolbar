@@ -3,21 +3,12 @@
  *
  * Built by `flags()`, not by `start(api)` — slot functions run during the
  * toolbar's first render, before any effect fires, so the store the chip reads
- * must exist by the time the factory returns. Same rule as `/ext/metrics` and
- * `/ext/environment`.
+ * must exist by the time the factory returns.
  *
- * Two things set this extension apart from those two:
- *
- * **It mutates the application.** An override changes what the app does,
- * outlives the tab, and is applied by *consumer* code this extension calls.
- * So every call into consumer code is wrapped with the failure shown (not
- * swallowed), and there's a kill switch (`?dtb-flags=reset`) that works
- * before React mounts — the override that wedges the app is exactly the one
- * you can't reach the panel to remove.
- *
- * **Flag keys and values can carry secrets.** `redact()` runs once on the way
- * in; the panel and the clipboard read the same redacted view. No path from a
- * raw flag value skips it.
+ * This extension mutates the application (an override outlives the tab and is
+ * applied by consumer code, so failures are shown, not swallowed, and
+ * `?dtb-flags=reset` works before React mounts) and flag values can carry
+ * secrets (`redact()` runs once on the way in; nothing reads a raw value).
  */
 import { createDerivedStore, describeError, redact } from "../../runtime";
 import {
@@ -67,10 +58,9 @@ export interface FlagsRuntimeOptions {
    *
    * Pass a function for values that change; it's re-read every `pollMs` and on
    * demand. Pass a `Readable` or a `{ getState, subscribe }` store and it is
-   * re-read when that notifies instead, with no timer. If you fold the
-   * toolbar's overrides back into the same store you read this from, nothing
-   * breaks: the override badge comes from this extension's own map, not from
-   * comparing values.
+   * re-read when that notifies instead, with no timer. The override badge
+   * comes from this extension's own map, not from comparing values, so
+   * nothing breaks if you fold overrides back into this same store.
    */
   flags?: FlagsInput;
   /**
@@ -78,8 +68,7 @@ export interface FlagsRuntimeOptions {
    * flag no longer has a local override — fall back to your own resolution.
    *
    * Omit it *and* `onOverridesChange` and the panel is **read-only**: lists,
-   * searches and copies, no editors. The honest degradation for a consumer
-   * with nowhere to put one.
+   * searches and copies, no editors.
    */
   onOverride?(key: string, value: FlagValue | undefined): void;
   /**
@@ -87,8 +76,7 @@ export interface FlagsRuntimeOptions {
    * a `?dtb-flags=reset` load (an empty map), every edit and the `flags.set`
    * command. Called **after** the per-key `onOverride` calls of the same
    * synchronous change; a throw here is recorded as one map-wide `bulkError`.
-   * Either adapter alone makes the panel writable: a consumer that mirrors the
-   * whole map implements this and drops `onOverride`.
+   * Either adapter alone makes the panel writable.
    *
    * A fresh copy every time — mutating it changes nothing.
    */
@@ -119,11 +107,9 @@ export interface FlagsRuntime {
   /**
    * `null` until `start(api)` runs.
    *
-   * @deprecated Nothing in the package reads it any more: every persisted
-   * preference goes through `readPreference`/`writePreference` from
-   * `@nejcm/dev-toolbar/kit`, which guard the adapter for you. Use those with
-   * `api.storage` instead. Removal is a published-API change and waits for the
-   * next major.
+   * @deprecated Nothing in the package reads it any more; use
+   * `readPreference`/`writePreference` from `@nejcm/dev-toolbar/kit` with
+   * `api.storage` instead. Removal waits for the next major.
    */
   storage(): ToolbarStorage | null;
   start(api: ExtensionRuntimeApi): () => void;
@@ -260,10 +246,8 @@ function cloneOverrides(source: Record<string, FlagValue>): Record<string, FlagV
 /**
  * True when the URL asks for every override to be dropped.
  *
- * Exists because overrides persist and mutate the app: one that breaks the
- * page badly enough also breaks the toolbar you'd use to remove it, and
- * "clear your localStorage" isn't an escape hatch you can talk someone
- * through over chat.
+ * Exists because an override that breaks the page badly enough also breaks
+ * the toolbar you'd use to remove it.
  */
 export function resetRequested(param: string | null): boolean {
   if (param === null) return false;
@@ -278,14 +262,7 @@ export function resetRequested(param: string | null): boolean {
   }
 }
 
-/**
- * The row's markers, in the panel's own vocabulary — the same strings the
- * `data-dtb-tag` attributes carry in `ui.tsx`, so a reader of `diagnostics()`
- * and a reader of the rendered row describe a flag the same way.
- *
- * Deliberately a plain derived list rather than a second source of truth:
- * every entry is read straight off the `FlagView` the panel renders.
- */
+/** The row's markers, matching the `data-dtb-tag` values `ui.tsx` renders. */
 function tagsFor(view: FlagView, reloadPending: ReadonlySet<string>): string[] {
   const tags: string[] = [];
   if (view.overridden) tags.push("override");
@@ -353,10 +330,9 @@ export function createFlagsRuntime(options: FlagsRuntimeOptions = {}): FlagsRunt
   /**
    * Renders one flag value as the single line every surface shows.
    *
-   * The value is handed to `redact()` **under its own key** because `redact()`
-   * matches key names (e.g. `checkout.apiToken` must mask). Comparing the
-   * before/after render is what sets `masked`, so a formatting difference
-   * alone can never trip the badge.
+   * The value is handed to `redact()` under its own key, since `redact()`
+   * matches key names. `masked` is set by comparing the before/after render,
+   * so a formatting difference alone can never trip the badge.
    */
   const render = (
     key: string,
@@ -366,8 +342,7 @@ export function createFlagsRuntime(options: FlagsRuntimeOptions = {}): FlagsRunt
     if (value === undefined) return { text: "—", masked: false };
     if (sensitive) return { text: "[redacted]", masked: true };
     if (typeof value !== "string") {
-      // Booleans and numbers can't carry a credential; masking by key name
-      // would just make a flag called `session.newLogin` unreadable.
+      // Booleans and numbers can't carry a credential.
       return { text: formatValue(value), masked: false };
     }
     const before = formatValue(value);
@@ -450,12 +425,10 @@ export function createFlagsRuntime(options: FlagsRuntimeOptions = {}): FlagsRunt
           ? {}
           : {
               variants: reading.variants,
-              // The variants are what the `<select>` actually renders, so they
-              // need their own trip through `render()` — `masked` is derived
-              // from `effective`/`base`/`defaultValue` alone, and a masked
-              // current value next to a dropdown of raw credentials is no
-              // masking at all. Masked labels are numbered because N rows all
-              // reading `[redacted]` are indistinguishable to pick between.
+              // Variants get their own trip through render(): `masked` above
+              // covers only effective/base/defaultValue, so a raw credential
+              // would otherwise leak into the dropdown. Masked ones are
+              // numbered so N `[redacted]` rows stay distinguishable.
               variantTexts: reading.variants.map((variant, index) => {
                 const rendered = render(key, variant, reading.sensitive);
                 return rendered.masked ? `variant ${index + 1} (masked)` : rendered.text;
@@ -493,9 +466,8 @@ export function createFlagsRuntime(options: FlagsRuntimeOptions = {}): FlagsRunt
       });
     }
 
-    // Overrides whose flag the catalogue no longer lists (usually a renamed
-    // flag). Still applied to the app on every mount, so they're kept in the
-    // snapshot rather than becoming invisible and unclearable.
+    // Overrides whose flag the catalogue no longer lists (a renamed flag,
+    // usually). Still applied on every mount, so kept visible and clearable.
     for (const key of Object.keys(overrides)) {
       if (seen.has(key)) continue;
       const value = overrides[key] as FlagValue;
@@ -526,8 +498,7 @@ export function createFlagsRuntime(options: FlagsRuntimeOptions = {}): FlagsRunt
       });
     }
 
-    // Recently used first, then overridden, then alphabetical. The panel
-    // doesn't re-sort; this is the order every surface reads.
+    // Recently used first, then overridden, then alphabetical.
     const sorted = [...views].sort((a, b) => {
       if (a.recentlyUsed !== b.recentlyUsed) return a.recentlyUsed ? -1 : 1;
       if (a.overridden !== b.overridden) return a.overridden ? -1 : 1;
@@ -535,16 +506,14 @@ export function createFlagsRuntime(options: FlagsRuntimeOptions = {}): FlagsRunt
     });
 
     // Bar order follows the consumer's declared promotion order, not the
-    // panel's — a promoted flag's bar position shouldn't move on override.
+    // panel's, so a promoted flag's bar position doesn't move on override.
     //
     // Matched on `promotedIndex`, not on `flagKey`: two entries may name the
-    // same key with different windows or audiences, and only *one* of them is
-    // in force. Keyed by name, every entry naming that key pushed the same
-    // view again — two identical buttons, React's "two children with the same
-    // key" error, and a switch whose duplicate the consumer cannot click away.
+    // same key and only *one* is in force. Keyed by name, every entry naming
+    // that key pushed the same view again — duplicate buttons, React's
+    // same-key error, and a switch whose duplicate cannot be clicked away.
     // `promotionFor` returns the first eligible entry, so each promoted view
-    // owns exactly one index and those indices ascend with `promotions`: order
-    // is unchanged for every configuration that was not already duplicating.
+    // owns exactly one index and those indices ascend with `promotions`.
     const promotedViews: FlagView[] = [];
     for (let index = 0; index < promotions.length; index += 1) {
       const view = sorted.find((candidate) => candidate.promotedIndex === index);
@@ -567,12 +536,10 @@ export function createFlagsRuntime(options: FlagsRuntimeOptions = {}): FlagsRunt
     };
   };
 
-  /**
-   * Nothing here may propagate. The first `build()` runs inside `flags()`, at
-   * factory time before core mounts anything, so a throw wouldn't degrade to
-   * an error chip — it would take down the host app's render. Later calls run
-   * inside a `setInterval`, where nothing could catch them at all.
-   */
+  // Nothing here may propagate: the first build() runs at factory time,
+  // before core mounts anything, so a throw would take down the host app's
+  // render rather than degrade to an error chip. Later calls run inside a
+  // setInterval, where nothing could catch them at all.
   const build = (revision: number): FlagsSnapshot => {
     try {
       return buildSnapshot(revision);
@@ -629,20 +596,16 @@ export function createFlagsRuntime(options: FlagsRuntimeOptions = {}): FlagsRunt
     writePreference(storage, OVERRIDES_PREFERENCE, JSON.stringify(overrides));
   };
 
-  /**
-   * Calls the consumer's adapter. Wrapped because it's consumer code running
-   * inside our click handler, but the failure is *recorded*, not swallowed —
-   * a panel that shows "overridden" while the app never heard about it is a lie.
-   */
+  // Calls the consumer's adapter. A failure is recorded, not swallowed — a
+  // panel that shows "overridden" while the app never heard about it is a lie.
   const apply = (key: string, value: FlagValue | undefined): void => {
     if (!writable) return;
     try {
       onOverride?.(key, value);
-      // Only this key's own failure clears, and only on its own success.
       adapterErrors.delete(key);
     } catch (error) {
-      // Rendered as a row `title`, so the thrown text is masked — under the
-      // consumer's own `redactOptions` — before this sentence is built.
+      // Rendered as a row `title`, so the message is masked under the
+      // consumer's own redactOptions before this sentence is built.
       adapterErrors.set(
         key,
         `${describeError(error, redactOptions).message} — your application may not have picked this override up.`,
@@ -746,9 +709,7 @@ export function createFlagsRuntime(options: FlagsRuntimeOptions = {}): FlagsRunt
         (candidate) => typeof candidate?.key === "string" && candidate.key === key,
       );
       // An unknown key is a typo far more often than a deliberate orphan, and
-      // an orphan created by a command is invisible until someone opens the
-      // panel. The panel's own editors can only reach catalogued rows, so this
-      // refuses what the UI could not have done either.
+      // an orphan created by a command is invisible until the panel is opened.
       if (reading === undefined && !Object.prototype.hasOwnProperty.call(overrides, key)) {
         throw new Error(
           `No flag named "${key}". The catalogue lists: ` +
@@ -758,8 +719,8 @@ export function createFlagsRuntime(options: FlagsRuntimeOptions = {}): FlagsRunt
               .join(", ")}.`,
         );
       }
-      // The same rule `vetOverrides` applies to a persisted override, so a
-      // command cannot write a value a reload would then discard.
+      // Same rule `vetOverrides` applies to a persisted override: a command
+      // cannot write a value a reload would then discard.
       if (reading !== undefined) {
         const type = inferType(reading);
         if (!valueMatchesFlagType(value, type, reading.variants)) {
@@ -768,10 +729,8 @@ export function createFlagsRuntime(options: FlagsRuntimeOptions = {}): FlagsRunt
               `${
                 reading.variants === undefined
                   ? ""
-                  : // Rendered, not raw. This message is thrown to the caller, and the
-                    // agent bridge redacts it as one whole string — a credential
-                    // spliced into the middle of a sentence matches none of the
-                    // anchored value shapes, so it has to be masked before it lands here.
+                  : // Rendered, not raw: a credential mid-sentence would not match
+                    // the agent bridge's anchored redaction shapes.
                     ` (variants: ${JSON.stringify(
                       reading.variants.map(
                         (variant) => render(key, variant, reading.sensitive).text,

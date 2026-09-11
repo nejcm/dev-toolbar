@@ -1,11 +1,11 @@
 /**
  * Revision-owned snapshot publication. [dev-toolbar/runtime]
  *
- * Passing revision into the builder prevents export reads from advancing it.
- * See "advances revision only on publish, not on export reads" in
- * src/ext/environment/__tests__/runtime.test.ts.
- * `getSnapshot()` returns published state; `peek()` returns the latest write;
- * `read()` builds fresh state without writing or advancing revision.
+ * Passing revision into the builder prevents export reads from advancing it
+ * (see "advances revision only on publish, not on export reads" in
+ * src/ext/environment/__tests__/runtime.test.ts). `getSnapshot()` returns
+ * published state; `peek()` returns the latest write; `read()` builds fresh
+ * state without writing or advancing revision.
  */
 import { createThrottledStore } from "./throttledStore";
 import type { CreateThrottledStoreOptions, ThrottledStore } from "./throttledStore";

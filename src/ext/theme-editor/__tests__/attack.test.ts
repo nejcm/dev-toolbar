@@ -1,16 +1,7 @@
 /**
- * The paths this extension's own author attacked, and what each attack found.
- * [dev-toolbar/ext/theme-editor]
- *
- * Three landed on the first pass. They are here rather than folded into
- * `runtime.test.ts` because they share one shape, and the shape is the lesson:
- * **every string this extension prints or writes has a source, and three of them
- * were not on the list.** §15.3's rule is that both halves of a join are foreign
- * until proven otherwise; the corollary this phase adds is that "foreign" is a
- * property of the *source*, so the way to find the gaps is to enumerate sources
- * rather than to re-read the joins.
- *
- * Each `it` below fails against the code as first written.
+ * Attacks this extension's own author ran against it. Kept separate from
+ * `runtime.test.ts` since they share one shape: every string this extension
+ * prints or writes has a source, and these three sources were missed.
  */
 import { afterEach, describe, expect, it } from "vitest";
 import { fakeExtensionApi } from "@nejcm/dev-toolbar/testing";
@@ -44,10 +35,8 @@ describe("attack 1 — the surface selector is printed, so it is foreign", () =>
     runtime.setOverride("--x", "#000");
 
     const css = runtime.cssText();
-    // The selector never resolves — `querySelector` throws on it and the runtime
-    // fails closed — so nothing was ever applied. The export was the leak: it
-    // printed a *working* rule the consumer never wrote, into a file somebody
-    // pastes into their stylesheet.
+    // The selector never resolves and nothing was ever applied — the export
+    // was the leak, printing a working rule the consumer never wrote.
     expect(css).not.toContain("evil.test");
     expect(css).not.toContain("background");
     expect(css).toContain(":root {");
@@ -56,12 +45,8 @@ describe("attack 1 — the surface selector is printed, so it is foreign", () =>
   });
 
   it("prints combinators and attribute selectors, which are ordinary", () => {
-    // The first cut of the guard denied `>`, `+`, `~` and every `@`, under a
-    // comment claiming a real selector never contains them. `#app > main` is an
-    // ordinary surface selector, and denying it exported the block scoped to
-    // `:root` with a note saying it could not be printed — a wrong scope in a
-    // stylesheet, which is a worse failure than the one the refusal exists to
-    // prevent.
+    // `#app > main` is an ordinary surface selector; denying it would export
+    // the block scoped to `:root` instead — a wrong scope, worse than a refusal.
     for (const selector of [
       "#app > main",
       ".a + .b",
@@ -110,13 +95,8 @@ describe("attack 2 — storage is a door, and it was the one under-treated", () 
   const HOSTILE = 'red; background: url("https://evil.test/y")';
 
   it("re-checks a persisted value instead of trusting its own past self", () => {
-    // `localStorage` is writable by every script on the origin and by anybody
-    // who has been talked into pasting something into a console, so a persisted
-    // edit is no more trustworthy than a pasted recipe. Untreated, this value
-    // reached two places: `style.setProperty`, where the CSSOM accepts a
-    // custom-property value of nearly any shape and wrote
-    // `--x: red; background: url(…)` into the inline style attribute verbatim,
-    // and `cssText`, which printed the same thing into an export.
+    // `localStorage` is writable by any script on the origin, so a persisted
+    // edit is no more trustworthy than a pasted recipe.
     const storage = createMemoryStorage();
     storage.setItem(OVERRIDES_KEY, JSON.stringify({ "--x": HOSTILE }));
 
@@ -129,23 +109,15 @@ describe("attack 2 — storage is a door, and it was the one under-treated", () 
     expect(root().getAttribute("style")).toBeNull();
     expect(runtime.cssText()).not.toContain("evil.test");
     expect(runtime.store.peek().notice).toContain("dropped as unusable");
-    // And the cleaned map is written back, so it is not re-read and re-refused
-    // on every load.
+    // The cleaned map is written back, so it isn't re-read and re-refused.
     expect(storage.getItem(OVERRIDES_KEY)).toBeNull();
   });
 
   it("never writes a reserved name that arrived through storage", () => {
-    // The other half of the bleed guard, and the half that was unpinned.
-    // `vetStored()` deliberately does not filter *names* — an orphan is the
-    // developer's own work — so a `--dtb-*` entry planted in `localStorage`
-    // travels all the way to `applyAll()`, and `checkTokenName` inside
-    // `writeOne()` is the only line that stops it. Review deleted that line and
-    // all 85 tests passed: §16.2's "the test that pins this" covered the
-    // `setOverride` door and nothing else.
-    //
-    // The lesson generalises past this file: a guard reached by two code paths
-    // needs a test per path, because the *rule* being right is not evidence
-    // that both callers consult it.
+    // `vetStored()` deliberately does not filter names, so a `--dtb-*` entry
+    // planted in `localStorage` reaches `applyAll()`; `checkTokenName` inside
+    // `writeOne()` is the only line that stops it. A guard reached by two
+    // code paths needs a test per path.
     const storage = createMemoryStorage();
     storage.setItem(
       OVERRIDES_KEY,
@@ -172,16 +144,8 @@ describe("attack 2 — storage is a door, and it was the one under-treated", () 
   });
 
   it("lets no door put a reserved name into the override map", () => {
-    // The invariant, across every door at once, rather than one door at a time.
-    //
-    // This replaces the mutation the reviewer asked for and it is worth saying
-    // why. Deleting `writeOne`'s name check used to break the storage-door test;
-    // after `vetStored` started dropping reserved names — the residue fix, also
-    // requested — the stop moved earlier, so that mutation no longer fails and
-    // `writeOne`'s copy became an unreachable funnel invariant. Testing the
-    // *property* instead of one implementation of it is the honest replacement:
-    // it fails if any door's filter is removed, and it keeps meaning something
-    // if the filters move again.
+    // Tests the invariant across every door at once, rather than one
+    // implementation of it — it still fails if any door's filter moves or is removed.
     const storage = createMemoryStorage();
     storage.setItem(
       OVERRIDES_KEY,
@@ -198,11 +162,9 @@ describe("attack 2 — storage is a door, and it was the one under-treated", () 
 
     // Door 1: the panel's editor.
     expect(runtime.setOverride("--dtb-accent", "#ff0000")).toBe("syntax");
-    // Door 2: a pasted recipe. It names both a reserved token the catalogue
-    // does *not* declare and the reserved one it does — the second is the case
-    // that matters, because "dropped for being undeclared" and "dropped for
-    // being reserved" are two different filters and only one of them is under
-    // test if the recipe names only an unknown token.
+    // Door 2: a pasted recipe naming both an undeclared reserved token and a
+    // declared one — "undeclared" and "reserved" are different filters, so
+    // both need covering.
     runtime.importRecipe(
       JSON.stringify({
         schemaVersion: 1,
@@ -227,9 +189,8 @@ describe("attack 2 — storage is a door, and it was the one under-treated", () 
   });
 
   it("still applies a legitimate stored edit whose token has been renamed", () => {
-    // The name is *not* filtered against the catalogue, unlike an import: an
-    // orphan is the developer's own work and gets a row so it can be cleared
-    // (§12.4). It is the value that is foreign, not the name.
+    // Unlike an import, the name is not filtered against the catalogue — an
+    // orphan is the developer's own work and gets a row so it can be cleared.
     const storage = createMemoryStorage();
     storage.setItem(OVERRIDES_KEY, JSON.stringify({ "--renamed": "#00ff00", "--x": HOSTILE }));
     const runtime = createThemeEditorRuntime({
@@ -263,24 +224,18 @@ describe("attack 3 — a description is exported, so it is foreign too", () => {
     const view = runtime.store.peek().tokens[0];
     expect(view?.description).not.toContain("super-secret");
     expect(view?.metadataMasked).toBe(true);
-    // Separate from `masked`, which is about the value and drives the editor.
-    // A row whose description was scrubbed has a perfectly usable value, and
-    // tagging it "masked" would send the input into its refuse-to-seed mode for
-    // nothing.
+    // Separate from `masked`: a scrubbed description still leaves a usable
+    // value, and tagging it "masked" would refuse to seed the editor for nothing.
     expect(view?.masked).toBe(false);
 
     const figma = runtime.figmaText();
     expect(figma).not.toContain("super-secret");
-    // The count is computed from what this document actually carries, not
-    // borrowed from a neighbouring number (§15.3).
     expect(figma).toContain("1 value was masked");
   });
 
   it("redacts a group name too, and counts it", () => {
-    // §16.8's checklist, applied to the one source it had not been: the group
-    // is consumer-supplied configuration and it reaches the Figma export as a
-    // JSON key. Injection is not the hazard there — prose carrying a credential
-    // is, exactly as for the description.
+    // The group is consumer-supplied configuration reaching the Figma export
+    // as a JSON key — prose carrying a credential is the hazard, not injection.
     const runtime = createThemeEditorRuntime({
       tokens: [
         {
@@ -303,11 +258,8 @@ describe("attack 3 — a description is exported, so it is foreign too", () => {
   });
 
   it("does not claim more than an anchored matcher can do", () => {
-    // The deliberate-leak assertion, in the spirit of §15.3's. A credential the
-    // consumer buried mid-sentence survives, because `redact()` matches value
-    // *shapes* anchored to the whole string. Calling the redactor and missing is
-    // a different failure from not calling it, and a suite that only showed the
-    // successes would imply a guarantee this package does not make.
+    // Deliberate-leak assertion: a credential buried mid-sentence survives
+    // because `redact()` matches value shapes anchored to the whole string.
     const runtime = createThemeEditorRuntime({
       tokens: [
         {
@@ -341,11 +293,9 @@ describe("attack 4 — the reversal, against elements it does not own alone", ()
   };
 
   it("stays exact over repeated acquire/release cycles", () => {
-    // Three cycles rather than one, because the residue this guards against is
-    // *cumulative*: a cycle that left `style=""` behind would make the next
-    // acquisition read `hasAttribute("style")` as true and keep it forever, so
-    // "byte-for-byte" would be quietly false from the second cycle on. One
-    // cycle cannot show that.
+    // Three cycles, not one: residue left by one cycle (a stray `style=""`)
+    // would make the next acquisition read `hasAttribute("style")` as true
+    // and keep it forever — invisible after a single cycle.
     const element = document.createElement("div");
     element.id = "hold-target";
     document.body.appendChild(element);
@@ -379,10 +329,8 @@ describe("attack 4 — the reversal, against elements it does not own alone", ()
   });
 
   it("keeps an *empty* attribute it did not create", () => {
-    // The case `style.length` cannot see, and the only thing the
-    // `hadStyleAttribute` reading decides. `style=""` is inert, but `[style]` is
-    // a legal selector and the attribute is not ours: an extension whose
-    // headline claim is exact reversal does not remove what it did not add.
+    // `style=""` is inert, but `[style]` is a legal selector and the attribute
+    // isn't ours to remove.
     const element = document.createElement("div");
     element.id = "hold-target";
     element.setAttribute("style", "");

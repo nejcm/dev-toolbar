@@ -28,16 +28,15 @@ import type { A11yRuntime } from "./runtime";
  * The rendered surfaces. [dev-toolbar/ext/a11y]
  *
  * Everything here reads `snapshot.report` — the same object `diagnostics()`
- * returns and the commands hand back, so the panel cannot show a fact an agent
- * cannot read, and neither can show an unmasked one.
+ * and the commands return, so the panel and an agent see identical, equally
+ * masked facts.
  *
  * `presentation` arrives already resolved and is read through `/kit`'s
- * `resolveCompactControl` and `renderCompact`, so the `hasIcon` guard, the
- * `"default"` fallback, the `CompactRenderContext` and the `undefined`
- * fall-through live in one place for all nine extensions rather than nine.
- * What stays here is the DOM: a consumer's `render` supplies the children of
- * the chip carrying `data-dtb-status`, and `Chip` paints the dot before them,
- * so no callback can cost the control its state attributes or its dot.
+ * `resolveCompactControl` and `renderCompact`, so the resolution rules live in
+ * one place for all nine extensions. What stays here is the DOM: a consumer's
+ * `render` supplies the children of the chip carrying `data-dtb-status`, and
+ * `Chip` paints the dot before them, so no callback can cost the control its
+ * state attributes or its dot.
  */
 
 const box = (rect: RectLike): CSSProperties => ({

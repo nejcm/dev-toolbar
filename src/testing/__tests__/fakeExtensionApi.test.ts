@@ -1,14 +1,10 @@
 /**
- * `fakeExtensionApi()` is a published export, so its defaults are a promise:
- * a suite that overrides nothing must still get an `api` core would recognise,
- * and the three handles (`setVisible`, `abort`, `controller`) must drive the
- * two things an extension's `start()` actually subscribes to.
- *
- * The first test is the load-bearing one. The helper exists so that widening
- * `ExtensionRuntimeApi` costs one edit instead of ten (contract v2's required
- * `invokeCommand`, `docs/adr/ADR-003-contract-version-policy.md`), and that
- * only holds while the object it returns is *complete*. A missing member is a
- * type error at every call site, which is exactly the cost being avoided.
+ * `fakeExtensionApi()` is a published export: a suite that overrides nothing
+ * must still get an `api` core would recognise, and its handles
+ * (`setVisible`, `abort`, `controller`) must drive what `start()` subscribes
+ * to. The first test is load-bearing — the returned object must stay
+ * *complete*, or a widened `ExtensionRuntimeApi` becomes a type error at
+ * every call site instead of one edit here.
  */
 import { describe, expect, it, vi } from "vitest";
 import { fakeExtensionApi } from "../fakeExtensionApi";

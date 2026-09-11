@@ -1,10 +1,9 @@
 /**
- * `DEFAULT_INSTANCE_ID` and `instanceHeightVariable` mirror the internal ones
- * in `src/core/DevToolbar` and `src/core/useHeightVariables`, which
- * `src/testing` may not value-import (it would
- * inline core's whole React context into `dist/testing.cjs`, since tsup's CJS
- * output has no code splitting). Both are stateless, so duplicating them is
- * safe; `__tests__/heightVariable.test.ts` asserts they stay in agreement.
+ * Mirrors `DEFAULT_INSTANCE_ID` (`src/core/DevToolbar`) and
+ * `instanceHeightVariable` (`src/core/useHeightVariables`), which
+ * `src/testing` may not value-import (see AGENTS.md on `../core/*`). Both are
+ * stateless, so duplicating them is safe; `__tests__/heightVariable.test.ts`
+ * asserts they stay in agreement.
  */
 import { HEIGHT_VARIABLE } from "@nejcm/dev-toolbar";
 

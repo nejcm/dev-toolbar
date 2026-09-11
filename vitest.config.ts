@@ -44,26 +44,17 @@ export default defineConfig({
       // nothing reads it in CI and it's thousands of files to upload.
       reporter: ["text", "json-summary", "lcov"],
       reportsDirectory: "./coverage",
-      // Vitest 4 always counts every file matching `include`, whether or not a
-      // test imports it, and dropped the old `all` flag — don't reintroduce
-      // `all: true`, it's now a type error, not a no-op.
+      // Vitest 4 counts every file matching `include` whether or not a test
+      // imports it, and dropped the old `all` flag — don't reintroduce `all: true`.
       include: ["src/**/*.{ts,tsx}"],
       // index.tsx/types.ts/barrels look like "just re-exports" but carry real
-      // logic and are genuinely tested — don't exclude them without measuring
-      // coverage both ways first (it previously put ~1,700 lines out of reach).
+      // logic and are genuinely tested — don't exclude without measuring
+      // coverage both ways first.
       exclude: ["src/**/*.test.{ts,tsx}", "src/test-utils/**"],
-      // Floors, not targets. Measured: statements 95.64, branches 89.80,
-      // functions 97.01, lines 97.32 — up from 93.84 / 86.40 / 95.08 / 96.09,
-      // again for the same reason: the bar-presentation work moved another
-      // layer of per-extension branching into `src/kit` (100% statements,
-      // 99.48% branches), where one densely tested truth table stands in for
-      // nine hand-written ones. The floors are deliberately *not* raised to
-      // match. They were last set with two to three points of room and now
-      // carry three to six, which is slack rather than a ratchet — but the
-      // headroom is what lets ordinary work land without a coverage argument,
-      // and the numbers above are the thing to read when judging a drop.
-      // `functions` is still tightest in practice — if it fires on ordinary
-      // work, add tests rather than lowering the number.
+      // Floors, not targets. Measured: statements 95.67, branches 89.84,
+      // functions 97.02, lines 97.34 — the headroom is what lets ordinary work
+      // land without a coverage argument. `functions` is tightest in practice —
+      // if it fires on ordinary work, add tests rather than lowering the number.
       thresholds: {
         statements: 91,
         branches: 84,

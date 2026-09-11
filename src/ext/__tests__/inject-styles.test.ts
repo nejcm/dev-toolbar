@@ -1,27 +1,24 @@
 /**
  * Every stylesheet-bearing extension wires `useExtensionSurface` to its own
  * `ensureXStyles`. The third argument is typed `() => unknown`, so a swapped
- * injector typechecks. This file generalises the existing own-sheet checks and
- * adds the foreign-sheet half that catches a wrong ensureXStyles argument.
+ * injector typechecks — this file checks each extension's own sheet plus the
+ * foreign-sheet half that catches a wrong `ensureXStyles` argument.
  *
- * Mounting the toolbar renders only the `compact` slot and the overlay slots —
- * `PanelHost` never mounts a panel that has not been opened. Each case therefore
+ * Mounting the toolbar renders only the `compact` and overlay slots —
+ * `PanelHost` never mounts a panel that hasn't been opened — so each case
  * names its `panel` id and the test opens it before asserting.
  *
- * What `mountEverySurface` checks is a floor, not a proof: it catches the host
- * slot failing to render, and an extension whose surface threw. It cannot
- * prove the extension's own component ran. Core renders the
- * `data-dtb-part="item"` wrapper for every extension and substitutes a default
- * trigger when `compact` is absent (`src/core/Bar.tsx`), and the
- * `data-dtb-part="panel"` wrapper sits outside `ExtensionBoundary`
- * (`src/core/PanelHost.tsx`) — so a slot deleted from an extension's factory
- * still leaves both wrappers in the DOM and this file drops to half coverage
- * without failing. The error-chip assertion closes the crash half of that;
- * the deleted-slot half has no cheap generic check and is not covered here.
+ * `mountEverySurface` is a floor, not a proof: it catches the host slot
+ * failing to render and an extension whose surface threw, but cannot prove
+ * the extension's own component ran. Core renders the `item` wrapper for
+ * every extension and the `panel` wrapper sits outside `ExtensionBoundary`
+ * (`src/core/Bar.tsx`, `src/core/PanelHost.tsx`), so a slot deleted from an
+ * extension's factory still leaves both wrappers in the DOM — the error-chip
+ * assertion catches the crash half of that; the deleted-slot half has no
+ * cheap generic check and isn't covered here.
  *
- * command-menu is the one extension with no panel: it lives in the overlay
- * slot on purpose (see `src/ext/command-menu/index.tsx`), and both of its call
- * sites — trigger and overlay — mount from the bare mount.
+ * command-menu is the one extension with no panel — it lives in the overlay
+ * slot on purpose (`src/ext/command-menu/index.tsx`).
  */
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { cleanupToolbar, mountToolbar } from "@nejcm/dev-toolbar/testing";
@@ -83,8 +80,8 @@ const EXTENSION_CASE_DEFINITIONS: Record<string, ExtensionCaseDefinition> = {
     overlays: [],
     usesKitStyles: true,
     mount(injectStyles) {
-      // A stub loader: this suite is about stylesheets, and the real peer's
-      // import would be a 550 KB parse in every one of these mounts.
+      // A stub loader: the real peer's import would be a 550 KB parse in
+      // every one of these mounts, and this suite is about stylesheets.
       return mountExtension(
         a11y({ injectStyles, load: () => Promise.reject(new Error("no axe")) }),
       );
@@ -203,11 +200,9 @@ afterEach(() => {
 
 /**
  * Mounts, then opens the panel so every `useExtensionSurface` call site the
- * extension owns is given the chance to run.
- *
- * The presence assertions prove the *host slot* rendered and that nothing
- * degraded to an error chip — not that the extension's own component ran; see
- * the file header for what this does and does not catch.
+ * extension owns gets a chance to run. Proves the host slot rendered and
+ * nothing degraded to an error chip — see the file header for what this does
+ * and does not catch.
  */
 function mountEverySurface(target: ExtensionCase, injectStyles: boolean): void {
   const toolbar = target.mount(injectStyles);
@@ -215,9 +210,8 @@ function mountEverySurface(target: ExtensionCase, injectStyles: boolean): void {
   expect(toolbar.item(target.name), `${target.name} must render a bar item`).not.toBeNull();
 
   // A surface that throws is caught by `ExtensionBoundary` and replaced with an
-  // error chip, leaving the item/panel wrapper in place — so without this the
-  // remaining surface injects the own sheet and the swap check passes on half
-  // the call sites.
+  // error chip, leaving the item/panel wrapper in place — without this check
+  // the swap check would pass on only half the call sites.
   expect(
     toolbar.errorChip(target.name),
     `${target.name} must not degrade to an error chip — a thrown surface never reaches its ensureXStyles`,
@@ -240,10 +234,9 @@ function mountEverySurface(target: ExtensionCase, injectStyles: boolean): void {
 }
 
 /**
- * Both halves in one assertion. Asserting the own-sheet count first would
- * short-circuit a pure swap — `expect` throws before the foreign-sheet loop
- * runs — and the failure would say "expected 1, got 0" without naming the
- * foreign sheet that actually landed.
+ * Both halves in one assertion: asserting the own-sheet count first would
+ * short-circuit a pure swap and fail with "expected 1, got 0" without naming
+ * the foreign sheet that actually landed.
  */
 function expectOnlyOwnSheet(target: ExtensionCase): void {
   const own = document.head.querySelectorAll(`style[${STYLE_ATTRIBUTE}="${target.entry}"]`).length;

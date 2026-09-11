@@ -4,16 +4,10 @@
  * Event Timing may be unavailable. Check `supportedEntryTypes` first and catch
  * `observe()`, which has historically thrown for unknown options in Safari.
  *
- * Entries sharing a non-zero `interactionId` form one interaction with the
- * longest entry's duration.
- * Per the Event Timing specification's *computing interactionId* algorithm, non-zero ids go to
- * `keydown`/`keyup`, `pointerdown`/`pointerup`, `click`, `contextmenu`, and IME-composition
- * `input`; `keydown`/`pointerdown` inherit the completing `keyup`/`pointerup` id. All other
- * events get 0, including `mousedown`/`mouseup`, `mouseover`/`pointerover`/`pointermove`,
- * `keypress`, `compositionstart`/`update`/`end`, non-composition `input`, and `pointercancel`,
- * which leaves `pointerdown` at 0.
- * Entries with id 0 are skipped unless `includeNonInteractions` is enabled. Engines without
- * `interactionId` use one record per entry and say so in the hint.
+ * Entries sharing a non-zero `interactionId` fold into one interaction, whose
+ * duration is its longest entry's (see `includeNonInteractions` below for how
+ * ids are assigned). Engines without `interactionId` use one record per entry
+ * and say so in the hint.
  *
  * The chip shows the *worst* interaction in the rolling window; the panel also
  * shows the latest.
@@ -54,14 +48,14 @@ export interface DelayCollectorOptions {
   /**
    * Keep entries with `interactionId` 0. Default `false`.
    *
-   * Per the Event Timing specification's *computing interactionId* algorithm, non-zero ids go to
-   * `keydown`/`keyup`, `pointerdown`/`pointerup`, `click`, `contextmenu`, and IME-composition
-   * `input`; `keydown`/`pointerdown` inherit the completing `keyup`/`pointerup` id. All other
-   * events get 0, including `mousedown`/`mouseup`, `mouseover`/`pointerover`/`pointermove`,
-   * `keypress`, `compositionstart`/`update`/`end`, non-composition `input`, and `pointercancel`,
-   * which leaves `pointerdown` at 0.
-   * These are slow handlers, not interactions; enable this to inspect them. Each becomes its own
-   * record because it cannot be grouped.
+   * Per the Event Timing spec's *computing interactionId* algorithm, non-zero
+   * ids go to `keydown`/`keyup`, `pointerdown`/`pointerup`, `click`,
+   * `contextmenu`, and IME-composition `input`; the down event inherits the
+   * completing up event's id. Everything else — `mousedown`/`mouseup`,
+   * `mouseover`/`pointerover`/`pointermove`, `keypress`, composition events,
+   * non-composition `input`, `pointercancel` — gets 0. These are slow
+   * handlers, not interactions; enable this to inspect them, one record each
+   * since they cannot be grouped.
    */
   includeNonInteractions?: boolean;
   /** Milliseconds. Default `{ warn: 200, bad: 500 }`, aligned with INP guidance. */

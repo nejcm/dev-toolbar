@@ -53,15 +53,11 @@ let written: readonly string[] = [];
 let clipboard: ClipboardStub;
 
 /**
- * Edits land on a dedicated `#app` element rather than on `:root`, for a reason
- * worth stating: **core writes `--dev-toolbar-height` as an inline style on
- * `document.documentElement`**, so `<html>` carries a `style` attribute for as
- * long as a toolbar is mounted and keeps an empty one afterwards. A
- * byte-equality reversal assertion against `:root` would therefore be measuring
- * core's own residue rather than this extension's, and would fail — or, worse,
- * pass for the wrong reason once somebody "fixed" it by loosening the
- * assertion. The bleed test below is the one case that deliberately uses
- * `:root`, because that is the element the toolbar inherits from.
+ * Edits land on a dedicated `#app` element rather than `:root`: core writes
+ * `--dev-toolbar-height` inline on `document.documentElement`, so a
+ * byte-equality reversal assertion against `:root` would measure core's own
+ * residue. The bleed test below is the one case that deliberately uses
+ * `:root`, since that's the element the toolbar inherits from.
  */
 const mount = (options: ThemeEditorOptions = {}, storage?: ToolbarStorage | null) => {
   const extension = themeEditor({
@@ -212,8 +208,8 @@ describe("the panel", () => {
   });
 
   it("never seeds the editor with a masked value", () => {
-    // §12.6: the input is the one place a redacted snapshot would leak back
-    // onto the screen, and out again through the next copy.
+    // The input is the one place a redacted snapshot would leak back onto
+    // the screen, and out again through the next copy.
     const { toolbar } = mount({
       tokens: [{ name: "--api-token", type: "string", value: "sk-live-secret" }],
     });
@@ -258,8 +254,8 @@ describe("the panel", () => {
   });
 
   it("shows the exact payload the copy button writes", () => {
-    // §15.4's property, at a smaller scale: the panel's biggest element is the
-    // payload itself, asserted by comparing the clipboard write to the DOM.
+    // The panel's biggest element is the payload itself, asserted by
+    // comparing the clipboard write to the DOM.
     const { toolbar } = mount();
     act(() => {
       toolbar.openPanel("theme-editor");
@@ -454,8 +450,6 @@ describe("the shell contract", () => {
   });
 
   it("declares the contract version core implements", () => {
-    // §15.7's habit: an extension that *states* a version copies the assertion,
-    // not just the constant.
     expect(themeEditor().contractVersion).toBe(CONTRACT_VERSION);
   });
 
@@ -496,9 +490,8 @@ describe("the shell contract", () => {
   });
 
   it("relabels the preview command to say what a run will do", async () => {
-    // The one thing a static `commands` array could not do (§12.2, §13.1):
-    // "Pause the preview" over an already-paused preview is the same class of
-    // lie as a badge that says *edited* over a page that never heard about it.
+    // A static `commands` array couldn't do this: "Pause the preview" over an
+    // already-paused preview would be a lie.
     const { extension, toolbar } = mount();
     const label = () =>
       collectCommands([extension]).find((command) => command.id === "theme-editor.togglePreview")
@@ -509,8 +502,7 @@ describe("the shell contract", () => {
   });
 
   it("throws out of a copy command when nothing reached the clipboard", async () => {
-    // §15.6: a palette closes over a resolve and reports a throw, so a copy
-    // that silently did nothing must not resolve.
+    // A copy that silently did nothing must not resolve.
     clipboard.restore();
     clipboard = installClipboard(null);
     const { extension } = mount();
@@ -545,16 +537,10 @@ describe("the shell contract", () => {
   });
 
   it("leaves the toolbar's own appearance alone while the app's changes", () => {
-    // The bleed test. `:root` is an ancestor of the portalled toolbar root, so
-    // a `--dtb-*` edit landing there would repaint the bar. It cannot: the name
-    // is never written.
-    //
-    // Asserted against **computed** values, not against style attributes. The
-    // first cut compared attributes, which is a weaker claim than §16.2 was
-    // making: a token can reach the bar by *inheritance* from `:root` without
-    // any attribute on the bar changing at all, which is precisely the bleed
-    // path. Reading the custom property back off the toolbar root is the
-    // assertion that would actually fail if the guard did.
+    // The bleed test: `:root` is an ancestor of the portalled toolbar root,
+    // so a `--dtb-*` edit landing there would repaint the bar. Asserted
+    // against computed values, not style attributes — a token can reach the
+    // bar by inheritance from `:root` without any attribute on the bar changing.
     const { toolbar } = mount({ surfaces: [{ id: "root", selector: ":root" }] });
     const barShape = () => {
       const bar = toolbar.bar() as HTMLElement;
@@ -662,9 +648,8 @@ describe("the shell contract", () => {
 
 describe("the panel, after the surface moves", () => {
   it("holds the colour picker's draft until blur — a drag used to commit every step", () => {
-    /* Regression: the native colour input committed on every `change`, and a
-       drag fires one per step — a hundred `setOverride` calls, each of them a
-       write, a `persistOverrides` and a publish, for one colour choice. */
+    // Regression: the native colour input committed on every `change`, and a
+    // drag fires one per step — a hundred `setOverride` calls for one choice.
     const { toolbar } = mount();
     act(() => {
       toolbar.openPanel("theme-editor");
@@ -687,10 +672,7 @@ describe("the panel, after the surface moves", () => {
   });
 
   it("drops a held colour draft when the surface vanishes — a disabling input fires no blur", async () => {
-    /* Chrome does not fire `blur` on a focused element that *becomes*
-       disabled, so a draft held when `writable` flips would sit there showing
-       a colour nothing on the page is wearing until the field was focused and
-       left again. */
+    // Chrome does not fire `blur` on a focused element that becomes disabled.
     const { toolbar } = mount();
     act(() => {
       toolbar.openPanel("theme-editor");
@@ -738,9 +720,8 @@ describe("the panel, after the surface moves", () => {
       "Nothing matches the #app surface any more, so 1 edit is no longer on the page. " +
         "They are kept, and go back on when it returns.",
     );
-    // …and no row was marked failed for it. The `edited` count is the control:
-    // it proves the row rendered its tags at all in this state, so the zero
-    // above is a real absence rather than a selector that matches nothing.
+    // The `edited` count is the control: it proves the row rendered its tags
+    // at all, so the zero above is a real absence, not a bad selector.
     const tags = (tag: string) =>
       toolbar.panel("theme-editor")?.querySelectorAll(`[data-dtb-tag="${tag}"]`).length ?? 0;
     expect(tags("not-applied")).toBe(0);

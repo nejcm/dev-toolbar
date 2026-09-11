@@ -319,11 +319,9 @@ describe("persistence", () => {
     expect(Object.keys(persisted)).toEqual(["__proto__"]);
     expect(persisted["__proto__"]).toBe("x");
 
-    // And it renders as itself. `redact()` used to rebuild into a plain object,
-    // where writing `__proto__` is swallowed by the prototype's setter, so the
-    // row read back through `Object.prototype` and displayed "[object Object]"
-    // for every value — with a "masked" badge, because the two rendered forms
-    // differed. Fixed in /runtime; /ext/environment had it too.
+    // Regression: `redact()` used to rebuild into a plain object, where writing
+    // `__proto__` is swallowed by the prototype's setter — every value then
+    // read back as "[object Object]" and wrongly showed as masked.
     const view = runtime.store.getSnapshot().flags.find((entry) => entry.key === "__proto__");
     expect(view?.effectiveText).toBe("x");
     expect(view?.baseText).toBe("base");
@@ -548,8 +546,8 @@ describe("failing closed", () => {
     runtime.setOverride("ui-facelift", true);
     runtime.setOverride("checkout.copy", "new");
     const snapshot = runtime.store.getSnapshot();
-    // A single error slot was erased here by the unrelated success, taking the
-    // only warning off screen while the row kept claiming to be overridden.
+    // A single error slot would be erased by the unrelated success, hiding the
+    // warning while the row keeps claiming to be overridden.
     expect(snapshot.adapterErrors["ui-facelift"]).toContain("provider is offline");
     expect(snapshot.adapterErrors["checkout.copy"]).toBeUndefined();
     expect(snapshot.flags.find((v) => v.key === "ui-facelift")?.applyError).toBeDefined();
@@ -573,8 +571,7 @@ describe("failing closed", () => {
         }),
       ).api,
     );
-    // The load where it matters most: the first stored override failed and the
-    // second succeeded, and the failure must survive that.
+    // The first stored override fails, the second succeeds — the failure must survive that.
     expect(runtime.store.getSnapshot().adapterErrors["ui-facelift"]).toContain(
       "provider is offline",
     );
@@ -1033,18 +1030,18 @@ describe("publication guarantees", () => {
     ["expiresAt", "2031-01-01T00:00:00.000Z", 1],
   ] as const)("view.%s publishes once", assertViewPublication);
 
-  // Pins missing owner/reloadBehavior/recentlyUsed in signature() (runtime.ts:517).
-  // owner/reloadBehavior leave ui.tsx:424/384 stale; when covered, change their counts
-  // to 1 and getSnapshot() toBe(peek()). recentlyUsed is NOT a UI defect: changed visible
-  // ordering republishes through ordered keys, as the published flag ordering test pins.
+  // Pins fields missing from signature(): owner/reloadBehavior leave the UI
+  // stale until covered (then flip these to 1 call and toBe(peek())).
+  // recentlyUsed alone is not a UI defect — a visible reorder republishes
+  // through the ordered-keys path, pinned separately below.
   it.each([
     ["owner", "Team B", 0],
     ["reloadBehavior", "full-reload", 0],
     ["recentlyUsed", true, 0],
   ] as const)("BUG: view.%s changes without publishing", assertViewPublication);
 
-  // Pins missing expired in signature() (runtime.ts:517); ui.tsx:373 keeps the old expiry tag.
-  // When covered, invert to toHaveBeenCalledTimes(1) and getSnapshot() toBe(peek()).
+  // Pins `expired` missing from signature(), which leaves the expiry tag stale;
+  // when covered, invert to toHaveBeenCalledTimes(1) and getSnapshot() toBe(peek()).
   it("BUG: crossing expiresAt changes only expired, without publishing", () => {
     let now = Date.parse("2029-12-31T23:59:59Z");
     const runtime = createFlagsRuntime({ flags: [initial], now: () => now });
@@ -1060,35 +1057,17 @@ describe("publication guarantees", () => {
     runtime.store.destroy();
   });
 
-  // Deliberate, permanent, and identical for both fields: `promotedLabel` and
-  // `promotedIcon` are left out of `signature()`, so mutating the `promoted`
-  // array after `flags()` ran does not republish.
-  //
-  // The reason is config immutability, not signability — `promotedIcon` is a
-  // `string` and could be signed in one line. A `PromotedFlag` is config held
-  // in the factory closure, and the factory's JSDoc says build it once: an
-  // array mutated afterwards is not a supported input, so these two only ever
-  // "change" when a consumer edits what they already handed over.
-  //
-  // The line is *not* "nothing about promotion is live" — eligibility and
-  // position are both signed, and `promotedIndex` republishes the moment a
-  // window opens or closes (see "publishes promotion eligibility alone once"
-  // below). The line is what the signature is *for*: **what the runtime
-  // decides is signed; what the consumer handed over verbatim is not.** The
-  // runtime decides which entry is in force and where it sits, so those are
-  // snapshot state and must republish. `label` and `icon` it merely copies
-  // through, so their only source of change is the consumer editing an object
-  // they already gave away — signing them would advertise a live-config
-  // behaviour this option bag cannot keep across the board, because
-  // `PromotedFlag.presentation` sits right beside them carrying a `ReactNode`
-  // that can never be signed at all: left out of the signature it would never
-  // publish, `JSON.stringify`'d it would republish on every 250 ms tick.
-  // Half-live config is worse than config.
-  //
-  // So the answer to "my promoted icon changed and the bar did not" is to
-  // rebuild the extension, not to sign the field. See
-  // `__tests__/presentation.test.tsx`, "the hard rule: a ReactNode never
-  // enters the store", and `docs/adr/ADR-004-per-extension-bar-presentation.md`.
+  // Deliberate and permanent: `promotedLabel`/`promotedIcon` are left out of
+  // `signature()`, so mutating the `promoted` array after `flags()` ran does
+  // not republish. The rule the signature encodes: **what the runtime decides
+  // is signed; what the consumer handed over verbatim is not.** Eligibility
+  // and position *are* signed — `promotedIndex` republishes the moment a
+  // window opens or closes — but `label` and `icon` are copied through, and
+  // signing them would advertise live config this option bag cannot keep:
+  // `PromotedFlag.presentation` sits beside them carrying a `ReactNode` that
+  // can never be signed at all. So the answer to "my promoted icon changed and
+  // the bar did not" is to rebuild the extension. See
+  // `docs/adr/ADR-004-per-extension-bar-presentation.md`.
   it.each(["label", "icon"] as const)(
     "promoted %s alone does not publish — config is not live",
     (field) => {
@@ -1159,9 +1138,9 @@ describe("publication guarantees", () => {
     },
   );
 
-  // Pins missing boolean effective state in signature() (runtime.ts:517): equal masked
-  // text hides its change, so ui.tsx:50/208 keeps the old on/checked state.
-  // When covered, invert to toHaveBeenCalledTimes(1) and getSnapshot() toBe(peek()).
+  // Pins boolean `effective` missing from signature(): equal masked text hides
+  // the change, leaving the on/checked state stale. When covered, invert to
+  // toHaveBeenCalledTimes(1) and getSnapshot() toBe(peek()).
   it("BUG: masked boolean effective state changes without a notification", () => {
     const runtime = createFlagsRuntime({
       flags: [{ key: "feature", type: "boolean", value: false, sensitive: true }],
@@ -1503,13 +1482,11 @@ describe("published flag ordering", () => {
     runtime.store.destroy();
   });
 
-  // Was pinned as a bug: promoted order was invisible to `signature()`, so a
-  // reordered `promoted` left the published bar order stale. `promotedIndex` —
-  // added so a control gets the *eligible* entry's presentation rather than the
-  // first entry that mentions its key — is each view's position in that array,
-  // so a reorder now moves the signature and publishes. The bar order is a
-  // by-product of covering eligibility, not a promise that config is live:
-  // `label` and `icon` still are not signed, deliberately.
+  // Was pinned as a bug: promoted order was invisible to `signature()`.
+  // `promotedIndex` — added so a control gets the *eligible* entry's
+  // presentation — is each view's position in `promoted`, so a reorder now
+  // moves the signature and publishes. A by-product of covering eligibility,
+  // not a promise that config is live: `label` and `icon` still are not signed.
   it("publishes a reordered promotion configuration", () => {
     const promoted = [{ flagKey: "a" }, { flagKey: "b" }];
     const runtime = createFlagsRuntime({

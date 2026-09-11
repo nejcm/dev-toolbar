@@ -45,10 +45,9 @@ describe("hidden extensions", () => {
 
 describe("subscribeVisibility is released when api.signal aborts", () => {
   it("stops delivering after the extension is unregistered, without calling the returned unsubscribe", () => {
-    // `contract.ts` promises `api.signal` is aborted on teardown, and an
-    // extension that keeps only the signal (never calling the function
-    // `subscribeVisibility` returns) is a legal reading of that contract. Its
-    // subscription must still be released when the signal aborts.
+    // `contract.ts` promises `api.signal` aborts on teardown; an extension
+    // that never calls the unsubscribe `subscribeVisibility` returns (keeping
+    // only the signal) is a legal reading of that, and must still be released.
     const seen: boolean[] = [];
     const start = (api: {
       signal: AbortSignal;
@@ -256,9 +255,8 @@ describe("start(api) ordering", () => {
   });
 
   it("does NOT win that race when `enabled` flips true later", () => {
-    // `mounted` is already true by then, so the slot renders in the same commit
-    // whose effects will run start(). Extensions must therefore still build
-    // their state in the factory, not in start().
+    // `mounted` is already true, so the slot renders in the same commit whose
+    // effects run start() — extensions must build state in the factory, not start().
     const order: string[] = [];
     const extension = probe(order);
     const { rerender, unmount } = render(
@@ -274,10 +272,9 @@ describe("start(api) ordering", () => {
 
 describe("a throwing subscribeVisibility callback", () => {
   it("is contained: it neither escapes nor starves the next extension", () => {
-    // The shell isolates failures. An extension that throws while being told
-    // about a visibility change must not surface as an exception in whatever
-    // flipped visibility (the toggle shortcut, a consumer calling
-    // `setVisible`), and must not stop the extensions notified after it.
+    // The shell isolates failures: a throw from one extension's visibility
+    // callback must not surface in whatever flipped visibility, and must not
+    // stop the extensions notified after it.
     const errors: unknown[][] = [];
     const spy = vi.spyOn(console, "error").mockImplementation((...args: unknown[]) => {
       errors.push(args);
@@ -315,10 +312,9 @@ describe("a throwing subscribeVisibility callback", () => {
       expect(String(errors[0]?.[0])).toContain('extension "broken"');
       expect(String(errors[0]?.[0])).toContain("subscribeVisibility");
 
-      // The throw must not desynchronise the broken extension's own `last`
-      // bookkeeping either: the next transition still reaches both of them,
-      // so a healthy extension misses no change and the broken one is
-      // reported again rather than falling silent.
+      // The throw must not desync the broken extension's own bookkeeping: the
+      // next transition still reaches both, reporting the broken one again
+      // rather than going silent.
       expect(() => toolbar.setVisible(true)).not.toThrow();
       expect(seen).toEqual([false, true]);
       expect(errors).toHaveLength(2);

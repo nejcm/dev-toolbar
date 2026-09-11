@@ -209,11 +209,9 @@ describe("createTimeSeries", () => {
     series.push(2, 20);
     expect(series.times.size).toBe(2);
 
-    // `times`/`values` are typed as `NumericRingView`, which has no `push`/`clear` —
-    // this guards against a caller pushing into one ring and desyncing the pair
-    // (`ts-expect-error` fails the build if `NumericRingView` ever regains these
-    // methods, e.g. by widening back to `NumericRing`). The compile-time error is
-    // the point of this test, not the runtime effect of the calls below.
+    // `times`/`values` are typed as `NumericRingView` (no `push`/`clear`), guarding
+    // against desyncing the pair; the compile-time error is the point, not the
+    // runtime effect of the calls below.
     // @ts-expect-error -- `push` is not on `NumericRingView`.
     series.times.push(3);
     // @ts-expect-error -- `clear` is not on `NumericRingView`.

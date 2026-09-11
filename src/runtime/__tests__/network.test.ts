@@ -1,10 +1,6 @@
-/**
- * The shared interceptor's own tests: "one wrapper, many sinks" idempotency,
- * refusing to restore over a later patch, and the dual-package residue. These
- * are properties of the patch rather than of any sink, so they are asserted
- * against `instrumentFetch`/`instrumentXhr` directly; what a collector does
- * with what it is handed is tested next to that collector.
- */
+// The shared interceptor's own tests: one-wrapper-many-sinks idempotency,
+// refusing to restore over a later patch, and the dual-package residue.
+// What a collector does with what it's handed is tested next to that collector.
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { instrumentFetch, instrumentXhr } from "../network";
 import type { NetworkSink, NetworkSinkResult } from "../network";

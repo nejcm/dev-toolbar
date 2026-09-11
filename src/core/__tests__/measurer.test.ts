@@ -1,13 +1,10 @@
 /**
- * `domMeasurer` against a DOM that actually reports sizes.
- *
- * The widths come from `src/test-utils/dom-layout.ts`, a repo-internal fixture
- * that patches the very reads this file is testing — `clientWidth`,
- * `offsetWidth`, `getComputedStyle`, `getBoundingClientRect`. The *published*
- * fake (`installToolbarLayout()`) cannot serve here any more: it answers core
- * through the measurer slot and patches no DOM read, so measuring it with
- * `domMeasurer` would measure jsdom's zeros and assert nothing. It is still
- * used below for the one thing it does provide the DOM — a `ResizeObserver`.
+ * `domMeasurer` against a DOM that actually reports sizes, via
+ * `src/test-utils/dom-layout.ts`, which patches the reads under test
+ * (`clientWidth`, `offsetWidth`, `getComputedStyle`, `getBoundingClientRect`).
+ * The published fake (`installToolbarLayout()`) can't serve here — it patches
+ * no DOM read, so `domMeasurer` would just see jsdom's zeros — but it's still
+ * used below for the one thing it does provide: a `ResizeObserver`.
  */
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { installToolbarLayout, cleanupToolbar } from "@nejcm/dev-toolbar/testing";

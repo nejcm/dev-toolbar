@@ -2,27 +2,20 @@
  * One assertion, across every first-party extension: the `contractVersion` each
  * one declares equals the `CONTRACT_VERSION` core implements.
  *
- * It exists because §7 forbids an extension from importing a *value* from core,
- * so each extension hand-maintains its own copy of the number and a bump has
- * to be propagated by hand. A missed one is silent in tests and surfaces only as
- * a mount-time `console.warn` that nothing asserts the absence of — the risk
- * `docs/adr/ADR-003-contract-version-policy.md` records under "Risk accepted",
- * and the reason that record asks for the equality assertion to be copied
- * alongside the constant.
+ * §7 forbids an extension from importing a *value* from core, so each one
+ * hand-maintains its own copy of the number, and a missed bump is silent in
+ * tests (`docs/adr/ADR-003-contract-version-policy.md`'s accepted risk).
+ * `/ext/diagnostics` and `/ext/theme-editor` already assert this in their own
+ * suites; this file covers the rest.
  *
- * `/ext/diagnostics` and `/ext/theme-editor` already assert this inside their
- * own suites. This file is what covers the rest.
+ * **The roster is derived, not restated**: a list of names checked against
+ * another hand-written list is a tautology, so the expected set is read from
+ * the filesystem *and* from `package.json`'s `exports`, both required to agree
+ * with each other and with the factories below.
  *
- * **The roster is derived, not restated.** A list of names checked against
- * another list of names is a tautology: a new `src/ext/foo/` added to neither
- * would pass it. So the expected set is read from the filesystem *and* from
- * `package.json`'s `exports`, and the two are required to agree with each other
- * and with the factories below. A new extension therefore cannot reach `main`
- * without being listed here, whichever half of the work its author forgot.
- *
- * It lives at `src/ext/__tests__/` rather than next to core's contract tests
- * because `src/core/__tests__/boundary.test.ts` forbids anything under
- * `src/core` from naming `ext/` at all, tests included.
+ * Lives here rather than beside core's contract tests because
+ * `src/core/__tests__/boundary.test.ts` forbids anything under `src/core` from
+ * naming `ext/`, tests included.
  */
 import { describe, expect, it } from "vitest";
 import { CONTRACT_VERSION } from "@nejcm/dev-toolbar";
@@ -41,7 +34,7 @@ import type { DevToolbarExtension } from "../../core/contract";
 
 const roster = extensionRoster();
 
-/** Keyed by subpath name, so the keys can be compared against the two derived sets. */
+/** Keyed by subpath name so the keys can be compared against the two derived sets. */
 const FACTORIES: Record<string, () => DevToolbarExtension> = {
   a11y: () => a11y(),
   agent: () => agentBridge({ instanceId: "version-probe" }),
@@ -56,16 +49,14 @@ const FACTORIES: Record<string, () => DevToolbarExtension> = {
 
 describe("every first-party extension declares core's contract version", () => {
   it("covers exactly the extensions that exist on disk", () => {
-    // Fails for a `src/ext/foo/` that nobody added below — which is the
-    // whole point, and is not something comparing two hand-written lists can do.
+    // Fails for a `src/ext/foo/` nobody added below — comparing two
+    // hand-written lists could never catch that.
     expect(Object.keys(FACTORIES).sort()).toEqual(roster.onDisk);
   });
 
   it("covers exactly the extensions package.json publishes", () => {
-    // The other half: a directory that exists but was never added to `exports`
-    // is unpublishable (AGENTS.md), and one that is exported without a
-    // directory is broken. Requiring both to match these factories catches
-    // either mistake here rather than at `bun run build`.
+    // The other half: a directory never added to `exports` is unpublishable
+    // (AGENTS.md), and an export without a directory is broken.
     expect(Object.keys(FACTORIES).sort()).toEqual(roster.published);
   });
 

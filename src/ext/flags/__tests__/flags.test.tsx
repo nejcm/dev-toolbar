@@ -139,8 +139,8 @@ describe("the promoted flag", () => {
   });
 
   it("keeps working when the extension collapses into the ⋮ menu", () => {
-    // One extension is one overflow unit, so the promoted control collapses
-    // with the chip. Collapsing must cost its position, never its capability.
+    // One extension is one overflow unit: the promoted control collapses with
+    // the chip, never loses its capability.
     const { toolbar } = mount({
       onOverride: record,
       promoted: { flagKey: "ui-facelift" },
@@ -431,8 +431,7 @@ describe("persistence across a reload", () => {
     first.unmount();
     applied = [];
 
-    // A second mount is what a reload looks like from here: a fresh extension
-    // object over the same storage.
+    // A second mount is what a reload looks like: a fresh extension object over the same storage.
     const second = mount({ onOverride: record }, storage);
     expect(applied).toEqual([["ui-facelift", true]]);
     expect(text(second.toolbar.item("flags")?.querySelector('[data-dtb-part="flag-count"]'))).toBe(
@@ -451,9 +450,8 @@ describe("persistence across a reload", () => {
   });
 
   it("readStoredOverrides() hands back an ordinary object", () => {
-    // The internal map is null-prototype so a `__proto__` key round-trips as
-    // data. That representation must not cross a public API: a consumer or a
-    // library calling `.hasOwnProperty()` on the result would throw.
+    // The internal map is null-prototype, but that must not cross the public
+    // API: a caller's `.hasOwnProperty()` would throw on it.
     const storage = createMemoryStorage({
       "dtb:v1:test:ext:flags:overrides": '{"__proto__":"x","a":1}',
     });
@@ -581,8 +579,7 @@ describe("failing closed", () => {
           ?.querySelector<HTMLButtonElement>('[data-dtb-part="flag-switch"]')
           ?.click();
       });
-      // The bar is intact — no error chip — and the failure is on screen, on
-      // the banner and on the row that lied.
+      // The bar is intact — no error chip — and the failure is on screen instead.
       expect(toolbar.errorChip("flags")).toBeNull();
       expect(text(toolbar.panel("flags"))).toContain(
         "1 override could not be applied: ui-facelift",
@@ -615,9 +612,7 @@ describe("failing closed", () => {
 });
 
 describe("orphaned overrides", () => {
-  // A renamed flag leaves its override behind, and that override is still
-  // applied to the app on every mount. Not rendering it made it invisible and
-  // unclearable at the same time.
+  // A renamed flag leaves its override behind, still applied on every mount.
   const stored = () =>
     createMemoryStorage({
       "dtb:v1:test:ext:flags:overrides": '{"checkout.v2":"on"}',
@@ -774,9 +769,8 @@ describe("commands", () => {
   });
 
   it("gives a flag added after mount a working command, without a reload", async () => {
-    // The gap recorded in architecture.md §12.2 and closed by P2's third extension: `commands`
-    // used to be a static array enumerated in the factory, so this flag got a
-    // panel row and no command until the page reloaded.
+    // `commands` used to be a static array enumerated in the factory, so a
+    // flag added later got a panel row but no command until reload.
     const catalogue: FlagReading[] = [
       { key: "ui-facelift", type: "boolean", defaultValue: false, value: false },
     ];
@@ -793,9 +787,7 @@ describe("commands", () => {
       defaultValue: false,
       value: false,
     });
-    // Whatever makes the extension re-read — a poll tick here, its own refresh
-    // command — is enough. Nothing re-renders the toolbar and no extension
-    // object is rebuilt.
+    // Any re-read is enough — nothing re-renders the toolbar or rebuilds the extension.
     await toolbar.runCommand("flags.refresh");
 
     expect(toolbar.getCommands().map((command) => command.id)).toContain(

@@ -70,9 +70,9 @@ function attach(
 }
 
 /**
- * Both fan-outs swallow sink errors on purpose: these run inside the host
- * app's `fetch`/`XMLHttpRequest`, and a bug here (or in a consumer's own
- * `filter`) must never surface as a failed request in the app being measured.
+ * Swallows sink errors on purpose: this runs inside the host app's
+ * `fetch`/`XMLHttpRequest`, and a bug here must never surface as a failed
+ * request in the app being measured.
  */
 function fanIn(sinks: Set<NetworkSink>, method: string, url: string): [NetworkSink, unknown][] {
   const tokens: [NetworkSink, unknown][] = [];

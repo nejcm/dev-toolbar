@@ -5,21 +5,18 @@
  * toolbar's first render (before any effect fires), so the store the chip
  * reads must exist by the time the factory returns.
  *
- * This is the first extension that draws over the host application:
- * - **Never takes a pointer event it doesn't own** — the surface is
- *   `pointer-events: none` throughout; the inspector only observes the
- *   pointer via a passive, capturing `pointermove` listener + `elementFromPoint`.
- * - **Leaves nothing behind** — everything drawn is React inside `overlay`,
- *   removed on unmount by construction. Sole exception: `boxes`' stylesheet
- *   in `document.head` (`setHostOutlines`), torn down alongside the listeners.
- * - **Observes nothing while the bar is hidden** — core reports visibility
- *   but never pauses anybody (§2), so this decides "hidden" for itself: the
- *   overlay slot isn't rendered then, listeners detach, the host stylesheet
- *   comes off, and everything resumes when the bar returns (§13.2).
- * - **Nothing here may throw** — measurement runs inside a
+ * First extension that draws over the host application:
+ * - Never takes a pointer event it doesn't own — the surface is
+ *   `pointer-events: none` throughout; the inspector only observes via a
+ *   passive, capturing `pointermove` listener + `elementFromPoint`.
+ * - Leaves nothing behind — everything drawn is React inside `overlay`.
+ *   Sole exception: `boxes`' stylesheet in `document.head`
+ *   (`setHostOutlines`), torn down alongside the listeners.
+ * - Observes nothing while the bar is hidden — core never pauses anybody
+ *   (§2), so this decides "hidden" for itself (§13.2).
+ * - Nothing here may throw — measurement runs inside a
  *   `requestAnimationFrame`/`MutationObserver` where nobody upstream could
- *   catch it, so a throw switches every overlay off instead of recurring
- *   every frame.
+ *   catch it, so a throw switches every overlay off instead of recurring.
  */
 import {
   STYLE_ATTRIBUTE,
@@ -69,17 +66,14 @@ export const DEFAULT_FOCUS_LIMIT = 200;
 /**
  * The one stylesheet this extension puts in front of the application.
  *
- * Deliberately not inside `@layer dev-toolbar`: every other stylesheet here is
- * layered so consumer CSS wins without `!important` (§4.1), but this one must
- * be visible over the app's own styles while a developer has it switched on.
- * Still not `!important`, so a higher-specificity app rule can beat it — the
- * panel says so rather than hiding the limitation.
+ * Deliberately not inside `@layer dev-toolbar` — unlike every other
+ * stylesheet here, this one must be visible over the app's own styles while
+ * switched on. Still not `!important`, so a higher-specificity app rule can
+ * beat it; the panel says so rather than hiding the limitation.
  *
- * `outline`, not `border`/`box-shadow`, because it paints outside the box and
- * never reflows the page.
- *
- * The `:not()` pair keeps it off every dev toolbar on the page — ours and
- * anybody else's.
+ * `outline`, not `border`/`box-shadow`, since it paints outside the box and
+ * never reflows the page. The `:not()` pair keeps it off every dev toolbar on
+ * the page — ours and anybody else's.
  */
 export const BOXES_CSS = String.raw`html body :not([data-dev-toolbar]):not([data-dev-toolbar] *) {
   outline: 1px solid rgba(88, 166, 255, 0.42);
@@ -100,16 +94,10 @@ export interface OverlaysRuntimeOptions {
   persist?: boolean;
   /**
    * Hold the layout-boxes insert until `setStyleNonce()` has been called once,
-   * so `<DevToolbar styleNonce>` is present at first write and first-writer-wins
-   * cannot make an un-nonced sheet permanent. Default `false`: turning boxes on
-   * inserts immediately, which is what a headless runtime with no React surface
-   * to learn a nonce from wants.
-   *
-   * `overlays()` sets it — the overlay surface is what learns the slot nonce,
-   * so with it set the boxes sheet appears only once that surface has mounted
-   * (or a factory `styleNonce` supplied the nonce up front). Safe because a
-   * hidden toolbar renders no overlay surface and `sync()` already keeps
-   * outlines off while hidden.
+   * so first-writer-wins cannot make an un-nonced sheet permanent. Default
+   * `false`: a headless runtime with no React surface to learn a nonce from
+   * wants boxes to insert immediately. `overlays()` sets it, since the
+   * overlay surface is what learns the slot nonce.
    */
   deferOutlinesUntilStyleNonce?: boolean;
 }
@@ -125,19 +113,14 @@ export interface OverlaysRuntime {
   /** Turns everything off. The escape hatch the panel and a command both use. */
   disableAll(): void;
   /**
-   * CSP nonce for the layout-boxes sheet. A truthy factory option is applied
-   * before `start()`; the overlay surface writes the resolved slot nonce once
-   * it mounts — including `undefined`, which means "no nonce, insert un-nonced".
-   * Only matters ahead of the first insert: the sheet is first-writer-wins.
-   * Under `deferOutlinesUntilStyleNonce` the insert waits for the first call.
+   * CSP nonce for the layout-boxes sheet. Only matters ahead of the first
+   * insert: the sheet is first-writer-wins. `undefined` means "no nonce,
+   * insert un-nonced". Under `deferOutlinesUntilStyleNonce` the insert waits
+   * for the first call.
    */
   setStyleNonce(nonce?: string): void;
   start(api: ExtensionRuntimeApi): () => void;
-  /**
-   * Which layers are on, plus the scan's own health. Pure and cheap — it reads
-   * the flag map and the last published snapshot and measures nothing
-   * (`plans/agent-readable-toolbar.md` § Phase 1).
-   */
+  /** Which layers are on, plus the scan's own health. Measures nothing. */
   diagnostics(): unknown;
 }
 
@@ -146,14 +129,10 @@ export const BOXES_REFS_ATTRIBUTE = "data-dtb-refs";
 
 /**
  * Acquires or releases the host-outline stylesheet. Reference-counted via
- * `data-dtb-refs` on the element (DOM-state, not module-state, since two
- * toolbars — or two bundled copies of this extension — are separate closures
- * sharing one `document.head`). Without the count, one instance unmounting
- * would remove outlines belonging to another instance that still has the
- * overlay on, leaving its chip/panel out of sync with the DOM.
- *
- * Release queries the document for the attribute rather than holding the
- * node, so a runtime that lost its reference cannot leave a sheet behind.
+ * `data-dtb-refs` on the element (DOM-state, not module-state — two toolbars,
+ * or two bundled copies of this extension, are separate closures sharing one
+ * `document.head`). Without the count, one instance unmounting would remove
+ * outlines still owned by another instance.
  */
 export function setHostOutlines(on: boolean, doc?: Document, nonce?: string): void {
   const target = doc ?? (typeof document === "undefined" ? null : document);
@@ -166,8 +145,7 @@ export function setHostOutlines(on: boolean, doc?: Document, nonce?: string): vo
   ];
   const readRefs = (node: HTMLElement): number => {
     const parsed = Number.parseInt(node.getAttribute(BOXES_REFS_ATTRIBUTE) ?? "", 10);
-    // A sheet with no count is one somebody else inserted, or one from an
-    // older version. Treat it as held once rather than as free to remove.
+    // No count = somebody else's sheet (or an older version) — held once, not free to remove.
     return Number.isFinite(parsed) && parsed > 0 ? parsed : 1;
   };
 
@@ -204,10 +182,8 @@ const DISABLEABLE = new Set([
  * True when the browser will skip this element in the tab sequence.
  *
  * `aria-disabled` is deliberately not here — it's a promise to assistive tech,
- * not a change to focus behaviour, so an `aria-disabled` button is still a
- * real `Tab` stop. A disabled `fieldset` does disable its contained controls,
- * except those inside its first `<legend>` (e.g. a "turn this section on"
- * checkbox), which stay enabled.
+ * not a change to focus behaviour. A disabled `fieldset` disables its
+ * contained controls except those inside its first `<legend>`.
  */
 const isDisabled = (element: Element): boolean => {
   if (DISABLEABLE.has(element.tagName) && element.hasAttribute("disabled")) {
@@ -289,7 +265,7 @@ export function createOverlaysRuntime(options: OverlaysRuntimeOptions = {}): Ove
   /* ------------------------------------------------------------------ */
 
   let hover: HoverTarget | null = null;
-  /** The element under the pointer when `inspect` is on — retained for geometry observation. */
+  /** Retained for geometry observation, not just as a description of `hover`. */
   let hoverElement: Element | null = null;
   let hoverNameElement: Element | null = null;
   let hoverName: string | null = null;
@@ -300,17 +276,10 @@ export function createOverlaysRuntime(options: OverlaysRuntimeOptions = {}): Ove
 
   /**
    * The elements the focus overlay is drawing over. Strong references to host
-   * nodes — a retention risk worth naming: a removed node stays reachable
-   * until the next measurement drops anything with `isConnected === false`
-   * (hiding the bar and teardown clear the list too), so the window is one
-   * frame wide.
-   *
-   * Each entry carries the accessible name and `tabindex` resolved at scan
-   * time, so a scroll frame costs one rect per element and nothing else.
-   *
-   * The inspector, by contrast, retains nothing — it re-hit-tests the
-   * pointer's coordinates every frame, which is also correct since scrolling
-   * changes what's under a stationary pointer.
+   * nodes, so a removed node stays reachable until the next measurement drops
+   * anything with `isConnected === false` — a one-frame-wide retention window.
+   * Name and tabindex are resolved at scan time, so a scroll frame costs one
+   * rect per element and nothing else.
    */
   let focusElements: Scanned[] = [];
 
@@ -319,12 +288,10 @@ export function createOverlaysRuntime(options: OverlaysRuntimeOptions = {}): Ove
   let pointerSeen = false;
   let rescanQueued = false;
   /**
-   * Whether the focus overlay was drawing after the previous `sync()`. The
-   * scan is queued on the false -> true edge here rather than when the
-   * MutationObserver is created, because that observer is shared with
-   * `inspect`: enabling focus while inspect is already on creates no observer
-   * and would otherwise measure an empty retained set until an unrelated
-   * mutation burst happened to queue a rescan.
+   * Whether the focus overlay was drawing after the previous `sync()`. Scan
+   * is queued on the false -> true edge here, not on MutationObserver
+   * creation, since that observer is shared with `inspect` — enabling focus
+   * while inspect is already on creates no observer of its own.
    */
   let focusDrawing = false;
 
@@ -341,8 +308,8 @@ export function createOverlaysRuntime(options: OverlaysRuntimeOptions = {}): Ove
   });
 
   const store = createThrottledStore<OverlaysSnapshot>(snapshot(), {
-    // intervalMs: 0 because coalescing on a timer would lag the cursor; the
-    // saving instead comes from `equals` — an unchanged frame publishes nothing.
+    // 0 because coalescing on a timer would lag the cursor; `equals` below is
+    // what saves the re-renders instead.
     intervalMs: 0,
     equals: sameSnapshot,
   });
@@ -356,13 +323,12 @@ export function createOverlaysRuntime(options: OverlaysRuntimeOptions = {}): Ove
   /* ------------------------------------------------------------------ */
 
   /**
-   * Every measurement is wrapped in this: a throw inside a frame callback or
-   * `MutationObserver` can't be caught upstream and would recur every frame,
-   * so the only honest response is to stop drawing.
+   * A throw inside a frame callback or `MutationObserver` can't be caught
+   * upstream and would recur every frame, so the only honest response is to
+   * stop drawing.
    */
   const fail = (where: string, thrown: unknown): void => {
-    // `error` reaches `diagnostics()`, which leaves the page: the thrown text
-    // is masked before this sentence is built around it, never after.
+    // `error` reaches `diagnostics()`, which leaves the page: mask before building this sentence, never after.
     const { message } = describeError(thrown);
     error = `${where} failed: ${message} — every overlay was switched off.`;
     // eslint-disable-next-line no-console
@@ -372,8 +338,7 @@ export function createOverlaysRuntime(options: OverlaysRuntimeOptions = {}): Ove
       thrown,
     );
     // Not persisted: a transient failure shouldn't cost the developer their
-    // saved toggles. Memory says off; storage still has their picks, restored
-    // on reload.
+    // saved toggles — storage still has their picks, restored on reload.
     flags = { ...NO_OVERLAYS };
     hover = null;
     focusItems = [];
@@ -405,8 +370,7 @@ export function createOverlaysRuntime(options: OverlaysRuntimeOptions = {}): Ove
   });
 
   const resolveHoverName = (element: Element): string | null => {
-    // The cache is only sound while a MutationObserver is attached — without
-    // one, every frame must re-walk the subtree.
+    // Cache is only sound while a MutationObserver is attached; without one, re-walk every frame.
     if (observer === null) return accessibleName(element);
     if (hoverNameElement !== element || hoverNameStale) {
       hoverNameElement = element;
@@ -441,8 +405,7 @@ export function createOverlaysRuntime(options: OverlaysRuntimeOptions = {}): Ove
     if (
       !pointerSeen ||
       typeof document === "undefined" ||
-      // Absent in jsdom and other layout-less environments; no element is the
-      // correct answer there, not a thrown error.
+      // Absent in jsdom and other layout-less environments — not a thrown error.
       typeof document.elementFromPoint !== "function"
     ) {
       hover = null;
@@ -451,8 +414,7 @@ export function createOverlaysRuntime(options: OverlaysRuntimeOptions = {}): Ove
       return;
     }
     const found = document.elementFromPoint(pointerX, pointerY);
-    // elementFromPoint hit-tests the real page, so it can return the toolbar
-    // itself when the pointer is over the bar/panel/palette — never wanted.
+    // Can return the toolbar itself when the pointer is over the bar/panel/palette.
     if (!found || isInToolbar(found)) {
       hover = null;
       hoverElement = null;
@@ -479,8 +441,8 @@ export function createOverlaysRuntime(options: OverlaysRuntimeOptions = {}): Ove
       if (isDisabled(element)) continue;
       if (element.closest("[inert]") !== null) continue;
       if (element.getAttribute("contenteditable") === "false") continue;
-      // type="hidden" passes every selector above and has no box, so without
-      // this it consumed a badge-limit slot only to be dropped at measure time.
+      // type="hidden" passes every selector above but has no box; without this
+      // it consumed a badge-limit slot only to be dropped at measure time.
       if (
         element.tagName === "INPUT" &&
         (element.getAttribute("type") ?? "").toLowerCase() === "hidden"
@@ -493,16 +455,13 @@ export function createOverlaysRuntime(options: OverlaysRuntimeOptions = {}): Ove
         break;
       }
     }
-    // Accessible name is resolved here, once per scan, not per frame — a
-    // subtree walk plus a possible getElementById, too costly to repeat for
-    // up to 200 elements every scroll frame.
-    //
-    // Cache safety depends on every mutation that can change a name being
-    // observed by the MutationObserver below — not on names being otherwise
-    // stable. In particular, text written into an existing Text node is a
-    // `characterData` record, not `childList`; missing that once left an
-    // emptied button badge saying "named" indefinitely. If `accessibleName`
-    // grows a branch reading something new, add its mutation type below too.
+    // Resolved here, once per scan, not per frame — too costly to repeat for
+    // up to 200 elements every scroll frame. Cache safety depends on every
+    // mutation that can change a name being observed below: a name written
+    // into an existing Text node is a `characterData` record, not `childList`
+    // — missing that once left an emptied button badge saying "named"
+    // indefinitely. If `accessibleName` grows a branch reading something new,
+    // add its mutation type below too.
     focusElements = inTabOrder(found).map((element) => ({
       element,
       name: accessibleName(element),
@@ -512,9 +471,9 @@ export function createOverlaysRuntime(options: OverlaysRuntimeOptions = {}): Ove
   };
 
   /**
-   * Re-measures the retained elements on every scroll/resize frame — no
-   * re-query. Numbering counts every element with a box regardless of
-   * on-screen visibility, so scrolling moves badges without renumbering them.
+   * Re-measures retained elements on every scroll/resize frame — no re-query.
+   * Numbering counts every element with a box regardless of on-screen
+   * visibility, so scrolling moves badges without renumbering them.
    */
   const measureFocus = (): void => {
     const bounds = viewport();
@@ -572,8 +531,7 @@ export function createOverlaysRuntime(options: OverlaysRuntimeOptions = {}): Ove
 
   const schedule = () => {
     if (frame !== null || typeof requestAnimationFrame !== "function") {
-      // No rAF (jsdom without one, SSR): measure synchronously instead of
-      // silently drawing nothing; `guard` still contains anything it throws.
+      // No rAF (jsdom without one, SSR): measure synchronously rather than silently drawing nothing.
       if (frame === null) runFrame();
       return;
     }
@@ -616,9 +574,8 @@ export function createOverlaysRuntime(options: OverlaysRuntimeOptions = {}): Ove
   const GEOMETRY_ATTRS = new Set(["class", "style"]);
 
   const onMutation = (records: MutationRecord[]) => {
-    // Skip records we caused ourselves: the surface is portaled into `body`,
-    // so badges drawn/removed as the page scrolls are themselves mutations of
-    // the observed subtree, and rescanning for them would be self-inflicted work.
+    // Skip records we caused ourselves — the surface is portaled into `body`,
+    // so drawing/removing badges as the page scrolls is itself a mutation.
     if (records.length > 0 && records.every((record) => isInToolbar(record.target))) {
       return;
     }
@@ -638,13 +595,11 @@ export function createOverlaysRuntime(options: OverlaysRuntimeOptions = {}): Ove
         hoverNameStale = true;
       }
     }
-    // Position-only shifts a ResizeObserver cannot see — `class`/`style` route
-    // here, never to `rescanQueued`.
     if (scheduleGeometry) schedule();
     if (!needsRescan) return;
     // Debounced, not per-record: a React commit is a burst of records, and
-    // re-querying on each one would make this overlay the perf problem it
-    // was installed to find.
+    // re-querying on each one would make this overlay the perf problem it was
+    // installed to find.
     if (mutationTimer !== null) return;
     mutationTimer = setTimeout(() => {
       mutationTimer = null;
@@ -690,8 +645,7 @@ export function createOverlaysRuntime(options: OverlaysRuntimeOptions = {}): Ove
     if (on === pointerAttached || typeof window === "undefined") return;
     pointerAttached = on;
     const method = on ? "addEventListener" : "removeEventListener";
-    // Capture so a host stopping propagation can't blind the inspector;
-    // passive so it can never delay a scroll.
+    // Capture so a host stopping propagation can't blind the inspector; passive so it can't delay a scroll.
     window[method]("pointermove", onPointerMove as EventListener, {
       capture: true,
       passive: true,
@@ -717,8 +671,7 @@ export function createOverlaysRuntime(options: OverlaysRuntimeOptions = {}): Ove
     if (on === geometryAttached || typeof window === "undefined") return;
     geometryAttached = on;
     const method = on ? "addEventListener" : "removeEventListener";
-    // Capture: scroll doesn't bubble, so a window listener alone would only
-    // hear the document, missing app content scrolling in its own containers.
+    // Capture: scroll doesn't bubble, so a window listener alone would miss app content scrolling in its own containers.
     window[method]("scroll", onGeometry, { capture: true, passive: true });
     window[method]("resize", onGeometry, { passive: true });
   };
@@ -734,14 +687,13 @@ export function createOverlaysRuntime(options: OverlaysRuntimeOptions = {}): Ove
         childList: true,
         subtree: true,
         attributes: true,
-        // React updates a sole text child by writing nodeValue rather than
-        // replacing the node — a characterData record. Without watching it,
-        // `<button>{label}</button>` going "Save" -> "" left the cached name
-        // stale and the badge claiming the button was named.
+        // React writes nodeValue on a sole text child rather than replacing
+        // the node — a characterData record, not childList. Without watching
+        // it, `<button>{label}</button>` going "Save" -> "" left the cached
+        // name stale.
         characterData: true,
-        // Everything the scan filters on, plus everything accessibleName
-        // reads, plus geometry attrs — kept as one list so neither set can
-        // silently drift from the code.
+        // Everything the scan filters on, everything accessibleName reads,
+        // plus geometry attrs — kept as one list so neither set can drift.
         attributeFilter: [
           // geometry — routed to `schedule()`, never `rescanQueued`
           "class",
@@ -799,8 +751,7 @@ export function createOverlaysRuntime(options: OverlaysRuntimeOptions = {}): Ove
   let outlinesWanted = false;
 
   const flushOutlines = () => {
-    // Insert waits for a nonce source so `<DevToolbar styleNonce>` is present
-    // at first write. Teardown never waits — a sheet must not outlive us.
+    // Insert waits for a nonce source; teardown never waits — a sheet must not outlive us.
     if (outlinesWanted && !nonceKnown) return;
     if (outlinesWanted === outlinesOn) return;
     outlinesOn = outlinesWanted;
@@ -813,21 +764,15 @@ export function createOverlaysRuntime(options: OverlaysRuntimeOptions = {}): Ove
   };
 
   const setStyleNonce = (nonce?: string) => {
-    // Unconditional, including `undefined`: the sheet is recreated every time
-    // the bar comes back, so a remembered nonce would outlive the host's
-    // rotation and stamp a stale one on the new sheet. A factory `styleNonce`
-    // cannot be blanked this way — the surface calls
-    // `resolveStyleNonce(option, slot)`, so `undefined` only ever arrives when
-    // there is no factory option to lose.
+    // Unconditional, including `undefined`: the sheet is recreated whenever
+    // the bar comes back, so a remembered nonce would outlive the host's own
+    // rotation and stamp a stale one on the new sheet.
     styleNonce = nonce;
     nonceKnown = true;
     flushOutlines();
   };
 
-  /**
-   * Brings the world into line with `flags` and `active`. Every mutator ends
-   * here, so exactly one place owns what is attached.
-   */
+  /** Brings the world into line with `flags` and `active`; every mutator ends here. */
   function sync(): void {
     const on = active;
     setOutlines(on && flags.boxes);
@@ -844,8 +789,7 @@ export function createOverlaysRuntime(options: OverlaysRuntimeOptions = {}): Ove
       focusTruncated = false;
       unnamedCount = 0;
     }
-    // The retained sets just changed shape; without this the ResizeObserver
-    // keeps the old focus elements until the hover target next moves.
+    // Retained sets just changed shape; without this the ResizeObserver keeps stale targets.
     syncObservedGeometry();
     if (on && (flags.inspect || flags.focus)) schedule();
     else cancelFrame();
@@ -896,12 +840,9 @@ export function createOverlaysRuntime(options: OverlaysRuntimeOptions = {}): Ove
 
     setStyleNonce,
 
-    /**
-     * No geometry: `focusItems` and `hover` are per-frame measurements of the
-     * host page, they change on every pointer move, and a bug report does not
-     * want a rectangle per tabbable element. What a reader needs is which
-     * layers are drawing and whether the scan is telling the truth.
-     */
+    // No geometry: focusItems/hover change every pointer move, and a bug
+    // report needs which layers are on and whether the scan is honest, not a
+    // rectangle per tabbable element.
     diagnostics() {
       const latest = store.peek();
       return {
@@ -931,8 +872,7 @@ export function createOverlaysRuntime(options: OverlaysRuntimeOptions = {}): Ove
           },
           enabledPreference,
         );
-        // A failed read must preserve session choices; a missing key restores defaults.
-        // parseFlags fails closed, so an unreadable blob means every overlay off.
+        // A failed read preserves session choices; a missing key restores defaults.
         if (readable) flags = stored === null ? { ...initialFlags } : parseFlags(stored);
       }
 
@@ -940,8 +880,6 @@ export function createOverlaysRuntime(options: OverlaysRuntimeOptions = {}): Ove
       active = api.isVisible();
 
       const stopWatchingVisibility = api.subscribeVisibility((visible) => {
-        // The overlay slot isn't rendered while the bar is hidden; everything
-        // resumes on its own when it comes back.
         active = visible;
         sync();
         publish();
@@ -954,8 +892,7 @@ export function createOverlaysRuntime(options: OverlaysRuntimeOptions = {}): Ove
 
       let disposed = false;
       const dispose = () => {
-        // Idempotent: both the abort handler and the returned cleanup; core
-        // runs the second after the first.
+        // Idempotent: this is both the abort handler and the returned cleanup.
         if (disposed) return;
         disposed = true;
         active = false;
@@ -966,9 +903,7 @@ export function createOverlaysRuntime(options: OverlaysRuntimeOptions = {}): Ove
         setGeometryListeners(false);
         setGeometryObserver(false);
         setDomObserver(false);
-        // Releases only our reference (ref-counted, see setHostOutlines) — an
-        // unconditional removal would un-outline a second toolbar's sheet
-        // while its chip/panel still said the overlay was on.
+        // Releases only our reference (ref-counted, see setHostOutlines).
         setOutlines(false);
         stopWatchingVisibility();
         storage = null;
@@ -982,8 +917,7 @@ export function createOverlaysRuntime(options: OverlaysRuntimeOptions = {}): Ove
         unnamedCount = 0;
         // So a StrictMode remount sees the enable edge again and rescans.
         focusDrawing = false;
-        // The store outlives one start/stop cycle — StrictMode runs
-        // mount -> cleanup -> mount; destroying it here would freeze the panel.
+        // Store outlives one start/stop cycle — destroying it here would freeze the panel across StrictMode's remount.
         publish();
         store.flush();
       };

@@ -12,11 +12,12 @@ import { BOXES_CSS } from "../overlays/runtime";
 import { THEME_EDITOR_CSS } from "../theme-editor/css";
 import { extensionRoster } from "../../test-utils/extension-roster";
 
-// One pattern for every sheet: left/right/margin-left/margin-right/padding-left/padding-right and
-// text-align: left|right pin to a physical side regardless of dir="rtl"; so does a
-// four-value padding/margin shorthand, which can hide an asymmetric left/right pair
-// behind logical-looking property names. inset-inline(-start|-end), text-align:
-// start|end and padding-block/padding-inline flip automatically.
+// left/right, the margin/padding/border -left/-right properties, and
+// text-align: left|right all pin to a physical side regardless of dir="rtl";
+// so does a four-value padding/margin shorthand, which can hide an asymmetric
+// left/right pair behind logical-looking property names. The logical
+// equivalents (inset-inline*, text-align: start|end, padding-block/-inline)
+// flip automatically.
 const PHYSICAL_CSS_PATTERN =
   /\bleft\s*:|\bright\s*:|\bborder-(?:left|right)(?:-(?:width|color|style))?\s*:|\bborder-(?:top|bottom)-(?:left|right)-radius\s*:|margin-left|margin-right|padding-left|padding-right|text-align:\s*(left|right)|\b(?:float|clear)\s*:\s*(left|right)\b|\bbackground-position\s*:\s*(left|right)\b|\b(?:inset|padding|margin)\s*:\s*[^\s;]+\s+[^\s;]+\s+[^\s;]+\s+[^\s;]+\s*;/;
 
@@ -104,8 +105,8 @@ function scopeViolations(css: string): string[] {
           atRuleDepth = depth + 1;
         }
       } else if (depth === 2 && atRuleDepth === 2) {
-        // @keyframes blocks and nested at-rules are intentionally unsupported and
-        // will be reported as violations — add handling when the first animation lands.
+        // @keyframes and nested at-rules are intentionally unsupported here —
+        // add handling when the first animation lands.
         const unscoped = unscopedSelectorParts(prelude);
         if (unscoped.length > 0) {
           violations.push(...unscoped);
@@ -135,7 +136,7 @@ function scopeViolations(css: string): string[] {
   return violations;
 }
 
-// Allow-listed text is removed by exact match so any other left/right creeping in elsewhere is still caught.
+// Removed by exact match so any other left/right creeping in elsewhere is still caught.
 function removeAllowlisted(
   css: string,
   allow: ReadonlyArray<{ text: string; count: number }>,

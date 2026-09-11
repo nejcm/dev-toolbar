@@ -1,25 +1,14 @@
 /**
  * `@nejcm/dev-toolbar/ext/agent` exposes core's command and diagnostics
- * aggregations to an in-page agent (`plans/agent-readable-toolbar.md` § Phase 0).
- * It uses a registry because core supports multiple mounted roots; `default`
- * throws unless there is exactly one rather than guessing.
+ * aggregations to an in-page agent. Uses a registry, not a singleton, because
+ * core supports multiple mounted roots; `default` throws unless there is
+ * exactly one rather than guessing.
  *
- * The chip deliberately diverges from the plan's "no `compact`, no `panel`":
- * that shape paints a chip anyway, since `Bar.tsx` falls back to a `trigger`
- * span for any extension with neither. A null compact slot still creates the
- * item and its `:not(:first-child)::before` divider (`styles.css`), and
- * `hidden` stops `start()` entirely (`useExtensionLifecycle.ts`), taking the global with
- * it. `priority: -1` makes the chip collapse first instead.
- *
- * `allowRun` defaults off because the global is reachable by any page script.
- * Teardown removes stale handles and the global. Nothing touches a global at
- * module evaluation, so SSR remains safe. Core's import boundary also matters:
- * this extension imports only core types and uses `/runtime` for redaction;
- * core may not import `/runtime`.
- *
- * `read().shell` is the one DOM read. The shell belongs to core, which has no
- * extension to publish these facts through `diagnostics()`; changing that
- * would be a core contract change (`plans/agent-readable-toolbar.md` § Phase 1).
+ * The chip renders `compact` (rather than omitting it) so `Bar.tsx` doesn't
+ * fall back to a generic `trigger` span; `priority: -1` makes it collapse
+ * before an ordinary extension. `allowRun` defaults off since the published
+ * global is reachable by any page script. This extension imports only core
+ * types and uses `/runtime` for redaction — core may not import `/runtime`.
  */
 import { useEffect } from "react";
 import {
@@ -94,24 +83,17 @@ export interface AgentBridgeOptions {
   /** Extra `redact()` keys for consumer-supplied diagnostics. */
   extraKeys?: readonly string[];
   /**
-   * Off-page transport (`plans/agent-readable-toolbar.md` § Phase 3). Absent —
-   * the default — means the bridge opens no connection to anything: the global
-   * is the whole surface, and only a script already in the page can reach it.
-   *
-   * Present means the page POSTs its (coalesced, already-redacted) snapshot to
-   * `report.url` and picks up commands the receiver has queued, which is what
-   * lets an agent that never loads the app `curl` the state. Point it at a
-   * **dev-server route on the same origin**; see the Vite recipe in the README.
-   *
-   * `allowRun` still gates running: with it off the handle has no
-   * `runCommand`, so a queued command comes back refused rather than run.
+   * Off-page transport. Absent (default) means the bridge opens no
+   * connection — the global is the whole surface. Present means the page
+   * POSTs its coalesced, redacted snapshot to `report.url` and picks up
+   * queued commands, letting an agent that never loads the app `curl` the
+   * state. Point it at a **dev-server route on the same origin** (see the
+   * Vite recipe in the README); `allowRun` still gates running.
    */
   report?: AgentReportOptions;
   /**
-   * The `instanceId` you pass to `<DevToolbar>`, and the key this bridge's
-   * handle is published under. Default `"default"`, matching core's own
-   * default. The contract hands `start(api)` no instance identity, so — as in
-   * `/ext/flags` and `/ext/theme-editor` — you repeat it here.
+   * The `instanceId` you pass to `<DevToolbar>`. Default `"default"`. The
+   * contract hands `start(api)` no instance identity, so you repeat it here.
    */
   instanceId?: string;
   /** Extension id. Default `"agent"`. */
@@ -162,11 +144,7 @@ export interface AgentBridgeOptions {
   styleNonce?: string;
   align?: ToolbarAlign;
   order?: number;
-  /**
-   * Overflow collapse order — **lowest collapses first**. Default `-1`, below
-   * core's default of `0`, so this chip yields the bar before any ordinary
-   * extension does. Nothing is lost when it does: the bridge is not its chip.
-   */
+  /** Overflow collapse order, lowest first. Default `-1`, below core's `0`, so this chip yields the bar before an ordinary extension. */
   priority?: number;
   hidden?: boolean;
 }

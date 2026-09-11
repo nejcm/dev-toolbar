@@ -1,17 +1,8 @@
 /**
- * `/ext/theme-editor` styles. [dev-toolbar/ext/theme-editor]
- *
- * Same rules as core and the other extensions: inside the `dev-toolbar` cascade
- * layer, every selector scoped by `[data-dev-toolbar]`, every colour from a
- * `--dtb-*` token, every part name namespaced by kind (`thm-*`).
- *
- * No declaration carries `!important` — this extension's guard against writing
- * reserved names (`RESERVED_PREFIXES` in `./types`) is a refusal to ever emit
- * them, not a cascade fight, so no `!important` is needed to win one.
- *
- * Every selector starts at `[data-dev-toolbar]`, so this file cannot style the
- * application: app appearance is decided by the custom properties the runtime
- * writes, which are the consumer's own tokens, never ours.
+ * `/ext/theme-editor` styles. Inside the `dev-toolbar` cascade layer, every
+ * selector scoped by `[data-dev-toolbar]` so this file cannot style the
+ * application. No `!important`: reserved names are refused outright (see
+ * `RESERVED_PREFIXES` in `./types`), so there's never a cascade fight to win.
  */
 import { KIT_CSS, createStyleInjector, ensureKitStyles } from "@nejcm/dev-toolbar/kit";
 

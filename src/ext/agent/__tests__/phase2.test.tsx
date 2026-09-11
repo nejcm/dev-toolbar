@@ -147,12 +147,9 @@ describe("an agent sets a specific flag to a specific value in one call", () => 
   it("refuses `value: null` on a boolean, string or number flag, and says why", async () => {
     const { applied } = mountFlags();
 
-    // `null` is a `FlagValue`, so it gets past `isFlagValue` — and is then
-    // refused by the flag's own declared type, because `typeof null` is
-    // "object". That refusal is the correct behaviour: `vetOverrides` would
-    // discard such an override on the next reload, so accepting it here would
-    // make an override that silently vanishes. The bug this test pins is the
-    // schema and the docs having claimed the opposite.
+    // `null` passes `isFlagValue` but is refused by the flag's own declared
+    // type (`typeof null` is "object"): correct, since `vetOverrides` would
+    // discard it on reload, making an override that silently vanishes.
     for (const key of ["new-header", "theme.name", "search.rank"]) {
       const result = await run("flags.set", { key, value: null });
       expect(result, `${key} accepted null`).toMatchObject({ ok: false, reason: "threw" });
@@ -405,10 +402,9 @@ describe("diagnostics.capture resolves the snapshot it captured", () => {
 const nest = (n: number): unknown => (n === 0 ? { leaf: "SENTINEL" } : { d: nest(n - 1) });
 
 /**
- * `redact()` walks its argument from depth 0 and replaces any object at depth
- * >= `maxDepth` (8) with `"[truncated]"`. A contribution's `data` therefore
- * survives a different number of levels depending on **how deep inside the
- * redacted root it sits**, and there are three surfaces, not two:
+ * `redact()` walks from depth 0 and truncates any object at depth >=
+ * `maxDepth` (8), so a contribution's `data` survives a different number of
+ * levels depending on how deep it sits on each of three surfaces:
  *
  * | Path | `data` sits at | Levels kept below its own root |
  * | --- | --- | --- |
@@ -416,16 +412,9 @@ const nest = (n: number): unknown => (n === 0 ? { leaf: "SENTINEL" } : { d: nest
  * | B. bridge `runCommand("diagnostics.capture").result` — `redact(snapshot)` | depth 3 | 4 |
  * | C. bug-report JSON — `renderJson(capture())` | depth 0 | 7 |
  *
- * C is the **most** permissive: `/ext/diagnostics` redacts each contribution
- * at its own root and `renderJson` does not re-redact the assembled snapshot.
- * B is strictest because the bridge applies a second pass three levels down.
- *
- * All three are pinned because an earlier version of this block measured B
- * correctly and called it C, so the assertions passed while the name above them
- * was false. Naming the surface each test reads is the point.
- *
- * `README.md` and `src/ext/agent/runtime.ts` quote all three numbers; this
- * test pins them here too.
+ * C is most permissive (each contribution redacted once, at its own root,
+ * never re-redacted); B is strictest (a second pass three levels down).
+ * `README.md` and `runtime.ts` quote all three numbers; pinned here too.
  */
 describe("re-redaction truncates deep contributions, at three pinned depths", () => {
   it("path A — the bridge's roster read keeps five levels and drops the sixth", () => {

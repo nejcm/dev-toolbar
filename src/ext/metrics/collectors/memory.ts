@@ -1,13 +1,13 @@
 /**
  * JS heap usage. [dev-toolbar/ext/metrics]
  *
- * `performance.memory` is a non-standard Chromium API. Other browsers return
- * `unsupported`; it reports JS heap, not process memory.
+ * `performance.memory` is a non-standard Chromium API; other browsers return
+ * `unsupported`. It reports JS heap, not process memory.
  *
- * A site-isolated desktop renderer gets precise live values. Otherwise, including
- * most Android sites or disabled site isolation, values are quantized and cached
- * for up to 20 minutes. Since the mode is not exposed, a long run of identical
- * readings marks the source rate-limited instead of presenting stale values as live.
+ * Outside a site-isolated desktop renderer, values are quantized and cached
+ * for up to 20 minutes. Since that mode isn't exposed, a long run of
+ * identical readings marks the source rate-limited instead of presenting
+ * stale values as live.
  */
 import { createTimeSeries } from "../../../runtime";
 import { formatBytes, formatBytesDelta, formatPercent, NOT_AVAILABLE } from "../format";

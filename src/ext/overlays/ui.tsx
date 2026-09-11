@@ -25,21 +25,17 @@ import type { OverlaysRuntime } from "./runtime";
  * The rendered surfaces. [dev-toolbar/ext/overlays]
  *
  * Everything drawn over the application is React, inside the `overlay` slot —
- * no imperative DOM writing to reverse, so toggling off, hiding, unmounting
- * and hot reload all restore the page by construction. The one exception, the
- * host-outline stylesheet, lives in `runtime.ts` and tears down with the
- * listeners.
+ * no imperative DOM writing to reverse. The one exception, the host-outline
+ * stylesheet, lives in `runtime.ts` and tears down with the listeners.
  *
  * `presentation` arrives already resolved and is read through `/kit`'s
- * `resolveCompactControl` and `renderCompact`, so the `hasIcon` guard, the
- * `"default"` fallback, the `CompactRenderContext` and the `undefined`
- * fall-through live in one place for all nine extensions rather than nine.
- * What stays here is the DOM: a consumer's `render` supplies the children of
- * the chip carrying `data-dtb-active`, and `Chip` paints the dot before them,
- * so no callback can cost the control its state attributes or its dot. The
- * error `Tag` is rendered *after* those children under every preset and under
- * a `render` callback alike — a measurement that threw is state, not
- * presentation (`plans/bar-presentation-icons-v1.md`, invariant 2).
+ * `resolveCompactControl` and `renderCompact`, so the resolution rules live in
+ * one place for all nine extensions. What stays here is the DOM: a consumer's
+ * `render` supplies the children of the chip carrying `data-dtb-active`, and
+ * `Chip` paints the dot before them. The error `Tag` is rendered *after* those
+ * children under every preset and under a `render` callback alike — a
+ * measurement that threw is state, not presentation
+ * (`plans/bar-presentation-icons-v1.md`, invariant 2).
  */
 
 const box = (rect: RectLike): CSSProperties => ({

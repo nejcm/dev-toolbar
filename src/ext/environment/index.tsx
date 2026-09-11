@@ -170,11 +170,7 @@ export function environment(options: EnvironmentOptions = {}): DevToolbarExtensi
       />
     ),
 
-    /**
-     * The redacted snapshot, for `/ext/diagnostics` — **P3**. Same builder as
-     * `environment.copyJson`, so a bug-report aggregator can't fetch what the
-     * panel wouldn't show.
-     */
+    /** The redacted snapshot, for `/ext/diagnostics`. Same builder as `environment.copyJson`. */
     diagnostics: () => runtime.diagnostics(),
 
     panel: ({ styleNonce }) => (
@@ -191,9 +187,7 @@ export function environment(options: EnvironmentOptions = {}): DevToolbarExtensi
         label: "Copy environment summary",
         group: "Environment",
         keywords: ["release", "commit", "clipboard", "context"],
-        // Same redacted snapshot the panel renders, so `runCommand("environment.copy")`
-        // can't bypass the UI's masking. `/runtime`'s writer throws on failed writes,
-        // which the palette reports (§13.4).
+        // Same redacted snapshot the panel renders, so this command can't bypass masking.
         run: async () => {
           await writeClipboardTextOrThrow(runtime.snapshotText());
         },

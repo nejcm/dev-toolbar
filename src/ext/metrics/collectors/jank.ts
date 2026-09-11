@@ -27,27 +27,24 @@ export interface JankCollectorOptions {
   /** Rolling active window. Default `5000` ms, per §3D. */
   windowMs?: number;
   /**
-   * Target frame budget override. Without one, calibration uses the first 120 active intervals;
-   * only `reset()` recalibrates. Set it when the refresh rate can switch. Calibration intervals
-   * stay out of `worstFrame`; stall detection runs first and still reports in `stalls`/
-   * `longestStall`.
+   * Target frame budget override. Without one, calibration uses the first 120
+   * active intervals; only `reset()` recalibrates. Set it when the refresh
+   * rate can switch.
    */
   frameMs?: number;
   /**
-   * Deltas over this threshold are not frame pacing. If a visibility change spans the gap, discard
-   * it; otherwise record a stall outside the dropped-frame ratio. Default `1000` ms.
+   * Deltas over this threshold are not frame pacing: discarded if a
+   * visibility change spans the gap, else recorded as a stall outside the
+   * dropped-frame ratio. Default `1000` ms.
    */
   idleGapMs?: number;
   /**
-   * Visible gaps over this threshold are treated as absent. Debugger pauses, modal dialogs, and
-   * synchronous XHR emit no `visibilitychange`, but longer gaps are unlikely page work. Default
-   * `30_000` ms.
+   * Visible gaps over this threshold are treated as absent — a debugger
+   * pause, modal dialog, or sync XHR emits no `visibilitychange`, but a
+   * longer gap is unlikely page work. Default `30_000` ms.
    */
   stallCeilingMs?: number;
-  /**
-   * Frames retained. Defaults to enough for `windowMs` at `frameMs` when given, else 4 ms
-   * (~240 Hz), plus 250 slots of slack. Override for unusual refresh rates or memory limits.
-   */
+  /** Frames retained. Defaults to cover `windowMs` at `frameMs` (or 4 ms) plus slack. */
   historySize?: number;
   /** Fractions, not percentages. Default `{ warn: 0.02, bad: 0.05 }`. */
   thresholds?: Thresholds;

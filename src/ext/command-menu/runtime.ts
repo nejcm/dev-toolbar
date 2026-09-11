@@ -1,17 +1,11 @@
 /**
- * Everything `/ext/command-menu` owns that is not React. [dev-toolbar/ext/command-menu]
+ * Everything `/ext/command-menu` owns that is not React.
  *
- * Unlike the other extensions, which *produce* commands, this one only
- * consumes core's aggregation — via `ExtensionRuntimeApi.getCommands()`, not
- * `useToolbarCommands()`, since an extension can't import a *value* from core
- * (§7) and the hook is a value.
- *
- * Two consequences: the list is only ever correct at the moment it's asked
- * for (the function form of `commands` can start contributing without notice,
- * so the palette re-enumerates on every open and runs by `id` through core
- * rather than holding a captured object), and running a command runs
- * somebody else's code — it may throw, reject, or have vanished since being
- * listed, all shown in the palette rather than thrown at the host app.
+ * Consumes core's aggregation via `ExtensionRuntimeApi.getCommands()`, not
+ * `useToolbarCommands()` — an extension can't import a *value* from core (§7).
+ * So the palette re-enumerates on every open and runs commands by `id`
+ * through core, since a listed command may vanish, throw, or reject by the
+ * time it's run.
  */
 import { createThrottledStore, describeError } from "../../runtime";
 import { parseList, readPreference, writePreference } from "@nejcm/dev-toolbar/kit";
@@ -24,11 +18,7 @@ import type { CommandMatch } from "./types";
 /** Storage key holding the recently-run ids, most recent first. */
 export const RECENT_KEY = "recent";
 
-/**
- * The recents list as it is laid down in storage: this extension's own JSON,
- * stored byte-for-byte. The serialised empty list is the fallback, so a list
- * pruned to nothing removes the key.
- */
+/** Recents as stored: this extension's own JSON, byte-for-byte. A list pruned to nothing removes the key. */
 const RECENT_PREFERENCE: Preference<string> = {
   key: RECENT_KEY,
   encoding: "string",
@@ -281,24 +271,18 @@ export function createCommandMenuRuntime(
       ready: false,
       recent: [],
     },
-    // Publishes on write (intervalMs: 0): coalescing keystrokes would drop the
-    // frame the typist is steering by. Used for the `useSyncExternalStore`
-    // shape, not the throttling.
+    // intervalMs: 0 — coalescing keystrokes would drop the frame the typist is steering by.
     { intervalMs: 0 },
   );
 
   let api: ExtensionRuntimeApi | null = null;
 
   /**
-   * The palette's own view of the aggregation, and the **one** place
-   * `input`-carrying commands are dropped (contract v2).
-   *
-   * A command that declares `input` needs a form this palette does not have,
-   * and offering a row that cannot be run — or running it with `undefined` and
-   * letting it throw — would both be worse than not listing it. So it is
-   * skipped here, once, and left to `/ext/agent`, which can supply input.
-   * Filtering here rather than in `filterCommands` keeps `snapshot.commands`
-   * honest: it is what the palette could run, not what exists.
+   * The one place `input`-carrying commands are dropped (contract v2): this
+   * palette has no form to collect input, so it skips such a command rather
+   * than list a row it can't run — left to `/ext/agent` instead. Filtered
+   * here, not in `filterCommands`, so `snapshot.commands` stays "what the
+   * palette could run."
    */
   const enumerate = (): readonly AnyToolbarCommand[] => {
     if (!api) return EMPTY;

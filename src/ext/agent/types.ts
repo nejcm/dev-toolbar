@@ -8,10 +8,7 @@ import type { CommandInputSchema, ExtensionDiagnostics } from "../../core/contra
 export interface AgentCommandView {
   id: string;
   label: string;
-  /**
-   * Prose for a reader deciding whether to call this (contract v2). Absent
-   * when the command declares none — `label` is then all there is.
-   */
+  /** Prose for a reader deciding whether to call this (contract v2). Absent when the command declares none. */
   description?: string;
   group?: string;
   keywords?: readonly string[];
@@ -32,20 +29,16 @@ export interface AgentBarItemView {
 }
 
 /**
- * Shell-level facts: what the *chrome* is doing, as opposed to what an
- * extension is doing.
- *
- * Nothing publishes these through `diagnostics()`, because the shell is core
- * and core has no extension to speak for it. So the bridge reads them off the
- * root node — the one DOM read in the whole design
- * (`plans/agent-readable-toolbar.md` § Phase 1, open question 3: core owning
- * this instead would be a core change and a `CONTRACT_VERSION` conversation).
+ * Shell-level facts (the chrome, not an extension). Nothing publishes these
+ * through `diagnostics()` since the shell is core and has no extension to
+ * speak for it, so the bridge reads them off the root node — the one DOM
+ * read in the whole design.
  */
 export interface AgentShellView {
   /**
-   * False when no root carrying this `instanceId` is in the document — which
-   * is also what a *hidden* bar looks like, because core removes it rather
-   * than hiding it visually. `AgentSnapshot.visible` tells the two apart.
+   * False when no root carrying this `instanceId` is in the document — also
+   * what a *hidden* bar looks like, since core removes rather than hides it.
+   * `AgentSnapshot.visible` tells the two apart.
    */
   mounted: boolean;
   position: string | null;
@@ -53,16 +46,14 @@ export interface AgentShellView {
   colorScheme: string | null;
   /**
    * The per-instance CSS custom property core publishes on
-   * `document.documentElement`, and its current value. The **unsuffixed**
-   * `--dev-toolbar-height` is published only while this is the sole mounted
-   * instance, so it is deliberately not reported here: this name is the one
-   * that is always this instance's.
+   * `document.documentElement`. The unsuffixed `--dev-toolbar-height` is
+   * published only while this is the sole mounted instance, so it is
+   * deliberately not reported here.
    */
   heightVariable: { name: string; value: string | null };
   /**
-   * Only what is still *in* the bar. A collapsed extension is removed from
-   * its region and re-rendered inside the `···` menu, so an id missing from
-   * here is either collapsed or has no bar item at all.
+   * Only what is still *in* the bar. A collapsed extension moves into the
+   * `···` menu, so an id missing here is either collapsed or has no bar item.
    */
   bar: readonly AgentBarItemView[];
   overflow: AgentOverflowView;
@@ -75,12 +66,7 @@ export interface AgentOverflowView {
   present: boolean;
   /** True while the `···` menu is open. */
   open: boolean;
-  /**
-   * The collapsed extensions — **only while the menu is open**. Core renders
-   * the menu's contents on open, so a closed menu is an empty list here, not
-   * a claim that nothing collapsed. `present` is the fact to read when it is
-   * closed.
-   */
+  /** Collapsed extensions, **only while the menu is open** — closed is `[]`, not "nothing collapsed"; read `present` for that. */
   items: readonly string[];
 }
 
@@ -99,21 +85,16 @@ export interface AgentSnapshot {
   shell: AgentShellView;
   /**
    * One entry per present, non-hidden extension, redacted again on the way
-   * out (decision 3). `status: "absent"` distinguishes "had nothing to say"
-   * from "blew up", which is the difference between an agent reporting a clean
-   * run and reporting a clean run because it read half the roster.
+   * out. `status: "absent"` distinguishes "had nothing to say" from "blew
+   * up" — the difference between a clean run and a clean run that only read
+   * half the roster.
    */
   diagnostics: readonly ExtensionDiagnostics[];
 }
 
 /** Result of `runCommand`; command failures are values so an agent can branch on them. */
 export type AgentRunResult =
-  /**
-   * `result` is whatever `run()` returned, redacted on the way out like every
-   * other read (decision 3), and `undefined` for the many commands that return
-   * nothing. It is `structuredClone`-able or it does not survive
-   * `page.evaluate`, which is the contract's requirement on `Out` too.
-   */
+  /** Whatever `run()` returned, redacted like every other read; `undefined` for commands that return nothing. Must be `structuredClone`-able to survive `page.evaluate`. */
   | { ok: true; result?: unknown }
   | { ok: false; reason: "unknown-command" }
   /** The toolbar this handle belonged to has unmounted; nothing was run. */
@@ -123,15 +104,11 @@ export type AgentRunResult =
 /**
  * One mounted toolbar, as an agent sees it.
  *
- * `runCommand` is **absent**, not merely refusing, when `allowRun` is off:
- * there is no way to run anything at all.
- *
- * A handle someone captured before its toolbar unmounted refuses everything
- * afterwards (decision 4): `read()` and `listCommands()` **throw**, and
- * `runCommand()` resolves `{ ok: false, reason: "torn-down" }`. Reads throw
- * rather than answering because the only value-shaped answer available — an
- * empty snapshot — is indistinguishable from a live toolbar with nothing in
- * it, which is precisely the wrong answer to give an agent.
+ * `runCommand` is **absent**, not merely refusing, when `allowRun` is off.
+ * A handle captured before its toolbar unmounted refuses everything after:
+ * `read()` and `listCommands()` **throw** (an empty snapshot would be
+ * indistinguishable from a live, empty toolbar), and `runCommand()` resolves
+ * `{ ok: false, reason: "torn-down" }`.
  */
 export interface AgentHandle {
   readonly instanceId: string;
@@ -140,11 +117,8 @@ export interface AgentHandle {
   listCommands(): readonly AgentCommandView[];
   read(): AgentSnapshot;
   /**
-   * Present only when `allowRun` is `true`.
-   *
-   * `input` is handed to the command's `run()` unchanged; read the schema from
-   * `listCommands()[n].input` to know what it wants. A command that refuses
-   * its input throws, which arrives here as
+   * Present only when `allowRun` is `true`. `input` is handed to the
+   * command's `run()` unchanged; a refusal arrives as
    * `{ ok: false, reason: "threw", error }` rather than a rejection.
    */
   runCommand?(id: string, input?: unknown): Promise<AgentRunResult>;
@@ -152,8 +126,8 @@ export interface AgentHandle {
 
 /**
  * The object installed at `globalName`. Keyed by `instanceId` rather than
- * being a singleton (decision 1): core supports several mounted roots, and a
- * singleton would let the last mount silently win.
+ * being a singleton: core supports several mounted roots, and a singleton
+ * would let the last mount silently win.
  */
 export interface AgentRegistry {
   /** Shape version of this object, independent of `CONTRACT_VERSION`. */

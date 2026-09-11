@@ -60,9 +60,9 @@ describe("redact", () => {
     });
   });
 
-  // The old unanchored SCHEME regex matched a credential-shaped prefix inside
-  // ordinary prose and replaced the whole string — `token expired…` became
-  // `token [redacted]`, and `Bearer abc def` lost its trailing word.
+  // `redact()` is an anchored whole-value match — it must not fire on prose
+  // that merely starts with a scheme-like prefix (see `redactText` for the
+  // substring-scan counterpart that handles prose).
   it("leaves prose that merely starts like a scheme header byte-for-byte", () => {
     expect(redact({ h: "token expired, please log in" })).toEqual({
       h: "token expired, please log in",
@@ -124,8 +124,6 @@ describe("redact", () => {
   });
 
   it("masks credentials inside URL-shaped values, wherever the key is innocent", () => {
-    // `redact()` matches key names, and `?access_token=` hides in the *value* —
-    // so the OAuth-callback shape leaks unless URLs are parsed too.
     expect(
       redact({
         page: "https://app.test/cb?access_token=hunter2&state=1",
@@ -147,10 +145,9 @@ describe("redact", () => {
   });
 
   it("returns an innocent URL byte-for-byte, normalisation included", () => {
-    // `URL.toString()` rewrites more than it looks: it adds the missing path,
-    // lowercases scheme and host, and punycodes an IDN. A redactor that had
-    // nothing to redact must not touch the value, or two diagnostic dumps that
-    // are identical will not diff as identical.
+    // `URL.toString()` normalizes (adds path, lowercases host, punycodes IDN);
+    // a redactor with nothing to redact must not touch the value at all, or
+    // two identical diagnostic dumps would stop diffing as identical.
     const untouched = [
       "https://app.test?x=1", // gains "/" through URL.toString()
       "HTTPS://App.Test/path", // lowercased
@@ -180,15 +177,10 @@ describe("redact", () => {
   });
 
   it("bounds a shared (DAG) reference walked once per path with maxNodes", () => {
-    // `seen` (the cycle guard) is scoped to one path: it is added before
-    // recursing into a value and removed after, so a value reachable through
-    // several paths is walked once per path, not once overall. A structure
-    // where every one of 8 keys at each of 7 levels aliases the *same* child
-    // costs 8^7 walks of the innermost object with no bound on the count —
-    // only on width (`maxArrayLength`) and depth (`maxDepth`), neither of
-    // which this shape exceeds. A `Proxy`'s `ownKeys` trap (which `walk` hits
-    // once per object it walks, via `Object.keys`) counts how many times the
-    // shared leaf is actually visited.
+    // The cycle guard is scoped to one path, so a value reachable through many
+    // paths is walked once per path — a DAG of 8 keys x 7 levels aliasing one
+    // child costs 8^7 walks with no bound but `maxNodes`. A `Proxy` `ownKeys`
+    // trap counts how many times the shared leaf is actually visited.
     let leafWalks = 0;
     function buildLevel(depth: number): unknown {
       if (depth === 0) {
@@ -211,24 +203,19 @@ describe("redact", () => {
 
     const output = redact(sharedGraph, { maxNodes: 50 });
 
-    // The budget is spent well before every path to the leaf is walked: far
-    // fewer than the 8^7 = 2_097_152 an unbounded walk would produce.
+    // Far fewer than the 8^7 = 2_097_152 walks an unbounded traversal would produce.
     expect(leafWalks).toBeLessThan(200);
     expect(JSON.stringify(output)).toContain("[truncated]");
 
-    // The budget is shared by the whole call, not per-branch: once it is
-    // spent, a sibling key that has not even been reached yet is truncated
-    // too, not just the branch that used up the count.
+    // The budget is shared by the whole call: a sibling not yet reached is
+    // truncated too, not just the branch that spent the count.
     const record = output as Record<string, unknown>;
     expect(record["k7"]).toBe("[truncated]");
   });
 
   it("falls back to the default maxArrayLength instead of throwing when it is NaN", () => {
-    // `Math.min(length, NaN)` is `NaN`, and `new Array(NaN)` throws a
-    // `RangeError` — straight out of `redact()`, defeating its one
-    // guarantee: it does not throw. Before the fix this call threw; after,
-    // a malformed bound falls back to the default rather than being read as
-    // "unbounded".
+    // `new Array(NaN)` throws a RangeError, defeating redact()'s one guarantee
+    // that it never throws — a malformed bound must fall back to the default.
     const array = Array.from({ length: 250 }, (_, index) => index);
     expect(() => redact(array, { maxArrayLength: Number.NaN })).not.toThrow();
     expect(redact(array, { maxArrayLength: Number.NaN })).toEqual(
@@ -350,9 +337,8 @@ describe("redact", () => {
   });
 
   it("tags a revoked Proxy instead of letting Array.isArray throw", () => {
-    // `Array.isArray` throws a `TypeError` on a revoked Proxy — the one read
-    // in `walk()` that used to sit above every guard, before the object and
-    // array branches even get to decide which one they are.
+    // `Array.isArray` throws a TypeError on a revoked Proxy, before `walk()`
+    // even gets to decide which branch to take.
     const revokedObject = Proxy.revocable({}, {});
     revokedObject.revoke();
     expect(redact({ nested: revokedObject.proxy })).toEqual({ nested: "[unwalkable]" });
@@ -382,11 +368,6 @@ describe("redact", () => {
   });
 
   it("keeps the type it was handed, where `walk` actually guarantees one", () => {
-    // Type-level, and it fails on the single `<T>(value: T) => unknown`
-    // signature this replaced: `T` appeared only in the parameter, so every
-    // caller paid for a return of `unknown` with a cast or a `String()` wrap.
-    // The runtime assertions are the same values, so a signature that drifts
-    // from the behaviour fails twice.
     const text: string = "https://app.test/about";
     expectTypeOf(redact(text)).toEqualTypeOf<string>();
     expectTypeOf(redact(text, { mask: "***" })).toEqualTypeOf<string>();
@@ -402,10 +383,8 @@ describe("redact", () => {
     // record *or* as a tag string (a cycle, `maxDepth: 0`, a hostile Proxy).
     expectTypeOf(redact({ a: 1 })).toBeUnknown();
     expectTypeOf(redact([1, 2])).toBeUnknown();
-    // An explicit type argument still lands on the catch-all overload, the way
-    // it did under the single `<T>(value: T) => unknown` signature. Without a
-    // type parameter there, TS matches only the primitive-constrained overload
-    // and fails with TS2344 — a break for a caller who spelled the type out.
+    // An explicit type argument must still land on the catch-all overload,
+    // not fail with TS2344.
     expectTypeOf(redact<{ a: 1 }>({ a: 1 })).toBeUnknown();
     expectTypeOf(redact<string>("x")).toBeUnknown();
     expect(redact({ deep: { a: 1 } }, { maxDepth: 0 })).toBe("[truncated]");
@@ -419,8 +398,7 @@ describe("redact", () => {
 });
 
 describe("isSensitiveKey", () => {
-  // Every default entry, spelled the way a real payload spells it, plus the
-  // separator and case variants the normaliser is supposed to fold together.
+  // Default entries as a real payload spells them, plus separator/case variants.
   const SENSITIVE = [
     ...DEFAULT_SENSITIVE_KEYS,
     "Authorization",
@@ -458,8 +436,7 @@ describe("isSensitiveKey", () => {
     "set-cookie",
     "Set-Cookie",
     "signature",
-    // Plural tolerance: the one inflection the segment rule folds, so
-    // `credential` still covers the `credentials` bag every SDK ships.
+    // Plural tolerance: `credential` still covers the `credentials` bag every SDK ships.
     "credential",
     "credentials",
     "tokens",
@@ -475,28 +452,22 @@ describe("isSensitiveKey", () => {
     "passcode",
     "otp",
     "otpCode",
-    // A PIN *is* the credential: `pin` matching the `pin` segment of `pinCode`
-    // is the rule working, not the over-match `spinner` was.
+    // A PIN *is* the credential: matching the `pin` segment of `pinCode` is the
+    // rule working, not the over-match `spinner` was.
     "pin",
     "pinCode",
-    // Run-together compounds have no boundary to segment on, so they are only
+    // Run-together compounds have no boundary to segment on, so they're only
     // matched because the list carries the concatenation itself.
     "accesstoken",
     "authtoken",
     "secretkey",
-    // Standard session cookie names, all-caps and unsegmentable, listed for
-    // the same reason.
     "JSESSIONID",
     "PHPSESSID",
-    // `auth` no longer reaches inside a word, so the spellings it used to cover
-    // by substring are entries of their own.
+    // `auth` no longer reaches inside a word, so spellings it used to cover by
+    // substring are entries of their own — same for the other named fields below.
     "Authentication",
     "authorisation",
     "bearer",
-    // Named credential fields the substring rule caught inside a longer word
-    // and the segment rule releases unless the word itself is listed: Django's
-    // CSRF form field, the abbreviated session ids, the TOTP/HOTP spellings of
-    // a one-time code, and `xauth` written without its separator.
     "csrfmiddlewaretoken",
     "sessid",
     "SESSID",
@@ -512,10 +483,8 @@ describe("isSensitiveKey", () => {
     expect(isSensitiveKey(key)).toBe(true);
   });
 
-  // Substring matching over the normalised key redacted every one of these:
-  // `auth` hit `author`, `pin` hit `shipping` and `spinner`, `sid` hit
-  // `inside`, `residual` and `consider`. In a diagnostics dump a masked
-  // `author` is a lie by omission, so the matcher reads word segments instead.
+  // Substring matching used to redact every one of these (`auth` hit `author`,
+  // `pin` hit `spinner`, `sid` hit `inside`), so the matcher reads word segments instead.
   const INNOCENT = [
     "author",
     "authorName",
@@ -545,10 +514,8 @@ describe("isSensitiveKey", () => {
     expect(isSensitiveKey(key)).toBe(false);
   });
 
-  // A key name is whatever the consumer called it. `[^a-z\\d]+` as the segment
-  // separator treated every non-ASCII letter as punctuation, so `contraseña`
-  // segmented to `contrase`/`a` and `пароль` to nothing at all — and an
-  // `extraKeys` entry that HEAD matched by substring stopped matching.
+  // The segmenter used to treat every non-ASCII letter as punctuation, so
+  // `contraseña` split to `contrase`/`a` and `пароль` to nothing at all.
   it("segments a non-ASCII key, so extraKeys can name one", () => {
     expect(isSensitiveKey("contraseña", { extraKeys: ["contraseña"] })).toBe(true);
     expect(isSensitiveKey("Contraseña", { extraKeys: ["contraseña"] })).toBe(true);
@@ -563,9 +530,8 @@ describe("isSensitiveKey", () => {
     expect(isSensitiveKey("Passwörter", { extraKeys: ["contraseña"] })).toBe(false);
   });
 
-  // An entry is canonicalised through the same segmenter as the key, so it
-  // cannot carry a character no run of segments can hold. Stripping only
-  // `-_.` and whitespace left `x/y` unmatchable.
+  // An entry is canonicalised through the same segmenter as the key; stripping
+  // only `-_.` and whitespace used to leave `x/y` unmatchable.
   it("accepts an extraKey spelled with any separator", () => {
     expect(isSensitiveKey("x/y", { extraKeys: ["x/y"] })).toBe(true);
     expect(isSensitiveKey("x-y", { extraKeys: ["x/y"] })).toBe(true);
@@ -587,8 +553,7 @@ describe("isSensitiveKey", () => {
   });
 
   // `keys`/`extraKeys` match a *run* of segments; `allowKeys` matches the
-  // *whole* canonical key. An entry that would sensitise a key as a substring
-  // does not, by itself, exempt a longer key built from it.
+  // *whole* canonical key.
   it("does not let allowKeys exempt by partial match", () => {
     // "session" alone still sensitises "sessionName" — allowKeys has to name
     // the whole key, not just the segment that triggered the match.
@@ -601,13 +566,9 @@ describe("isSensitiveKey", () => {
     expect(isSensitiveKey("sessionNameV2", { allowKeys: ["sessionName"] })).toBe(true);
   });
 
-  // `isSensitiveKey` memoises the resolved form of an options object by its
-  // identity (see `resolveCached` in redact.ts), so a caller that hoists its
-  // options and reuses the same object gets it resolved once. That means the
-  // resolution is a snapshot taken the first time the object is seen: mutating
-  // a field on an already-used options object is not picked up by later calls
-  // sharing that same object. A fresh object literal per call is unaffected —
-  // there is nothing to reuse, so each one resolves independently, correctly.
+  // `isSensitiveKey` memoises the resolved form of an options object by identity
+  // (`resolveCached` in redact.ts): a snapshot taken the first time the object
+  // is seen, so mutating it later is not picked up by calls sharing that object.
   it("resolves an options object once: later mutation of that same object is not observed", () => {
     const shared: RedactOptions = { extraKeys: ["tenantcode"] };
     expect(isSensitiveKey("tenantCode", shared)).toBe(true);
@@ -657,8 +618,8 @@ describe("redactUrl", () => {
     expect(output).toContain("state=1");
   });
 
-  // The old fragment pass parsed the whole hash as query params, so
-  // `/settings?token` was read as one param key and the path was mangled.
+  // The old fragment pass parsed the whole hash as query params, mangling a
+  // hash-router path like `/settings?token`.
   it("masks only the query in a hash-router fragment and keeps the path", () => {
     expect(redactUrl("https://app.test/#/settings?token=abc&tab=general")).toBe(
       `https://app.test/#/settings?token=${REDACTED}&tab=general`,
@@ -697,9 +658,8 @@ describe("redactUrl", () => {
     expect(redactUrl("cb?token=1")).toBe(`cb?token=${REDACTED}`);
   });
 
-  // One table, every reference form the callers actually hand over: absolute,
-  // the three relative forms, and the strings that are not URLs at all but
-  // reach here anyway because a fetch argument is whatever the app passed.
+  // Every reference form callers hand over: absolute, the three relative
+  // forms, and non-URL strings that reach here anyway via a fetch argument.
   const UNMASKED = [
     "https://api.test/v1/users?page=2",
     "HTTPS://App.Test/path",
@@ -730,11 +690,9 @@ describe("redactUrl", () => {
     ["#access_token=a&state=1", `#access_token=${REDACTED}&state=1`],
     ["https://alice:hunter2@example.com/x", `https://${REDACTED}:${REDACTED}@example.com/x`],
     ["http://bad host/?%zz=1&api_key=a", `http://bad host/?%zz=1&api_key=${REDACTED}`],
-    // The parser strips leading C0 controls and spaces and removes every tab,
-    // newline and carriage return before it looks at the slashes, so the form
-    // has to be counted on the same normalised string the parser saw. A raw
-    // count read "  //host.test/p" as document-relative and returned the query
-    // alone, origin and all.
+    // The parser strips leading whitespace and every tab/newline/CR before
+    // looking at the slashes, so the form must be judged from that normalised
+    // string, not the raw input.
     ["  //host.test/p?token=1", `//host.test/p?token=${REDACTED}`],
     ["  /rooted?token=1", `/rooted?token=${REDACTED}`],
     ["\t/tab?token=1", `/tab?token=${REDACTED}`],
@@ -745,9 +703,8 @@ describe("redactUrl", () => {
     expect(redactUrl(input)).toBe(expected);
   });
 
-  // The mask goes into a URL *literally*, in all three positions, so a dump
-  // reads `[redacted]` rather than `%5Bredacted%5D` and a consumer can compare
-  // against the exported `REDACTED` without re-encoding it first.
+  // The mask goes into a URL literally so a dump reads `[redacted]` rather
+  // than percent-encoded, and can be compared against the exported `REDACTED`.
   it("writes the mask literally in userinfo, query and fragment", () => {
     expect(redactUrl("https://user:pw@a.test/p")).toBe(`https://${REDACTED}:${REDACTED}@a.test/p`);
     expect(redactUrl("https://a.test/p?token=abc&x=1")).toBe(
@@ -789,8 +746,8 @@ describe("redactUrl", () => {
     expect(redactUrl("::::?api_key=abc&ok=1", { mask })).toBe(`::::?api_key=${mask}&ok=1`);
   });
 
-  // A mask carrying a URL delimiter cannot go in literally without changing
-  // what the URL means, so it keeps the percent-encoded treatment.
+  // A mask carrying a URL delimiter must stay percent-encoded, or it would
+  // change what the URL means.
   it("percent-encodes a mask that would break the URL", () => {
     expect(redactUrl("https://a.test/p?token=abc&x=1", { mask: "a&b=c" })).toBe(
       `https://a.test/p?token=${encodeURIComponent("a&b=c")}&x=1`,
@@ -800,8 +757,7 @@ describe("redactUrl", () => {
     );
   });
 
-  // The placeholder the mask is carried in must not collide with the input:
-  // the substitution is only allowed to rewrite the slots this pass wrote.
+  // The internal placeholder must not collide with input that happens to look like it.
   it("does not rewrite input that looks like the internal placeholder", () => {
     const input = "https://a.test/p?note=dtb*mask*&more=dtb%2Amask%2A&token=abc";
     const output = redactUrl(input);
@@ -815,11 +771,9 @@ describe("redactUrl", () => {
     expect(redactUrl("https://a.test/p?note=dtb*mask*")).toBe("https://a.test/p?note=dtb*mask*");
   });
 
-  // The placeholder has to be cleared against the *normalised* serialisation,
-  // not the argument: the parser lowercases the host and strips tabs, newlines
-  // and carriage returns before the output is built from it. Cleared against
-  // the argument alone, the swap rewrote the host — leaving an unparseable
-  // URL — and rewrote ordinary path and query text as if it had matched.
+  // The placeholder must be cleared against the normalised serialisation (the
+  // parser lowercases the host and strips tabs/newlines/CRs), not the raw
+  // argument, or the swap corrupts the host and rewrites unrelated text.
   it.each([
     [
       "a host the parser lowercases into the placeholder",
@@ -840,15 +794,12 @@ describe("redactUrl", () => {
     const output = redactUrl(input);
     expect(output).toBe(expected);
     expect(output).not.toContain("s3cr3t");
-    // The host rewrite is what made this unparseable, so parsing is the assertion.
     expect(() => new URL(output)).not.toThrow();
     expect(new URL(output).host).toBe(new URL(input).host);
   });
 
-  // Clearing the placeholder used to append one `*` and re-scan, which is
-  // quadratic in the input's own run of `*` — 300 000 of them took 11.5 s,
-  // synchronously inside a patched `fetch`. The timeout is the regression
-  // guard; the expectations are that the shortcut is still correct.
+  // Clearing the placeholder used to append one `*` and re-scan — quadratic
+  // in a run of `*`s, 11.5s at 300k of them, synchronously inside `fetch`.
   it("clears the placeholder in one pass over a long run of stars", () => {
     const stars = "*".repeat(300_000);
     const output = redactUrl(`https://a.test/p?n=dtb*mask${stars}&token=1`);
@@ -857,10 +808,9 @@ describe("redactUrl", () => {
 });
 
 describe("ACRONYM segmentation cost", () => {
-  // The old `(\p{Lu}+)(\p{Lu}\p{Ll})` pattern is pathological on a long
-  // uppercase run with no lowercase terminator: greedy `\p{Lu}+` grabs the
-  // run, fails, backtracks from every start position (~5.6 s at 100k `A`s
-  // against the 2 s timeout; the lookahead form takes under 1 ms).
+  // The old greedy pattern backtracked from every start position on a long
+  // uppercase run with no lowercase terminator — 5.6s at 100k `A`s against a
+  // 2s timeout; the lookahead form takes under 1ms.
   it("segments a long uppercase run with no lowercase terminator in one pass", () => {
     const key = "A".repeat(100_000);
     expect(isSensitiveKey(key)).toBe(false);
@@ -890,8 +840,8 @@ describe("redactHeaders", () => {
       ]),
     ).toEqual({ "set-cookie": REDACTED, accept: "application/json" });
 
-    // The old array branch overwrote duplicate keys, so the last value won
-    // (`"b"`) instead of joining like the `Headers` branch (`"a, b"`).
+    // The array branch must join duplicate keys like the Headers branch does,
+    // not overwrite (last value winning).
     expect(
       redactHeaders([
         ["x-trace", "a"],
@@ -911,11 +861,9 @@ describe("redactHeaders", () => {
 });
 
 describe("a Headers or URL instance nested inside a plain object", () => {
-  // A network collector's dump shape: `{ url, headers, body }`, where `url` is
-  // a real `URL` and `headers` a real `Headers` — not top-level arguments to
-  // `redactHeaders`/`redactUrl`, but values `walk()` meets while recursing an
-  // object. Both must be masked the same way the top-level helpers mask them,
-  // and honour the same options.
+  // A network collector's dump shape: `{ url, headers, body }` where `url`/`headers`
+  // are real instances `walk()` meets while recursing, not top-level arguments —
+  // they must be masked the same way the top-level helpers mask them.
   it("redacts a nested Headers instance", () => {
     const headers = new Headers({ Authorization: "Bearer x", Accept: "application/json" });
     expect(redact({ headers })).toEqual({
@@ -938,10 +886,9 @@ describe("a Headers or URL instance nested inside a plain object", () => {
   });
 
   it("honours allowKeys on a nested Headers instance", () => {
-    // A plain value, not a `Bearer …`/JWT-shaped one — `redactString` masks a
-    // credential-*shaped value* regardless of `allowKeys`, which names keys.
-    // The point here is the key check alone, so the value must not trip that
-    // separate rule.
+    // A plain value, not credential-shaped — `redactString` masks a
+    // credential-shaped value regardless of `allowKeys`, which names keys, so
+    // the value here must not trip that separate rule.
     const headers = new Headers({ "Session-Name": "checkout" });
     expect(redact({ headers }, { allowKeys: ["sessionName"] })).toEqual({
       headers: { "session-name": "checkout" },
@@ -972,9 +919,7 @@ describe("a Headers or URL instance nested inside a plain object", () => {
 describe("hostile inputs walk() has not yet been asked to survive in this file", () => {
   it("tags a Proxy array whose length getter throws", () => {
     // `Array.isArray` sees through a Proxy to its target, so this still takes
-    // the array branch; reading `.length` is the part that can throw on
-    // hostile input (a Proxy `get` trap), same family as the index-getter and
-    // ownKeys cases above.
+    // the array branch; reading `.length` is what can throw here.
     const hostile = new Proxy([1, 2, 3], {
       get(target, prop, receiver) {
         if (prop === "length") throw new Error("length blew up");
@@ -986,16 +931,11 @@ describe("hostile inputs walk() has not yet been asked to survive in this file",
 
   it("tags an object whose own getPrototypeOf call throws, distinct from the instanceof cascade", () => {
     // `instanceof` invokes the same `getPrototypeOf` trap as the explicit
-    // `Object.getPrototypeOf(value)` call further down `walk()`, so a trap
-    // that always throws is caught by the earlier instanceof cascade's own
-    // try/catch, never reaching the later one. Returning `null` for the
-    // handful of calls the cascade makes (satisfying every `instanceof`
-    // check as false) before throwing on the next call isolates the later,
-    // standalone `Object.getPrototypeOf` site instead. The six calls are the
-    // six instanceof checks in that cascade, in order: Date, Error, URL,
-    // Headers, Map, Set — the `expect(calls).toBe(7)` below pins that count
-    // so a reorder or an added/removed check fails loudly here instead of
-    // silently exercising the wrong catch block.
+    // `Object.getPrototypeOf(value)` call later in `walk()`, so a trap that
+    // always throws would be caught by the instanceof cascade's own try/catch
+    // first. Returning null for its six checks (Date, Error, URL, Headers,
+    // Map, Set) before throwing isolates the later, standalone call instead;
+    // `expect(calls).toBe(7)` pins that count so a changed cascade fails loudly here.
     let calls = 0;
     const hostile = new Proxy(
       {},
@@ -1012,13 +952,10 @@ describe("hostile inputs walk() has not yet been asked to survive in this file",
   });
 
   it("tags an object whose constructor getter throws instead of propagating it", () => {
-    // A real (non-getter) `constructor` property is what puts `value` past the
-    // `proto !== Object.prototype` guard in the first place — an object whose
-    // own prototype chain ends at `Object.prototype` never reaches the
-    // `ctorName` read at all. `class Weird {}` gives it exactly that kind of
-    // prototype; overriding the instance's own `constructor` with a throwing
-    // getter (class syntax itself rejects `get constructor()`) is what makes
-    // reading it throw.
+    // Reading `.constructor` only happens past the `proto !== Object.prototype`
+    // guard, so `class Weird {}` gives it a non-default prototype; the
+    // instance's own `constructor` is then overridden with a throwing getter
+    // (class syntax itself rejects `get constructor()` on the class).
     class Weird {}
     const hostile = new Weird();
     Object.defineProperty(hostile, "constructor", {
@@ -1031,17 +968,13 @@ describe("hostile inputs walk() has not yet been asked to survive in this file",
 });
 
 describe("a key called __proto__", () => {
-  // Found through /ext/flags: a flag literally keyed `__proto__` rendered as
-  // "[object Object]" for every value, with a spurious "masked" badge. The
-  // rebuild assigned into a plain object, and `Object.prototype`'s `__proto__`
-  // setter swallows the write. Nothing was polluted; the value was replaced by
-  // a lie, which is worse in a redactor than in most places.
+  // A flag literally keyed `__proto__` used to render as "[object Object]" with
+  // a spurious "masked" badge: assigning into a plain object during rebuild hit
+  // `Object.prototype`'s `__proto__` setter, which silently swallowed the write.
   it("survives the rebuild as data", () => {
-    // `as object`, not `as never`: `never` is assignable to `string`, so it
-    // picks the string overload and the cast below stops making sense.
     const output = redact({ __proto__: undefined, a: 1 } as object) as Record<string, unknown>;
-    // Build the input by definition too — an object *literal* `__proto__:` sets
-    // the prototype rather than creating a key.
+    // Defined via defineProperty: an object *literal* `__proto__:` sets the
+    // prototype rather than creating a key.
     const input: Record<string, unknown> = {};
     Object.defineProperty(input, "__proto__", {
       value: "keep-me",
@@ -1055,8 +988,7 @@ describe("a key called __proto__", () => {
     expect(Object.keys(redacted).sort()).toEqual(["__proto__", "token"]);
     expect(Object.getOwnPropertyDescriptor(redacted, "__proto__")?.value).toBe("keep-me");
     expect(redacted["token"]).toBe(REDACTED);
-    // Still an ordinary object: the fix must not leak a null prototype across
-    // the public API.
+    // Must not leak a null prototype across the public API.
     expect(Object.getPrototypeOf(redacted)).toBe(Object.prototype);
     expect(output).toBeTypeOf("object");
   });
@@ -1153,12 +1085,8 @@ describe("redactText", () => {
     expect(redact("the token expired")).toBe("the token expired");
   });
 
-  // `TEXT_URL` without a leading lookbehind was quadratic on a long
-  // alphanumeric run: every interior position started a candidate scan that
-  // ran to the end of the run before failing on the missing `:` (the same
-  // defect `network.test.ts` pins for `URL_IN_TEXT`). The text is app-supplied —
-  // a stringified body or a base64 blob in an error message. The timeout is
-  // the regression guard; the expectation is that the URL is still masked.
+  // Without a leading lookbehind, `TEXT_URL` was quadratic on a long
+  // alphanumeric run (same defect `network.test.ts` pins for `URL_IN_TEXT`).
   it("scans a long alphanumeric run in one pass", () => {
     const blob = "a".repeat(200_000);
     expect(redactText(`${blob} https://api.test/v1?access_token=super-secret`)).toBe(
@@ -1229,15 +1157,13 @@ describe("redactProse", () => {
   const JWT = "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NSJ9.dBjftJeZ4CVPmB92K";
 
   it.each([
-    // What it masks: the anchored pass, then every `scheme://…` run.
     ["failed for https://x/?token=abc", "failed for https://x/?token=[redacted]"],
     ["https://x/?token=abc", "https://x/?token=[redacted]"],
     [
       "callback https://app.test/cb?access_token=hunter2&state=1 rejected",
       "callback https://app.test/cb?access_token=[redacted]&state=1 rejected",
     ],
-    // The body runs to whitespace, so a quoted value is masked *with* its quotes:
-    // `TEXT_URL` stops at a quote and would leave `"abc"` alone.
+    // The body runs to whitespace, so a quoted value is masked with its quotes.
     ['failed for https://x/?token="abc" (401)', "failed for https://x/?token=[redacted] (401)"],
     ["Bearer abc", "Bearer [redacted]"],
     [JWT, "[redacted]"],
@@ -1249,8 +1175,7 @@ describe("redactProse", () => {
       "wss://s.test/live?token=abc\nnext line https://y/?sid=1",
       "wss://s.test/live?token=[redacted]\nnext line https://y/?sid=[redacted]",
     ],
-    // A run of digits glued to the scheme is prose, not scheme: masked as the
-    // original `URL_LIKE` did, the digits left in place.
+    // A run of digits glued to the scheme is prose, not scheme: digits left in place.
     ["code 500https://x/?token=abc", "code 500https://x/?token=[redacted]"],
     ["", ""],
     ["nothing to see", "nothing to see"],
@@ -1266,8 +1191,7 @@ describe("redactProse", () => {
       'failed "https://x/?ok=1","https://y/?token=abc"',
     ],
     ["see https://x/?token=abchttps://y/?ok=1", "see https://x/?token=[redacted]"],
-    // A wrapping bracket glued to the value goes with it; one after a later
-    // parameter survives, percent-encoded by the URL parser.
+    // A wrapping bracket glued to the value goes with it; a later one survives, percent-encoded.
     ["see [https://x/?token=abc]", "see [https://x/?token=[redacted]"],
     ["see [https://x/?token=abc&ok=1]", "see [https://x/?token=[redacted]&ok=1%5D"],
   ])("masks %j as %j", (input, expected) => {
@@ -1299,7 +1223,7 @@ describe("redactProse", () => {
       "see https://x/?token=abc",
     );
     // `values: false` turns off the anchored shape pass; the URL sweep is key
-    // matching and still runs, exactly as the a11y composition behaved.
+    // matching and still runs.
     expect(redactProse("Bearer abc", { values: false })).toBe("Bearer abc");
     expect(redactProse("see https://x/?token=abc", { values: false })).toBe(
       "see https://x/?token=[redacted]",
@@ -1310,15 +1234,9 @@ describe("redactProse", () => {
     );
   });
 
-  // Parity with the a11y and console compositions on their one per-match
-  // failure path. `redactUrl()` falls back to a raw query rewrite when the
-  // parser rejects the URL, and that fallback percent-encodes the mask — so a
-  // lone surrogate as the mask throws *inside* the sweep, after the options were
-  // resolved and cached. The shipped `maskUrls` caught that per match and kept
-  // the match as written; `redactProse` does the same. Pinned, not repaired:
-  // this branch's claim is byte-identical consolidation. Both prefix shapes of
-  // `PROSE_URL` group 1 are covered — empty (`failed http://…`) and non-empty
-  // (`+.-500http://…`, the digits and punctuation the shipped regex skipped).
+  // A lone surrogate as the mask makes `redactUrl()`'s fallback rewrite throw
+  // mid-sweep; `redactProse` catches that per match and keeps it as written,
+  // same as the shipped `maskUrls` did.
   describe("hands a URL back as written when its own rewrite throws", () => {
     const surrogate = { mask: "\uD800" };
 
@@ -1349,23 +1267,10 @@ describe("redactProse", () => {
     });
   });
 
-  // The shipped `URL_LIKE` had no lookbehind, so a long run with no `://`
-  // started a scan at every letter that ran to the end of the run before
-  // failing — quadratic. `PROSE_URL` starts only at the head of a run. The
-  // timeout is the regression guard; the expectations are that the URL after
-  // the run is still masked.
-  //
-  // Calibration (Node 26, this machine): the shipped composition takes 10-22 s
-  // on the four alphanumeric runs at 200k and 0.3-0.8 s at 40k, where the
-  // 2,000 ms timeout let it pass; `PROSE_URL` takes 1-3 ms at 200k. 200k is
-  // the same size `network.test.ts` uses for `URL_IN_TEXT`, and the margins
-  // hold on a slower, noisier CI machine in both directions: the quadratic form
-  // only gets further past the timeout, the linear form has three orders of
-  // magnitude in hand. An elapsed-time assertion would be tighter and no
-  // stricter — the timeout already fails the test — while adding a GC- and
-  // JIT-sensitive number to the suite. The quotes and angle-wrapper rows were
-  // never quadratic (no letter run); they pin the sweep's behaviour on the two
-  // non-letter shapes the fixture would otherwise miss.
+  // The shipped `URL_LIKE` had no lookbehind, so a long run with no `://` was
+  // quadratic (10-22s at 200k vs. `PROSE_URL`'s 1-3ms); the quotes and
+  // angle-wrapper rows aren't quadratic but pin the sweep's behavior on the
+  // two non-letter shapes the fixture would otherwise miss.
   it.each([
     ["letters", "a".repeat(200_000)],
     ["hex", "3f9a2b7c1d".repeat(20_000)],

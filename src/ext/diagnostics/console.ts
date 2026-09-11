@@ -1,29 +1,23 @@
 /**
- * The console and error tail. [dev-toolbar/ext/diagnostics]
- * (`plans/ecosystem-extensions.md` § 1B.) Full behavioural contract — patch
- * rules, redaction, the dual-package hazard, known limits — is in
- * docs/ext/diagnostics.md; this header only orients the code.
+ * The console and error tail (`plans/ecosystem-extensions.md` § 1B). Full
+ * contract is in docs/ext/diagnostics.md; this header only orients the code.
  *
  * Patches `console.error`/`console.warn` and listens for `window`'s `error`
- * and `unhandledrejection`, grouping by message into a bounded, redacted tail.
- * Always calls through (even when a recorder throws), restores by identity on
- * teardown and never over a later patch (same rule as the `fetch` interceptor
- * in `src/runtime/network.ts`), and cannot recurse: one module-level depth
- * guard covers every patched method, so logging nested inside a recorder
- * (e.g. `ExtensionBoundary.componentDidCatch`) forwards without recording
- * twice. `console.log` is never patched and there is no option to.
+ * and `unhandledrejection`, grouping by message into a bounded, redacted
+ * tail. Always calls through, restores by identity on teardown and never
+ * over a later patch (same rule as the `fetch` interceptor in
+ * `src/runtime/network.ts`). A module-level depth guard prevents recursion
+ * when a recorder's own logging (or `ExtensionBoundary.componentDidCatch`)
+ * re-enters a patched method. `console.log` is never patched.
  *
  * Patch state is module-level, so the dual-package hazard applies (see
- * `src/runtime/network.ts`): the built ESM+CJS pair, detached inner-first,
- * strands a wrapper per cycle — measured to a `RangeError` after the order of
- * ten thousand cycles under Node 26.4.0 (harness-dependent), and still
- * forwarding past 20,000 under Bun 1.4.0 (docs/ext/diagnostics.md § "before
- * you ship two copies").
+ * `src/runtime/network.ts`, and docs/ext/diagnostics.md § "before you ship
+ * two copies"): an ESM+CJS pair detached inner-first strands a wrapper per
+ * cycle.
  *
- * Stacks use `redactText()` on the original text, then a cap. Messages,
- * names and string arguments go through `redactProse()` — the whole-value
- * pass plus a URL sweep, owned by `/runtime`. A transparent `Proxy`
- * over `console` remains a distinct patch owner; see the documented limit.
+ * Stacks are masked with `redactText()`; messages, names and string
+ * arguments with `redactProse()` (whole-value plus URL sweep, from
+ * `/runtime`).
  */
 import { describeError, redact, redactProse, redactText } from "../../runtime";
 import type { RedactOptions } from "../../runtime";
@@ -123,10 +117,8 @@ interface Installed {
   uninstall(): void;
 }
 
-// Keyed by console identity, not by method name alone: a page can swap
-// `globalThis.console`, and comparing a single per-method entry's target would
-// make a later tail on a third console inherit an earlier one's answer.
-// `WeakMap` so a dropped console is collectable with its registrations.
+// Keyed by console identity, not method name alone: a page can swap
+// `globalThis.console`, so a per-method-only entry could leak across consoles.
 const patches = new WeakMap<ConsoleLike, Map<PatchedMethod, Installed>>();
 
 // Shared by every patched method: logging while a listener runs forwards to

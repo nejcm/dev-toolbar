@@ -28,20 +28,16 @@ import type { EnvironmentRuntime } from "./runtime";
 /**
  * The rendered surface. [dev-toolbar/ext/environment]
  *
- * Slot functions must be cheap, so they return these components and the
- * components subscribe to the extension's own store. Everything they render
- * comes from the snapshot, which is redacted before it is built — the panel has
- * no access to the raw context and cannot accidentally print it.
+ * Everything rendered comes from the snapshot, which is already redacted —
+ * these components have no access to the raw context.
  *
  * `presentation` arrives already resolved and is read through `/kit`'s
- * `resolveCompactControl` and `renderCompact`, so the `hasIcon` guard, the
- * `"default"` fallback, the `CompactRenderContext` and the `undefined`
- * fall-through live in one place for all nine extensions rather than nine.
- * What stays here is the DOM: a consumer's `render` supplies the children of
- * the chip carrying `data-dtb-severity`, and `Chip` paints the dot before
- * them, so no callback can cost the control its state attributes or its dot.
- * The `impersonating` marker is rendered *after* those children under every
- * preset and under a `render` callback alike — it is state, not presentation
+ * `resolveCompactControl` and `renderCompact`, so the resolution rules live in
+ * one place for all nine extensions. What stays here is the DOM: a consumer's
+ * `render` supplies the children of the chip carrying `data-dtb-severity`, and
+ * `Chip` paints the dot before them. The `impersonating` marker is rendered
+ * *after* those children under every preset and under a `render` callback
+ * alike — it is state, not presentation
  * (`plans/bar-presentation-icons-v1.md`, invariant 2).
  */
 

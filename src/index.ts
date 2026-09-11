@@ -35,11 +35,9 @@ export { useDevToolbar, useToolbarCommands } from "./core/context";
 export type { DevToolbarContextValue } from "./core/context";
 
 // `collectCommands`, `resolveExtensionCommands` and `collectDiagnostics` are
-// deliberately *not* exported. Extensions read the aggregation via
-// `api.getCommands()`/`api.getDiagnostics()`, hosts via `useToolbarCommands()`/
-// `useDevToolbar().getCommands()` — both merge props plus dynamic
-// registrations with `hidden` extensions filtered out, which a root-level
-// aggregator over a caller-assembled array could never do correctly.
+// deliberately *not* exported: a root-level aggregator over a caller-assembled
+// array could never replicate the props + dynamic-registration merge that
+// `api.getCommands()`/`useToolbarCommands()` do internally.
 // `useDevToolbar().extensions` is the unfiltered list.
 export { invokeCommand, runCommand } from "./core/commands";
 export type { InvokeCommandOptions } from "./core/commands";
@@ -58,8 +56,6 @@ export { ITEM_SELECTOR } from "./core/measurer";
 export { DEFAULT_SHORTCUT } from "./core/shortcut";
 
 export { DEFAULT_PANEL_HEIGHT, MAX_PANEL_HEIGHT, MIN_PANEL_HEIGHT } from "./core/store";
-// `useDevToolbar().store.getSnapshot()` already hands consumers a `ToolbarState`
-// through the exported `DevToolbarContextValue`; without this the type is
-// reachable only through an indexed-access type on `DevToolbarContextValue`.
-// `ToolbarStore` itself is deliberately left unexported for a later PR.
+// Without this export, `ToolbarState` is reachable only via an indexed-access
+// type on `DevToolbarContextValue`. `ToolbarStore` itself stays unexported.
 export type { ToolbarState } from "./core/store";

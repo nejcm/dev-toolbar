@@ -1,40 +1,26 @@
 /**
  * `/ext/overlays` styles. [dev-toolbar/ext/overlays]
  *
- * Same rules as core and the other extensions: everything inside the
- * `dev-toolbar` cascade layer, scoped by `[data-dev-toolbar]`, colours from
- * `--dtb-*` tokens, parts namespaced `ovl-*`.
+ * Same rules as core and the other extensions: layered under `dev-toolbar`,
+ * scoped by `[data-dev-toolbar]`, `--dtb-*` tokens, `ovl-*` parts.
  *
  * Exception: the drawing surface's four `!important` declarations
- * (`pointer-events`, `z-index`, `position`, `inset`) — the only ones in this
- * package. Layered CSS is designed to lose to unlayered author CSS (so
- * consumers can restyle without `!important`), but that is wrong for safety:
- * a stray unlayered `div { pointer-events: auto }` would re-enable pointer
- * events on the surface and let it swallow every click in the page (review
- * demonstrated exactly that). `!important` blocks this because the cascade
- * reverses layer order for important declarations, so a layered-important
- * rule beats an unlayered-important one. Only a rule deliberately targeting
- * this part inside `@layer dev-toolbar` can still override them — someone
- * switching the guard off on purpose.
- *
- * What each one protects: `pointer-events: none` keeps every click landing on
- * the app underneath; `z-index: -1` (inside the toolbar root's own stacking
- * context) paints the surface over the page but under the bar, panel and
- * command palette; `position: fixed` + `inset: 0` cover the viewport rather
- * than the 30px bar, and guard against the `display: contents` wrapper
- * turning a `position: static` surface into a height-adding flex child.
- *
- * Everything else is ordinary layered CSS and stays overridable.
+ * (`pointer-events`, `z-index`, `position`, `inset`). Layered CSS is designed
+ * to lose to unlayered author CSS, but a stray unlayered `div {
+ * pointer-events: auto }` would re-enable pointer events on the surface and
+ * let it swallow every click in the page (review demonstrated exactly that).
+ * `!important` reverses layer priority, so this beats it; only a rule
+ * deliberately targeting this part inside `@layer dev-toolbar` can still
+ * override it.
  */
 import { KIT_CSS, createStyleInjector, ensureKitStyles } from "@nejcm/dev-toolbar/kit";
 
 const OVERLAYS_EXTENSION_CSS = String.raw`@layer dev-toolbar {
   [data-dev-toolbar] [data-dtb-part="ovl-surface"] {
-    /* The four !important declarations — see file header. Do not remove. */
+    /* Four !important declarations — see file header. Do not remove. */
     position: fixed !important;
     inset: 0 !important;
     z-index: -1 !important;
-    /* Repeated on every descendant below so nothing can become a click target. */
     pointer-events: none !important;
     overflow: hidden;
     font-family: var(--dtb-font-mono);
@@ -180,10 +166,7 @@ const OVERLAYS_EXTENSION_CSS = String.raw`@layer dev-toolbar {
     max-width: 720px;
   }
 
-  /* One overlay is one card: the switch on the first line, and its summary,
-     cost and any note indented under it in the second column, so a row of
-     four reads as four decisions rather than as a paragraph. */
-  /* The part+kind pair keeps this padding override above the kit's row default. */
+  /* part+kind pair keeps this padding override above the kit's row default. */
   [data-dev-toolbar] [data-dtb-part="ovl-row"][data-dtb-kind="row"] {
     grid-template-columns: auto 1fr;
     gap: var(--dtb-space-1) var(--dtb-space-2);

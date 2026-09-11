@@ -16,9 +16,7 @@ describe("maskEmails", () => {
   });
 
   it("matches a form-encoded separator too, and preserves the one it found", () => {
-    // `redactUrl()` re-serialises the query when it masks anything, so an
-    // address arrives here as `a%40b.io`. Output keeps `%40` rather than
-    // normalising it, so the row still shows what the URL pass produced.
+    // `redactUrl()` re-serialises the query, so an address can arrive as `a%40b.io`.
     expect(maskEmails("login_hint=nejc%40example.com")).toBe("login_hint=n***%40example.com");
     expect(maskEmails("a@x.io and bob%40y.co.uk")).toBe("a***@x.io and b***%40y.co.uk");
   });
@@ -28,19 +26,14 @@ describe("maskEmails", () => {
   });
 
   it("still masks the shapes the unbounded pattern did", () => {
-    // The bounded rewrite is only safe if it gives up nothing: an empty label,
-    // a deep domain and a long local part all masked before, so they must now.
     expect(maskEmails("a@b..io")).toBe("a***@b..io");
     expect(maskEmails(`a@${"l.".repeat(12)}com`)).toBe(`a***@${"l.".repeat(12)}com`);
     expect(maskEmails(`${"x".repeat(100)}@b.io`)).toBe("x***@b.io");
   });
 
   it("stays linear on a long run with no separator", () => {
-    // `detectRoute()` hands this pass an unbounded URL fragment, so an
-    // attacker-shared link is an attacker-chosen input. The unbounded pattern
-    // rescanned the remainder from every start position — ~10 s at 100k
-    // characters, repeated on every poll. Ten times the input must cost about
-    // ten times the work, not a hundred.
+    // `detectRoute()` feeds this an attacker-chosen URL fragment; the old
+    // unbounded pattern rescanned from every start position (~10s at 100k chars).
     const time = (size: number) => {
       const input = `/#${"a".repeat(size)}`;
       const started = performance.now();
@@ -48,9 +41,7 @@ describe("maskEmails", () => {
       return performance.now() - started;
     };
     time(10_000); // warm the JIT so the budget measures the scan, not compilation
-    // ~10,000 ms before, ~25 ms after, measured on the author's machine. The
-    // budget is absolute rather than a ratio so a slow runner reads as slow,
-    // not as a regression; even 40x slower than measured still passes.
+    // Absolute budget, not a ratio, so a slow runner reads as slow, not a regression.
     expect(time(100_000)).toBeLessThan(1_000);
   });
 });
@@ -206,12 +197,8 @@ describe("diagnostics", () => {
 });
 
 describe("nested `extra` values", () => {
-  /**
-   * The regression that matters most in this file. Stringifying before
-   * redacting hid the inner keys from `redact()`'s walk, so the token reached
-   * the panel and the clipboard verbatim — while the row still claimed to be
-   * masked, because a sibling email had been.
-   */
+  // Stringifying before redacting hid inner keys from `redact()`'s walk, so a
+  // token reached the panel verbatim while the row still claimed to be masked.
   it("redacts keys inside a nested object", () => {
     const runtime = createEnvironmentRuntime({
       detect: false,
@@ -297,12 +284,8 @@ describe("the `fields` allowlist", () => {
   });
 
   it("never reads the route when the row is excluded", () => {
-    // Excluding a row has to mean the value is never collected: redaction runs
-    // over every detected field before the rows are filtered, so an excluded
-    // route would still be read off `location` and scanned on every snapshot.
-    // Asserting the row is absent would pass either way — the row was always
-    // filtered. What has to be pinned is that `location` is never *read*, so
-    // this stands in a `location` whose `pathname` throws.
+    // Asserting the row is absent would pass either way; what needs pinning is
+    // that `location` is never *read*, so this substitutes one whose `pathname` throws.
     const original = window.location;
     Object.defineProperty(window, "location", {
       configurable: true,
@@ -427,12 +410,8 @@ describe("a context that throws while being read", () => {
   });
 
   it("does not throw out of the factory — a getter inside `extra`", () => {
-    // A getter nested inside `extra` is read by `redact()`'s own walk
-    // (`Object.keys` plus a per-key read, deep inside the object graph), not
-    // by this file's code directly. `redact()` now tags a throwing getter itself
-    // (`"[getter threw]"`) rather than propagating, so this no longer
-    // degrades the whole snapshot — it produces a normal one with the one
-    // hostile property tagged.
+    // `redact()` tags a throwing getter itself (`"[getter threw]"`) rather than
+    // propagating, so a normal snapshot comes back with just that property tagged.
     const spy = vi.spyOn(console, "error").mockImplementation(() => {});
     try {
       const runtime = createEnvironmentRuntime({
@@ -483,11 +462,8 @@ describe("a context that throws while being read", () => {
   });
 
   it("does not throw uncaught from the poll interval", () => {
-    // Inside a setInterval a throw is nobody's to catch. `throwingExtra()`
-    // no longer exercises this: `redact()` absorbs that throw on its own
-    // account now, so `build()`'s catch never runs for it. A getter directly
-    // on the context object is still read outside `redact()` and still hits
-    // `build()`'s catch — that is what this test needs to be about.
+    // A getter directly on the context object is read outside `redact()`, so
+    // it still needs to hit build()'s own catch (unlike a getter inside `extra`).
     vi.useFakeTimers();
     const spy = vi.spyOn(console, "error").mockImplementation(() => {});
     const controller = new AbortController();
@@ -515,8 +491,6 @@ describe("a context that throws while being read", () => {
   });
 
   it("never reads an extra the allowlist dropped, so it cannot throw either", () => {
-    // The allowlist filters before redaction, so the getter is never invoked
-    // and there is nothing to degrade from.
     const spy = vi.spyOn(console, "error").mockImplementation(() => {});
     try {
       const runtime = createEnvironmentRuntime({
@@ -543,8 +517,7 @@ describe("a context that throws while being read", () => {
           },
         },
       });
-      // The diagnostic row is not consumer data, so it survives the allowlist;
-      // everything the allowlist dropped stays dropped.
+      // The diagnostic row is not consumer data, so it survives the allowlist.
       expect(runtime.store.getSnapshot().fields.map((field) => field.id)).toEqual([
         "contextError",
         "environment",
@@ -569,11 +542,8 @@ describe("`masked` on a Date-valued extra", () => {
   });
 
   it("tags an invalid Date instead of degrading the whole snapshot", () => {
-    // `new Date(NaN).toISOString()` throws `RangeError`. That used to escape
-    // `stringify()` unguarded, which `redactValues` does not catch, so it
-    // took down `build()`'s whole snapshot rather than costing this one
-    // field. `redact()` itself already mirrors this guard for the redacted
-    // side; `stringify()` needs the same one for the raw side.
+    // `new Date(NaN).toISOString()` throws; unguarded, that used to take down
+    // build()'s whole snapshot rather than costing just this one field.
     const spy = vi.spyOn(console, "error").mockImplementation(() => {});
     try {
       const runtime = createEnvironmentRuntime({
@@ -592,18 +562,9 @@ describe("`masked` on a Date-valued extra", () => {
 });
 
 describe("URL-shaped fields", () => {
-  /**
-   * The highest-severity finding of the review. `detectRoute()` returns a
-   * *relative* reference, which `redact()`'s value pass never inspects — it
-   * only fires on `scheme://…` — so on an OAuth implicit callback a live
-   * `access_token` reached the panel, `snapshotText()`, `diagnostics()` and
-   * both copy commands, tagged `masked: false`.
-   *
-   * The naive fix (redacting `detectRoute()`'s own return) was rejected: it
-   * makes both sides of `redactValues`' comparison equal, so the row stops
-   * leaking but still reports `masked: false` — the reader is told nothing was
-   * hidden. So the raw value stays raw and only the rendered side is redacted.
-   */
+  // `detectRoute()` returns a relative reference, which `redact()`'s value
+  // pass never inspects (it only fires on `scheme://…`), so an OAuth implicit
+  // callback's `access_token` must be caught by the explicit `redactUrl()` pass instead.
   const routeField = (search: string, hash: string) => {
     history.pushState({}, "", `/callback${search}${hash}`);
     try {
@@ -625,10 +586,8 @@ describe("URL-shaped fields", () => {
     expect(field?.value).toBe("/callback?access_token=[redacted]#id_token=[redacted]&state=s");
     expect(field?.value).not.toContain("abc123");
     expect(field?.value).not.toContain("xyz789");
-    // The row must also say it was rewritten — a closed leak labelled unmasked
-    // is worse than the leak, because nobody double-checks a clean-looking row.
+    // A closed leak labelled unmasked is worse than the leak itself.
     expect(field?.masked).toBe(true);
-    // Still the browser's answer about this tab, not something the deploy said.
     expect(field?.source).toBe("detected");
     expect(text).not.toContain("abc123");
     expect(text).not.toContain("xyz789");
@@ -637,16 +596,12 @@ describe("URL-shaped fields", () => {
   });
 
   it("leaves a route with nothing to mask byte-for-byte, and says so", () => {
-    // The other direction of the same lie: `redactUrl()` normalises when it
-    // rewrites, so an innocent route must come back untouched and unflagged.
     const { field } = routeField("?page=2&sort=name", "#section-3");
     expect(field?.value).toBe("/callback?page=2&sort=name#section-3");
     expect(field?.masked).toBe(false);
   });
 
   it("counts the masked route in the footer snapshotText() prints", () => {
-    // The footer is a claim about the text above it; before the fix it could
-    // read "(0 values masked)" over a line containing a live token.
     const { text, maskedCount } = routeField("?access_token=abc123", "");
     expect(maskedCount).toBe(1);
     expect(text).toContain("(1 value masked before copying)");
@@ -655,8 +610,6 @@ describe("URL-shaped fields", () => {
   });
 
   it("masks userinfo in an absolute wss:// endpoint", () => {
-    // Phase 1 widened `ABSOLUTE_URL` to require `://` rather than reject a
-    // non-http scheme, which is what makes a websocket endpoint maskable at all.
     const runtime = createEnvironmentRuntime({
       detect: false,
       context: { apiEndpoint: "wss://user:pass@a.test/socket" },
@@ -667,16 +620,9 @@ describe("URL-shaped fields", () => {
   });
 
   it("masks a protocol-relative endpoint's password rather than mangling it", () => {
-    /**
-     * A protocol-relative endpoint has no `scheme://`, so `redact()`'s value
-     * pass skips it and only the explicit `redactUrl()` pass sees it. With no
-     * URL pass, the email pass got there first and the row read
-     * `//user:p***@a.test/socket` — the password mangled rather than masked,
-     * and its first character still on screen and on the clipboard.
-     *
-     * For this input the two orders converge; the order itself is pinned by the
-     * `token@x.co` test below.
-     */
+    // A protocol-relative endpoint has no `scheme://`, so only the explicit
+    // `redactUrl()` pass sees it — without it the email pass mangled the
+    // password to `p***@` instead of masking it.
     const runtime = createEnvironmentRuntime({
       detect: false,
       context: { apiEndpoint: "//user:pass@a.test/socket" },
@@ -688,16 +634,8 @@ describe("URL-shaped fields", () => {
   });
 
   it("still masks an address beside a masked token — redactUrl() re-serialises @ as %40", () => {
-    /**
-     * `maskUrl()` does not rewrite only the parameter it matched: masking any
-     * one of them re-serialises the whole query through
-     * `URLSearchParams.toString()`, which form-encodes the `@` of every *other*
-     * parameter as `%40`. An `@`-only `EMAIL` then walked straight past the
-     * address, so adding the URL pass *introduced* an email leak on any URL
-     * carrying both a credential and an address. Swapping the two passes is not
-     * the fix — `EMAIL` can also match a sensitive *key* (`?token@x.co=secret`)
-     * and mangle it out of `matches()`' reach, leaking the secret instead.
-     */
+    // Masking any query parameter re-serialises the whole query, form-encoding
+    // every other `@` as `%40` — hence `EMAIL` must accept `%40` too.
     const runtime = createEnvironmentRuntime({
       detect: false,
       context: { apiEndpoint: "/callback?access_token=abc&login_hint=nejc@example.com" },
@@ -709,10 +647,8 @@ describe("URL-shaped fields", () => {
   });
 
   it("keeps a sensitive key matchable when the key itself contains an address", () => {
-    // The reverse leak, and the reason `redactUrl()` goes first: key matching
-    // has to see `token@x.co` before the email pass rewrites it to `t***@x.co`.
-    // The email pass then over-masks the key on its way out, which is cosmetic
-    // — the value it guards is already `[redacted]` by then.
+    // The reason `redactUrl()` goes first: key matching must see `token@x.co`
+    // before the email pass rewrites it to `t***@x.co`.
     const runtime = createEnvironmentRuntime({
       detect: false,
       context: { apiEndpoint: "/cb?token@x.co=secret" },
@@ -723,8 +659,6 @@ describe("URL-shaped fields", () => {
   });
 
   it("covers a string-valued extra the module cannot enumerate", () => {
-    // `redactUrl()` returns a non-URL string byte-for-byte, so applying it to
-    // every string extra is free coverage for consumer keys like `callbackUrl`.
     const runtime = createEnvironmentRuntime({
       detect: false,
       context: { extra: { callbackUrl: "/oauth/done?access_token=xyz789", note: "all fine" } },
@@ -740,11 +674,8 @@ describe("URL-shaped fields", () => {
 });
 
 describe("revision", () => {
-  /*
-   * Regression: `buildSnapshot` and `failedSnapshot` bumped `revision` on every
-   * `build()` call, so `snapshotText()`/`diagnostics()` advanced the counter
-   * even though they never publish — and each `publish()` advanced it twice.
-   */
+  // Regression: revision used to bump on every build(), so read-only exports
+  // like snapshotText()/diagnostics() advanced the counter without publishing.
   it("advances revision only on publish, not on export reads", () => {
     let env = "dev";
     const runtime = createEnvironmentRuntime({
@@ -802,9 +733,8 @@ describe("publication guarantees", () => {
     runtime.store.destroy();
   });
 
-  // Pins missing kind/impersonating/supplied/severity in signature() (runtime.ts:455);
-  // ui.tsx:29/57/65/72 stays stale only when fields excludes the proxy rows used by default (P3).
-  // When covered, invert to toHaveBeenCalledTimes(1) and getSnapshot() toBe(peek()).
+  // Pins a known gap: signature() misses kind/impersonating/supplied/severity
+  // when fields excludes the proxy rows used by default.
   it.each([
     ["kind", { environment: "blue" }, { environment: "green" }, { kind: "green" }],
     [
@@ -840,9 +770,8 @@ describe("publication guarantees", () => {
     runtime.store.destroy();
   });
 
-  // Pins missing field.masked/maskedCount in signature() (runtime.ts:455), leaving
-  // ui.tsx:198/207/181 stale when a literal value equals its mask text, an edge case (P3).
-  // When covered, invert to toHaveBeenCalledTimes(1) and getSnapshot() toBe(peek()).
+  // Pins a known gap: signature() misses field.masked/maskedCount when a
+  // literal value happens to equal its own mask text.
   it("BUG: same display text hides field.masked and maskedCount changes", () => {
     let userId = "Bearer abcdefghijklmnop";
     const runtime = createEnvironmentRuntime({

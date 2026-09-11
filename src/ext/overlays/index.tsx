@@ -14,31 +14,22 @@
  *
  * Four overlays ship, each toggled and persisted independently: layout boxes,
  * column grid, element inspector, and focus order. §3G lists nine more;
- * `OverlayId` in `./types` explains why they were left out (re-render flash
- * needs React internals; stacking-context/scroll-container overlays need
- * `getComputedStyle` on every element in the document).
+ * `OverlayId` in `./types` explains why they were left out.
  *
- * As the first extension drawing over the host app, its constraints matter as
- * much as its features:
- * - **Never intercepts a pointer event** — the surface and everything in it
- *   is `pointer-events: none !important`, so clicks always reach the page.
- *   The inspector only *observes* the pointer (passive capturing listener +
- *   `elementFromPoint`).
- * - **Draws below the toolbar, never over it** — `z-index: -1 !important`
- *   inside the toolbar root's stacking context, so overlays sit over the page
- *   but under the bar, panel and command palette.
- * - **Mutates no host DOM node** — no injected classes/inline styles;
- *   geometry comes from `getBoundingClientRect`, `getComputedStyle` and a
- *   `MutationObserver`. Sole exception: the layout-boxes stylesheet, one
- *   `<style>` in `document.head`, removed on toggle-off, hide, and teardown.
- * - **Observes nothing it isn't drawing for** — listeners are per-overlay and
- *   all come off while the bar is hidden (this extension decides "hidden"
- *   for itself; core never pauses anybody, §13.2).
- * - **A throw switches everything off** — measurement runs inside animation
+ * As the first extension drawing over the host app:
+ * - Never intercepts a pointer event — the surface is `pointer-events: none
+ *   !important`; the inspector only *observes* via a passive capturing
+ *   listener + `elementFromPoint`.
+ * - Draws below the toolbar (`z-index: -1 !important` inside the toolbar
+ *   root's own stacking context), never over it.
+ * - Mutates no host DOM node — geometry comes from read-only APIs. Sole
+ *   exception: the layout-boxes stylesheet, torn down on toggle-off, hide,
+ *   and teardown.
+ * - Observes nothing it isn't drawing for — listeners come off while the bar
+ *   is hidden (this extension decides "hidden" for itself; core never pauses
+ *   anybody, §13.2).
+ * - A throw switches everything off — measurement runs inside animation
  *   frames and a `MutationObserver`, where nothing upstream could catch it.
- *
- * Each overlay also contributes a toggle command (function-form `commands`,
- * since the Show/Hide label depends on live state).
  */
 import { createOverlaysRuntime } from "./runtime";
 import { OverlaysChip, OverlaysPanel, OverlaysSurface } from "./ui";
@@ -151,21 +142,16 @@ export function overlays(options: OverlaysOptions = {}): DevToolbarExtension {
   const presentation = resolvePresentation(presentationOption);
 
   // Built here, not in start(api): slot functions run during the toolbar's
-  // first render, which is before any effect fires.
-  // `deferOutlinesUntilStyleNonce`: the boxes sheet is first-writer-wins, and
-  // the overlay surface is what learns `<DevToolbar styleNonce>`, so the insert
-  // waits for it. A factory nonce releases the wait here and now.
+  // first render, before any effect fires. deferOutlinesUntilStyleNonce holds
+  // the boxes sheet (first-writer-wins) until the overlay surface has learned
+  // <DevToolbar styleNonce>, unless a factory nonce releases the wait now.
   const runtime = createOverlaysRuntime({
     ...runtimeOptions,
     deferOutlinesUntilStyleNonce: true,
   });
   if (optionNonce) runtime.setStyleNonce(optionNonce);
 
-  /**
-   * Function form of `commands` (§13.1), rebuilt each aggregation pass so the
-   * Show/Hide label always matches live state. Pure and cheap: reads the
-   * runtime's flag map, measures nothing.
-   */
+  /** Function form of `commands` (§13.1) so the Show/Hide label matches live state. */
   const toggles = (): ToolbarCommand[] =>
     OVERLAY_IDS.map((overlayId) => {
       const meta = OVERLAY_META[overlayId];
@@ -218,11 +204,9 @@ export function overlays(options: OverlaysOptions = {}): DevToolbarExtension {
       />
     ),
 
-    /**
-     * Surface goes in `overlay`, not `panel`/`compact` (§13.2): a collapsed
-     * `compact` isn't in the DOM, so overlays would vanish on narrow windows,
-     * and `panel` is a bar-pinned drawer rather than a viewport-sized layer.
-     */
+    // Surface goes in `overlay`, not `panel`/`compact` (§13.2): a collapsed
+    // `compact` isn't in the DOM, and `panel` is a bar-pinned drawer, not a
+    // viewport-sized layer.
     overlay: ({ styleNonce }) => (
       <OverlaysSurface
         runtime={runtime}

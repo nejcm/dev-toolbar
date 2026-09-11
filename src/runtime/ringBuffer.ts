@@ -16,11 +16,10 @@
 const MAX_CAPACITY = 1 << 24;
 
 /**
- * Clamps a requested capacity to a sane, allocatable slot count: at least 1
- * (a zero-length ring silently swallowing every sample is never intended)
- * and at most `MAX_CAPACITY`. Non-finite input and fractions are folded in
- * the same pass, so a bad value fails predictably here rather than throwing
- * a `RangeError` from `new Array()`/`new Float64Array()`.
+ * Clamps a requested capacity to a sane, allocatable slot count: at least 1,
+ * at most `MAX_CAPACITY`. Non-finite input and fractions are folded in the
+ * same pass, so a bad value fails predictably here rather than throwing a
+ * `RangeError` from `new Array()`/`new Float64Array()`.
  */
 export function clampCapacity(capacity: number): number {
   // `NaN > 0` and `-Infinity > 0` are both false, so both take `: 1`.
@@ -129,8 +128,7 @@ export interface NumericRingStats {
  * Read-only view of a {@link NumericRing}: every inspection method, minus
  * `push`/`clear`. `TimeSeries` exposes its two backing rings through this
  * type so a consumer can read `times`/`values` without a route to push or
- * clear one out of step with the other (which would desync the pair). This
- * is what the sparklines read.
+ * clear one out of step with the other. This is what the sparklines read.
  */
 export interface NumericRingView {
   readonly capacity: number;
@@ -144,21 +142,19 @@ export interface NumericRingView {
    * Writes **up to** `into.length` values, never more: given a destination
    * shorter than `size` it keeps the *newest* that fit and drops the oldest,
    * which is what a sparkline wants. Slots past the return value are left as
-   * the caller had them — read only the prefix the return value covers, since
-   * a reused array still holds the previous pass's tail beyond it.
+   * the caller had them — read only the prefix the return value covers.
    */
   copyInto(into: Float64Array | number[]): number;
   /**
    * Fills and returns `into` when given; allocates a fresh object otherwise.
    *
-   * Non-finite samples are **not** filtered, and count asymmetrically on
-   * purpose. `NaN` fails every comparison, so it is skipped by `min`/`max` but
-   * folded into `sum`, making `mean` `NaN` as soon as one `NaN` is in the
-   * window; `±Infinity` participates in all three. `count` is always `size`.
-   * The asymmetry is the useful one: `min`/`max` stay usable as a chart's
-   * scale, while a `NaN` `mean` is a loud, un-ignorable signal that a bad
-   * sample was pushed — quietly averaging around it would be worse. Reject
-   * non-finite values at the collector if you would rather they never land.
+   * Non-finite samples are **not** filtered, and count asymmetrically: `NaN`
+   * fails every comparison so it's skipped by `min`/`max` but folded into
+   * `sum`, making `mean` `NaN` as soon as one lands — a loud, un-ignorable
+   * signal that a bad sample was pushed, while `min`/`max` stay usable as a
+   * chart's scale. `±Infinity` participates in all three; `count` is always
+   * `size`. Reject non-finite values at the collector if you'd rather they
+   * never land.
    *
    * On an empty ring every field is `NaN` except `count`, which is `0`.
    */

@@ -1,8 +1,7 @@
 /**
- * The P3 aggregation. Core collects and renders nothing, the way it does for
- * commands — so what is asserted here is the *roster*, and specifically that it
- * is complete. A reader of a bug report cannot tell an extension that had
- * nothing to say from one that blew up unless core tells it apart first.
+ * Core collects and renders nothing, the way it does for commands — what's
+ * asserted here is that the roster is complete. A reader can't tell an extension
+ * that had nothing to say from one that blew up unless core tells it apart.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { collectDiagnostics, resetDiagnosticsWarnings } from "../diagnostics";
@@ -39,8 +38,8 @@ describe("collectDiagnostics", () => {
   });
 
   it("lists an extension that declares no diagnostics() as present-but-absent", () => {
-    // The assertion that matters: `b` is *in* the roster. Dropping it would
-    // make a snapshot that omitted it look complete.
+    // The assertion that matters: `b` is *in* the roster — dropping it would
+    // make an incomplete snapshot look complete.
     const entries = collectDiagnostics([ext("b")]);
     expect(entries).toEqual([{ id: "b", label: "B", status: "absent" }]);
   });
@@ -97,12 +96,10 @@ describe("collectDiagnostics", () => {
   });
 
   it("hands over the message and the name unjoined, so a reader can redact", () => {
-    // The reason this is a split and not a string. `redact()` matches value
-    // shapes anchored to the whole string, so a message that *is* a
-    // credential-carrying URL — what fetch, undici and axios all throw — is
-    // maskable on its own and unmaskable behind an "Error: " prefix. Core
-    // cannot redact (it may not import `/runtime`); it can decline to make
-    // redaction impossible.
+    // Why this is a split, not a joined string: redact() matches whole-value shapes,
+    // so a message that is itself a credential-carrying URL is maskable on its own
+    // but not behind an "Error: " prefix. Core can't redact (no `/runtime` import)
+    // but can avoid making redaction impossible.
     const url = "https://api.test/refresh?refresh_token=super-secret";
     const entries = collectDiagnostics([
       ext("net", {

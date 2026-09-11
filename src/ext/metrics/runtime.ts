@@ -137,11 +137,7 @@ export function createMetricsRuntime(options: MetricsRuntimeOptions): MetricsRun
 
   const publish = () => store.set(build());
 
-  /**
-   * Collectors call this from a `fetch` wrapper or observer callback, possibly
-   * hundreds of times per tick, so calls are folded into one microtask; the
-   * store then throttles the notification on top of that.
-   */
+  /** Folds bursty collector calls into one microtask; the store throttles on top of that. */
   const invalidate = () => {
     if (dirty) return;
     dirty = true;
@@ -190,17 +186,14 @@ export function createMetricsRuntime(options: MetricsRuntimeOptions): MetricsRun
       const timer = setInterval(publish, tickMs);
       publish();
 
-      // Core reports visibility but never pauses us. Only aggregation stops:
-      // collectors keep filling buffers, and rolling windows stay honest since
-      // they're computed from timestamps rather than accumulated per tick.
+      // Core reports visibility but never pauses us; only aggregation stops here.
       const stopWatching = api.subscribeVisibility(() => {
         publish();
       });
 
-      // The store belongs to the runtime, not one start/stop cycle, so it is
-      // deliberately NOT destroyed here. React StrictMode's mount → cleanup →
-      // mount would otherwise drop React's subscription on the first cleanup,
-      // freezing the chips while collectors kept collecting.
+      // The store outlives one start/stop cycle, deliberately not destroyed
+      // here — StrictMode's mount → cleanup → mount would otherwise drop
+      // React's subscription and freeze the chips.
       const dispose = () => {
         clearInterval(timer);
         stopWatching();
@@ -215,20 +208,18 @@ export function createMetricsRuntime(options: MetricsRuntimeOptions): MetricsRun
     },
     exportRequests(limit?: number) {
       // Not `peek()` alone: a request that landed since the last tick would be
-      // missing, and the point of this call is the tail as it is *now*.
+      // missing, and this call wants the tail as it is *now*.
       publish();
       store.flush();
       const snapshot = store.getSnapshot();
       const keep = limit === undefined ? Infinity : Math.max(0, Math.floor(limit));
-      // A slice only when the limit actually bites, so the identity below holds
-      // for every call that asks for the whole tail.
+      // Slice only when the limit bites, so the identity below holds otherwise.
       const requests =
         keep >= snapshot.requests.length ? snapshot.requests : snapshot.requests.slice(0, keep);
       return {
         generatedAt: new Date().toISOString(),
-        // Same reasoning as `diagnostics()`: the page URL is the likeliest
-        // credential carrier in this payload, and this is headed for a
-        // clipboard or an agent.
+        // The page URL is the likeliest credential carrier here, and this is
+        // headed for a clipboard or an agent.
         url: typeof location === "undefined" ? null : redactUrl(location.href),
         count: requests.length,
         retained: snapshot.requests.length,
@@ -243,14 +234,10 @@ export function createMetricsRuntime(options: MetricsRuntimeOptions): MetricsRun
         generatedAt: new Date().toISOString(),
         userAgent: typeof navigator === "undefined" ? null : navigator.userAgent,
         // Explicit redactUrl, not left to `redact()`: the page URL is the most
-        // likely credential carrier here (e.g. an OAuth `?access_token=…`
-        // callback), and this is headed for a clipboard.
+        // likely credential carrier here (e.g. an OAuth callback).
         url: typeof location === "undefined" ? null : redactUrl(location.href),
-        /**
-         * Numeric values, not formatted chip text (`plans/agent-readable-toolbar.md`
-         * § Phase 1). Read from the last published snapshot because diagnostics
-         * runs on every roster read.
-         */
+        // Numeric values, not formatted chip text — read from the last
+        // published snapshot since diagnostics runs on every roster read.
         metrics: latest.order.map((id) => {
           const view = metricView(latest, id);
           return {
