@@ -33,14 +33,10 @@ runs:
     # would restore a cache missing those packages and decline to save
     # (actions/cache only writes on a primary-key miss), re-fetching forever.
     #
-    # `github.job` is in the key for the same reason, one level up. CI now runs
-    # three lanes in parallel and they install different trees: `unit` installs
-    # only the root, `browser` adds the playground, `package` adds both
-    # fixtures. On one shared key they race — the first to finish reserves it,
-    # the rest log "Unable to reserve cache", and whichever partial tree won
-    # becomes the exact hit every later run restores and never re-saves. Each
-    # lane keeping its own cache is what makes the entry complete for the job
-    # that reads it.
+    # `github.job` is in the key for the same reason one level up: the three CI
+    # lanes install different trees, so on a shared key they race and whichever
+    # partial tree reserves it first becomes the exact hit every later run
+    # restores and never re-saves.
     #
     # Listed explicitly, not `**/bun.lock`: the post step re-evaluates this key
     # to save, by which point node_modules exists, and the playground's

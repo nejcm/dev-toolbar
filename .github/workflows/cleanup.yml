@@ -32,11 +32,9 @@ on:
 permissions:
   actions: write
 
-# Close/reopen churn on one PR can otherwise run two `gh cache delete --all`
-# against the same ref at once. Harmless today (the delete is idempotent and
-# `--succeed-on-no-caches` covers the loser), but keyed per PR so a future
-# step here doesn't have to be. Not cancel-in-progress: the second run is the
-# one that sees the caches the first one missed.
+# Close/reopen churn can otherwise run two deletes against one ref at once.
+# Not cancel-in-progress: the second run is the one that sees the caches the
+# first one missed.
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || inputs.pr-number }}
   cancel-in-progress: false

@@ -192,9 +192,7 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-bun-
 
-      # `--ignore-scripts`, unlike everywhere else: this is the one job that can mint npm's publish credential, and a dependency `postinstall` runs before any code in this repository does. Nothing here needs an install hook — verified by building the tree from a clean `--ignore-scripts` install. The same reasoning keeps the jest-consumer test out of this job and in ci.yml's `package` lane — code Jest loads can mint the OIDC token too, so for that one `--ignore-scripts` was not enough and the whole test had to move. This closes the half that stayed.
-      #
-      # What it does NOT close: `prepublishOnly` below still runs tsup and tsc from `node_modules` inside this job. Closing that means packing the tarball in `gate` and publishing the artifact, so no third-party code runs beside the credential at all — worth doing, but it rewrites the publish path, and the publish path is where this repo's expensive bugs have lived.
+      # `--ignore-scripts`, unlike everywhere else: this is the one job that can mint npm's publish credential, and a dependency `postinstall` runs before any code in this repository does. Verified that the tree still builds from a clean `--ignore-scripts` install. (The same threat is why ci.yml's `package` lane, not this job, runs the jest-consumer test.) Not closed: `prepublishOnly` below still runs tsup and tsc from `node_modules` here — that needs packing in `gate` and publishing the artifact instead.
       - name: Install dependencies
         run: bun install --frozen-lockfile --ignore-scripts
 
