@@ -35,14 +35,20 @@ import { type TokenView, severityFor } from "../types";
 /* --- a cascade small enough to be honest about ----------------------------- */
 
 /**
- * The sheet's own selectors are chains of attribute-only compounds joined by
- * descendant or child combinators, which is little enough cascade to model
- * exactly. `KIT_CSS` — prepended to `THEME_EDITOR_CSS` — also carries
- * pseudo-classes and element selectors this cannot read; those rules are
- * recorded instead of parsed, and a guard below fails if any of them could
- * reach a row or a tag.
+ * The sheet's own selectors are chains of attribute-only compounds — each
+ * optionally negating an attribute with `:not()`, which is how the kit keeps
+ * its `action` and `tag` resets off a bar trigger — joined by descendant or
+ * child combinators, which is little enough cascade to model exactly.
+ * `KIT_CSS` — prepended to `THEME_EDITOR_CSS` — also carries pseudo-classes
+ * and element selectors this cannot read; those rules are recorded instead of
+ * parsed, and a guard below fails if any of them could reach a row or a tag.
  */
-type Compound = readonly string[];
+interface Compound {
+  /** Attribute selectors the element must carry. */
+  readonly attrs: readonly string[];
+  /** Attribute selectors it must not, from `:not()`. */
+  readonly nots: readonly string[];
+}
 type Combinator = "descendant" | "child";
 
 interface Step {
@@ -70,9 +76,16 @@ function parseSelector(selector: string): readonly Step[] | null {
       combinator = "child";
       continue;
     }
-    const attrs = part.match(/\[[^\]]+\]/g);
-    if (attrs === null || attrs.join("") !== part) return null;
-    steps.push({ combinator, compound: attrs });
+    const nots: string[] = [];
+    // `:not([attr])` only — a negation of anything else is left unreadable.
+    const positive = part.replace(/:not\((\[[^\]]+\])\)/g, (_all, attr: string) => {
+      nots.push(attr);
+      return "";
+    });
+    const attrs = positive.match(/\[[^\]]+\]/g) ?? [];
+    if (attrs.join("") !== positive) return null;
+    if (attrs.length === 0 && nots.length === 0) return null;
+    steps.push({ combinator, compound: { attrs, nots } });
     combinator = "descendant";
   }
   return steps.length === 0 ? null : steps;
@@ -108,13 +121,39 @@ function parseRules(css: string): Rule[] {
 
 const RULES = parseRules(THEME_EDITOR_CSS);
 
+/** One element's own attribute selectors. */
+type ElementAttrs = readonly string[];
+
 /** An element as its attribute selectors, outermost ancestor first. */
-type Element = readonly Compound[];
+type Element = readonly ElementAttrs[];
+
+/**
+ * `[name]` is satisfied by any value, `[name="v"]` only by that value — so a
+ * guard written `:not([data-dtb-part])` really does exclude an element
+ * carrying `data-dtb-part="thm-tag"`, which string equality would miss.
+ */
+function attrMatches(condition: string, attrs: readonly string[]): boolean {
+  const m = /^\[([\w-]+)(?:="([^"]*)")?\]$/.exec(condition);
+  if (m === null) throw new Error(`theme-editor contrast: unmodelled attribute ${condition}`);
+  const [, name, value] = m;
+  return attrs.some((a) => {
+    const parsed = /^\[([\w-]+)(?:="([^"]*)")?\]$/.exec(a);
+    if (parsed === null) throw new Error(`theme-editor contrast: unmodelled fixture ${a}`);
+    return parsed[1] === name && (value === undefined || parsed[2] === value);
+  });
+}
+
+function compoundMatches(compound: Compound, attrs: readonly string[]): boolean {
+  return (
+    compound.attrs.every((a) => attrMatches(a, attrs)) &&
+    compound.nots.every((a) => !attrMatches(a, attrs))
+  );
+}
 
 function matchesAt(steps: readonly Step[], i: number, element: Element, j: number): boolean {
   if (j < 0) return false;
   const step = steps[i] as Step;
-  if (!step.compound.every((attr) => (element[j] as Compound).includes(attr))) return false;
+  if (!compoundMatches(step.compound, element[j] as readonly string[])) return false;
   if (i === 0) return true;
   if (step.combinator === "child") return matchesAt(steps, i - 1, element, j - 1);
   for (let k = j - 1; k >= 0; k -= 1) {
@@ -134,7 +173,11 @@ function resolve(element: Element, property: string): string | undefined {
     const value = rule.decls[property];
     if (value === undefined) continue;
     if (!matches(rule.steps, element)) continue;
-    const spec = rule.steps.reduce((n, step) => n + step.compound.length, 0);
+    // `:not()` takes the specificity of its argument, so a negated attr counts 1.
+    const spec = rule.steps.reduce(
+      (n, step) => n + step.compound.attrs.length + step.compound.nots.length,
+      0,
+    );
     if (best === undefined || spec > best.spec || (spec === best.spec && rule.order > best.order)) {
       best = { spec, order: rule.order, value };
     }
@@ -144,7 +187,7 @@ function resolve(element: Element, property: string): string | undefined {
 
 /* --- the stacks ------------------------------------------------------------ */
 
-const ROOT: Compound = ["[data-dev-toolbar]"];
+const ROOT: ElementAttrs = ["[data-dev-toolbar]"];
 
 const SEVERITIES = ["unknown", "warn", "bad", "override"] as const;
 const TAGS = ["edited", "not-applied", "orphaned", "masked"] as const;
@@ -172,12 +215,12 @@ interface Stack {
 /** Every (row severity, tag) the panel can paint, as a measurable stack. */
 const STACKS: readonly Stack[] = SEVERITIES.flatMap((severity) =>
   TAGS.map((tag): Stack => {
-    const row: Compound = [
+    const row: ElementAttrs = [
       '[data-dtb-part="thm-row"]',
       '[data-dtb-kind="row"]',
       `[data-dtb-severity="${severity}"]`,
     ];
-    const tagEl: Compound = [
+    const tagEl: ElementAttrs = [
       '[data-dtb-part="thm-tag"]',
       '[data-dtb-kind="tag"]',
       `[data-dtb-tag="${tag}"]`,

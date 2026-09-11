@@ -27,6 +27,12 @@ export interface StyleRule {
   readonly prelude: string;
   /** The at-rule preludes it sits inside, outermost first. */
   readonly enclosing: readonly string[];
+  /**
+   * The text between the rule's braces, comments already replaced by a space.
+   * Raw, not parsed into declarations — a caller that needs them parses what
+   * it models and fails closed on the rest, the way this scanner does.
+   */
+  readonly block: string;
 }
 
 // `quoted` marks string indices so structural checks can skip them — braces
@@ -142,7 +148,7 @@ export function styleRules(css: string): StyleRule[] {
       if (hasUnquoted(scanned, "{", i + 1, end - 1)) {
         throw new Error(`css-rules: nested rule inside "${text}"; refusing to scan`);
       }
-      rules.push({ prelude: text, enclosing: [...enclosing] });
+      rules.push({ prelude: text, enclosing: [...enclosing], block: source.slice(i + 1, end - 1) });
       i = end;
       continue;
     }
@@ -174,7 +180,7 @@ export function styleRules(css: string): StyleRule[] {
 }
 
 /** Split on top-level `separator`, ignoring any inside (), [] or a string. */
-function splitTopLevel(text: string, separator: string): string[] {
+export function splitTopLevel(text: string, separator: string): string[] {
   const parts: string[] = [];
   let depth = 0;
   let quote = "";

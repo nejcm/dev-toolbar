@@ -56,7 +56,54 @@ export const KIT_CSS = String.raw`@layer dev-toolbar {
     font-family: var(--dtb-font-mono);
   }
 
-  [data-dev-toolbar] [data-dtb-kind="action"] {
+  /* The *panel* control reset -- 22px tall, --dtb-control-padding-x, a 1px
+     frame -- and the :not() is what keeps it there.
+
+     Action stamps this kind, so an extension author reaching for the kit's
+     button to build a bar compact slot gets it on an element that also carries
+     data-dtb-part="trigger". Core's bar rule for that part is
+     [data-dev-toolbar] [data-dtb-part="trigger"] -- the same (0,2,0) this rule
+     used to be, in the same @layer dev-toolbar -- so source order decided it,
+     and the kit sheet is injected after core's (verified in Chromium: core,
+     then kit, then the extension sheets). The panel reset won, and the chip
+     painted a border no other bar chip has and measured 8px wider: 3px more
+     padding a side plus a 1px border a side, at either density. It cost the
+     playground a Linux-only CI failure, and a consumer of the published kit
+     would get no signal at all.
+
+     :not() takes the specificity of its argument, so this is (0,3,0): it wins
+     where it applies and simply stops matching where it does not, which leaves
+     core's trigger rule to style the chip unopposed. Core keeps its own
+     specificity, so a consumer's [data-dtb-part="trigger"] override still wins
+     the way it always did.
+
+     trigger is the only bar *part* this has to name: item, overflow-button,
+     overflow-menu-item and error-chip are rendered by core, so no extension
+     can put a kind on one. It is not the only *kind* that needs the guard --
+     tag carries one too, below. Between them they are the kinds that both
+     disagree with the bar's geometry and are plausible on a trigger: action
+     because it is the button you reach for, tag because it is a span and
+     core sanctions span[data-dtb-part="trigger"] as a readout. Several other
+     kinds also disagree with the bar (glyph, note, dot, row, banner, stack,
+     list, toolbar, search) and are left alone, because none of them reads as
+     something you would stamp on a bar chip. A kit Chip on a trigger stays
+     legitimate and unguarded: chip declares no geometry core's trigger rule
+     does not already declare.
+
+     Why here and not by raising core's specificity instead. Not because a
+     consumer would lose: both sheets sit in @layer dev-toolbar, and unlayered
+     author CSS beats any layered rule whatever the specificity (README.md,
+     docs/architecture.md), so core's number is invisible to anyone writing
+     outside the layer. Three better reasons. It would edit src/styles.css and
+     src/core/css.ts, invoking the byte-identity ritual for a kit-side
+     mistake. It would fix one tie rather than the class -- every kit kind
+     that disagrees with the bar would need core to out-specify it in turn.
+     And :not() puts the exclusion where the knowledge is: the kit knows
+     action is a panel control, and core has no business knowing kit kinds
+     exist (AGENTS.md draws that boundary). Action is a panel control; a bar
+     trigger is the extension's own element. See docs/kit.md, and
+     kitBarTrigger.test.ts, which resolves this cascade. */
+  [data-dev-toolbar] [data-dtb-kind="action"]:not([data-dtb-part="trigger"]) {
     display: inline-flex;
     align-items: center;
     min-height: var(--dtb-control-height);
@@ -69,7 +116,8 @@ export const KIT_CSS = String.raw`@layer dev-toolbar {
     cursor: pointer;
   }
 
-  [data-dev-toolbar] [data-dtb-kind="action"]:hover:not(:disabled) {
+  [data-dev-toolbar]
+    [data-dtb-kind="action"]:not([data-dtb-part="trigger"]):hover:not(:disabled) {
     background: var(--dtb-item-hover-bg);
   }
 
@@ -78,7 +126,13 @@ export const KIT_CSS = String.raw`@layer dev-toolbar {
     color: var(--dtb-muted);
   }
 
-  [data-dev-toolbar] [data-dtb-kind="tag"] {
+  /* Guarded for the same reason as action, and measured the same way: a Tag is
+     a <span>, and core sanctions span[data-dtb-part="trigger"] as a readout
+     chip, so a Tag used as one is plausible authoring rather than absurd.
+     Unguarded it ties core's trigger rule at (0,2,0) and wins on source order,
+     which took 3px of padding a side and 1px of font size off a live trigger
+     -- 12px narrower. */
+  [data-dev-toolbar] [data-dtb-kind="tag"]:not([data-dtb-part="trigger"]) {
     padding: 0 var(--dtb-space-1);
     border-radius: var(--dtb-radius);
     font-size: calc(var(--dtb-font-size) - 1px);

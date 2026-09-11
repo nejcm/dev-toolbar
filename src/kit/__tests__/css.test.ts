@@ -35,10 +35,23 @@ describe("KIT_CSS", () => {
     expect(KIT_CSS).toMatch(
       /\[data-dtb-kind="action"\][^{]*\{[^}]*background: transparent;[^}]*\}/s,
     );
-    expect(KIT_CSS).toContain('[data-dtb-kind="action"]:hover:not(:disabled)');
+    // The :not() guard keeps the *panel* control reset off a bar trigger; see
+    // kitBarTrigger.test.ts, which resolves that cascade.
+    expect(KIT_CSS).toContain(
+      '[data-dtb-kind="action"]:not([data-dtb-part="trigger"]):hover:not(:disabled)',
+    );
     expect(KIT_CSS).toMatch(
       /\[data-dtb-kind="note"\][^{]*\{[^}]*margin: 0;[^}]*color: var\(--dtb-muted\);[^}]*\}/s,
     );
+  });
+
+  /**
+   * Both kinds that are plausible on a bar trigger and disagree with its
+   * geometry carry the guard. Selector text only; `kitBarTrigger.test.ts`
+   * resolves what it does, and the e2e measures it in a browser.
+   */
+  it.each(["action", "tag"])("keeps the %s kind off a bar trigger", (kind) => {
+    expect(KIT_CSS).toContain(`[data-dtb-kind="${kind}"]:not([data-dtb-part="trigger"])`);
   });
 
   it.each([

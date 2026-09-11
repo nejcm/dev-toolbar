@@ -24,7 +24,18 @@ export type SpanProps = HTMLAttributes<HTMLSpanElement> & DataAttributes;
 /** Props for the shared button reset. Everything a `<button>` takes. */
 export type ActionProps = ButtonHTMLAttributes<HTMLButtonElement> & DataAttributes;
 
-/** A button carrying the shared reset, defaulting to a non-submitting type. */
+/**
+ * A button carrying the shared **panel** control reset, defaulting to a
+ * non-submitting type.
+ *
+ * Not a bar trigger. `data-dtb-kind="action"` is the panel geometry —
+ * `--dtb-control-height`, `--dtb-control-padding-x`, a 1px border — where a bar
+ * chip is core's `[data-dtb-part="trigger"]`: `--dtb-item-padding-x` and no
+ * border. Write the trigger yourself and put kit controls inside it; the kit
+ * sheet guards this rule with `:not([data-dtb-part="trigger"])` so the mistake
+ * is merely redundant rather than 8px wide, but the division is the point.
+ * See docs/kit.md, "Action is a panel control".
+ */
 export const Action = forwardRef<HTMLButtonElement, ActionProps>(function Action(
   { type = "button", ...rest },
   ref,
@@ -175,7 +186,17 @@ export const Banner = forwardRef<HTMLElement, BannerProps>(function Banner(
 /** Props for a small inline marker. Everything a `<span>` takes. */
 export type TagProps = SpanProps;
 
-/** A small inline marker beside a value. */
+/**
+ * A small inline marker beside a value.
+ *
+ * A panel marker, like `Action`: `data-dtb-kind="tag"` is `--dtb-space-1`
+ * padding and a font step down, where a bar chip is core's
+ * `[data-dtb-part="trigger"]`. Core sanctions `span[data-dtb-part="trigger"]`
+ * as a bar readout, so the kit sheet guards this rule with
+ * `:not([data-dtb-part="trigger"])` too — a `Tag` used as a readout chip would
+ * otherwise measure 12px narrower. See docs/kit.md, "Action is a panel
+ * control".
+ */
 export const Tag = forwardRef<HTMLSpanElement, TagProps>(function Tag(rest, ref) {
   return <span {...rest} ref={ref} data-dtb-kind="tag" />;
 });
