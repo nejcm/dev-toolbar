@@ -344,22 +344,33 @@ The numbers are therefore **not** in the name, and `aria-label` replaces content
 they would go unannounced. They arrive as a description instead: each painted label span
 and value span carries an `id`, and the button's `aria-describedby` lists them **in
 pairs** — label, then value, one pair per metric, in bar order. `aria-describedby` joins
-each target's computed name with a space, so with the default four collectors the chip
-announces
+each target's computed name with a space, so the chip announces its name and then one
+word-then-number pair per metric. Measured in Chromium over the real DOM
+(`Accessibility.getPartialAXTree`) against `examples/playground`'s bar with the kit
+stylesheet loaded — six collectors, the built-in four plus the playground's own `react`
+and `LCP`:
 
-> *"Metrics: mem, delay, jank, net, button"* — *"mem 48 MB delay NA jank — net 0"*
+> *"Metrics: mem, delay, jank, net, react, LCP, button"* — *"mem 22 MB delay — jank — net
+> 0 react 1 ms LCP 348 ms"*
 
-measured in Chromium over the real DOM (`Accessibility.getPartialAXTree`; `NA` and `—`
-are what a collector this browser cannot support, or has not sampled yet, paints).
+Every figure there belongs to that run in that browser: a heap reading and a timing
+reading are both environment-specific, and so are the two markers, which are **not**
+interchangeable. `—` is what a *supported* collector paints before its first sample —
+Chromium does support Event Timing, so `delay` reads `—` until an interaction lands and a
+real number (`64 ms`, in one such run) seconds later. `NA` is the separate *unsupported*
+marker (`NOT_AVAILABLE`, `src/ext/metrics/format.ts`), and it is what the same chip paints
+for `delay` under the unit tests, where jsdom has no Event Timing at all. So do not read a
+pinned test literal as a browser measurement: the `48 MB` this page uses elsewhere to
+illustrate a heap readout is the jsdom fixture's value, not a figure a browser reported.
 
-The pairing is the decision, and it costs saying the four words twice. Pointing at the
-**value spans alone** is shorter — *"48 MB NA — 0"* — and the name does state the same
-four words, in the same order, immediately before; but attributing four numbers to a
-list stated earlier in one utterance is a working-memory task, and an `NA` or an `—`
+The pairing is the decision, and it costs saying the words twice. Pointing at the
+**value spans alone** is shorter — *"22 MB — — 0 1 ms 348 ms"* — and the name does state
+the same words, in the same order, immediately before; but attributing a run of numbers
+to a list stated earlier in one utterance is a working-memory task, and a `—` or an `NA`
 cannot be placed at all. Pointing at the **chips** instead needs no extra ids and
 announces *the same utterance*: a chip is a flex container, and accname puts a space
-between flex-item children, so *"mem 22 MB delay — jank — net 0"* is what both options
-produce (measured against the playground's bar with the kit stylesheet loaded; an earlier
+between flex-item children, so *"mem 22 MB delay — jank — net 0 react 1 ms LCP 348 ms"* is
+what both options produce (the same measurement as above; an earlier
 round recorded *"mem48 MB"* here, which was an unstyled fixture). The pairs win on
 behaviour rather than on wording: a chip is whatever the preset or a `render` callback
 painted, so pointing at it would describe a consumer's own markup, and it would not be
@@ -372,7 +383,8 @@ one page from colliding; do not select on them. A span contributes only when it 
 painted: the attribute is omitted entirely when no value is painted — a preset that
 paints none (`"icon"`, `"icon-label"`, `"label"`), or a `render` callback that replaced
 the span — and `"icon-value"`, which paints a glyph and the number but no word, falls
-back to the unpaired *"48 MB NA — 0"* because there is no word on the bar to point at.
+back to the unpaired *"22 MB — — 0 1 ms 348 ms"* because there is no word on the bar to
+point at.
 With no `aria-describedby` at all a browser describes the button by its `title`
 (*"Runtime performance — click for details"*), which is why the attribute's absence is
 never silence — and it is also why **this is the only first-party chip with an

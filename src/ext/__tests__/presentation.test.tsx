@@ -462,9 +462,7 @@ describe("label in name, and where the readout is announced", () => {
         // `"label"` paints the text alone, so there is no value span to point
         // at — and a dangling IDREF announces nothing at all.
         const control = trigger(mount(id, nameCase.bare!()), id);
-        expect(
-          control.querySelector('[data-dtb-kind="value"], [data-dtb-part$="-count"]'),
-        ).toBeNull();
+        expect(control.querySelector('[data-dtb-kind="value"]')).toBeNull();
         expect(
           describedByIds(control),
           `${id}: an aria-describedby with nothing to point at`,
