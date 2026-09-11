@@ -59,13 +59,20 @@ import {
   DEFAULT_RESET_PARAM,
   OVERRIDES_KEY,
   isFlagValue,
+  promotionsOf,
   vetOverrides,
 } from "./runtime";
 import { writeClipboardTextOrThrow } from "../../runtime";
 import { FlagsChip, FlagsPanel } from "./ui";
-import { readInput, readStoredRecord, resolveStyleNonce } from "@nejcm/dev-toolbar/kit";
+import {
+  readInput,
+  readStoredRecord,
+  resolvePresentation,
+  resolveStyleNonce,
+} from "@nejcm/dev-toolbar/kit";
+import type { CompactPresentationInput, ResolvedCompactPresentation } from "@nejcm/dev-toolbar/kit";
 import type { FlagsRuntimeOptions } from "./runtime";
-import type { FlagReading, FlagValue, FlagsInput } from "./types";
+import type { FlagReading, FlagValue, FlagView, FlagsInput, FlagsSnapshot } from "./types";
 import type {
   CommandInputSchema,
   DevToolbarExtension,
@@ -112,6 +119,29 @@ export interface FlagsOptions extends Pick<
    * slot prop core forwards from `<DevToolbar>`.
    */
   styleNonce?: string;
+  /**
+   * How the **flags chip** presents itself: a preset, your own icon, a render
+   * callback and an accessible-name override. A bare preset is the shorthand —
+   * `presentation: "icon-value"`.
+   *
+   * This is the chip alone. A promoted flag is its own bar control, so its
+   * presentation is configured next to it, on
+   * {@link PromotedFlag.presentation} — rather than by one callback here
+   * receiving `FlagsSnapshot | FlagView` and making you narrow it.
+   *
+   * `render` supplies the children of the span carrying `data-dtb-overridden`,
+   * so the state attributes, `aria-expanded`, `onClick` and `title` stay the
+   * extension's; returning `undefined` falls through to the preset. `name`
+   * overrides the trigger's `aria-label`, and a whitespace-only return is
+   * ignored.
+   *
+   * Nothing here reaches the store: the icon and the callbacks are held in this
+   * closure and passed as props, because a `ReactNode` cannot be signed and
+   * this store republishes on a string signature.
+   *
+   * `docs/adr/ADR-004-per-extension-bar-presentation.md`.
+   */
+  presentation?: CompactPresentationInput<FlagsSnapshot>;
 }
 
 /**
@@ -129,8 +159,30 @@ export function flags(options: FlagsOptions = {}): DevToolbarExtension {
     keepMounted = true,
     injectStyles = true,
     styleNonce: optionNonce,
+    presentation: presentationOption,
     ...runtimeOptions
   } = options;
+
+  // Resolved once, here, rather than per render: this closure is where the
+  // icons and the callbacks live, exactly as `label` and `injectStyles` do —
+  // and the only place they *can* live. `FlagsSnapshot` and `FlagView` are
+  // store snapshots, published on a string signature, and a `ReactNode` cannot
+  // be signed: left out of the signature it would never publish, and
+  // `JSON.stringify`'d it would republish every 250 ms tick and put a React
+  // element into what `diagnostics()` serialises. So `PromotedFlag.icon` stays
+  // `string`, rich icons arrive on `PromotedFlag.presentation`, and both
+  // resolved maps travel to `ui.tsx` as props.
+  const presentation = resolvePresentation(presentationOption);
+  //
+  // Keyed by *position* in `promoted`, not by `flagKey`: two entries may name
+  // the same key with different `startAt`/`expiresAt`/`audience` windows, and
+  // only the runtime knows which one is in force right now. It says so in
+  // `FlagView.promotedIndex`, and this map is read with that index — keyed by
+  // key instead, an expired entry's icon would paint on the live entry's label.
+  const promotedPresentations = new Map<number, ResolvedCompactPresentation<FlagView>>();
+  promotionsOf(runtimeOptions.promoted).forEach((promotion, index) => {
+    promotedPresentations.set(index, resolvePresentation(promotion.presentation));
+  });
 
   // Built here, not in start(api): slot functions run during the toolbar's
   // first render, which is before any effect fires.
@@ -243,6 +295,8 @@ export function flags(options: FlagsOptions = {}): DevToolbarExtension {
       <FlagsChip
         runtime={runtime}
         label={label}
+        presentation={presentation}
+        promotedPresentations={promotedPresentations}
         isOverflowed={isOverflowed}
         isPanelOpen={isPanelOpen}
         injectStyles={injectStyles}

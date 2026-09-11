@@ -230,6 +230,34 @@ describe("resolveCompactControl", () => {
       expect(control.icon).toBe("*");
     },
   );
+
+  it.each(NO_ICON)(
+    'holds "parts.icon implies a paintable icon" under "default", given %s',
+    (_case, icon) => {
+      // `DEFAULTS.overflow` names an icon slot, which is what an extension whose
+      // `"default"` has always painted one declares (`/ext/flags`' promoted
+      // control and its string `PromotedFlag.icon`). Without the guard on this
+      // side, `parts.icon: true` would arrive next to `icon: undefined` — an
+      // inconsistent pair `renderCompactParts` trusts, painting an empty
+      // `<span data-dtb-kind="glyph">` that still eats a `gap`. The invariant is
+      // on this function's output, not on where the parts came from.
+      const control = resolveCompactControl<number>({ preset: "default", icon }, 1, {
+        isOverflowed: true,
+        defaults: DEFAULTS,
+      });
+
+      expect(control.icon == null).toBe(true);
+      expect(control.parts).toEqual({ ...DEFAULTS.overflow, icon: false });
+      // The rest of the extension's own tree is untouched: the clause only ever
+      // turns a `true` into `false`, so defaults naming no icon slot cannot move.
+      expect(
+        resolveCompactControl<number>({ preset: "default", icon }, 1, {
+          isOverflowed: false,
+          defaults: DEFAULTS,
+        }).parts,
+      ).toBe(DEFAULTS.bar);
+    },
+  );
 });
 
 describe("renderCompact", () => {

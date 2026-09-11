@@ -11,7 +11,7 @@
  * re-applied through your adapter.
  */
 import { matchesQuery as matchesKitQuery } from "@nejcm/dev-toolbar/kit";
-import type { Input, SeverityWithOverride } from "@nejcm/dev-toolbar/kit";
+import type { CompactPresentationInput, Input, SeverityWithOverride } from "@nejcm/dev-toolbar/kit";
 
 /** `null` is a real value ("unset variant"), not "no value". */
 export type FlagValue = boolean | string | number | null;
@@ -91,7 +91,19 @@ export interface PromotedFlag {
   flagKey: string;
   /** Bar label. Defaults to the flag's `label`, then its `key`. */
   label?: string;
-  /** A short glyph rendered before the label. Text, not an asset. */
+  /**
+   * A short glyph rendered before the label. **Text, not an asset** — and
+   * deliberately still `string`.
+   *
+   * This field is copied into the snapshot as {@link FlagView.promotedIcon},
+   * and the flags store publishes on a *string* signature. A `ReactNode` cannot
+   * be signed: left out of the signature it would never publish, and
+   * `JSON.stringify`'d it would republish on every 250 ms tick — and it would
+   * put a React element inside the object `diagnostics()` serialises. Rich
+   * icons go on {@link PromotedFlag.presentation} instead, which stays in the
+   * factory closure and never reaches the store
+   * (`docs/adr/ADR-004-per-extension-bar-presentation.md`).
+   */
   icon?: string;
   /** ISO date. Before it, the flag is not promoted. */
   startAt?: string;
@@ -99,6 +111,28 @@ export interface PromotedFlag {
   expiresAt?: string;
   /** Promoted only for an actor in one of these. Empty/omitted means everybody. */
   audience?: readonly string[];
+  /**
+   * How *this* promoted control presents itself: a preset, your own icon, a
+   * render callback and an accessible-name override. A bare preset is the
+   * shorthand — `presentation: "icon"`.
+   *
+   * It lives here rather than on `flags()` because a control's presentation is
+   * configured next to that control: a flags-level callback would have to
+   * receive `FlagsSnapshot | FlagView` and make you narrow it. The chip has its
+   * own `presentation` option on `flags()`.
+   *
+   * Under `"default"` a bare `icon` here is *not* a no-op, unlike on the chip:
+   * this control has had a glyph slot since it existed — the string
+   * {@link PromotedFlag.icon} — and `presentation.icon` fills that same slot,
+   * which is the upgrade path off the string field. No existing consumer can
+   * have a `presentation`, so today's output is unmoved.
+   *
+   * Nothing here reaches the store. A `PromotedFlag` is config held in the
+   * factory closure; only `label` and `icon` are copied into a snapshot (plus
+   * this entry's position, as {@link FlagView.promotedIndex}, which is how the
+   * bar knows *which* entry's presentation to use), and this field is not.
+   */
+  presentation?: CompactPresentationInput<FlagView>;
 }
 
 /** Chip/dot colour. Same vocabulary and tokens `/ext/metrics` and `/ext/environment` use. */
@@ -161,6 +195,19 @@ export interface FlagView {
   applyError?: string;
   /** True when the flag is promoted into the bar right now. */
   promoted: boolean;
+  /**
+   * Which entry of the `promoted` option is the one in force, as an index into
+   * that array. Set exactly when {@link FlagView.promoted} is true.
+   *
+   * Two entries may name the same key with different `startAt`/`expiresAt`/
+   * `audience` windows, so "which entry won" is not answerable from the key
+   * alone — this is the runtime telling the UI which one it picked, so a
+   * promoted control gets the *chosen* entry's
+   * {@link PromotedFlag.presentation} rather than the first one that mentions
+   * its key. A number is signable; the presentation itself never enters a
+   * snapshot (`docs/adr/ADR-004-per-extension-bar-presentation.md`).
+   */
+  promotedIndex?: number;
   promotedLabel?: string;
   promotedIcon?: string;
 }

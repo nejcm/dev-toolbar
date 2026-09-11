@@ -10,11 +10,21 @@ import {
   Select,
   Tag,
   TextInput,
+  renderCompact,
+  renderCompactParts,
+  resolveAccessibleName,
+  resolveCompactControl,
+  resolveIcon,
   useExtensionSurface,
+} from "@nejcm/dev-toolbar/kit";
+import type {
+  CompactDefaults,
+  CompactParts,
+  ResolvedCompactPresentation,
 } from "@nejcm/dev-toolbar/kit";
 import { ensureFlagsStyles } from "./css";
 import { formatValue, matchesQuery, parseValue, severityFor } from "./types";
-import type { FlagValue, FlagView } from "./types";
+import type { FlagValue, FlagView, FlagsSnapshot } from "./types";
 import type { FlagsRuntime } from "./runtime";
 
 /**
@@ -29,20 +39,119 @@ import type { FlagsRuntime } from "./runtime";
 /* Bar */
 
 /**
+ * What `"default"` paints on the flags chip, in each of the two places it
+ * appears.
+ *
+ * The `⋮` row is the same tree as the bar's, down to the word: this chip has
+ * always painted `"flags"` in both, unlike the Group A chips that swing to
+ * their `label` when overflowed. So `overflow.text` is `"short"` here, which is
+ * what keeps the default byte-identical in the menu — and it is exactly why
+ * `CompactDefaults` is handed in per extension rather than known to kit.
+ * Under any *preset* the menu still forces `"full"`, which is the chip's
+ * `label` ("Flags"); that is the documented overflow guarantee, and it only
+ * ever applies once a consumer has opted into a preset.
+ */
+const CHIP_DEFAULTS: CompactDefaults = {
+  bar: { icon: false, text: "short", value: true },
+  overflow: { icon: false, text: "short", value: true },
+};
+
+/**
+ * What `"default"` paints on a promoted control.
+ *
+ * `icon: true` because a promoted flag has *always* been able to paint one —
+ * `PromotedFlag.icon`, the string glyph. It occupies the same slot the new
+ * `presentation.icon` does, so the back-compat emoji keeps working under
+ * `preset: "icon"` instead of being silently dropped. The two suppliers paint
+ * two shapes; see `promotedParts`.
+ *
+ * The bar and the `⋮` menu are the same tree here too — the promoted control
+ * is rendered identically in both — so both rows are the same.
+ */
+const PROMOTED_DEFAULTS: CompactDefaults = {
+  bar: { icon: true, text: "short", value: true },
+  overflow: { icon: true, text: "short", value: true },
+};
+
+/** A control whose consumer configured nothing. Shared, so it is not rebuilt per render. */
+const NO_PRESENTATION: ResolvedCompactPresentation<FlagView> = { preset: "default" };
+
+/**
+ * The icon and the text of one promoted control.
+ *
+ * The icon slot has two suppliers and therefore two shapes, and that is
+ * deliberate rather than an oversight:
+ *
+ * - `PromotedFlag.icon` is a **string** — "text, not an asset" — and it has
+ *   shipped as a bare `<span aria-hidden="true">` since this control existed.
+ *   Routing it through `Glyph` would change the default output, so it keeps its
+ *   own node and today's bytes.
+ * - `PromotedFlag.presentation.icon` is a `ReactNode`, and gets kit's `Glyph`:
+ *   `aria-hidden` by default and clamped, because a 24px `<svg>` handed to an
+ *   11px bar would set the bar's height.
+ *
+ * The text span is deliberately unnamed, which is what it has always been. A
+ * promoted control has one text rather than two — the promoted label *is* the
+ * identity — so `short` and `full` are the same word and the `⋮` rule is a
+ * no-op here.
+ */
+function promotedParts(
+  label: string,
+  parts: CompactParts,
+  icon: ReactNode,
+  legacy: string | undefined,
+): ReactNode {
+  // No presence check here: `resolveCompactControl` holds "`parts.icon` implies
+  // a paintable `icon`" on its own output now, `defaults` included — which is
+  // what `PROMOTED_DEFAULTS.icon: true` relies on, since this is the one
+  // first-party tree whose `"default"` names an icon slot.
+  //
+  // `legacy` is only ever the resolved icon when the consumer supplied no
+  // usable `presentation.icon`, so this fork is "which supplier", not "which
+  // preset".
+  const paintsLegacy = parts.icon && legacy !== undefined;
+  return (
+    <>
+      {paintsLegacy ? <span aria-hidden="true">{legacy}</span> : null}
+      {renderCompactParts({
+        parts: { ...parts, icon: parts.icon && !paintsLegacy },
+        icon,
+        iconProps: { "data-dtb-part": "flag-promoted-icon" },
+        short: label,
+        full: label,
+      })}
+    </>
+  );
+}
+
+/**
  * The promoted flag itself: one control in the bar.
  *
  * A boolean is a `role="switch"` that flips the flag in place — the point of
  * promoting it during a migration. Anything else opens the panel; a bar is
  * no place to edit a string.
+ *
+ * Its `presentation` is configured on the `PromotedFlag` itself rather than on
+ * `flags()`, because a control's presentation belongs next to that control —
+ * the alternative is one flags-level callback receiving
+ * `FlagsSnapshot | FlagView` and making the consumer narrow it. It reaches here
+ * as a prop, resolved once in the factory closure: a `ReactNode` cannot go
+ * anywhere near this extension's signature-based store.
  */
 function PromotedControl({
   view,
+  presentation,
   writable,
+  isOverflowed,
+  isPanelOpen,
   onToggle,
   onOpen,
 }: {
   view: FlagView;
+  presentation: ResolvedCompactPresentation<FlagView>;
   writable: boolean;
+  isOverflowed: boolean;
+  isPanelOpen: boolean;
   onToggle(): void;
   onOpen(): void;
 }): ReactNode {
@@ -67,24 +176,79 @@ function PromotedControl({
   // repeating it there would be noise. `title` explains; it does not name.
   const accessibleLabel = view.type === "boolean" ? label : `${label}, ${view.effectiveText}`;
 
+  // The rich icon is resolved *first* — a function `icon` may decline for this
+  // control and supply for the next — and the back-compat string glyph fills
+  // the slot only when nothing usable came back. Testing `presentation.icon`
+  // instead would let `icon: () => undefined` drop the legacy glyph silently,
+  // though the README promises the rich one merely *wins*. Filling the slot is
+  // also what lets `hasIcon` — and so the "an icon-only preset with no icon
+  // paints text" guarantee — see the string glyph at all.
+  const rich = resolveIcon(presentation.icon, view);
+  // Truthiness, not presence — this control has painted the glyph on
+  // `view.promotedIcon ? … : null` since it existed, so `icon: ""` has always
+  // painted *nothing*. Testing `!== undefined` instead would give `""` a slot:
+  // an empty `<span aria-hidden="true">` that still eats a `gap` in the bar,
+  // and — worse — a truthy `hasIcon` under `preset: "icon"`, which suppresses
+  // kit's guarantee 1 and leaves the control blank but for its dot. An empty
+  // string is not an icon.
+  const legacy =
+    (rich === undefined || rich === null) && view.promotedIcon ? view.promotedIcon : undefined;
+  // The already-resolved node goes back in, so a function `icon` is invoked
+  // once per control rather than twice.
+  const control = resolveCompactControl({ ...presentation, icon: legacy ?? rich }, view, {
+    isOverflowed,
+    defaults: PROMOTED_DEFAULTS,
+  });
+
+  // A boolean has no value slot: the switch announces its own state, and
+  // painting "true" next to it would be noise.
+  const paintsValue = control.parts.value && view.type !== "boolean";
+  // Kit's guarantee 1 covers `"icon"` alone, because for every other preset
+  // "the other part" is always there — except here, where a promoted boolean
+  // has no value to paint. `"value"` and an iconless `"icon-value"` would leave
+  // a switch that is a bare dot, so the plan's own principle applies: a blank
+  // control is worse than an unstyled one. `short` and `full` are the same word
+  // on this control, so the `⋮` rule is a no-op either way.
+  const parts =
+    control.parts.icon || control.parts.text !== "none" || paintsValue
+      ? control.parts
+      : { ...control.parts, text: "short" as const };
+
+  const fallback = (
+    <>
+      {promotedParts(label, parts, control.icon, legacy)}
+      {paintsValue ? (
+        <span data-dtb-part="flag-promoted-value" data-dtb-kind="value">
+          {view.effectiveText}
+        </span>
+      ) : null}
+    </>
+  );
+
   return (
     <button
       type="button"
       data-dtb-part="flag-promoted"
       data-dtb-flag={view.key}
       data-dtb-overridden={view.overridden ? "true" : "false"}
-      aria-label={accessibleLabel}
+      // `presentation.name` overrides it, and a whitespace-only override is
+      // ignored so no override can leave this control unnamed. `title`
+      // explains; it does not name, so it is not overridable.
+      aria-label={resolveAccessibleName(presentation.name, view, accessibleLabel)}
       {...(toggleable ? { role: "switch", "aria-checked": on } : {})}
       onClick={toggleable ? onToggle : onOpen}
       title={title}
     >
+      {/* The dot stays outside the preset and outside `render`: it is state,
+          not text, and `role="switch"`/`aria-checked`, `data-dtb-flag` and
+          `data-dtb-overridden` are on the button for the same reason. A
+          callback supplies children only. */}
       <span data-dtb-part="flag-promoted-dot" data-dtb-kind="dot" aria-hidden="true" />
-      {view.promotedIcon ? <span aria-hidden="true">{view.promotedIcon}</span> : null}
-      <span>{label}</span>
-      {view.type === "boolean" ? null : (
-        <span data-dtb-part="flag-promoted-value" data-dtb-kind="value">
-          {view.effectiveText}
-        </span>
+      {renderCompact(
+        presentation,
+        view,
+        { icon: control.icon, isOverflowed, isPanelOpen },
+        fallback,
       )}
     </button>
   );
@@ -93,6 +257,23 @@ function PromotedControl({
 export interface ChipProps {
   runtime: FlagsRuntime;
   label: string;
+  /** The chip's own, already through `resolvePresentation` in the factory closure. */
+  presentation: ResolvedCompactPresentation<FlagsSnapshot>;
+  /**
+   * Each promoted flag's own, keyed by its **position** in the `promoted`
+   * option — `PromotedFlag.presentation` resolved once in the factory.
+   *
+   * By position rather than by `flagKey` because two entries may name the same
+   * key with different `startAt`/`expiresAt`/`audience` windows, and the
+   * runtime is the one that knows which is in force: it says so in
+   * `FlagView.promotedIndex`, which is what this map is read with. Keyed by
+   * key, an expired entry's presentation would paint on the live entry's label.
+   *
+   * It travels as a prop for the same reason `label` and `injectStyles` do, and
+   * for one more: a `ReactNode` cannot enter this extension's store, which
+   * republishes on a *string* signature.
+   */
+  promotedPresentations: ReadonlyMap<number, ResolvedCompactPresentation<FlagView>>;
   isOverflowed: boolean;
   isPanelOpen: boolean;
   injectStyles: boolean;
@@ -104,6 +285,8 @@ export interface ChipProps {
 export function FlagsChip({
   runtime,
   label,
+  presentation,
+  promotedPresentations,
   isOverflowed,
   isPanelOpen,
   injectStyles,
@@ -120,27 +303,55 @@ export function FlagsChip({
     ? `Feature flags: ${count} · ${snapshot.overriddenCount} locally overridden${snapshot.writable ? "" : " · read-only"}`
     : "Feature flags: none supplied to flags()";
 
+  const control = resolveCompactControl(presentation, snapshot, {
+    isOverflowed,
+    defaults: CHIP_DEFAULTS,
+  });
+  // The one construction: handed to a `render` callback as `ctx.fallback` and
+  // painted when there is none, so `render: (_, ctx) => ctx.fallback` is exact
+  // by construction rather than by two pieces of markup kept in step.
+  const contents = (
+    <>
+      {renderCompactParts({
+        parts: control.parts,
+        icon: control.icon,
+        iconProps: { "data-dtb-part": "flag-icon" },
+        short: "flags",
+        full: label,
+        textProps: { "data-dtb-part": "flag-label", "data-dtb-kind": "label" },
+      })}
+      {control.parts.value ? <span data-dtb-part="flag-count">{summary}</span> : null}
+    </>
+  );
+
   const trigger = (
     <button
       type="button"
       data-dtb-part={isOverflowed ? "flag-overflow-trigger" : "trigger"}
       aria-expanded={isPanelOpen}
-      aria-label={label}
+      // `presentation.name` overrides it; a whitespace-only override is ignored
+      // so no override can leave the trigger unnamed. `title` is not
+      // overridable — it explains, it does not name.
+      aria-label={resolveAccessibleName(presentation.name, snapshot, label)}
       onClick={onToggle}
       title={title}
     >
       {/* Hand-written, not the kit's <Chip>: this chip has no dot, and the kit
           chip always renders one. An extra node here would move the whole
-          summary by a dot and a gap. */}
+          summary by a dot and a gap. That is also why a consumer's `render`
+          supplies this span's *children*: the span carries
+          `data-dtb-overridden`, which is state and not the callback's to lose. */}
       <span
         data-dtb-part="flag-chip"
         data-dtb-kind="chip"
         data-dtb-overridden={snapshot.overriddenCount > 0 ? "true" : "false"}
       >
-        <span data-dtb-part="flag-label" data-dtb-kind="label">
-          flags
-        </span>
-        <span data-dtb-part="flag-count">{summary}</span>
+        {renderCompact(
+          presentation,
+          snapshot,
+          { icon: control.icon, isOverflowed, isPanelOpen },
+          contents,
+        )}
       </span>
     </button>
   );
@@ -152,7 +363,10 @@ export function FlagsChip({
     <PromotedControl
       key={view.key}
       view={view}
+      presentation={promotedPresentations.get(view.promotedIndex ?? -1) ?? NO_PRESENTATION}
       writable={snapshot.writable}
+      isOverflowed={isOverflowed}
+      isPanelOpen={isPanelOpen}
       onToggle={() => runtime.toggle(view.key)}
       onOpen={onOpen}
     />

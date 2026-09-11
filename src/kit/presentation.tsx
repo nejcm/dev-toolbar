@@ -254,6 +254,16 @@ export interface CompactControl {
  * `null` for `"default"`, and every caller then owes the same
  * `isOverflowed ? overflow : bar` choice. Nine copies of that choice is nine
  * places for the byte-identity property to rot.
+ *
+ * The guard applies to `defaults` too, and that is the whole point of "in one
+ * place": an extension whose `"default"` paints an icon (`/ext/flags`' promoted
+ * control, which has painted `PromotedFlag.icon` since it existed) would
+ * otherwise get `parts.icon === true` alongside `icon == null` — an
+ * inconsistent pair `renderCompactParts` trusts, painting an empty
+ * `<span data-dtb-kind="glyph">` that still eats a `gap`. The invariant is on
+ * this function's *output*: `parts.icon` implies `icon` is paintable, whichever
+ * side the parts came from. Extensions whose defaults name no icon slot are
+ * untouched — the clause only ever turns a `true` into `false`.
  */
 export function resolveCompactControl<TView>(
   presentation: ResolvedCompactPresentation<TView>,
@@ -261,11 +271,10 @@ export function resolveCompactControl<TView>(
   { isOverflowed, defaults }: CompactControlOptions,
 ): CompactControl {
   const icon = resolveIcon(presentation.icon, view);
-  const parts = resolveCompactParts(presentation.preset, {
-    hasIcon: icon !== undefined && icon !== null,
-    isOverflowed,
-  });
-  return { icon, parts: parts ?? (isOverflowed ? defaults.overflow : defaults.bar) };
+  const hasIcon = icon !== undefined && icon !== null;
+  const parts = resolveCompactParts(presentation.preset, { hasIcon, isOverflowed });
+  const chosen = parts ?? (isOverflowed ? defaults.overflow : defaults.bar);
+  return { icon, parts: chosen.icon && !hasIcon ? { ...chosen, icon: false } : chosen };
 }
 
 /**
@@ -307,6 +316,13 @@ export interface CompactPartsContent {
  * chosen per render is what `react/no-unstable-nested-components` rejects, and
  * the result here is `Chip`'s children, which every site then concatenates its
  * own value and state children onto.
+ *
+ * **Precondition:** `parts.icon` implies `icon` is paintable. This function
+ * paints the `Glyph` on `parts.icon` alone and does not re-check the node, so
+ * an inconsistent pair yields an empty `<span data-dtb-kind="glyph">` that
+ * still eats a `gap`. `resolveCompactControl` guarantees the pair on its own
+ * output, `defaults` included — take `parts` from there rather than assembling
+ * them by hand.
  */
 export function renderCompactParts({
   parts,

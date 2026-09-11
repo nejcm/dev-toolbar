@@ -1060,25 +1060,54 @@ describe("publication guarantees", () => {
     runtime.store.destroy();
   });
 
-  // Pins missing promotedLabel/promotedIcon in signature() (runtime.ts:517);
-  // ui.tsx:49/75 keeps the old promoted chip label/icon after configuration changes.
-  // When covered, invert to toHaveBeenCalledTimes(1) and getSnapshot() toBe(peek()).
-  it.each(["label", "icon"] as const)("BUG: promoted %s alone does not publish", (field) => {
-    const promoted: PromotedFlag = { flagKey: "feature", label: "Pinned", icon: "A" };
-    const runtime = createFlagsRuntime({ flags: [initial], promoted: [promoted] });
-    const before = runtime.store.getSnapshot();
-    const listener = vi.fn();
-    runtime.store.subscribe(listener);
-    promoted[field] = "Changed";
-    runtime.refresh();
-    runtime.store.flush();
-    const viewField = field === "label" ? "promotedLabel" : "promotedIcon";
-    expect(runtime.store.peek().flags).toEqual([{ ...before.flags[0], [viewField]: "Changed" }]);
-    expect(runtime.store.peek().promoted).toEqual(runtime.store.peek().flags);
-    expect(listener).not.toHaveBeenCalled();
-    expect(runtime.store.getSnapshot()).toBe(before);
-    runtime.store.destroy();
-  });
+  // Deliberate, permanent, and identical for both fields: `promotedLabel` and
+  // `promotedIcon` are left out of `signature()`, so mutating the `promoted`
+  // array after `flags()` ran does not republish.
+  //
+  // The reason is config immutability, not signability — `promotedIcon` is a
+  // `string` and could be signed in one line. A `PromotedFlag` is config held
+  // in the factory closure, and the factory's JSDoc says build it once: an
+  // array mutated afterwards is not a supported input, so these two only ever
+  // "change" when a consumer edits what they already handed over.
+  //
+  // The line is *not* "nothing about promotion is live" — eligibility and
+  // position are both signed, and `promotedIndex` republishes the moment a
+  // window opens or closes (see "publishes promotion eligibility alone once"
+  // below). The line is what the signature is *for*: **what the runtime
+  // decides is signed; what the consumer handed over verbatim is not.** The
+  // runtime decides which entry is in force and where it sits, so those are
+  // snapshot state and must republish. `label` and `icon` it merely copies
+  // through, so their only source of change is the consumer editing an object
+  // they already gave away — signing them would advertise a live-config
+  // behaviour this option bag cannot keep across the board, because
+  // `PromotedFlag.presentation` sits right beside them carrying a `ReactNode`
+  // that can never be signed at all: left out of the signature it would never
+  // publish, `JSON.stringify`'d it would republish on every 250 ms tick.
+  // Half-live config is worse than config.
+  //
+  // So the answer to "my promoted icon changed and the bar did not" is to
+  // rebuild the extension, not to sign the field. See
+  // `__tests__/presentation.test.tsx`, "the hard rule: a ReactNode never
+  // enters the store", and `docs/adr/ADR-004-per-extension-bar-presentation.md`.
+  it.each(["label", "icon"] as const)(
+    "promoted %s alone does not publish — config is not live",
+    (field) => {
+      const promoted: PromotedFlag = { flagKey: "feature", label: "Pinned", icon: "A" };
+      const runtime = createFlagsRuntime({ flags: [initial], promoted: [promoted] });
+      const before = runtime.store.getSnapshot();
+      const listener = vi.fn();
+      runtime.store.subscribe(listener);
+      promoted[field] = "Changed";
+      runtime.refresh();
+      runtime.store.flush();
+      const viewField = field === "label" ? "promotedLabel" : "promotedIcon";
+      expect(runtime.store.peek().flags).toEqual([{ ...before.flags[0], [viewField]: "Changed" }]);
+      expect(runtime.store.peek().promoted).toEqual(runtime.store.peek().flags);
+      expect(listener).not.toHaveBeenCalled();
+      expect(runtime.store.getSnapshot()).toBe(before);
+      runtime.store.destroy();
+    },
+  );
 
   it("publishes promotion eligibility alone once", () => {
     let now = 0;
@@ -1094,7 +1123,7 @@ describe("publication guarantees", () => {
     runtime.refresh();
     runtime.store.flush();
     expect(runtime.store.getSnapshot().flags).toEqual([
-      { ...before.flags[0], promoted: true, promotedLabel: "Feature" },
+      { ...before.flags[0], promoted: true, promotedIndex: 0, promotedLabel: "Feature" },
     ]);
     expect(runtime.store.getSnapshot().promoted).toEqual(runtime.store.getSnapshot().flags);
     expect(listener).toHaveBeenCalledTimes(1);
@@ -1474,9 +1503,14 @@ describe("published flag ordering", () => {
     runtime.store.destroy();
   });
 
-  // Pins missing promoted order in signature() (runtime.ts:517); ui.tsx:144 keeps old bar order.
-  // When covered, invert to toHaveBeenCalledTimes(1) and getSnapshot() toBe(peek()).
-  it("BUG: reordering promotion configuration leaves the published bar order stale", () => {
+  // Was pinned as a bug: promoted order was invisible to `signature()`, so a
+  // reordered `promoted` left the published bar order stale. `promotedIndex` —
+  // added so a control gets the *eligible* entry's presentation rather than the
+  // first entry that mentions its key — is each view's position in that array,
+  // so a reorder now moves the signature and publishes. The bar order is a
+  // by-product of covering eligibility, not a promise that config is live:
+  // `label` and `icon` still are not signed, deliberately.
+  it("publishes a reordered promotion configuration", () => {
     const promoted = [{ flagKey: "a" }, { flagKey: "b" }];
     const runtime = createFlagsRuntime({
       flags: [
@@ -1491,14 +1525,12 @@ describe("published flag ordering", () => {
     promoted.reverse();
     runtime.refresh();
     runtime.store.flush();
-    expect(runtime.store.peek()).toEqual({
-      ...before,
-      promoted: [...before.promoted].reverse(),
-      revision: before.revision + 1,
-      at: expect.any(Number),
-    });
-    expect(listener).not.toHaveBeenCalled();
-    expect(runtime.store.getSnapshot()).toBe(before);
+    const after = runtime.store.getSnapshot();
+    expect(after).toBe(runtime.store.peek());
+    expect(after).not.toBe(before);
+    expect(after.promoted.map((view) => view.key)).toEqual(["b", "a"]);
+    expect(after.promoted.map((view) => view.promotedIndex)).toEqual([0, 1]);
+    expect(listener).toHaveBeenCalledTimes(1);
     runtime.store.destroy();
   });
 });
