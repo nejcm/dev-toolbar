@@ -107,29 +107,12 @@ export function themeEditor(options: ThemeEditorOptions = {}): DevToolbarExtensi
   } = options;
 
   // Built here, not in start(api): slot functions run during the toolbar's
-  // first render, which is before any effect fires.
+  // first render, before any effect fires.
   const runtime = createThemeEditorRuntime(options);
 
-  /**
-   * Enumerated on every aggregation pass, not once in the factory — the
-   * function form of `commands` (§13.1), so labels stay accurate (e.g. never
-   * "Pause the theme preview" over an already-paused one) and presets reflect
-   * the consumer's live preset getter.
-   *
-   * Uses `peek()`, not `getSnapshot()`, so a command reflects the latest edit
-   * even while the store's publishes are coalesced for the chip.
-   */
-  /**
-   * `theme.setToken` — the thing this extension could not express at all
-   * before contract v2 (`plans/agent-readable-toolbar.md` § Phase 2). A design
-   * token's value space is open (`#3b82f6`, `12px`, `1.4`), so no enumeration
-   * of per-value commands was ever possible; the only way in was the panel's
-   * text input.
-   *
-   * Refusals come back as thrown reasons rather than a coerced value, matching
-   * the editor: `setOverride` returns why it refused and the panel keeps the
-   * draft instead of writing something the author did not ask for.
-   */
+  // Refusals come back as thrown reasons rather than a coerced value, matching
+  // the editor: `setOverride` returns why it refused and the panel keeps the
+  // draft instead of writing something the author did not ask for.
   const setTokenCommand: ToolbarCommand<{ name: string; value?: string }> = {
     id: `${id}.setToken`,
     label: "Set a design token",
@@ -169,10 +152,6 @@ export function themeEditor(options: ThemeEditorOptions = {}): DevToolbarExtensi
       }
       const refusal = runtime.setOverride(name, value);
       if (refusal !== null) {
-        // The refused token's own declared type, so a `"type"` refusal reads
-        // "not a color" rather than the generic word. `checkTokenName` refuses
-        // an unknown/reserved name with the same `"syntax"` value, which needs
-        // no type to be legible.
         const type =
           runtime.store.peek().tokens.find((view) => view.name === name)?.type ?? "string";
         throw new Error(`"${name}" was not set: ${describeValueRefusal(refusal, type)}`);

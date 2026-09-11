@@ -1,17 +1,8 @@
 // @vitest-environment node
-/**
- * SSR / no-DOM safety for `src/runtime`, in an environment that genuinely has
- * no `document`, `window`, or `localStorage` — mirroring
- * `src/core/__tests__/ssr.test.tsx`. `styles.ts`'s doc comment promises
- * `ensureStyleSheet()` degrades to `null` with no document rather than
- * throwing; nothing exercised that outside jsdom, where `document` always
- * exists and the guard's true branch is unreachable.
- *
- * This file also covers the `performance`-less fallback in `bus.ts`'s and
- * `throttledStore.ts`'s `defaultNow`: jsdom always defines `performance`, so
- * the `Date.now()` half of `typeof performance !== "undefined" ? ... :
- * Date.now()` is otherwise never taken.
- */
+// SSR / no-DOM safety for `src/runtime`, in an environment with genuinely no
+// `document`/`window`/`localStorage` (jsdom always has `document`, so the
+// no-DOM branches — including the `performance`-less fallback in `defaultNow` —
+// are otherwise unreachable).
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createEventBus } from "../bus";
 import { createThrottledStore } from "../throttledStore";
@@ -33,12 +24,8 @@ describe("styles.ts: ensureStyleSheet with no document", () => {
 
 describe("src/runtime/index.ts: re-exports", () => {
   it("re-exports STYLE_ATTRIBUTE and an ensureStyleSheet that returns null with no document", () => {
-    // The import above is static, so a throw during this module's own
-    // evaluation (e.g. a top-level DOM access in one of the barrel's
-    // dependencies) would fail this whole file before any test ran — a
-    // louder, earlier failure than a runtime assertion here could produce,
-    // and the intended one. What is left to assert at test time is the
-    // shape of what evaluation produced.
+    // The static import above already fails the whole file if module
+    // evaluation touches the DOM; this only asserts the shape it produced.
     expect(runtime.STYLE_ATTRIBUTE).toBe("data-dev-toolbar-styles");
     expect(runtime.ensureStyleSheet("x", "y")).toBeNull();
   });
@@ -72,9 +59,8 @@ describe("defaultNow falls back to Date.now() with no performance global", () =>
     const after = Date.now();
 
     expect(Number.isFinite(event.at)).toBe(true);
-    // Date.now() resolution, not performance.now()'s sub-millisecond one —
-    // bounding it against a Date.now() window either side is how we know
-    // the fallback branch, not some other clock, produced it.
+    // Bounding by a Date.now() window (not performance.now()'s sub-ms one)
+    // confirms the fallback branch produced this, not some other clock.
     expect(event.at).toBeGreaterThanOrEqual(before);
     expect(event.at).toBeLessThanOrEqual(after);
   });
@@ -84,14 +70,9 @@ describe("defaultNow falls back to Date.now() with no performance global", () =>
     delete globalThis.performance;
     expect(typeof globalThis.performance).toBe("undefined");
     const listener = vi.fn();
-    // The argument is `initial` (the store's starting value), not
-    // `intervalMs` — `intervalMs` defaults to 250 here, which is why the
-    // very first write still counts as "after idle" and publishes
-    // synchronously (leading edge) regardless of what `now()` returns. That
-    // publish only happens at all if `now() - lastPublishedAt` evaluated
-    // without throwing, so this proves the Date.now() fallback ran and
-    // returned a usable number rather than blowing up on the missing global —
-    // not that it returned any particular value.
+    // The leading-edge publish only happens if `now() - lastPublishedAt`
+    // evaluates without throwing, so this proves the Date.now() fallback
+    // returns a usable number rather than blowing up on the missing global.
     const store = createThrottledStore(0);
     store.subscribe(listener);
     store.set(1);

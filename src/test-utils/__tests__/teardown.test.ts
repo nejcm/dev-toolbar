@@ -1,8 +1,6 @@
 /**
- * `vitest.setup.ts`'s `afterEach`, tested directly. Vitest stops the remaining
- * hooks once one throws, and files without a local `afterEach` have only this
- * one — so the property is "a throwing step cannot skip a later one", and the
- * error still surfaces.
+ * `vitest.setup.ts`'s `afterEach`, tested directly: Vitest stops the
+ * remaining hooks once one throws, so a throwing step must not skip a later one.
  */
 import { describe, expect, it } from "vitest";
 import { resetToolbarTestEnvironment } from "../teardown";
@@ -35,9 +33,8 @@ describe("resetToolbarTestEnvironment", () => {
       resetMountedInstances: () => ran.push("resetMountedInstances"),
     });
 
-    // Toolbar mounts go first: RTL's `cleanup()` unmounts the trees the tracked
-    // list would otherwise still be holding `unmount` functions for. The
-    // registry reset follows the unmounts so it forgets only what they leaked.
+    // Toolbar mounts first so RTL's cleanup() unmounts the trees before the
+    // registry reset checks what they leaked.
     expect(ran).toEqual(["cleanupToolbar", "cleanup", "resetMountedInstances"]);
     expect(world()).toEqual(clean);
   });
@@ -94,9 +91,7 @@ describe("resetToolbarTestEnvironment", () => {
       caught = error;
     }
 
-    // In step order, so the earliest failure — the interesting one, since
-    // `cleanup()` unmounting a tree `cleanupToolbar()` left half torn down is a
-    // consequence rather than a cause — reads first.
+    // Step order, so the earliest (causal) failure reads first.
     expect(caught).toBeInstanceOf(AggregateError);
     expect((caught as AggregateError).errors.map((error: Error) => error.message)).toEqual([
       "unmount blew up",

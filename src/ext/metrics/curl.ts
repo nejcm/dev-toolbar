@@ -1,12 +1,10 @@
 /**
  * One retained request, rendered as a `curl` line. [dev-toolbar/ext/metrics]
- * Method and URL only — no header, body or cookie, deliberately out of scope
- * (`plans/ecosystem-extensions.md` § 1A). The URL is normalised through `URL`
- * before redaction, so the line matches what the browser would actually send;
- * every value is single-quoted for `sh`, and the line carries `--globoff`
- * since the `[redacted]` mask contains curl glob characters. Full rationale —
- * including the WHATWG-vs-curl hostname gap this cannot close — is in
- * docs/ext/metrics.md.
+ * Method and URL only, deliberately — no header, body or cookie. The URL is
+ * normalised through `URL` before redaction so the line matches what the
+ * browser would send; every value is single-quoted for `sh`, and the line
+ * carries `--globoff` since the `[redacted]` mask contains glob characters.
+ * The WHATWG-vs-curl hostname gap this cannot close is in docs/ext/metrics.md.
  */
 import { redactUrl } from "../../runtime";
 import type { RedactOptions } from "../../runtime";

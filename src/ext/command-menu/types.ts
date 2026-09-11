@@ -92,18 +92,12 @@ export function scoreCommand(
 }
 
 /**
- * The displayed list, in display order. Two modes:
- *
- * - **No query** — browsing. Recents first under their own heading, then
- *   everything else in aggregation order (consecutive same-`group` runs
- *   become sections).
- * - **A query** — searching. One flat list ordered by score, no headings
- *   (a scored order would keep re-splitting them); each row still shows its
- *   own group.
- *
- * Ordering is total and deterministic in both modes (score, then recency,
- * then aggregation order), so the row under the cursor doesn't move when an
- * unrelated pass re-enumerates.
+ * The displayed list, in display order. Browsing (no query): recents first
+ * under their own heading, then the rest in aggregation order, sectioned by
+ * consecutive `group`. Searching: one flat list by score, no headings.
+ * Ordering is total and deterministic (score, then recency, then aggregation
+ * order), so the row under the cursor doesn't move when an unrelated pass
+ * re-enumerates.
  */
 export function filterCommands(
   commands: readonly AnyToolbarCommand[],

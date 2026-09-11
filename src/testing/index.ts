@@ -1,12 +1,13 @@
 /**
- * `@nejcm/dev-toolbar/testing` — test helpers for extension authors, in this
- * repo and outside it. Reaches only core, never `src/runtime/` or `src/ext/*`;
- * core values come through `@nejcm/dev-toolbar` (so a CommonJS consumer shares
- * one instance), types come from `../core/*`.
+ * `@nejcm/dev-toolbar/testing` — test helpers for extension authors. Core
+ * values come through `@nejcm/dev-toolbar`, never a relative `../core/*`
+ * import — the CJS build doesn't code-split, so a relative import would
+ * inline a second core into `dist/testing.cjs` and give a CJS consumer two
+ * instances. Types may still come from `../core/*` since they erase.
  *
- * `renderWithToolbar` needs the optional peer `@testing-library/react`, which
- * nothing else here imports statically — so this subpath still works without
- * it, and `renderWithToolbar()` throws a message naming the remedy if it's missing.
+ * `renderWithToolbar` needs the optional peer `@testing-library/react`;
+ * nothing else here imports it statically, so the rest of this subpath works
+ * without it.
  */
 export { renderWithToolbar } from "./renderWithToolbar";
 export type {
@@ -46,5 +47,5 @@ export type {
 export { installClipboard } from "./clipboard";
 export type { ClipboardStub, ClipboardWrite } from "./clipboard";
 
-// The package's own specifier, not `../core/storage` — AGENTS.md, *Conventions*.
+// Package specifier, not `../core/storage` — see this file's header.
 export { createMemoryStorage, createNullStorage } from "@nejcm/dev-toolbar";

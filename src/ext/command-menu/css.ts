@@ -13,10 +13,8 @@ const COMMAND_MENU_EXTENSION_CSS = String.raw`@layer dev-toolbar {
     font-family: var(--dtb-font-mono);
   }
 
-  /* ⌘ ⌃ ⌥ ⇧ are not in the monospace faces, so there they fall back to a
-     font that draws them small beside the letter. The UI face has them at
-     letter height; a touch larger still, since the symbols sit lower than
-     a capital's cap height. */
+  /* ⌘⌃⌥⇧ aren't in the monospace faces; the UI face draws them at letter
+     height, sized up slightly since they sit lower than a capital's cap height. */
   [data-dev-toolbar] [data-dtb-part="cmd-glyph"] {
     font-family: var(--dtb-font-family);
     font-size: 1.18em;
@@ -36,9 +34,7 @@ const COMMAND_MENU_EXTENSION_CSS = String.raw`@layer dev-toolbar {
     position: fixed;
     z-index: 3;
     top: 12vh;
-    /* left: 50% + translateX(-50%) centres symmetrically regardless of dir;
-       inset-inline-start: 50% would NOT be equivalent under rtl. Left is
-       deliberately physical. */
+    /* Deliberately physical left: inset-inline-start: 50% is not equivalent under rtl. */
     left: 50%;
     transform: translateX(-50%);
     width: min(560px, calc(100vw - 32px));
@@ -55,11 +51,9 @@ const COMMAND_MENU_EXTENSION_CSS = String.raw`@layer dev-toolbar {
     overflow: hidden;
   }
 
-  /* The query line, not a field in a form: it fills the dialog's head, and
-     takes its own generous padding and a larger size rather than core's field
-     geometry, which is sized for controls sitting in a row. Its border, ground
-     and outline are all off — the rule under it and the dialog's own frame do
-     that work. */
+  /* The query line, not a form field: its own padding/size instead of core's
+     row-sized field geometry. Border/background/outline are off — the rule
+     under it and the dialog's frame do that work instead. */
   [data-dev-toolbar] [data-dtb-part="cmd-input"] {
     flex: 0 0 auto;
     width: 100%;
@@ -76,11 +70,10 @@ const COMMAND_MENU_EXTENSION_CSS = String.raw`@layer dev-toolbar {
     outline: none;
   }
 
-  /* The base rule drops the outline so a pointer click does not ring the whole
-     query line; a keyboard focus still has to be visible, and it takes an
-     inset ring because the field is flush with the dialog's frame. Stated here
-     rather than left to core's field rule, which this part ties on
-     specificity and would beat by injection order. */
+  /* Keyboard focus still needs a visible ring; inset because the field is
+     flush with the dialog's frame. Stated here rather than left to core's
+     field rule, which this part ties on specificity and would beat by
+     injection order. */
   [data-dev-toolbar] [data-dtb-part="cmd-input"]:focus-visible {
     outline: 2px solid var(--dtb-accent);
     outline-offset: -2px;

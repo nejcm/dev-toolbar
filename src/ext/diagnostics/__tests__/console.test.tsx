@@ -1,9 +1,9 @@
 /**
  * The console and error tail (`plans/ecosystem-extensions.md` § 1B).
  *
- * Most tests execute the real patch rather than inspect a string: a recorder
- * replaces `console.error` before mount, and assertions check what it received,
- * the global identity afterwards, and what a nested log does.
+ * Most tests execute the real patch rather than inspect a string: assertions
+ * check what a recorder received, the global identity afterwards, and what a
+ * nested log does.
  */
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { act } from "@testing-library/react";

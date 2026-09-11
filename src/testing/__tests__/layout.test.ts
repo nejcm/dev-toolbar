@@ -2,17 +2,14 @@
  * The fake layout's measurements, observer delivery and install lifetime.
  *
  * The two things an install owns are `globalThis` state — the measurer slot
- * core reads through, and the `ResizeObserver` jsdom lacks — so the only thing
- * that makes them safe is that installing and restoring is disciplined. Each
- * case here is a way that discipline used to break: an install that captured a
- * *previous* value which was itself a fake, and then put it back.
+ * core reads through, and the `ResizeObserver` jsdom lacks — so installing and
+ * restoring must stay disciplined (e.g. never capturing a *previous* value
+ * that was itself a fake, then putting that back).
  *
- * Measurements are asserted through the registered `Measurer`, because that is
- * now the only way core sees them: nothing is patched onto the element
- * prototype or `getComputedStyle` any more. The complementary assertion — that
- * a live install leaves every DOM read at jsdom's own answer, prototype spies
- * included — lives in `src/core/__tests__/layoutMeasurer.test.tsx`, next to
- * the `domMeasurer` it is about.
+ * Measurements are asserted through the registered `Measurer`, since that is
+ * the only way core sees them. The complementary assertion — that a live
+ * install leaves every DOM read at jsdom's own answer — lives in
+ * `src/core/__tests__/layoutMeasurer.test.tsx`.
  */
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Measurer } from "../../core/measurer";
@@ -158,19 +155,14 @@ describe("installToolbarLayout", () => {
   });
 
   it("missing getComputedStyle preserves fallback", () => {
-    // docs/testing.md: omitting `paddingX`/`gap` leaves the original computed
-    // styles unchanged, "preserving core's fallback when jsdom cannot resolve
-    // them". A host with no `getComputedStyle` at all is the sharpest case of
-    // "cannot resolve": `domMeasurer` guards both of its reads and answers
-    // `undefined`, which a `CollapseReading` treats as "keep what the machine
-    // already has". The registered measurer has to answer the same rather than
-    // throw, or core loses a fallback it still guards for.
+    // No `getComputedStyle` at all must answer `undefined`, same as
+    // `domMeasurer`'s own guard, so core keeps its existing value rather than
+    // throwing.
     const native = globalThis.getComputedStyle;
     installToolbarLayout();
     const target = barWithRegion();
-    // Deleted, not set to `undefined`: that is why both guards are written as
-    // `typeof`, which is the one read of an absent binding that is not a
-    // `ReferenceError`.
+    // Deleted, not `undefined`: `typeof` is the one read of an absent binding
+    // that isn't a `ReferenceError`.
     Reflect.deleteProperty(globalThis, "getComputedStyle");
     try {
       expect(measurer().padding(target)).toBeUndefined();
@@ -227,9 +219,8 @@ describe("installToolbarLayout", () => {
     try {
       const before = getComputedStyle(unrelated).cssText;
       const handle = installToolbarLayout({ paddingX: 12, gap: 8 });
-      // The whole reason the interception went away: a live install must not
-      // be able to fight a consumer's own styles or style stubs. The override
-      // reaches core through the measurer and nowhere else.
+      // A live install must not fight a consumer's own styles or stubs — the
+      // override reaches core through the measurer only.
       expect(getComputedStyle(target).cssText).toBe(before);
       expect(getComputedStyle(target)).toMatchObject({
         paddingLeft: "5px",
@@ -281,11 +272,8 @@ describe("installToolbarLayout", () => {
     handle.flush();
     const entries = callback.mock.lastCall![0];
     expect(entries.map((entry) => entry.target)).toEqual(targets);
-    // Synthesized per target through the registered measurer, dispatched on
-    // the part name. Core's `notify` takes no arguments, but the fake owns
-    // `globalThis.ResizeObserver` and a consumer's own observer reads these:
-    // a zero rectangle would send `if (width < 500)` down the wrong branch
-    // with nothing to notice.
+    // A consumer's own observer reads these entries directly, so a zero
+    // rectangle would silently send `if (width < 500)` down the wrong branch.
     expect(entries.map((entry) => [entry.contentRect.width, entry.contentRect.height])).toEqual([
       [500, 0],
       [123, 0],
@@ -295,9 +283,8 @@ describe("installToolbarLayout", () => {
     ]);
     expect(entries.map((entry) => entry.borderBoxSize)).toEqual([[], [], [], [], []]);
 
-    // The shape a real entry hands over: a `DOMRectReadOnly`, not the mutable
-    // `DOMRect` subclass, whose derived edges show up in `toJSON()` while own
-    // keys and a spread stay empty because geometry is prototype accessors.
+    // Matches a real entry's shape: `DOMRectReadOnly`, not `DOMRect` — derived
+    // edges show up in `toJSON()`, but own keys and a spread stay empty.
     const itemRect = entries[1]!.contentRect;
     expect(itemRect).toBeInstanceOf(DOMRectReadOnly);
     expect(itemRect).not.toBeInstanceOf(DOMRect);
@@ -319,9 +306,8 @@ describe("installToolbarLayout", () => {
     expect(callback.mock.lastCall?.[0][2]?.contentRect.height).toBe(64);
     expect(callback).toHaveBeenCalledTimes(4);
 
-    // A fresh instance per entry, per delivery: the entries captured at the
-    // first flush still read what they were delivered with, three setters
-    // later. This is the invariant `deliver()`'s comment claims.
+    // Entries captured at the first flush still read what they were
+    // delivered with, three setters later.
     expect(itemRect.width).toBe(123);
     expect(entries[0]?.contentRect.width).toBe(500);
     expect(entries[2]?.contentRect.height).toBe(42);
@@ -426,8 +412,7 @@ describe("installToolbarLayout", () => {
     const a = installToolbarLayout({ barWidth: 111 });
     const b = installToolbarLayout({ barWidth: 222 });
 
-    // Insertion order — what a shared `unmountAll` array drains in, and what
-    // used to leave `a`'s fake measurements registered for good.
+    // Insertion order, not reverse — used to leave `a`'s fakes registered for good.
     a.restore();
     b.restore();
 
@@ -499,22 +484,14 @@ describe("installToolbarLayout", () => {
   it("never touches an element's own rectangle, root or not", () => {
     const handle = installToolbarLayout({ barWidth: 640, rootHeight: 42 });
     const rootTarget = root();
-    // The root's height reaches core through `Measurer.height`; the element's
-    // own `getBoundingClientRect()` is jsdom's, unpatched, as is a plain
-    // element's. The patched-rectangle path lives on only as a repo-internal
-    // fixture (`src/test-utils/dom-layout.ts`), where `domMeasurer`'s own test
-    // needs something to read.
+    // The root's height reaches core through `Measurer.height`;
+    // `getBoundingClientRect()` stays jsdom's own, unpatched.
     expect(measurer().height(rootTarget)).toBe(42);
     const rect = rootTarget.getBoundingClientRect();
     expect(rect.height).toBe(0);
     expect(rect.width).toBe(0);
-    // Positively jsdom's own zero rectangle rather than a synthesized one:
-    // jsdom hands back a plain object, so it is neither a `DOMRect` nor does
-    // it carry `toJSON()`. The patched path used to return
-    // `DOMRect.fromRect(...)` here, which is exactly what those two used to
-    // pin; the real Web IDL shape — `DOMRectReadOnly`, `toJSON()` with the
-    // derived edges, no own keys — is asserted where the fake still builds a
-    // rectangle, on a delivered `contentRect` above.
+    // jsdom's own zero rectangle, not a synthesized one: a plain object,
+    // neither a `DOMRect` nor carrying `toJSON()`.
     expect(rect).not.toBeInstanceOf(DOMRect);
     expect((rect as { toJSON?: unknown }).toJSON).toBeUndefined();
     expect(document.createElement("div").getBoundingClientRect().height).toBe(0);

@@ -1,24 +1,15 @@
 /**
  * A prototype-patching layout fixture, for testing the DOM adapter itself.
  *
- * `src/testing/layout.ts` used to do this: patch `HTMLElement.prototype`'s
- * width getters, `getBoundingClientRect` and `getComputedStyle` so jsdom's
- * uniform 0x0 could not stop an overflow collapse. It now registers a
- * `Measurer` on core's slot instead and touches no DOM read, which is the
- * right shape for a *published* fake — it stops fighting a consumer's own
- * stubs — but it leaves `domMeasurer` with nothing to read.
+ * `src/testing/layout.ts` no longer patches `HTMLElement.prototype` — it
+ * registers a `Measurer` on core's slot instead, so jsdom's uniform 0x0 never
+ * reaches it. That leaves `domMeasurer` itself untested against real DOM
+ * reads, which is what this repo-internal fixture is for: `src/core/__tests__/
+ * measurer.test.ts` uses it to prove `domMeasurer` reaches `clientWidth`,
+ * `offsetWidth`, `getComputedStyle` and `getBoundingClientRect()`.
  *
- * So the patches live on here, repo-internally: `src/core/__tests__/
- * measurer.test.ts` installs this fixture to prove `domMeasurer` really does
- * reach `clientWidth`, `offsetWidth`, `getComputedStyle` and
- * `getBoundingClientRect()`, rather than measuring a fake that has already
- * answered in its place. Nothing under `src/test-utils/` is a published
- * entrypoint (AGENTS.md), so this is a fixture, not API.
- *
- * Deliberately simpler than the fake it came from: one install at a time, no
- * `ResizeObserver`, no measurer registration. Nesting, observer delivery and
- * install-stack discipline are `src/testing/layout.ts`'s problems, and they are
- * tested there.
+ * Deliberately simpler than `src/testing/layout.ts`: one install at a time, no
+ * `ResizeObserver`, no measurer registration.
  */
 
 export interface DomLayoutOptions {

@@ -1,20 +1,18 @@
 /**
- * Pushes the bridge's coalesced, redacted snapshot to an off-page endpoint
- * (`plans/agent-readable-toolbar.md` § Phase 3). The page polls because the
- * server has no channel back; queued commands run on the next check-in.
- * `allowRun` still gates command execution, and no global is touched here.
+ * Pushes the bridge's coalesced, redacted snapshot to an off-page endpoint.
+ * The page polls because the server has no channel back; queued commands run
+ * on the next check-in. `allowRun` still gates command execution.
  */
 import { createThrottledStore, describeErrorUnmasked } from "../../runtime";
 import { AGENT_MARKER, AGENT_PROTOCOL_VERSION } from "./types";
 import type { AgentHandle, AgentRunResult, AgentSnapshot } from "./types";
 
 /**
- * What the page sends the server on each check-in.
- *
- * `snapshot` is **absent** on a check-in where the coalesced state did not
- * change, which is the common case: an idle page sends a few hundred bytes to
- * ask whether anything was queued for it. The server keeps the last snapshot
- * it was given rather than expecting one every time.
+ * What the page sends the server on each check-in. `snapshot` is **absent**
+ * when the coalesced state did not change — the common case: an idle page
+ * sends a few hundred bytes to ask whether anything was queued for it. The
+ * server keeps the last snapshot it was given rather than expecting one
+ * every time.
  */
 export interface AgentReportBody {
   /** `AGENT_PROTOCOL_VERSION`, so a receiver can refuse a shape it does not know. */
@@ -22,9 +20,8 @@ export interface AgentReportBody {
   instanceId: string;
   /**
    * Identifies the *page*, not the toolbar. Two tabs of the same app report
-   * the same `instanceId` and different `reporterId`s, which is the only way a
-   * receiver holding one slot can say "two pages are writing into this" rather
-   * than blending them silently.
+   * the same `instanceId` and different `reporterId`s, so a receiver holding
+   * one slot can tell two pages are writing into it rather than blend them.
    */
   reporterId: string;
   /** Whether this bridge can run a command at all. The receiver refuses `POST`s when false. */
@@ -44,10 +41,10 @@ export interface AgentPendingCommand {
 }
 
 /**
- * `AgentRunResult` plus the one refusal the *reporter* can produce on its own:
- * a command handed to a handle that has no `runCommand`. A server that honours
- * `allowRun` never sees it; it exists so a server that does not gets an honest
- * answer instead of a fabricated `"unknown-command"`.
+ * `AgentRunResult` plus the one refusal the *reporter* can produce on its
+ * own: a command handed to a handle with no `runCommand`. A server that
+ * honours `allowRun` never sees it; one that doesn't gets an honest answer
+ * instead of a fabricated `"unknown-command"`.
  */
 export type AgentReportRunOutcome = AgentRunResult | { ok: false; reason: "run-not-allowed" };
 
@@ -87,23 +84,18 @@ export interface AgentReportOptions {
    */
   schedule?: (callback: () => void, delayMs: number) => () => void;
   /**
-   * Repeating timer for the check-in loop, returning its own cancel. Separate
-   * from `schedule` because the two have different semantics — one fires once,
-   * one fires every `pollMs` — and sharing a knob between them would make an
-   * injected fake wrong for one of the two.
+   * Repeating timer for the check-in loop, returning its own cancel. Kept
+   * separate from `schedule` (one-shot vs. every `pollMs`) so an injected
+   * fake isn't wrong for one of the two.
    */
   pollSchedule?: (callback: () => void, everyMs: number) => () => void;
   /**
-   * One clock for both the throttled store and the check-in loop's own
-   * staleness check. Injectable so a test can drive coalescing without global
-   * fake timers.
-   *
-   * The two halves have *different* defaults when this is omitted — the store
-   * falls back to `performance.now()`, the loop to `Date.now()` — which is
-   * safe only because neither ever compares a reading against the other's.
-   * The loop's `sentAt` is set from this clock and compared against this
-   * clock, and nothing else reads it. Keep it that way: a single subtraction
-   * across the two bases would be off by however long the page has been open.
+   * One clock for both the throttled store and the check-in loop's staleness
+   * check. When omitted, the store falls back to `performance.now()` and the
+   * loop to `Date.now()` — safe only because neither ever compares a reading
+   * against the other's base. Keep `sentAt` compared only against this same
+   * clock; mixing the two bases would be off by however long the page has
+   * been open.
    */
   now?: () => number;
   /**
@@ -205,15 +197,10 @@ export function createAgentReporter(
       const parsed: unknown = await response.json();
       return parsed !== null && typeof parsed === "object" ? (parsed as AgentReportResponse) : null;
     } catch (error) {
-      // Report a missing or restarting dev server once; the poll would repeat
-      // the same failure every 500 ms. Unmasked on purpose: this is the
-      // developer's own console, which logs the raw thrown value on a failure
-      // path by design (`docs/architecture.md` §10). If the diagnostics console
-      // tail captures this line it runs `redactProse()` over it, which finds a
-      // URL inside the sentence but not a bare credential sitting mid-sentence
-      // — so a `fetch` rejection whose message *is* a credential would reach
-      // an exported tail as written. That is the raw-console policy's cost,
-      // accepted here as everywhere else it applies.
+      // Report a missing/restarting dev server once, not every 500ms poll.
+      // Unmasked on purpose (`docs/architecture.md` §10: the developer's own
+      // console logs raw thrown values) — a `fetch` rejection whose message
+      // is itself a credential would reach an exported console tail as-is.
       failures += 1;
       if (failures === 1) {
         warn(
@@ -227,9 +214,9 @@ export function createAgentReporter(
   };
 
   const run = async (command: AgentPendingCommand): Promise<AgentCommandResult> => {
-    // The server receives `allowRun` on every check-in and should not queue this
-    // when it is false, but keep the refusal honest if it does. The await below
-    // needs no try/catch: the handle turns a throwing command into a value.
+    // The server shouldn't queue this when allowRun is false, but keep the
+    // refusal honest if it does. No try/catch needed: the handle turns a
+    // throwing command into a value.
     if (handle.runCommand === undefined) {
       return { token: command.token, outcome: { ok: false, reason: "run-not-allowed" } };
     }
@@ -330,11 +317,8 @@ export function createAgentReporter(
 
 /**
  * Starts a reporter and returns its teardown. A bridge without `report` opens
- * no connection.
- *
- * The first check-in is deferred by one macrotask, so it sees the committed
- * toolbar without waiting for `pollMs`. Later checks use `pollMs`; overlapping
- * ticks are dropped so a slow round trip cannot build a stale backlog.
+ * no connection. Overlapping ticks are dropped so a slow round trip cannot
+ * build a stale backlog.
  */
 export function startAgentReporter(handle: AgentHandle, options: AgentReportOptions): () => void {
   const { pollMs = 500 } = options;
@@ -350,12 +334,9 @@ export function startAgentReporter(handle: AgentHandle, options: AgentReportOpti
     });
   };
 
-  // Deferred by a macrotask rather than run inline. `start(api)` is called
-  // while core is still committing, so a synchronous first check-in reports
-  // `shell.mounted: false` — a first answer that is wrong for about a second,
-  // and wrong in the one field a reader uses to decide the toolbar is there.
-  // `setTimeout(…, 0)` costs nothing perceptible and makes the first answer
-  // the settled one.
+  // Deferred by a macrotask, not run inline: `start(api)` runs while core is
+  // still committing, so a synchronous first check-in would report
+  // `shell.mounted: false` for about a second.
   const first = setTimeout(pump, 0);
   const cancel = schedule(pump, pollMs);
 

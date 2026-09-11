@@ -2,25 +2,16 @@
  * A self-contained pub/sub bus with a hand-cranked clock.
  *
  * Deliberately *not* an import from `src/runtime/bus.ts`: `src/testing/` may
- * not import `src/runtime/` at all (per AGENTS.md's layering table), and this
- * stays a test double, not a re-export, permanently.
+ * not import `src/runtime/` (AGENTS.md layering), so this restates the
+ * contract instead, matched *by hand* to `BusLike<Events>` so `createMockBus()`
+ * stays structurally assignable without either module importing the other.
+ * `src/ext/metrics/__tests__/network.test.ts` asserts that assignability, so
+ * drift fails a test rather than surprising a consumer.
  *
- * Since it can't import the contract, it restates it: the shapes here are
- * matched *by hand* to `BusLike<Events>` in `src/runtime/bus.ts` so that
- * `createMockBus()` stays structurally assignable to a `BusLike` option
- * without either module importing the other. `src/ext/metrics/__tests__/network.test.ts`
- * asserts that assignability, so drift fails a test rather than surprising a
- * consumer. The mock is deliberately *wider* than the contract (`type: string`
- * rather than a key of an event map, plus a recorded history) — the direction
- * assignability needs.
- *
- * Known divergences from `createEventBus()`:
- * - `MockBus` is not generic over an `Events` map — `emit`/`on`/`once` take
- *   `type: string` everywhere. A caller wanting payload type safety narrows at
- *   the call site.
- * - `MockBus.reset()` also wipes recorded history and pending timers, unlike
- *   `EventBus.clear()` which drops only subscribers — deliberately not aliased
- *   under one name since the scopes differ.
+ * Known divergences from `createEventBus()`: `MockBus` isn't generic over an
+ * `Events` map (`emit`/`on`/`once` take `type: string`), and `reset()` also
+ * wipes history and timers, unlike `EventBus.clear()` — deliberately not
+ * aliased under one name since the scopes differ.
  */
 
 export interface MockClock {
@@ -123,9 +114,9 @@ function createClock(start: number): MockClock {
   let nextId = 0;
   let timers: Timer[] = [];
 
-  // Generous cap for legitimate heavy use (e.g. `setInterval(cb, 1);
-  // advance(20_000)`); when hit, `advance`/`setTime` throw naming the runaway
-  // timer rather than silently truncating.
+  // High enough for legitimate heavy use (e.g. `setInterval(cb, 1);
+  // advance(20_000)`); past this, `advance`/`setTime` throw naming the runaway
+  // timer instead of silently truncating.
   const MAX_TIMER_FIRINGS = 100_000;
 
   const runDueUpTo = (target: number) => {
@@ -147,8 +138,8 @@ function createClock(start: number): MockClock {
       }
       due.callback();
     }
-    // Recompute to check whether a timer is still genuinely due — otherwise
-    // `advance(100_000)` for a plain 1ms interval would throw a false positive.
+    // Recheck: otherwise `advance(100_000)` for a plain 1ms interval would
+    // throw a false positive.
     const due = timers
       .filter((timer) => timer.at <= target)
       .sort((a, b) => a.at - b.at || a.id - b.id)[0];
@@ -166,11 +157,10 @@ function createClock(start: number): MockClock {
   };
 
   const schedule = (callback: () => void, delay: number, interval: number | null) => {
-    // `null` = one-shot (setTimeout): delay may legitimately be 0. A recurring
-    // timer (setInterval) is floored to 1ms for both its first and every later
-    // firing, so `setInterval(cb, 0)` has a consistent cadence rather than
-    // firing immediately once. `NaN` falls back to that same floor; `Infinity`
-    // is left alone as a legitimate "never fires" interval.
+    // `null` = one-shot (setTimeout), delay may legitimately be 0. A recurring
+    // interval is floored to 1ms (including `NaN`) so `setInterval(cb, 0)` has
+    // a consistent cadence instead of firing immediately once; `Infinity` is
+    // left alone as a legitimate "never fires" interval.
     const safeInterval =
       interval === null ? null : Number.isNaN(interval) ? 1 : Math.max(1, interval);
     const safeDelay =

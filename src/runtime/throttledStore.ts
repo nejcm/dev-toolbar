@@ -35,11 +35,9 @@ export interface ThrottledStore<T> {
    * `subscribe` stops adding listeners.
    *
    * A pending trailing write is discarded by default (`getSnapshot()` keeps
-   * the last published value); pass `{ flush: true }` to publish it first,
-   * synchronously notifying subscribers, before tearing down. Off by
-   * default since publishing during teardown can re-enter a caller that is
-   * itself unwinding. Calling on an already-destroyed store is a no-op
-   * regardless of the option.
+   * the last published value); pass `{ flush: true }` to publish it first.
+   * Off by default since publishing during teardown can re-enter a caller
+   * that is itself unwinding.
    */
   destroy(destroyOptions?: { flush?: boolean }): void;
   /** Notifications emitted so far. The coalescing assertion in the tests. */

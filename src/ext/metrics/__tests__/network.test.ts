@@ -125,13 +125,9 @@ describe("network collector — fetch present", () => {
     controller.abort();
   });
 
-  // The first `URL_IN_TEXT` was quadratic on a long alphanumeric run: without a
-  // leading lookbehind, every interior position started a candidate scan that
-  // ran to the end of the run before failing on the missing `:` (200k letters
-  // took 5.4 s against the 2 s timeout; the lookbehind form is ~0.1 ms). The
-  // text is app-supplied — a stringified body or a base64 blob in an error
-  // message — and this runs synchronously inside the host's rejection handler.
-  // The timeout is the regression guard; the expectation is that it still works.
+  // The first `URL_IN_TEXT` was quadratic on a long alphanumeric run (app-supplied,
+  // e.g. a base64 blob in an error message): 5.4s for 200k letters against the
+  // 2s timeout below, which is the regression guard.
   it("scans a long alphanumeric error message in one pass", async () => {
     const blob = "a".repeat(200_000);
     globalThis.fetch = vi.fn(async () => {
@@ -149,14 +145,9 @@ describe("network collector — fetch present", () => {
   }, 2000);
 
   it("redacts past a bracketed array parameter — `]` must not end the match", async () => {
-    /**
-     * `)` and `]` were in the mid-URL stop class as well as the final-character
-     * one, so a URL containing either *before* its credential was truncated
-     * there and the credential survived into `diagnostics()`. Bracketed array
-     * and filter parameters are ordinary Rails / PHP / JSON:API query syntax,
-     * and the existing suite passed against the leaking pattern purely because
-     * no case had a `]` or `)` ahead of the token.
-     */
+    // `)` and `]` used to be in the mid-URL stop class too, so a URL containing
+    // either before its credential (ordinary Rails/PHP/JSON:API query syntax)
+    // was truncated there and the credential leaked into `diagnostics()`.
     globalThis.fetch = vi.fn(async () => {
       throw new Error("Failed to fetch https://api.test/v1?ids[]=1&access_token=super-secret");
     }) as unknown as typeof fetch;
@@ -455,8 +446,8 @@ describe("network collector — fetch present", () => {
     const collector = createNetworkCollector({ patchXhr: false });
     const controller = new AbortController();
     collector.start(context(controller, { t: 0 }));
-    // A malformed percent-escape used to make redactUrl() throw URIError,
-    // synchronously, inside the wrapper.
+    // A malformed percent-escape used to make redactUrl() throw synchronously
+    // inside the wrapper.
     await expect(globalThis.fetch("http://bad host/?%zz=1&api_key=abc")).resolves.toMatchObject({
       status: 200,
     });
@@ -808,21 +799,14 @@ describe("network collector — instrumented client instead of a patch", () => {
     controller.abort();
   });
 
-  // The point of shipping a bus double in `./testing` is that it can stand in
-  // here. It could not: `./testing` may not import `./runtime` (AGENTS.md), so
-  // `MockBus` restates the contract and had drifted out of assignability — no
-  // `clear()`, no `options.signal`, an unkeyed `on`. The `bus` option now asks
-  // for `BusLike`, the two methods a collector calls, and the mock matches it.
-  // Assert that here rather than in `src/testing/__tests__`, which the core
-  // boundary test forbids from naming `runtime` at all.
-  //
-  // The type assertion is necessary and not sufficient: a callee may declare
-  // *fewer* parameters than its caller passes, so a mock whose `on` ignored
-  // `options` entirely would still satisfy `BusLike` and then silently leak
-  // every subscription past teardown. The `listenerCount()` assertion after
-  // `controller.abort()` below is what actually holds the mock to the `signal`
-  // half of the contract; `src/testing/__tests__/mockBus.test.ts` covers the
-  // rest of that parity from the double's own side.
+  // `./testing`'s `MockBus` restates `BusLike` rather than importing it
+  // (AGENTS.md forbids `./testing` from naming `./runtime`), so it can drift
+  // out of assignability. Asserted here rather than in `src/testing/__tests__`,
+  // which the core boundary test forbids from naming `runtime` at all. The
+  // type assertion alone isn't enough — a mock could ignore `options.signal`
+  // and still satisfy `BusLike` while leaking every subscription past
+  // teardown — so `listenerCount()` after `abort()` below checks that half
+  // of the contract for real.
   it("takes the shipped createMockBus() double, which satisfies BusLike", () => {
     expectTypeOf(createMockBus()).toExtend<BusLike<ToolbarEventMap>>();
 

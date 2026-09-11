@@ -19,8 +19,8 @@ import type { A11yRuntime } from "./runtime";
  * The rendered surfaces. [dev-toolbar/ext/a11y]
  *
  * Everything here reads `snapshot.report` — the same object `diagnostics()`
- * returns and the commands hand back, so the panel cannot show a fact an agent
- * cannot read, and neither can show an unmasked one.
+ * and the commands return, so the panel and an agent see identical, equally
+ * masked facts.
  */
 
 const box = (rect: RectLike): CSSProperties => ({

@@ -136,25 +136,11 @@ export function flags(options: FlagsOptions = {}): DevToolbarExtension {
   // first render, which is before any effect fires.
   const runtime = createFlagsRuntime(runtimeOptions);
 
-  /**
-   * Rebuilt on every aggregation pass (the function form of `commands`) so a
-   * flag the catalogue grows after mount gets a toggle command immediately.
-   * Command identity is the `id`, so rebuilding costs nothing — `run` looks
-   * the flag up live either way.
-   *
-   * Uses `peek()`, not `getSnapshot()`: the store coalesces publishes at 4 Hz
-   * for the chip, and a lagging command list would make "the flag is in the
-   * panel but not the palette" a timing question.
-   *
-   * Orphans get a row so they can be cleared, but no toggle command — offering
-   * to turn on a flag the application doesn't have has no place in a palette.
-   */
-  /**
-   * What `flags.set` takes. `value` absent means "clear the override and fall
-   * back to the application's own value" — the same meaning `undefined` has in
-   * `onOverride`. `null` cannot mean that: it is a real `FlagValue`, and for a
-   * variant flag that lists it, a settable one.
-   */
+  // Rebuilt on every aggregation pass so a flag the catalogue grows after
+  // mount gets a toggle command immediately; command identity is `id`, so
+  // rebuilding costs nothing. Uses `peek()`, not `getSnapshot()` (the store
+  // coalesces publishes at 4 Hz, and a lagging command list would desync from
+  // the panel). Orphans get a row to clear but no toggle command.
   const setInput: CommandInputSchema = {
     fields: {
       key: {
@@ -163,16 +149,10 @@ export function flags(options: FlagsOptions = {}): DevToolbarExtension {
         description: "The flag's key, exactly as the catalogue spells it.",
       },
       value: {
-        // Genuinely polymorphic: the accepted type is whatever the named flag
-        // declares, and refusing a mismatch is `run()`'s job, not the schema's.
-        //
-        // `null` is deliberately absent from this list. It is a real
-        // `FlagValue`, but `applyOverride` refuses it for every boolean,
-        // string and number flag — `valueMatchesFlagType` checks `typeof`, so
-        // only a variant flag whose `variants` include `null` accepts one.
-        // That refusal is correct (`vetOverrides` would discard such an
-        // override on the next reload), so the schema says the same thing the
-        // command does rather than advertising a value that always throws.
+        // `null` is deliberately absent: `applyOverride` refuses it for every
+        // boolean/string/number flag (only a variant whose `variants` include
+        // `null` accepts one), so the schema doesn't advertise a value that
+        // always throws.
         type: ["boolean", "string", "number"],
         description:
           "The value to force. Must match the flag's own type. `null` is refused " +
@@ -185,14 +165,11 @@ export function flags(options: FlagsOptions = {}): DevToolbarExtension {
   /**
    * The one call an agent needs: `runCommand("flags.set", { key, value })`.
    *
-   * It does **not** replace the per-flag enumeration below. The two serve
-   * different readers: `flags.toggle.<key>` is what a human finds by typing a
-   * flag's name into `⌘K`, and `/ext/command-menu` skips every command that
-   * carries `input` (contract v2), so shipping only this one would leave the
-   * palette with no flag actions at all. The plan's objection was that the
-   * enumeration is "wasteful as a tool schema" — which this fixes by adding
-   * the schema, not by deleting the palette's rows
-   * (`plans/agent-readable-toolbar.md` § Phase 2).
+   * Does not replace the per-flag enumeration below: `flags.toggle.<key>` is
+   * what a human finds by typing a flag's name into `⌘K`, and
+   * `/ext/command-menu` skips every command that carries `input` (contract
+   * v2), so shipping only this one would leave the palette with no flag
+   * actions at all.
    */
   const setCommand: ToolbarCommand<{ key: string; value?: FlagValue }> = {
     id: `${id}.set`,
@@ -317,9 +294,7 @@ export interface ReadStoredOverridesOptions {
   resetParam?: string | null;
   /**
    * The catalogue, in any shape `flags()` accepts. When given, the map is
-   * vetted the way `start()` vets it, so a value its flag's declared type
-   * rejects is dropped here as the panel would drop it. Omit it and the map
-   * is returned as parsed.
+   * vetted the way `start()` vets it. Omit it and the map is returned as parsed.
    */
   flags?: FlagsInput;
 }
@@ -328,15 +303,12 @@ export interface ReadStoredOverridesOptions {
  * Reads the persisted override map **without mounting anything**.
  *
  * On a reload the app boots with its own flag values, and the toolbar only
- * re-applies overrides once `start()` runs in an effect — everything rendered
- * before that is unoverridden. Call this at the top of your entry point and
- * seed your own override store from it so first paint agrees with the panel.
+ * re-applies overrides once `start()` runs in an effect. Call this at the top
+ * of your entry point and seed your own override store from it so first paint
+ * agrees with the panel.
  *
  * Honours `?dtb-flags=reset`, same as `start()`: while the param is in the URL
- * this returns `{}` — the mounted runtime is about to clear the stored map and
- * tell your adapter about every key it dropped — and keeps returning `{}` for
- * as long as the param stays there. Pass `flags` and the result is vetted
- * against the catalogue too, so what you seed is what the panel will accept.
+ * this returns `{}`.
  */
 export function readStoredOverrides(
   options: ReadStoredOverridesOptions = {},

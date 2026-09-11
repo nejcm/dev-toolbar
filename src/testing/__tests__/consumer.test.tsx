@@ -196,20 +196,15 @@ describe("@nejcm/dev-toolbar/testing", () => {
       return toolbar.barIds();
     };
 
-    // `a` is wider in the bar than beside a collapsed `b`, so there is no
-    // fixed point. Cycle detection settles it on the side that fits:
-    //   available: 1000 − 2 (the empty end region's gap) = 998
-    //   a at 900, all three in the bar: 900 + 60 + 60 + 2×2 = 1024 > 998
-    //   a at 900, b collapsed:         900 + 60 + 2 + 2 + 28 = 992 ≤ 998
-    // A return to the state that does not fit is refused, however many
-    // deliveries ask for it.
+    // `a` is wider in the bar than beside a collapsed `b`, so there's no fixed
+    // point; cycle detection settles on the side that fits and refuses to
+    // return to the one that doesn't, however many deliveries ask for it.
     expect(flip(900)).toEqual(["a", "c"]);
     expect(flip(60)).toEqual(["a", "c"]);
     expect(flip(900)).toEqual(["a", "c"]);
     expect(flip(60)).toEqual(["a", "c"]);
 
-    // Genuine growth is not a return, so it is still heard while settled:
-    //   a at 950, b and c collapsed: 950 + 2 + 28 = 980 ≤ 998
+    // Genuine growth is not a return, so it's still heard while settled.
     expect(flip(950)).toEqual(["a"]);
 
     layout.setItemWidth("a", 900, false);

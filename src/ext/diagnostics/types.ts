@@ -2,17 +2,12 @@
  * Shared vocabulary for `/ext/diagnostics`. [dev-toolbar/ext/diagnostics]
  *
  * §3J: capture a diagnostic snapshot for a bug report. All output here is
- * outbound (ticket, chat, email), so two rules shape every type below:
- *
- * **Redaction happens on the way in** (§11.3) — the snapshot is redacted as
- * it's built, and every consumer (panel, clipboard, download, commands) reads
- * that one already-redacted object.
- *
- * **Omission is first-class.** A silently-dropped failing extension is worse
- * than an explicit "could not be read" — the reader wasn't there and can't
- * tell absence from failure. So every extension appears in `contributions`
- * with a `status`, and anything not `"ok"` is *also* summarised at the top
- * level in `omissions`, where it can't be missed.
+ * outbound (ticket, chat, email), so redaction happens on the way in (§11.3)
+ * — the snapshot is redacted as it's built, and every consumer reads that one
+ * already-redacted object — and omission is first-class: every extension
+ * appears in `contributions` with a `status`, and anything not `"ok"` is also
+ * summarised at the top level in `omissions`, so a silently-dropped failure
+ * can't read as absence.
  */
 
 /** How the snapshot is rendered for copying and downloading. */
@@ -69,16 +64,10 @@ export interface InteractionReport {
   support: SupportState;
   /**
    * Interactions in the window, grouped by non-zero `interactionId` like INP. Each group counts
-   * once at its longest entry; id-0 entries stay in `eventCount` but not interaction counts.
-   * Engines without the field count one entry as one interaction. `null` unless `support` is
-   * `"supported"`.
-   *
-   * Per the Event Timing specification's *computing interactionId* algorithm, non-zero ids go to
-   * `keydown`/`keyup`, `pointerdown`/`pointerup`, `click`, `contextmenu`, and IME-composition
-   * `input`; `keydown`/`pointerdown` inherit the completing `keyup`/`pointerup` id. All
-   * other events get 0, including `mousedown`/`mouseup`, `mouseover`/`pointerover`/`pointermove`,
-   * `keypress`, `compositionstart`/`update`/`end`, non-composition `input`, and `pointercancel`,
-   * which leaves `pointerdown` at 0.
+   * once at its longest entry; id-0 entries (per the Event Timing spec's *computing
+   * interactionId* algorithm, most non-pointer/key events) stay in `eventCount` but not
+   * interaction counts. Engines without the field count one entry as one interaction. `null`
+   * unless `support` is `"supported"`.
    */
   count: number | null;
   /** Interactions whose longest entry reaches `slowInteractionMs`; `null` unless observed. */

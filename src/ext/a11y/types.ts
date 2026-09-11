@@ -1,9 +1,9 @@
 /**
  * Shared vocabulary for `/ext/a11y`. [dev-toolbar/ext/a11y]
  *
- * `ScanStatus` reuses `/ext/metrics`' status vocabulary rather than inventing
- * one: a peer that is not installed is the same fact as a platform API that is
- * not there, and `"unsupported"` is what the rest of the bar already calls it.
+ * `ScanStatus` reuses `/ext/metrics`' status vocabulary: a missing peer is the
+ * same fact as a missing platform API, and `"unsupported"` is what the bar
+ * already calls it.
  */
 import type { Severity } from "@nejcm/dev-toolbar/kit";
 
@@ -36,12 +36,10 @@ export type ScanStatus =
   | "failed";
 
 /**
- * The part of axe-core this extension uses, declared structurally.
- *
- * Deliberately not `import type { ... } from "axe-core"`: the published
- * `.d.ts` would then reference a module an optional peer's absence makes
- * unresolvable, and every consumer without axe installed would fail to
- * typecheck against our types.
+ * The part of axe-core this extension uses, declared structurally rather than
+ * as `import type { ... } from "axe-core"`: the published `.d.ts` would then
+ * reference a module the optional peer's absence makes unresolvable, failing
+ * typecheck for any consumer without axe installed.
  */
 export interface AxeLike {
   readonly version?: string;

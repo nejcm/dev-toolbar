@@ -149,10 +149,7 @@ describe("a flag override, without opening the flags panel", () => {
 });
 
 describe("the roster the bridge reads", () => {
-  /**
-   * Build the roster once so the assertion derives its expectations from the
-   * mounted list instead of restating it.
-   */
+  /** Built once so the assertion derives expectations from the mounted list instead of restating it. */
   const ALL = (): DevToolbarExtension[] => [
     agentBridge({ instanceId: "test", allowRun: true }),
     flags({ flags: CATALOGUE }),
@@ -346,12 +343,9 @@ describe("shell facts, which no extension owns", () => {
   });
 
   /**
-   * The empty cases above pass just as well when `readShell` finds nothing at
-   * all, so on their own they pin no attribute. These two do: `activePanel`
-   * hangs off `[data-dtb-part="panel"][data-dtb-active="true"]` and the menu
-   * items off `[data-dtb-part="overflow-menu-item"][data-dtb-ext-id]`, and a
-   * rename of either would leave the fields reading `null` / `[]` forever
-   * while every "nothing is open" assertion still passed.
+   * The empty cases above pass even if `readShell` found nothing at all. This
+   * one pins the actual attribute (`[data-dtb-part="panel"][data-dtb-active="true"]`)
+   * so a rename of it can't silently leave the field reading `null` forever.
    */
   it("names the open panel, not just the absence of one", () => {
     const { toolbar } = renderWithToolbar(undefined, {

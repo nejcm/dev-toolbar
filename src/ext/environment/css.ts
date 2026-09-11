@@ -2,8 +2,8 @@
  * `/ext/environment` styles. [dev-toolbar/ext/environment]
  *
  * Same rules as core and `/ext/metrics`: scoped by `[data-dev-toolbar]` inside
- * the `dev-toolbar` cascade layer, colours from `--dtb-*` tokens, `data-dtb-part`
- * names namespaced by kind (`env-*`) rather than instance id.
+ * the `dev-toolbar` cascade layer, `--dtb-*` tokens, `data-dtb-part` names
+ * namespaced by kind (`env-*`).
  */
 import { KIT_CSS, createStyleInjector, ensureKitStyles } from "@nejcm/dev-toolbar/kit";
 
@@ -43,20 +43,16 @@ const ENVIRONMENT_EXTENSION_CSS = String.raw`@layer dev-toolbar {
     overflow: auto;
     display: flex;
     flex-direction: column;
-    /* Sections are separated by air and by their legend rule, not by boxes,
-       so the gap has to be big enough to beat the row gap inside a section
-       several times over. */
+    /* Sections are separated by air and a legend rule, not boxes, so this gap
+       must clearly exceed a section's own row gap. */
     gap: var(--dtb-space-5);
   }
 
-  /* The heading also carries data-dtb-legend, which is where its type and its
-     trailing rule come from — core owns that treatment so every extension's
-     sections look alike. Nothing is left to restate here. */
+  /* Legend type/rule come from data-dtb-legend (core), so nothing to restate here. */
 
-  /* Grid, gap and the dd reset come from the kit's rows kind. What stays
-     here is the one thing only this panel needs: a hostname or a build id is a
-     single unbreakable token, and without this it widens the value column past
-     the panel instead of wrapping. */
+  /* Grid/gap/dd reset come from the kit's rows kind. This is the one addition
+     this panel needs: an unbreakable token so a hostname/build id wraps
+     instead of widening the value column past the panel. */
   [data-dev-toolbar] [data-dtb-part="env-rows"] dd {
     word-break: break-word;
   }
@@ -97,9 +93,8 @@ const ENVIRONMENT_EXTENSION_CSS = String.raw`@layer dev-toolbar {
     font-family: var(--dtb-font-mono);
   }
 
-  /* The panel's floor: a rule across the measure with the copy actions under
-     it. Its rule and a section legend's rule share the same two ends, so the
-     panel reads as one ruled column rather than as stacked fragments. */
+  /* Shares its rule's endpoints with a legend's rule, so the panel reads as
+     one ruled column rather than stacked fragments. */
   [data-dev-toolbar] [data-dtb-part="env-actions"] {
     display: flex;
     align-items: center;
@@ -115,8 +110,7 @@ const ENVIRONMENT_EXTENSION_CSS = String.raw`@layer dev-toolbar {
     outline-offset: -1px;
   }
 
-  /* Inside a ⋮ row, which supplies the padding — see core's
-     overflow-menu-item. */
+  /* Inside a ⋮ row, which supplies the padding — see core's overflow-menu-item. */
   [data-dev-toolbar] [data-dtb-part="env-overflow"] {
     display: flex;
     flex-direction: column;
@@ -142,11 +136,9 @@ const injectEnvironmentStyles = createStyleInjector(
 );
 
 /**
- * Injects both stylesheets once per document through the kit's injectors.
- * Their DOM keys deduplicate across bundled copies.
- * Core's `injectStyles` prop isn't visible to extensions, so this extension
- * has its own switch — `environment({ injectStyles: false })` — and exports
- * the self-contained `ENVIRONMENT_CSS` for consumers who ship CSS themselves.
+ * Core's `injectStyles` prop isn't visible to extensions, so this one has its
+ * own switch — `environment({ injectStyles: false })` — and exports the
+ * self-contained `ENVIRONMENT_CSS` for consumers who ship CSS themselves.
  */
 export function ensureEnvironmentStyles(doc?: Document, nonce?: string): HTMLStyleElement | null {
   ensureKitStyles(doc, nonce);

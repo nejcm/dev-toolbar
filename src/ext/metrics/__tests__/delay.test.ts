@@ -172,16 +172,11 @@ describe("delay collector — Event Timing present", () => {
   });
 
   it("masks each part of the target before joining them", () => {
-    // The last known instance of §15.3's join defect, recorded in §15.7 and
-    // closed here. `id` and `className` are live DOM attributes, so they are
-    // foreign, and metrics' `redact()` pass matches value shapes **anchored to
-    // the whole string** — so a credential-shaped `id` was findable on its own
-    // and unfindable the moment `tag` was joined in front of it.
-    //
-    // A JWT-shaped id is the shape that survives an anchored matcher after a
-    // join and not before it, which is exactly what makes it the right fixture:
-    // the point is not that this markup is likely, it is that the guarantee
-    // either holds per part or does not hold at all.
+    // `id`/`className` are foreign DOM attributes, and `redact()` matches value
+    // shapes anchored to the whole string — so a credential-shaped `id` was
+    // findable on its own but not once `tag` was joined in front of it. A
+    // JWT-shaped id is exactly the shape that only an anchored matcher catches
+    // pre-join, which is why it's the fixture here.
     const observer = install({});
     const clock = { t: 0 };
     const collector = createDelayCollector();

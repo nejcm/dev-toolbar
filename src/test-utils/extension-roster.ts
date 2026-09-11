@@ -1,9 +1,7 @@
 /**
- * Shared by tests that enumerate first-party extensions. It reads the source
+ * Shared by tests that enumerate first-party extensions: reads the source
  * tree and package exports so a new extension cannot disappear from one test
  * suite. `shared` and `__tests__` are support directories, not extensions.
- * Keep this outside `src/testing/`: it reads the repository with `node:fs` and
- * is not part of the published `/testing` entrypoint.
  */
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";

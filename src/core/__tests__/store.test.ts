@@ -123,11 +123,10 @@ describe("toolbar store", () => {
 });
 
 /**
- * Original bug: `getSnapshot` was passed to `useSyncExternalStore` as the
- * *server* snapshot too. The store reads storage eagerly at construction, so
- * hydration's first client render saw the persisted preferences where the
- * server render had seen the defaults, and every consumer reading `position`
- * or `visible` during render mismatched.
+ * Regression: `getSnapshot` was passed to `useSyncExternalStore` as the
+ * server snapshot too — since the store reads storage eagerly at
+ * construction, hydration's first client render saw persisted preferences
+ * where the server render saw defaults, mismatching every consumer.
  */
 describe("createToolbarStore server snapshot", () => {
   it("returns the resolved defaults, not what is persisted — a server cannot read the browser's storage", () => {

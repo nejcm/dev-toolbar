@@ -319,11 +319,9 @@ describe("persistence", () => {
     expect(Object.keys(persisted)).toEqual(["__proto__"]);
     expect(persisted["__proto__"]).toBe("x");
 
-    // And it renders as itself. `redact()` used to rebuild into a plain object,
-    // where writing `__proto__` is swallowed by the prototype's setter, so the
-    // row read back through `Object.prototype` and displayed "[object Object]"
-    // for every value — with a "masked" badge, because the two rendered forms
-    // differed. Fixed in /runtime; /ext/environment had it too.
+    // Regression: `redact()` used to rebuild into a plain object, where writing
+    // `__proto__` is swallowed by the prototype's setter — every value then
+    // read back as "[object Object]" and wrongly showed as masked.
     const view = runtime.store.getSnapshot().flags.find((entry) => entry.key === "__proto__");
     expect(view?.effectiveText).toBe("x");
     expect(view?.baseText).toBe("base");
@@ -548,8 +546,8 @@ describe("failing closed", () => {
     runtime.setOverride("ui-facelift", true);
     runtime.setOverride("checkout.copy", "new");
     const snapshot = runtime.store.getSnapshot();
-    // A single error slot was erased here by the unrelated success, taking the
-    // only warning off screen while the row kept claiming to be overridden.
+    // A single error slot would be erased by the unrelated success, hiding the
+    // warning while the row keeps claiming to be overridden.
     expect(snapshot.adapterErrors["ui-facelift"]).toContain("provider is offline");
     expect(snapshot.adapterErrors["checkout.copy"]).toBeUndefined();
     expect(snapshot.flags.find((v) => v.key === "ui-facelift")?.applyError).toBeDefined();
@@ -573,8 +571,7 @@ describe("failing closed", () => {
         }),
       ).api,
     );
-    // The load where it matters most: the first stored override failed and the
-    // second succeeded, and the failure must survive that.
+    // The first stored override fails, the second succeeds — the failure must survive that.
     expect(runtime.store.getSnapshot().adapterErrors["ui-facelift"]).toContain(
       "provider is offline",
     );
@@ -1033,18 +1030,18 @@ describe("publication guarantees", () => {
     ["expiresAt", "2031-01-01T00:00:00.000Z", 1],
   ] as const)("view.%s publishes once", assertViewPublication);
 
-  // Pins missing owner/reloadBehavior/recentlyUsed in signature() (runtime.ts:517).
-  // owner/reloadBehavior leave ui.tsx:424/384 stale; when covered, change their counts
-  // to 1 and getSnapshot() toBe(peek()). recentlyUsed is NOT a UI defect: changed visible
-  // ordering republishes through ordered keys, as the published flag ordering test pins.
+  // Pins fields missing from signature(): owner/reloadBehavior leave the UI
+  // stale until covered (then flip these to 1 call and toBe(peek())).
+  // recentlyUsed alone is not a UI defect — a visible reorder republishes
+  // through the ordered-keys path, pinned separately below.
   it.each([
     ["owner", "Team B", 0],
     ["reloadBehavior", "full-reload", 0],
     ["recentlyUsed", true, 0],
   ] as const)("BUG: view.%s changes without publishing", assertViewPublication);
 
-  // Pins missing expired in signature() (runtime.ts:517); ui.tsx:373 keeps the old expiry tag.
-  // When covered, invert to toHaveBeenCalledTimes(1) and getSnapshot() toBe(peek()).
+  // Pins `expired` missing from signature(), which leaves the expiry tag stale;
+  // when covered, invert to toHaveBeenCalledTimes(1) and getSnapshot() toBe(peek()).
   it("BUG: crossing expiresAt changes only expired, without publishing", () => {
     let now = Date.parse("2029-12-31T23:59:59Z");
     const runtime = createFlagsRuntime({ flags: [initial], now: () => now });
@@ -1060,9 +1057,9 @@ describe("publication guarantees", () => {
     runtime.store.destroy();
   });
 
-  // Pins missing promotedLabel/promotedIcon in signature() (runtime.ts:517);
-  // ui.tsx:49/75 keeps the old promoted chip label/icon after configuration changes.
-  // When covered, invert to toHaveBeenCalledTimes(1) and getSnapshot() toBe(peek()).
+  // Pins promotedLabel/promotedIcon missing from signature(), which leaves the
+  // promoted chip stale after config changes; when covered, invert to
+  // toHaveBeenCalledTimes(1) and getSnapshot() toBe(peek()).
   it.each(["label", "icon"] as const)("BUG: promoted %s alone does not publish", (field) => {
     const promoted: PromotedFlag = { flagKey: "feature", label: "Pinned", icon: "A" };
     const runtime = createFlagsRuntime({ flags: [initial], promoted: [promoted] });
@@ -1130,9 +1127,9 @@ describe("publication guarantees", () => {
     },
   );
 
-  // Pins missing boolean effective state in signature() (runtime.ts:517): equal masked
-  // text hides its change, so ui.tsx:50/208 keeps the old on/checked state.
-  // When covered, invert to toHaveBeenCalledTimes(1) and getSnapshot() toBe(peek()).
+  // Pins boolean `effective` missing from signature(): equal masked text hides
+  // the change, leaving the on/checked state stale. When covered, invert to
+  // toHaveBeenCalledTimes(1) and getSnapshot() toBe(peek()).
   it("BUG: masked boolean effective state changes without a notification", () => {
     const runtime = createFlagsRuntime({
       flags: [{ key: "feature", type: "boolean", value: false, sensitive: true }],
@@ -1474,8 +1471,8 @@ describe("published flag ordering", () => {
     runtime.store.destroy();
   });
 
-  // Pins missing promoted order in signature() (runtime.ts:517); ui.tsx:144 keeps old bar order.
-  // When covered, invert to toHaveBeenCalledTimes(1) and getSnapshot() toBe(peek()).
+  // Pins promoted order missing from signature(), which leaves the bar order
+  // stale. When covered, invert to toHaveBeenCalledTimes(1) and getSnapshot() toBe(peek()).
   it("BUG: reordering promotion configuration leaves the published bar order stale", () => {
     const promoted = [{ flagKey: "a" }, { flagKey: "b" }];
     const runtime = createFlagsRuntime({

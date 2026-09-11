@@ -80,12 +80,7 @@ export function CommandMenuTrigger({
 /** The Apple modifier symbols `describeHotkey()` can emit. */
 const MODIFIER_GLYPHS = /([⌘⌃⌥⇧])/;
 
-/**
- * The hint with each modifier symbol in its own `cmd-glyph` span. Monospace
- * fonts have no `⌘`, so the glyph falls back to another face at a visibly
- * smaller size than the `K` beside it; the span lets the stylesheet set it in
- * the UI face, where the symbols are drawn to match the letters.
- */
+/** Wraps each modifier symbol in its own `cmd-glyph` span, so the stylesheet can set it in a face that draws it to match the letters. */
 function HotkeyHint({ hint }: { hint: string }): ReactNode {
   return hint
     .split(MODIFIER_GLYPHS)
@@ -218,9 +213,8 @@ function Dialog({
       {/* Decorative click-catcher; Escape and the dialog's own controls are the keyboard path out. */}
       <div
         data-dtb-part="cmd-scrim"
-        // A right-click or stylus barrel press isn't a dismissal. `> 0` rather
-        // than `!== 0`: jsdom's synthesized pointer events carry no `button`
-        // at all, and should still be able to dismiss the dialog.
+        // A right-click or stylus barrel press isn't a dismissal. `> 0`, not
+        // `!== 0`: jsdom's synthesized pointer events carry no `button` at all.
         onPointerDown={(event) => {
           if (event.button > 0) return;
           runtime.close();

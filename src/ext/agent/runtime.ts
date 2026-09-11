@@ -3,9 +3,9 @@
  *
  * The bridge publishes `ExtensionRuntimeApi` through a global and adds no
  * enumeration of its own, so hidden-extension behavior comes from
- * `getCommands()` and `getDiagnostics()` (`plans/agent-readable-toolbar.md` §
- * Phase 0, decision 6). Installation happens from client-only `start(api)`,
- * not at module evaluation, so importing this module during SSR is inert.
+ * `getCommands()` and `getDiagnostics()`. Installation happens from
+ * client-only `start(api)`, not at module evaluation, so importing this
+ * module during SSR is inert.
  */
 import { describeError, redact } from "../../runtime";
 import type { RedactOptions } from "../../runtime";
@@ -37,11 +37,7 @@ export interface AgentRuntimeOptions {
   extraKeys?: readonly string[];
   /** Reported in the snapshot so a reader can branch on it. */
   contractVersion: number;
-  /**
-   * Optional off-page transport (Phase 3). Absent means the bridge opens no
-   * connection to anything and stays exactly what Phases 0–2 made it: a
-   * global for a script that is already in the page.
-   */
+  /** Optional off-page transport. Absent means the bridge opens no connection and stays only a global for a script already in the page. */
   report?: AgentReportOptions;
 }
 
@@ -69,10 +65,8 @@ function define(target: Record<string, unknown>, key: string, value: unknown): v
 
 /**
  * Mirrors core's `instanceHeightVariable` (`src/core/useHeightVariables.ts`).
- *
- * Keep this as a copy: extensions may import only *types* from core, and a
- * value import is not guaranteed to resolve to the host's copy (AGENTS.md).
- * If core's folding rule changes, update this regex too.
+ * Kept as a copy — extensions may import only types from core — so update
+ * this regex if core's folding rule changes.
  */
 function heightVariableName(instanceId: string): string {
   return `--dev-toolbar-height-${instanceId.replace(/[^A-Za-z0-9_-]+/g, "_")}`;
@@ -92,16 +86,12 @@ function toBarItem(element: Element): AgentBarItemView {
 }
 
 /**
- * **The only place this extension reads the DOM**, and it is deliberate.
- *
- * Position, density, colour scheme, the height variable and bar membership
- * are facts about the *shell*, and the shell is core: there is no extension
- * to publish them through `diagnostics()`, and giving core one would be a
- * core change and a `CONTRACT_VERSION` conversation
- * (`plans/agent-readable-toolbar.md` § Phase 1, open question 3 — the answer
- * for this phase is the bridge). Everything else the bridge reports comes
- * from `api`, and nothing here reads an extension's own markup: an extension
- * that wants to be readable publishes state, it does not get scraped.
+ * **The only place this extension reads the DOM**, and it is deliberate:
+ * position, density, colour scheme, the height variable and bar membership
+ * are facts about the shell, which is core and has no extension to publish
+ * them through `diagnostics()`. Everything else the bridge reports comes
+ * from `api` — an extension's own markup is never scraped; it publishes
+ * state instead.
  *
  * There is no document during SSR or in plain Node tests. An unmounted or
  * hidden toolbar has no root, so both return `mounted: false`.
@@ -120,8 +110,8 @@ export function readShell(instanceId: string): AgentShellView {
   };
   if (typeof document === "undefined" || document.documentElement === null) return empty;
 
-  // Match the arbitrary instance id in JS. Escaping it in a CSS attribute
-  // selector would not work for every host.
+  // Match the instance id in JS rather than a CSS attribute selector, which
+  // would not escape it safely for every host.
   const root = [...document.querySelectorAll(PART("root"))].find(
     (candidate) => candidate.getAttribute("data-dtb-instance") === instanceId,
   );
@@ -170,7 +160,7 @@ export function toCommandView(command: AnyToolbarCommand): AgentCommandView {
 /**
  * The registry object. A plain `instances` map plus a `default` accessor that
  * throws a message naming the ids to choose from — a guess would make the
- * second mounted toolbar an invisible source of wrong answers (decision 1).
+ * second mounted toolbar an invisible source of wrong answers.
  */
 export function createAgentRegistry(): AgentRegistry {
   const instances: Record<string, AgentHandle> = {};
@@ -186,10 +176,8 @@ export function createAgentRegistry(): AgentRegistry {
               `there is no default. Pick one: instances[${JSON.stringify(ids[0])}].`,
       );
     },
-    // Non-enumerable on purpose: the getter throws whenever the instance
-    // count is not exactly one, and an enumerable throwing getter would make
-    // `{...registry}`, `Object.entries(registry)` and `JSON.stringify(registry)`
-    // throw too — a trap for any in-page tooling that walks the global.
+    // Non-enumerable: an enumerable throwing getter would make `{...registry}`,
+    // `Object.entries` and `JSON.stringify` throw too.
     enumerable: false,
     configurable: true,
   });
@@ -207,7 +195,7 @@ function isAgentRegistry(value: unknown): value is AgentRegistry {
   );
 }
 
-/** A command's throw as a value: `describeError()`'s halves, handed over unjoined (`ExtensionDiagnostics.error`). */
+/** A command's throw as a value: `describeError()`'s halves, handed over unjoined. */
 const threw = (error: unknown, options: RedactOptions): AgentRunResult => {
   const { name, message } = describeError(error, options);
   return name === undefined
@@ -227,7 +215,7 @@ export function createAgentHandle(
   /**
    * A captured handle can outlive its registry entry, so every method checks
    * `api.signal`. Reads throw because an empty snapshot is indistinguishable
-   * from a live toolbar with no state (decision 4).
+   * from a live toolbar with no state.
    */
   const assertLive = (verb: string): void => {
     if (!api.signal.aborted) return;
@@ -243,24 +231,15 @@ export function createAgentHandle(
   };
 
   /**
-   * Redact on the way out (decision 3). Extensions must redact at the source;
-   * this second pass is defense in depth, and belongs here because core may not
-   * import `/runtime`.
-   *
-   * The second pass costs depth. `redact()` starts at depth 0 and truncates at
-   * `maxDepth` 8, so the surviving levels depend on the surface:
-   *
-   * - **5** here: `data` sits at depth 2 (array -> entry -> `data`).
-   * - **4** in `runCommand("diagnostics.capture").result`: depth 3, after a
-   *   second pass over an already-redacted snapshot.
-   * - **7** in bug-report JSON: `/ext/diagnostics` redacts each contribution at
-   *   its own root and `renderJson` only calls `JSON.stringify`.
-   *
-   * The bug report is most permissive and the capture result strictest. A
-   * deeply nested consumer value can therefore be intact in a ticket but
-   * truncated through this handle. The remedy is at the source: flatten the
-   * contribution, or raise `maxDepth` where it is built. All three numbers are
-   * pinned by `__tests__/phase2.test.tsx`.
+   * Redact again on the way out; extensions must also redact at the source,
+   * this is defense in depth (belongs here since core may not import
+   * `/runtime`). `redact()` truncates at `maxDepth` 8 from depth 0, so
+   * surviving levels vary by surface: **5** here (`data` at depth 2), **4**
+   * in `runCommand("diagnostics.capture").result` (a second pass three
+   * levels down), **7** in bug-report JSON (each contribution redacted once,
+   * at its own root). A deeply nested value can be intact in a ticket but
+   * truncated here — fix at the source: flatten it, or raise `maxDepth`. All
+   * three numbers are pinned by `__tests__/phase2.test.tsx`.
    */
   const readDiagnostics = (): readonly ExtensionDiagnostics[] => {
     const redacted = redact(api.getDiagnostics(), redactOptions);
@@ -288,25 +267,18 @@ export function createAgentHandle(
     },
   };
 
-  // With `allowRun` off there is no run path at all (decision 2).
+  // With `allowRun` off there is no run path at all.
   if (allowRun) {
     handle.runCommand = async (id: string, input?: unknown): Promise<AgentRunResult> => {
-      // Keep failures as values so callers can branch on them, including for a
-      // dead toolbar.
       if (api.signal.aborted) return { ok: false, reason: "torn-down" };
       if (typeof id !== "string") return { ok: false, reason: "unknown-command" };
       try {
-        // `invokeCommand` returns the command's value; `runCommand` only says
-        // whether something ran (`plans/agent-readable-toolbar.md` § Phase 2).
         const outcome = await api.invokeCommand(id, input);
         if (!outcome.ok) return { ok: false, reason: "unknown-command" };
-        // A command result crosses the same boundary as diagnostics, so apply
-        // the same redaction and omit an `undefined` result (decision 3).
+        // Same boundary as diagnostics: redact, and omit an `undefined` result.
         const result = redact(outcome.result, redactOptions);
         return result === undefined ? { ok: true } : { ok: true, result };
       } catch (error) {
-        // Turn command throws, including input refusals, into values for the
-        // agent.
         return threw(error, redactOptions);
       }
     };
@@ -318,7 +290,7 @@ export function createAgentHandle(
 /**
  * Installs a handle and returns an idempotent teardown. Refuses a foreign
  * global or duplicate `instanceId` rather than handing an agent the wrong
- * toolbar (decision 4).
+ * toolbar.
  */
 export function installAgentBridge(
   api: ExtensionRuntimeApi,

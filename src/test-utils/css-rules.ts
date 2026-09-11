@@ -1,15 +1,14 @@
 /**
- * A small, deliberate CSS scanner for the stylesheet invariants in
- * `__tests__` — lets a test assert something about every rule in a shipped
- * sheet without a hand-maintained list to go stale. Not a CSS parser: any
- * construct it does not recognise throws rather than scanning to a vacuous pass.
+ * A small CSS scanner for the stylesheet invariants in `__tests__`. Not a
+ * full parser: any construct it doesn't recognise throws rather than
+ * scanning to a vacuous pass.
  */
 
 /** At-rules whose block holds further rules, and is therefore descended into. */
 const NESTING_AT_RULES = new Set(["layer", "media", "supports", "container", "scope"]);
 
-// The only statement forms this scanner passes over; everything else — `@import`
-// above all — throws rather than silently skip a statement it never looks at.
+// The only statement forms this scanner passes over; everything else (`@import`
+// above all) throws rather than silently skipping it.
 const STATEMENT_AT_RULES = new Set(["charset", "layer"]);
 
 /** At-rules whose block holds no style rules, and is therefore skipped whole. */
@@ -30,16 +29,14 @@ export interface StyleRule {
   readonly enclosing: readonly string[];
 }
 
-// Comments removed, strings kept verbatim (a selector is reported as written)
-// with `quoted` marking their indices so structural tests can skip them —
-// braces and comment openers inside a quoted value are not structure.
+// `quoted` marks string indices so structural checks can skip them — braces
+// and comment openers inside a quoted value are not structure.
 interface ScannedSource {
   readonly source: string;
   readonly quoted: readonly boolean[];
 }
 
-// Strips comments and locates strings in one pass so neither is mistaken for
-// the other. Fails closed: an unterminated comment/string or an escape throws.
+// Fails closed: an unterminated comment/string or an escape throws.
 function scanSource(css: string): ScannedSource {
   let source = "";
   const quoted: boolean[] = [];
@@ -107,8 +104,7 @@ function hasUnquoted(scanned: ScannedSource, char: string, from: number, to: num
 
 /**
  * Every style rule in `css`, descending through `@layer`, `@media` and the
- * other nesting at-rules. Throws on anything else: an unknown at-rule, a
- * nested style rule (this codebase writes none), a stray declaration.
+ * other nesting at-rules. Throws on anything else it doesn't model.
  */
 export function styleRules(css: string): StyleRule[] {
   const scanned = scanSource(css);
@@ -205,9 +201,8 @@ function splitTopLevel(text: string, separator: string): string[] {
 
 /**
  * The rightmost compound of a complex selector — the elements the rule
- * actually styles. Everything before the last top-level combinator is the
- * context it requires, and combinators inside `:where()`/`:not()` are not
- * top-level, so `:where(:not([data-dtb-embed] *))` stays part of its compound.
+ * actually styles. Combinators inside `:where()`/`:not()` are not top-level,
+ * so `:where(:not([data-dtb-embed] *))` stays part of its compound.
  */
 function subjectCompound(selector: string): string {
   let depth = 0;
@@ -306,10 +301,8 @@ function matchingIndex(text: string, from: number, open: string, close: string):
 }
 
 /**
- * Attribute values are compared as text, so a `[data-dtb-*]` token inside one
- * is a string and not a condition. Strip every quoted value before anything
- * looks for tokens; an unterminated quote — or an escape, which this scanner
- * does not model — throws.
+ * Strips quoted attribute values so a `[data-dtb-*]`-looking token inside one
+ * isn't mistaken for a condition. An unterminated quote or escape throws.
  */
 function stripStrings(selector: string): string {
   if (selector.includes("\\")) {
@@ -323,9 +316,8 @@ function stripStrings(selector: string): string {
 }
 
 /**
- * A compound selector split into the simple selectors it ANDs together: an
- * element matches the compound only if it matches every piece. Throws on any
- * syntax this scanner does not model, rather than skipping it.
+ * A compound selector split into the simple selectors it ANDs together.
+ * Throws on any syntax this scanner does not model, rather than skipping it.
  */
 function compoundPieces(compound: string): string[] {
   const pieces: string[] = [];
@@ -398,9 +390,9 @@ function parsePseudo(piece: string): Pseudo {
 
 /**
  * Does *every* element matching `compound` necessarily carry an attribute
- * `test` accepts? Mandatory and positive, both load-bearing: a token inside
- * `:not()` is not a condition the subject meets, and a token in one branch of
- * `:is()`/`:where()` is not one every matching element meets.
+ * `test` accepts? A token inside `:not()` is not a condition the subject
+ * meets, and a token in one branch of `:is()`/`:where()` is not one every
+ * matching element meets.
  */
 function requiresAttribute(compound: string, test: (name: string) => boolean): boolean {
   let required = false;
@@ -450,11 +442,10 @@ export interface EmbedGuardAudit {
 }
 
 /**
- * Sorts every selector in `css` by its subject compound, mandatory-and-positive
- * matching only; throws on anything unscoped by `[data-dev-toolbar]` or
- * unparseable. `keyed` requires the *selected* element itself to carry a
- * toolbar-owned attribute — why this is core's invariant, not every sheet's;
- * see docs/embedding.md.
+ * Sorts every selector in `css` by its subject compound; throws on anything
+ * unscoped by `[data-dev-toolbar]` or unparseable. `keyed` requires the
+ * *selected* element itself to carry a toolbar-owned attribute; see
+ * docs/embedding.md.
  */
 export function auditEmbedGuards(css: string): EmbedGuardAudit {
   const audit: EmbedGuardAudit = { root: [], keyed: [], guarded: [], unguarded: [] };

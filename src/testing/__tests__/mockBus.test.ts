@@ -1,19 +1,12 @@
 /**
- * The subscription parity `createMockBus()` claims.
+ * The subscription parity `createMockBus()` claims: `BusLike`'s `emit`/`on`
+ * shape says nothing about *behaviour*, so a mock that accepted `options` and
+ * ignored it would typecheck while leaking every subscription past teardown.
+ * These assertions hold it to the contract.
  *
- * The double is only useful if a collector written against the real bus can be
- * pointed at it unchanged, and the `bus` option in `/ext/metrics` now asks for
- * `BusLike` — `emit` plus `on(type, handler, { signal })` — precisely so it
- * can be. That type says nothing about *behaviour*, and a callee is allowed to
- * declare fewer parameters than its caller passes, so a mock that accepted
- * `options` and ignored it would typecheck and then leak every subscription
- * past teardown. These are the assertions that hold it to the contract.
- *
- * Nothing here imports `../../runtime`: `src/core/__tests__/boundary.test.ts`
- * walks every file under `src/testing`, this directory included, and fails on
- * a specifier naming `runtime/` or `ext/`. The type-level half of the parity
- * check therefore lives in `src/ext/metrics/__tests__/network.test.ts`, which
- * may name both sides.
+ * Nothing here imports `../../runtime` — `src/testing` may not (AGENTS.md
+ * layering). The type-level half of the parity check lives in
+ * `src/ext/metrics/__tests__/network.test.ts`.
  */
 import { describe, expect, expectTypeOf, it, vi } from "vitest";
 import { createMockBus } from "../mockBus";

@@ -1,20 +1,13 @@
 /**
- * Shared vocabulary for `/ext/theme-editor`. [dev-toolbar/ext/theme-editor]
+ * Shared vocabulary for `/ext/theme-editor`. Design tokens are
+ * consumer-owned state: this extension owns no design system, only the
+ * override map.
  *
- * Design tokens are **consumer-owned state**: this extension owns no design
- * system and generates no palette. You hand it the tokens your application
- * publishes; it edits them, shows the difference, and gives the edit back as
- * something pasteable into code or handed to a designer. The one state it owns
- * is the override map — a toolbar preference nothing else in the app knows.
- *
- * Two validation rules carry the safety story, deliberately different:
- * - **A token *name* is validated, never redacted.** It ends up as a CSS
- *   identifier in inline style and exported CSS text, so the hazard is
- *   *syntax* — `;` or `}` closes the declaration and opens an attacker's rule.
- *   Masking it would corrupt every export and guard nothing.
- * - **A token *value* is validated *and* redacted.** Validated because it's
- *   about to be written into the page; redacted because it's about to leave
- *   on a clipboard.
+ * A token *name* is validated but never redacted — it becomes a CSS
+ * identifier, so the hazard is syntax (`;`/`}` closing a declaration), and
+ * masking it would corrupt every export while guarding nothing. A token
+ * *value* is both validated (it's written into the page) and redacted (it
+ * can leave on a clipboard).
  */
 import { matchesQuery as matchesKitQuery, type SeverityWithOverride } from "@nejcm/dev-toolbar/kit";
 
@@ -75,15 +68,10 @@ export const DEFAULT_SURFACE: ThemeSurface = {
 /* -------------------------------------------------------------------------- */
 
 /**
- * Prefixes this extension will never write, whatever a consumer declares —
- * the guard against an app edit restyling the toolbar. The toolbar is styled
- * entirely from `--dtb-*` and publishes `--dev-toolbar-height`; since `:root`
- * is an ancestor of the portalled toolbar root, writing either name there
- * would repaint the tool you're using to make the edit.
- *
- * This is a **refusal to write the name at all**, not a CSS rule, so it never
- * has to win an argument with the consumer's stylesheet. Restyling the bar is
- * still supported — just from your own stylesheet, unlayered, per §4.1.
+ * Prefixes this extension will never write, whatever a consumer declares.
+ * `:root` is an ancestor of the portalled toolbar root, so writing `--dtb-*`
+ * or `--dev-toolbar-height` there would repaint the tool you're using to make
+ * the edit — refused as a name, not fought as a cascade rule.
  */
 export const RESERVED_PREFIXES: readonly string[] = ["--dtb-", "--dev-toolbar"];
 
@@ -124,13 +112,11 @@ export type ValueRefusal = "empty" | "syntax" | "too-long" | "type";
 export const MAX_VALUE_LENGTH = 512;
 
 /**
- * Constructs that must never reach a declaration this extension writes or
- * exports: `;{}` open/close a declaration or rule, `\` and `/*` hide a
- * comment-terminated payload, `<` matters because this string may be pasted
- * into a `<style>` block, and `url(`/`image-set(`/`@import` fetch — a shared
- * theme link causing a request to another host would be exfiltration, not a
- * cosmetic problem. This is a deny list of escaping constructs, not an allow
- * list — `var()`, `calc()`, `color-mix()` etc. are all fine.
+ * Deny list of escaping constructs (not an allow list — `var()`, `calc()`
+ * etc. are fine): `;{}` open/close a declaration, `\` and comment markers
+ * hide a terminated payload, `<` matters since this may be pasted into a
+ * `<style>` block, and `url(`/`image-set(`/`@import` would let a shared
+ * theme link fetch from another host.
  */
 const VALUE_FORBIDDEN =
   /[;{}<>\\]|\/\*|\*\/|\burl\s*\(|\bimage-set\s*\(|\bexpression\s*\(|@import|\bsrc\s*:/i;
@@ -139,35 +125,26 @@ const VALUE_FORBIDDEN =
 const MAX_NESTING_DEPTH = 32;
 
 /**
- * A quote-aware structural scan of a value that is about to be written into a
- * declaration and printed into exported CSS text.
+ * A quote-aware structural scan for balance that `VALUE_FORBIDDEN`'s
+ * character deny list can't catch (e.g. `calc(` that never closes) — an
+ * unbalanced value printed into a `cssText()` export would swallow the
+ * declarations after it.
  *
- * `VALUE_FORBIDDEN` is a *character* deny list; it cannot see that `calc(`
- * never closes. An unbalanced value is not merely useless — printed into a
- * `cssText()` export it swallows the declarations that follow it, so a
- * refusal here is what keeps a truncated paste from re-scoping somebody's
- * stylesheet.
+ * Must run after `VALUE_FORBIDDEN`: `\` is already denied by then, so this
+ * scanner needs no escape state. Moving it earlier would make `"a\"b"`
+ * misread as a string.
  *
- * **It runs after `VALUE_FORBIDDEN`, and that ordering is load-bearing:** `\`
- * is already denied by the time this is reached, so the scanner carries no
- * escape state. Move it earlier and `"a\"b"` becomes a string this scanner
- * mis-reads.
- *
- * `!` is refused *outside quotes only*, because `--label: "wow!"` is a
- * legitimate custom-property value. The reason to refuse it unquoted is not
- * syntax: CSSOM takes priority as a separate argument, so a conforming
- * browser drops the whole `red !important` declaration silently while the
- * panel would go on claiming the edit was applied.
+ * `!` is refused outside quotes only (`--label: "wow!"` is legitimate)
+ * because a bare `!important` is silently dropped whole by CSSOM, which
+ * would leave the panel claiming an edit was applied that never took.
  */
 function structurallySound(value: string): boolean {
   const stack: string[] = [];
   let quote: string | null = null;
   for (const character of value) {
     if (quote !== null) {
-      // An unescaped newline inside a string is a `<bad-string>` token, and a
-      // browser drops the whole declaration — a silent failure exactly like
-      // `!important`'s. Unreachable from an `<input>`, reachable from an
-      // imported recipe, a shared link or storage.
+      // An unescaped newline makes a `<bad-string>` token; the browser drops
+      // the whole declaration silently, same as `!important`.
       if (character === "\n") return false;
       if (character === quote) quote = null;
       continue;
@@ -196,17 +173,10 @@ const LENGTH_SHAPE =
 const FUNCTIONAL = /^(?:calc|clamp|min|max|var|env|round)\s*\(/i;
 
 /**
- * The type-*independent* half of `checkTokenValue`, and the whole of its
- * security-relevant half: trim → empty → too long → forbidden constructs →
- * structurally sound.
- *
- * Split out so the pre-mount reader (`readStoredThemeOverrides`) and the
- * mounted runtime can share one policy instead of drifting. Everything a
- * caller without a catalogue can still check lives here.
- *
- * Not exported: `checkStoredEntry` is the door a caller without a catalogue
- * is meant to use, and a second exported entry point invites a third caller
- * that runs only half the policy.
+ * The type-independent (and whole security-relevant) half of
+ * `checkTokenValue`, split out so the pre-mount reader and the mounted
+ * runtime share one policy. Not exported — `checkStoredEntry` is the
+ * intended door for a caller with no catalogue.
  */
 function checkTokenValueShape(raw: string): ValueRefusal | null {
   const value = raw.trim();
@@ -218,20 +188,16 @@ function checkTokenValueShape(raw: string): ValueRefusal | null {
 }
 
 /**
- * Accepts or refuses one edited value. The safety pass is universal and
- * strict; the *type* pass refuses only what's definitely not that type
- * (numbers/lengths have a fixed shape) and lets colours and free strings
- * through, since a matcher trying to enumerate valid color syntax would
- * refuse tomorrow's. Returns `undefined` rather than a coerced fallback: a
- * refused edit is recoverable, a silently corrected one is not.
+ * Accepts or refuses one edited value. The type pass only refuses what's
+ * definitely not that type (numbers/lengths have a fixed shape); colours and
+ * free strings pass through, since enumerating valid color syntax would
+ * refuse tomorrow's.
  */
 export function checkTokenValue(type: TokenType, raw: string): ValueRefusal | null {
   const shape = checkTokenValueShape(raw);
   if (shape !== null) return shape;
   const value = raw.trim();
-  // After the structural scan, never before: `calc(` is *functional-looking*
-  // and structurally broken, and short-circuiting on the prefix first is what
-  // let it through.
+  // Must run after the structural scan — a broken `calc(` should still be refused.
   if (FUNCTIONAL.test(value)) return null;
   if (type === "number" && !NUMBER_SHAPE.test(value)) return "type";
   if (type === "length" && !LENGTH_SHAPE.test(value)) return "type";
@@ -261,19 +227,13 @@ export const MASK_SENTINEL = "[redacted]";
 export type StoredEntryRefusal = TokenRefusal | ValueRefusal;
 
 /**
- * The one policy for a `name → value` pair arriving from **storage** rather
- * than from the editor.
- *
- * Storage is a door like a pasted recipe or a link: `localStorage` is
- * writable by every script on the origin, so an entry cannot be trusted just
- * because we wrote it. Two callers share this — the mounted runtime's
- * `vetStored`, and `readStoredThemeOverrides`, which runs before anything is
- * mounted and hands its result to the consumer's own theme provider. They
- * disagreed before this existed.
- *
- * `type` is optional because the pre-mount caller may have no catalogue;
- * omitting it falls back to `"string"`, the loosest type, which still runs
- * the entire security-relevant pass.
+ * The one policy for a `name → value` pair arriving from storage rather than
+ * the editor. `localStorage` is writable by every script on the origin, so
+ * an entry can't be trusted just because we wrote it. Shared by the mounted
+ * runtime's `vetStored` and the pre-mount `readStoredThemeOverrides`, which
+ * used to disagree before this existed. `type` is optional since the
+ * pre-mount caller may have no catalogue; omitting it falls back to the
+ * loosest type, `"string"`.
  */
 export function checkStoredEntry(
   name: string,
@@ -294,20 +254,12 @@ export function checkStoredEntry(
 
 /**
  * True when a surface selector is safe to print into exported CSS text.
- *
- * `querySelector` already fails closed on a malformed selector at *resolve*
- * time, but `cssText` **prints** it regardless — e.g.
- * `:root { } body { background: url(…) } .z` resolves to nothing, yet would
- * still export a working rule the consumer never wrote. So this refuses to
- * emit rather than tries to escape: the deny list covers only characters that
- * end a selector and start something else (`;{}`, a comment opener, `<`, a
- * backslash escape, `url(`).
- *
- * Combinators (`>`, `+`, `~`) are deliberately *not* denied — `#app > main` is
- * an ordinary selector, and refusing it would silently export the block
- * scoped to `:root` instead, a wrong scope that's worse than a refusal. `@` is
- * allowed except at the start (the only position it can open an at-rule); it's
- * legal inside an attribute selector's value.
+ * `querySelector` fails closed on a malformed selector at resolve time, but
+ * `cssText` prints it regardless, so a selector like
+ * `:root { } body { background: url(…) } .z` could export a working rule the
+ * consumer never wrote. Combinators (`>`, `+`, `~`) are deliberately not
+ * denied — refusing `#app > main` would silently export the block scoped to
+ * `:root` instead, a wrong scope that's worse than a refusal.
  */
 export function isPrintableSelector(selector: string): boolean {
   return (
@@ -374,12 +326,10 @@ export interface TokenView {
   type: TokenType;
 
   /**
-   * The application's own value, ignoring this extension's edit. Supplied by
-   * the consumer via `value`, or read off the surface with `getComputedStyle`
-   * — but only while the token is **not** overridden; the last pre-override
-   * read is kept afterwards, since once the override is on the element the
-   * computed value *is* the override, and re-reading it would falsely claim
-   * the app already agreed with the edit.
+   * The application's own value, ignoring this extension's edit. Read via
+   * `getComputedStyle` only while not overridden — once the override is on
+   * the element, the computed value *is* the override, so the last
+   * pre-override read is kept instead of re-reading.
    */
   base: string | null;
   defaultValue: string | null;
@@ -396,13 +346,10 @@ export interface TokenView {
   /** True when redaction changed the value this row shows. */
   masked: boolean;
   /**
-   * True when redaction changed something this row shows that is **not** the
-   * value — its description or group name. Kept separate from `masked`
-   * because `masked` drives the editor (it refuses to seed itself from a
-   * masked value) while a row with only a scrubbed *description* still has a
-   * usable value — but both are exported (Figma `$description`, group as a
-   * JSON key), so anything counting what was withheld from an outbound
-   * document must include them too.
+   * True when redaction changed the description or group name rather than
+   * the value. Kept separate from `masked`, which drives the editor (it
+   * won't seed itself from a masked value); both still count toward what an
+   * export withholds.
    */
   metadataMasked: boolean;
 
@@ -461,14 +408,10 @@ export function matchesQuery(view: TokenView, query: string): boolean {
 /* -------------------------------------------------------------------------- */
 
 /**
- * §3H's shareable recipe, with one deliberate divergence: §3H suggests an
- * OKLCH delta (`overrides: Record<string, { l?, c?, h?, alpha? }>` plus
- * `inputs: { base, accent, contrast }`), which presumes the toolbar owns a
- * colour model and scale generator. This extension owns neither, so an
- * override here is the **literal value** the token takes — a complete,
- * self-describing document rather than a delta against a generator the
- * reader may not have. That also makes the Figma pipeline deterministic:
- * what is exported is what is applied.
+ * A shareable recipe. Deliberately not a colour-model delta (`{l, c, h}` etc)
+ * since this extension owns no palette generator — an override is the
+ * literal value the token takes, a self-describing document. That also makes
+ * the Figma export deterministic: what's exported is what's applied.
  */
 export interface ThemeRecipe {
   schemaVersion: 1;

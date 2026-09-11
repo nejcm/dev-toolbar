@@ -41,20 +41,15 @@ export interface ToolbarStore {
   getSnapshot(): ToolbarState;
   /**
    * The snapshot a server render sees: **the defaults**, resolved but never
-   * read from storage.
+   * read from storage — `useSyncExternalStore` requires the server snapshot
+   * to agree with the first client render, and a server has no access to
+   * persisted preferences, so returning persisted state here caused hydration
+   * to see `position: "top"` where the server HTML said `"bottom"`. One
+   * frozen object built once, so identity never changes mid-render.
    *
-   * `useSyncExternalStore` requires the server snapshot and the first client
-   * render to agree, and a server has no access to the browser's persisted
-   * preferences — so returning the persisted state here is what made hydration
-   * see `position: "top"` where the server HTML said `"bottom"`. Stable by
-   * construction: one frozen object built once, so React never sees it change
-   * identity mid-render.
-   *
-   * The consequence, deliberately: an SSR-side storage adapter is unsupported.
-   * Preferences supplied through `storage` on the server would be ignored for
-   * the server snapshot and then appear on the client, which is the mismatch
-   * this exists to prevent. Pass `defaultVisible`/`defaultPosition`/
-   * `defaultPanelHeight` instead — those *are* honoured on both sides.
+   * Deliberate consequence: an SSR-side storage adapter is unsupported. Use
+   * `defaultVisible`/`defaultPosition`/`defaultPanelHeight` instead — those
+   * *are* honoured on both sides.
    */
   getServerSnapshot(): ToolbarState;
   setVisible(visible: boolean): void;
@@ -86,11 +81,8 @@ export function createToolbarStore(options: ToolbarStoreOptions): ToolbarStore {
   /**
    * The single place `?? true` / `?? "bottom"` / `clampPanelHeight` resolve, so
    * the server snapshot and the storage fallbacks can never disagree about what
-   * a default is. Clamped here too: `defaultPanelHeight: 5000` must not reach a
-   * server render unclamped and then snap on the client.
-   *
-   * Built once, and never mutated — {@link ToolbarStore.getServerSnapshot}
-   * hands this exact object back on every call, which is the identity stability
+   * a default is. Built once and never mutated — {@link ToolbarStore.getServerSnapshot}
+   * hands this exact object back every call, the identity stability
    * `useSyncExternalStore` requires of a server snapshot.
    */
   const defaults: ToolbarState = Object.freeze({

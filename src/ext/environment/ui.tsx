@@ -19,10 +19,8 @@ import type { EnvironmentRuntime } from "./runtime";
 /**
  * The rendered surface. [dev-toolbar/ext/environment]
  *
- * Slot functions must be cheap, so they return these components and the
- * components subscribe to the extension's own store. Everything they render
- * comes from the snapshot, which is redacted before it is built — the panel has
- * no access to the raw context and cannot accidentally print it.
+ * Everything rendered comes from the snapshot, which is already redacted —
+ * these components have no access to the raw context.
  */
 
 const kindLabel = (snapshot: EnvironmentSnapshot): string =>

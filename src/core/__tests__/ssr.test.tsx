@@ -1,14 +1,11 @@
 // @vitest-environment node
 /**
- * SSR safety, in an environment that genuinely has no DOM.
- *
- * `docs/architecture.md` §8 promises the bar never appears in server HTML, and
- * says so on the strength of a by-hand check in a Next app. This file is the
- * automated half. The `node` environment above is load-bearing: there is no
- * `window`, no `document` and no `localStorage`, so any unguarded access
- * during the server render is a `ReferenceError` rather than something a mock
- * quietly absorbs. `vitest.setup.ts` skips its jsdom fixtures here for the
- * same reason.
+ * SSR safety, in an environment with genuinely no DOM. `docs/architecture.md`
+ * §8 promises the bar never appears in server HTML; this is the automated
+ * half of that check. The `node` environment above is load-bearing — no
+ * `window`, `document`, or `localStorage`, so unguarded access is a
+ * `ReferenceError` rather than something a mock quietly absorbs.
+ * `vitest.setup.ts` skips its jsdom fixtures here for the same reason.
  */
 import { describe, expect, it, vi } from "vitest";
 import { renderToString } from "react-dom/server";
@@ -17,19 +14,16 @@ import { DevToolbarInset } from "../DevToolbarInset";
 import type { DevToolbarExtension, ExtensionRuntimeApi } from "../contract";
 
 /**
- * What `vitest.setup.ts` left behind, read before the line below replaces it.
- * The setup skips its jsdom fixtures here, so this must be `undefined`: the
- * assertion is in `really is running without a DOM`.
+ * What `vitest.setup.ts` left behind, read before the line below replaces it
+ * — must be `undefined` here, asserted in `really is running without a DOM`.
  */
 const shimmedLocalStorage = Object.getOwnPropertyDescriptor(globalThis, "localStorage")?.value;
 
 /**
- * A real Node server has no `localStorage` at all. Node's own is a lazy getter
- * that prints an ExperimentalWarning the first time anything reads it — and
- * `createLocalStorage()` reads it on every render that passes no `storage`
- * prop, which is most of this file. Shadowing it with a plain absent value is
- * both faithful to the environment being emulated and the thing that keeps the
- * warning out of every run's log.
+ * A real Node server has no `localStorage`. Node's own is a lazy getter that
+ * prints an ExperimentalWarning on first read, and `createLocalStorage()`
+ * reads it on every render with no `storage` prop — most of this file.
+ * Shadowing it keeps both the emulation faithful and the warning out of the log.
  */
 Object.defineProperty(globalThis, "localStorage", { configurable: true, value: undefined });
 

@@ -5,24 +5,18 @@ import type { ReactElement } from "react";
  * The slice of `@testing-library/react` that `renderWithToolbar` uses.
  *
  * RTL is an *optional* peer dependency, so it must never appear as a static
- * import in this subpath's module graph — that would break importing
- * `@nejcm/dev-toolbar/testing` for `createMockBus()` alone on a project that
- * never installed RTL. So it's loaded via a dynamic import, started eagerly at
- * module scope and cached:
- *
- * - The import goes through the *host's own module graph*, so `act`/`render`
- *   here are the same instances the consumer's setup file uses — unlike
- *   `createRequire()`, which would load an unrelated second copy whose
- *   `cleanup()` wouldn't clean up what this `render()` mounted.
- * - The rejection is swallowed, so a missing RTL costs nothing until
- *   `renderWithToolbar()` is actually called, which then throws with install
- *   instructions.
+ * import here — that would break importing `@nejcm/dev-toolbar/testing` for
+ * `createMockBus()` alone on a project that never installed RTL. It's loaded
+ * via a dynamic import, started eagerly at module scope and cached: the
+ * import goes through the host's own module graph, so `act`/`render` are the
+ * same instances the consumer's setup file uses (unlike `createRequire()`,
+ * which would load an unrelated second copy whose `cleanup()` wouldn't clean
+ * up what this `render()` mounted); the rejection is swallowed, so a missing
+ * RTL costs nothing until `renderWithToolbar()` is actually called.
  *
  * Jest needs the fallback path below: inside its vm sandbox `import()` never
- * settles, but the module-scoped `require` *is* the runner's own resolver
- * there, returning the same copy already in Jest's registry (so the
- * `createRequire()` hazard above doesn't apply). `require` doesn't exist in
- * the ESM build, so that branch stays dead exactly where it should.
+ * settles, but the module-scoped `require` is the runner's own resolver
+ * there, returning the same copy already in Jest's registry.
  */
 export interface ReactTestingLibrary {
   /** Sync form wraps the state mutators; async form wraps `runCommand()`, which may await. */
@@ -61,10 +55,9 @@ export function setTestingLibrary(module: ReactTestingLibrary): void {
  * CommonJS-only fallback for hosts whose `import()` never settles — Jest.
  *
  * Reached through `module.require` rather than the bare `require` identifier:
- * both resolve the same way under Jest, but a bare `require` makes esbuild
- * inject its `__require` shim into the shared chunk — truthy even in the ESM
- * build, which would widen this guard. `module` is undefined in ESM, so this
- * stays genuinely dead there.
+ * a bare `require` makes esbuild inject its `__require` shim into the shared
+ * chunk, truthy even in the ESM build, which would widen this guard. `module`
+ * is undefined in ESM, so this stays genuinely dead there.
  */
 function requireFromHost(): ReactTestingLibrary | null {
   const host: unknown = typeof module === "undefined" ? undefined : (module as unknown);
