@@ -14,6 +14,13 @@
   style break at the boundary is accepted, not an oversight.
 -->
 
+## [0.10.2](https://github.com/nejcm/dev-toolbar/compare/v0.10.1...v0.10.2) (2026-09-11)
+
+
+### Bug Fixes
+
+* **core:** clear WCAG AA on the toolbar's own text ([#107](https://github.com/nejcm/dev-toolbar/issues/107)) ([5b68998](https://github.com/nejcm/dev-toolbar/commit/5b6899827d480815d98da6c0a40d60e954c2d97b))
+
 ## [0.10.1](https://github.com/nejcm/dev-toolbar/compare/v0.10.0...v0.10.1) (2026-09-11)
 
 
