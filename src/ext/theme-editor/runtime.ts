@@ -116,7 +116,12 @@ export interface ThemeEditorRuntimeOptions {
   redactOptions?: RedactOptions;
   /** Query parameter carrying a shared recipe. Default `"dtb-theme"`. `null` disables. */
   themeParam?: string | null;
-  /** Persist edits through `api.storage`. Default `true`. */
+  /**
+   * Persist edits through `api.storage`. Default `true`.
+   *
+   * `true` also keeps edits across a `stop()`/`start()` when the adapter throws
+   * and nothing could be written; `false` resets the map on every `start()`.
+   */
   persist?: boolean;
   /** Clock, injectable for tests. Default `Date.now`. */
   now?: () => number;

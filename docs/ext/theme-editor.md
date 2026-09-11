@@ -46,6 +46,12 @@ So it behaves like `/ext/flags`, which changes what your app *does*:
   will keep. Without `tokens` every value is checked as a `string`, the loosest type: the
   whole security pass still runs, but a value your catalogue declares as a `number` or
   `length` and would refuse as one survives.
+- **Edits outlive a restart the storage cannot serve.** With `persist: true` on a
+  browser that throws from `localStorage` — site data blocked — the edits live only in
+  the session map, and toggling the toolbar off and on keeps them: a read that *threw*
+  is no longer mistaken for "nothing stored" and does not replace the live map
+  (`#91`). `persist: false` is the deliberate exception, and resets the map on every
+  `start()`: a non-persisting editor remembers nothing across a restart by design.
 - **There is a kill switch.** Any page loaded with `?dtb-theme=reset` drops every edit
   *before* any of them is applied, because the edit that makes the page unreadable is
   the one you cannot see the panel to remove.

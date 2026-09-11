@@ -37,6 +37,11 @@ back as CSS, a recipe, a design-tokens export or a link.
   `dtb:v1:<instanceId>:ext:<id>:overrides` and reapply on the next mount.
   `?dtb-theme=reset` drops them before any are applied, so a broken edit is
   recoverable even when it makes the panel unreadable.
+- **A throwing store does not wipe the session.** Under `persist: true` the
+  stored map replaces the live one only when `getItem` actually returned; a read
+  that threw looks like an empty map and is ignored, so a `stop()`/`start()` on a
+  browser with site data blocked keeps the edits. `persist: false` resets on every
+  `start()`, deliberately. `__tests__/runtime.test.ts` pins both.
 - **Exact reversal.** Edits are inline custom properties on the surface element.
   Prior values are recorded and restored, and an element with no original
   `style` attribute ends up with none — `setProperty` then `removeProperty`
