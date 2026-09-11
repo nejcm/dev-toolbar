@@ -6,9 +6,16 @@ import type { Page, TestInfo } from "@playwright/test";
 test("collapses in priority order as the window narrows", async ({ toolbar, page }) => {
   // Priorities live in examples/playground/src/extensions.tsx; the assertion is
   // on the *order*, so a new extension in the middle does not break it.
-  await page.setViewportSize({ width: 520, height: 800 });
+  // 700px, not the 520px this used to start from. The assertion below wants the
+  // top four priorities seated; at 520px the narrowest that seats all four was
+  // 494px here, i.e. 26px of slack — and Linux's monospace fallback is wider
+  // than macOS's, enough that CI sat within a few pixels of the edge. The bar's
+  // composition is unchanged from 494px to past 900px (every id below is on the
+  // same side of the line across that whole range), so 700px pins exactly what
+  // 520px did with ~200px of slack instead of a handful, on either platform.
+  await page.setViewportSize({ width: 700, height: 800 });
   await expect.poll(() => toolbar.read().then((s) => s.shell.overflow.present)).toBe(true);
-  // The exact bar at 520px moves whenever the playground gains a chip, so the
+  // The exact bar here moves whenever the playground gains a chip, so the
   // assertion is on the ends of the priority scale: the highest-priority ids
   // stay, the lowest-priority ones go, and `agent` (-1) is always first out.
   await expect
