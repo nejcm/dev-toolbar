@@ -14,6 +14,13 @@
   style break at the boundary is accepted, not an oversight.
 -->
 
+## [0.10.3](https://github.com/nejcm/dev-toolbar/compare/v0.10.2...v0.10.3) (2026-09-11)
+
+
+### Bug Fixes
+
+* **kit:** stop the panel control reset landing on a bar trigger ([#109](https://github.com/nejcm/dev-toolbar/issues/109)) ([badce70](https://github.com/nejcm/dev-toolbar/commit/badce70ec9fc8fd2783a7eafd60a4fc8d4afac36))
+
 ## [0.10.2](https://github.com/nejcm/dev-toolbar/compare/v0.10.1...v0.10.2) (2026-09-11)
 
 

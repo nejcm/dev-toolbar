@@ -1,6 +1,6 @@
 {
   "name": "@nejcm/dev-toolbar",
-  "version": "0.10.2",
+  "version": "0.10.3",
   "private": false,
   "description": "Extensible, low-overhead in-app developer toolbar for React applications: runtime health signals, feature flags, overlays and diagnostics.",
   "keywords": [
