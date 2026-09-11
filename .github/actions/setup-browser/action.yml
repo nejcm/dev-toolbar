@@ -1,0 +1,52 @@
+name: Set up a Playwright browser
+description: Restore the Playwright browser cache and install Chromium for one package.
+
+# Used by the two lanes that drive a real Chromium, each from its own
+# `@playwright/test` pin. Callers must checkout first, and must set
+# `timeout-minutes` on the `uses:` step — a composite action cannot set its
+# own, and a cold install is a ~150 MB fetch.
+
+inputs:
+  working-directory:
+    description: Package whose `@playwright/test` pin decides the browser build.
+    required: true
+
+runs:
+  using: composite
+  steps:
+    # Read from the package's own manifest, so a Dependabot bump of that pin
+    # keys a fresh cache instead of restoring a browser build it cannot use.
+    - name: Read the pinned Playwright version
+      id: pin
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      run: |
+        version=$(jq -r '.devDependencies["@playwright/test"]' package.json)
+        if [ -z "$version" ] || [ "$version" = "null" ]; then
+          echo "::error::No exact @playwright/test pin in ${PWD}/package.json"
+          exit 1
+        fi
+        echo "version=${version}" >> "$GITHUB_OUTPUT"
+
+    # No `restore-keys`: a near-miss restores a build this pin cannot use, and
+    # Playwright then downloads the right one on top — both end up in the
+    # tarball the post step saves. No `github.job` segment either (unlike
+    # setup-job): the two lanes race to save one key, but they write identical
+    # browsers, so scoping would double a ~271 MB cache to buy nothing.
+    - name: Cache Playwright's browsers
+      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ~/.cache/ms-playwright
+        key: ${{ runner.os }}-playwright-${{ steps.pin.outputs.version }}
+
+    # Not `--with-deps`. On 2026-09-11 the apt half spent 7m20s on a cache
+    # *hit* and cancelled the run: every library was already the newest version
+    # in the runner image, and what it was fetching was 21 MB of CJK/Cyrillic
+    # fallback fonts from a mirror serving at 48 kB/s. Playwright's launch
+    # check is ldd-only and never validated those fonts, so it bought nothing —
+    # and a missing library still fails loudly, by name, at browser launch.
+    # Install the named package here if that day comes.
+    - name: Install Chromium
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      run: bunx playwright install chromium

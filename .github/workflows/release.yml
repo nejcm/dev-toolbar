@@ -117,7 +117,12 @@ jobs:
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
 
-  # 2. The only CI the release commit gets — ci.yml skips it as both PR and push, so this is what verifies the version bump before it reaches npm. Relies on ci.yml's `workflow_call`/`called` input and the `chore(release):` marker (see CONTRIBUTING.md, "Releasing"); don't remove either.
+  # 2. The only CI the release commit gets — ci.yml skips it as a PR and has no push trigger, so this is what verifies the version bump before it reaches npm. Relies on ci.yml's `workflow_call` and the `chore(release):` marker (see CONTRIBUTING.md, "Releasing"); don't remove either.
+  #
+  # It runs the *whole* of CI, and that is deliberate even though a release commit touches only package.json, CHANGELOG.md and .release-please-manifest.json — `src/` is byte-identical to a commit CI already passed, so `unit` and `browser` re-prove nothing about the diff. Two things keep them here anyway:
+  #  - This repository is private on a plan without branch protection, so `main` accepts a direct push, and the `chore(release):` title marker lets a PR opt out of CI by name. Neither path is hypothetical enough to make this the one gate that trusts `main` was already verified.
+  #  - Since ci.yml split into parallel lanes the gate finishes in about the time its slowest lane takes, not the sum — the cost that would have justified trimming it is mostly gone.
+  # If that first point ever stops being true (branch protection, required checks), skipping `unit` and `browser` here is the obvious saving.
   gate:
     name: gate (CI on the release commit)
     needs: [release-please]
@@ -150,6 +155,8 @@ jobs:
         with:
           # The release tag, not github.sha (predates the release commit) — else this packs and publishes the previous version. Observed: v0.4.0 tagged, tarball built as 0.3.0.
           ref: ${{ needs.release-please.outputs.tag_name }}
+          # This job holds `id-token: write`. Nothing here talks to git after the fetch, so the checkout token has no reason to stay in `.git/config` next to the credential that can publish.
+          persist-credentials: false
 
       - name: Set up bun
         uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
@@ -185,8 +192,9 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-bun-
 
+      # `--ignore-scripts`, unlike everywhere else: this is the one job that can mint npm's publish credential, and a dependency `postinstall` runs before any code in this repository does. Verified that the tree still builds from a clean `--ignore-scripts` install. (The same threat is why ci.yml's `package` lane, not this job, runs the jest-consumer test.) Not closed: `prepublishOnly` below still runs tsup and tsc from `node_modules` here — that needs packing in `gate` and publishing the artifact instead.
       - name: Install dependencies
-        run: bun install --frozen-lockfile
+        run: bun install --frozen-lockfile --ignore-scripts
 
       # Lifecycle scripts stay on so prepublishOnly (typecheck && build) rebuilds dist/ at pack time, not from leftovers. No --provenance: provenance needs a public source repo, so nothing here is attested and the flag would not change that (see CONTRIBUTING, "How the first publish happened"). npm not `bun publish` — bun supports no OIDC (oven-sh/bun#18611).
       - name: Publish to npm

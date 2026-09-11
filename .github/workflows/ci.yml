@@ -1,40 +1,27 @@
 name: CI
 
 on:
-  # No `branches:` filter: it matches on the PR's *base* branch, which misses
-  # stacked/slash-named branches.
-  #
-  # `ready_for_review` is added so a draft->ready flip re-runs `verify` instead
-  # of merging on a stale green check. `converted_to_draft` is deliberately
-  # absent; see the job's `if:`.
+  # No `branches:` filter: it matches the PR's *base* branch, which misses
+  # stacked/slash-named branches. `ready_for_review` re-runs CI on a
+  # draft->ready flip; `converted_to_draft` is absent since that flip changes
+  # no code and would replace a real status with a skipped one.
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
     # Only on this trigger — `workflow_call` has no path filter, so
     # release.yml's gate is untouched. A skipped workflow reports no status, so
-    # if `verify` becomes a required check this needs a same-named no-op job.
+    # a job below that ever becomes a required check needs a same-named no-op.
     paths-ignore:
       - "**/*.md"
       - "docs/**"
       - "LICENSE"
-  # Exposed so the Phase 4 release workflow can call CI as its release gate.
   workflow_call:
     inputs:
-      called:
-        description: >-
-          Always true when reusable. Lets the release-commit skip below tell a
-          release push apart from a release workflow calling CI as its gate —
-          on `workflow_call`, `github.event_name` belongs to the caller, so
-          `github` alone can't distinguish them.
-        type: boolean
-        required: false
-        default: true
       ref:
         description: >-
           Commit-ish to check out. Release callers MUST pass the release tag:
-          on `workflow_call` checkout defaults to the caller's `github.sha`,
-          which is the push that started the run, not the release commit
-          created mid-run. Empty verifies the triggering ref (what
-          `pull_request` wants).
+          checkout otherwise defaults to the caller's `github.sha`, the push
+          that started the run rather than the release commit created mid-run.
+          Empty verifies the triggering ref.
         type: string
         required: false
         default: ""
@@ -42,28 +29,35 @@ on:
 permissions:
   contents: read
 
-# `github.workflow`/`github.ref` resolve to the caller's values on
-# `workflow_call`, so a release-triggered run lands in the caller's
-# concurrency group — the caller needs its own `concurrency` with
-# `cancel-in-progress: false` so a release isn't cancelled mid-flight.
+# `github.workflow`/`github.ref` resolve to the *caller's* values here, so a
+# release-triggered run groups as `Release-refs/heads/main` — neither this
+# group nor release.yml's literal `release` one. What stops a release being
+# cancelled mid-flight is release.yml's own `cancel-in-progress: false`, which
+# serialises release runs so two gates never overlap.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  verify:
-    name: verify
+  # Does CI apply to this event? The three real jobs `needs:` this one, and a
+  # skipped job skips its dependents — so the condition lives in one place
+  # instead of three drifting copies. A dependent that ever gains job-level
+  # `if: always()`/`!cancelled()` opts out of that and would run on a draft or
+  # release PR; step-level `!cancelled()` is unaffected.
+  #
+  # Costs ~15s and one billed minute per run (metered plan, jobs round up) —
+  # as does each lane below, which is the price of the wall clock halving.
+  #
+  # Both skips hand the release commit to release.yml's `gate`, the CI that
+  # actually blocks publishing:
+  #  1. The release PR, by branch prefix or title marker (either alone
+  #     survives the other changing). Same-repo only: both are attacker-chosen
+  #     on a fork PR, so without that clause any outsider could opt out of CI.
+  #     Cost is a hand-written `chore(release):` PR skipping CI.
+  #  2. Draft PRs.
+  guard:
+    name: guard
     runs-on: ubuntu-latest
-    # Two skips hand the release commit to release.yml's `gate`, the CI that
-    # actually blocks publishing:
-    #  1. The release PR (GitHub triggers it despite `GITHUB_TOKEN` opening
-    #     it). The title marker backstops the branch prefix in case
-    #     release-please-config.json's title pattern changes; cost is a
-    #     hand-written `chore(release):` PR skipping CI. Same-repo only: both
-    #     the branch name and the title are attacker-chosen on a fork PR, so
-    #     without that clause any outsider could opt their own PR out of CI.
-    #  2. Draft PRs — `converted_to_draft` isn't a trigger since that flip
-    #     changes no code and would replace a real status with a skipped one.
     if: >-
       (github.event_name != 'pull_request'
       || github.event.pull_request.head.repo.full_name != github.repository
@@ -71,124 +65,62 @@ jobs:
       || startsWith(github.event.pull_request.title, 'chore(release):')))
       && (github.event_name != 'pull_request'
       || github.event.pull_request.draft != true)
+    timeout-minutes: 5
+    steps:
+      - name: This event gets CI
+        run: echo "Running CI for ${{ github.event_name }}."
+
+  # Build the package, check its shape, prove what a consumer installs.
+  #
+  # `verify:static` is `verify` minus `vitest run` — `unit` runs that suite
+  # instrumented, so a plain `verify` here would pay for it twice. The two
+  # fixtures share this lane because they pack the `dist/` it just built; on
+  # their own they would repeat a checkout, install and build to save nothing.
+  package:
+    name: package
+    needs: [guard]
+    runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
       # Third-party actions pin a full commit SHA with the version in a
       # trailing comment (tags are mutable); dependabot.yml bumps by reading
-      # that comment. Local composite actions are referenced by path, not
-      # SHA — they're this repo's own code, covered by the checkout.
+      # it. Local composite actions go by path — own code, covered by the
+      # checkout. `persist-credentials: false`: nothing here talks to git after
+      # the fetch, so the token has no reason to sit in `.git/config`.
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ inputs.ref }}
+          persist-credentials: false
 
-      # bun + Node + install cache + `bun install --frozen-lockfile`; details
-      # live in the action.
       - name: Set up job
         uses: ./.github/actions/setup-job
 
-      # `verify:static` is `verify` minus `vitest run` (format:check,
-      # typecheck, lint, knip, build, check:package) — Coverage below runs the
-      # same suite instrumented, so a plain `verify` here paid for it twice
-      # (~90s). Contributors still get the full `bun run verify`; only CI
-      # splits it. `format:check` leads since it's cheap and the only
-      # enforcement for commits that skip the pre-commit hook.
       - name: Verify (format, typecheck, lint, unused code, build, package shape)
         run: bun run verify:static
 
-      # Must stay outside release.yml's only credentialed job — code Jest
-      # loads can still mint the OIDC token, so `--ignore-scripts` alone isn't
-      # enough; the whole test has to live elsewhere.
+      # `require()` through the CommonJS build, typechecked under node16.
+      # Must stay out of release.yml's credentialed job: code Jest loads can
+      # mint the OIDC token, so `--ignore-scripts` there would not be enough.
       #
-      # bun, not `npm ci`: npm proved nothing here and cost 2m33 a run, unable
-      # to read the bun cache `Set up job` above already warmed. Full reasoning
-      # in `test/fixtures/jest-consumer/README.md`.
+      # bun, not `npm ci`: npm proved nothing and cost 2m33 a run, unable to
+      # read the cache `Set up job` warmed. See the fixture's README.
       - name: Install the jest-consumer fixture
         run: bun install --frozen-lockfile --ignore-scripts
         working-directory: test/fixtures/jest-consumer
 
-      # Not `test:jest-consumer`, which rebuilds for local use — verify:static
-      # already produced the `dist/` this reads.
+      # Not `test:jest-consumer`, which rebuilds for local use.
       - name: Verify the packaged CommonJS consumer
         run: bun run --cwd test/fixtures/jest-consumer test
 
-      # `examples/` sits outside every `verify` gate (own tsconfig/deps,
-      # excluded from vitest/oxlint/knip) — fine while the playground was
-      # manual-only, not once it grew plugins/devToolbarAgent.ts, the
-      # dev-server half of /ext/agent's reporter that the README tells
-      # consumers to copy. `node --test` uses Node's type stripping (no build,
-      # no deps) and covers the malformed-body cases that once crashed the dev
-      # server. Needs the dist/ verify:static just built (file:../.. link); no
-      # install since the suite only imports node:* and the plugin's
-      # type-only `vite` import.
-      - name: Test the playground's dev-server plugin
-        run: bun run test
-        working-directory: examples/playground
-
-      # Needs the link, so it follows the install above. Not
-      # --frozen-lockfile: file:../.. re-links against the dist/ just built,
-      # and bun won't restore that from cache.
-      - name: Install the playground
-        run: bun install
-        working-directory: examples/playground
-
-      - name: Typecheck the playground
-        run: bun run typecheck
-        working-directory: examples/playground
-
-      # Read from the two manifests rather than hardcoded here, so a Dependabot
-      # bump of either exact `@playwright/test` pin keys a fresh cache on its
-      # own instead of restoring a browser build that no longer matches. Both
-      # are pinned the same today, which makes the second install below a
-      # no-op; the key does not rely on that staying true.
-      - name: Read the pinned Playwright versions
-        id: playwright
-        run: |
-          pg=$(jq -r '.devDependencies["@playwright/test"]' examples/playground/package.json)
-          vc=$(jq -r '.devDependencies["@playwright/test"]' test/fixtures/vite-consumer/package.json)
-          echo "versions=${pg}-${vc}" >> "$GITHUB_OUTPUT"
-
-      # Playwright downloads Chromium to ~/.cache/ms-playwright and skips the
-      # download when the build it wants is already there, so a hit saves the
-      # ~150 MB fetch on every run. Same SHA and version as setup-job's cache.
-      - name: Cache Playwright's browsers
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: ~/.cache/ms-playwright
-          key: ${{ runner.os }}-playwright-${{ steps.playwright.outputs.versions }}
-
-      # The browser half of the suite: the real shell and first-party
-      # extensions in a real Chromium, driven through the playground (see
-      # examples/playground/e2e/README.md). Needs the install above and the
-      # dist/ verify:static built. Not part of `bun run test`; vitest stays
-      # fast, and this is where layout, keys and reloads get proven.
-      #
-      # Runs even on a cache hit: `--with-deps` installs the system libraries
-      # Chromium links against, which live outside the cached directory, and
-      # the browser download itself is what Playwright skips when present.
-      - name: Install the playground's Chromium
-        run: bunx playwright install --with-deps chromium
-        working-directory: examples/playground
-
-      - name: Browser tests
-        run: bun run test:e2e
-        working-directory: examples/playground
-
-      # The ESM-through-a-bundler half of the jest-consumer question: the packed
-      # tarball, unpacked into a real consumer's node_modules and served by a
-      # cold Vite dev server with the *default* dependency optimizer — the path
-      # the playground cannot take, since it links `file:../..` and opts out of
-      # the optimizer. Its steps are a unit: install, put the packed package in
-      # place (the fixture deliberately has no `@nejcm/dev-toolbar` dependency,
-      # so before `sync` its imports do not resolve and `tsc` fails with
-      # TS2307), typecheck, then its own Chromium and the run.
       - name: Install the vite-consumer fixture
         run: bun install --frozen-lockfile --ignore-scripts
         working-directory: test/fixtures/vite-consumer
 
-      # Packs the `dist/` verify:static built — not `test:vite-consumer`, which
-      # rebuilds for local use. `test` below syncs again on purpose: it is what
-      # clears `node_modules/.vite`, and a second pack costs about a second.
+      # The fixture has no `@nejcm/dev-toolbar` dependency on purpose, so
+      # before `sync` its imports do not resolve and `tsc` fails with TS2307.
+      # `test` syncs again deliberately: that is what clears
+      # `node_modules/.vite`, and a second pack costs about a second.
       - name: Put the packed package in the fixture
         run: bun run sync
         working-directory: test/fixtures/vite-consumer
@@ -197,52 +129,70 @@ jobs:
         run: bun run typecheck
         working-directory: test/fixtures/vite-consumer
 
-      # From the fixture's own `@playwright/test`, so the browser it gets is the
-      # one its pin wants whether or not that pin still equals the playground's.
-      # A no-op download while they are equal; `--with-deps` is idempotent.
-      - name: Install the vite-consumer fixture's Chromium
-        run: bunx playwright install --with-deps chromium
-        working-directory: test/fixtures/vite-consumer
+      - name: Install Chromium
+        uses: ./.github/actions/setup-browser
+        timeout-minutes: 6
+        with:
+          working-directory: test/fixtures/vite-consumer
 
+      # The ESM half the playground cannot prove: a cold Vite dev server with
+      # the *default* optimizer over a tarball in real `node_modules`. The
+      # playground links `file:../..`, which Vite treats as source.
       - name: Verify the packaged consumer through Vite's optimizer
         run: bun run test
         working-directory: test/fixtures/vite-consumer
 
-      # Traces and screenshots are only written for failures, so this is
-      # empty on green and the one thing you want on red.
       - name: Upload browser test evidence
         if: ${{ failure() }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: playwright-report
-          path: |
-            examples/playground/e2e-results/
-            test/fixtures/vite-consumer/e2e-results/
+          name: playwright-report-vite-consumer
+          path: test/fixtures/vite-consumer/e2e-results/
           retention-days: 14
           if-no-files-found: ignore
 
-      # `!cancelled()` rather than `always()`: useful on a failed
-      # verify:static, but shouldn't block a cancellation.
-      #
-      # The package's pitch is low overhead across 11 entry points, so this is
-      # the number a reviewer most wants.
+      # Both reports use `!cancelled()`, not `always()`: worth having on a
+      # failed run, not worth blocking a cancellation. knip here is report-only
+      # (it swallows its exit code) — the gate is the copy inside
+      # `verify:static`, and this still renders when that one failed.
       - name: Report bundle size
         if: ${{ !cancelled() }}
         uses: ./.github/actions/report-bundle-size
 
-      # Report-only (swallows its own exit code, see the action). knip inside
-      # verify:static above is the real gate; this re-runs it for the report
-      # even when that step failed.
       - name: Knip
         if: ${{ !cancelled() }}
         uses: ./.github/actions/knip-check
 
-      # The only run of the suite now that verify:static stops short of
-      # `vitest run`. vitest.config.ts's floors gate on top of it.
+  # The vitest suite, instrumented. Its own lane because it is minutes long:
+  # until 2026-09-11 it ran last in one serial job, where a slow apt fetch four
+  # steps upstream cancelled the coverage gate outright.
+  unit:
+    name: unit
+    needs: [guard]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.ref }}
+          persist-credentials: false
+
+      - name: Set up job
+        uses: ./.github/actions/setup-job
+
+      # Not optional: `core/boundary`, `testing/exports` and `ext/a11y/peer`
+      # assert against `dist/` and *hard-fail* rather than skip when `CI` is
+      # set, so a CI run cannot quietly drop the only end-to-end assertions
+      # about the published entry points.
+      - name: Build
+        run: bun run build
+
+      # The only run of the suite; vitest.config.ts's floors gate on top of it.
       - name: Coverage
         run: bun run test:coverage
 
-      # Reported even on failure — that's the run you most want the numbers on.
+      # Reported even on failure — that's the run you most want numbers on.
       - name: Report coverage
         if: ${{ !cancelled() }}
         run: |
@@ -275,3 +225,72 @@ jobs:
           path: coverage/lcov.info
           retention-days: 14
           if-no-files-found: warn
+
+  # The real shell and extensions in a real Chromium, through the playground
+  # (see examples/playground/e2e/README.md) — where layout, keys and reloads
+  # get proven.
+  #
+  # Builds its own `dist/` rather than downloading one: the build costs about
+  # what the artifact round-trip does, and an artifact would trip the
+  # stale-dist guard in `e2e/global-setup.ts`, which compares `src/` and
+  # `dist/` mtimes — a fresh checkout stamps `src/` with *now*.
+  browser:
+    name: browser
+    needs: [guard]
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.ref }}
+          persist-credentials: false
+
+      - name: Set up job
+        uses: ./.github/actions/setup-job
+
+      - name: Build
+        run: bun run build
+
+      # `examples/` sits outside every `verify` gate (own tsconfig/deps,
+      # excluded from vitest/oxlint/knip) — fine while the playground was
+      # manual-only, not once it grew plugins/devToolbarAgent.ts, the
+      # dev-server half of /ext/agent's reporter the README tells consumers to
+      # copy. `node --test` needs no build or install, and covers the
+      # malformed-body cases that once crashed the dev server.
+      - name: Test the playground's dev-server plugin
+        run: bun run test
+        working-directory: examples/playground
+
+      # Not --frozen-lockfile: `file:../..` re-links against the `dist/` just
+      # built, and bun won't restore that from cache.
+      - name: Install the playground
+        run: bun install
+        working-directory: examples/playground
+
+      - name: Typecheck the playground
+        run: bun run typecheck
+        working-directory: examples/playground
+
+      # Bounded here because a composite action cannot set its own timeout,
+      # and on a cache miss this is a ~150 MB fetch.
+      - name: Install Chromium
+        uses: ./.github/actions/setup-browser
+        timeout-minutes: 6
+        with:
+          working-directory: examples/playground
+
+      - name: Browser tests
+        run: bun run test:e2e
+        working-directory: examples/playground
+
+      # Traces and screenshots are written only for failures: empty on green,
+      # and the one thing you want on red.
+      - name: Upload browser test evidence
+        if: ${{ failure() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: playwright-report-playground
+          path: examples/playground/e2e-results/
+          retention-days: 14
+          if-no-files-found: ignore

@@ -15,8 +15,11 @@ bun run test:e2e:ui         # Playwright's UI mode, for writing or debugging a s
 bunx playwright show-report e2e-results/report
 ```
 
-Chromium is installed once with `bunx playwright install chromium` (CI does
-`--with-deps`). The first run of a fresh checkout needs it.
+Chromium is installed once with `bunx playwright install chromium`. The first
+run of a fresh checkout needs it. CI runs the same command and deliberately
+*not* `--with-deps`: the runner image already ships every library Chromium
+links against, and the apt half once spent 7m20s fetching fallback fonts from
+a slow mirror and cancelled the run (see `.github/actions/setup-browser`).
 
 ## How it is put together
 

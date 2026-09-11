@@ -27,9 +27,13 @@ That is `format:check && typecheck && lint && knip && build && test &&
 check:package`, in sequence. `format:check` goes first because it takes about
 ten milliseconds: if the tree is mis-formatted you find out immediately rather
 than after `tsc` has run. If it passes locally it passes in CI, and a PR that
-fails it will not merge. CI does not run it verbatim, though: it runs
-`verify:static` and then `test:coverage`, so the suite runs once there instead
-of twice.
+fails it will not merge. CI does not run it verbatim, though: it splits the
+work across three parallel jobs — `package` (`verify:static`, then the two
+packaging fixtures, which pack the `dist/` it just built), `unit`
+(`test:coverage`) and `browser` (the playground's Playwright suite).
+`verify:static` stops short of `vitest run` because `unit` runs the same suite
+instrumented, so the suite runs once across CI instead of twice, and no lane
+can delay another.
 
 The individual pieces, when you want a faster loop:
 
@@ -79,8 +83,11 @@ it.
 out of `verify` because the instrumentation is slow enough to notice in a local
 loop. The thresholds in `vitest.config.ts` are floors set just under the measured
 numbers, so they fail on a regression rather than on ordinary movement. CI runs
-this after `verify:static`, where it is the only run of the suite, and a drop
-below a floor fails the build.
+it in the `unit` job, where it is the only run of the suite, and a drop below a
+floor fails the build. That job exists so nothing else can take it down with
+it: until 2026-09-11 coverage ran last in a single serial job, and a stalled
+Ubuntu mirror four steps upstream — fetching fallback fonts Chromium did not
+need — ran the job past its limit and cancelled the coverage gate outright.
 
 Coverage measures **all** of `src/` bar the test files. If you are tempted to add
 an `exclude` entry, measure both ways first and put the numbers in the comment —
@@ -370,7 +377,12 @@ not write changelog entries by hand.
    release **tag**, not `github.sha` — that is the commit the run started from,
    which predates the release commit, and checking it out would gate the wrong
    tree and pack the previous version. The gate is `ci.yml` called as a
-   reusable workflow, and it is the only CI the release commit gets.
+   reusable workflow, and it is the only CI the release commit gets. It runs
+   all of CI, not a subset, even though a release commit changes only
+   `package.json`, `CHANGELOG.md` and `.release-please-manifest.json`: this
+   repository has no branch protection, so `main` accepts a direct push, and
+   the `chore(release):` marker below lets a PR opt out of CI by title. The
+   gate is what stands between either of those and npm.
    `ci.yml` skips the release PR itself (by release-please's
    `release-please--*` branch prefix, or the `chore(release):` title marker, and
    only for a **same-repo** PR — otherwise any fork could opt out of CI by

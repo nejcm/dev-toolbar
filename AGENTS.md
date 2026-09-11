@@ -72,12 +72,14 @@ invisible to the pre-`exports` `node10` algorithm, so consumers need
 unsupported.
 
 `bun run verify` is the one command that matters. If it passes locally it passes in
-CI — but CI does not run it verbatim: `.github/workflows/ci.yml` runs `verify:static`
-and then `test:coverage`, which is `verify`'s `vitest run` with instrumentation and
-the floors on top. Running plain `verify` there paid for the same 2,706 tests twice.
-`size` is an advisory job-summary report. CI re-runs `knip` afterwards too, but only
-to write the readable report to the job summary — the gate is the `knip` inside
-`verify:static`, so unused code fails on your machine first.
+CI — but CI does not run it verbatim: `.github/workflows/ci.yml` splits it across
+three parallel jobs. `package` runs `verify:static` and then the two consumer
+fixtures; `unit` runs `test:coverage`, which is `verify`'s `vitest run` with
+instrumentation and the floors on top; `browser` runs the playground's Playwright
+suite. Running plain `verify` in the first of those would pay for the same 2,706
+tests twice. `size` is an advisory job-summary report. CI re-runs `knip` afterwards
+too, but only to write the readable report to the job summary — the gate is the
+`knip` inside `verify:static`, so unused code fails on your machine first.
 
 `bun audit` is **not** on the pull-request path. It lives in
 `.github/workflows/audit.yml`, daily and on demand: its answer depends on the
