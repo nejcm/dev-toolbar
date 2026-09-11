@@ -32,9 +32,29 @@
  */
 import { createCommandMenuRuntime, isApplePlatform } from "./runtime";
 import { CommandMenuOverlay, CommandMenuTrigger } from "./ui";
-import { resolveStyleNonce } from "@nejcm/dev-toolbar/kit";
-import type { CommandMenuRuntimeOptions } from "./runtime";
+import { resolvePresentation, resolveStyleNonce } from "@nejcm/dev-toolbar/kit";
+import type { CompactPresentation } from "@nejcm/dev-toolbar/kit";
+import type { CommandMenuRuntimeOptions, CommandMenuSnapshot } from "./runtime";
 import type { DevToolbarExtension, ExtensionRuntimeApi, ToolbarAlign } from "../../core/contract";
+
+/**
+ * The bar trigger's presentation: an icon, and an accessible name to go with
+ * it. Two knobs, not four — this trigger has a symbol and a hotkey hint,
+ * neither a value, so no preset member would mean anything an icon doesn't
+ * already (`plans/bar-presentation-icons-v1.md`, group C).
+ *
+ * A `Pick` of the shared interface, not a lookalike, so `icon` and `name`
+ * mean exactly what they mean on the other eight and widening later is
+ * additive.
+ *
+ * `TView` is `CommandMenuSnapshot` — the same object the trigger already
+ * renders from and `diagnostics()` returns, so `snapshot.open` is there to
+ * branch an icon on.
+ */
+export type CommandMenuPresentation = Pick<
+  CompactPresentation<CommandMenuSnapshot>,
+  "icon" | "name"
+>;
 
 export interface CommandMenuOptions extends CommandMenuRuntimeOptions {
   /** Extension id. Default `"command-menu"`. */
@@ -67,6 +87,27 @@ export interface CommandMenuOptions extends CommandMenuRuntimeOptions {
    * slot prop core forwards from `<DevToolbar>`.
    */
   styleNonce?: string;
+  /**
+   * Your own icon for the bar trigger, and the accessible name to go with it.
+   * Two knobs, not the four value-bearing extensions take; see
+   * {@link CommandMenuPresentation}.
+   *
+   * An icon replaces only the hardcoded `⌘` — the hotkey hint still follows
+   * it in the bar, and the label still follows it in the `⋮` menu, so the
+   * trigger is never wordless. It lands in a `data-dtb-part="cmd-icon"` span
+   * carrying kit's glyph kind, which clamps it (`cmd-glyph` keeps its own
+   * type-setting, since that part covers every modifier symbol this
+   * extension paints, palette rows included).
+   *
+   * `name` overrides `aria-label`; a whitespace-only return is ignored, so
+   * the trigger is never left unnamed. `title` is not overridable — it
+   * explains, not names, and still spells out the hotkey once the hint is
+   * replaced.
+   *
+   * The icon lives in this factory's closure and travels as a prop, like
+   * `label` and `injectStyles`.
+   */
+  presentation?: CommandMenuPresentation;
 }
 
 /** Builds the extension. Call once — the result owns the palette's state and, once started, the key binding. */
@@ -82,10 +123,15 @@ export function commandMenu(options: CommandMenuOptions = {}): DevToolbarExtensi
     emptyMessage = "No matching command.",
     injectStyles = true,
     styleNonce: optionNonce,
+    presentation: presentationOption,
     shortcut,
     apple = isApplePlatform(),
     rememberRecent,
   } = options;
+
+  // Resolved once here — the closure where an icon and a name callback live,
+  // like `label` and `injectStyles`.
+  const presentation = resolvePresentation<CommandMenuSnapshot>(presentationOption);
 
   // Built here, not in start(api): slot functions run on first render, before any effect fires.
   const runtime = createCommandMenuRuntime({
@@ -117,6 +163,7 @@ export function commandMenu(options: CommandMenuOptions = {}): DevToolbarExtensi
       <CommandMenuTrigger
         runtime={runtime}
         label={label}
+        presentation={presentation}
         isOverflowed={isOverflowed}
         injectStyles={injectStyles}
         styleNonce={resolveStyleNonce(optionNonce, styleNonce)}

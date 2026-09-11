@@ -29,9 +29,10 @@
  * the app under test.
  */
 import { writeClipboardTextOrThrow } from "@nejcm/dev-toolbar/runtime";
-import { resolveStyleNonce } from "@nejcm/dev-toolbar/kit";
+import { resolvePresentation, resolveStyleNonce } from "@nejcm/dev-toolbar/kit";
 import { DEFAULT_LOAD_ON, createA11yRuntime } from "./runtime";
 import { A11yChip, A11yPanel, A11ySurface } from "./ui";
+import type { CompactPresentationInput } from "@nejcm/dev-toolbar/kit";
 import type { A11yRuntimeOptions } from "./runtime";
 import type { A11yReport } from "./types";
 import type {
@@ -71,6 +72,29 @@ export interface A11yOptions extends A11yRuntimeOptions {
    * prop core forwards from `<DevToolbar>`.
    */
   styleNonce?: string;
+  /**
+   * How the bar control presents itself: a preset, your own icon, a render
+   * callback, and an accessible-name override. A bare preset is shorthand —
+   * `presentation: "icon-value"`.
+   *
+   * Each knob is invoked once per render, in the bar and the `⋮` menu alike,
+   * with the same `A11yReport` the panel and `diagnostics()` read. Presets
+   * operate on the short bar word (`"a11y"`): `label` stays the overflow and
+   * accessible-name identity, so `"icon-label"` paints `"a11y"` in the bar and
+   * `"Accessibility"` in the menu.
+   *
+   * `render` supplies the chip's children; the state attributes,
+   * `aria-expanded` and `title` stay the extension's. Returning `undefined`
+   * falls through to the preset. `name` overrides `aria-label` (a
+   * whitespace-only return is ignored) — prefer a name that doesn't change
+   * with the report's `total`, or a screen reader re-announces it every scan.
+   *
+   * A `ReactNode` cannot be signed, so the icon and callbacks live in this
+   * closure and travel as props, never into the a11y store's snapshot.
+   *
+   * `docs/adr/ADR-004-per-extension-bar-presentation.md`.
+   */
+  presentation?: CompactPresentationInput<A11yReport>;
 }
 
 /** Builds the extension. Call it once — the returned object owns the store and the scan state. */
@@ -85,8 +109,15 @@ export function a11y(options: A11yOptions = {}): DevToolbarExtension {
     keepMounted = true,
     injectStyles = true,
     styleNonce: optionNonce,
+    // Pulled out so it isn't spread into `createA11yRuntime` below with the
+    // rest of `options`.
+    presentation: presentationOption,
     ...runtimeOptions
   } = options;
+
+  // Resolved once here — the closure the icon and callbacks live in, like
+  // `label` and `injectStyles`.
+  const presentation = resolvePresentation(presentationOption);
 
   const runtime = createA11yRuntime(runtimeOptions);
   const loadOn = runtimeOptions.loadOn ?? DEFAULT_LOAD_ON;
@@ -222,6 +253,7 @@ export function a11y(options: A11yOptions = {}): DevToolbarExtension {
       <A11yChip
         runtime={runtime}
         label={label}
+        presentation={presentation}
         isOverflowed={isOverflowed}
         isPanelOpen={isPanelOpen}
         injectStyles={injectStyles}

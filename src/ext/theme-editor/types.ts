@@ -389,6 +389,30 @@ export interface ThemeSnapshot {
   notice: string | null;
 }
 
+/**
+ * What a consumer's `presentation` callbacks are told about the bar control.
+ *
+ * Deliberately not `ThemeSnapshot`: as a callback parameter this type is
+ * contravariant, so every field here is one that can never be renamed without
+ * breaking consumer code. It carries only what the chip paints —
+ * `tokenCount`/`overriddenCount`/`preview` drive the value word and the
+ * `data-dtb-edited`/`-preview` attributes; `supplied`/`writable` are the two
+ * states an icon would most want to draw differently. Derivable fields
+ * (`edited`, the value word, `surface`'s shape) are left out.
+ */
+export interface ThemeEditorBarView {
+  /** How many design tokens the catalogue declares. The value word when nothing is edited. */
+  tokenCount: number;
+  /** How many carry a local edit. Drives `data-dtb-edited` and the value word. */
+  overriddenCount: number;
+  /** False while edits are held back so you can see the application untouched. Drives `data-dtb-preview`. */
+  preview: boolean;
+  /** False when the consumer supplied no tokens at all. */
+  supplied: boolean;
+  /** False when there is nowhere to write — no document, or no element matches the surface. */
+  writable: boolean;
+}
+
 /** Chip/row colour. Same vocabulary the other extensions use. */
 export type TokenSeverity = Exclude<SeverityWithOverride, "ok">;
 

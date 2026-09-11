@@ -8,7 +8,16 @@ import {
   Row,
   Rows,
   Tag,
+  renderCompact,
+  renderCompactParts,
+  resolveAccessibleName,
+  resolveCompactControl,
   useExtensionSurface,
+} from "@nejcm/dev-toolbar/kit";
+import type {
+  CompactDefaults,
+  CompactParts,
+  ResolvedCompactPresentation,
 } from "@nejcm/dev-toolbar/kit";
 import { ensureA11yStyles } from "./css";
 import { IMPACT_SEVERITY, selectionKey, worstImpact } from "./types";
@@ -21,6 +30,12 @@ import type { A11yRuntime } from "./runtime";
  * Everything here reads `snapshot.report` — the same object `diagnostics()`
  * and the commands return, so the panel and an agent see identical, equally
  * masked facts.
+ *
+ * `presentation` arrives already resolved and is read via `/kit`'s
+ * `resolveCompactControl` and `renderCompact`, so resolution rules live in one
+ * place for all nine extensions. What stays here is the DOM: `render`
+ * supplies the chip's children, and `Chip` paints the dot before them, so no
+ * callback can cost the control its state attributes or its dot.
  */
 
 const box = (rect: RectLike): CSSProperties => ({
@@ -45,9 +60,54 @@ const chipSeverity = (report: A11yReport) => {
   return worst === null ? "ok" : IMPACT_SEVERITY[worst];
 };
 
+/**
+ * The short bar word. `label` is the extension's full identity (error chip,
+ * panel name, `⋮` row) and too long for the bar. Presets operate on this word
+ * instead; `label` stays the overflow and accessible-name identity — why the
+ * text axis is `"none" | "short" | "full"`, not a boolean
+ * (`plans/bar-presentation-icons-v1.md`, "Which text").
+ */
+const SHORT_LABEL = "a11y";
+
+/**
+ * Today's tree, expressed as parts. `resolveCompactControl` returns these when
+ * the preset is `"default"` — handed in rather than known to kit, since
+ * `"default"` means *whatever this extension renders today*, and that differs
+ * per extension. Being exactly expressible as parts is what makes "default
+ * output is byte-identical" structural rather than a claim.
+ */
+const DEFAULTS: CompactDefaults = {
+  bar: { icon: false, text: "short", value: true },
+  overflow: { icon: false, text: "full", value: true },
+};
+
+/**
+ * The icon and the text, as the chip's children rather than `Chip`'s
+ * `icon`/`label`/`value` slots
+ * (`docs/adr/ADR-004-per-extension-bar-presentation.md`). `Chip` renders
+ * children right after the dot, in the slots' own position. The fragment is
+ * kit's `renderCompactParts` — shared now that six extensions wrote it
+ * identically.
+ */
+function iconAndText(label: string, parts: CompactParts, icon: ReactNode): ReactNode {
+  return renderCompactParts({
+    parts,
+    icon,
+    iconProps: { "data-dtb-part": "a11y-icon" },
+    short: SHORT_LABEL,
+    full: label,
+    // `data-dtb-part` only — `[data-dtb-kind="label"]` tints with
+    // `--dtb-muted`, and this chip has never been tinted; that's a separate
+    // visual decision, not a side effect of naming the span.
+    textProps: { "data-dtb-part": "a11y-label" },
+  });
+}
+
 export interface ChipProps {
   runtime: A11yRuntime;
   label: string;
+  /** Already through `resolvePresentation`, in the factory closure. */
+  presentation: ResolvedCompactPresentation<A11yReport>;
   isOverflowed: boolean;
   isPanelOpen: boolean;
   injectStyles: boolean;
@@ -58,6 +118,7 @@ export interface ChipProps {
 export function A11yChip({
   runtime,
   label,
+  presentation,
   isOverflowed,
   isPanelOpen,
   injectStyles,
@@ -65,17 +126,36 @@ export function A11yChip({
   onToggle,
 }: ChipProps): ReactNode {
   const { report } = useExtensionSurface(runtime.store, injectStyles, ensureA11yStyles, styleNonce);
-  const accessibleLabel =
-    report.status === "ok"
-      ? `${label}, ${report.total} violation${report.total === 1 ? "" : "s"}`
-      : `${label}, ${report.status}`;
+  const severity = chipSeverity(report);
+  const control = resolveCompactControl(presentation, report, { isOverflowed, defaults: DEFAULTS });
+  const fallback = (
+    <>
+      {iconAndText(label, control.parts, control.icon)}
+      {/* The order `Chip`'s own value slot wrote before this moved into the
+          chip's children: kind, severity, then the site's props. */}
+      {control.parts.value ? (
+        <span data-dtb-kind="value" data-dtb-severity={severity} data-dtb-part="a11y-value">
+          {chipValue(report)}
+        </span>
+      ) : null}
+    </>
+  );
 
   return (
     <button
       type="button"
       data-dtb-part="trigger"
       aria-expanded={isPanelOpen}
-      aria-label={accessibleLabel}
+      // `presentation.name` overrides this; a whitespace-only override is
+      // ignored so the trigger is never left unnamed. `title` explains, it
+      // does not name, so it's not overridable.
+      aria-label={resolveAccessibleName(
+        presentation.name,
+        report,
+        report.status === "ok"
+          ? `${label}, ${report.total} violation${report.total === 1 ? "" : "s"}`
+          : `${label}, ${report.status}`,
+      )}
       onClick={onToggle}
       title={
         report.status === "unsupported"
@@ -84,14 +164,18 @@ export function A11yChip({
       }
     >
       <Chip
-        label={isOverflowed ? label : "a11y"}
-        value={chipValue(report)}
-        severity={chipSeverity(report)}
+        severity={severity}
         data-dtb-part="a11y-chip"
         data-dtb-status={report.status}
         dotProps={{ "data-dtb-part": "a11y-dot" }}
-        valueProps={{ "data-dtb-part": "a11y-value" }}
-      />
+      >
+        {renderCompact(
+          presentation,
+          report,
+          { icon: control.icon, isOverflowed, isPanelOpen },
+          fallback,
+        )}
+      </Chip>
     </button>
   );
 }

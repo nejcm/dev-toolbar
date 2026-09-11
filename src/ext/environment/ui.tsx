@@ -8,11 +8,20 @@ import {
   Row,
   Rows,
   Tag,
+  renderCompact,
+  renderCompactParts,
+  resolveAccessibleName,
+  resolveCompactControl,
   useCopyStatus,
   useExtensionSurface,
 } from "@nejcm/dev-toolbar/kit";
+import type {
+  CompactDefaults,
+  CompactParts,
+  ResolvedCompactPresentation,
+} from "@nejcm/dev-toolbar/kit";
 import { ensureEnvironmentStyles } from "./css";
-import { GROUP_LABELS } from "./types";
+import { GROUP_LABELS, kindLabel } from "./types";
 import type { EnvironmentFieldView, EnvironmentGroup, EnvironmentSnapshot } from "./types";
 import type { EnvironmentRuntime } from "./runtime";
 
@@ -21,14 +30,62 @@ import type { EnvironmentRuntime } from "./runtime";
  *
  * Everything rendered comes from the snapshot, which is already redacted —
  * these components have no access to the raw context.
+ *
+ * `presentation` arrives already resolved and is read through `/kit`'s
+ * `resolveCompactControl` and `renderCompact`. A consumer's `render` supplies
+ * only the chip's children; `Chip` still owns the dot and the state
+ * attributes. The `impersonating` marker renders after those children under
+ * every preset and under `render` alike — it is state, not presentation
+ * (`plans/bar-presentation-icons-v1.md`, invariant 2).
  */
 
-const kindLabel = (snapshot: EnvironmentSnapshot): string =>
-  snapshot.supplied && snapshot.kind !== "unknown" ? String(snapshot.kind) : "unknown";
+/**
+ * The short bar word. Presets operate on this; `label` stays the
+ * accessible-name identity (`plans/bar-presentation-icons-v1.md`,
+ * "Which text").
+ */
+const SHORT_LABEL = "env";
+
+/**
+ * Today's tree, expressed as parts — what `resolveCompactControl` falls back
+ * to under `"default"`. Environment is the one Group A chip whose overflow
+ * row isn't a different tree: it has always painted `"env"` in both places,
+ * so `overflow.text` is `"short"` here where the other four say `"full"`. A
+ * preset still forces `"full"` in the menu; only `"default"` is pinned to
+ * what shipped. The `impersonating` child is not in here: it's state the
+ * extension paints after the parts under every preset.
+ */
+const DEFAULTS: CompactDefaults = {
+  bar: { icon: false, text: "short", value: true },
+  overflow: { icon: false, text: "short", value: true },
+};
+
+/**
+ * The icon and text as the chip's children, not `Chip`'s `icon`/`label`/
+ * `value` slots (`docs/adr/ADR-004-per-extension-bar-presentation.md`).
+ *
+ * Unlike the other chips, this text span also carries `data-dtb-kind="label"`
+ * — environment already passed `labelProps` before this feature, so it's
+ * today's bytes. That attribute is what the kit sheet's
+ * `[data-dtb-kind="label"]` rule tints; dropping it here would be a
+ * regression, and adding it to the others would recolour them.
+ */
+function iconAndText(label: string, parts: CompactParts, icon: ReactNode): ReactNode {
+  return renderCompactParts({
+    parts,
+    icon,
+    iconProps: { "data-dtb-part": "env-icon" },
+    short: SHORT_LABEL,
+    full: label,
+    textProps: { "data-dtb-part": "env-label", "data-dtb-kind": "label" },
+  });
+}
 
 export interface ChipProps {
   runtime: EnvironmentRuntime;
   label: string;
+  /** Already through `resolvePresentation`, in the factory closure. */
+  presentation: ResolvedCompactPresentation<EnvironmentSnapshot>;
   isOverflowed: boolean;
   isPanelOpen: boolean;
   injectStyles: boolean;
@@ -36,9 +93,16 @@ export interface ChipProps {
   onToggle(): void;
 }
 
+/**
+ * The one Group A chip with two button wrappers. The `⋮` row is a different
+ * element (`data-dtb-part="env-overflow"`, no `aria-expanded`) but shares the
+ * same children, `aria-label` and `title` — the fork is about the element,
+ * never the presentation, so `inner` is built once above it.
+ */
 export function EnvironmentChip({
   runtime,
   label,
+  presentation,
   isOverflowed,
   isPanelOpen,
   injectStyles,
@@ -55,25 +119,63 @@ export function EnvironmentChip({
   const title = snapshot.supplied
     ? `${label}: ${kind} — click for the full context`
     : `${label}: unknown — no context supplied to environment()`;
+  // The chip paints "env" plus the kind, so without a name of its own the
+  // button is announced as its own readout. `title` explains; it does not name.
+  const accessibleLabel = [label, kind, snapshot.impersonating ? "impersonating" : null]
+    .filter((part) => part !== null)
+    .join(", ");
+  // `presentation.name` overrides it; a whitespace-only override is ignored.
+  const accessibleName = resolveAccessibleName(presentation.name, snapshot, accessibleLabel);
+
+  const control = resolveCompactControl(presentation, snapshot, {
+    isOverflowed,
+    defaults: DEFAULTS,
+  });
+  const fallback = (
+    <>
+      {iconAndText(label, control.parts, control.icon)}
+      {control.parts.value ? (
+        <span
+          data-dtb-kind="value"
+          data-dtb-severity={snapshot.severity}
+          data-dtb-part="env-value"
+          data-dtb-env={kind}
+        >
+          {kind}
+        </span>
+      ) : null}
+    </>
+  );
 
   const inner = (
     <Chip
-      label="env"
-      value={kind}
       severity={snapshot.severity}
       data-dtb-part="env-chip"
       data-dtb-severity={snapshot.severity}
       dotProps={{ "data-dtb-part": "env-dot" }}
-      labelProps={{ "data-dtb-part": "env-label", "data-dtb-kind": "label" }}
-      valueProps={{ "data-dtb-part": "env-value", "data-dtb-env": kind }}
     >
+      {renderCompact(
+        presentation,
+        snapshot,
+        { icon: control.icon, isOverflowed, isPanelOpen },
+        fallback,
+      )}
+      {/* Invariant 2: acting as somebody else is state, not presentation — it
+          sits outside both the preset and `render`, after the contents, under
+          every preset. */}
       {snapshot.impersonating ? <span data-dtb-part="env-alert">impersonating</span> : null}
     </Chip>
   );
 
   if (isOverflowed) {
     return (
-      <button type="button" data-dtb-part="env-overflow" onClick={onToggle} title={title}>
+      <button
+        type="button"
+        data-dtb-part="env-overflow"
+        aria-label={accessibleName}
+        onClick={onToggle}
+        title={title}
+      >
         {inner}
       </button>
     );
@@ -84,6 +186,7 @@ export function EnvironmentChip({
       type="button"
       data-dtb-part="trigger"
       aria-expanded={isPanelOpen}
+      aria-label={accessibleName}
       onClick={onToggle}
       title={title}
     >

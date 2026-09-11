@@ -4,7 +4,7 @@
   "version": "0.0.0",
   "description": "CommonJS/Jest consumer fixture for @nejcm/dev-toolbar. Not published; see README.md in this directory.",
   "scripts": {
-    "test": "node sync-package.mjs && jest"
+    "test": "node sync-package.mjs && node ../../../node_modules/typescript/bin/tsc -p tsconfig.json && jest"
   },
   "devDependencies": {
     "@testing-library/react": "^16.3.3",

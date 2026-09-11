@@ -285,10 +285,66 @@ which, under Node's default policy, ends the dev server. That is not hypothetica
 two-word `curl`s did exactly that before the guard existed, and
 `examples/playground/plugins/__tests__/devToolbarAgent.test.ts` now pins all three.
 
-Options: `globalName`, `allowRun`, `extraKeys`, `report`, `instanceId`, plus the usual
+Options: `globalName`, `allowRun`, `extraKeys`, `report`, `instanceId`,
+`presentation` (below), `injectStyles`, `styleNonce`, plus the usual
 `id` / `label` / `align` / `order` / `priority` / `hidden`.
 
 Commands: none. It contributes a transport, not behaviour.
+
+## Bar presentation
+
+```tsx
+agentBridge({ presentation: { icon: <RobotIcon /> } });
+```
+
+**Two knobs, not four.** The seven value-bearing extensions take a whole
+[`CompactPresentation`](../kit.md#presentation) — `preset`, `icon`, `render`, `name`.
+This chip has one text and no value, so there is nothing to preset *against*: every
+member but `"default"` would be a no-op or a lie, and a `render` callback over a view
+that never changes is a `ReactNode` with extra steps. `AgentPresentation` is therefore
+`Pick<CompactPresentation<AgentChipView>, "icon" | "name">`.
+
+The narrowing is visible rather than silent — the bare-preset shorthand is a **compile
+error** here, not an option that quietly does nothing:
+
+```tsx
+agentBridge({ presentation: "icon" });
+// error TS2559: Type 'string' has no properties in common with type 'AgentPresentation'.
+```
+
+Like every factory option it is fixed when the factory is called; remount the toolbar or
+reload to change it.
+
+- **`TView` is `AgentChipView`.** This extension has no store, so there is no snapshot to
+  hand a callback: it gets the four facts the chip *is* — `label`, `allowRun`,
+  `globalName`, `instanceId`. `allowRun` is the one worth branching on:
+  `icon: (view) => (view.allowRun ? <Armed /> : <ReadOnly />)` paints the distinction
+  `data-dtb-agent-mode` already carries.
+- **An icon replaces the label in the bar, and joins it in the `⋮` menu.** The chip is a
+  readout; an icon and a word side by side say the same thing twice in the width the bar
+  is short of. The menu is never wordless, which is the rule the kit enforces everywhere.
+- **With an icon the chip becomes `role="img"` with an `aria-label`** — a bare
+  `<span aria-label>` is *not* a named node, so the attribute would be ignored and the
+  chip announced by its `title`, or by nothing. **Without** an icon it stays the
+  role-less `<span>` it has always been, named by its own text. Adding a role there would
+  move the default's accessible name, so it is conditional on purpose — and the corollary
+  is that **`name` does nothing without an icon**: there is no named node for it to land
+  on.
+- **New parts, both on the icon path only:** `agent-icon` (the glyph wrapper) and
+  `agent-label` (the `⋮` word).
+- **`injectStyles` (default `true`) and `styleNonce` apply on the icon path only.** The
+  one sheet this extension brings is `KIT_CSS`, for the glyph clamp, and it is ensured
+  only while an icon is on the bar — so under a nonce-based CSP a consumer who never
+  passes an icon never sees a kit `<style>` from `/ext/agent` at all. Turn `injectStyles`
+  off if you turned core's off, and ship `KIT_CSS` yourself.
+- **Nothing here reaches the bridge.** The icon lives in the factory closure and is read
+  during render, so no `ReactNode` can reach `read()` or the `report` transport — both of
+  which must stay JSON.
+
+One caveat worth stating: the `role="img"` path is covered by unit tests
+(`presentation.test.tsx`) but has **no browser proof**. The playground does not opt this
+extension into an icon, so unlike `/ext/metrics`, `/ext/flags` and `/ext/a11y` nothing in
+`examples/playground/e2e/` exercises it against a real accessibility tree.
 
 ---
 

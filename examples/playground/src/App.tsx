@@ -2,11 +2,13 @@ import { Profiler, useEffect, useState } from "react";
 import { DevToolbar, DevToolbarInset, useDevToolbar } from "@nejcm/dev-toolbar";
 import type { ToolbarDensity } from "@nejcm/dev-toolbar";
 import {
+  BAR_PRESENTATION_MODES,
   reactProfiler,
   playgroundContext,
-  playgroundExtensions,
+  playgroundExtensionsFor,
   playgroundFlags,
 } from "./extensions";
+import type { BarPresentationMode } from "./extensions";
 import { EmbedDemoProvider, QueryPlayground } from "./embedDemo";
 import { TanStackShell, TanStackShellCard } from "./tanstackDemo";
 import { CanvasStage, HeroFigure, MediaGallery, VideoEmbed } from "./mediaDemo";
@@ -635,6 +637,12 @@ export function App() {
   const [inset, setInset] = useState(true);
   const [density, setDensity] = useState<ToolbarDensity>("compact");
   const [enabled, setEnabled] = useState(true);
+  /**
+   * Which `presentation` the three icon-bearing extensions are built with.
+   * Defaults to `"default"` so the resting playground passes no
+   * `presentation` and every chip keeps its existing width.
+   */
+  const [barPresentation, setBarPresentation] = useState<BarPresentationMode>("default");
 
   useEffect(() => {
     document.documentElement.toggleAttribute("data-pg-restyle", restyled);
@@ -817,6 +825,21 @@ export function App() {
           >
             Density: {density}
           </button>
+          <button
+            type="button"
+            className="pg-button"
+            data-testid="toggle-bar-icons"
+            onClick={() =>
+              setBarPresentation(
+                (value) =>
+                  BAR_PRESENTATION_MODES[
+                    (BAR_PRESENTATION_MODES.indexOf(value) + 1) % BAR_PRESENTATION_MODES.length
+                  ] as BarPresentationMode,
+              )
+            }
+          >
+            Bar icons: {barPresentation}
+          </button>
           <ShellControls />
           <button
             type="button"
@@ -834,7 +857,11 @@ export function App() {
   return (
     <EmbedDemoProvider>
       <DevToolbar
-        extensions={playgroundExtensions}
+        // A factory option can't change on a running extension — core keeps
+        // the first object's `start()` and warns. `key` forces a remount
+        // instead, the supported way to change a factory option at runtime.
+        key={barPresentation}
+        extensions={playgroundExtensionsFor(barPresentation)}
         enabled={enabled}
         instanceId="playground"
         density={density}

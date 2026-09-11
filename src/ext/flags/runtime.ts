@@ -147,7 +147,12 @@ const monotonic = (): number =>
     ? performance.now()
     : Date.now();
 
-function toArray(
+/**
+ * The `promoted` option as a list. Exported for `index.tsx`, which walks the
+ * same entries to resolve each `PromotedFlag.presentation` — closure state
+ * that never reaches a snapshot.
+ */
+export function promotionsOf(
   promoted: PromotedFlag | readonly PromotedFlag[] | undefined,
 ): readonly PromotedFlag[] {
   if (promoted === undefined) return [];
@@ -283,7 +288,7 @@ export function createFlagsRuntime(options: FlagsRuntimeOptions = {}): FlagsRunt
     now = Date.now,
   } = options;
 
-  const promotions = toArray(promoted);
+  const promotions = promotionsOf(promoted);
   const writable = typeof onOverride === "function" || typeof onOverridesChange === "function";
 
   let storage: ToolbarStorage | null = null;
@@ -348,9 +353,18 @@ export function createFlagsRuntime(options: FlagsRuntimeOptions = {}): FlagsRunt
 
   /* Promotion window */
 
-  const promotionFor = (key: string): PromotedFlag | null => {
+  /**
+   * The promotion in force for a key right now, and where in `promoted` it
+   * sits. Two entries can name the same key with different windows or
+   * audiences, so "which entry won" isn't answerable from the key alone —
+   * the index is published as {@link FlagView.promotedIndex} so `index.tsx`
+   * can match the chosen entry's `presentation` rather than the wrong one's.
+   * A number is signable, which is what keeps it snapshot state at all.
+   */
+  const promotionFor = (key: string): { entry: PromotedFlag; index: number } | null => {
     const at = now();
-    for (const entry of promotions) {
+    for (let index = 0; index < promotions.length; index += 1) {
+      const entry = promotions[index] as PromotedFlag;
       if (entry.flagKey !== key) continue;
       const startAt = parseDate(entry.startAt);
       if (startAt !== null && at < startAt) continue;
@@ -360,7 +374,7 @@ export function createFlagsRuntime(options: FlagsRuntimeOptions = {}): FlagsRunt
         const actor = audience ?? [];
         if (!entry.audience.some((name) => actor.includes(name))) continue;
       }
-      return entry;
+      return { entry, index };
     }
     return null;
   };
@@ -442,8 +456,9 @@ export function createFlagsRuntime(options: FlagsRuntimeOptions = {}): FlagsRunt
         ...(promotion === null
           ? {}
           : {
-              promotedLabel: promotion.label ?? reading.label ?? key,
-              ...(promotion.icon === undefined ? {} : { promotedIcon: promotion.icon }),
+              promotedIndex: promotion.index,
+              promotedLabel: promotion.entry.label ?? reading.label ?? key,
+              ...(promotion.entry.icon === undefined ? {} : { promotedIcon: promotion.entry.icon }),
             }),
       });
     }
@@ -489,11 +504,14 @@ export function createFlagsRuntime(options: FlagsRuntimeOptions = {}): FlagsRunt
 
     // Bar order follows the consumer's declared promotion order, not the
     // panel's, so a promoted flag's bar position doesn't move on override.
+    //
+    // Matched on promotedIndex, not flagKey: two entries can name the same
+    // key, and matching by name pushed every one of them as duplicate views
+    // (duplicate buttons, React's same-key error). Each promoted view has
+    // exactly one index, ascending with `promotions`.
     const promotedViews: FlagView[] = [];
-    for (const entry of promotions) {
-      const view = sorted.find(
-        (candidate) => candidate.key === entry.flagKey && candidate.promoted,
-      );
+    for (let index = 0; index < promotions.length; index += 1) {
+      const view = sorted.find((candidate) => candidate.promotedIndex === index);
       if (view) promotedViews.push(view);
     }
 
@@ -554,7 +572,8 @@ export function createFlagsRuntime(options: FlagsRuntimeOptions = {}): FlagsRunt
           `${view.key}=${view.label}:${view.description ?? ""}:${view.type}:` +
           `${view.projectUrl ?? ""}:${view.expiresAt ?? ""}:${view.masked ? 1 : 0}:` +
           `${view.effectiveText}:${view.baseText}:${view.defaultText}:${view.source}:` +
-          `${view.overridden ? 1 : 0}:${view.promoted ? 1 : 0}:${view.orphaned ? 1 : 0}:` +
+          `${view.overridden ? 1 : 0}:${view.promoted ? 1 : 0}:${view.promotedIndex ?? -1}:` +
+          `${view.orphaned ? 1 : 0}:` +
           `${view.applyError ?? ""}:${view.variants === undefined ? "" : JSON.stringify(view.variants.map(formatValue))}`,
       )
       .join("|");

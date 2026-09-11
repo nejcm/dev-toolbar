@@ -149,6 +149,15 @@ export const GROUP_LABELS: Record<EnvironmentGroup, string> = {
   client: "Client",
 };
 
+/**
+ * The one word the bar chip paints as its value — `"unknown"` unless the
+ * consumer supplied a kind. Exported so a `presentation` callback painting
+ * the same value doesn't re-derive this rule and drift from it.
+ */
+export function kindLabel(snapshot: EnvironmentSnapshot): string {
+  return snapshot.supplied && snapshot.kind !== "unknown" ? String(snapshot.kind) : "unknown";
+}
+
 /** Folds real-world spellings (`"Production"`, `" prod "`, `"PROD"`) onto the canonical names. */
 export function normaliseKind(kind: string): string {
   const value = kind.trim().toLowerCase();

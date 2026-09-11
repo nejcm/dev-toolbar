@@ -65,8 +65,42 @@ stated in-panel next to the feature it would have belonged to.
 `tokens`, `surfaces`, `presets`, `mode`, `persist`, `themeParam`, `createdBy`,
 `pollMs`, `redactOptions`.
 
+`presentation` changes how the bar control looks, not what it edits: a
+`CompactPreset`, your own `ReactNode` icon (or `(view) => ReactNode`), a
+`render` callback and an accessible-name override. It resolves through `/kit`'s
+`resolveCompactControl`, so `"default"` is byte-identical to what shipped
+before the option existed. **Presets operate on the short bar word
+(`"theme"`)**; `label` stays the accessible-name identity, and a preset in the
+`⋮` menu swings to it — `"default"` paints `"theme"` in both places, because
+that is what this chip has always shipped.
+
+The callbacks are handed a narrow `ThemeEditorBarView` — `tokenCount`,
+`overriddenCount`, `preview`, `supplied`, `writable` — rather than the whole
+`ThemeSnapshot`. A view type that is only read can gain and lose fields freely;
+as a callback parameter it is contravariant, so the token list, the groups and
+the apply errors are deliberately not in it.
+
+`mode` (`"light" | "dark" | null`) is **also** left out, and that one is a
+decision rather than a consequence: it is the obvious input for a sun/moon icon,
+and the argument against it is only that the view was cut to the five facts the
+chip itself paints. A consumer's callback *reads* this type, so adding a field is
+additive and safe in a minor release — the contravariance cost is paid by
+renaming or removing one, not by adding. Left out until somebody asks.
+
+This chip **colours its own dot** from `data-dtb-edited` and `data-dtb-preview`
+rather than from a kit `severity`, and its count opts out of the kit's `value`
+kind. Those are state, not text: they are written on the `Chip` itself, above
+the children a consumer supplies, so no preset and no `render` can change what
+colour the bar is showing you — only the words next to it. Nothing configured
+here reaches the store or the runtime: a `ReactNode` cannot be signed, so the
+icon and the callbacks stay in the factory closure and travel as props.
+[ADR-004](../../../docs/adr/ADR-004-per-extension-bar-presentation.md).
+
 ## Tests
 
 `__tests__/runtime.test.ts` for resolution, persistence and exports;
 `attack.test.ts` for the values the editor must refuse;
 `theme-editor.test.tsx` for the panel and commands.
+`presentation.test.tsx` pins the default bar and `⋮` markup as literal strings —
+in the state that ships and in an edited, preview-paused one — every preset in
+both places, and the three callbacks.

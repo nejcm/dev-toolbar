@@ -17,7 +17,9 @@ import type {
 import type { SeverityWithOverride } from "./types";
 
 type DataAttributes = { [name: `data-${string}`]: string | undefined };
-type SpanProps = HTMLAttributes<HTMLSpanElement> & DataAttributes;
+
+/** Everything a `<span>` takes, plus `data-*`. Shared by every span-shaped slot in the kit. */
+export type SpanProps = HTMLAttributes<HTMLSpanElement> & DataAttributes;
 
 /** Props for the shared button reset. Everything a `<button>` takes. */
 export type ActionProps = ButtonHTMLAttributes<HTMLButtonElement> & DataAttributes;
@@ -30,9 +32,56 @@ export const Action = forwardRef<HTMLButtonElement, ActionProps>(function Action
   return <button {...rest} ref={ref} type={type} data-dtb-kind="action" />;
 });
 
-/** Props for a bar chip: a decorative dot, a label and an optional value. */
+/** Props for a small inline icon wrapper. Everything a `<span>` takes. */
+export type GlyphProps = SpanProps;
+
+/**
+ * A consumer-supplied icon, hidden from assistive technology and clamped.
+ *
+ * `aria-hidden` by default — the name belongs to the control, not the icon;
+ * pass `aria-hidden={false}` with a `role`/`aria-label` where the icon *is*
+ * the name. Clamps its direct child to `--dtb-glyph-size` (default `1.15em`)
+ * so a 24px `<svg>` can't set the bar's height. Standalone rather than a
+ * `Chip`-only slot because three first-party controls are hand-written and
+ * don't route through `Chip`.
+ */
+export const Glyph = forwardRef<HTMLSpanElement, GlyphProps>(function Glyph(
+  { "aria-hidden": ariaHidden = "true", ...rest },
+  ref,
+) {
+  return <span {...rest} ref={ref} aria-hidden={ariaHidden} data-dtb-kind="glyph" />;
+});
+
+/**
+ * Whether a resolved icon is one of the primitives React paints nothing for
+ * — `false`, `true`, `null`, `undefined`, `""`. Lives here rather than in
+ * `presentation.tsx` to avoid a module cycle.
+ *
+ * Emptiness, not falsiness: `0` is paintable (React renders the character).
+ * A presence test (`!= null`) would wrongly call `icon: (v) => v.enabled &&
+ * <Icon />` present when it returns `false`, painting an empty glyph that
+ * still eats the flex `gap`.
+ *
+ * The rule is shallow by design and not exhaustive: `[]`, `<></>`, `[null]`,
+ * or a component returning `null` all still count as "an icon" and produce
+ * the same empty glyph — deciding those would mean rendering them first.
+ * `icon: () => undefined` is the supported way to say "no icon".
+ */
+export function hasPaintableIcon(icon: ReactNode): boolean {
+  return icon !== undefined && icon !== null && icon !== false && icon !== true && icon !== "";
+}
+
+/**
+ * Props for a bar chip: a decorative dot, an optional icon, an optional label
+ * and an optional value.
+ */
 export interface ChipProps extends SpanProps {
-  label: ReactNode;
+  /** Optional; `undefined`/`null` renders nothing, not an empty span (the chip's `gap` would still apply). */
+  label?: ReactNode;
+  /** A consumer-supplied icon, rendered after the dot inside a `Glyph`. Guarded by `hasPaintableIcon`, not a presence check — see that function. */
+  icon?: ReactNode;
+  /** Props for the icon's `Glyph` wrapper. */
+  iconProps?: GlyphProps;
   value?: ReactNode;
   /**
    * Colours the dot and the value only — `data-dtb-severity` is compound with
@@ -47,21 +96,28 @@ export interface ChipProps extends SpanProps {
 }
 
 /**
- * A dot, a label, an optional value and whatever else the site appends.
+ * A dot, an optional icon, an optional label, an optional value and whatever
+ * else the site appends.
  *
  * Each slot takes its own props so a site keeps its `data-dtb-part` names.
  * The dot and value default to `data-dtb-kind`; the label does not — pass
  * `labelProps={{ "data-dtb-kind": "label" }}` to opt in, or `undefined` on
  * the others to opt out.
+ *
+ * The icon slot is the exception: `Glyph` writes `data-dtb-kind` after its
+ * own props, so `iconProps` cannot override it — the size clamp keyed on that
+ * kind is the reason `Glyph` exists. Style the icon through the element you
+ * hand to `icon`.
  */
 export const Chip = forwardRef<HTMLSpanElement, ChipProps>(function Chip(
-  { children, dotProps, label, labelProps, severity, value, valueProps, ...rest },
+  { children, dotProps, icon, iconProps, label, labelProps, severity, value, valueProps, ...rest },
   ref,
 ) {
   return (
     <span {...rest} ref={ref} data-dtb-kind="chip">
       <span data-dtb-kind="dot" data-dtb-severity={severity} aria-hidden="true" {...dotProps} />
-      <span {...labelProps}>{label}</span>
+      {hasPaintableIcon(icon) ? <Glyph {...iconProps}>{icon}</Glyph> : null}
+      {label === undefined || label === null ? null : <span {...labelProps}>{label}</span>}
       {value === undefined || value === null ? null : (
         <span data-dtb-kind="value" data-dtb-severity={severity} {...valueProps}>
           {value}

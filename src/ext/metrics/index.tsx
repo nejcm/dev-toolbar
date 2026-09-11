@@ -24,8 +24,9 @@ import { writeClipboardTextOrThrow } from "../../runtime";
 import { createMetricsRuntime } from "./runtime";
 import { MetricsChips, MetricsPanel } from "./ui";
 import { METRIC_IDS, isMetricId } from "./types";
-import { resolveStyleNonce } from "@nejcm/dev-toolbar/kit";
-import type { Collector, CollectorId, MetricId } from "./types";
+import { resolvePresentation, resolveStyleNonce } from "@nejcm/dev-toolbar/kit";
+import type { CompactPresentationInput } from "@nejcm/dev-toolbar/kit";
+import type { Collector, CollectorId, MetricId, MetricView } from "./types";
 import type { MemoryCollectorOptions } from "./collectors/memory";
 import type { DelayCollectorOptions } from "./collectors/delay";
 import type { JankCollectorOptions } from "./collectors/jank";
@@ -42,7 +43,10 @@ import type { NetworkEntryView, NetworkExport } from "./types";
 export interface MetricsOptions {
   /** Extension id. Change it to mount two independent metric groups. Default `"metrics"`. */
   id?: string;
-  /** Bar label, used by the error chip and the panel's accessible name. Default `"Metrics"`. */
+  /**
+   * Bar label, used by the error chip, the bar trigger's accessible name and
+   * the panel's accessible name. Default `"Metrics"`.
+   */
   label?: string;
   align?: ToolbarAlign;
   order?: number;
@@ -65,6 +69,23 @@ export interface MetricsOptions {
    * slot prop core forwards from `<DevToolbar>`.
    */
   styleNonce?: string;
+  /**
+   * How the bar control presents itself: a preset, your own icon, a render
+   * callback and an accessible-name override. Bare-preset shorthand:
+   * `presentation: "icon-value"`.
+   *
+   * Unlike the other extensions, the callback knobs run once per metric per
+   * render — the `MetricView` passed in says which one, so
+   * `icon: (m) => ICONS[m.id]` needs no separate map. `render` supplies only
+   * the children of that metric's element; `name` is invoked with the first
+   * metric in bar order, since one trigger names the whole readout.
+   *
+   * Icon and callbacks are held in this closure and passed as props — a
+   * `ReactNode` cannot be signed into a store snapshot.
+   *
+   * `docs/adr/ADR-004-per-extension-bar-presentation.md`.
+   */
+  presentation?: CompactPresentationInput<MetricView>;
   /** `false` switches a metric off entirely; an object configures it. */
   memory?: boolean | MemoryCollectorOptions;
   delay?: boolean | DelayCollectorOptions;
@@ -97,6 +118,9 @@ export function metrics(options: MetricsOptions = {}): DevToolbarExtension {
     injectStyles = true,
     styleNonce: optionNonce,
   } = options;
+
+  // Resolved once, in the closure the icon and callbacks live in.
+  const presentation = resolvePresentation(options.presentation);
 
   const custom = new Map<CollectorId, Collector>();
   for (const collector of customCollectors) {
@@ -329,6 +353,8 @@ export function metrics(options: MetricsOptions = {}): DevToolbarExtension {
     compact: ({ isOverflowed, isPanelOpen, togglePanel, styleNonce }) => (
       <MetricsChips
         runtime={runtime}
+        label={label}
+        presentation={presentation}
         isOverflowed={isOverflowed}
         isPanelOpen={isPanelOpen}
         injectStyles={injectStyles}

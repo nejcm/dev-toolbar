@@ -21,7 +21,8 @@ The cost column is also rendered in the panel, next to each switch — an overla
 leave on while profiling should tell you what it is charging you.
 
 Options: `defaults` (which overlays start on), `grid` (`columns` / `gutter` /
-`maxWidth` / `baseline`), `focusLimit`, `mutationDebounceMs`, `persist`, plus the
+`maxWidth` / `baseline`), `focusLimit`, `mutationDebounceMs`, `persist`,
+`presentation` (see [Bar presentation](#bar-presentation)), plus the
 usual `id` / `label` / `align` / `order` / `priority` / `hidden` / `keepMounted` /
 `injectStyles` / `styleNonce`. `styleNonce` also stamps the layout-boxes sheet,
 which is not gated on `injectStyles`.
@@ -65,6 +66,35 @@ label your app rewrites live is re-checked.
 Other overlay modes — a re-render flash, for one — are deliberately absent: each
 would have to touch every element in the document.
 
+
+## Bar presentation
+
+```tsx
+overlays({ presentation: { preset: "icon", icon: <LayersIcon /> } });
+```
+
+`presentation` changes how the bar control looks, never what it draws.
+The four knobs — a preset, your own `ReactNode` icon, a `render` callback and an
+accessible-name override — the preset-by-preset table and the rules every extension
+shares are in [kit.md](../kit.md#presentation). Two of those rules are worth repeating
+before the specifics: `"default"` is byte-identical to what shipped before the option
+existed, and `presentation`, like every factory option, is **fixed when the factory is
+called** — to change it at runtime, remount the toolbar or reload.
+
+What is specific to this extension:
+
+- **The short bar word is `overlays`**; `label` stays the `⋮` and accessible-name
+  identity.
+- **The icon lands in `data-dtb-part="ovl-icon"` and the word in `ovl-chip-label`** —
+  not `ovl-label`, which was already taken by the element inspector's floating hover
+  label, the one `css.ts` positions absolutely over your page. Two different elements
+  cannot share a part name, and the older one is the one consumers have written CSS
+  against.
+- **`TView` is `OverlaysSnapshot`**, so `icon: (s) => (s.activeCount > 0 ? <On /> : <Off />)`
+  paints the distinction `data-dtb-active` already carries.
+- **The error tag is not yours to restyle.** It renders outside both the preset and
+  `render`, under every preset including `"icon"`: a measurement that threw switched
+  every overlay off, and that is state rather than presentation.
 
 ---
 

@@ -58,7 +58,32 @@ Show/Hide label depends on live state.
 `defaults`, `grid`, `persist`, `focusLimit`, `mutationDebounceMs`,
 `deferOutlinesUntilStyleNonce`.
 
+`presentation` changes how the bar control looks, not what it draws: a
+`CompactPreset`, your own `ReactNode` icon (or `(snapshot) => ReactNode`), a
+`render` callback over `OverlaysSnapshot` and an accessible-name override. It
+resolves through `/kit`'s `resolveCompactControl`, so `"default"` is
+byte-identical to what shipped before the option existed and the `⋮` menu
+always paints the full `label`. **Presets operate on the short bar word
+(`"overlays"`)**, which is the swing `ui.tsx` used to write by hand as
+`isOverflowed ? label : "overlays"`; `label` stays the overflow and
+accessible-name identity.
+
+**The error tag is not yours to restyle.** It sits outside both the preset and
+`render`, after the contents, under every preset including `"icon"` — a
+measurement that threw switched every overlay off, and that is state rather
+than presentation. The parts go in as the kit `Chip`'s *children* rather than
+its `icon` / `label` / `value` slots, so `render` replaces them and never the
+`Chip` — the dot, `data-dtb-active` and the `aria-label` are not a callback's
+to lose. Nothing configured here reaches the store: a `ReactNode` cannot be
+signed, so the icon and the callbacks stay in the factory closure and travel as
+props.
+[ADR-004](../../../docs/adr/ADR-004-per-extension-bar-presentation.md).
+
 ## Tests
 
 `__tests__/runtime.test.ts` for measurement, observers and persistence;
-`overlays.test.tsx` for the panel, the chip and the toggle commands.
+`overlays.test.tsx` for the panel, the chip and the toggle commands;
+`presentation.test.tsx` pins the default bar and `⋮` markup as literal strings
+— in the `"off"` state, with one overlay on, and with a failed measurement, so
+`data-dtb-active` and the error tag are both covered — plus every preset in
+both places and the three callbacks.

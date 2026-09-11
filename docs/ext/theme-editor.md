@@ -136,7 +136,8 @@ Use `redactOptions: { allowKeys: ["..."] }` if the default list is masking a tok
 yours that is not a secret.
 
 Options: `tokens`, `onApply`, `surfaces`, `presets`, `mode`, `pollMs`, `redactOptions`,
-`themeParam`, `persist`, `now`, `document`, `createdBy`, plus the usual `id` / `label` /
+`themeParam`, `persist`, `now`, `document`, `createdBy`,
+`presentation` (see [Bar presentation](#bar-presentation)), plus the usual `id` / `label` /
 `align` / `order` / `priority` / `hidden` / `keepMounted` / `injectStyles` /
 `styleNonce`.
 
@@ -157,6 +158,42 @@ This is the command that could not exist before v2. A token's value space is ope
 and the panel's text input was the only way in. It refuses the same values the editor
 refuses, and says which; it declares `input`, so `⌘K` does not list it.
 
+
+## Bar presentation
+
+```tsx
+themeEditor({ presentation: { preset: "icon-value", icon: <PaletteIcon /> } });
+```
+
+`presentation` changes how the bar control looks, never what it edits.
+The four knobs — a preset, your own `ReactNode` icon, a `render` callback and an
+accessible-name override — the preset-by-preset table and the rules every extension
+shares are in [kit.md](../kit.md#presentation). Two of those rules are worth repeating
+before the specifics: `"default"` is byte-identical to what shipped before the option
+existed, and `presentation`, like every factory option, is **fixed when the factory is
+called** — to change it at runtime, remount the toolbar or reload.
+
+What is specific to this extension:
+
+- **The short bar word is `theme`**, and `"default"` paints it in both the bar and the
+  `⋮` menu, because that is what this chip has always shipped. Any preset still forces
+  the full `label` in the menu. The icon lands in `data-dtb-part="thm-icon"` and the word
+  in `thm-label`.
+- **The callbacks are handed a narrow `ThemeEditorBarView`** — `tokenCount`,
+  `overriddenCount`, `preview`, `supplied`, `writable` — rather than the whole
+  `ThemeSnapshot`. A type that is only *read* may gain and lose optional fields freely;
+  as a callback parameter it is contravariant, so the token list, the groups and the
+  apply errors are deliberately not in it.
+- **`mode` (`"light" | "dark" | null`) is deliberately not in that view yet**, even
+  though it is the obvious input for a sun/moon icon. It is a recorded omission rather
+  than an oversight: the view was cut to the five facts the chip itself paints, and
+  adding a field to a view a consumer only *reads* is additive and safe. If you want to
+  branch an icon on the mode, say so — it can land in a minor release without breaking a
+  callback.
+- **This chip colours its own dot** from `data-dtb-edited` and `data-dtb-preview` rather
+  than from a kit `severity`, and its count opts out of the kit's `value` kind. Both are
+  state, written on the chip above whatever children you supply, so no preset and no
+  `render` can change the colour the bar is showing you — only the words next to it.
 
 ---
 

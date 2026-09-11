@@ -34,8 +34,10 @@
 import { createOverlaysRuntime } from "./runtime";
 import { OverlaysChip, OverlaysPanel, OverlaysSurface } from "./ui";
 import { OVERLAY_IDS, OVERLAY_META } from "./types";
-import { resolveStyleNonce } from "@nejcm/dev-toolbar/kit";
+import { resolvePresentation, resolveStyleNonce } from "@nejcm/dev-toolbar/kit";
+import type { CompactPresentationInput } from "@nejcm/dev-toolbar/kit";
 import type { OverlaysRuntimeOptions } from "./runtime";
+import type { OverlaysSnapshot } from "./types";
 import type {
   DevToolbarExtension,
   ExtensionRuntimeApi,
@@ -54,7 +56,10 @@ export interface OverlaysOptions extends Omit<
 > {
   /** Extension id. Default `"overlays"`. */
   id?: string;
-  /** Bar label, used by the error chip and the panel's accessible name. Default `"Overlays"`. */
+  /**
+   * Bar label, used by the error chip, the bar trigger's accessible name and
+   * the panel's accessible name. Default `"Overlays"`.
+   */
   label?: string;
   align?: ToolbarAlign;
   order?: number;
@@ -79,6 +84,27 @@ export interface OverlaysOptions extends Omit<
    * from `<DevToolbar>`.
    */
   styleNonce?: string;
+  /**
+   * How the bar control presents itself: a preset, your own icon, a render
+   * callback and an accessible-name override. A bare preset is the shorthand —
+   * `presentation: "icon-value"`.
+   *
+   * One control, invoked with the same `OverlaysSnapshot` the panel reads.
+   * Presets operate on the short bar word (`"overlays"`); `label` stays the
+   * overflow and accessible-name identity.
+   *
+   * The error tag is not yours to restyle: it renders outside both the preset
+   * and `render`, after the contents, under every preset including `"icon"` —
+   * a measurement that threw switching every overlay off is state, not
+   * presentation. `render` supplies the children of the chip carrying
+   * `data-dtb-active` and the dot; returning `undefined` falls through to the
+   * preset. `name` overrides the `aria-label` (a whitespace-only return is
+   * ignored) — prefer one that doesn't change with the count, or a screen
+   * reader re-announces the control on every toggle.
+   *
+   * `docs/adr/ADR-004-per-extension-bar-presentation.md`.
+   */
+  presentation?: CompactPresentationInput<OverlaysSnapshot>;
 }
 
 /**
@@ -96,8 +122,15 @@ export function overlays(options: OverlaysOptions = {}): DevToolbarExtension {
     keepMounted = false,
     injectStyles = true,
     styleNonce: optionNonce,
+    // Destructured out so it isn't part of the ...runtimeOptions spread below —
+    // an icon or callback has no business reaching the runtime.
+    presentation: presentationOption,
     ...runtimeOptions
   } = options;
+
+  // Resolved once, here, in the factory closure — where the icon and the
+  // callbacks live, same as `label` and `injectStyles`.
+  const presentation = resolvePresentation(presentationOption);
 
   // Built here, not in start(api): slot functions run during the toolbar's
   // first render, before any effect fires. deferOutlinesUntilStyleNonce holds
@@ -144,6 +177,7 @@ export function overlays(options: OverlaysOptions = {}): DevToolbarExtension {
       <OverlaysChip
         runtime={runtime}
         label={label}
+        presentation={presentation}
         isOverflowed={isOverflowed}
         isPanelOpen={isPanelOpen}
         injectStyles={injectStyles}

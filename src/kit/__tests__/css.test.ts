@@ -7,6 +7,7 @@ const KINDS = [
   "action",
   "chip",
   "dot",
+  "glyph",
   "tag",
   "row",
   "list",
@@ -49,6 +50,23 @@ describe("KIT_CSS", () => {
   ])("maps %s severity to %s", (severity, token) => {
     expect(KIT_CSS).toContain(`[data-dtb-severity="${severity}"]`);
     expect(KIT_CSS).toContain(`var(${token})`);
+  });
+
+  /**
+   * A `ReactNode` icon may be a bare character, not just an element.
+   * `line-height: 0` on the wrapper collapsed a character's box to zero height
+   * and, inherited into the block child, centred it on the box's top edge —
+   * so both line boxes track the clamped size instead.
+   */
+  it("gives the glyph wrapper and its clamped child a line box the size of the clamp", () => {
+    const wrapper = KIT_CSS.match(/\[data-dtb-kind="glyph"\]\s*\{([^}]*)\}/)?.[1] ?? "";
+    const child = KIT_CSS.match(/\[data-dtb-kind="glyph"\]\s*>\s*\*\s*\{([^}]*)\}/)?.[1] ?? "";
+
+    expect(wrapper).toContain("line-height: var(--dtb-glyph-size, 1.15em);");
+    expect(wrapper).not.toContain("line-height: 0");
+    expect(child).toContain("height: var(--dtb-glyph-size, 1.15em);");
+    expect(child).toContain("line-height: var(--dtb-glyph-size, 1.15em);");
+    expect(child).toContain("text-align: center;");
   });
 
   it("requires dot and value severity on the styled element", () => {

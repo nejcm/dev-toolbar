@@ -321,6 +321,25 @@ export interface DiagnosticsSnapshotState {
   warnings: number;
 }
 
+/**
+ * What a consumer's `presentation` callbacks are told about the bar control.
+ *
+ * Deliberately not `DiagnosticsSnapshotState`: a callback parameter is
+ * contravariant, so this carries only the facts the chip actually paints
+ * (`plans/bar-presentation-icons-v1.md`, "The callback goes on all seven").
+ * Anything derivable is left out.
+ */
+export interface DiagnosticsBarView {
+  /** Whether a snapshot has been captured. The dot's and the value's binary state. */
+  captured: boolean;
+  /** How many things the last capture could not include. Drives `data-dtb-incomplete`. */
+  omissions: number;
+  /** Errors seen so far — live, not as of the last capture, like the badge. */
+  errors: number;
+  /** Warnings seen so far, on the same live basis. */
+  warnings: number;
+}
+
 /** A consumer-supplied section, treated exactly like an extension contribution. */
 export interface DiagnosticSource {
   id: string;

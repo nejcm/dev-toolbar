@@ -14,6 +14,40 @@ export const KIT_CSS = String.raw`@layer dev-toolbar {
     flex: 0 0 auto;
   }
 
+  /* The line-height is the glyph size rather than 0, because an icon may be a
+     *character*: presentation.icon takes a ReactNode, and a string is the
+     cheapest icon there is. A bare character is an anonymous flex item whose
+     height is its line box, so a zero line-height collapsed the wrapper to zero
+     height and left the character hanging out of a box that measured nothing.
+     It has no effect on an element child, which the clamp below sizes. */
+  [data-dev-toolbar] [data-dtb-kind="glyph"] {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 auto;
+    line-height: var(--dtb-glyph-size, 1.15em);
+    color: inherit;
+  }
+
+  /* Clamp the icon itself, not the wrapper, and only the direct child: a 24px
+     <svg> handed to an 11px bar would otherwise set the bar's height. The size
+     is an em length, so it inherits --dtb-font-size and tracks the density
+     block's 11px -> 12px switch with no token of its own. Spacing is the gap.
+
+     The child carries its own line-height and text-align for the other kind of
+     icon: a character wrapped in a span opts into this clamp, and a block child
+     inheriting a zero line-height painted its glyph centred on the box's *top
+     edge*, about half a glyph above the <svg>s beside it. Matching the line box
+     to the clamped height centres the character in the box the clamp gives it. */
+  [data-dev-toolbar] [data-dtb-kind="glyph"] > * {
+    display: block;
+    width: var(--dtb-glyph-size, 1.15em);
+    height: var(--dtb-glyph-size, 1.15em);
+    line-height: var(--dtb-glyph-size, 1.15em);
+    text-align: center;
+    flex: 0 0 auto;
+  }
+
   [data-dev-toolbar] [data-dtb-kind="label"] {
     color: var(--dtb-muted);
   }

@@ -5,6 +5,8 @@ export {
   Chip,
   EmptyState,
   Field,
+  Glyph,
+  hasPaintableIcon,
   Note,
   Row,
   Rows,
@@ -19,11 +21,13 @@ export type {
   ChipProps,
   EmptyStateProps,
   FieldProps,
+  GlyphProps,
   NoteProps,
   RowProps,
   RowsProps,
   SearchFieldProps,
   SelectProps,
+  SpanProps,
   TagProps,
   TextInputProps,
 } from "./controls";
@@ -51,6 +55,31 @@ export {
 } from "./preference";
 export type { Preference, PreferenceEncoding, StoredRecordOptions } from "./preference";
 export { resolveStyleNonce } from "./nonce";
+export {
+  renderCompact,
+  renderCompactParts,
+  resolveAccessibleName,
+  resolveCompactControl,
+  resolveCompactParts,
+  resolveIcon,
+  resolveNameOverride,
+  resolvePresentation,
+} from "./presentation";
+export type {
+  CompactControl,
+  CompactControlOptions,
+  CompactDefaults,
+  CompactParts,
+  CompactPartsContent,
+  CompactPartsOptions,
+  CompactPlace,
+  CompactPreset,
+  CompactPresentation,
+  CompactPresentationInput,
+  CompactRenderContext,
+  CompactText,
+  ResolvedCompactPresentation,
+} from "./presentation";
 export { createPoller } from "./poller";
 export { matchesQuery } from "./query";
 export { createSource, derive, isReadable, readInput } from "./source";

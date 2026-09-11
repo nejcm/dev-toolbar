@@ -47,8 +47,10 @@ import { createThemeEditorRuntime } from "./runtime";
 import { writeClipboardTextOrThrow } from "../../runtime";
 import { describeValueRefusal } from "./types";
 import { ThemeChip, ThemePanel } from "./ui";
-import { resolveStyleNonce } from "@nejcm/dev-toolbar/kit";
+import { resolvePresentation, resolveStyleNonce } from "@nejcm/dev-toolbar/kit";
+import type { CompactPresentationInput } from "@nejcm/dev-toolbar/kit";
 import type { ThemeEditorRuntimeOptions } from "./runtime";
+import type { ThemeEditorBarView } from "./types";
 import type {
   DevToolbarExtension,
   ExtensionRuntimeApi,
@@ -87,6 +89,26 @@ export interface ThemeEditorOptions extends ThemeEditorRuntimeOptions {
    * slot prop core forwards from `<DevToolbar>`.
    */
   styleNonce?: string;
+  /**
+   * How the bar control presents itself: a preset, your own icon, a render
+   * callback and an accessible-name override. A bare preset is the shorthand —
+   * `presentation: "icon-value"`.
+   *
+   * One control, invoked with a narrow `ThemeEditorBarView` rather than the
+   * whole `ThemeSnapshot` — the token list, groups and apply errors are
+   * working state a callback shouldn't depend on. Presets operate on the
+   * short bar word (`"theme"`); `label` stays the accessible-name identity.
+   *
+   * `render` supplies the children of the chip carrying `data-dtb-edited` and
+   * `data-dtb-preview` — this chip colours its own dot from exactly those two,
+   * so neither a preset nor a callback can change that colour, only the words
+   * beside it. Returning `undefined` falls through to the preset. `name`
+   * overrides the `aria-label` (a whitespace-only return is ignored); `title`
+   * is not overridable.
+   *
+   * `docs/adr/ADR-004-per-extension-bar-presentation.md`.
+   */
+  presentation?: CompactPresentationInput<ThemeEditorBarView>;
 }
 
 /**
@@ -104,10 +126,21 @@ export function themeEditor(options: ThemeEditorOptions = {}): DevToolbarExtensi
     keepMounted = true,
     injectStyles = true,
     styleNonce: optionNonce,
+    presentation: presentationOption,
   } = options;
+
+  // Resolved once, here, in the factory closure — where the icon and the
+  // callbacks live, same as `label` and `injectStyles`.
+  const presentation = resolvePresentation(presentationOption);
 
   // Built here, not in start(api): slot functions run during the toolbar's
   // first render, before any effect fires.
+  //
+  // Passed as `options` in full, not a `...runtimeOptions` rest like other
+  // extensions use: a rest element reads every own property, and
+  // `redactOptions` can be a getter that throws before mount
+  // (`readRedactionProperty` in the runtime is what that guards). The runtime
+  // destructures only the fields it names, so `presentation` is untouched.
   const runtime = createThemeEditorRuntime(options);
 
   // Refusals come back as thrown reasons rather than a coerced value, matching
@@ -188,6 +221,7 @@ export function themeEditor(options: ThemeEditorOptions = {}): DevToolbarExtensi
       <ThemeChip
         runtime={runtime}
         label={label}
+        presentation={presentation}
         isOverflowed={isOverflowed}
         isPanelOpen={isPanelOpen}
         injectStyles={injectStyles}
@@ -319,6 +353,7 @@ export {
 export type {
   DesignTokenDefinition,
   RecipeParse,
+  ThemeEditorBarView,
   ThemeRecipe,
   ThemeSnapshot,
   ThemeSurface,

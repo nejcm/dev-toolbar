@@ -6,11 +6,20 @@ import {
   Chip,
   EmptyState,
   Note,
+  renderCompact,
+  renderCompactParts,
+  resolveAccessibleName,
+  resolveCompactControl,
   useExtensionSurface,
+} from "@nejcm/dev-toolbar/kit";
+import type {
+  CompactDefaults,
+  CompactParts,
+  ResolvedCompactPresentation,
 } from "@nejcm/dev-toolbar/kit";
 import { ensureDiagnosticsStyles } from "./css";
 import { SNAPSHOT_FORMATS } from "./types";
-import type { SnapshotFormat } from "./types";
+import type { DiagnosticsBarView, SnapshotFormat } from "./types";
 import type { DiagnosticsRuntime } from "./runtime";
 
 /**
@@ -21,6 +30,13 @@ import type { DiagnosticsRuntime } from "./runtime";
  * summary of it. Everything rendered comes from the already-redacted
  * snapshot, so no component here has access to a raw value to print one
  * (same construction as `/ext/environment` and `/ext/flags`).
+ *
+ * `presentation` arrives already resolved and is read through `/kit`'s
+ * `resolveCompactControl` and `renderCompact`. A consumer's `render` supplies
+ * only the chip's children; `Chip` still owns the dot and the state
+ * attributes. The error/warning badge renders after those children under
+ * every preset and under `render` alike — it is live state, not presentation
+ * (`plans/bar-presentation-icons-v1.md`, invariant 2).
  */
 
 const FORMAT_LABEL: Record<SnapshotFormat, string> = {
@@ -32,9 +48,50 @@ const FORMAT_LABEL: Record<SnapshotFormat, string> = {
 /* Bar chip                                                                    */
 /* -------------------------------------------------------------------------- */
 
+/**
+ * The short bar word. Presets operate on this; `label` stays the overflow
+ * and accessible-name identity (`plans/bar-presentation-icons-v1.md`,
+ * "Which text").
+ */
+const SHORT_LABEL = "diagnostics";
+
+/**
+ * Today's tree, expressed as parts — what `resolveCompactControl` falls back
+ * to under `"default"`. Diagnostics' default is exactly expressible as parts
+ * (short word plus value in the bar, full label plus value in the `⋮` menu,
+ * no icon in either), which is what makes "default output is byte-identical"
+ * structural rather than asserted. The badge is not in here: it's state the
+ * extension paints after the parts under every preset.
+ */
+const DEFAULTS: CompactDefaults = {
+  bar: { icon: false, text: "short", value: true },
+  overflow: { icon: false, text: "full", value: true },
+};
+
+/**
+ * The icon and text as the chip's children, not `Chip`'s `icon`/`label`/
+ * `value` slots (`docs/adr/ADR-004-per-extension-bar-presentation.md`).
+ */
+function iconAndText(label: string, parts: CompactParts, icon: ReactNode): ReactNode {
+  return renderCompactParts({
+    parts,
+    icon,
+    iconProps: { "data-dtb-part": "diag-icon" },
+    short: SHORT_LABEL,
+    full: label,
+    // `data-dtb-part` only. The kit's `[data-dtb-kind="label"]` rule tints a
+    // labelled span with `--dtb-muted`; this chip has never been tinted, and
+    // whether it should be is a visual decision, not a side effect of naming
+    // the span.
+    textProps: { "data-dtb-part": "diag-label" },
+  });
+}
+
 export interface ChipProps {
   runtime: DiagnosticsRuntime;
   label: string;
+  /** Already through `resolvePresentation`, in the factory closure. */
+  presentation: ResolvedCompactPresentation<DiagnosticsBarView>;
   isOverflowed: boolean;
   isPanelOpen: boolean;
   injectStyles: boolean;
@@ -51,6 +108,7 @@ export interface ChipProps {
 export function DiagnosticsChip({
   runtime,
   label,
+  presentation,
   isOverflowed,
   isPanelOpen,
   injectStyles,
@@ -81,12 +139,27 @@ export function DiagnosticsChip({
     .filter((part) => part !== null)
     .join(", ");
 
+  // See `DiagnosticsBarView`.
+  const view: DiagnosticsBarView = { captured, omissions, errors, warnings };
+  const control = resolveCompactControl(presentation, view, { isOverflowed, defaults: DEFAULTS });
+  const fallback = (
+    <>
+      {iconAndText(label, control.parts, control.icon)}
+      {control.parts.value ? (
+        <span data-dtb-kind="value" data-dtb-part="diag-value">
+          {captured ? (omissions === 0 ? "ready" : `${omissions} missing`) : "capture"}
+        </span>
+      ) : null}
+    </>
+  );
+
   return (
     <button
       type="button"
       data-dtb-part="trigger"
       aria-expanded={isPanelOpen}
-      aria-label={accessibleLabel}
+      // `presentation.name` overrides it; a whitespace-only override is ignored.
+      aria-label={resolveAccessibleName(presentation.name, view, accessibleLabel)}
       onClick={onToggle}
       title={
         (captured
@@ -96,13 +169,19 @@ export function DiagnosticsChip({
       }
     >
       <Chip
-        label={isOverflowed ? label : "diagnostics"}
-        value={captured ? (omissions === 0 ? "ready" : `${omissions} missing`) : "capture"}
         data-dtb-part="diag-chip"
         data-dtb-incomplete={omissions > 0 ? "true" : "false"}
         dotProps={{ "data-dtb-part": "diag-dot" }}
-        valueProps={{ "data-dtb-part": "diag-value" }}
       >
+        {renderCompact(
+          presentation,
+          view,
+          { icon: control.icon, isOverflowed, isPanelOpen },
+          fallback,
+        )}
+        {/* Invariant 2: the badge is state, not presentation — it sits outside
+            both the preset and `render`, after the contents, under every
+            preset. */}
         {caught > 0 ? (
           <span
             data-dtb-part="diag-errors"

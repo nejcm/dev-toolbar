@@ -36,6 +36,18 @@ in [`docs/ext/`](../../docs/ext/).
   `@nejcm/dev-toolbar/kit` so CommonJS consumers get one instance.
   Measurement primitives — the event bus, ring buffers, the throttled store,
   `redact()` and `redactText()` — live in [`src/runtime/`](../runtime/).
+- **Bar presentation is one option, resolved through `/kit`.** All nine take a
+  `presentation` option, normalised in the factory with `resolvePresentation` and
+  read in the slot through `resolveCompactControl` / `renderCompact` /
+  `renderCompactParts`, so the two guarantees — an icon-only preset with no icon
+  paints text, the `⋮` menu always paints full text — hold once rather than nine
+  times. `"default"` resolves to `null`, which is what makes byte-identical default
+  output a structural property rather than a truth-table coincidence. `/ext/agent`
+  and `/ext/command-menu` take a narrowed `Pick<…, "icon" | "name">`: no value and
+  no second text means nothing to preset against. **A `ReactNode` never enters a
+  store snapshot** — the stores are signature-based, so icons and callbacks stay in
+  the factory closure and travel as props, exactly as `label` does.
+  [ADR-004](../../docs/adr/ADR-004-per-extension-bar-presentation.md).
 - **Every field of a `*Snapshot` in `types.ts` is required, new ones included.**
   The runtime is the only thing that builds a snapshot; a consumer reads one. So
   optionality would buy compatibility for a caller that does not exist, at the

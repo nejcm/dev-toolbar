@@ -7,7 +7,7 @@ Everything the [README](../README.md) links to, in one place.
 | Document | What is in it |
 | --- | --- |
 | [api.md](./api.md) | The root entry: every `<DevToolbar>` prop, the toggle shortcut, the `⋮` menu, the escape-hatch exports and every published type |
-| [styling.md](./styling.md) | The three ways to restyle the bar, and why none of them needs `!important` |
+| [styling.md](./styling.md) | The three ways to restyle the bar, why none of them needs `!important`, and how icons and bar text are configured |
 | [ssr.md](./ssr.md) | Why the bar cannot mismatch on hydration, and the one Next.js app-router rule |
 | [testing.md](./testing.md) | `@nejcm/dev-toolbar/testing` — `renderWithToolbar`, the fake layout, the mock bus and the Jest caveats |
 
@@ -17,7 +17,7 @@ Everything the [README](../README.md) links to, in one place.
 | --- | --- |
 | [extension-contract.md](./extension-contract.md) | The object you write, the slot props, `start(api)`, and the two lifecycle rules that bite |
 | [runtime.md](./runtime.md) | `@nejcm/dev-toolbar/runtime` — event bus, ring buffers, throttled store, `redact()` and `redactText()` |
-| [kit.md](./kit.md) | `@nejcm/dev-toolbar/kit` — the shared severity vocabulary, the storage/poll/style helpers, `data-dtb-kind`, the thin React controls and `embed()` |
+| [kit.md](./kit.md) | `@nejcm/dev-toolbar/kit` — the shared severity vocabulary, the storage/poll/style helpers, `data-dtb-kind`, the thin React controls, the `presentation` vocabulary and `embed()` |
 | [embedding.md](./embedding.md) | Putting a third-party devtool on the bar: the four-line recipe that already works, the bring-your-own-CSS rule, the `embed()` frame helper, and one chip that opens a whole devtools shell such as TanStack Devtools |
 | [architecture.md](./architecture.md) | What the shell guarantees, why the boundaries sit where they do, and the known gaps in the contract |
 | [adr/](./adr/) | Decision records, and the process for adding one |

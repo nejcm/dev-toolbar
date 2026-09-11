@@ -64,7 +64,72 @@ observing it, which is why three rules hold:
 `resetParam`, `pollMs`, `redactOptions`. `readStoredOverrides({ flags })` vets
 the pre-mount read against the catalogue with the exported `vetOverrides`.
 
+## Presentation
+
+`/ext/flags` puts **two kinds of control** in the bar, so it has two
+`presentation` options — a control's presentation is configured next to that
+control, rather than by one callback that would have to receive
+`FlagsSnapshot | FlagView` and make you narrow it.
+
+| Option | Control | `TView` | Invoked |
+| --- | --- | --- | --- |
+| `flags({ presentation })` | The flags chip | `FlagsSnapshot` | once |
+| `PromotedFlag.presentation` | One promoted flag | `FlagView` | once per promoted flag |
+
+```tsx
+flags({
+  presentation: "icon-value",
+  promoted: [
+    { flagKey: "ui-facelift", presentation: { preset: "icon", icon: <FlagIcon /> } },
+    { flagKey: "checkout.tier" }, // untouched — still the default tree
+  ],
+});
+```
+
+Both take the same four knobs (`preset`, `icon`, `render`, `name`) from
+`@nejcm/dev-toolbar/kit`; a bare preset is the shorthand. `render` supplies
+**children only** — the `<button>`, `type`, `aria-expanded`, `onClick`,
+`title`, `role="switch"`/`aria-checked`, the promoted dot, `data-dtb-flag` and
+`data-dtb-overridden` stay this extension's, and a preset changes text, never
+state. Returning `undefined` falls through to the preset; a whitespace-only
+`name` is ignored, so no override can leave a control unnamed.
+
+Two things are specific to flags:
+
+- **The chip's `⋮` row says `flags`, not `Flags`, under `"default"`.** Unlike
+  the Group A chips, it has never swung to its `label` when overflowed. Any
+  *preset* still forces the full word there, which is the library-wide
+  overflow guarantee.
+- **`PromotedFlag.icon` stays a `string`** — "text, not an asset". It is copied
+  into every snapshot as `FlagView.promotedIcon`, and this store republishes on
+  a **string signature**: a `ReactNode` cannot be signed (left out it never
+  publishes; `JSON.stringify`'d it republishes every 250 ms tick) and it would
+  sit inside what `diagnostics()` serialises. Rich icons go on
+  `presentation.icon`, which lives in the factory closure and reaches `ui.tsx`
+  as a prop, exactly as `label` and `injectStyles` do. The string glyph still
+  fills the icon slot when no `presentation.icon` is supplied, so it survives a
+  preset instead of vanishing; supply both and the rich one wins (a function
+  `icon` that returns nothing for this control counts as not supplied, and the
+  string glyph fills the slot again). `icon: ""` is not an icon: it has never
+  painted a node and still does not fill the slot, so an icon-only preset falls
+  back to text rather than leaving a control that is nothing but its dot.
+- **A promoted control's `"default"` tree paints `presentation.icon`.** It is
+  the one place a bare `icon` under `"default"` is not a no-op: this control has
+  had a glyph slot since it existed — the string `PromotedFlag.icon` — and
+  `presentation.icon` fills that same slot, which is the upgrade path off the
+  string field. No existing consumer can have a `presentation`, so today's bytes
+  are unmoved. Chips whose default names no icon slot ignore a bare `icon`.
+- **A promoted boolean falls back to text rather than to nothing.** A switch has
+  no value slot — it announces its own state — so `"value"`, and `"icon-value"`
+  with no icon, would leave a control that is nothing but its dot. Both paint
+  the label instead: a blank control is worse than an unstyled one.
+
+`docs/adr/ADR-004-per-extension-bar-presentation.md` records the decision.
+
 ## Tests
 
 `__tests__/runtime.test.ts` for storage, the reset param and override
-application; `flags.test.tsx` for the panel, the promoted chip and the commands.
+application; `flags.test.tsx` for the panel, the promoted chip and the
+commands; `presentation.test.tsx` for both `presentation` surfaces — the
+byte-identical default trees, the preset table on each, and the evidence that
+no `ReactNode` reaches the store, `diagnostics()` or the copy-recipe path.

@@ -40,8 +40,10 @@
 import { writeClipboardTextOrThrow } from "../../runtime";
 import { createEnvironmentRuntime } from "./runtime";
 import { EnvironmentChip, EnvironmentPanel } from "./ui";
-import { resolveStyleNonce } from "@nejcm/dev-toolbar/kit";
+import { resolvePresentation, resolveStyleNonce } from "@nejcm/dev-toolbar/kit";
+import type { CompactPresentationInput } from "@nejcm/dev-toolbar/kit";
 import type { EnvironmentContextInput, EnvironmentRuntimeOptions } from "./runtime";
+import type { EnvironmentSnapshot } from "./types";
 import type { DevToolbarExtension, ExtensionRuntimeApi, ToolbarAlign } from "../../core/contract";
 
 export interface EnvironmentOptions extends Pick<
@@ -50,7 +52,7 @@ export interface EnvironmentOptions extends Pick<
 > {
   /** Extension id. Default `"environment"`. */
   id?: string;
-  /** Bar label, used by the chip. Default `"Environment"`. */
+  /** Bar label, used by the chip and its accessible name. Default `"Environment"`. */
   label?: string;
   align?: ToolbarAlign;
   order?: number;
@@ -72,6 +74,28 @@ export interface EnvironmentOptions extends Pick<
    * slot prop core forwards from `<DevToolbar>`.
    */
   styleNonce?: string;
+  /**
+   * How the bar control presents itself: a preset, your own icon, a render
+   * callback and an accessible-name override. Bare-preset shorthand:
+   * `presentation: "icon-value"`. Callbacks see the redacted
+   * `EnvironmentSnapshot`. Presets operate on the short bar word (`"env"`);
+   * `label` stays the accessible-name identity. Use the exported
+   * `kindLabel(snapshot)` to paint the same value word a preset would.
+   *
+   * This extension renders two button wrappers — the bar trigger and the `⋮`
+   * row (no `aria-expanded`) — both driven by this option identically; the
+   * fork is about the element, not the presentation.
+   *
+   * `render` supplies only the chip's children; state attributes, `title` and
+   * the `impersonating` marker stay the extension's. `name` overrides the
+   * `aria-label` on both wrappers; a whitespace-only return is ignored.
+   *
+   * Icon and callbacks are held in this closure and passed as props — a
+   * `ReactNode` cannot be signed into a store snapshot.
+   *
+   * `docs/adr/ADR-004-per-extension-bar-presentation.md`.
+   */
+  presentation?: CompactPresentationInput<EnvironmentSnapshot>;
 }
 
 /**
@@ -94,7 +118,11 @@ export function environment(options: EnvironmentOptions = {}): DevToolbarExtensi
     detect,
     maskPii,
     redactOptions,
+    presentation: presentationOption,
   } = options;
+
+  // Resolved once, in the closure the icon and callbacks live in.
+  const presentation = resolvePresentation(presentationOption);
 
   // Built here, not in start(api): slot functions run before any effect fires.
   const runtime = createEnvironmentRuntime({
@@ -123,6 +151,7 @@ export function environment(options: EnvironmentOptions = {}): DevToolbarExtensi
       <EnvironmentChip
         runtime={runtime}
         label={label}
+        presentation={presentation}
         isOverflowed={isOverflowed}
         isPanelOpen={isPanelOpen}
         injectStyles={injectStyles}
@@ -180,7 +209,7 @@ export type {
   EnvironmentRuntime,
   EnvironmentRuntimeOptions,
 } from "./runtime";
-export { FIELD_SPECS, GROUP_LABELS, severityForKind } from "./types";
+export { FIELD_SPECS, GROUP_LABELS, kindLabel, severityForKind } from "./types";
 export type {
   EnvironmentContext,
   EnvironmentFieldId,

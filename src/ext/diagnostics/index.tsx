@@ -40,7 +40,8 @@
  */
 import { createDiagnosticsRuntime } from "./runtime";
 import { DiagnosticsChip, DiagnosticsPanel } from "./ui";
-import { resolveStyleNonce } from "@nejcm/dev-toolbar/kit";
+import { resolvePresentation, resolveStyleNonce } from "@nejcm/dev-toolbar/kit";
+import type { CompactPresentationInput } from "@nejcm/dev-toolbar/kit";
 import type { DiagnosticsRuntimeOptions } from "./runtime";
 import type {
   AnyToolbarCommand,
@@ -49,7 +50,7 @@ import type {
   ToolbarAlign,
   ToolbarCommand,
 } from "../../core/contract";
-import type { ConsoleTailReport, DiagnosticSnapshot } from "./types";
+import type { ConsoleTailReport, DiagnosticSnapshot, DiagnosticsBarView } from "./types";
 
 export interface DiagnosticsOptions extends Omit<DiagnosticsRuntimeOptions, "id"> {
   /** Extension id. Default `"diagnostics"`. */
@@ -82,6 +83,23 @@ export interface DiagnosticsOptions extends Omit<DiagnosticsRuntimeOptions, "id"
    * slot prop core forwards from `<DevToolbar>`.
    */
   styleNonce?: string;
+  /**
+   * How the bar control presents itself: a preset, your own icon, a render
+   * callback and an accessible-name override. Bare-preset shorthand:
+   * `presentation: "icon-value"`. Presets operate on the short bar word
+   * (`"diagnostics"`); `label` stays the overflow and accessible-name identity.
+   *
+   * The error/warning badge sits outside both the preset and `render`, after
+   * the contents, under every preset including `"icon"` — it is live state,
+   * not presentation. `name` overrides the `aria-label`; a whitespace-only
+   * return is ignored.
+   *
+   * Icon and callbacks are held in this closure and passed as props — a
+   * `ReactNode` cannot be signed into a store snapshot.
+   *
+   * `docs/adr/ADR-004-per-extension-bar-presentation.md`.
+   */
+  presentation?: CompactPresentationInput<DiagnosticsBarView>;
 }
 
 /**
@@ -99,8 +117,13 @@ export function diagnostics(options: DiagnosticsOptions = {}): DevToolbarExtensi
     keepMounted = false,
     injectStyles = true,
     styleNonce: optionNonce,
+    // Destructured out so it isn't spread into createDiagnosticsRuntime below.
+    presentation: presentationOption,
     ...runtimeOptions
   } = options;
+
+  // Resolved once, in the closure the icon and callbacks live in.
+  const presentation = resolvePresentation(presentationOption);
 
   // Built here, not in start(api): slot functions run on the toolbar's first
   // render, before any effect fires, and a persisted open panel needs it then.
@@ -179,6 +202,7 @@ export function diagnostics(options: DiagnosticsOptions = {}): DevToolbarExtensi
       <DiagnosticsChip
         runtime={runtime}
         label={label}
+        presentation={presentation}
         isOverflowed={isOverflowed}
         isPanelOpen={isPanelOpen}
         injectStyles={injectStyles}
@@ -302,6 +326,7 @@ export type {
   DiagnosticOmission,
   DiagnosticSnapshot,
   DiagnosticSource,
+  DiagnosticsBarView,
   DiagnosticsSnapshotState,
   InteractionReport,
   LayoutShiftReport,

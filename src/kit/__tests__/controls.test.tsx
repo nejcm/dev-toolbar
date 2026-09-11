@@ -7,6 +7,8 @@ import {
   Chip,
   EmptyState,
   Field,
+  Glyph,
+  hasPaintableIcon,
   Note,
   Row,
   Rows,
@@ -96,6 +98,120 @@ describe("Chip", () => {
     expect(chip.children).toHaveLength(2);
     expect(chip.children[0]?.getAttribute("data-dtb-kind")).toBe("dot");
     expect(chip.children[1]?.hasAttribute("data-dtb-kind")).toBe(false);
+  });
+
+  it("renders the icon after the dot and before the label", () => {
+    const { container } = render(
+      <Chip icon={<svg data-dtb-part="example-icon" />} label="metrics" value="42" />,
+    );
+
+    const chip = container.firstElementChild as HTMLSpanElement;
+    expect(Array.from(chip.children, (child) => child.getAttribute("data-dtb-kind"))).toEqual([
+      "dot",
+      "glyph",
+      null,
+      "value",
+    ]);
+    expect(chip.children[1]?.firstElementChild?.getAttribute("data-dtb-part")).toBe("example-icon");
+  });
+
+  it("takes props for the icon wrapper", () => {
+    const { container } = render(
+      <Chip icon="*" iconProps={{ "data-dtb-part": "example-icon" }} label="metrics" />,
+    );
+
+    const glyph = container.querySelector('[data-dtb-kind="glyph"]');
+    expect(glyph?.getAttribute("data-dtb-part")).toBe("example-icon");
+  });
+
+  it.each([undefined, null])(
+    "omits the label node entirely for %s, so the gap does not shift an icon-only chip",
+    (label) => {
+      const { container } = render(<Chip icon="*" label={label} value="42" />);
+
+      const chip = container.firstElementChild as HTMLSpanElement;
+      expect(Array.from(chip.children, (child) => child.getAttribute("data-dtb-kind"))).toEqual([
+        "dot",
+        "glyph",
+        "value",
+      ]);
+    },
+  );
+
+  it("omits the icon node entirely when no icon is supplied", () => {
+    const { container } = render(<Chip label="metrics" />);
+
+    const chip = container.firstElementChild as HTMLSpanElement;
+    expect(chip.querySelector('[data-dtb-kind="glyph"]')).toBeNull();
+    expect(chip.children).toHaveLength(2);
+  });
+
+  // hasPaintableIcon's emptiness rule, not a presence test: `icon={enabled &&
+  // <I />}` is `false` half the time, and a presence test would still paint it.
+  it.each([false, true, ""])("takes %p as no icon at all, not as an icon", (icon) => {
+    const { container } = render(<Chip icon={icon} label="metrics" />);
+
+    expect(container.querySelector('[data-dtb-kind="glyph"]')).toBeNull();
+  });
+
+  // Emptiness, not falsiness: React paints `0` as the character.
+  it("paints 0 as an icon", () => {
+    const { container } = render(<Chip icon={0} label="metrics" />);
+
+    expect(container.querySelector('[data-dtb-kind="glyph"]')?.textContent).toBe("0");
+  });
+});
+
+describe("Glyph", () => {
+  it("hides itself from assistive technology by default and forwards its ref", () => {
+    const ref = createRef<HTMLSpanElement>();
+    const { container } = render(
+      <Glyph ref={ref} data-dtb-part="example-icon">
+        <svg />
+      </Glyph>,
+    );
+
+    const glyph = container.firstElementChild as HTMLSpanElement;
+    expect(ref.current).toBe(glyph);
+    expect(glyph.getAttribute("data-dtb-kind")).toBe("glyph");
+    expect(glyph.getAttribute("aria-hidden")).toBe("true");
+    expect(glyph.getAttribute("data-dtb-part")).toBe("example-icon");
+  });
+
+  it("lets a site that names the icon itself opt out of aria-hidden", () => {
+    const { getByRole } = render(
+      <Glyph aria-hidden={false} role="img" aria-label="memory">
+        <svg />
+      </Glyph>,
+    );
+
+    expect(getByRole("img", { name: "memory" }).getAttribute("data-dtb-kind")).toBe("glyph");
+  });
+});
+
+describe("hasPaintableIcon", () => {
+  // The five primitives React paints nothing for. `0` paints the character.
+  it.each([[undefined], [null], [false], [true], [""]])("%j is not an icon", (empty) => {
+    expect(hasPaintableIcon(empty)).toBe(false);
+  });
+
+  it.each([[0], ["*"], ["0"], [NaN]])("%j is an icon", (node) => {
+    expect(hasPaintableIcon(node)).toBe(true);
+  });
+
+  // The boundary, pinned so the rule stays the narrow one: a node that paints
+  // nothing (an empty array, a component returning null) still counts as an
+  // icon — deciding otherwise needs rendering it, which this can't do.
+  it.each([[[]], [[null]], [[undefined, false]]])("%j is a node, so it counts", (node) => {
+    expect(hasPaintableIcon(node)).toBe(true);
+  });
+
+  // /ext/flags has painted its legacy string | undefined icon on truthiness
+  // since it existed; the two rules must agree over that type.
+  it("agrees with truthiness over the legacy glyph's string | undefined", () => {
+    for (const glyph of [undefined, "", "★", " "]) {
+      expect(hasPaintableIcon(glyph)).toBe(Boolean(glyph));
+    }
   });
 });
 

@@ -1057,25 +1057,30 @@ describe("publication guarantees", () => {
     runtime.store.destroy();
   });
 
-  // Pins promotedLabel/promotedIcon missing from signature(), which leaves the
-  // promoted chip stale after config changes; when covered, invert to
-  // toHaveBeenCalledTimes(1) and getSnapshot() toBe(peek()).
-  it.each(["label", "icon"] as const)("BUG: promoted %s alone does not publish", (field) => {
-    const promoted: PromotedFlag = { flagKey: "feature", label: "Pinned", icon: "A" };
-    const runtime = createFlagsRuntime({ flags: [initial], promoted: [promoted] });
-    const before = runtime.store.getSnapshot();
-    const listener = vi.fn();
-    runtime.store.subscribe(listener);
-    promoted[field] = "Changed";
-    runtime.refresh();
-    runtime.store.flush();
-    const viewField = field === "label" ? "promotedLabel" : "promotedIcon";
-    expect(runtime.store.peek().flags).toEqual([{ ...before.flags[0], [viewField]: "Changed" }]);
-    expect(runtime.store.peek().promoted).toEqual(runtime.store.peek().flags);
-    expect(listener).not.toHaveBeenCalled();
-    expect(runtime.store.getSnapshot()).toBe(before);
-    runtime.store.destroy();
-  });
+  // Deliberate and permanent: promotedLabel/promotedIcon are left out of
+  // signature(), so mutating `promoted` after flags() ran does not republish.
+  // What the runtime decides (eligibility, promotedIndex) is signed; what the
+  // consumer handed over verbatim (label, icon, and presentation's ReactNode,
+  // which can never be signed) is not. Rebuild the extension instead.
+  it.each(["label", "icon"] as const)(
+    "promoted %s alone does not publish — config is not live",
+    (field) => {
+      const promoted: PromotedFlag = { flagKey: "feature", label: "Pinned", icon: "A" };
+      const runtime = createFlagsRuntime({ flags: [initial], promoted: [promoted] });
+      const before = runtime.store.getSnapshot();
+      const listener = vi.fn();
+      runtime.store.subscribe(listener);
+      promoted[field] = "Changed";
+      runtime.refresh();
+      runtime.store.flush();
+      const viewField = field === "label" ? "promotedLabel" : "promotedIcon";
+      expect(runtime.store.peek().flags).toEqual([{ ...before.flags[0], [viewField]: "Changed" }]);
+      expect(runtime.store.peek().promoted).toEqual(runtime.store.peek().flags);
+      expect(listener).not.toHaveBeenCalled();
+      expect(runtime.store.getSnapshot()).toBe(before);
+      runtime.store.destroy();
+    },
+  );
 
   it("publishes promotion eligibility alone once", () => {
     let now = 0;
@@ -1091,7 +1096,7 @@ describe("publication guarantees", () => {
     runtime.refresh();
     runtime.store.flush();
     expect(runtime.store.getSnapshot().flags).toEqual([
-      { ...before.flags[0], promoted: true, promotedLabel: "Feature" },
+      { ...before.flags[0], promoted: true, promotedIndex: 0, promotedLabel: "Feature" },
     ]);
     expect(runtime.store.getSnapshot().promoted).toEqual(runtime.store.getSnapshot().flags);
     expect(listener).toHaveBeenCalledTimes(1);
@@ -1471,9 +1476,11 @@ describe("published flag ordering", () => {
     runtime.store.destroy();
   });
 
-  // Pins promoted order missing from signature(), which leaves the bar order
-  // stale. When covered, invert to toHaveBeenCalledTimes(1) and getSnapshot() toBe(peek()).
-  it("BUG: reordering promotion configuration leaves the published bar order stale", () => {
+  // Was pinned as a bug: promoted order was invisible to signature(). Now
+  // promotedIndex — each view's position, added so a control can find its
+  // eligible entry's presentation — moves the signature on reorder. label
+  // and icon still aren't signed; this is a by-product, not a promise.
+  it("publishes a reordered promotion configuration", () => {
     const promoted = [{ flagKey: "a" }, { flagKey: "b" }];
     const runtime = createFlagsRuntime({
       flags: [
@@ -1488,14 +1495,12 @@ describe("published flag ordering", () => {
     promoted.reverse();
     runtime.refresh();
     runtime.store.flush();
-    expect(runtime.store.peek()).toEqual({
-      ...before,
-      promoted: [...before.promoted].reverse(),
-      revision: before.revision + 1,
-      at: expect.any(Number),
-    });
-    expect(listener).not.toHaveBeenCalled();
-    expect(runtime.store.getSnapshot()).toBe(before);
+    const after = runtime.store.getSnapshot();
+    expect(after).toBe(runtime.store.peek());
+    expect(after).not.toBe(before);
+    expect(after.promoted.map((view) => view.key)).toEqual(["b", "a"]);
+    expect(after.promoted.map((view) => view.promotedIndex)).toEqual([0, 1]);
+    expect(listener).toHaveBeenCalledTimes(1);
     runtime.store.destroy();
   });
 });

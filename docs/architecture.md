@@ -499,7 +499,10 @@ deliberate kinds of exception are whitelisted precisely where they occur:
 ### 4.2 `data-dtb-part`
 
 Every part carries a stable attribute. These are the supported selector hooks; class
-names inside core are not.
+names inside core are not. The table below is **core's** parts — the unprefixed names.
+An extension's own parts are namespaced and documented on that extension's page in
+[docs/ext/](./ext/), which is where the icon and text parts the `presentation` option
+added are listed too; this table does not grow when an extension adds one.
 
 | Part | Element | Notes |
 | --- | --- | --- |
@@ -533,9 +536,9 @@ on the same element for targeting.
 overflows rather than aligning, which is why a legend's rule stops at the measure.
 
 A second attribute cuts the other way. `data-dtb-part` says *which* part this is;
-`data-dtb-kind` says *what sort of thing* it is — `action`, `chip`, `dot`, `label`,
-`value`, `note`, `tag`, `row`, `rows`, `list`, `empty`, `banner`, `search`, `toolbar`,
-`field`.
+`data-dtb-kind` says *what sort of thing* it is — `action`, `chip`, `dot`, `glyph`,
+`label`, `value`, `note`, `tag`, `row`, `rows`, `stack`, `list`, `empty`, `banner`,
+`search`, `toolbar`, `field`.
 Parts are namespaced per extension and so cannot be styled across extensions in one
 rule; kinds are shared and exist precisely for that. `KIT_CSS`, from
 [`@nejcm/dev-toolbar/kit`](./kit.md), is the one stylesheet keyed on them, and it
@@ -544,7 +547,7 @@ drifted three ways. Severity rules there are **compound** —
 `[data-dtb-kind="dot"][data-dtb-severity="warn"]`, both attributes on one element — so
 a container carrying a severity never tints its descendants. `field` is a kind with no
 kit rule at all: core's `:where(input, select, textarea)` already owns field geometry,
-so that fifteenth kind is a selector hook and nothing more. The kit's sheet is subject to the
+so that seventeenth kind is a selector hook and nothing more. The kit's sheet is subject to the
 same three gates as core's and every extension's — logical properties only,
 `@layer dev-toolbar`, `[data-dev-toolbar]`-scoped — enforced by
 `src/ext/__tests__/stylesheets.test.ts`.

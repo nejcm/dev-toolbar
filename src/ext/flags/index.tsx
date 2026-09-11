@@ -59,13 +59,20 @@ import {
   DEFAULT_RESET_PARAM,
   OVERRIDES_KEY,
   isFlagValue,
+  promotionsOf,
   vetOverrides,
 } from "./runtime";
 import { writeClipboardTextOrThrow } from "../../runtime";
 import { FlagsChip, FlagsPanel } from "./ui";
-import { readInput, readStoredRecord, resolveStyleNonce } from "@nejcm/dev-toolbar/kit";
+import {
+  readInput,
+  readStoredRecord,
+  resolvePresentation,
+  resolveStyleNonce,
+} from "@nejcm/dev-toolbar/kit";
+import type { CompactPresentationInput, ResolvedCompactPresentation } from "@nejcm/dev-toolbar/kit";
 import type { FlagsRuntimeOptions } from "./runtime";
-import type { FlagReading, FlagValue, FlagsInput } from "./types";
+import type { FlagReading, FlagValue, FlagView, FlagsInput, FlagsSnapshot } from "./types";
 import type {
   CommandInputSchema,
   DevToolbarExtension,
@@ -112,6 +119,22 @@ export interface FlagsOptions extends Pick<
    * slot prop core forwards from `<DevToolbar>`.
    */
   styleNonce?: string;
+  /**
+   * How the **flags chip** presents itself: a preset, your own icon, a render
+   * callback and an accessible-name override. A bare preset is the shorthand —
+   * `presentation: "icon-value"`.
+   *
+   * This is the chip alone; a promoted flag configures its own on
+   * {@link PromotedFlag.presentation}, next to that control.
+   *
+   * `render` supplies the children of the span carrying `data-dtb-overridden` —
+   * state attributes, `aria-expanded`, `onClick` and `title` stay the
+   * extension's; returning `undefined` falls through to the preset. `name`
+   * overrides the trigger's `aria-label` (a whitespace-only return is ignored).
+   *
+   * `docs/adr/ADR-004-per-extension-bar-presentation.md`.
+   */
+  presentation?: CompactPresentationInput<FlagsSnapshot>;
 }
 
 /**
@@ -129,8 +152,21 @@ export function flags(options: FlagsOptions = {}): DevToolbarExtension {
     keepMounted = true,
     injectStyles = true,
     styleNonce: optionNonce,
+    presentation: presentationOption,
     ...runtimeOptions
   } = options;
+
+  // Resolved once, here, in the factory closure — the only place icons and
+  // callbacks can live, since a `ReactNode` can't cross into this extension's
+  // string-signed store (see PromotedFlag.icon). Both resolved maps travel to
+  // `ui.tsx` as props.
+  const presentation = resolvePresentation(presentationOption);
+  // Keyed by position in `promoted`, matching FlagView.promotedIndex — two
+  // entries can name the same key, only the runtime knows which is live.
+  const promotedPresentations = new Map<number, ResolvedCompactPresentation<FlagView>>();
+  promotionsOf(runtimeOptions.promoted).forEach((promotion, index) => {
+    promotedPresentations.set(index, resolvePresentation(promotion.presentation));
+  });
 
   // Built here, not in start(api): slot functions run during the toolbar's
   // first render, which is before any effect fires.
@@ -220,6 +256,8 @@ export function flags(options: FlagsOptions = {}): DevToolbarExtension {
       <FlagsChip
         runtime={runtime}
         label={label}
+        presentation={presentation}
+        promotedPresentations={promotedPresentations}
         isOverflowed={isOverflowed}
         isPanelOpen={isPanelOpen}
         injectStyles={injectStyles}
