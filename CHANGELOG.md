@@ -14,6 +14,13 @@
   style break at the boundary is accepted, not an oversight.
 -->
 
+## [0.10.1](https://github.com/nejcm/dev-toolbar/compare/v0.10.0...v0.10.1) (2026-09-11)
+
+
+### Bug Fixes
+
+* **ext:** put the visible word in the metrics and a11y trigger names ([#102](https://github.com/nejcm/dev-toolbar/issues/102)) ([82468aa](https://github.com/nejcm/dev-toolbar/commit/82468aa3ff2c5f37a88300e00cc33cab9aa0cb4c))
+
 ## [0.10.0](https://github.com/nejcm/dev-toolbar/compare/v0.9.0...v0.10.0) (2026-09-11)
 
 
