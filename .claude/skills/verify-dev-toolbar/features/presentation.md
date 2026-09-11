@@ -2,11 +2,14 @@
 
 Each extension factory takes one `presentation` option — a preset, an icon the
 *consumer* supplies as a `ReactNode`, a render callback and an accessible-name
-override. The playground exercises it on `metrics`, `flags` and `a11y` with
+override. The playground exercises it on `metrics`, `flags`, `overlays` and `a11y` with
 inline `<svg>`s it owns itself (`examples/playground/src/barIcons.tsx`), which
 is the proof no icon library is bundled, vendored or peer-depended, and on
 `agent` with the icon half of the narrowed two-knob option — no preset, because
-that chip has no value and no short word of its own (ADR-004, "Group C"). Five
+that chip has no value and no short word of its own (ADR-004, "Group C").
+`overlays` is the one that carries its icon **at rest**, in every mode — the
+standing demo, so the option is visible without first finding the header
+toggle. Five
 things here are invisible to jsdom: the icon is scaled rather than clipped, an
 icon-only control is several times narrower than the chip it replaced, the
 collapse decision has to settle after that swing, an icon-only control still
@@ -35,7 +38,8 @@ browser's own accessibility tree says.
 ## How to get to it (user POV)
 
 - Click **Bar icons** in the playground header. It cycles
-  `default → icon-value → icon`, rebuilding `metrics`, `flags`, `a11y` and
+  `default → icon-value → icon`, rebuilding `metrics`, `flags`, `overlays`,
+  `a11y` and
   `agent` with that mode and remounting the toolbar (`key`) so the new objects
   actually start. The rest of the roster is the same objects, stopped and
   started again. `agent` reads both non-default modes identically — it takes
@@ -52,9 +56,13 @@ browser's own accessibility tree says.
 Preconditions:
 
 - Baseline per [README](./README.md), viewport pinned to 1280×800.
-- **The resting playground is `default`**, deliberately: it passes no
-  `presentation` at all, so every width the rest of this map measured still
-  holds. Anything measured after a click on **Bar icons** is a different bar,
+- **The resting playground is `default`**, deliberately — with one exception:
+  it passes no `presentation` at all except on `overlays`, which is built
+  `{ preset: "icon-value", icon: OVERLAYS_ICON }` at rest and reads `▤ off` /
+  `▤ 2 on` rather than `overlays off`. Every width the rest of this map
+  measured still holds for the other chips; the `overlays` chip is narrower
+  than the pre-#103 measurements, so re-measure before quoting a bar count that
+  depends on it. Anything measured after a click on **Bar icons** is a different bar,
   and a report that quotes a chip list must say which mode it was in.
 - The pane must be **displayed** for the flip: the collapse runs off a
   `ResizeObserver`, and a hidden pane delivers no frames (see
@@ -64,9 +72,13 @@ Preconditions:
 State is `read().shell.bar` / `read().shell.overflow`; the icons themselves are
 pixels and come from the page read.
 
-- **Resting state.** Read. No `[data-dtb-kind="glyph"]` inside
-  `[data-dtb-part="bar"]` carries an `<svg>`; the flags chip paints `flags` and
-  its promoted switch paints the `◈` it has always painted.
+- **Resting state.** Read. **Exactly one** `[data-dtb-kind="glyph"]` inside
+  `[data-dtb-part="bar"]` carries an `<svg>` — `overlays`, whose `ovl-icon`
+  is there in every mode and whose `ovl-chip-label` is the state word (`off`,
+  `2 on`), never `overlays`; the flags chip paints `flags` and
+  its promoted switch paints the `◈` it has always painted. Its `⋮` row keeps
+  the configured `Overlays` label under every preset, so nothing is lost on
+  collapse.
 - **Flip to `icon-value`.** Click `[data-testid="toggle-bar-icons"]` once; the
   button reports `Bar icons: icon-value`. Page-read
   `[data-dtb-part="bar"] [data-dtb-kind="glyph"] > svg`: each one's
@@ -159,7 +171,7 @@ pixels and come from the page read.
 ## Gotchas
 
 - **The flip rebuilds the agent bridge too**, since `agent` is now one of the
-  four. The remount tears down its global and installs it again, so a read
+  five. The remount tears down its global and installs it again, so a read
   taken during a flip can find `window.__DEV_TOOLBAR__.instances.playground`
   momentarily absent — poll, as the spec's helpers do, rather than reading once.
 - `presentation` is a **factory option**, held in the extension's closure, so

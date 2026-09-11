@@ -35,7 +35,10 @@ driving the app, then use the matching feature file as the recipe.
   `metrics`, `diagnostics`, `hydr`, `boom` collapsed. **`a11y` (priority 25)
   joined the playground after that measurement**, so re-measure before quoting
   a bar count: one more item at the same viewport moves the collapse line, and
-  `a11y` sits between `hydr` (20) and `metrics` (35) in collapse order. (Cross-checked the same
+  `a11y` sits between `hydr` (20) and `metrics` (35) in collapse order. The
+  `overlays` chip has also **narrowed** since that measurement — it now paints
+  an icon plus its state (`▤ off`) instead of `overlays off`, see
+  [presentation.md](./presentation.md) — which moves the line the other way. (Cross-checked the same
   moment against the DOM: `[data-dtb-part="region"] > [data-dtb-part="item"]`
   lists those same eight at `innerWidth: 1280`.) `agent` has the lowest
   `priority` (`-1`), so it is the first to leave the bar as the window narrows.
