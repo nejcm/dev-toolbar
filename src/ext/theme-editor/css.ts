@@ -148,6 +148,27 @@ const THEME_EDITOR_EXTENSION_CSS = String.raw`@layer dev-toolbar {
     color: var(--dtb-danger);
   }
 
+  /* A tinted row owns its tint, and a tag inside one is drawn back on the
+     panel ground rather than on top of it. Stacking translucent layers is what
+     made "edited" inside an overridden row 4.36:1 and "no longer declared"
+     inside a warn row 4.10:1 — the same alpha painted twice, under AA both
+     times. Merely dropping the tag's own tint is not enough: the row's tint
+     still shows through, and on dark an "edited" tag in a warn row lands at
+     4.16:1. An opaque reset puts every tag on the one ground core already
+     measures its colour against. __tests__/contrast.test.ts resolves these
+     grounds out of this sheet, so removing the rule fails there. */
+  [data-dev-toolbar]
+    [data-dtb-part="thm-row"][data-dtb-severity="override"]
+    [data-dtb-part="thm-tag"],
+  [data-dev-toolbar]
+    [data-dtb-part="thm-row"][data-dtb-severity="warn"]
+    [data-dtb-part="thm-tag"],
+  [data-dev-toolbar]
+    [data-dtb-part="thm-row"][data-dtb-severity="bad"]
+    [data-dtb-part="thm-tag"] {
+    background: var(--dtb-panel-bg);
+  }
+
   [data-dev-toolbar] [data-dtb-part="thm-editor"] {
     display: flex;
     flex-wrap: wrap;

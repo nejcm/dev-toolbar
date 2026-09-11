@@ -543,6 +543,16 @@ extension's severity borders and text move at once. Banner **grounds** are separ
 tokens — `--dtb-ok-bg`, `--dtb-warn-bg`, `--dtb-danger-bg`, and `--dtb-item-active-bg`
 for `override` — so a full re-tint means overriding both halves.
 
+A `value` and a `banner` are text at 11px or 12px — both under WCAG's 18.66px
+large-text threshold — so a severity colour owes 4.5:1 against the bar, against a
+panel, *and* against its own `-bg` tint over either; the `dot` in the same colour is
+non-text and owes 3:1. The shipped tokens clear that on the grounds core paints —
+the bar, a panel, a field, a trigger that is hovered or has its panel open — and
+`src/core/__tests__/contrast.test.ts` keeps them there. Stacking one severity's tint
+*on another's* is outside that arithmetic and is the extension's own to measure. An
+override is yours to check either way: the toolbar is excluded from `/ext/a11y`'s
+scans, so axe in your app will not see it.
+
 ### Under a host reset
 
 Because the sheet is layered, a kit control needs the same armour any dev-toolbar

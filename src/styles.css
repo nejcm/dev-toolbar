@@ -56,7 +56,10 @@
     --dtb-z-index: 2147483000;
     --dtb-bg: #f6f6f7;
     --dtb-fg: #202124;
-    --dtb-muted: #6b6f76;
+    /* The weakest foreground the sheet has, so it is what bounds how dark a
+       state ground above may go. Dark enough for 4.5:1 on a selected chip
+       while still reading as secondary beside --dtb-fg. */
+    --dtb-muted: #5f636a;
     --dtb-border: rgba(0, 0, 0, 0.12);
     /* The bar's own edge, softer than the borders inside it: half the strength
        of --dtb-border, which stays as it is for panel rules, inputs and the
@@ -65,13 +68,29 @@
        bar rather than the page — a slightly darker grey on light, and on dark
        a line a little lighter than the bar rather than a bright one. */
     --dtb-bar-border: rgba(0, 0, 0, 0.07);
-    --dtb-accent: #5e6ad2;
+    /* Also text — a kit value at "override" severity, a link in a panel —
+       and the ground it has to clear is the override banner, which is the
+       one banner with no tint of its own and sits on --dtb-item-active-bg.
+       Same indigo, dark enough for that ground. */
+    --dtb-accent: #4652c9;
     --dtb-item-bg: transparent;
-    --dtb-item-hover-bg: rgba(0, 0, 0, 0.06);
+    --dtb-item-hover-bg: rgba(0, 0, 0, 0.04);
     /* Selected reads as recessed, not tinted: a plain darker ground, and one
-       step darker again while the pointer is down. */
-    --dtb-item-active-bg: rgba(0, 0, 0, 0.13);
-    --dtb-item-pressed-bg: rgba(0, 0, 0, 0.19);
+       step darker again while the pointer is down. The ramp is deliberately
+       shallow — these grounds are painted *under a chip's own text*, and a
+       selected trigger at the 13% black this used to be pulled every label in
+       it down by about 1.2, which is what put --dtb-muted at 3.47:1 and
+       --dtb-warn at 2.82:1 with a panel open. Three even 4% steps keep the
+       states distinguishable (246 -> 236 -> 226 -> 216 on the bar). The ramp
+       is shallower, not free: selected still costs --dtb-muted 0.91 (5.59 ->
+       4.68) where the old one cost 1.19 (4.67 -> 3.48). What clears AA is the
+       sum — a shallower ramp *and* foregrounds moved down to meet it. A
+       pressed trigger is deliberately not in that sum: it is AA
+       non-conformant by design, since no value both clears 4.5:1 under every
+       foreground and stays a visible third step. It lasts only while the
+       pointer is held. */
+    --dtb-item-active-bg: rgba(0, 0, 0, 0.08);
+    --dtb-item-pressed-bg: rgba(0, 0, 0, 0.12);
     --dtb-panel-bg: #ffffff;
     --dtb-menu-bg: #ffffff;
     /* Inputs, selects and textareas. A well, not an outline: it separates the
@@ -84,12 +103,22 @@
        floating dialog wants. Separate from --dtb-shadow, which the command
        palette still uses to sit above the page. */
     --dtb-menu-shadow: 0 2px 10px rgba(0, 0, 0, 0.08);
-    --dtb-danger: #c0392b;
-    --dtb-danger-bg: rgba(192, 57, 43, 0.12);
-    --dtb-ok: #1e8a54;
-    --dtb-ok-bg: rgba(30, 138, 84, 0.12);
-    --dtb-warn: #a8730c;
-    --dtb-warn-bg: rgba(168, 115, 12, 0.14);
+    /* The severity family. Every one of these is *text* somewhere — a chip
+       value, a badge, the error chip's retry — at 11px or 12px, both under
+       WCAG's 18.66px large-text threshold, so each has to clear 4.5:1 on
+       every ground it is painted on: the bar, a panel, and its own -bg tint
+       composited over either. On light that is what sets these lightnesses;
+       they are the original hues at the lightness the ratio allows, chosen
+       as a set so no one severity reads heavier than its neighbours. Each
+       -bg is the same colour at a low alpha, so a tint follows its token.
+       Dark already cleared. src/core/__tests__/contrast.test.ts computes the
+       ratios from these declarations and fails if an edit drops one below. */
+    --dtb-danger: #b53628;
+    --dtb-danger-bg: rgba(181, 54, 40, 0.12);
+    --dtb-ok: #187345;
+    --dtb-ok-bg: rgba(24, 115, 69, 0.12);
+    --dtb-warn: #855b0a;
+    --dtb-warn-bg: rgba(133, 91, 10, 0.14);
 
     position: fixed;
     inset-inline: 0;

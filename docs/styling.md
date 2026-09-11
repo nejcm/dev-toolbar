@@ -68,6 +68,16 @@ severity borders and text at once. Banner grounds are their own tokens —
 `--dtb-ok-bg`, `--dtb-warn-bg`, `--dtb-danger-bg`, and `--dtb-item-active-bg` for
 `override` — so a full re-tint means overriding both halves.
 
+Both halves carry a contrast obligation. The bar's text is 11px compact and 12px
+comfortable, both under WCAG's 18.66px large-text threshold, so a severity colour
+owes **4.5:1** against every ground it lands on — the bar, a panel, *and* its own
+`-bg` tint over either — while the dot drawn in the same colour is non-text and owes
+**3:1**. The shipped values are picked to clear that on the grounds the toolbar
+paints, with 0.05–0.11 to spare on a trigger whose panel is open; if you override one,
+or stack one severity's tint on another's, check the pair you have made.
+`/ext/a11y` excludes the toolbar from its own scans, so an axe run in your app will not
+tell you.
+
 `data-dtb-tone` is older, extension-local vocabulary rather than part of the kit.
 Flags banners retain `error` and `warn` alongside kit severity. Theme-editor banners
 use `error`, `warn` and `info`, interpreted only by its own stylesheet. New extensions

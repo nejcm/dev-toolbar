@@ -431,29 +431,72 @@ Set them on `[data-dev-toolbar]`, or on any ancestor. Unlayered CSS wins.
 | `--dtb-z-index` | `2147483000` | Toolbar root stacking |
 | `--dtb-bg` | `#f6f6f7` | Bar background |
 | `--dtb-fg` | `#202124` | Foreground |
-| `--dtb-muted` | `#6b6f76` | Secondary text |
+| `--dtb-muted` | `#5f636a` | Secondary text — the weakest foreground, so it bounds how dark a state ground may go |
 | `--dtb-border` | `rgba(0,0,0,.12)` | Panel and menu borders, inputs, item dividers |
 | `--dtb-bar-border` | `rgba(0,0,0,.07)` | The bar's own edge — half `--dtb-border`'s strength (`rgba(255,255,255,.07)` on dark) |
-| `--dtb-accent` | `#5e6ad2` | Focus ring, resizer highlight |
+| `--dtb-accent` | `#4652c9` | Focus ring, resizer highlight, `"override"` severity |
 | `--dtb-item-bg` | `transparent` | Trigger background |
-| `--dtb-item-hover-bg` | `rgba(0,0,0,.06)` | Trigger hover |
-| `--dtb-item-active-bg` | `rgba(0,0,0,.13)` | Trigger with its panel open — a neutral darker ground, not a tint |
-| `--dtb-item-pressed-bg` | `rgba(0,0,0,.19)` | Trigger while the pointer is down |
+| `--dtb-item-hover-bg` | `rgba(0,0,0,.04)` | Trigger hover |
+| `--dtb-item-active-bg` | `rgba(0,0,0,.08)` | Trigger with its panel open — a neutral darker ground, not a tint |
+| `--dtb-item-pressed-bg` | `rgba(0,0,0,.12)` | Trigger while the pointer is down |
 | `--dtb-panel-bg` | `#ffffff` | Panel background |
 | `--dtb-menu-bg` | `#ffffff` | `⋮` menu background |
 | `--dtb-field-bg` | `rgba(0,0,0,.035)` | Inputs, selects and textareas — a recessed well, not an outlined box |
 | `--dtb-shadow` | `0 6px 24px rgba(0,0,0,.14)` | Floating surfaces: the command palette dialog, overlay labels |
 | `--dtb-menu-shadow` | `0 2px 10px rgba(0,0,0,.08)` | The `⋮` popup, which is flush and bordered so it needs only a hint of lift |
-| `--dtb-danger` | `#c0392b` | Error chip text; "bad" severity |
-| `--dtb-danger-bg` | `rgba(192,57,43,.12)` | Error chip background |
-| `--dtb-ok` | `#1e8a54` | "ok" severity |
-| `--dtb-ok-bg` | `rgba(30,138,84,.12)` | — |
-| `--dtb-warn` | `#a8730c` | "warn" severity |
-| `--dtb-warn-bg` | `rgba(168,115,12,.14)` | — |
+| `--dtb-danger` | `#b53628` | Error chip text; "bad" severity |
+| `--dtb-danger-bg` | `rgba(181,54,40,.12)` | Error chip background |
+| `--dtb-ok` | `#187345` | "ok" severity |
+| `--dtb-ok-bg` | `rgba(24,115,69,.12)` | — |
+| `--dtb-warn` | `#855b0a` | "warn" severity |
+| `--dtb-warn-bg` | `rgba(133,91,10,.14)` | — |
 | `--dtb-panel-height` | set per panel | Written by the panel host; read, do not set |
 
 Dark values are applied for `[data-dtb-color-scheme="dark"]` and, under
 `prefers-color-scheme: dark`, for anything not explicitly `"light"`.
+
+Every colour above is a **text** colour somewhere, and the bar's text is 11px
+compact and 12px comfortable — both under WCAG's 18.66px large-text threshold,
+so each owes 4.5:1 against every ground it is painted on: the bar, a panel, and
+its own `-bg` tint composited over either. `--dtb-ok`, `--dtb-warn`,
+`--dtb-danger` and `--dtb-accent` are the original hues at the lightness that
+ratio allows, picked as a set so no one severity reads heavier than its
+neighbours. The dots and sparkline strokes drawn in the same colours are
+non-text, and owe 3:1.
+
+The three item grounds are part of that arithmetic, not separate from it. They
+are painted *under a chip's own text*, so the selected state is a ground every
+foreground has to clear: at the `.13` black this used to be, a trigger with its
+panel open pulled `--dtb-muted` to 3.47:1 and `--dtb-warn` to 2.82:1. Hover,
+selected and pressed are now three even 4% steps — `246 → 236 → 226 → 216` on
+the bar — which stays legible as a ramp and is *shallower*, not free: selected
+still costs `--dtb-muted` 0.91 (5.59 → 4.68) where the old ground cost 1.19
+(4.67 → 3.48). What clears AA is the sum of both halves — a shallower ramp and
+foregrounds moved down to meet it. The margin left over is thin by design: on
+the selected-trigger ground the family has 0.05–0.11 to spare, so a later nudge
+to `--dtb-ok`, `--dtb-bg` or the active alpha is expected to trip the guard
+below rather than pass quietly.
+
+A *pressed* trigger is **AA non-conformant by design**. It is not a near miss
+and it is not measured: no value of `--dtb-item-pressed-bg` both clears 4.5:1
+under every foreground and stays a visible third step past hover and selected.
+It lasts only while the pointer is held, and axe never evaluates it.
+
+Nothing catches a regression here in a browser: `/ext/a11y` excludes the
+toolbar from its own scans, so a consumer's axe run never measures the bar.
+`src/core/__tests__/contrast.test.ts` computes the ratios from the declarations
+in `src/styles.css` instead, and fails if a token drops below its floor — which
+is also the check a consumer's own override should be held to.
+
+That file measures the tokens against *core's* surfaces. An extension sheet
+that stacks one token's tint on another builds grounds core never sees, and
+owes its own guard: `/ext/theme-editor` tinted a token row by severity and then
+painted a tinted tag inside it, so an `edited` tag on an overridden row read at
+4.36:1 until the row was made the owner of its tint
+(`src/ext/theme-editor/__tests__/contrast.test.ts`). Two tokens are deliberately
+outside both: `--dtb-border` and `--dtb-bar-border` separate surfaces that are
+already told apart by their grounds, so they are treated as decorative under
+1.4.11 — a judgement, not a measurement.
 
 **The bar is monospace end to end, labels included**, and that is deliberate:
 one family is the only way to get one baseline. Two families at one size do not
