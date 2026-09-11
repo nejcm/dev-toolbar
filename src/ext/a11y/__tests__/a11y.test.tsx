@@ -101,7 +101,7 @@ describe("the chip", () => {
     const chip = toolbar.item("a11y");
     expect(chip?.textContent).toContain("2");
     expect(chip?.querySelector('[data-dtb-part="trigger"]')?.getAttribute("aria-label")).toBe(
-      "Accessibility, 2 violations",
+      "Accessibility (a11y), 2 violations",
     );
   });
 });

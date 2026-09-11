@@ -942,6 +942,21 @@ is the helper for a control in that position; `resolveAccessibleName` is the one
 control with a name of its own to fall back to, and it is defined in terms of it, so the
 whitespace rule is one rule.
 
+**What the *fallback* name must contain is the extension's business, not kit's**, and
+there is one rule it follows: the name contains the short bar word, because WCAG 2.5.3
+Label in Name wants the word a speech-input user can see inside the name they can say.
+Whatever the name does *not* carry — the visible readout — reaches a screen reader as the
+control's **description**, and that is already the chip's `title`: an `aria-label`
+replaces content rather than adding to it, but a browser with no `aria-describedby` to
+follow describes a control by its `title`, and every first-party chip has one that states
+its readout with more context than the value span does. An explicit `aria-describedby`
+would *displace* that, so exactly one extension adds one — `/ext/metrics`, whose title
+(`Runtime performance — click for details`) carries no readout at all; it points at its
+own label and value spans, in pairs. Kit answers *which parts*; the value span, any `id`
+on it and the `aria-describedby` are that extension's own DOM, which is why no helper here
+has an opinion about them. See
+[styling.md](./styling.md#the-name-carries-the-word-title-carries-the-readout).
+
 ### A factory option cannot be changed at runtime
 
 `presentation` is fixed when the factory is called, exactly like `label`, `align` and

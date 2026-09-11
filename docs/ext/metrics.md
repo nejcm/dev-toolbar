@@ -322,6 +322,72 @@ What is specific to this extension:
   usable override keeps no `aria-label` at all — those rows are named by their content
   today.
 
+## The bar button's accessible name, and where the numbers go
+
+The bar trigger is named after the extension **plus the short words it paints**, built
+from each switched-on collector's `view.label` in bar order. `metrics()` runs all four
+built-in collectors unless you narrow `only`, so the name you get by default is
+`Metrics: mem, delay, jank, net`. With `only: ["memory"]` it is `Metrics: mem`, and with
+no metrics at all (`only: []`) it is the `label` alone.
+
+Two reasons for that exact shape:
+
+- **WCAG 2.5.3 Label in Name.** The chip paints `mem`; a speech-input user says "mem".
+  A name of `Metrics` contained no such word, so nothing matched. It was
+  `Metrics` before; it is `Metrics: mem, delay, jank, net` now.
+- **It does not churn.** Every collector hardcodes its `label` — `mem`, `delay`, `jank`,
+  `net`, and a custom collector falls back to its own id (`react-profiler` names itself
+  `react-profiler`) — so the name is a function of your configuration, never of the
+  readout. A name built from `view.display` would re-speak on every focus.
+
+The numbers are therefore **not** in the name, and `aria-label` replaces content, so
+they would go unannounced. They arrive as a description instead: each painted label span
+and value span carries an `id`, and the button's `aria-describedby` lists them **in
+pairs** — label, then value, one pair per metric, in bar order. `aria-describedby` joins
+each target's computed name with a space, so with the default four collectors the chip
+announces
+
+> *"Metrics: mem, delay, jank, net, button"* — *"mem 48 MB delay NA jank — net 0"*
+
+measured in Chromium over the real DOM (`Accessibility.getPartialAXTree`; `NA` and `—`
+are what a collector this browser cannot support, or has not sampled yet, paints).
+
+The pairing is the decision, and it costs saying the four words twice. Pointing at the
+**value spans alone** is shorter — *"48 MB NA — 0"* — and the name does state the same
+four words, in the same order, immediately before; but attributing four numbers to a
+list stated earlier in one utterance is a working-memory task, and an `NA` or an `—`
+cannot be placed at all. Pointing at the **chips** instead needs no extra ids and
+announces *the same utterance*: a chip is a flex container, and accname puts a space
+between flex-item children, so *"mem 22 MB delay — jank — net 0"* is what both options
+produce (measured against the playground's bar with the kit stylesheet loaded; an earlier
+round recorded *"mem48 MB"* here, which was an unstyled fixture). The pairs win on
+behaviour rather than on wording: a chip is whatever the preset or a `render` callback
+painted, so pointing at it would describe a consumer's own markup, and it would not be
+gated by the value span the way the pairs are. Neither option repeats the readout — which
+is the thing [the "never say it twice" rule](../styling.md#the-name-carries-the-word-title-carries-the-readout)
+is about.
+
+The ids come from React's `useId()`, which is what keeps two `<DevToolbar>` instances on
+one page from colliding; do not select on them. A span contributes only when it actually
+painted: the attribute is omitted entirely when no value is painted — a preset that
+paints none (`"icon"`, `"icon-label"`, `"label"`), or a `render` callback that replaced
+the span — and `"icon-value"`, which paints a glyph and the number but no word, falls
+back to the unpaired *"48 MB NA — 0"* because there is no word on the bar to point at.
+With no `aria-describedby` at all a browser describes the button by its `title`
+(*"Runtime performance — click for details"*), which is why the attribute's absence is
+never silence — and it is also why **this is the only first-party chip with an
+`aria-describedby` at all.** A description *replaces* the title rather than adding to it,
+and every other chip's title already states its readout with more context than the value
+span has (`Feature flags: 6 · 0 locally overridden` against a bare `6`). This one's does
+not, which is what earns it the override. See
+[styling.md](../styling.md#the-name-carries-the-word-title-carries-the-readout).
+
+The `⋮` rows get **no** description: each row is one metric and is already named by its
+own content (*"Memory 48 MB"*), so a description would repeat it.
+
+`presentation.name` still overrides the whole name, and a whitespace-only override is
+still ignored.
+
 ---
 
 [Documentation index](../README.md) · [Extension contract](../extension-contract.md) · [Runtime](../runtime.md)

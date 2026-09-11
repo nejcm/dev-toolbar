@@ -160,16 +160,24 @@ export function A11yChip({
       type="button"
       data-dtb-part="trigger"
       aria-expanded={isPanelOpen}
+      // WCAG 2.5.3 Label in Name: the bar paints `SHORT_LABEL`, so the name has
+      // to contain that word for a speech-input user saying what they see. It
+      // leads with `label` rather than with the abbreviation because a screen
+      // reader reads "a11y" as "a eleven y", while speech-input matching only
+      // needs containment — and `label` is what the `⋮` row paints, which
+      // `${label} (${SHORT_LABEL})` contains too. A consumer-configured `label`
+      // keeps working: `Axe (a11y)`.
       // `presentation.name` overrides it, and a whitespace-only override is
       // ignored so no override can leave the trigger unnamed — which is what
-      // this extension would flag on the toolbar's own bar. `title` explains;
-      // it does not name, so it is not overridable.
+      // this extension would flag on the toolbar's own bar. `title` explains
+      // the state and, with no `aria-describedby` here, is what a browser
+      // reads as the description; it does not name, so it is not overridable.
       aria-label={resolveAccessibleName(
         presentation.name,
         report,
         report.status === "ok"
-          ? `${label}, ${report.total} violation${report.total === 1 ? "" : "s"}`
-          : `${label}, ${report.status}`,
+          ? `${label} (${SHORT_LABEL}), ${report.total} violation${report.total === 1 ? "" : "s"}`
+          : `${label} (${SHORT_LABEL}), ${report.status}`,
       )}
       onClick={onToggle}
       title={
