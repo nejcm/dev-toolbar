@@ -481,7 +481,7 @@ lets one stylesheet serve every extension. An element usually carries both:
 | --- | --- | --- |
 | `chip` | inline flex row, `--dtb-chip-gap`, no wrapping | `<Chip>` |
 | `dot` | a 6px round status dot, muted by default | `<Chip>`'s dot slot |
-| `glyph` | a centring inline-flex box with `line-height: 0`, clamping its direct child to `--dtb-glyph-size` | `<Glyph>`, `<Chip>`'s icon slot |
+| `glyph` | a centring inline-flex box whose line box is `--dtb-glyph-size`, clamping its direct child to the same | `<Glyph>`, `<Chip>`'s icon slot |
 | `label` | muted text | `<Row>`'s `<dt>`, opt-in on `<Chip>` |
 | `value` | the mono font | `<Chip>`'s value slot, `<Row>`'s `<dd>` |
 | `action` | the ten-declaration button reset, plus `:hover:not(:disabled)` | `<Action>`, `<CopyButton>` |

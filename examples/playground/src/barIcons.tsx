@@ -122,11 +122,15 @@ export const A11Y_ICON: ReactNode = (
  * Look at the two together before shipping a text icon of your own. They do not
  * size the same way, and cannot: the kit clamp is
  * `[data-dtb-kind="glyph"] > *`, which matches an element child and never a
- * bare text node, and the `Glyph` itself is `line-height: 0`. An `<svg>` is
- * therefore clamped to `--dtb-glyph-size` and a character is not — it is
- * centred by the glyph's `align-items`, at whatever size the font gives it,
- * which is why an emoji reads as oversized next to these and a geometric
- * character like this one does not. Wrapping the character in a `<span>` opts
- * it into the clamp, at the cost of the character being laid out as a block.
+ * bare text node. An `<svg>` is therefore clamped to `--dtb-glyph-size` and a
+ * character is not — it is centred by the glyph's `align-items`, at whatever
+ * size the font gives it, which is why an emoji reads as oversized next to
+ * these and a geometric character like this one does not.
+ *
+ * So: pass a geometric character bare, as this one is — it needs no wrapper,
+ * and the glyph's line box (`line-height: var(--dtb-glyph-size, 1.15em)`,
+ * `src/kit/css.ts`) gives it a real box to sit in. Wrap it in a `<span>` only
+ * when you want an oversized character clamped like an element; the wrapper is
+ * what opts it into `> *`.
  */
 export const PROMOTED_FLAG_ICON: ReactNode = "◈";

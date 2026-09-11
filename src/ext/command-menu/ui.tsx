@@ -95,9 +95,9 @@ export function CommandMenuTrigger({
           those in the UI face at 1.18em because the monospace faces have no
           such glyph. That is type-setting for text. Giving it
           `data-dtb-kind="glyph"` (which `Glyph` pins) would put kit's
-          `line-height: 0` and its `> *` size clamp on text spans down in the
-          dialog, and would scale a consumer's `<svg>` by the 1.18em meant for a
-          font fallback. So the kind lands here, on the one node that is a
+          `--dtb-glyph-size` line box and its `> *` size clamp on text spans
+          down in the dialog, and would scale a consumer's `<svg>` by the 1.18em
+          meant for a font fallback. So the kind lands here, on the one node that is a
           foreign element — which is what the clamp exists for — and the `⌘`
           keeps the bytes and the rules it has always had. */}
       {hasIcon ? (

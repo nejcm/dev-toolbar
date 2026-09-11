@@ -64,19 +64,39 @@ pixels and come from the page read.
   box instead of scaled into it, which is the failure worth knowing.
 - **The text glyph beside them.** In the same bar, the promoted flag's glyph is
   the character `◈`, not an element. The kit clamp is
-  `[data-dtb-kind="glyph"] > *`, which matches an element child and never a
-  text node, and the `Glyph` is `line-height: 0` — so the character is centred
-  at whatever size the font gives it while the `<svg>`s beside it are clamped.
-  Compare them in one screenshot; an emoji in that slot reads as oversized.
-  Wrapping a character in a `<span>` opts it into the clamp — **and that is not
-  the whole fix**. Measured in this playground at the compact density: the span
-  does take the clamp's box, 12.64×12.64 exactly like the `<svg>`s beside it,
-  but the character inside paints at 13px tall from `top` 771.17 to 784.17 while
-  the box runs 778.17 to 790.81. `line-height: 0` is inherited into a
-  `display: block` child, so the glyph is centred on the box's *top edge* and
-  rides about half its height above its neighbours. The wrapper needs its own
-  `line-height` and centring (the `Glyph`'s own `inline-flex` + `align-items:
-  center`) before the advice is worth giving.
+  `[data-dtb-kind="glyph"] > *`, which matches an element child and never a text
+  node — so the character is laid out at whatever size the font gives it while
+  the `<svg>`s beside it are clamped to `--dtb-glyph-size`. Compare them in one
+  screenshot; an emoji in that slot reads as oversized, and that part has not
+  changed. What *did* change is that both kinds now sit on the same line:
+  the `Glyph`'s own `line-height` is `var(--dtb-glyph-size, 1.15em)` rather than
+  `0`, and the clamped child carries the same `line-height` plus
+  `text-align: center` (`src/kit/css.ts`).
+  Measured in this playground at the compact density, 2600×800, Chromium, the
+  bar's 11px font resolving `1.15em` to **12.65px** — and re-measured after the
+  fix, with a `<span>`-wrapped `◈` injected into a real bar `Glyph` beside the
+  `<svg>`s and the character's ink read back through a `Range`:
+
+  | | box | character ink | ink vs box centre |
+  | --- | --- | --- | --- |
+  | `<svg>` child (before **and** after) | 12.65×12.65, `top` 778.17 → `bottom` 790.81 | — | — |
+  | `<span>`-wrapped `◈`, **before** | 12.65×12.65, 778.17 → 790.81 | 13px tall, 771.17 → 784.17 | **6.82px high** |
+  | `<span>`-wrapped `◈`, **after** | 12.65×12.65, 778.17 → 790.81 | 13px tall, 777.17 → 790.17 | 0.82px high |
+  | bare `◈` text node, **before** | **0px tall**, 784.50 → 784.50 | 13px tall, 777.50 → 790.50 | — (box measured nothing) |
+  | bare `◈` text node, **after** | 6.63×12.65, 778.17 → 790.83 | 13px tall, 777.17 → 790.17 | 0.82px high |
+
+  The visible defect was the **wrapped** character: `line-height: 0` was
+  inherited into the `display: block` child, so the character was centred on the
+  box's *top edge* and rode about half its height (6.82px) above its neighbours.
+  A **bare** character never misrendered — the zero line box sat at the chip's
+  centre and the character overflowed it symmetrically, so its ink moved only
+  0.17px under the fix and no item or `⋮` row height changed. What the fix buys
+  there is a box that exists at all: a zero-height wrapper breaks hit-testing,
+  any background or outline on the glyph, and any consumer measuring it. Both
+  kinds now land in the same place, and the residual 0.82px is ordinary text
+  centring: half-leading centres the font's ascent+descent box, not this
+  character's ink. **Measure the `<svg>`s in the same read**: 12.65×12.65 at
+  `top` 778.17 is the number that must not move.
 - **Flip to `icon`.** Click again. The values go; the controls are glyphs.
   Re-read until `shell.bar` reports the same ids twice running. It **settles**
   — that is the assertion — but it need not settle *minimally*: the flip
@@ -93,9 +113,14 @@ pixels and come from the page read.
   one `metrics` entry reports a non-null `value`. Both are `null` when the flip
   left the rendered stores orphaned, which is exactly what the remount fixes.
 - **Names survive.** Every `[data-dtb-part="trigger"]` in the bar has a
-  non-empty `aria-label` or non-empty text. Then run `/ext/a11y` per
-  [a11y.md](./a11y.md) with the bar in `icon` mode: axe scans the toolbar's own
-  bar, and an unnamed icon-only button would be its finding.
+  non-empty `aria-label` or non-empty text. A stock `/ext/a11y` scan cannot
+  prove this — its default context is `exclude: [["[data-dev-toolbar]"]]`
+  (`src/ext/a11y/runtime.ts`), so the toolbar is exactly what it does *not*
+  look at. Point axe at the bar yourself instead: with the bar in `icon` mode,
+  run `axe.run` over an include-the-bar context — `{ include:
+  [["[data-dev-toolbar]"]] }` — which is what a consumer would have to pass
+  through the runtime's public `context` option. An unnamed icon-only button is
+  its finding.
 - **Restore.** Click once more, back to `Bar icons: default`.
 
 ## Gotchas

@@ -52,6 +52,25 @@ describe("KIT_CSS", () => {
     expect(KIT_CSS).toContain(`var(${token})`);
   });
 
+  /**
+   * The glyph clamp has to hold a *character* as well as an element:
+   * `presentation.icon` takes a `ReactNode`, and a string is the cheapest icon
+   * a consumer can pass. `line-height: 0` on the wrapper collapsed a bare
+   * character's box to zero height, and was inherited into the `display: block`
+   * child, painting a `<span>`-wrapped character centred on the box's top edge.
+   * Both line boxes therefore track the clamped size instead.
+   */
+  it("gives the glyph wrapper and its clamped child a line box the size of the clamp", () => {
+    const wrapper = KIT_CSS.match(/\[data-dtb-kind="glyph"\]\s*\{([^}]*)\}/)?.[1] ?? "";
+    const child = KIT_CSS.match(/\[data-dtb-kind="glyph"\]\s*>\s*\*\s*\{([^}]*)\}/)?.[1] ?? "";
+
+    expect(wrapper).toContain("line-height: var(--dtb-glyph-size, 1.15em);");
+    expect(wrapper).not.toContain("line-height: 0");
+    expect(child).toContain("height: var(--dtb-glyph-size, 1.15em);");
+    expect(child).toContain("line-height: var(--dtb-glyph-size, 1.15em);");
+    expect(child).toContain("text-align: center;");
+  });
+
   it("requires dot and value severity on the styled element", () => {
     expect(KIT_CSS).not.toMatch(
       /\[data-dtb-severity="[^"]+"\]\s+\[data-dtb-kind="(?:dot|value)"\]/,
