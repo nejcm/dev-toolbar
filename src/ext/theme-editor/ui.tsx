@@ -42,45 +42,24 @@ import type { ThemeEditorRuntime } from "./runtime";
  * snapshot, already redacted — no component here has access to a raw token
  * value.
  *
- * `presentation` arrives already resolved and is read through `/kit`'s
- * `resolveCompactControl` and `renderCompact`, so the `hasIcon` guard, the
- * `"default"` fallback, the `CompactRenderContext` and the `undefined`
- * fall-through live in one place for all nine extensions rather than nine.
- * What stays here is the DOM: a consumer's `render` supplies the children of
- * the chip carrying `data-dtb-edited` and `data-dtb-preview`, and `Chip`
- * paints the dot before them, so no callback can cost the control its state
- * attributes or its dot — which matters more here than anywhere else in Group
- * A, because this chip colours its own dot from those two attributes rather
- * than from a `severity`
- * (`plans/bar-presentation-icons-v1.md`, invariant 1).
+ * `presentation` arrives already resolved. A consumer's `render` supplies only
+ * the chip's children — `Chip` still paints the dot and the state attributes
+ * `data-dtb-edited`/`data-dtb-preview` above them, since this chip colours its
+ * own dot from those two rather than from a `severity` (invariant 2).
  */
 
 /* -------------------------------------------------------------------------- */
 /* Bar                                                                         */
 /* -------------------------------------------------------------------------- */
 
-/**
- * The short word the bar paints, and the reason there is one.
- *
- * `label` is the extension's identity — the panel's accessible name, the
- * trigger's `aria-label` — and the chip has always painted this lowercase word
- * instead, in the bar *and* in the `⋮` row. Presets operate on *this* word;
- * `label` stays the accessible-name identity, which is what makes the text
- * axis `"none" | "short" | "full"` rather than a boolean
- * (`plans/bar-presentation-icons-v1.md`, "Which text").
- */
+/** The short bar word. `label` stays the accessible-name identity; presets operate on this one. */
 const SHORT_LABEL = "theme";
 
 /**
- * Today's tree, expressed as parts.
- *
- * `resolveCompactControl` answers the preset's parts, or these when the preset
- * is `"default"` — handed in rather than known to kit, because `"default"`
- * means *whatever this extension renders today* and that differs across the
- * nine. Like `/ext/environment` and unlike the other three Group A chips, this
- * one paints the same short word in both places, so `overflow.text` is
- * `"short"`. A preset still forces `"full"` in the menu; only `"default"` is
- * pinned to what shipped.
+ * Today's tree, expressed as parts. Handed to `resolveCompactControl` for
+ * `"default"`, since that means whatever this extension renders today, which
+ * differs per extension. Unlike three of the four Group A chips, this one
+ * paints the same short word in both bar and `⋮` row.
  */
 const DEFAULTS: CompactDefaults = {
   bar: { icon: false, text: "short", value: true },
@@ -88,16 +67,9 @@ const DEFAULTS: CompactDefaults = {
 };
 
 /**
- * The icon and the text.
- *
- * These are the chip's *children* rather than `Chip`'s `icon` / `label` /
- * `value` slots — the same call the rest of Group A and `/ext/metrics` made,
- * and the reason is recorded in
- * `docs/adr/ADR-004-per-extension-bar-presentation.md`. `Chip` renders its
- * children straight after the dot, in the slots' own position, so nothing
- * about the surrounding output moves. The fragment itself is kit's
- * `renderCompactParts` — six extensions wrote it identically once the text
- * span was named here, so it is one function now.
+ * The icon and the text, as the chip's children rather than `Chip`'s
+ * `icon`/`label`/`value` slots (ADR-004). `Chip` renders children right after
+ * the dot, so output position is unchanged.
  */
 function iconAndText(label: string, parts: CompactParts, icon: ReactNode): ReactNode {
   return renderCompactParts({
@@ -106,10 +78,8 @@ function iconAndText(label: string, parts: CompactParts, icon: ReactNode): React
     iconProps: { "data-dtb-part": "thm-icon" },
     short: SHORT_LABEL,
     full: label,
-    // `data-dtb-part` only. The kit's `[data-dtb-kind="label"]` rule tints a
-    // labelled span with `--dtb-muted`; this chip has never been tinted, and
-    // whether it should be is a visual decision, not a side effect of naming
-    // the span.
+    // data-dtb-part only, no kind: this chip has never been tinted by the
+    // kit's [data-dtb-kind="label"] rule, and that stays a visual decision.
     textProps: { "data-dtb-part": "thm-label" },
   });
 }
@@ -162,8 +132,7 @@ export function ThemeChip({
     : "Design tokens: none supplied to themeEditor()";
   const accessibleLabel = edited ? `${label}, ${snapshot.overriddenCount} edited` : label;
 
-  // The narrow view the consumer's knobs see — the facts the chip paints, not
-  // the editor's working state behind them. See `ThemeEditorBarView`.
+  // The narrow view the consumer's knobs see. See ThemeEditorBarView.
   const view: ThemeEditorBarView = {
     tokenCount: snapshot.tokens.length,
     overriddenCount: snapshot.overriddenCount,
@@ -175,11 +144,8 @@ export function ThemeChip({
   const fallback = (
     <>
       {iconAndText(label, control.parts, control.icon)}
-      {/* The order `Chip`'s own value slot wrote before this moved into the
-          chip's children — with the kit's `value` kind opted *out* of, which is
-          what `valueProps={{ "data-dtb-kind": undefined }}` did before: the
-          count is unstyled here, and the chip's colour comes from
-          `data-dtb-edited`/`-preview` rather than from a `severity`. */}
+      {/* Unstyled, as Chip's value slot was before (kit's value kind opted out) —
+          this chip's colour comes from data-dtb-edited/-preview, not severity. */}
       {control.parts.value ? <span data-dtb-part="thm-count">{summary}</span> : null}
     </>
   );
@@ -189,18 +155,13 @@ export function ThemeChip({
       type="button"
       data-dtb-part={isOverflowed ? "thm-overflow-trigger" : "trigger"}
       aria-expanded={isPanelOpen}
-      // `presentation.name` overrides it, and a whitespace-only override is
-      // ignored so no override can leave the trigger unnamed. `title`
-      // explains; it does not name, so it is not overridable.
       aria-label={resolveAccessibleName(presentation.name, view, accessibleLabel)}
       onClick={onToggle}
       title={title}
     >
-      {/* The chip colours its own dot from data-dtb-edited/-preview, and the
-          label and count are unstyled here, so the kit adds no kind or
-          severity to those two slots. Invariant 1: those two attributes are
-          state, and no preset and no `render` can move them — they are written
-          on the `Chip` itself, above the children a consumer supplies. */}
+      {/* The chip colours its own dot from data-dtb-edited/-preview; those state
+          attributes are written on Chip itself, above whatever children a
+          preset or render callback supplies (invariant 2). */}
       <Chip
         data-dtb-part="thm-chip"
         data-dtb-edited={edited ? "true" : "false"}

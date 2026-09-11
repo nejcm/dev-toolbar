@@ -30,14 +30,12 @@ import type { DevToolbarExtension, ExtensionRuntimeApi, ToolbarAlign } from "../
 /**
  * What this chip is built from, and all a presentation knob is handed.
  *
- * Every other extension passes its store's snapshot; this one has no store —
- * the bridge publishes to a global, not to a React surface — so there is no
- * snapshot to pass and nothing about the chip changes after the factory runs.
- * Rather than hand a callback `void` or `undefined`, it gets the four facts the
- * chip *is*: the configured `label`, whether running is allowed, and which
- * global and instance this bridge is keyed under. `allowRun` is the one worth
- * branching on — `icon: (view) => (view.allowRun ? <Armed /> : <ReadOnly />)`
- * paints the distinction the `data-dtb-agent-mode` attribute already carries.
+ * Every other extension passes its store's snapshot; this one has none — the
+ * bridge publishes to a global, not a React surface — so it gets the four
+ * facts the chip *is* instead: `label`, `allowRun`, and the global/instance
+ * key. `allowRun` is the one worth branching on —
+ * `icon: (view) => (view.allowRun ? <Armed /> : <ReadOnly />)` paints the
+ * distinction `data-dtb-agent-mode` already carries.
  */
 export interface AgentChipView {
   /** The configured `label`. Default `"Agent"`. */
@@ -51,21 +49,15 @@ export interface AgentChipView {
 }
 
 /**
- * The agent chip's presentation: an icon, and an accessible name to go with it.
- *
- * **Two knobs, not four.** The other seven extensions take the whole
- * `CompactPresentation` — `preset`, `icon`, `render` and `name` — because they
- * have a value, a short bar word and a full label for a preset to select
- * between. This chip has one text and no value, so every preset member but
- * `"default"` would be a no-op or a lie, and a `render` callback over a view
- * that never changes is a `ReactNode` with extra steps. Publishing them anyway
- * would be publishing knobs that silently do nothing, so the type is
- * `Pick`ed down to the two that act (`plans/bar-presentation-icons-v1.md`,
+ * The agent chip's presentation: an icon, and an accessible name to go with
+ * it. Two knobs, not four — this chip has one text and no value, so `preset`
+ * and `render` would be a no-op or a lie here, unlike the other seven
+ * extensions' `CompactPresentation` (`plans/bar-presentation-icons-v1.md`,
  * group C; `docs/adr/ADR-004-per-extension-bar-presentation.md`).
  *
- * It stays a `Pick` of the shared interface rather than a lookalike of its own,
- * so `icon` and `name` mean here exactly what they mean on the other eight and
- * a widening later is additive.
+ * A `Pick` of the shared interface, not a lookalike, so `icon` and `name`
+ * mean exactly what they mean on the other eight and widening later is
+ * additive.
  */
 export type AgentPresentation = Pick<CompactPresentation<AgentChipView>, "icon" | "name">;
 
@@ -101,39 +93,34 @@ export interface AgentBridgeOptions {
   /** Bar label, used by the error chip and the label chip. Default `"Agent"`. */
   label?: string;
   /**
-   * Your own icon for the bar chip, and the accessible name that goes with it.
-   * Two knobs rather than the four the value-bearing extensions take; see
-   * {@link AgentPresentation} for why.
+   * Your own icon for the bar chip, and the accessible name to go with it.
+   * Two knobs, not the four value-bearing extensions take; see
+   * {@link AgentPresentation}.
    *
-   * Supplying an icon **replaces the label** in the bar: this chip is a
-   * readout, so an icon and a word side by side say the same thing twice in the
-   * width the bar is short of. The `⋮` menu keeps the word and puts the icon
-   * before it, which is the same "the menu is never wordless" rule `/kit`
-   * enforces for every preset.
+   * Supplying an icon **replaces the label** in the bar — an icon and a word
+   * side by side would say the same thing twice in the space the bar is
+   * short of. The `⋮` menu keeps the word and puts the icon before it.
    *
-   * With an icon the chip becomes `role="img"` with an `aria-label`, because a
-   * bare `<span aria-label>` is **not** a named node — the attribute would be
-   * ignored and the chip would be announced by its `title`, or by nothing.
-   * Without one it stays the role-less span it has always been, named by its
-   * own text: adding a role there would change what every screen reader already
-   * reads out.
+   * With an icon the chip becomes `role="img"` with an `aria-label`, since a
+   * bare `<span aria-label>` names nothing — the chip would fall back to its
+   * `title`, or to nothing. Without one it stays the role-less span it has
+   * always been, named by its own text.
    *
-   * Nothing here reaches the bridge. The icon lives in this factory's closure,
-   * exactly as `label` does, so no `ReactNode` can reach `read()` or the
-   * `report` transport — both of which must stay JSON.
+   * The icon lives in this factory's closure, like `label`, so no `ReactNode`
+   * reaches `read()` or the `report` transport — both of which must stay
+   * JSON.
    */
   presentation?: AgentPresentation;
   /**
    * Inject `KIT_CSS` while an icon is on the bar. Default `true`.
    *
-   * This extension has no stylesheet of its own and still does not — the chip
-   * is a plain trigger, and the surface it exists for is a global. An icon is
-   * the one thing it paints that needs a rule: `/kit`'s glyph clamp, which is
-   * what stops a 24px `<svg>` setting the bar's height. Every other extension
-   * carries `KIT_CSS` on the front of its own sheet; with none to carry it,
-   * this ensures kit's directly, and only when there is an icon to clamp.
+   * This extension has no stylesheet of its own — an icon is the only thing
+   * it paints that needs one: `/kit`'s glyph clamp, which stops a 24px
+   * `<svg>` from setting the bar's height. Other extensions carry `KIT_CSS`
+   * on their own sheet; this injects it directly, only when there's an icon
+   * to clamp.
    *
-   * Turn it off if you turned off core's `injectStyles` and ship the toolbar's
+   * Turn it off if you disabled core's `injectStyles` and ship the toolbar's
    * CSS yourself — `KIT_CSS` is exported from `@nejcm/dev-toolbar/kit`.
    */
   injectStyles?: boolean;
@@ -164,14 +151,13 @@ interface AgentIconChipProps {
 /**
  * The chip once a consumer has supplied an icon.
  *
- * A component rather than more JSX in the slot, for one reason: the glyph clamp
- * lives in `KIT_CSS`, injection is an effect everywhere in this codebase, and a
- * slot function has nowhere to put one. Declared at module scope, never inside
- * the slot — `react/no-unstable-nested-components` is an error here, and a
- * component redeclared per render would remount the icon on every tick.
+ * A component, not more JSX in the slot, because injecting `KIT_CSS` needs an
+ * effect and a slot function has nowhere to put one. Declared at module
+ * scope — `react/no-unstable-nested-components` is an error here, and a
+ * per-render component would remount the icon every tick.
  *
- * It is deliberately not the no-icon path as well: that chip must stay the
- * exact span it has always been, and it needs no stylesheet to be it.
+ * Deliberately not shared with the no-icon path: that chip must stay the
+ * exact span it has always been, and needs no stylesheet.
  */
 function AgentIconChip({
   view,
@@ -192,19 +178,19 @@ function AgentIconChip({
     <span
       data-dtb-part="trigger"
       data-dtb-agent-mode={agentMode}
-      // `role="img"` is what makes the `aria-label` count: an attribute on a
-      // role-less span names nothing, which is exactly how this chip came to be
-      // exempt from the "named by an attribute" rule in
-      // `src/ext/__tests__/presentation.test.tsx` while it had no icon. The
-      // role also hides the `⋮` row's duplicate word from the announcement.
+      // `role="img"` is what makes `aria-label` count — a role-less span
+      // names nothing, which is why this chip was exempt from the "named by
+      // an attribute" rule in `src/ext/__tests__/presentation.test.tsx`
+      // before it had an icon. The role also hides the `⋮` row's duplicate
+      // word from the announcement.
       role="img"
       aria-label={resolveAccessibleName(presentation.name, view, view.label)}
       title={title}
     >
-      {/* `parts.icon` is true under a branch that has already proved the icon
-          paintable, which is `renderCompactParts`' precondition met by
-          construction rather than through a parts table this chip has no preset
-          to fill. The `⋮` row keeps the word and puts the icon before it. */}
+      {/* `parts.icon: true` is safe here — this branch already proved the icon
+          paintable, satisfying `renderCompactParts`' precondition by
+          construction rather than a parts table (no preset to fill it). The
+          `⋮` row keeps the word and puts the icon before it. */}
       {renderCompactParts({
         parts: { icon: true, text: isOverflowed ? "full" : "none", value: false },
         icon,
@@ -241,8 +227,8 @@ export function agentBridge(options: AgentBridgeOptions = {}): DevToolbarExtensi
     hidden,
   } = options;
 
-  // Resolved once, here, rather than per render: this closure is where an icon
-  // and a name callback live, exactly as `label` and `allowRun` do.
+  // Resolved once here — the closure where an icon and a name callback live,
+  // like `label` and `allowRun`.
   const presentation = resolvePresentation<AgentChipView>(presentationOption);
   const view: AgentChipView = { label, allowRun, globalName, instanceId };
   const agentMode = allowRun ? "run-enabled" : "read-only";
@@ -263,13 +249,12 @@ export function agentBridge(options: AgentBridgeOptions = {}): DevToolbarExtensi
 
     compact: ({ isOverflowed, styleNonce }) => {
       const icon = resolveIcon(presentation.icon, view);
-      // Kit's one emptiness rule — `false`, `true`, `null`, `undefined` and
-      // `""` are all "no icon", because React paints nothing for any of them —
-      // and the reason this is a branch rather than a parts table: with no icon
-      // the chip is the span it has always been, down to the byte — no role, no
-      // `aria-label`, and the label as a bare text child rather than wrapped.
-      // So `icon: (view) => view.busy && <Spinner />` returns to that span when
-      // it declines, rather than to a `role="img"` chip with nothing in it.
+      // Kit's emptiness rule: `false`, `true`, `null`, `undefined`, `""` are
+      // all "no icon" (React paints nothing for any of them). This is a
+      // branch, not a parts table, because with no icon the chip must stay
+      // the exact span it always was — no role, no `aria-label`, label as a
+      // bare text child. So `icon: (view) => view.busy && <Spinner />` falls
+      // back to that span when it declines.
       if (!hasPaintableIcon(icon)) {
         return (
           <span data-dtb-part="trigger" data-dtb-agent-mode={agentMode} title={title}>

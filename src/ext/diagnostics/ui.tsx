@@ -32,15 +32,11 @@ import type { DiagnosticsRuntime } from "./runtime";
  * (same construction as `/ext/environment` and `/ext/flags`).
  *
  * `presentation` arrives already resolved and is read through `/kit`'s
- * `resolveCompactControl` and `renderCompact`, so the `hasIcon` guard, the
- * `"default"` fallback, the `CompactRenderContext` and the `undefined`
- * fall-through live in one place for all nine extensions rather than nine.
- * What stays here is the DOM: a consumer's `render` supplies the children of
- * the chip carrying `data-dtb-incomplete`, and `Chip` paints the dot before
- * them, so no callback can cost the control its state attributes or its dot.
- * The error/warning badge is rendered *after* those children under every
- * preset and under a `render` callback alike — it is live state, not
- * presentation (`plans/bar-presentation-icons-v1.md`, invariant 2).
+ * `resolveCompactControl` and `renderCompact`. A consumer's `render` supplies
+ * only the chip's children; `Chip` still owns the dot and the state
+ * attributes. The error/warning badge renders after those children under
+ * every preset and under `render` alike — it is live state, not presentation
+ * (`plans/bar-presentation-icons-v1.md`, invariant 2).
  */
 
 const FORMAT_LABEL: Record<SnapshotFormat, string> = {
@@ -53,30 +49,19 @@ const FORMAT_LABEL: Record<SnapshotFormat, string> = {
 /* -------------------------------------------------------------------------- */
 
 /**
- * The short word the bar paints, and the reason there is one.
- *
- * `label` is the extension's identity — the panel's accessible name, the `⋮`
- * row — and the bar has always painted this instead. Presets operate on *this*
- * word; `label` stays the overflow and accessible-name identity, which is what
- * makes the text axis `"none" | "short" | "full"` rather than a boolean
- * (`plans/bar-presentation-icons-v1.md`, "Which text").
+ * The short bar word. Presets operate on this; `label` stays the overflow
+ * and accessible-name identity (`plans/bar-presentation-icons-v1.md`,
+ * "Which text").
  */
 const SHORT_LABEL = "diagnostics";
 
 /**
- * Today's tree, expressed as parts.
- *
- * `resolveCompactControl` answers the preset's parts, or these when the preset
- * is `"default"` — handed in rather than known to kit, because `"default"`
- * means *whatever this extension renders today* and that differs across the
- * nine. Diagnostics' default is exactly expressible as parts (short word plus
- * value in the bar, full label plus value in the `⋮` menu, no icon in either),
- * so "the default output is byte-identical" is a structural property rather
- * than a claim — and the hand-rolled `isOverflowed ? label : "diagnostics"`
- * swing this chip used to write is now just `parts.text`.
- *
- * The badge is not in here, and cannot be: it is state the extension paints
- * after the parts under every preset.
+ * Today's tree, expressed as parts — what `resolveCompactControl` falls back
+ * to under `"default"`. Diagnostics' default is exactly expressible as parts
+ * (short word plus value in the bar, full label plus value in the `⋮` menu,
+ * no icon in either), which is what makes "default output is byte-identical"
+ * structural rather than asserted. The badge is not in here: it's state the
+ * extension paints after the parts under every preset.
  */
 const DEFAULTS: CompactDefaults = {
   bar: { icon: false, text: "short", value: true },
@@ -84,16 +69,8 @@ const DEFAULTS: CompactDefaults = {
 };
 
 /**
- * The icon and the text.
- *
- * These are the chip's *children* rather than `Chip`'s `icon` / `label` /
- * `value` slots — the same call `/ext/a11y` and `/ext/metrics` made, and the
- * reason is recorded in
- * `docs/adr/ADR-004-per-extension-bar-presentation.md`. `Chip` renders its
- * children straight after the dot, in the slots' own position, so nothing
- * about the surrounding output moves. The fragment itself is kit's
- * `renderCompactParts` — six extensions wrote it identically once the text
- * span was named here, so it is one function now.
+ * The icon and text as the chip's children, not `Chip`'s `icon`/`label`/
+ * `value` slots (`docs/adr/ADR-004-per-extension-bar-presentation.md`).
  */
 function iconAndText(label: string, parts: CompactParts, icon: ReactNode): ReactNode {
   return renderCompactParts({
@@ -162,16 +139,12 @@ export function DiagnosticsChip({
     .filter((part) => part !== null)
     .join(", ");
 
-  // The narrow view the consumer's knobs see — four facts the chip paints, not
-  // the store state behind them. See `DiagnosticsBarView`.
+  // See `DiagnosticsBarView`.
   const view: DiagnosticsBarView = { captured, omissions, errors, warnings };
   const control = resolveCompactControl(presentation, view, { isOverflowed, defaults: DEFAULTS });
   const fallback = (
     <>
       {iconAndText(label, control.parts, control.icon)}
-      {/* The order `Chip`'s own value slot wrote before this moved into the
-          chip's children: kind, then the site's props. This chip passes no
-          `severity`, so no `data-dtb-severity` is written — it never did. */}
       {control.parts.value ? (
         <span data-dtb-kind="value" data-dtb-part="diag-value">
           {captured ? (omissions === 0 ? "ready" : `${omissions} missing`) : "capture"}
@@ -185,9 +158,7 @@ export function DiagnosticsChip({
       type="button"
       data-dtb-part="trigger"
       aria-expanded={isPanelOpen}
-      // `presentation.name` overrides it, and a whitespace-only override is
-      // ignored so no override can leave the trigger unnamed. `title`
-      // explains; it does not name, so it is not overridable.
+      // `presentation.name` overrides it; a whitespace-only override is ignored.
       aria-label={resolveAccessibleName(presentation.name, view, accessibleLabel)}
       onClick={onToggle}
       title={
@@ -208,10 +179,9 @@ export function DiagnosticsChip({
           { icon: control.icon, isOverflowed, isPanelOpen },
           fallback,
         )}
-        {/* Invariant 2: the badge is state, not presentation. It sits outside
+        {/* Invariant 2: the badge is state, not presentation — it sits outside
             both the preset and `render`, after the contents, under every
-            preset including `"icon"` — a consumer restyling the chip cannot
-            silence the one thing on it that says something is wrong. */}
+            preset. */}
         {caught > 0 ? (
           <span
             data-dtb-part="diag-errors"

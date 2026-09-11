@@ -364,17 +364,11 @@ describe("CollapseMachine cycle detection", () => {
   });
 
   it("a presentation flip — one exogenous shrink, not a width that depends on the decision — can latch", () => {
-    // The presentation presets put a real number on the swing this machine has
-    // to survive, and it is a different swing from the 2-cycle above. An icon
-    // preset is *exogenous*: the consumer changes what a control paints, the
-    // control is one width before and another after, and that width does not
-    // depend on whether it collapsed. The bar's own box and the roster do not
-    // move, so every one of those readings is an item reading.
-    //
-    // 160 → 40 is roughly the ratio an icon-only control has against the short
-    // word plus value it replaces (`plans/bar-presentation-icons-v1.md`,
-    // Verification). Available width is the bar minus one inter-region gap,
-    // since this roster has no end items: 280 − 2 = 278.
+    // A presentation preset is an exogenous width change: the control's width
+    // shifts because it now paints something else, not because it collapsed.
+    // 160 → 40 mirrors an icon-only control replacing a short word+value
+    // (`plans/bar-presentation-icons-v1.md`, Verification). Available width is
+    // the bar minus one inter-region gap (no end items here): 280 − 2 = 278.
     const m = machine();
     /** One preset flip: the control's new width, and nothing else, arrives. */
     const flip = (width: number) => m.measure({ widths: [["a", width]] });
@@ -393,8 +387,7 @@ describe("CollapseMachine cycle detection", () => {
     ).toBe(true);
     expect(ids(m)).toEqual(["b"]);
 
-    // Flip to `icon`: the first shrink is a decision never held since the last
-    // honest reading, so it is heard and `b` comes back.
+    // First shrink since the last honest reading is heard: `b` returns.
     expect(flip(40)).toBe(true);
     expect(ids(m)).toEqual([]);
 
@@ -402,17 +395,15 @@ describe("CollapseMachine cycle detection", () => {
     expect(flip(160)).toBe(true);
     expect(ids(m)).toEqual(["b"]);
 
-    // Flip to `icon` a second time, still without an honest reading between.
-    // The empty set has now been held since, so the return is refused.
+    // Second flip to `icon`, still no honest reading between: ∅ was already
+    // held, so the return is refused.
     expect(flip(40)).toBe(false);
     expect(m.latched).toBe(true);
     expect(ids(m)).toEqual(["b"]);
 
-    // What `latched` costs, stated by the machine rather than by arithmetic on
-    // literals: a machine with no history, given exactly this reading, collapses
-    // nothing. `b` is held in the `⋮` anyway — safe, reachable, not minimal, and
-    // exactly the "refusing a smaller state can retain extra collapsed items
-    // that would fit" the class comment warns about.
+    // What latching costs: a fresh machine given this exact reading collapses
+    // nothing, yet `b` stays held — safe and reachable, but not minimal, per
+    // the class comment's warning about refusing a smaller state.
     const fresh = machine();
     expect(
       fresh.measure({
@@ -427,19 +418,17 @@ describe("CollapseMachine cycle detection", () => {
     ).toBe(false);
     expect(ids(fresh)).toEqual([]);
 
-    // An honest reading clears the history and recomputes from the cached
-    // widths, which is what releases it — the bar moving by one pixel is enough.
+    // An honest reading (the bar moving by one pixel) clears the history and
+    // releases the latch.
     expect(m.measure({ barWidth: 281 })).toBe(true);
     expect(ids(m)).toEqual([]);
     expect(m.latched).toBe(false);
   });
 
   it("a single presentation flip latches too, once a live value has grown since the last honest reading", () => {
-    // The cheaper version of the same cost, and the likelier one: nothing is
-    // flipped twice. A metrics chip's own readout grows between resizes — a
-    // longer number, a slower request — which collapses `b`; then one click on
-    // the icon preset proposes the empty set the honest reading already held,
-    // and that single flip is refused.
+    // The likelier case: a single flip, not two. A metrics chip's readout
+    // grows between resizes, collapsing `b`; one click to the icon preset then
+    // proposes ∅, which the honest reading already held — refused.
     const m = machine();
 
     // Honest, and everything fits: ∅ is recorded as held.

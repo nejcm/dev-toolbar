@@ -4,18 +4,14 @@
  *
  * Every extension that lets a consumer restyle its bar control resolves that
  * option through these pure helpers, so the two guarantees below hold once
- * rather than nine times. Almost nothing here paints: `resolveCompactControl`
- * answers *which parts* to paint and the extension paints them, because the
- * nine bar controls do not share a DOM shape (three of them are hand-written
- * on purpose). `renderCompact` is an exception in spirit only — it invokes the
- * consumer's callback and returns its node, still without a tree of its own.
- * `renderCompactParts` is the one real exception, and it earned it: six of the
- * nine wrote the *same* icon-plus-text fragment, so the shared shape is a fact
- * about them rather than a shape imposed on them. It stops at the icon and the
- * text; the value span and the state children stay each extension's own.
+ * rather than nine times. `resolveCompactControl` answers *which parts* to
+ * paint; the extension still paints them, since the nine bar controls don't
+ * share a DOM shape. `renderCompactParts` is the one shared painter, and only
+ * for the icon-plus-text fragment six extensions wrote identically — the
+ * value span and state children stay each extension's own.
  *
- * Provenance: `plans/bar-presentation-icons-v1.md`, "Design"; the decision and
- * its rejected alternatives are `docs/adr/ADR-004-per-extension-bar-presentation.md`.
+ * Provenance: `plans/bar-presentation-icons-v1.md`, "Design";
+ * `docs/adr/ADR-004-per-extension-bar-presentation.md` for rejected alternatives.
  */
 import type { ReactNode } from "react";
 import { Glyph, hasPaintableIcon } from "./controls";
@@ -24,13 +20,10 @@ import type { SpanProps } from "./controls";
 /**
  * How a bar control presents itself.
  *
- * `"default"` is a member rather than an absence because today's rendering is
- * not one thing across the nine — Group A is short-word plus value, agent is
- * label-only, command-menu is a glyph plus a hotkey hint — so a member named
- * `"label-value"` would be a lie for three of them. It is also the option's
- * default value, so every existing consumer lands on it and
- * `resolveCompactParts` returns `null`: see that function for why that is what
- * makes byte-identical default output a structural property.
+ * `"default"` is a member, not an absence, because "default" isn't one shape
+ * across the nine (short-word-plus-value, label-only, glyph-plus-hint). It's
+ * also the option's default, so `resolveCompactParts` returning `null` for it
+ * is what makes byte-identical default output structural rather than assumed.
  */
 export type CompactPreset =
   /** Whatever this extension renders today. Extension-defined; resolves to `null`. */
@@ -49,11 +42,9 @@ export type CompactPreset =
 /**
  * Which text a control paints.
  *
- * Group A chips paint a hardcoded short word in the bar (`"a11y"`,
- * `"diagnostics"`, `"overlays"`) and the configured `label` only when
- * overflowed, so presets operate on the short bar word while `label` stays the
- * overflow and accessible-name identity. Presets in the bar therefore select
- * `"short"`, and the overflow rule forces `"full"`.
+ * Group A chips paint a hardcoded short word in the bar and the configured
+ * `label` only when overflowed, so presets select `"short"` in the bar and
+ * the overflow rule forces `"full"`.
  */
 export type CompactText = "none" | "short" | "full";
 
@@ -71,11 +62,10 @@ export interface CompactParts {
  * What a `render` callback is told about the control it is painting.
  *
  * `fallback` is an element tree, not a rendered result, so building it costs
- * nothing when the callback ignores it: `render: (m, ctx) => m.severity ===
- * "bad" ? <Siren /> : ctx.fallback`.
+ * nothing when the callback ignores it.
  *
- * `density` is deliberately absent — no first-party compact slot reads density
- * today, so it would be speculative surface. Adding it later is additive.
+ * No `density`: no first-party compact slot reads it today, so adding it
+ * would be speculative surface.
  */
 export interface CompactRenderContext {
   /** The resolved preset, `"default"` included. */
@@ -93,32 +83,26 @@ export interface CompactRenderContext {
 /**
  * The presentation of one bar control.
  *
- * One option rather than four siblings: four names across nine extensions is 36
- * new option-bag entries, and the four are meaningless apart — an `icon` with
- * no preset that paints it does nothing.
+ * One option rather than four siblings: the four are meaningless apart — an
+ * `icon` with no preset that paints it does nothing.
  */
 export interface CompactPresentation<TView> {
   /** Defaults to `"default"`. */
   preset?: CompactPreset;
-  /**
-   * A `ReactNode`, or a function returning one. The function form dissolves the
-   * cardinality problem: an extension with N controls needs no icon map, just
-   * `icon: (view) => ICONS[view.id]`.
-   */
+  /** A `ReactNode`, or a function of the view data — avoids an icon map for extensions with N controls. */
   icon?: ReactNode | ((data: TView) => ReactNode);
   /**
    * Full control over the control's children. The extension keeps its
    * `<button>`, `type`, `aria-expanded`, `onClick`, `title` and any
    * `role="switch"`/`aria-checked`; this supplies children only.
    *
-   * Returning `undefined` falls through to the preset, so a callback can opt
-   * out per control rather than per extension.
+   * Returning `undefined` falls through to the preset.
    */
   render?: (data: TView, ctx: CompactRenderContext) => ReactNode;
   /**
-   * Overrides the control's `aria-label`. A whitespace-only return is ignored:
-   * an icon-only control that lost its name would be worse than one named
-   * awkwardly. `title` is not overridable — it explains, it does not name.
+   * Overrides the control's `aria-label`. A whitespace-only return is
+   * ignored — an unnamed icon-only control is worse than an awkwardly named
+   * one. `title` is not overridable; it explains, it does not name.
    */
   name?: (data: TView) => string;
 }
@@ -142,23 +126,18 @@ export interface CompactPartsOptions {
 /**
  * Which parts a preset paints, or `null` for `"default"`.
  *
- * `null` is the whole point of the resolver: each extension reads
- * `parts === null ? <today's tree> : <driven tree>`, which makes "today's
- * output is byte-identical" a structural property rather than a truth-table
- * coincidence — and so a provable compatibility claim rather than an asserted
- * one.
+ * Each extension reads `parts === null ? <today's tree> : <driven tree>`,
+ * which makes "today's output is byte-identical" structural rather than
+ * asserted.
  *
  * Two guarantees live here and nowhere else:
  *
- * 1. **An icon-only preset with no icon supplied paints text.** A blank control
- *    is worse than an unstyled one. Only `"icon"` needs this: the other
- *    icon-bearing presets still have their text or value to paint. "No icon"
- *    is `hasPaintableIcon`'s answer — `false` and `""` are as absent as
- *    `undefined`, since React paints nothing for any of them.
- * 2. **The `⋮` menu always paints `"full"` text.** The same reasoning `/ext/a11y`
- *    already applies by hand. It holds for every preset by construction; it is
- *    deliberately *not* enforced for `render`, which is honoured in both places
- *    with `ctx.isOverflowed` as the hook (ADR-004 records that deviation).
+ * 1. **An icon-only preset with no icon supplied paints text instead.** Only
+ *    `"icon"` needs this — the other icon-bearing presets still have text or
+ *    value to paint. "No icon" is `hasPaintableIcon`'s answer.
+ * 2. **The `⋮` menu always paints `"full"` text**, for every preset, by
+ *    construction. Deliberately not enforced for `render`, which is honoured
+ *    in both places via `ctx.isOverflowed` instead (ADR-004).
  */
 export function resolveCompactParts(
   preset: CompactPreset,
@@ -201,9 +180,8 @@ export function resolvePresentation<TView>(
 /**
  * Resolves a possibly-function `icon` against this control's view data.
  *
- * Invoked as a plain call and its result rendered as a node — never as
- * `const Icon = icon; <Icon />`, which `react/no-unstable-nested-components`
- * rejects and which would remount the icon on every render.
+ * Called directly and its result rendered as a node — never
+ * `const Icon = icon; <Icon />`, which would remount the icon every render.
  */
 export function resolveIcon<TView>(
   icon: CompactPresentation<TView>["icon"],
@@ -213,12 +191,11 @@ export function resolveIcon<TView>(
 }
 
 /**
- * The parts an extension paints under `"default"`, in each of the two places a
- * bar control appears.
+ * The parts an extension paints under `"default"`, in each of the two places
+ * a bar control appears.
  *
- * Passed in rather than known here: `"default"` means *whatever this extension
- * renders today*, and that differs across the nine. Group A happening to share
- * a shape is not a licence to hardcode it in kit.
+ * Passed in rather than known here — `"default"` means whatever this
+ * extension renders today, and that differs across the nine.
  */
 export interface CompactDefaults {
   /** What `"default"` paints in the bar. */
@@ -247,26 +224,16 @@ export interface CompactControl {
  * One control's icon and parts, with the `hasIcon` guard and the
  * `"default"` fallback in one place.
  *
- * The guard is `hasPaintableIcon` — every node React paints nothing for, `""`
- * and `false` included — and it has to happen here rather than in
- * `resolveCompactParts`: a function `icon` can return nothing for one control
- * and a node for the next, so guarantee 1 applies per control, not per
- * extension.
+ * The guard happens here rather than in `resolveCompactParts` because a
+ * function `icon` can return nothing for one control and a node for the
+ * next — guarantee 1 applies per control, not per extension.
  *
- * The other half of the point is `defaults`: `resolveCompactParts` answers
- * `null` for `"default"`, and every caller then owes the same
- * `isOverflowed ? overflow : bar` choice. Nine copies of that choice is nine
- * places for the byte-identity property to rot.
- *
- * The guard applies to `defaults` too, and that is the whole point of "in one
- * place": an extension whose `"default"` paints an icon (`/ext/flags`' promoted
- * control, which has painted `PromotedFlag.icon` since it existed) would
- * otherwise get `parts.icon === true` alongside `icon == null` — an
- * inconsistent pair `renderCompactParts` trusts, painting an empty
- * `<span data-dtb-kind="glyph">` that still eats a `gap`. The invariant is on
- * this function's *output*: `parts.icon` implies `icon` is paintable, whichever
- * side the parts came from. Extensions whose defaults name no icon slot are
- * untouched — the clause only ever turns a `true` into `false`.
+ * The guard also applies to `defaults`: an extension whose `"default"` paints
+ * an icon (`/ext/flags`' promoted control) could otherwise report
+ * `parts.icon === true` alongside `icon == null`, and `renderCompactParts`
+ * would paint an empty glyph that still eats the `gap`. This function's
+ * output always keeps `parts.icon` implying `icon` is paintable — it only
+ * ever turns a `true` into `false`.
  */
 export function resolveCompactControl<TView>(
   presentation: ResolvedCompactPresentation<TView>,
@@ -283,18 +250,10 @@ export function resolveCompactControl<TView>(
 /**
  * The icon and the text of one bar control, as `Chip` children.
  *
- * Six first-party extensions wrote the same six-line fragment: paint the
- * `Glyph` when `parts.icon`, and paint one `<span>` carrying either the short
- * bar word or the full identity when `parts.text` is not `"none"`. The
- * divergence that kept it six copies was the text span's attributes — four
- * chips wrote a bare `<span>` and two wrote a named one — and that is gone now
- * that all six name theirs, leaving `textProps` as an ordinary prop bag rather
- * than a shape parameter.
- *
- * `parts.value` is deliberately not read here: every site paints its own value
- * span, with its own part, its own `data-dtb-severity` and — for the two that
- * have one — its own state child after it. Kit answers *which parts*; the
- * extension still owns the DOM (ADR-004).
+ * Shared shape for the icon-plus-text fragment six first-party extensions
+ * wrote identically. `parts.value` is deliberately not read here — every site
+ * paints its own value span and, where it has one, its own state child after
+ * it. Kit answers which parts; the extension still owns the DOM (ADR-004).
  */
 export interface CompactPartsContent {
   /** Which parts to paint: `resolveCompactControl(...).parts`. */
@@ -314,18 +273,13 @@ export interface CompactPartsContent {
 /**
  * Paints the icon and the text of one bar control.
  *
- * A plain function returning a fragment rather than a component, for the same
- * reason `resolveIcon` is a call and not `<Icon />`: a component declared or
- * chosen per render is what `react/no-unstable-nested-components` rejects, and
- * the result here is `Chip`'s children, which every site then concatenates its
- * own value and state children onto.
+ * A plain function returning a fragment, not a component — the same reason
+ * `resolveIcon` is a call and not `<Icon />`. The result becomes `Chip`'s
+ * children, which the caller then appends its own value and state children to.
  *
- * **Precondition:** `parts.icon` implies `icon` is paintable. This function
- * paints the `Glyph` on `parts.icon` alone and does not re-check the node, so
- * an inconsistent pair yields an empty `<span data-dtb-kind="glyph">` that
- * still eats a `gap`. `resolveCompactControl` guarantees the pair on its own
- * output, `defaults` included — take `parts` from there rather than assembling
- * them by hand.
+ * Precondition: `parts.icon` implies `icon` is paintable. This function
+ * trusts `parts.icon` without re-checking the node; `resolveCompactControl`
+ * is what guarantees the pair, so take `parts` from there.
  */
 export function renderCompactParts({
   parts,
@@ -351,33 +305,25 @@ export interface CompactPlace {
   isOverflowed: boolean;
   /** True while this extension's panel is the open one. */
   isPanelOpen: boolean;
-  /**
-   * The resolved icon, as `resolveCompactControl` returned it. Required rather
-   * than optional so a caller cannot silently drop it from the context.
-   */
+  /** The resolved icon, as `resolveCompactControl` returned it. Required so it can't be silently dropped. */
   icon: ReactNode;
 }
 
 /**
  * Invokes a `render` callback for one control, or returns the preset's node.
  *
- * The `CompactRenderContext` is assembled here and nowhere else, so the seven
- * value-bearing extensions cannot drift on which fields it carries — and
- * neither can they drift on the `undefined` rule: a callback returning
- * `undefined` falls through to `fallback`, so a consumer opts out per control
- * rather than per extension.
+ * `CompactRenderContext` is assembled only here, so extensions can't drift on
+ * its fields or on the `undefined` rule: a callback returning `undefined`
+ * falls through to `fallback`.
  *
- * `fallback` is an element tree the caller has already built, not a rendered
- * result, so handing it out costs nothing when the callback ignores it. It is
- * also the *same* construction the extension paints when there is no callback,
- * which is what makes `render: (_, ctx) => ctx.fallback` exact by construction
- * rather than by two pieces of markup kept in step.
+ * `fallback` is an element tree the caller already built — the same one
+ * painted when there's no callback, so `render: (_, ctx) => ctx.fallback` is
+ * exact by construction.
  *
- * The callback is honoured in the bar and in the `⋮` menu alike, with
- * `ctx.isOverflowed` as the hook. That is the deliberate deviation from the
- * "the menu always paints text" guarantee that ADR-004 records: the guarantee
- * holds by construction for every preset, and a callback is the consumer taking
- * the wheel.
+ * Honoured in the bar and the `⋮` menu alike via `ctx.isOverflowed`, the
+ * deliberate exception to "the menu always paints text" (ADR-004): that
+ * guarantee holds by construction for presets; a callback is the consumer
+ * taking the wheel.
  */
 export function renderCompact<TView>(
   presentation: ResolvedCompactPresentation<TView>,
@@ -402,13 +348,9 @@ export function renderCompact<TView>(
  * The `name` override, when there is one that says something — `undefined`
  * otherwise.
  *
- * The whitespace rule lives here so that the two callers cannot drift on it:
- * `resolveAccessibleName` below, which has an extension-supplied name to fall
- * back to, and a control that has **none** and must therefore write no
- * `aria-label` at all rather than an empty one. `/ext/metrics`' `⋮` rows are
- * that second case: they are named by their content today, and ADR-004 leaves
- * naming them outright a separate, open decision — but a consumer who supplies
- * one should not lose it the moment the control collapses.
+ * Whitespace-only is treated as absent here so both callers agree:
+ * `resolveAccessibleName` below, and a control with no fallback name at all,
+ * which must write no `aria-label` rather than an empty one.
  */
 export function resolveNameOverride<TView>(
   name: ((data: TView) => string) | undefined,
@@ -424,10 +366,6 @@ export function resolveNameOverride<TView>(
 /**
  * The control's accessible name: the override when it says something, the
  * extension's own name otherwise.
- *
- * A whitespace-only override is ignored rather than trusted, so no override can
- * leave an icon-only control unnamed — which is exactly what `/ext/a11y` would
- * flag on the toolbar's own bar.
  */
 export function resolveAccessibleName<TView>(
   name: ((data: TView) => string) | undefined,

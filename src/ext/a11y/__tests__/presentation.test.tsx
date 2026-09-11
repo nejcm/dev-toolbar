@@ -1,29 +1,25 @@
 /**
- * `/ext/a11y`' `presentation` option, against the real shell.
+ * `/ext/a11y`'s `presentation` option, against the real shell.
  *
- * a11y is the first of Group A — the five extensions that route their bar
- * control through the kit `Chip` — so this is where two things are settled that
- * the other four copy.
+ * a11y is the first of Group A (the five extensions that route their bar
+ * control through the kit `Chip`), so two things get settled here that the
+ * other four copy:
  *
- * 1. **The parts go in as `Chip`'s children, not its `icon`/`label`/`value`
- *    slots.** `ctx.fallback` has to be a children tree, so `render` replaces
- *    the control's children and never the `Chip` itself, which is what keeps
- *    the dot and `data-dtb-status` out of the consumer's hands. The slot path
- *    would need a second tree just for `fallback`. `/ext/metrics` made the same
- *    call for the same reason; both directions are pinned below.
- * 2. **A preset operates on the short bar word.** a11y used to write the
- *    `isOverflowed ? label : "a11y"` swing by hand; the text axis
- *    `"none" | "short" | "full"` is that swing, so `label` stays the overflow
- *    and accessible-name identity under every preset.
+ * 1. The parts go in as `Chip`'s children, not its `icon`/`label`/`value`
+ *    slots — `ctx.fallback` must be a children tree, so `render` replaces the
+ *    control's children, never the `Chip` itself, keeping the dot and
+ *    `data-dtb-status` out of the consumer's hands. `/ext/metrics` made the
+ *    same call; both directions are pinned below.
+ * 2. A preset operates on the short bar word: `label` stays the overflow and
+ *    accessible-name identity under every preset, replacing the old
+ *    `isOverflowed ? label : "a11y"` swing written by hand.
  *
- * The default output is pinned as two literal strings, in the bar and in the
- * `⋮` menu. `resolveCompactParts` answering `null` for `"default"` is what
- * makes byte-identity structural; a string is what makes it evidence.
+ * The default output is pinned as two literal strings (bar and `⋮` menu).
+ * `resolveCompactParts` answering `null` for `"default"` is what makes
+ * byte-identity structural; the string is what makes it evidence.
  *
- * `loadOn: "scan"` throughout so nothing imports axe-core: these tests are
- * about the chip's markup, and the report stays in its `pending` state — the
- * same state `src/ext/__tests__/presentation.test.tsx` pins a11y's accessible
- * name in.
+ * `loadOn: "scan"` throughout so nothing imports axe-core — these tests are
+ * about the chip's markup, with the report staying `pending`.
  *
  * [dev-toolbar/plans/bar-presentation-icons-v1 §4]
  */
@@ -36,9 +32,9 @@ import type { A11yOptions } from "../index";
 import type { A11yReport, AxeLike } from "../types";
 
 /**
- * Tears down whatever is already mounted first: several tests here compare two
- * presentations of the same extension, and the testing helpers query the
- * document rather than one root, so a leftover toolbar answers for the new one.
+ * Tears down any already-mounted toolbar first — the testing helpers query
+ * the document rather than one root, so a leftover toolbar would answer for
+ * the new one.
  */
 const mount = (options: A11yOptions = {}) => {
   cleanupToolbar();
@@ -79,14 +75,11 @@ const overflowChip = (options: A11yOptions = {}): HTMLElement =>
   overflowTrigger(options).querySelector('[data-dtb-part="a11y-chip"]') as HTMLElement;
 
 /**
- * The chip's text span, selected by the `data-dtb-part` it now carries.
- *
- * It used to be a bare `<span>` located structurally — the one child span with
- * no kind and no part of its own — because naming it would have changed the
- * bytes below. Naming it *is* the deliberate change this commit makes, so the
- * structural stand-in is gone and the selector says what it always meant.
- * There is deliberately no `data-dtb-kind="label"`: that is what the kit sheet
- * tints with `--dtb-muted`, and recolouring this chip is a separate decision.
+ * The chip's text span, now selected by its `data-dtb-part` rather than
+ * structurally (it used to be the one unnamed child span, since naming it
+ * would've changed the pinned bytes below — that naming is this commit).
+ * No `data-dtb-kind="label"`: that's what the kit sheet tints with
+ * `--dtb-muted`, and recolouring this chip is a separate decision.
  */
 const text = (chip: Element): string | null =>
   chip.querySelector('[data-dtb-part="a11y-label"]')?.textContent ?? null;
@@ -107,9 +100,8 @@ const ICON = (
 afterEach(cleanupToolbar);
 
 describe("the default presentation", () => {
-  // The exact markup that shipped before `presentation` existed. Regenerate it
-  // only against a deliberate, documented change to a11y's bar DOM: every
-  // consumer's CSS and every Playwright selector reads these attributes.
+  // The exact markup that shipped before `presentation` existed. Regenerate
+  // only against a deliberate, documented change to a11y's bar DOM.
   const DEFAULT_TRIGGER =
     '<button type="button" data-dtb-part="trigger" aria-expanded="false"' +
     ' aria-label="Accessibility, pending" title="Accessibility: click to scan this page">' +
@@ -120,8 +112,7 @@ describe("the default presentation", () => {
     '<span data-dtb-kind="value" data-dtb-severity="unknown" data-dtb-part="a11y-value">' +
     "scan</span></span></button>";
 
-  // The same tree with the full label — the only thing the `⋮` menu changes,
-  // which is the swing this chip used to write by hand.
+  // The same tree with the full label — the only thing the `⋮` menu changes.
   const DEFAULT_OVERFLOW_TRIGGER = DEFAULT_TRIGGER.replace(
     '<span data-dtb-part="a11y-label">a11y</span>',
     '<span data-dtb-part="a11y-label">Accessibility</span>',
@@ -167,9 +158,8 @@ const PRESETS: readonly PresetRow[] = [
   {
     preset: "icon",
     bar: { icon: true, text: null, value: null },
-    // Guarantee 2 forces text in the menu — and only text, so the row loses
-    // the readout today's default row paints. Intended, and pinned so it reads
-    // as a decision rather than surfacing later as a regression.
+    // Guarantee 2 forces text in the menu, and only text — losing the readout
+    // the default row paints is intentional, pinned as a decision.
     menu: { icon: true, text: "Accessibility", value: null },
     // Guarantee 1: an icon-only preset with no icon paints text, never nothing.
     bareBar: { text: "a11y", value: null },
@@ -267,14 +257,11 @@ describe("presets", () => {
 
 describe("a scanned state", () => {
   /**
-   * Everything above runs in `pending`, where the dot and the value are both
-   * `"unknown"` and the value reads `"scan"` — so a wrong severity *source*
-   * would pass all of it. The value span's `data-dtb-severity` is written here
-   * rather than by `Chip`'s own value slot, which is the price of putting the
-   * parts in the chip's children; this scans once and asserts that the written
-   * attribute is still `chipSeverity(report)` and not a constant or a stale
-   * variable. The dot comes from `Chip severity`, so pinning both says the two
-   * sources agree.
+   * Everything above runs in `pending` (dot and value both `"unknown"`), so a
+   * wrong severity *source* would still pass. Here a scan drives the value's
+   * `data-dtb-severity` (written by hand — the price of putting parts in the
+   * chip's children rather than `Chip`'s value slot) and the dot's `Chip
+   * severity` to a real value, proving both sources agree.
    */
   const CRITICAL = {
     violations: [
@@ -313,8 +300,8 @@ describe("a scanned state", () => {
     expect(
       chip.querySelector('[data-dtb-part="a11y-dot"]')?.getAttribute("data-dtb-severity"),
     ).toBe("bad");
-    // Invariant 1 in a state that is not `pending`: the preset changed the
-    // text, and the trigger's name still counts the violations.
+    // Outside `pending`: the preset changed the text, not the state — the
+    // status, the dot's severity and the violation count all survive it.
     expect(chip.getAttribute("data-dtb-status")).toBe("ok");
     expect(trigger.getAttribute("aria-label")).toBe("Accessibility, 1 violation");
     expect(text(chip)).toBeNull();
@@ -359,9 +346,8 @@ describe("the render callback", () => {
     const trigger = barTrigger({ presentation: { preset: "icon-value", icon: ICON, render } });
     const chip = trigger.querySelector('[data-dtb-part="a11y-chip"]') as HTMLElement;
     expect(chip.querySelector('[data-dtb-part="a11y-custom"]')?.textContent).toBe("pending scan");
-    // The consumer's node replaces the parts, not the chip: the dot, the state
-    // attribute and the trigger's name are not theirs to lose. This is the
-    // whole reason the parts are `Chip`'s children rather than its slots.
+    // The consumer's node replaces only the parts, never the chip — the dot
+    // and state attribute are not the render callback's to lose (see docblock, 1).
     expect(chip.querySelector('[data-dtb-part="a11y-dot"]')).not.toBeNull();
     expect(chip.getAttribute("data-dtb-status")).toBe("pending");
     expect(trigger.getAttribute("aria-label")).toBe("Accessibility, pending");
@@ -371,10 +357,9 @@ describe("the render callback", () => {
     expect(contexts[0]?.isPanelOpen).toBe(false);
     expect(contexts[0]?.icon).toBe(ICON);
 
-    // Honoured in the ⋮ menu too — ADR-004's deliberate deviation from the
-    // "always paint text" guarantee, with `isOverflowed` as the hook. Unlike
-    // metrics' `⋮` rows, this one keeps its own `aria-label`, so a callback
-    // painting an icon alone still leaves a named button.
+    // Honoured in the ⋮ menu too (ADR-004's deviation from "always paint
+    // text", via `isOverflowed`). Unlike metrics' rows, this keeps its own
+    // `aria-label`, so an icon-only callback still leaves a named button.
     const menu = overflowTrigger({ presentation: { render } });
     expect(menu.querySelector('[data-dtb-part="a11y-custom"]')?.textContent).toBe("pending scan");
     expect(menu.querySelector('[data-dtb-part="a11y-dot"]')).not.toBeNull();
@@ -391,9 +376,8 @@ describe("the render callback", () => {
   });
 
   it("returning ctx.fallback paints exactly what the preset would have", () => {
-    // One construction, handed out as `fallback` and rendered as the preset —
-    // so deferring is exact by construction rather than by careful mimicry,
-    // which is the property the slot-based alternative could not have.
+    // `fallback` is the same construction rendered as the preset, so deferring
+    // to it is exact by construction, not mimicry.
     const presetOnly = barTrigger({ presentation: { preset: "icon-value", icon: ICON } });
     const deferred = barTrigger({
       presentation: {

@@ -18,15 +18,7 @@ import type { SeverityWithOverride } from "./types";
 
 type DataAttributes = { [name: `data-${string}`]: string | undefined };
 
-/**
- * Everything a `<span>` takes, plus `data-*`.
- *
- * Named and exported because it is the shape of every span-shaped slot in the
- * kit — `Chip`'s `dotProps` / `labelProps` / `valueProps`, `Glyph`, `Tag`, and
- * `renderCompactParts`' two prop bags — and an extension passing one around
- * should not have to spell it out. `GlyphProps` and `TagProps` are aliases of
- * it, kept so each component still names its own props type.
- */
+/** Everything a `<span>` takes, plus `data-*`. Shared by every span-shaped slot in the kit. */
 export type SpanProps = HTMLAttributes<HTMLSpanElement> & DataAttributes;
 
 /** Props for the shared button reset. Everything a `<button>` takes. */
@@ -46,15 +38,12 @@ export type GlyphProps = SpanProps;
 /**
  * A consumer-supplied icon, hidden from assistive technology and clamped.
  *
- * Two reasons nine call sites should not each solve: it is `aria-hidden` by
- * default, because the name belongs to the control and an announced icon
- * duplicates it — pass `aria-hidden={false}` with a `role`/`aria-label` where
- * the icon *is* the name — and it clamps its direct child, because a 24px
- * `<svg>` handed to an 11px bar would otherwise set the bar's height. The clamp
- * is `--dtb-glyph-size`, defaulting to `1.15em`, so it tracks density for free.
- *
- * It is a standalone control, not just a `Chip` slot, because three of the nine
- * first-party bar controls are hand-written and cannot route through `Chip`.
+ * `aria-hidden` by default — the name belongs to the control, not the icon;
+ * pass `aria-hidden={false}` with a `role`/`aria-label` where the icon *is*
+ * the name. Clamps its direct child to `--dtb-glyph-size` (default `1.15em`)
+ * so a 24px `<svg>` can't set the bar's height. Standalone rather than a
+ * `Chip`-only slot because three first-party controls are hand-written and
+ * don't route through `Chip`.
  */
 export const Glyph = forwardRef<HTMLSpanElement, GlyphProps>(function Glyph(
   { "aria-hidden": ariaHidden = "true", ...rest },
@@ -64,37 +53,19 @@ export const Glyph = forwardRef<HTMLSpanElement, GlyphProps>(function Glyph(
 });
 
 /**
- * Whether a resolved icon is one of the **primitives React paints nothing
- * for** — `false`, `true`, `null`, `undefined` and `""`.
+ * Whether a resolved icon is one of the primitives React paints nothing for
+ * — `false`, `true`, `null`, `undefined`, `""`. Lives here rather than in
+ * `presentation.tsx` to avoid a module cycle.
  *
- * **The one rule**, and the reason it is a function rather than an inline
- * `!== undefined && !== null` at each of the five sites that need it: a
- * presence test that only rejects the middle two calls the first, fourth and
- * fifth an icon. That is not a cosmetic mistake — it is the hole guarantee 1
- * exists to close. `icon: (view) => view.enabled && <Icon />` is an ordinary
- * callback that returns `false` for a disabled control, and under
- * `preset: "icon"` a truthy `hasIcon` then suppresses the text *and* paints an
- * empty `<span data-dtb-kind="glyph">`, leaving a control that is blank but for
- * its dot and still eating a `gap`.
+ * Emptiness, not falsiness: `0` is paintable (React renders the character).
+ * A presence test (`!= null`) would wrongly call `icon: (v) => v.enabled &&
+ * <Icon />` present when it returns `false`, painting an empty glyph that
+ * still eats the flex `gap`.
  *
- * `0` is deliberately **paintable**: React renders it as the character `0`, and
- * a numeric badge is a legitimate icon. So this is emptiness, not falsiness.
- *
- * **Not every icon that paints nothing is caught, and none can be.** A *node*
- * is an icon here: `[]`, `<></>` and `[null]` all answer `true` and produce the
- * blank glyph above, as does `<Badges />` when that component returns `null` —
- * and the last of those is undecidable without rendering it, which a value test
- * cannot do. So the line is drawn where a value test can see: the five
- * primitives, and nothing deeper. Half-recursing into arrays and fragments
- * would move the boundary without reaching it and would make `[]` and `[null]`
- * disagree for no reason a consumer could predict; `icon: () => undefined` is
- * the supported way to say "no icon here", and every preset but `"icon"` still
- * has its text or value to paint regardless.
- *
- * `/ext/flags` reaches the same answer from the other direction: its legacy
- * `PromotedFlag.icon` is a `string | undefined` it has always painted on
- * truthiness, so `""` has never been an icon there either. Over that type the
- * two rules agree exactly, which is what lets that call site read this one.
+ * The rule is shallow by design and not exhaustive: `[]`, `<></>`, `[null]`,
+ * or a component returning `null` all still count as "an icon" and produce
+ * the same empty glyph — deciding those would mean rendering them first.
+ * `icon: () => undefined` is the supported way to say "no icon".
  */
 export function hasPaintableIcon(icon: ReactNode): boolean {
   return icon !== undefined && icon !== null && icon !== false && icon !== true && icon !== "";
@@ -105,26 +76,9 @@ export function hasPaintableIcon(icon: ReactNode): boolean {
  * and an optional value.
  */
 export interface ChipProps extends SpanProps {
-  /**
-   * Optional, and `undefined | null` renders nothing at all rather than an
-   * empty span — the chip is `inline-flex` with a `gap`, so an empty span would
-   * still consume one and leave an icon-only or value-only chip off-centre.
-   */
+  /** Optional; `undefined`/`null` renders nothing, not an empty span (the chip's `gap` would still apply). */
   label?: ReactNode;
-  /**
-   * A consumer-supplied icon, rendered after the dot inside a `Glyph`.
-   *
-   * Guarded by `hasPaintableIcon` rather than by the presence test the two text
-   * slots use, and the difference is the slot's audience: `label` and `value`
-   * are text a site passes explicitly, while an icon is what a consumer writes
-   * `icon={enabled && <I />}` for (ADR-004 records this slot as third-party
-   * surface). That expression is `false` half the time, and a presence test
-   * would call it an icon and paint an empty `Glyph` that still eats the gap —
-   * the same hole the `presentation` vocabulary's guarantee 1 exists to close,
-   * reached here through the same one rule. Note the rule is the five
-   * primitives React paints nothing for and nothing deeper: `icon={[]}` is a
-   * node, and still paints the empty `Glyph`.
-   */
+  /** A consumer-supplied icon, rendered after the dot inside a `Glyph`. Guarded by `hasPaintableIcon`, not a presence check — see that function. */
   icon?: ReactNode;
   /** Props for the icon's `Glyph` wrapper. */
   iconProps?: GlyphProps;
@@ -150,11 +104,10 @@ export interface ChipProps extends SpanProps {
  * `labelProps={{ "data-dtb-kind": "label" }}` to opt in, or `undefined` on
  * the others to opt out.
  *
- * The icon slot is the exception: `Glyph` writes its kind *after* its own
- * props, so `iconProps` cannot drop it. The clamp keyed on that kind is the
- * reason `Glyph` exists — an unclamped 24px `<svg>` would set the bar's
- * height — so opting out would defeat the control. Style the icon through the
- * element you hand to `icon`.
+ * The icon slot is the exception: `Glyph` writes `data-dtb-kind` after its
+ * own props, so `iconProps` cannot override it — the size clamp keyed on that
+ * kind is the reason `Glyph` exists. Style the icon through the element you
+ * hand to `icon`.
  */
 export const Chip = forwardRef<HTMLSpanElement, ChipProps>(function Chip(
   { children, dotProps, icon, iconProps, label, labelProps, severity, value, valueProps, ...rest },

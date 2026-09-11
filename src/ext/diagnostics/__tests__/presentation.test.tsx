@@ -1,26 +1,15 @@
 /**
  * `/ext/diagnostics`' `presentation` option, against the real shell.
  *
- * Diagnostics is the third Group A member and the first of the two that carry
- * an extra severity child, so what this file exists to settle is **invariant
- * 2**: the error/warning badge is state, not presentation. It sits outside both
- * the preset and `render`, after the contents, under every preset including
- * `"icon"` — a consumer restyling the chip cannot silence the one thing on it
- * that says something is wrong. Every preset row and the `render` case below
- * assert it in both places.
+ * The point of this file is invariant 2: the error/warning badge is state, not
+ * presentation. It sits outside both the preset and `render`, after the
+ * contents, under every preset including `"icon"`. Every preset row and the
+ * `render` case below assert it in both places.
  *
- * The other two decisions are `/ext/a11y`'s, copied rather than re-litigated:
- * the parts go in as `Chip`'s *children* rather than its `icon`/`label`/`value`
- * slots (so `ctx.fallback` is a children tree and `render` can never replace
- * the `Chip` itself), and a preset operates on the short bar word while `label`
- * stays the overflow and accessible-name identity.
- *
- * Byte-identity is pinned as literal strings in **three** states: the empty one
- * every other assertion runs in, a caught error plus a caught warning — because
- * the badge's four hand-written `data-dtb-*` attributes are invisible to a test
- * that only ever runs with no badge at all — and a captured snapshot with
- * something missing, which is the only state where `data-dtb-incomplete` is
- * `"true"`.
+ * Byte-identity is pinned in three states: empty, a caught error plus warning
+ * (the badge's attributes are otherwise invisible), and a captured snapshot
+ * with something missing (the only state where `data-dtb-incomplete` is
+ * `"true"`).
  *
  * [dev-toolbar/plans/bar-presentation-icons-v1 §4]
  */
@@ -29,18 +18,13 @@ import { act } from "@testing-library/react";
 import { cleanupToolbar, mountToolbar } from "@nejcm/dev-toolbar/testing";
 import type { CompactPreset, CompactRenderContext } from "@nejcm/dev-toolbar/kit";
 import { diagnostics } from "../index";
-// Both through `../index`: that is the subpath export the README advertises,
-// so the test exercises the entry point a consumer actually imports from.
+// Through `../index`, the entry point a consumer actually imports from.
 import type { DiagnosticsBarView, DiagnosticsOptions } from "../index";
 import type { DevToolbarExtension } from "../../../core/contract";
 
 const app = <main data-testid="app">app</main>;
 
-/**
- * Tears down whatever is already mounted first: several tests here compare two
- * presentations of the same extension, and the testing helpers query the
- * document rather than one root, so a leftover toolbar answers for the new one.
- */
+/** Tears down first: the testing helpers query the document, not one root. */
 const mount = (options: DiagnosticsOptions = {}) => {
   cleanupToolbar();
   return mountToolbar(app, {
@@ -77,14 +61,8 @@ const overflowChip = (options: DiagnosticsOptions = {}): HTMLElement =>
   overflowTrigger(options).querySelector('[data-dtb-part="diag-chip"]') as HTMLElement;
 
 /**
- * The chip's text span, selected by the `data-dtb-part` it now carries.
- *
- * It used to be a bare `<span>` located structurally — the one child span with
- * no kind and no part of its own — because naming it would have changed the
- * bytes below. Naming it *is* the deliberate change this commit makes, so the
- * structural stand-in is gone and the selector says what it always meant.
- * There is deliberately no `data-dtb-kind="label"`: that is what the kit sheet
- * tints with `--dtb-muted`, and recolouring this chip is a separate decision.
+ * The chip's text span. Deliberately no `data-dtb-kind="label"` — that's what
+ * the kit sheet tints, and recolouring this chip is a separate decision.
  */
 const text = (chip: Element): string | null =>
   chip.querySelector('[data-dtb-part="diag-label"]')?.textContent ?? null;
@@ -114,10 +92,9 @@ afterEach(() => {
 });
 
 /**
- * One caught error and one caught warning, which is the only state in this
- * file where the badge exists. `console.error`/`console.warn` are silenced
- * first: the extension's patch always calls through, and this test writes on
- * purpose.
+ * One caught error and one caught warning — the only state here where the
+ * badge exists. `console.error`/`.warn` are silenced first since the
+ * extension's patch always calls through.
  */
 const withCaught = async (options: DiagnosticsOptions = {}) => {
   console.error = () => {};
@@ -137,13 +114,9 @@ const CAUGHT_TITLE =
 
 /**
  * A captured snapshot that could not say everything. `QUIET` is a neighbour
- * extension with no `diagnostics()` of its own, which is exactly one omission;
- * opening the panel is what takes the snapshot, and closing it again puts the
- * trigger back in its resting state so `aria-expanded` stays `"false"`.
- *
- * This is the only state in this file where `data-dtb-incomplete` is `"true"`
- * — every other assertion runs with nothing missing, so the attribute the plan
- * names as diagnostics' state hook would pass with its condition inverted.
+ * extension with no `diagnostics()` of its own — exactly one omission. Opening
+ * then closing the panel takes the snapshot and returns the trigger to its
+ * resting state. The only state here where `data-dtb-incomplete` is `"true"`.
  */
 const QUIET: DevToolbarExtension = { id: "quiet", label: "Quiet" };
 
@@ -167,10 +140,9 @@ const omissionTrigger = (toolbar: Mounted): HTMLElement =>
     ?.querySelector<HTMLElement>('[data-dtb-part="trigger"]') as HTMLElement;
 
 /**
- * The diagnostics row inside the `⋮` menu, in the states that mount a
- * neighbour. Scoped by `data-dtb-ext-id`, never by `[data-dtb-part="trigger"]`
- * alone: the menu holds a row per overflowed extension, so an unscoped query
- * answers with `QUIET`'s placeholder instead — AGENTS.md's discriminator rule.
+ * The diagnostics row inside the `⋮` menu, scoped by `data-dtb-ext-id`: the
+ * menu holds a row per overflowed extension, so an unscoped query could
+ * answer with `QUIET`'s row instead.
  */
 const omissionMenuRow = (toolbar: Mounted): HTMLElement => {
   toolbar.resize(60);
@@ -185,9 +157,8 @@ const omissionMenuRow = (toolbar: Mounted): HTMLElement => {
 };
 
 describe("the default presentation", () => {
-  // The exact markup that shipped before `presentation` existed. Regenerated
-  // only against a deliberate, documented change to diagnostics' bar DOM:
-  // every consumer's CSS and every Playwright selector reads these attributes.
+  // The exact markup that shipped before `presentation` existed. Regenerate
+  // only by capture, never by hand.
   const DEFAULT_TRIGGER =
     '<button type="button" data-dtb-part="trigger" aria-expanded="false"' +
     ' aria-label="Diagnostics"' +
@@ -198,8 +169,7 @@ describe("the default presentation", () => {
     '<span data-dtb-kind="value" data-dtb-part="diag-value">capture</span>' +
     "</span></button>";
 
-  // The same tree with the full label — the only thing the `⋮` menu changes,
-  // which is the swing this chip used to write by hand.
+  // The same tree with the full label — the only thing the `⋮` menu changes.
   const DEFAULT_OVERFLOW_TRIGGER = DEFAULT_TRIGGER.replace(
     '<span data-dtb-part="diag-label">diagnostics</span>',
     '<span data-dtb-part="diag-label">Diagnostics</span>',
@@ -214,26 +184,13 @@ describe("the default presentation", () => {
   });
 
   it('is what an explicit "default" and a bare icon both resolve to', () => {
-    // An icon with no preset that paints it does nothing — the four knobs are
-    // meaningless apart, which is why they are one option.
+    // An icon with no preset that paints it does nothing.
     expect(barTrigger({ presentation: { preset: "default", icon: ICON } }).outerHTML).toBe(
       DEFAULT_TRIGGER,
     );
     expect(overflowTrigger({ presentation: "default" }).outerHTML).toBe(DEFAULT_OVERFLOW_TRIGGER);
   });
 
-  /**
-   * The state every other assertion in this file cannot see. The badge's four
-   * attributes and its `aria-hidden` are hand-written next to the parts rather
-   * than by `Chip`, so a test that only ever runs with no badge would pass with
-   * them mangled — and the badge is the reason this extension is in this phase.
-   */
-  /**
-   * The other state the empty one hides: a snapshot was taken and something is
-   * missing from it, so `data-dtb-incomplete` flips to `"true"`, the value word
-   * becomes the count, and both the name and the title carry it. Captured from
-   * the DOM like every literal here, never hand-written.
-   */
   it("paints the captured-with-omission state byte-identically", () => {
     const OMISSION_BAR =
       '<button type="button" data-dtb-part="trigger" aria-expanded="false"' +
@@ -310,9 +267,7 @@ const PRESETS: readonly PresetRow[] = [
   {
     preset: "icon",
     bar: { icon: true, text: null, value: null },
-    // Guarantee 2 forces text in the menu — and only text, so the row loses
-    // the readout today's default row paints. Intended, and pinned so it reads
-    // as a decision rather than surfacing later as a regression.
+    // Guarantee 2 forces text-only in the menu, so the row loses the value.
     menu: { icon: true, text: "Diagnostics", value: null },
     // Guarantee 1: an icon-only preset with no icon paints text, never nothing.
     bareBar: { text: "diagnostics", value: null },
@@ -324,8 +279,6 @@ const PRESETS: readonly PresetRow[] = [
     bareBar: { text: null, value: "capture" },
   },
   {
-    // The short bar word, the full label in the menu: the "which text" rule,
-    // asserted rather than described.
     preset: "icon-label",
     bar: { icon: true, text: "diagnostics", value: null },
     menu: { icon: true, text: "Diagnostics", value: null },
@@ -399,10 +352,8 @@ describe("presets", () => {
   });
 
   /**
-   * A state that is not the empty one, under every preset: `data-dtb-incomplete`
-   * follows the snapshot and not the preset, and the missing count still
-   * reaches the name and the title. The preset chooses *whether* a value is
-   * painted; the state chooses the word inside it.
+   * `data-dtb-incomplete` follows the snapshot, not the preset — the preset
+   * chooses whether a value is painted, the state chooses the word inside it.
    */
   it.each(PRESETS)("$preset leaves a captured omission's state alone", ({ bar, preset }) => {
     const toolbar = withOmission({ presentation: { preset, icon: ICON } });
@@ -426,11 +377,7 @@ describe("presets", () => {
     expect(row.getAttribute("aria-label")).toBe("Diagnostics, 1 missing");
   });
 
-  /**
-   * Invariant 2, the point of this phase. The badge is live state rendered
-   * after the contents, so it survives every preset — `"icon"` included, where
-   * the chip has no text and no value left.
-   */
+  /** Invariant 2: the badge survives every preset, `"icon"` included. */
   it.each(PRESETS)("$preset keeps the error badge, which is state", async ({ preset }) => {
     const toolbar = await withCaught({ presentation: { preset, icon: ICON } });
     const bar = toolbar
@@ -480,9 +427,7 @@ describe("a function icon", () => {
         },
       },
     });
-    // The four fields, and nothing else: `revision`, `capturedAt` and the
-    // whole `DiagnosticSnapshot` are implementation detail this callback
-    // parameter deliberately does not weld in.
+    // The four fields, and nothing else — not `revision`, `capturedAt` or the snapshot.
     expect(seen[0]).toEqual({ captured: false, omissions: 0, errors: 0, warnings: 0 });
     expect(Object.keys(seen[0] as DiagnosticsBarView).sort()).toEqual([
       "captured",
@@ -528,9 +473,7 @@ describe("the render callback", () => {
     const trigger = barTrigger({ presentation: { preset: "icon-value", icon: ICON, render } });
     const chip = trigger.querySelector('[data-dtb-part="diag-chip"]') as HTMLElement;
     expect(chip.querySelector('[data-dtb-part="diag-custom"]')?.textContent).toBe("nothing yet");
-    // The consumer's node replaces the parts, not the chip: the dot, the state
-    // attribute and the trigger's name are not theirs to lose. This is the
-    // whole reason the parts are `Chip`'s children rather than its slots.
+    // Replaces the parts, not the chip — the dot, state attribute and name aren't theirs to lose.
     expect(chip.querySelector('[data-dtb-part="diag-dot"]')).not.toBeNull();
     expect(chip.getAttribute("data-dtb-incomplete")).toBe("false");
     expect(trigger.getAttribute("aria-label")).toBe("Diagnostics");
@@ -540,10 +483,7 @@ describe("the render callback", () => {
     expect(contexts[0]?.isPanelOpen).toBe(false);
     expect(contexts[0]?.icon).toBe(ICON);
 
-    // Honoured in the ⋮ menu too — ADR-004's deliberate deviation from the
-    // "always paint text" guarantee, with `isOverflowed` as the hook. The row
-    // keeps its own `aria-label`, so a callback painting an icon alone still
-    // leaves a named button.
+    // Honoured in the ⋮ menu too — ADR-004's deliberate deviation from "always paint text".
     const menu = overflowTrigger({ presentation: { render } });
     expect(menu.querySelector('[data-dtb-part="diag-custom"]')?.textContent).toBe("nothing yet");
     expect(menu.querySelector('[data-dtb-part="diag-dot"]')).not.toBeNull();
@@ -566,12 +506,7 @@ describe("the render callback", () => {
     expect(trigger.getAttribute("aria-label")).toBe("Diagnostics, 1 error, 1 warning");
   });
 
-  /**
-   * Invariant 2's other half for this chip: `render` replaces the parts, so the
-   * value span (and its `"1 missing"`) is the consumer's to lose — but
-   * `data-dtb-incomplete` and the name are on the chip and the trigger, which
-   * `render` never reaches.
-   */
+  /** `render` can lose the value span, but not `data-dtb-incomplete` or the name. */
   it("cannot take the incomplete state with it", () => {
     const toolbar = withOmission({
       presentation: { render: () => <b data-dtb-part="diag-custom">mine</b> },
@@ -594,9 +529,6 @@ describe("the render callback", () => {
   });
 
   it("returning ctx.fallback paints exactly what the preset would have", () => {
-    // One construction, handed out as `fallback` and rendered as the preset —
-    // so deferring is exact by construction rather than by careful mimicry,
-    // which is the property the slot-based alternative could not have.
     const presetOnly = barTrigger({ presentation: { preset: "icon-value", icon: ICON } });
     const deferred = barTrigger({
       presentation: {
@@ -636,8 +568,6 @@ describe("the accessible-name override", () => {
   });
 
   it("ignores a whitespace-only override rather than leaving the control unnamed", () => {
-    // An icon-only control with no name is exactly what `/ext/a11y` would flag
-    // on the toolbar's own bar.
     const trigger = barTrigger({ presentation: { preset: "icon", icon: ICON, name: () => "   " } });
     expect(trigger.getAttribute("aria-label")).toBe("Diagnostics");
   });

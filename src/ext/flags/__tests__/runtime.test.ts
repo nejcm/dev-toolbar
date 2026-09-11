@@ -1057,17 +1057,11 @@ describe("publication guarantees", () => {
     runtime.store.destroy();
   });
 
-  // Deliberate and permanent: `promotedLabel`/`promotedIcon` are left out of
-  // `signature()`, so mutating the `promoted` array after `flags()` ran does
-  // not republish. The rule the signature encodes: **what the runtime decides
-  // is signed; what the consumer handed over verbatim is not.** Eligibility
-  // and position *are* signed — `promotedIndex` republishes the moment a
-  // window opens or closes — but `label` and `icon` are copied through, and
-  // signing them would advertise live config this option bag cannot keep:
-  // `PromotedFlag.presentation` sits beside them carrying a `ReactNode` that
-  // can never be signed at all. So the answer to "my promoted icon changed and
-  // the bar did not" is to rebuild the extension. See
-  // `docs/adr/ADR-004-per-extension-bar-presentation.md`.
+  // Deliberate and permanent: promotedLabel/promotedIcon are left out of
+  // signature(), so mutating `promoted` after flags() ran does not republish.
+  // What the runtime decides (eligibility, promotedIndex) is signed; what the
+  // consumer handed over verbatim (label, icon, and presentation's ReactNode,
+  // which can never be signed) is not. Rebuild the extension instead.
   it.each(["label", "icon"] as const)(
     "promoted %s alone does not publish — config is not live",
     (field) => {
@@ -1482,11 +1476,10 @@ describe("published flag ordering", () => {
     runtime.store.destroy();
   });
 
-  // Was pinned as a bug: promoted order was invisible to `signature()`.
-  // `promotedIndex` — added so a control gets the *eligible* entry's
-  // presentation — is each view's position in `promoted`, so a reorder now
-  // moves the signature and publishes. A by-product of covering eligibility,
-  // not a promise that config is live: `label` and `icon` still are not signed.
+  // Was pinned as a bug: promoted order was invisible to signature(). Now
+  // promotedIndex — each view's position, added so a control can find its
+  // eligible entry's presentation — moves the signature on reorder. label
+  // and icon still aren't signed; this is a by-product, not a promise.
   it("publishes a reordered promotion configuration", () => {
     const promoted = [{ flagKey: "a" }, { flagKey: "b" }];
     const runtime = createFlagsRuntime({

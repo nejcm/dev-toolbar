@@ -32,42 +32,27 @@ import type { EnvironmentRuntime } from "./runtime";
  * these components have no access to the raw context.
  *
  * `presentation` arrives already resolved and is read through `/kit`'s
- * `resolveCompactControl` and `renderCompact`, so the resolution rules live in
- * one place for all nine extensions. What stays here is the DOM: a consumer's
- * `render` supplies the children of the chip carrying `data-dtb-severity`, and
- * `Chip` paints the dot before them. The `impersonating` marker is rendered
- * *after* those children under every preset and under a `render` callback
- * alike — it is state, not presentation
+ * `resolveCompactControl` and `renderCompact`. A consumer's `render` supplies
+ * only the chip's children; `Chip` still owns the dot and the state
+ * attributes. The `impersonating` marker renders after those children under
+ * every preset and under `render` alike — it is state, not presentation
  * (`plans/bar-presentation-icons-v1.md`, invariant 2).
  */
 
 /**
- * The short word the bar paints, and the reason there is one.
- *
- * `label` is the extension's identity — the panel's accessible name, the `⋮`
- * row — and the bar has always painted this three-letter word instead, in the
- * bar *and* in the menu. Presets operate on *this* word; `label` stays the
- * accessible-name identity, which is what makes the text axis
- * `"none" | "short" | "full"` rather than a boolean
- * (`plans/bar-presentation-icons-v1.md`, "Which text").
+ * The short bar word. Presets operate on this; `label` stays the
+ * accessible-name identity (`plans/bar-presentation-icons-v1.md`,
+ * "Which text").
  */
 const SHORT_LABEL = "env";
 
 /**
- * Today's tree, expressed as parts.
- *
- * `resolveCompactControl` answers the preset's parts, or these when the preset
- * is `"default"` — handed in rather than known to kit, because `"default"`
- * means *whatever this extension renders today* and that differs across the
- * nine. Environment is the one Group A chip whose overflow row is not a
- * *different* tree: it has always painted `"env"` in both places, so
- * `overflow.text` is `"short"` here where the other four say `"full"`. That is
- * the whole point of handing the defaults in — the byte-identity of the `⋮`
- * row is a property of this record, not of a rule kit could have guessed.
- * (A preset still forces `"full"` in the menu; only `"default"` is pinned to
- * what shipped.)
- *
- * The `impersonating` child is not in here, and cannot be: it is state the
+ * Today's tree, expressed as parts — what `resolveCompactControl` falls back
+ * to under `"default"`. Environment is the one Group A chip whose overflow
+ * row isn't a different tree: it has always painted `"env"` in both places,
+ * so `overflow.text` is `"short"` here where the other four say `"full"`. A
+ * preset still forces `"full"` in the menu; only `"default"` is pinned to
+ * what shipped. The `impersonating` child is not in here: it's state the
  * extension paints after the parts under every preset.
  */
 const DEFAULTS: CompactDefaults = {
@@ -76,26 +61,14 @@ const DEFAULTS: CompactDefaults = {
 };
 
 /**
- * The icon and the text.
+ * The icon and text as the chip's children, not `Chip`'s `icon`/`label`/
+ * `value` slots (`docs/adr/ADR-004-per-extension-bar-presentation.md`).
  *
- * These are the chip's *children* rather than `Chip`'s `icon` / `label` /
- * `value` slots — the same call `/ext/a11y`, `/ext/diagnostics`,
- * `/ext/overlays` and `/ext/metrics` made, and the reason is recorded in
- * `docs/adr/ADR-004-per-extension-bar-presentation.md`. `Chip` renders its
- * children straight after the dot, in the slots' own position, so nothing
- * about the surrounding output moves. The fragment itself is kit's
- * `renderCompactParts` — six extensions wrote it identically, so it is one
- * function now, and `textProps` is what lets each keep its own attributes.
- *
- * One deliberate difference from the four chips that only carry a
- * `data-dtb-part`: this text span also carries `data-dtb-kind="label"`.
- * Environment already passed `labelProps` before any of this, so both are
- * today's bytes. `/ext/environment`'s own sheet selects on neither; what tints
- * the word is the kit sheet's
- * `[data-dtb-kind="label"] { color: var(--dtb-muted) }` (`src/kit/css.ts`).
- * Dropping the `kind` to match the others would be the regression, not the
- * cleanup — and adding it to the others would recolour four chips, which is
- * why they were named without it.
+ * Unlike the other chips, this text span also carries `data-dtb-kind="label"`
+ * — environment already passed `labelProps` before this feature, so it's
+ * today's bytes. That attribute is what the kit sheet's
+ * `[data-dtb-kind="label"]` rule tints; dropping it here would be a
+ * regression, and adding it to the others would recolour them.
  */
 function iconAndText(label: string, parts: CompactParts, icon: ReactNode): ReactNode {
   return renderCompactParts({
@@ -121,15 +94,10 @@ export interface ChipProps {
 }
 
 /**
- * The one Group A chip with **two** button wrappers.
- *
- * The `⋮` row is a different element — `data-dtb-part="env-overflow"`, and
- * deliberately no `aria-expanded`, because that row is not the disclosure the
- * bar trigger is. Both wrappers take the same children, the same
- * `aria-label` — the override included — and the same `title`, so the fork is
- * about the *element*, never about the presentation. That is why `contents` is
- * built once above the fork rather than inside each branch: a second
- * construction is a second thing to keep in step.
+ * The one Group A chip with two button wrappers. The `⋮` row is a different
+ * element (`data-dtb-part="env-overflow"`, no `aria-expanded`) but shares the
+ * same children, `aria-label` and `title` — the fork is about the element,
+ * never the presentation, so `inner` is built once above it.
  */
 export function EnvironmentChip({
   runtime,
@@ -156,9 +124,7 @@ export function EnvironmentChip({
   const accessibleLabel = [label, kind, snapshot.impersonating ? "impersonating" : null]
     .filter((part) => part !== null)
     .join(", ");
-  // `presentation.name` overrides it, and a whitespace-only override is
-  // ignored so no override can leave either wrapper unnamed. Resolved once,
-  // above the fork, because both wrappers carry it.
+  // `presentation.name` overrides it; a whitespace-only override is ignored.
   const accessibleName = resolveAccessibleName(presentation.name, snapshot, accessibleLabel);
 
   const control = resolveCompactControl(presentation, snapshot, {
@@ -168,8 +134,6 @@ export function EnvironmentChip({
   const fallback = (
     <>
       {iconAndText(label, control.parts, control.icon)}
-      {/* The order `Chip`'s own value slot wrote before this moved into the
-          chip's children: kind, severity, then the site's props. */}
       {control.parts.value ? (
         <span
           data-dtb-kind="value"
@@ -196,10 +160,9 @@ export function EnvironmentChip({
         { icon: control.icon, isOverflowed, isPanelOpen },
         fallback,
       )}
-      {/* Invariant 2: acting as somebody else is state, not presentation. It
+      {/* Invariant 2: acting as somebody else is state, not presentation — it
           sits outside both the preset and `render`, after the contents, under
-          every preset including `"icon"` — a consumer restyling the chip
-          cannot silence the one thing on it that says whose session this is. */}
+          every preset. */}
       {snapshot.impersonating ? <span data-dtb-part="env-alert">impersonating</span> : null}
     </Chip>
   );

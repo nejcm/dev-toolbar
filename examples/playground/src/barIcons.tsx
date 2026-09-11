@@ -3,23 +3,18 @@ import type { ReactNode } from "react";
 /**
  * The playground's own bar icons. [playground]
  *
- * Hand-written inline `<svg>` elements, owned by this app — which *is* the
- * proof that `presentation.icon` bundles, vendors and peer-depends on nothing:
- * the library never sees an icon it did not receive as a `ReactNode`, and the
- * package still has zero runtime dependencies. Copy one of these into your own
- * app, or hand `presentation.icon` whatever your icon library returns; the kit
- * only ever renders the node.
+ * Hand-written inline `<svg>` elements, owned by this app: the library never
+ * sees an icon it did not receive as a `ReactNode`, and has zero runtime
+ * dependencies. `presentation.icon` only ever renders the node it's given.
  *
- * Every icon carries a **`viewBox`**, and that is load-bearing rather than
- * tidy. `Glyph` clamps its direct child to `--dtb-glyph-size` (1.15em) through
- * `[data-dtb-kind="glyph"] > *`, so the element is *sized* by CSS; an `<svg>`
- * with no `viewBox` has no intrinsic coordinate system to scale into and is
- * clipped to that box instead of scaled down into it.
+ * Every icon carries a `viewBox` — load-bearing, not tidy. `Glyph` clamps its
+ * direct child to `--dtb-glyph-size` via `[data-dtb-kind="glyph"] > *`, so an
+ * `<svg>` with no `viewBox` has no coordinate system to scale into and gets
+ * clipped instead.
  *
- * They are plain elements rather than components on purpose: `presentation.icon`
- * is invoked as a call and its result rendered, never as `<Icon />`, which is
- * what `react/no-unstable-nested-components` rejects in the library and what
- * would remount the icon on every render here.
+ * Plain elements, not components: `presentation.icon` is invoked as a call
+ * and its result rendered, never as `<Icon />` — which `react/no-unstable-
+ * nested-components` rejects and would remount the icon on every render.
  */
 
 /** The attributes every icon below shares. One stroke weight, one coordinate system. */
@@ -79,13 +74,10 @@ const vitalsIcon: ReactNode = (
 );
 
 /**
- * One icon per metric id, for `metrics({ presentation: { icon } })`.
- *
- * The function form of `icon` is what makes this a map the *app* owns rather
- * than an `icons: Record<CollectorId, ReactNode>` option the library would have
- * had to grow: `icon: (metric) => METRIC_ICONS[metric.id]`. An id with no entry
- * returns `undefined`, which the preset reads as "no icon supplied" and paints
- * this metric's short label instead — a per-control fallback, not a per-extension one.
+ * One icon per metric id, for `metrics({ presentation: { icon } })` via
+ * `icon: (metric) => METRIC_ICONS[metric.id]`. An id with no entry returns
+ * `undefined`, which the preset reads as "no icon" and paints that metric's
+ * short label instead — a per-control fallback, not a per-extension one.
  */
 export const METRIC_ICONS: Record<string, ReactNode> = {
   delay: delayIcon,
@@ -112,25 +104,18 @@ export const A11Y_ICON: ReactNode = (
 );
 
 /**
- * A **text** glyph, deliberately kept beside the `<svg>` ones.
+ * A **text** glyph, deliberately kept beside the `<svg>` ones — the flags
+ * chip takes {@link FLAGS_ICON}, the promoted switch beside it takes this.
  *
- * `PromotedFlag.icon` has always been "a short glyph rendered before the label.
- * Text, not an asset", and `presentation.icon` accepts the same thing — so the
- * bar can hold both kinds at once, and here it does: the flags chip takes
- * {@link FLAGS_ICON} while the promoted switch beside it takes this.
+ * They don't size the same way: the kit clamp `[data-dtb-kind="glyph"] > *`
+ * matches an element child, never a bare text node, so an `<svg>` is clamped
+ * to `--dtb-glyph-size` and a character is not — it's centred by the glyph's
+ * `align-items` at the font's own size, which is why an emoji reads oversized
+ * next to these while a geometric character doesn't.
  *
- * Look at the two together before shipping a text icon of your own. They do not
- * size the same way, and cannot: the kit clamp is
- * `[data-dtb-kind="glyph"] > *`, which matches an element child and never a
- * bare text node. An `<svg>` is therefore clamped to `--dtb-glyph-size` and a
- * character is not — it is centred by the glyph's `align-items`, at whatever
- * size the font gives it, which is why an emoji reads as oversized next to
- * these and a geometric character like this one does not.
- *
- * So: pass a geometric character bare, as this one is — it needs no wrapper,
- * and the glyph's line box (`line-height: var(--dtb-glyph-size, 1.15em)`,
- * `src/kit/css.ts`) gives it a real box to sit in. Wrap it in a `<span>` only
- * when you want an oversized character clamped like an element; the wrapper is
- * what opts it into `> *`.
+ * Pass a geometric character bare, as here — the glyph's line box
+ * (`line-height: var(--dtb-glyph-size, 1.15em)`, `src/kit/css.ts`) gives it a
+ * real box to sit in. Wrap it in a `<span>` only to opt an oversized
+ * character into the `> *` clamp.
  */
 export const PROMOTED_FLAG_ICON: ReactNode = "◈";

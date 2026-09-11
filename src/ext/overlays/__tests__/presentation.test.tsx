@@ -1,26 +1,16 @@
 /**
  * `/ext/overlays`' `presentation` option, against the real shell.
  *
- * Overlays is the second of the two Group A members carrying an extra severity
- * child, so what this file exists to settle alongside `/ext/diagnostics` is
- * **invariant 2**: the error `Tag` is state, not presentation. A measurement
- * that threw switched every overlay off, and it sits outside both the preset
- * and `render`, after the contents, under every preset including `"icon"` — a
- * consumer restyling the chip cannot hide it. Every preset row and the
- * `render` case below assert it in both places.
+ * The point of this file is invariant 2: the error `Tag` (a measurement that
+ * threw switched every overlay off) is state, not presentation. It sits
+ * outside both the preset and `render`, after the contents, under every
+ * preset including `"icon"`. Every preset row and the `render` case below
+ * assert it in both places.
  *
- * The other two decisions are `/ext/a11y`'s, copied rather than re-litigated:
- * the parts go in as `Chip`'s *children* rather than its `icon`/`label`/`value`
- * slots (so `ctx.fallback` is a children tree and `render` can never replace
- * the `Chip` itself), and a preset operates on the short bar word while `label`
- * stays the overflow and accessible-name identity.
+ * Byte-identity is pinned in two states: `"off"`, and one overlay on (the
+ * only state where `data-dtb-active` is `"true"`).
  *
- * Byte-identity is pinned as literal strings in **two** states: the `"off"` one
- * every other assertion runs in, and one overlay on — because
- * `data-dtb-active` has only one value in a test that never turns anything on.
- *
- * `persist: false` throughout, so nothing here reads or writes storage and the
- * order of these tests cannot matter.
+ * `persist: false` throughout, so nothing here reads or writes storage.
  *
  * [dev-toolbar/plans/bar-presentation-icons-v1 §4]
  */
@@ -42,11 +32,7 @@ const app = (
   </main>
 );
 
-/**
- * Tears down whatever is already mounted first: several tests here compare two
- * presentations of the same extension, and the testing helpers query the
- * document rather than one root, so a leftover toolbar answers for the new one.
- */
+/** Tears down first: the testing helpers query the document, not one root. */
 const mount = (options: OverlaysOptions = {}) => {
   cleanupToolbar();
   return mountToolbar(app, {
@@ -81,17 +67,10 @@ const overflowChip = (options: OverlaysOptions = {}): HTMLElement =>
   overflowTrigger(options).querySelector('[data-dtb-part="ovl-chip"]') as HTMLElement;
 
 /**
- * The chip's text span, selected by the `data-dtb-part` it now carries.
- *
- * `ovl-chip-label` rather than `ovl-label`: that name was already this
- * extension's floating inspector label, and `css.ts` positions it absolutely.
- *
- * It used to be a bare `<span>` located structurally — the one child span with
- * no kind and no part of its own — because naming it would have changed the
- * bytes below. Naming it *is* the deliberate change this commit makes, so the
- * structural stand-in is gone and the selector says what it always meant.
- * There is deliberately no `data-dtb-kind="label"`: that is what the kit sheet
- * tints with `--dtb-muted`, and recolouring this chip is a separate decision.
+ * The chip's text span. `ovl-chip-label` rather than `ovl-label`: that name
+ * is already this extension's floating inspector label. Deliberately no
+ * `data-dtb-kind="label"` — that's what the kit sheet tints, and recolouring
+ * this chip is a separate decision.
  */
 const text = (chip: Element): string | null =>
   chip.querySelector('[data-dtb-part="ovl-chip-label"]')?.textContent ?? null;
@@ -124,10 +103,9 @@ afterEach(() => {
 });
 
 /**
- * The failed-measurement state, and the only state in this file where the
- * error `Tag` exists: the inspector is on, the element it measures throws, and
- * every overlay is switched off in response. Adapted from `overlays.test.tsx`'
- * `failWith`, which is the proven recipe.
+ * The failed-measurement state: the inspector is on, the element it measures
+ * throws, and every overlay switches off. Adapted from `overlays.test.tsx`'
+ * `failWith`.
  */
 const withError = async (options: OverlaysOptions = {}) => {
   const { toolbar } = mount({ defaults: { inspect: true }, ...options });
@@ -147,9 +125,8 @@ const withError = async (options: OverlaysOptions = {}) => {
 };
 
 describe("the default presentation", () => {
-  // The exact markup that shipped before `presentation` existed. Regenerated
-  // only against a deliberate, documented change to overlays' bar DOM: every
-  // consumer's CSS and every Playwright selector reads these attributes.
+  // The exact markup that shipped before `presentation` existed. Regenerate
+  // only by capture, never by hand.
   const DEFAULT_TRIGGER =
     '<button type="button" data-dtb-part="trigger" aria-expanded="false"' +
     ' aria-label="Overlays, off" title="Overlays: off — click to choose overlays">' +
@@ -159,8 +136,7 @@ describe("the default presentation", () => {
     '<span data-dtb-kind="value" data-dtb-part="ovl-value">off</span>' +
     "</span></button>";
 
-  // The same tree with the full label — the only thing the `⋮` menu changes,
-  // which is the swing this chip used to write by hand.
+  // The same tree with the full label — the only thing the `⋮` menu changes.
   const DEFAULT_OVERFLOW_TRIGGER = DEFAULT_TRIGGER.replace(
     '<span data-dtb-part="ovl-chip-label">overlays</span>',
     '<span data-dtb-part="ovl-chip-label">Overlays</span>',
@@ -175,19 +151,13 @@ describe("the default presentation", () => {
   });
 
   it('is what an explicit "default" and a bare icon both resolve to', () => {
-    // An icon with no preset that paints it does nothing — the four knobs are
-    // meaningless apart, which is why they are one option.
+    // An icon with no preset that paints it does nothing.
     expect(barTrigger({ presentation: { preset: "default", icon: ICON } }).outerHTML).toBe(
       DEFAULT_TRIGGER,
     );
     expect(overflowTrigger({ presentation: "default" }).outerHTML).toBe(DEFAULT_OVERFLOW_TRIGGER);
   });
 
-  /**
-   * The state every other assertion in this file cannot see: `data-dtb-active`
-   * has one value, the count reaches the value word and the name, and the
-   * title names the layer instead of the state.
-   */
   it("paints an active overlay byte-identically", () => {
     const ON_TRIGGER =
       '<button type="button" data-dtb-part="trigger" aria-expanded="false"' +
@@ -258,9 +228,7 @@ const PRESETS: readonly PresetRow[] = [
   {
     preset: "icon",
     bar: { icon: true, text: null, value: null },
-    // Guarantee 2 forces text in the menu — and only text, so the row loses
-    // the readout today's default row paints. Intended, and pinned so it reads
-    // as a decision rather than surfacing later as a regression.
+    // Guarantee 2 forces text-only in the menu, so the row loses the value.
     menu: { icon: true, text: "Overlays", value: null },
     // Guarantee 1: an icon-only preset with no icon paints text, never nothing.
     bareBar: { text: "overlays", value: null },
@@ -272,8 +240,6 @@ const PRESETS: readonly PresetRow[] = [
     bareBar: { text: null, value: "off" },
   },
   {
-    // The short bar word, the full label in the menu: the "which text" rule,
-    // asserted rather than described.
     preset: "icon-label",
     bar: { icon: true, text: "overlays", value: null },
     menu: { icon: true, text: "Overlays", value: null },
@@ -337,17 +303,13 @@ describe("presets", () => {
       const chip = trigger.querySelector('[data-dtb-part="ovl-chip"]') as HTMLElement;
       expect(chip.getAttribute("data-dtb-active")).toBe("false");
       expect(chip.querySelector('[data-dtb-part="ovl-dot"]')).not.toBeNull();
-      // A preset changes text, not state — and never the trigger's identity.
       expect(trigger.getAttribute("aria-label")).toBe("Overlays, off");
       expect(trigger.getAttribute("aria-expanded")).toBe("false");
       expect(trigger.getAttribute("title")).toBe("Overlays: off — click to choose overlays");
     }
   });
 
-  /**
-   * A state that is not the empty one, under every preset: `data-dtb-active`
-   * follows the store and not the preset, and the count still reaches the name.
-   */
+  /** `data-dtb-active` follows the store, not the preset. */
   it.each(PRESETS)("$preset leaves an active overlay's state alone", ({ preset }) => {
     const trigger = barTrigger({ defaults: { grid: true }, presentation: { preset, icon: ICON } });
     const chip = trigger.querySelector('[data-dtb-part="ovl-chip"]') as HTMLElement;
@@ -356,11 +318,7 @@ describe("presets", () => {
     expect(trigger.getAttribute("title")).toBe("Overlays: Column grid — click to choose overlays");
   });
 
-  /**
-   * Invariant 2, the point of this phase. The error tag is state rendered after
-   * the contents, so it survives every preset — `"icon"` included, where the
-   * chip has no text and no value left.
-   */
+  /** Invariant 2: the error tag survives every preset, `"icon"` included. */
   it.each(PRESETS)("$preset keeps the error tag, which is state", async ({ preset }) => {
     const toolbar = await withError({ presentation: { preset, icon: ICON } });
     const bar = toolbar
@@ -369,11 +327,8 @@ describe("presets", () => {
     const marker = tag(bar);
     expect(marker?.textContent).toBe("error");
     expect(marker?.getAttribute("data-dtb-kind")).toBe("tag");
-    // The tag is the chip's last child under every preset: it is appended after
-    // the contents, never interleaved with them.
     const chip = bar.querySelector('[data-dtb-part="ovl-chip"]') as HTMLElement;
     expect(chip.lastElementChild).toBe(marker);
-    // And the error still reaches the name, which the preset does not touch.
     expect(bar.getAttribute("aria-label")).toBe("Overlays, off, error");
 
     toolbar.resize(60);
@@ -459,9 +414,7 @@ describe("the render callback", () => {
     const trigger = barTrigger({ presentation: { preset: "icon-value", icon: ICON, render } });
     const chip = trigger.querySelector('[data-dtb-part="ovl-chip"]') as HTMLElement;
     expect(chip.querySelector('[data-dtb-part="ovl-custom"]')?.textContent).toBe("0 layers");
-    // The consumer's node replaces the parts, not the chip: the dot, the state
-    // attribute and the trigger's name are not theirs to lose. This is the
-    // whole reason the parts are `Chip`'s children rather than its slots.
+    // Replaces the parts, not the chip — the dot, state attribute and name aren't theirs to lose.
     expect(chip.querySelector('[data-dtb-part="ovl-dot"]')).not.toBeNull();
     expect(chip.getAttribute("data-dtb-active")).toBe("false");
     expect(trigger.getAttribute("aria-label")).toBe("Overlays, off");
@@ -471,10 +424,7 @@ describe("the render callback", () => {
     expect(contexts[0]?.isPanelOpen).toBe(false);
     expect(contexts[0]?.icon).toBe(ICON);
 
-    // Honoured in the ⋮ menu too — ADR-004's deliberate deviation from the
-    // "always paint text" guarantee, with `isOverflowed` as the hook. The row
-    // keeps its own `aria-label`, so a callback painting an icon alone still
-    // leaves a named button.
+    // Honoured in the ⋮ menu too — ADR-004's deliberate deviation from "always paint text".
     const menu = overflowTrigger({ presentation: { render } });
     expect(menu.querySelector('[data-dtb-part="ovl-custom"]')?.textContent).toBe("0 layers");
     expect(menu.querySelector('[data-dtb-part="ovl-dot"]')).not.toBeNull();
@@ -497,13 +447,7 @@ describe("the render callback", () => {
     expect(trigger.getAttribute("aria-label")).toBe("Overlays, off, error");
   });
 
-  /**
-   * `data-dtb-active` follows the store, not the callback: `render` replaces
-   * the chip's contents, but the state attribute is on the chip and the count
-   * is in the trigger's name, neither of which `render` reaches. Asserted in a
-   * state that is not the empty one, so `"true"` is actually observed here and
-   * not only in the preset rows above.
-   */
+  /** `render` replaces the chip's contents but not `data-dtb-active` or the name. */
   it("cannot take an active overlay's state with it", () => {
     const trigger = barTrigger({
       defaults: { grid: true },
@@ -529,9 +473,6 @@ describe("the render callback", () => {
   });
 
   it("returning ctx.fallback paints exactly what the preset would have", () => {
-    // One construction, handed out as `fallback` and rendered as the preset —
-    // so deferring is exact by construction rather than by careful mimicry,
-    // which is the property the slot-based alternative could not have.
     const presetOnly = barTrigger({ presentation: { preset: "icon-value", icon: ICON } });
     const deferred = barTrigger({
       presentation: {
@@ -570,8 +511,6 @@ describe("the accessible-name override", () => {
   });
 
   it("ignores a whitespace-only override rather than leaving the control unnamed", () => {
-    // An icon-only control with no name is exactly what `/ext/a11y` would flag
-    // on the toolbar's own bar.
     const trigger = barTrigger({ presentation: { preset: "icon", icon: ICON, name: () => "   " } });
     expect(trigger.getAttribute("aria-label")).toBe("Overlays, off");
   });

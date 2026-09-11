@@ -53,12 +53,10 @@ describe("KIT_CSS", () => {
   });
 
   /**
-   * The glyph clamp has to hold a *character* as well as an element:
-   * `presentation.icon` takes a `ReactNode`, and a string is the cheapest icon
-   * a consumer can pass. `line-height: 0` on the wrapper collapsed a bare
-   * character's box to zero height, and was inherited into the `display: block`
-   * child, painting a `<span>`-wrapped character centred on the box's top edge.
-   * Both line boxes therefore track the clamped size instead.
+   * A `ReactNode` icon may be a bare character, not just an element.
+   * `line-height: 0` on the wrapper collapsed a character's box to zero height
+   * and, inherited into the block child, centred it on the box's top edge —
+   * so both line boxes track the clamped size instead.
    */
   it("gives the glyph wrapper and its clamped child a line box the size of the clamp", () => {
     const wrapper = KIT_CSS.match(/\[data-dtb-kind="glyph"\]\s*\{([^}]*)\}/)?.[1] ?? "";

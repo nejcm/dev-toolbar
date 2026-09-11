@@ -92,16 +92,15 @@ export interface PromotedFlag {
   /** Bar label. Defaults to the flag's `label`, then its `key`. */
   label?: string;
   /**
-   * A short glyph rendered before the label. **Text, not an asset** — and
-   * deliberately still `string`.
+   * A short glyph rendered before the label. Text, not an asset — deliberately
+   * still `string`.
    *
-   * This field is copied into the snapshot as {@link FlagView.promotedIcon},
-   * and the flags store publishes on a *string* signature. A `ReactNode` cannot
-   * be signed: left out of the signature it would never publish, and
-   * `JSON.stringify`'d it would republish on every 250 ms tick — and it would
-   * put a React element inside the object `diagnostics()` serialises. Rich
-   * icons go on {@link PromotedFlag.presentation} instead, which stays in the
-   * factory closure and never reaches the store
+   * Copied into the snapshot as {@link FlagView.promotedIcon}, and this store
+   * publishes on a string signature: a `ReactNode` can't be signed (omitted it
+   * never publishes; `JSON.stringify`'d it republishes every tick and leaks a
+   * React element into what `diagnostics()` serialises). Rich icons go on
+   * {@link PromotedFlag.presentation} instead, which stays in the factory
+   * closure and never reaches the store
    * (`docs/adr/ADR-004-per-extension-bar-presentation.md`).
    */
   icon?: string;
@@ -114,23 +113,17 @@ export interface PromotedFlag {
   /**
    * How *this* promoted control presents itself: a preset, your own icon, a
    * render callback and an accessible-name override. A bare preset is the
-   * shorthand — `presentation: "icon"`.
+   * shorthand — `presentation: "icon"`. Lives here, next to the control,
+   * rather than on `flags()` (which has its own `presentation` for the chip).
    *
-   * It lives here rather than on `flags()` because a control's presentation is
-   * configured next to that control: a flags-level callback would have to
-   * receive `FlagsSnapshot | FlagView` and make you narrow it. The chip has its
-   * own `presentation` option on `flags()`.
+   * Under `"default"`, a bare `icon` here is not a no-op like it is on the
+   * chip: `presentation.icon` fills the same glyph slot {@link
+   * PromotedFlag.icon} always has, as the upgrade path off that string field.
    *
-   * Under `"default"` a bare `icon` here is *not* a no-op, unlike on the chip:
-   * this control has had a glyph slot since it existed — the string
-   * {@link PromotedFlag.icon} — and `presentation.icon` fills that same slot,
-   * which is the upgrade path off the string field. No existing consumer can
-   * have a `presentation`, so today's output is unmoved.
-   *
-   * Nothing here reaches the store. A `PromotedFlag` is config held in the
-   * factory closure; only `label` and `icon` are copied into a snapshot (plus
-   * this entry's position, as {@link FlagView.promotedIndex}, which is how the
-   * bar knows *which* entry's presentation to use), and this field is not.
+   * Held in the factory closure; never copied into a snapshot (unlike `label`
+   * and `icon`, which are — plus this entry's position, as
+   * {@link FlagView.promotedIndex}, which is how the bar knows which entry's
+   * presentation to use).
    */
   presentation?: CompactPresentationInput<FlagView>;
 }
@@ -196,16 +189,13 @@ export interface FlagView {
   /** True when the flag is promoted into the bar right now. */
   promoted: boolean;
   /**
-   * Which entry of the `promoted` option is the one in force, as an index into
-   * that array. Set exactly when {@link FlagView.promoted} is true.
+   * Which entry of the `promoted` option is the one in force, as an index
+   * into that array. Set exactly when {@link FlagView.promoted} is true.
    *
-   * Two entries may name the same key with different `startAt`/`expiresAt`/
-   * `audience` windows, so "which entry won" is not answerable from the key
-   * alone — this is the runtime telling the UI which one it picked, so a
-   * promoted control gets the *chosen* entry's
-   * {@link PromotedFlag.presentation} rather than the first one that mentions
-   * its key. A number is signable; the presentation itself never enters a
-   * snapshot (`docs/adr/ADR-004-per-extension-bar-presentation.md`).
+   * Two entries can name the same key with different windows, so "which
+   * entry won" isn't answerable from the key alone — this tells the UI which
+   * one to pull {@link PromotedFlag.presentation} from. A number is signable;
+   * the presentation itself never enters a snapshot.
    */
   promotedIndex?: number;
   promotedLabel?: string;

@@ -61,11 +61,8 @@ export function CommandMenuTrigger({
   const hint = describeHotkey(runtime.shortcut, apple);
   const keyshortcuts = ariaKeyshortcuts(runtime.shortcut, apple);
   const icon = resolveIcon(presentation.icon, snapshot);
-  // Kit's one emptiness rule: a function `icon` that returns nothing for this
-  // render leaves the hardcoded symbol in place rather than a gap — and
-  // "nothing" is every node React paints nothing for, so
-  // `icon: (s) => s.open && <X />` falls back to the `⌘` rather than to an
-  // empty glyph where the symbol used to be.
+  // Kit's emptiness rule: a function `icon` returning nothing falls back to
+  // the hardcoded `⌘`, not a gap — so `icon: (s) => s.open && <X />` works.
   const hasIcon = hasPaintableIcon(icon);
 
   return (
@@ -74,10 +71,9 @@ export function CommandMenuTrigger({
       data-dtb-part="trigger"
       aria-haspopup="dialog"
       aria-expanded={snapshot.open}
-      // A whitespace-only override is ignored, so no override can leave the
-      // trigger unnamed. `title` explains; it does not name, so it is not
-      // overridable — and it is the only place the hint is spelled out once the
-      // hotkey hint has been swapped for an icon.
+      // A whitespace-only override is ignored, so the trigger is never left
+      // unnamed. `title` is not overridable — it explains, not names, and is
+      // the only place the hint is spelled out once the icon replaces it.
       aria-label={resolveAccessibleName(
         presentation.name,
         snapshot,
@@ -89,21 +85,17 @@ export function CommandMenuTrigger({
       }
       onClick={() => runtime.toggle()}
     >
-      {/* The icon replaces the hardcoded `⌘` and nothing else: the hotkey hint
-          and the label are still painted after it.
+      {/* The icon replaces only the hardcoded `⌘` — the hotkey hint and label
+          still follow it.
 
-          It takes a part of its own rather than `cmd-glyph`, and that is the
-          decision worth knowing. `cmd-glyph` is not "the leading symbol" — it
-          is *every* Apple modifier symbol this extension paints, including the
-          ones inside each palette row's `cmd-option-hint`, and it exists to set
-          those in the UI face at 1.18em because the monospace faces have no
-          such glyph. That is type-setting for text. Giving it
-          `data-dtb-kind="glyph"` (which `Glyph` pins) would put kit's
-          `--dtb-glyph-size` line box and its `> *` size clamp on text spans
-          down in the dialog, and would scale a consumer's `<svg>` by the 1.18em
-          meant for a font fallback. So the kind lands here, on the one node that is a
-          foreign element — which is what the clamp exists for — and the `⌘`
-          keeps the bytes and the rules it has always had. */}
+          It gets its own part rather than reusing `cmd-glyph`: that part is
+          every Apple modifier symbol this extension paints (including inside
+          each palette row's `cmd-option-hint`), type-set at 1.18em because the
+          monospace faces lack the glyph — that's text sizing, not `Glyph`'s
+          `data-dtb-kind="glyph"` clamp. Putting the clamp there would scale a
+          consumer's `<svg>` by a ratio meant for a font fallback. So the clamp
+          lands only on this foreign-element node, and `⌘` keeps its own bytes
+          and rules. */}
       {hasIcon ? (
         <Glyph data-dtb-part="cmd-icon">{icon}</Glyph>
       ) : (

@@ -228,9 +228,8 @@ describe("resolveCompactControl", () => {
       defaults: DEFAULTS,
     });
 
-    // The `hasPaintableIcon` guard is here rather than in `resolveCompactParts`
-    // because a function icon can decline for one control and supply for the
-    // next, so `hasIcon` is per control.
+    // A function icon can decline for one control and supply for the next,
+    // so the guard runs per control, not in resolveCompactParts.
     expect(control.parts).toEqual({ icon: false, text: "short", value: false });
   });
 
@@ -245,9 +244,6 @@ describe("resolveCompactControl", () => {
         defaults: DEFAULTS,
       });
 
-      // Kit does not know what `"default"` means for any extension: the caller
-      // hands both trees in, and this choice between them is the thing that would
-      // otherwise be copied nine times.
       expect(control.parts).toBe(expected);
       // The icon still resolves under `"default"`; the parts are what decline it.
       expect(control.icon).toBe("*");
@@ -257,13 +253,9 @@ describe("resolveCompactControl", () => {
   it.each(NO_ICON)(
     'holds "parts.icon implies a paintable icon" under "default", given %s',
     (_case, icon) => {
-      // `DEFAULTS.overflow` names an icon slot, which is what an extension whose
-      // `"default"` has always painted one declares (`/ext/flags`' promoted
-      // control and its string `PromotedFlag.icon`). Without the guard on this
-      // side, `parts.icon: true` would arrive next to `icon: undefined` — an
-      // inconsistent pair `renderCompactParts` trusts, painting an empty
-      // `<span data-dtb-kind="glyph">` that still eats a `gap`. The invariant is
-      // on this function's output, not on where the parts came from.
+      // DEFAULTS.overflow names an icon slot (as /ext/flags' promoted control
+      // does). Without the guard here, parts.icon: true could pair with
+      // icon: undefined and renderCompactParts would paint an empty glyph.
       const control = resolveCompactControl<number>({ preset: "default", icon }, 1, {
         isOverflowed: true,
         defaults: DEFAULTS,
@@ -271,8 +263,7 @@ describe("resolveCompactControl", () => {
 
       expect(hasPaintableIcon(control.icon)).toBe(false);
       expect(control.parts).toEqual({ ...DEFAULTS.overflow, icon: false });
-      // The rest of the extension's own tree is untouched: the clause only ever
-      // turns a `true` into `false`, so defaults naming no icon slot cannot move.
+      // The clause only ever turns a true into false; other defaults are untouched.
       expect(
         resolveCompactControl<number>({ preset: "default", icon }, 1, {
           isOverflowed: false,

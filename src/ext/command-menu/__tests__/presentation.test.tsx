@@ -1,24 +1,21 @@
 /**
  * `/ext/command-menu`'s `presentation` option, against the real shell.
  *
- * Group C of `plans/bar-presentation-icons-v1.md`, and the half of it that was
- * already an icon plus text: the trigger paints a hardcoded `⌘` and then either
- * the hotkey hint or the label. So the option is two knobs — `icon` and `name`
- * — and `icon` has exactly one job: **replace the `⌘`, and nothing else**. The
- * hint still follows it in the bar and the label still follows it in the `⋮`
- * menu, so no icon can leave this trigger wordless.
+ * Group C: the trigger paints a hardcoded `⌘` then either the hotkey hint or
+ * the label, so the option is two knobs (`icon`, `name`), and `icon` has one
+ * job — replace the `⌘`, nothing else. The hint still follows it in the bar,
+ * the label still follows it in the `⋮` menu, so the trigger is never
+ * wordless.
  *
  * The replacement lands in a `data-dtb-part="cmd-icon"` span carrying kit's
- * `data-dtb-kind="glyph"` — the clamp that stops a 24px `<svg>` setting the
- * bar's height. `cmd-glyph` deliberately does **not** gain that kind: it is not
- * "the leading symbol", it is every Apple modifier symbol this extension
- * paints, palette rows included, and it exists to set that *text* in the UI
- * face at 1.18em. The kind is for foreign elements; the symbol keeps its
- * type-setting, and its bytes.
+ * `data-dtb-kind="glyph"` clamp (stops a 24px `<svg>` setting the bar's
+ * height). `cmd-glyph` deliberately doesn't gain that kind: it's every Apple
+ * modifier symbol this extension paints, type-set as *text* at 1.18em, not a
+ * foreign element to clamp.
  *
  * The default strings below were captured from the commit before this option
- * existed. Regenerate them only against a deliberate, documented change to the
- * bar DOM.
+ * existed. Regenerate only against a deliberate, documented change to the bar
+ * DOM.
  *
  * [dev-toolbar/plans/bar-presentation-icons-v1 §5 group C]
  */
@@ -179,9 +176,9 @@ describe("a function icon", () => {
     );
   });
 
-  // Kit's one emptiness rule, not a presence test: `icon: (s) => s.open && <X />`
-  // is an ordinary callback and it returns `false`, which React paints nothing
-  // for. Accepting it would have replaced the `⌘` with an empty glyph.
+  // Kit's emptiness rule, not a presence test: `icon: (s) => s.open && <X />`
+  // returns `false` when it declines, which must not replace the `⌘` with an
+  // empty glyph.
   it.each([
     ["false, from a && guard", false],
     ["true", true],

@@ -1,25 +1,21 @@
 /**
  * `/ext/agent`'s `presentation` option, against the real shell.
  *
- * Agent is group C of `plans/bar-presentation-icons-v1.md`: no value, no store,
- * nothing to preset against. So the option is two knobs — `icon` and `name` —
- * and the interesting facts are not a truth table but a fork:
+ * Agent is group C (`plans/bar-presentation-icons-v1.md`): no value, no
+ * store, nothing to preset against — so the option is two knobs, `icon` and
+ * `name`, and the facts are a fork rather than a truth table:
  *
- * 1. **With no icon the chip is the span it has always been**, down to the
- *    byte. Not "looks the same": the literal string below was captured from the
- *    commit before this option existed, and its `title` is still the only thing
- *    naming the chip, which is what `src/ext/__tests__/presentation.test.tsx`
- *    used to pin before agent grew a role to pin instead.
- * 2. **With an icon the chip becomes a named node**: `role="img"` plus an
- *    `aria-label`, because a bare `<span aria-label>` names nothing at all. The
- *    icon replaces the label in the bar and joins it in the `⋮` menu, which is
- *    the same "the menu is never wordless" rule `/kit` enforces for presets.
+ * 1. With no icon the chip is the span it has always been, down to the byte
+ *    (captured from the commit before this option existed) — `title` is
+ *    still the only thing naming it.
+ * 2. With an icon the chip becomes a named node: `role="img"` plus
+ *    `aria-label`, since a bare `<span aria-label>` names nothing. The icon
+ *    replaces the label in the bar and joins it in the `⋮` menu.
  *
- * The regenerate rule is the one every other extension's pin carries: capture
- * these strings again only against a deliberate, documented change to the bar
- * DOM — every consumer's CSS and every Playwright selector reads these
- * attributes, and `examples/playground/e2e/overflow.spec.ts` measures this chip
- * to the pixel.
+ * Regenerate the pinned strings only against a deliberate, documented change
+ * to the bar DOM — every consumer's CSS and Playwright selector reads these
+ * attributes, and `examples/playground/e2e/overflow.spec.ts` measures this
+ * chip to the pixel.
  *
  * [dev-toolbar/plans/bar-presentation-icons-v1 §5 group C]
  */
@@ -96,11 +92,10 @@ describe("the default presentation", () => {
   });
 
   /**
-   * The name `src/ext/__tests__/presentation.test.tsx` pinned while agent was
-   * exempt from its "named by an attribute" rule. That file now mounts this
-   * extension *with* an icon — the configuration in which it has a control to
-   * name at all — so the role-less chip's name is pinned here instead, through
-   * the same `accessibleName()` computation.
+   * The name `src/ext/__tests__/presentation.test.tsx` used to pin, before
+   * agent was exempt from its "named by an attribute" rule. That file now
+   * mounts this extension *with* an icon, so the role-less case is pinned
+   * here instead, via the same `accessibleName()`.
    */
   it("is named by its title, and only by its title", () => {
     expect(accessibleName(barChip())).toBe(
@@ -168,8 +163,8 @@ describe("an icon", () => {
 
 /**
  * The same facts `/ext/flags` and `/ext/overlays` pin for their own sheets,
- * on the one path that injects here: the icon chip. The chip that paints no
- * icon injects nothing to stamp, which is the last case below.
+ * on the one path that injects here (the icon chip). The no-icon chip
+ * injects nothing to stamp — the last case below.
  */
 describe("styleNonce", () => {
   it("stamps the factory option on the kit sheet", () => {
@@ -232,9 +227,9 @@ describe("a function icon", () => {
     expect(barChip({ presentation: { icon: () => null } }).outerHTML).toBe(DEFAULT_CHIP);
   });
 
-  // Kit's one emptiness rule, not a presence test. Accepting `false` would have
-  // given this chip `role="img"` and an `aria-label` around an empty glyph —
-  // an image named "Agent" that is not there.
+  // Kit's emptiness rule, not a presence test — accepting `false` would give
+  // this chip `role="img"` and an `aria-label` around an empty glyph: an
+  // image named "Agent" that isn't there.
   it.each([
     ["false, from a && guard", false],
     ["true", true],
@@ -263,9 +258,9 @@ describe("a name override", () => {
   });
 
   /**
-   * `name` is the accessible name, not the visible text: with no icon there is
-   * no `aria-label` on a role-less span for it to land on, and inventing one
-   * would name nothing while changing what the chip announces today.
+   * `name` is the accessible name, not the visible text: with no icon there's
+   * no `aria-label` for it to land on, and inventing one would change what
+   * the chip announces today.
    */
   it("does nothing without an icon, because there is no named node to name", () => {
     expect(barChip({ presentation: { name: () => "Whatever" } }).outerHTML).toBe(DEFAULT_CHIP);

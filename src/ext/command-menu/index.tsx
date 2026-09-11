@@ -38,20 +38,14 @@ import type { CommandMenuRuntimeOptions, CommandMenuSnapshot } from "./runtime";
 import type { DevToolbarExtension, ExtensionRuntimeApi, ToolbarAlign } from "../../core/contract";
 
 /**
- * The bar trigger's presentation: an icon, and an accessible name to go with it.
+ * The bar trigger's presentation: an icon, and an accessible name to go with
+ * it. Two knobs, not four — this trigger has a symbol and a hotkey hint,
+ * neither a value, so no preset member would mean anything an icon doesn't
+ * already (`plans/bar-presentation-icons-v1.md`, group C).
  *
- * **Two knobs, not four.** The seven value-bearing extensions take the whole
- * `CompactPresentation` — `preset`, `icon`, `render` and `name` — because they
- * have a value and two texts for a preset to select between. This trigger has
- * a symbol and a hotkey hint, and neither is a value; no preset member would
- * mean anything here that supplying an icon does not already mean, and
- * publishing presets that quietly resolve to `"default"` would be publishing
- * knobs that do nothing. So the type is `Pick`ed down to the two that act
- * (`plans/bar-presentation-icons-v1.md`, group C).
- *
- * It stays a `Pick` of the shared interface rather than a lookalike of its own,
- * so `icon` and `name` mean here exactly what they mean on the other eight and
- * a widening later is additive.
+ * A `Pick` of the shared interface, not a lookalike, so `icon` and `name`
+ * mean exactly what they mean on the other eight and widening later is
+ * additive.
  *
  * `TView` is `CommandMenuSnapshot` — the same object the trigger already
  * renders from and `diagnostics()` returns, so `snapshot.open` is there to
@@ -94,24 +88,24 @@ export interface CommandMenuOptions extends CommandMenuRuntimeOptions {
    */
   styleNonce?: string;
   /**
-   * Your own icon for the bar trigger, and the accessible name that goes with
-   * it. Two knobs rather than the four the value-bearing extensions take; see
-   * {@link CommandMenuPresentation} for why.
+   * Your own icon for the bar trigger, and the accessible name to go with it.
+   * Two knobs, not the four value-bearing extensions take; see
+   * {@link CommandMenuPresentation}.
    *
-   * An icon **replaces the hardcoded `⌘`** and nothing else: the hotkey hint
-   * still follows it in the bar, and the label still follows it in the `⋮`
-   * menu, so the trigger is never wordless. It lands in a
-   * `data-dtb-part="cmd-icon"` span carrying kit's glyph kind, which clamps it
-   * — `cmd-glyph` keeps its own type-setting, because that part is every
-   * modifier symbol this extension paints, palette rows included.
+   * An icon replaces only the hardcoded `⌘` — the hotkey hint still follows
+   * it in the bar, and the label still follows it in the `⋮` menu, so the
+   * trigger is never wordless. It lands in a `data-dtb-part="cmd-icon"` span
+   * carrying kit's glyph kind, which clamps it (`cmd-glyph` keeps its own
+   * type-setting, since that part covers every modifier symbol this
+   * extension paints, palette rows included).
    *
-   * `name` overrides the `aria-label`; a whitespace-only return is ignored, so
-   * no override can leave the trigger unnamed. `title` is not overridable — it
-   * explains, it does not name, and it is where the hotkey is still spelled out
-   * once the hint has been replaced.
+   * `name` overrides `aria-label`; a whitespace-only return is ignored, so
+   * the trigger is never left unnamed. `title` is not overridable — it
+   * explains, not names, and still spells out the hotkey once the hint is
+   * replaced.
    *
-   * Nothing here reaches the store: the icon lives in this factory's closure
-   * and travels as a prop, exactly as `label` and `injectStyles` do.
+   * The icon lives in this factory's closure and travels as a prop, like
+   * `label` and `injectStyles`.
    */
   presentation?: CommandMenuPresentation;
 }
@@ -135,8 +129,8 @@ export function commandMenu(options: CommandMenuOptions = {}): DevToolbarExtensi
     rememberRecent,
   } = options;
 
-  // Resolved once, here, rather than per render: this closure is where an icon
-  // and a name callback live, exactly as `label` and `injectStyles` do.
+  // Resolved once here — the closure where an icon and a name callback live,
+  // like `label` and `injectStyles`.
   const presentation = resolvePresentation<CommandMenuSnapshot>(presentationOption);
 
   // Built here, not in start(api): slot functions run on first render, before any effect fires.

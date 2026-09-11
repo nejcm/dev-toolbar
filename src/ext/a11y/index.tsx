@@ -74,26 +74,23 @@ export interface A11yOptions extends A11yRuntimeOptions {
   styleNonce?: string;
   /**
    * How the bar control presents itself: a preset, your own icon, a render
-   * callback and an accessible-name override. A bare preset is the shorthand —
+   * callback, and an accessible-name override. A bare preset is shorthand —
    * `presentation: "icon-value"`.
    *
-   * One control, so each knob is invoked once per render, in the bar and in the
-   * `⋮` menu alike, with the same `A11yReport` the panel and `diagnostics()`
-   * read. The presets operate on the **short bar word** (`"a11y"`): `label`
-   * stays the overflow and accessible-name identity, so `"icon-label"` paints
-   * `"a11y"` in the bar and `"Accessibility"` in the menu.
+   * Each knob is invoked once per render, in the bar and the `⋮` menu alike,
+   * with the same `A11yReport` the panel and `diagnostics()` read. Presets
+   * operate on the short bar word (`"a11y"`): `label` stays the overflow and
+   * accessible-name identity, so `"icon-label"` paints `"a11y"` in the bar and
+   * `"Accessibility"` in the menu.
    *
-   * `render` supplies the children of the chip carrying `data-dtb-status` and
-   * the dot, so the state attributes, `aria-expanded` and `title` stay the
-   * extension's; returning `undefined` falls through to the preset. `name`
-   * overrides the `aria-label`, and a whitespace-only return is ignored. Prefer
-   * a name that does not change with the *count* — the report carries `total`,
-   * so `(r) => \`A11y ${r.total}\`` renames the control on every scan and a
-   * screen reader re-announces it.
+   * `render` supplies the chip's children; the state attributes,
+   * `aria-expanded` and `title` stay the extension's. Returning `undefined`
+   * falls through to the preset. `name` overrides `aria-label` (a
+   * whitespace-only return is ignored) — prefer a name that doesn't change
+   * with the report's `total`, or a screen reader re-announces it every scan.
    *
-   * Nothing here reaches the store: the icon and the callbacks are held in this
-   * closure and passed as props, because a `ReactNode` cannot be signed and the
-   * a11y store republishes on a signature change.
+   * A `ReactNode` cannot be signed, so the icon and callbacks live in this
+   * closure and travel as props, never into the a11y store's snapshot.
    *
    * `docs/adr/ADR-004-per-extension-bar-presentation.md`.
    */
@@ -112,15 +109,14 @@ export function a11y(options: A11yOptions = {}): DevToolbarExtension {
     keepMounted = true,
     injectStyles = true,
     styleNonce: optionNonce,
-    // Destructured out rather than read off `options`: everything this factory
-    // does not name is spread into `createA11yRuntime` below, and an icon or a
-    // callback has no business reaching the runtime.
+    // Pulled out so it isn't spread into `createA11yRuntime` below with the
+    // rest of `options`.
     presentation: presentationOption,
     ...runtimeOptions
   } = options;
 
-  // Resolved once, here, rather than per render: this is the closure the icon
-  // and the callbacks live in, exactly as `label` and `injectStyles` do.
+  // Resolved once here — the closure the icon and callbacks live in, like
+  // `label` and `injectStyles`.
   const presentation = resolvePresentation(presentationOption);
 
   const runtime = createA11yRuntime(runtimeOptions);

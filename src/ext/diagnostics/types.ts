@@ -324,18 +324,10 @@ export interface DiagnosticsSnapshotState {
 /**
  * What a consumer's `presentation` callbacks are told about the bar control.
  *
- * Deliberately *not* `DiagnosticsSnapshotState`: `revision` is a store change
- * signal, `capturedAt` a `performance.now()` reading and `snapshot` the whole
- * `DiagnosticSnapshot`, and all three read as implementation detail. A view
- * type that is only *read* can gain and lose fields freely, but as a callback
- * parameter it is contravariant — every field here is a field that cannot be
- * renamed without breaking consumer callbacks — so this carries the four facts
- * the chip actually paints and nothing else
+ * Deliberately not `DiagnosticsSnapshotState`: a callback parameter is
+ * contravariant, so this carries only the facts the chip actually paints
  * (`plans/bar-presentation-icons-v1.md`, "The callback goes on all seven").
- *
- * Anything derivable is left out: the value word (`"capture"` / `"ready"` /
- * `"N missing"`) follows from `captured` and `omissions`, and the badge's count
- * is `errors + warnings`.
+ * Anything derivable is left out.
  */
 export interface DiagnosticsBarView {
   /** Whether a snapshot has been captured. The dot's and the value's binary state. */

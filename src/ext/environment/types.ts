@@ -151,10 +151,8 @@ export const GROUP_LABELS: Record<EnvironmentGroup, string> = {
 
 /**
  * The one word the bar chip paints as its value — `"unknown"` unless the
- * consumer supplied a kind. Exported because `presentation` hands a consumer's
- * `icon` / `render` / `name` the whole snapshot, and a callback painting the
- * same value the preset does should not re-derive this rule and drift from it.
- * Vocabulary, not DOM, so it lives here rather than in `ui.tsx`.
+ * consumer supplied a kind. Exported so a `presentation` callback painting
+ * the same value doesn't re-derive this rule and drift from it.
  */
 export function kindLabel(snapshot: EnvironmentSnapshot): string {
   return snapshot.supplied && snapshot.kind !== "unknown" ? String(snapshot.kind) : "unknown";
