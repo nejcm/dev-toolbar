@@ -5,9 +5,10 @@ otherwise re-declare, non-React helpers every extension would otherwise re-imple
 one shared stylesheet, and a set of thin React controls that render the markup an
 extension writes by hand anyway.
 
-The seven first-party extensions with a UI consume it, and a third-party extension
-consumes it identically — which is the point. Writing something that looks native
-stops being a few hundred lines of copied CSS.
+All nine first-party extensions consume it — `/ext/agent`, the one with neither a panel
+nor a stylesheet of its own, joined them for the `presentation` option — and a
+third-party extension consumes it identically, which is the point. Writing something
+that looks native stops being a few hundred lines of copied CSS.
 
 ```ts
 import {
@@ -18,6 +19,12 @@ import {
   type ReadableStore,
   type Source,
   type Input,
+  type CompactPreset,
+  type CompactPresentation,
+  type CompactPresentationInput,
+  type CompactRenderContext,
+  type CompactParts,
+  type CompactDefaults,
   // helpers, no React
   parseRecord,
   parseList,
@@ -32,6 +39,11 @@ import {
   ensureKitStyles,
   resolveStyleNonce,
   matchesQuery,
+  resolvePresentation,
+  resolveCompactControl,
+  resolveCompactParts,
+  resolveIcon,
+  resolveAccessibleName,
   KIT_CSS,
   // React
   embed,
@@ -44,7 +56,10 @@ import {
   CopyButton,
   EmptyState,
   Field,
+  Glyph,
   Note,
+  renderCompact,
+  renderCompactParts,
   Row,
   Rows,
   SearchField,
@@ -82,7 +97,7 @@ of the exact kit specifier, not same-name locals:
 | Copy actions | `CopyButton`: 2; `useCopyStatus`: 2 | `CopyButton` owns the button/status-region pairing. `useCopyStatus` is the shared status state for panels with several copy buttons. |
 | Filtering | `matchesQuery`: 2 | It is the string-level predicate shared by the flags and theme-editor view wrappers. |
 | Labelled control | `Field`: 1 | It names the wrapping-label pattern that associates a control without generating or synchronising an `id`. |
-| Bar presentation | `resolveCompactControl`: 6; `renderCompact`: 6; `renderCompactParts`: 6; `resolvePresentation`: 6; `resolveAccessibleName`: 6; `Glyph`: 0; `resolveCompactParts`: 0; `resolveIcon`: 0 | Every bar control a consumer can restyle resolves its `presentation` option through the same helpers, so the two guarantees — an icon-only preset with no icon paints text, and the `⋮` menu always paints full text — hold once rather than nine times. `resolveCompactControl` is the one an extension calls: it composes `resolveIcon` and `resolveCompactParts`, owns the per-control `undefined | null` icon guard, and takes the extension's own `"default"` parts as an argument, because `"default"` means *whatever this extension renders today* and that differs across the nine. `renderCompact` assembles the `CompactRenderContext` and applies the `undefined` fall-through, which is precisely what nine copies would drift on. `renderCompactParts` paints the icon and the text — the one function here that renders anything — and it was promoted only after six extensions had written the same fragment by hand, which is the *three users* bar met twice over rather than a shape predicted for them. `resolvePresentation` normalises the bare-preset shorthand in the factory; `resolveAccessibleName` guards the name override. The counts are measured, never predicted: the six extensions wired up so far — a11y, diagnostics, environment, metrics, overlays and theme-editor — each import five of these, and the numbers will reach nine as the rollout wires the remaining bar controls up. `Glyph` reads **0** and did not fall: it read 6 until `renderCompactParts` took the wrapper over, and it stays exported because three of the nine bar controls are hand-written on purpose and cannot route through `Chip` or through the icon-plus-text fragment — it owns the `aria-hidden` default and the direct-child clamp that keeps a 24px `<svg>` from setting the bar's height, and `Chip`'s icon slot and `renderCompactParts` are both callers inside kit itself. `resolveCompactParts` and `resolveIcon` read **0** and may stay there — `resolveCompactControl` composes them, so a first-party extension has no reason to call either. They stay exported for the third-party half of the bar, since an author whose control does not fit the icon-plus-parts shape needs the truth table itself; if the count is still 0 when the rollout finishes, that is the moment to ask whether they should be. |
+| Bar presentation | `resolvePresentation`: 9; `resolveAccessibleName`: 9; `renderCompactParts`: 8; `resolveCompactControl`: 7; `renderCompact`: 7; `resolveIcon`: 3; `Glyph`: 1; `resolveCompactParts`: 0 | Every bar control a consumer can restyle resolves its [`presentation`](#presentation) option through the same helpers, so the two guarantees — an icon-only preset with no icon paints text, and the `⋮` menu always paints full text — hold once rather than nine times. `resolvePresentation` normalises the bare-preset shorthand in the factory and `resolveAccessibleName` guards the name override, which is why those two read **9**: they are the pair every extension needs, the two that take no icon and no preset included. `resolveCompactControl` is the one a value-bearing extension calls: it composes `resolveIcon` and `resolveCompactParts`, owns the per-control `undefined \| null` icon guard, and takes the extension's own `"default"` parts as an argument, because `"default"` means *whatever this extension renders today* and that differs across the nine. `renderCompact` assembles the `CompactRenderContext` and applies the `undefined` fall-through, which is precisely what seven copies would drift on. Both read **7** rather than 9 because `/ext/agent` and `/ext/command-menu` take [the narrowed two-knob option](#the-narrowed-option-agent-and-command-menu) — no presets to resolve, no callback to invoke. `renderCompactParts` paints the icon and the text — the one function here that renders anything — and it reads **8**: the seven plus agent, which is icon-and-text without being preset-driven. It was promoted only after six extensions had written the same fragment by hand, which is the *three users* bar met twice over rather than a shape predicted for them. `resolveIcon` reads **3** — the three sites that resolve an icon without going through `resolveCompactControl`: command-menu and agent, which have no parts to resolve, and `/ext/flags`, which resolves the rich icon first so it can fall back to the legacy `PromotedFlag.icon` string. `Glyph` reads **1** and did not fall: it read 6 until `renderCompactParts` took the wrapper over, and what is left is `/ext/command-menu`, whose trigger is hand-written and paints an icon beside a hotkey hint that is neither a short nor a full text. It stays exported because it owns the `aria-hidden` default and the direct-child clamp that keeps a 24px `<svg>` from setting the bar's height, and because `Chip`'s icon slot and `renderCompactParts` are both callers inside kit itself — every glyph in the bar is one of its instances whether or not an extension named it. `resolveCompactParts` finished the rollout at **0**, which the row above said was the moment to ask whether it should stay. It stays, and the count is 0 *by construction* rather than for want of adoption: `resolveCompactControl` composes it, so a first-party extension has no reason to call it directly and never will. It is the third-party half of the bar — an author whose control is not icon-plus-text-plus-value needs the truth table itself — and it is the one function carrying both guarantees, so a userland re-derivation is exactly the drift the kit exists to prevent. Removal stays a live option on the same terms `Chip`'s `icon` / `iconProps` are kept under (ADR-004): if no third party asks, it can go. |
 | Live input | `isReadable`: 2; `readInput`: 2; `createSource`: 0; `derive`: 0; `useSource`: 0 | Admitted on the *third party asking* half of the bar: the first real integration hand-rolled a module-scope holder, reader functions and an effect to bridge React-owned state into `environment()` and `flags()`. `isReadable`/`readInput` are what those two runtimes use to accept the result; `createSource`, `derive` and `useSource` are the consumer's end of the same bridge and have no first-party caller by construction — no first-party extension owns app state. |
 
 One helper is admitted as an explicit exception to that bar rather than on either half
@@ -565,7 +580,8 @@ Thin by construction. Every one of them:
 | --- | --- | --- |
 | `<Action>` | `<button type="button">` | any panel button |
 | `<CopyButton>` | `<button>` + a status region | copy-to-clipboard, outcome included |
-| `<Chip>` | `<span>` + dot/label/value | the compact-slot summary |
+| `<Chip>` | `<span>` + dot/icon/label/value | the compact-slot summary |
+| `<Glyph>` | `<span>` | a consumer-supplied icon, hidden and clamped — see [Presentation](#glyph-and-icons-that-are-characters) |
 | `<Note>` | `<p>`, `<span>` or `<label>` | secondary text |
 | `<Banner>` | `<p>` or `<div>` | a panel-wide message |
 | `<Tag>` | `<span>` | a marker beside a value (`masked`, `detected`) |
@@ -619,23 +635,43 @@ nothing to copy" branch.
 
 ```tsx
 <Chip
-  label="env"
-  value={kind}
-  severity={snapshot.severity}
-  data-dtb-part="env-chip"
-  dotProps={{ "data-dtb-part": "env-dot" }}
-  labelProps={{ "data-dtb-part": "env-label", "data-dtb-kind": "label" }}
-  valueProps={{ "data-dtb-part": "env-value" }}
+  label="build"
+  value={commit}
+  severity={view.severity}
+  data-dtb-part="build-chip"
+  dotProps={{ "data-dtb-part": "build-dot" }}
+  labelProps={{ "data-dtb-part": "build-label", "data-dtb-kind": "label" }}
+  valueProps={{ "data-dtb-part": "build-value" }}
 >
-  {snapshot.impersonating ? <span data-dtb-part="env-alert">impersonating</span> : null}
+  {view.dirty ? <span data-dtb-part="build-alert">uncommitted</span> : null}
 </Chip>
 ```
 
-A dot, a label, an optional value, and whatever `children` append. Each slot takes its
-own props so a site keeps its part names. The dot and value carry a `data-dtb-kind` by
-default; the label does not, because most sites leave it unstyled — pass
-`labelProps={{ "data-dtb-kind": "label" }}` to opt in, or `"data-dtb-kind": undefined`
-on the others to opt out.
+A dot, an optional icon, an optional label, an optional value, and whatever `children`
+append. Each slot takes its own props so a site keeps its part names. The dot and value
+carry a `data-dtb-kind` by default; the label does not, because most sites leave it
+unstyled — pass `labelProps={{ "data-dtb-kind": "label" }}` to opt in, or
+`"data-dtb-kind": undefined` on the others to opt out.
+
+`label`, `icon` and `value` are each optional, and `undefined | null` renders **nothing
+at all** rather than an empty span: the chip is `inline-flex` with a gap, so an empty
+span would still consume one and leave an icon-only chip off-centre.
+
+`icon` renders after the dot, inside a [`Glyph`](#glyph-and-icons-that-are-characters),
+and `iconProps` reaches that wrapper. The icon slot is the one that will not let you
+drop its `data-dtb-kind`: the clamp keyed on that kind is the reason `Glyph` exists, so
+style the icon through the element you hand to `icon`, or add your own `data-dtb-part`
+alongside the kind.
+
+**The first-party Group A chips deliberately do not use the `icon` and `label` slots.**
+They pass their icon and text as `children` instead, because `ctx.fallback` in
+[Presentation](#render-and-what-it-may-not-take) has to be one children tree — the same
+construction handed to a `render` callback and painted when there is none — and because
+a `render` that replaced a whole slotted `Chip` would take the dot and the state
+attributes with it. The two slots are third-party surface, for an author whose control
+genuinely *is* a plain slotted chip with no callback to honour;
+[ADR-004](./adr/ADR-004-per-extension-bar-presentation.md) records that, and that their
+expected first-party count is zero.
 
 `severity` writes onto the dot and the value and **nothing else** — not the container.
 A site that also wants `[data-dtb-severity]` on the chip itself passes
@@ -738,6 +774,266 @@ one-word visible label gets spelled out for a screen reader.
 `TextInput` and `Select` pass the **value** to `onChange`, like `SearchField`, and carry
 `data-dtb-kind="field"`. Neither takes styling from the kit; see the `field` carve-out
 above.
+
+---
+
+## Presentation
+
+Every first-party extension takes one `presentation` option, and it is the same option
+in all nine: a preset, your own icon, a `render` callback over that extension's own view
+data, and an accessible-name override. The vocabulary lives here so a third-party bar
+control can be written against the same four knobs.
+
+```ts
+type CompactPreset =
+  | "default"    // whatever this extension renders today
+  | "icon"       // the icon alone; falls back to text with no icon supplied
+  | "icon-value"
+  | "icon-label"
+  | "label"
+  | "value";
+
+interface CompactPresentation<TView> {
+  preset?: CompactPreset;                                    // default "default"
+  icon?: ReactNode | ((data: TView) => ReactNode);
+  render?: (data: TView, ctx: CompactRenderContext) => ReactNode;
+  name?: (data: TView) => string;
+}
+
+type CompactPresentationInput<TView> = CompactPreset | CompactPresentation<TView>;
+```
+
+A bare preset is the shorthand for `{ preset }`, which is the case most consumers want:
+
+```tsx
+metrics({ presentation: "icon-value" });
+metrics({ presentation: { preset: "icon-value", icon: (m) => ICONS[m.id] } });
+```
+
+**No icon ships with this package** — not bundled, not vendored, not an optional peer.
+`icon` takes a `ReactNode`, so it is your `<svg>`, your icon-font element or your
+character, from whatever set your design system already uses.
+
+**The option is `presentation`, not `compact`.** `compact` already names the slot on
+`DevToolbarExtension`, and two things called `compact` would be a vocabulary collision.
+
+### Which text a preset selects
+
+A bar chip usually has two texts: a hardcoded short word it paints in the bar
+(`"a11y"`, `"env"`, `"overlays"`) and the configured `label`, which is its identity in
+the `⋮` menu and in its accessible name. **Presets operate on the short bar word;
+`label` stays the overflow and accessible-name identity.** The axis is
+`"none" | "short" | "full"`, presets in the bar select `"short"`, and the overflow rule
+forces `"full"` — so a preset can never leave a menu row wordless. `docs/styling.md`
+[states the rule once](./styling.md#which-text-a-bar-control-paints); this is the
+resolver's half of it.
+
+| Preset | In the bar | In the `⋮` menu |
+| --- | --- | --- |
+| `"default"` | whatever that extension paints today | whatever that extension paints today |
+| `"icon"` | icon | icon + **full text** |
+| `"icon-value"` | icon + value | icon + full text + value |
+| `"icon-label"` | icon + short word | icon + full text |
+| `"label"` | short word | full text |
+| `"value"` | value | full text + value |
+
+Two guarantees live in `resolveCompactParts` and nowhere else, which is what makes them
+hold once rather than nine times:
+
+1. **An icon-only preset with no icon supplied paints text.** A blank control is worse
+   than an unstyled one, and a function `icon` may return nothing for one control and a
+   node for the next, so the guard is per control.
+2. **The `⋮` menu always paints full text** under every preset, by construction.
+
+**Sharp edge: the menu row drops the *value* under `"icon"` and `"label"`.** The
+overflow rule forces the text on, never the value — so under `presentation: "icon"` a
+metrics row in the `⋮` menu reads `Memory` where the default reads `Memory 53 MB`. That
+is the table above read literally rather than a bug, and the fix is one word:
+`"icon-value"` keeps the number in both places.
+
+`"default"` is a member of the enum rather than an absence, and it resolves to `null`:
+each extension reads `parts === null ? <today's tree> : <driven tree>`, which is what
+makes "today's output is byte-identical" a structural property rather than a truth-table
+coincidence. Today's rendering is not one thing across the nine — Group A is short word
+plus value, `/ext/agent` is label-only, `/ext/command-menu` is a symbol plus a hotkey
+hint — so a member named `"label-value"` would have been a lie for three of them.
+
+### `render`, and what it may not take
+
+`render` supplies the control's **children** and nothing else. The `<button>`, its
+`type`, `aria-expanded`, `onClick`, `title`, any `role="switch"`/`aria-checked`, the
+chip's dot, every `data-dtb-*` state attribute and the severity children an extension
+paints after the contents — diagnostics' badge, environment's `impersonating` marker,
+overlays' error tag — all stay the extension's, under every preset including `"icon"`.
+**A preset changes text, not state.**
+
+```ts
+interface CompactRenderContext {
+  preset: CompactPreset;
+  icon?: ReactNode;        // already resolved through a function icon
+  isOverflowed: boolean;
+  isPanelOpen: boolean;
+  fallback: ReactNode;     // what the preset would have painted
+}
+```
+
+`fallback` is an element tree rather than a rendered result, so building it costs
+nothing when a callback ignores it — and it is the *same* construction the extension
+paints when there is no callback, which makes `render: (_, ctx) => ctx.fallback` exact
+rather than two pieces of markup kept in step:
+
+```tsx
+metrics({
+  presentation: {
+    preset: "icon-value",
+    render: (metric, ctx) => (metric.severity === "bad" ? <Siren /> : ctx.fallback),
+  },
+});
+```
+
+Returning `undefined` falls through to the preset too, so a callback opts out per
+control rather than per extension.
+
+**A callback is honoured in the `⋮` menu as well as the bar**, with `ctx.isOverflowed`
+as the hook. That is a deliberate inconsistency with the guarantee above: a preset is
+the library's opinion and should be safe by construction, while a callback is you taking
+the wheel, and silently discarding your output in one of the two places is a worse
+surprise than a documented edge. The cost is real — a menu row painting no text is
+announced by its `title` alone where the row is named by its content, as `/ext/metrics`'
+per-metric rows are — so branch on `ctx.isOverflowed` and paint a word.
+[ADR-004](./adr/ADR-004-per-extension-bar-presentation.md) records the deviation and
+what reversing it would cost.
+
+`name` overrides the control's `aria-label`; a whitespace-only return is ignored, so no
+override can leave an icon-only control unnamed. `title` is **not** overridable — it
+explains, it does not name.
+
+### A factory option cannot be changed at runtime
+
+`presentation` is fixed when the factory is called, exactly like `label`, `align` and
+`injectStyles`. **Handing `<DevToolbar>` a newly built extension object for an id that
+is already running does not reconfigure it.** Core keeps the first object's `start()`,
+logs `extension "<id>" was rebuilt after it started`, and never starts the new closure —
+so the bar renders a control wired to a runtime nobody is driving, and the symptom is a
+chip that has simply stopped: `/ext/a11y`'s `axeVersion` goes null, metrics freeze.
+
+To change presentation at runtime, remount the toolbar or reload the page:
+
+```tsx
+// `key` makes the flip what it really is: a config change. The shell unmounts,
+// every extension is stopped, and the new objects are started.
+<DevToolbar key={mode} extensions={extensionsFor(mode)} />
+```
+
+`examples/playground/src/App.tsx` is the worked example. This is the *other* side of
+[the build-once rule](./extension-contract.md): the object
+identity is the lifecycle.
+
+### The narrowed option: agent and command-menu
+
+`/ext/agent` and `/ext/command-menu` take
+`Pick<CompactPresentation<TView>, "icon" | "name">` — the two knobs that act, and no
+`preset` or `render`. Neither control has a value and neither has two texts, so there is
+nothing to preset *against*: every member but `"default"` would be a no-op or a lie, and
+a `render` callback over a view that never changes is a `ReactNode` with extra steps.
+
+The narrowing is visible rather than silent. The bare-preset shorthand is a **compile
+error** there, not an option that quietly does nothing:
+
+```tsx
+agentBridge({ presentation: "icon" });
+// error TS2559: Type 'string' has no properties in common with type 'AgentPresentation'.
+
+agentBridge({ presentation: { icon: <RobotIcon /> } }); // ✅
+```
+
+They stay a `Pick` of the shared interface rather than lookalikes of their own, so
+`icon` and `name` mean there exactly what they mean on the other seven, and widening
+later is additive.
+
+### `Glyph`, and icons that are characters
+
+```tsx
+<Glyph data-dtb-part="build-icon">{icon}</Glyph>
+```
+
+A `<span data-dtb-kind="glyph">` that is `aria-hidden` by default — the name belongs to
+the control, and an announced icon duplicates it — and that **clamps its direct child**
+to `--dtb-glyph-size` (`1.15em`), because a 24px `<svg>` handed to an 11px bar would set
+the bar's height. Pass `aria-hidden={false}` with a `role` and a name where the icon
+*is* the name.
+
+It is a standalone control and not only a `Chip` slot because three of the nine
+first-party bar controls are hand-written and cannot route through `Chip`.
+
+**A character needs no wrapper.** `icon` takes a `ReactNode`, and a string is the
+cheapest icon there is; the glyph's own line box is `--dtb-glyph-size`, so a bare
+`"▲"` sits in a real box and lines up with the `<svg>`s beside it. Wrap one in a
+`<span>` only to clamp an oversized character — an emoji — since the clamp is
+`[data-dtb-kind="glyph"] > *` and a bare text node is not an element for it to match.
+
+### Writing your own bar control
+
+An extension outside this package resolves the same option with the same helpers. Two
+shapes it has to supply itself: `CompactParts` — `{ icon, text, value }`, where `text`
+is the `"none" | "short" | "full"` axis rather than a boolean — and `CompactDefaults`,
+the `{ bar, overflow }` pair naming what **your** `"default"` paints in each place.
+This build chip paints its short word plus a value in the bar and the full label plus
+the value in the `⋮` menu, which is what Group A does:
+
+```tsx
+const BAR_PARTS: CompactParts = { icon: false, text: "short", value: true };
+const OVERFLOW_PARTS: CompactParts = { icon: false, text: "full", value: true };
+```
+
+```tsx
+const presentation = resolvePresentation(options.presentation); // once, in the factory
+
+compact: ({ isOverflowed, isPanelOpen, togglePanel }) => {
+  const control = resolveCompactControl(presentation, view, {
+    isOverflowed,
+    defaults: { bar: BAR_PARTS, overflow: OVERFLOW_PARTS },
+  });
+  const fallback = (
+    <Chip data-dtb-part="build-chip" severity={view.severity}>
+      {renderCompactParts({
+        parts: control.parts,
+        icon: control.icon,
+        iconProps: { "data-dtb-part": "build-icon" },
+        short: "build",
+        full: options.label,
+        textProps: { "data-dtb-part": "build-label" },
+      })}
+      {control.parts.value ? <span data-dtb-part="build-value">{view.commit}</span> : null}
+    </Chip>
+  );
+  return (
+    <button
+      type="button"
+      data-dtb-part="trigger"
+      aria-expanded={isPanelOpen}
+      aria-label={resolveAccessibleName(presentation.name, view, options.label)}
+      onClick={togglePanel}
+    >
+      {renderCompact(presentation, view, { icon: control.icon, isOverflowed, isPanelOpen }, fallback)}
+    </button>
+  );
+};
+```
+
+`resolveCompactControl` is the one to reach for: it composes `resolveIcon` and
+`resolveCompactParts`, owns the `undefined | null` icon guard per control, and takes
+**your** `"default"` parts as `defaults`, because `"default"` means *whatever this
+extension renders today* and the kit cannot know what that is for you. Its output
+guarantees that `parts.icon` implies a paintable icon — which is
+`renderCompactParts`' precondition, so take `parts` from there rather than assembling
+them by hand.
+
+`renderCompactParts` stops at the icon and the text. The value span, its
+`data-dtb-severity` and any state child after it stay yours: the kit answers *which
+parts*, the extension paints the DOM. And nothing here may enter a store snapshot — a
+`ReactNode` cannot be signed, so icons and callbacks belong in the factory closure and
+travel as props, exactly as `label` and `injectStyles` do.
 
 ---
 

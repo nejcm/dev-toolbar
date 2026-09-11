@@ -80,6 +80,13 @@ The callbacks are handed a narrow `ThemeEditorBarView` — `tokenCount`,
 as a callback parameter it is contravariant, so the token list, the groups and
 the apply errors are deliberately not in it.
 
+`mode` (`"light" | "dark" | null`) is **also** left out, and that one is a
+decision rather than a consequence: it is the obvious input for a sun/moon icon,
+and the argument against it is only that the view was cut to the five facts the
+chip itself paints. A consumer's callback *reads* this type, so adding a field is
+additive and safe in a minor release — the contravariance cost is paid by
+renaming or removing one, not by adding. Left out until somebody asks.
+
 This chip **colours its own dot** from `data-dtb-edited` and `data-dtb-preview`
 rather than from a kit `severity`, and its count opts out of the kit's `value`
 kind. Those are state, not text: they are written on the `Chip` itself, above

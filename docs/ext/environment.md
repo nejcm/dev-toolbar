@@ -113,6 +113,7 @@ environment({
   detect: false,                                 // no route/viewport/connection
   maskPii: false,                                // stop masking email addresses
   redactOptions: { extraKeys: ["tenantcode"] },  // mask more key names
+  presentation: "icon-value",                    // see Bar presentation, below
 });
 ```
 
@@ -122,6 +123,37 @@ stylesheet — pair `injectStyles={false}` on `<DevToolbar>` with
 `environment({ injectStyles: false })` and deliver `ENVIRONMENT_CSS` yourself.
 `styleNonce` on `<DevToolbar>` is forwarded to the sheet via the slot;
 `environment({ styleNonce })` overrides it.
+
+## Bar presentation
+
+```tsx
+environment({ presentation: { preset: "icon-value", icon: (s) => ICONS[s.kind] } });
+```
+
+`presentation` changes how the bar control looks, never what it reports.
+The four knobs — a preset, your own `ReactNode` icon, a `render` callback and an
+accessible-name override — the preset-by-preset table and the rules every extension
+shares are in [kit.md](../kit.md#presentation). Two of those rules are worth repeating
+before the specifics: `"default"` is byte-identical to what shipped before the option
+existed, and `presentation`, like every factory option, is **fixed when the factory is
+called** — to change it at runtime, remount the toolbar or reload.
+
+What is specific to this extension:
+
+- **The short bar word is `env`**, and `"default"` paints it in **both** places — the bar
+  and the `⋮` menu — where the other kit chips swing to their full `label` when
+  overflowed. That is what this chip has always shipped. Any *preset* still forces the
+  full `label` in the menu, which is the library-wide overflow rule.
+- **The icon lands in `data-dtb-part="env-icon"`**, a new part; the word keeps the
+  `env-label` it has always had.
+- **It renders two button wrappers** — the bar `trigger` and the `⋮` row
+  `env-overflow`, which deliberately carries no `aria-expanded` — and one `presentation`
+  drives both, the name override included. The fork is about the element, never the
+  presentation.
+- **`kindLabel(snapshot)` is exported** so a `render` callback can paint the same value
+  word the preset does instead of re-deriving the `supplied && kind !== "unknown"` rule.
+- **The dot's severity and the `impersonating` marker render outside the preset and the
+  callback**, under every preset including `"icon"`.
 
 ---
 

@@ -114,8 +114,17 @@ Two lifecycle rules the metrics extension paid for, so you do not have to:
 - **Build your extension once, at module scope.** The object identity *is* the
   lifecycle: `start()` belongs to the object core first saw, so rebuilding it inside
   render leaves the bar rendering a second object that owns nothing. Core warns once
-  per id when it detects this. A hot-module reload of the module that builds your
+  per id when it detects this — `extension "<id>" was rebuilt after it started` — and
+  keeps the first object's `start()`. A hot-module reload of the module that builds your
   extensions does the same thing; reload the page.
+
+  **The corollary: a factory option cannot be changed at runtime.** Handing
+  `<DevToolbar>` a freshly built object for a running id is that same warning, not a
+  reconfiguration: the new closure is never started, so the bar renders a control wired
+  to a runtime nobody is driving, and the symptom is a chip that has quietly stopped
+  updating. To change `presentation`, `label`, `injectStyles` or any other factory option
+  while the app is running, remount the toolbar — `<DevToolbar key={mode} …>` — or reload
+  the page. `examples/playground/src/App.tsx` is the worked example.
 
   The corollary every real app meets on day one: the object cannot read a hook, yet
   what it shows — the signed-in user, the workspace, the resolved flags — lives in
@@ -177,6 +186,15 @@ compact: ({ isPanelOpen, togglePanel }) => (
 
 `severity` colours the dot and the value from `--dtb-ok` / `--dtb-warn` /
 `--dtb-danger`, so your chip agrees with the rest of the bar for free.
+
+If you want the consumer of *your* extension to be able to restyle that chip the way
+they can restyle the first-party ones — an icon of theirs, icon-only, icon plus value —
+the kit publishes the vocabulary for it: one `presentation` option holding a preset, a
+`ReactNode` icon, a `render` callback over your own view type and an accessible-name
+override, plus the four pure helpers that resolve it. The shape, the preset table, the
+two guarantees it enforces and a worked bar control are in
+[kit.md](./kit.md#presentation). No icon set ships with this package; icons are the
+consumer's assets, passed in.
 
 **`Note` and `Action` next** — the two things every panel has. `Note` is muted,
 margin-free secondary text; `Action` is a `<button type="button">` carrying the shared

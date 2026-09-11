@@ -26,6 +26,7 @@ const extensions = [
       republish();
     },
     promoted: { flagKey: "ui-facelift", label: "UI Facelift 2026", icon: "◈" },
+    // `presentation` restyles the chip and each promoted flag — see below.
   }),
 ];
 ```
@@ -192,6 +193,59 @@ stylesheet — pair `injectStyles={false}` on `<DevToolbar>` with
 `flags({ injectStyles: false })` and deliver `FLAGS_CSS` yourself.
 `styleNonce` on `<DevToolbar>` is forwarded to the sheet via the slot;
 `flags({ styleNonce })` overrides it.
+
+## Bar presentation
+
+This extension puts **two kinds of control** in the bar, so it has two `presentation`
+options. A control's presentation is configured next to that control, rather than by one
+callback that would have to receive `FlagsSnapshot | FlagView` and make you narrow it.
+
+| Option | Control | `TView` | Invoked |
+| --- | --- | --- | --- |
+| `flags({ presentation })` | the flags chip | `FlagsSnapshot` | once |
+| `PromotedFlag.presentation` | one promoted flag | `FlagView` | once per promoted flag |
+
+```tsx
+flags({
+  presentation: "icon-value",
+  promoted: [
+    { flagKey: "ui-facelift", presentation: { preset: "icon", icon: <FlagIcon /> } },
+    { flagKey: "checkout.tier" },   // untouched — still the default tree
+  ],
+});
+```
+
+The four knobs — a preset, your own `ReactNode` icon, a `render` callback and an
+accessible-name override — the preset-by-preset table and the rules every extension
+shares are in [kit.md](../kit.md#presentation). Two of those rules are worth repeating
+before the specifics: `"default"` is byte-identical to what shipped before the option
+existed, and `presentation`, like every factory option, is **fixed when the factory is
+called** — to change it at runtime, remount the toolbar or reload.
+
+What is specific to this extension:
+
+- **The chip's short bar word is `flags`, and its `⋮` row says `flags` too under
+  `"default"`** — unlike the kit chips, it has never swung to its `label` when
+  overflowed. Any *preset* still forces the full word there. The chip's icon lands in
+  `data-dtb-part="flag-icon"`; a promoted flag's in `flag-promoted-icon`.
+- **`PromotedFlag.icon` stays a `string`** — "a short glyph rendered before the label.
+  Text, not an asset." It is copied into every snapshot as `FlagView.promotedIcon`, and
+  this store republishes on a **string signature**: a `ReactNode` cannot be signed, and
+  it would sit inside what `diagnostics()` serialises. Rich icons go on
+  `presentation.icon`, which lives in the factory closure and reaches the DOM as a prop.
+  The string glyph still fills the icon slot when no `presentation.icon` is supplied, so
+  it survives a preset instead of vanishing; supply both and the rich one wins. `icon: ""`
+  is not an icon — it has never painted a node, so an icon-only preset falls back to text
+  rather than leaving a control that is nothing but its dot.
+- **A promoted control's `"default"` tree paints `presentation.icon`.** It is the one
+  place a bare `icon` under `"default"` is not a no-op, because this control has had a
+  glyph slot since it existed. Chips whose default names no icon slot ignore a bare
+  `icon`.
+- **A promoted boolean falls back to text rather than to nothing.** A switch has no value
+  slot — it announces its own state — so `"value"`, and `"icon-value"` with no icon,
+  paint the label instead of leaving a control that is nothing but its dot.
+- **`role="switch"`, `aria-checked`, `data-dtb-flag` and `data-dtb-overridden` are not a
+  preset's to change, nor a callback's.**
 
 ---
 

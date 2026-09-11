@@ -14,8 +14,8 @@ const extensions = [commandMenu(), flags({ … }), metrics()];
 query it browses — recently run commands first, then everything else grouped by
 extension; with a query it is one flat list ordered by match quality. Options:
 `shortcut` (`null` binds no key), `placeholder`, `emptyMessage`, `rememberRecent`,
-plus the usual `id` / `label` / `align` / `order` / `priority` / `hidden` /
-`injectStyles` / `styleNonce`.
+`presentation` (below), plus the usual `id` / `label` / `align` / `order` /
+`priority` / `hidden` / `injectStyles` / `styleNonce`.
 
 Six things worth knowing:
 
@@ -56,6 +56,45 @@ Replacing it with your team's own `cmdk` is one line: leave it out and write you
 over `useToolbarCommands()` (stable snapshot) or `useDevToolbar().getCommands()`
 (re-enumerates now). That is what core aggregating and rendering nothing is for.
 
+
+## Bar presentation
+
+```tsx
+commandMenu({ presentation: { icon: <PaletteIcon /> } });
+```
+
+**Two knobs, not four.** The seven value-bearing extensions take a whole
+[`CompactPresentation`](../kit.md#presentation) — `preset`, `icon`, `render`, `name`.
+This trigger has a symbol and a hotkey hint, and neither is a value, so there is nothing
+to preset *against*: no member would mean anything here that supplying an icon does not
+already mean. `CommandMenuPresentation` is
+`Pick<CompactPresentation<CommandMenuSnapshot>, "icon" | "name">`.
+
+The narrowing is visible rather than silent — the bare-preset shorthand is a **compile
+error** here, not an option that quietly does nothing:
+
+```tsx
+commandMenu({ presentation: "icon" });
+// error TS2559: Type 'string' has no properties in common with type 'CommandMenuPresentation'.
+```
+
+Like every factory option it is fixed when the factory is called; remount the toolbar or
+reload to change it.
+
+- **An icon replaces the hardcoded `⌘`, and nothing else.** The hint still follows it in
+  the bar and the label still follows it in the `⋮` menu, so the trigger is never
+  wordless.
+- **It lands in a new `data-dtb-part="cmd-icon"` span carrying the kit's
+  `data-dtb-kind="glyph"`** — the clamp that stops a 24px `<svg>` setting the bar's
+  height. **`cmd-glyph` deliberately does not gain that kind.** That part is not "the
+  leading symbol": it is *every* Apple modifier symbol this extension paints, the ones
+  inside each palette row's `cmd-option-hint` included, and it exists to set that text in
+  the UI face at `1.18em` because the monospace faces have no such glyph.
+- **`TView` is `CommandMenuSnapshot`**, the same object the trigger already renders from,
+  so `snapshot.open` is there to branch an icon on.
+- **`name` overrides the `aria-label`**; a whitespace-only return is ignored. `title` is
+  not overridable, and it is where the hotkey is still spelled out once a `name` override
+  has dropped the hint from the accessible name.
 
 ---
 

@@ -40,6 +40,7 @@ metrics({
   memory: { thresholds: { warn: 0.4, bad: 0.7 } },
   jank: false,                       // switch one off entirely
   network: { slowMs: 400, filter: ({ url }) => !url.startsWith("/telemetry") },
+  presentation: "icon-value",        // see Bar presentation, below
 });
 ```
 
@@ -281,6 +282,35 @@ The extension ships its own stylesheet, injected once per document. If you set
 and deliver `METRICS_CSS` yourself — core's flag is a prop, and extensions cannot see
 props. `styleNonce` on `<DevToolbar>` is forwarded to the sheet via the slot;
 `metrics({ styleNonce })` overrides it.
+
+## Bar presentation
+
+```tsx
+metrics({ presentation: { preset: "icon-value", icon: (m) => ICONS[m.id] } });
+```
+
+`presentation` changes how the bar control looks, never what it measures.
+The four knobs — a preset, your own `ReactNode` icon, a `render` callback and an
+accessible-name override — the preset-by-preset table and the rules every extension
+shares are in [kit.md](../kit.md#presentation). Two of those rules are worth repeating
+before the specifics: `"default"` is byte-identical to what shipped before the option
+existed, and `presentation`, like every factory option, is **fixed when the factory is
+called** — to change it at runtime, remount the toolbar or reload.
+
+What is specific to this extension:
+
+- **It renders N controls, and the option is resolved once per control.** `TView` is
+  `MetricView` — the display type each collector's `read(now)` returns — so `icon` and
+  `render` are invoked per metric with the metric in hand. That is why no
+  `icons: Record<CollectorId, ReactNode>` map is needed: `icon: (m) => ICONS[m.id]`.
+- **The two texts are the metric's own**: `view.label` is the short bar word (`mem`) and
+  `view.title` is the full one the `⋮` menu paints (`Memory`). The icon lands in
+  `data-dtb-part="metrics-icon"`, a new part; the word keeps `metrics-label`.
+- **Sharp edge: `preset: "icon"` drops the number from the `⋮` menu.** The overflow rule
+  forces the *text* on, never the value, so a menu row reads `Memory` where the default
+  reads `Memory 53 MB`. Use `"icon-value"` to keep the number in both places.
+- **`data-dtb-metric`, `data-dtb-severity` and the chip's dot never depend on the
+  preset.** A preset changes text, not state.
 
 ---
 

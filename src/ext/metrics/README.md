@@ -55,7 +55,7 @@ placement and styling controls.
 `presentation` changes how the bar control looks, not what it measures: a
 `CompactPreset`, your own `ReactNode` icon (or `(view) => ReactNode`, so N
 metrics need no icon map), a `render` callback over `MetricView` and an
-accessible-name override. It resolves through `/kit`'s `resolveCompactParts`,
+accessible-name override. It resolves through `/kit`'s `resolveCompactControl`,
 so `"default"` is byte-identical to what shipped before the option existed and
 the `⋮` menu always paints the full title. Nothing configured here reaches the
 store — a `ReactNode` cannot be signed, so the icon and the callbacks stay in

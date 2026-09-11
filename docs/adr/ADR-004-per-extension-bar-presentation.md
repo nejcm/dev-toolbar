@@ -1,8 +1,7 @@
 # ADR-004 — Per-extension bar presentation
 
-**Status:** Proposed. The design is settled; the code does not do this yet. Nothing
-here is in force until the extension factories ship the option, at which point the
-status flips to `Accepted`.
+**Status:** Accepted. All nine extension factories ship the `presentation` option, the
+kit holds the vocabulary, and the playground proves it in a browser.
 
 ## Context
 
@@ -39,9 +38,10 @@ Two constraints bound the answer before any design starts:
 Each extension factory gains **one** option, `presentation`, holding four knobs: a
 `preset`, a consumer-supplied `ReactNode` icon (or a function returning one), an
 optional `render` callback over that extension's own view data, and an optional
-accessible-name override. Presentation becomes the consumer's decision, per extension,
-while the extension keeps the trigger element, its `data-dtb-*` state attributes and
-its accessible name.
+accessible-name override — of which two of the nine publish a narrowed pair, as the
+Group C subsection below records. Presentation becomes the consumer's decision, per
+extension, while the extension keeps the trigger element, its `data-dtb-*` state
+attributes and its accessible name.
 
 The vocabulary — `CompactPreset`, `CompactPresentation<TView>`, a `Glyph` control and
 the `resolveCompactParts` / `resolvePresentation` / `resolveCompactControl` /
@@ -57,6 +57,39 @@ The option is named `presentation`, not `compact`: `compact` already names the s
 reads `parts === null ? <today's tree> : <driven tree>`. That makes "today's output is
 byte-identical" a structural property of the resolver rather than a truth-table
 coincidence — which is what makes the compatibility claim provable.
+
+### Group C takes two knobs, not four
+
+Seven of the nine take the whole interface. `/ext/agent` and `/ext/command-menu` publish
+`Pick<CompactPresentation<TView>, "icon" | "name">` instead. Neither control has a
+value, and neither has a short bar word distinct from its full label — the agent chip is
+one text, the command-menu trigger is a symbol plus a hotkey hint — so every preset
+member but `"default"` would resolve to a no-op or a lie, and a `render` callback over a
+view that never changes is a `ReactNode` with extra steps.
+
+The narrowing is **visible rather than silent**: the bare-preset shorthand
+(`presentation: "icon"`) is a **compile error** on those two, not an option that quietly
+does nothing. It stays a `Pick` of the shared interface rather than a lookalike of its
+own, so `icon` and `name` mean there exactly what they mean on the other seven and a
+widening later is additive. This is a published-types decision on two of the nine option
+bags, which is why it is recorded here rather than only in the JSDoc;
+[docs/kit.md](../kit.md#the-narrowed-option-agent-and-command-menu) states it for
+consumers.
+
+Two further facts about the agent chip are recorded because both are changes on its
+**icon path only** — with no icon supplied it is the span it has always been, down to
+the byte:
+
+- **`role="img"` is conditional.** An `aria-label` on a role-less span names nothing,
+  which is how that chip came to be exempt from the "named by an attribute" rule while
+  it had no icon. Supplying an icon gives it the role, so the `aria-label` the `name`
+  knob feeds actually counts — and the role hides the `⋮` row's duplicate word from the
+  announcement.
+- **`/ext/agent` injects `KIT_CSS` on that path.** It is the one extension in the
+  test roster's `STYLELESS` set — no panel and no stylesheet of its own — and the glyph
+  clamp (`--dtb-glyph-size`) lives in the kit sheet, so an icon needs it. The no-icon
+  branch injects nothing, so a consumer who supplies none still gets a styleless
+  extension.
 
 ### Hard rule: a `ReactNode` never enters a store snapshot
 
@@ -93,8 +126,13 @@ this record said it was. A menu row keeps the element the extension gave it — 
 announced *"Memory 48 MB"* with *"Memory"*. So a callback that paints no text in the
 menu leaves that row named by its `title` and nothing else — the weak fallback the
 accessible-names step removed from the four unnamed triggers, reintroduced by consumer
-choice on one row. Naming those rows outright is a separate decision, deferred to the
-docs step, because it changes the default DOM and the announced name.
+choice on one row. Naming those rows outright is a separate decision, **left open**: it
+would change the default DOM and the announced name for every user under `"default"` —
+*"Memory 48 MB"* becomes whatever is chosen — to cure an edge a consumer has to opt into,
+so it belongs in a step with its own e2e rather than this one. What this change ships
+instead is documentation: `docs/kit.md` names the edge and gives `ctx.isOverflowed` as
+the escape hatch, under
+[`render`, and what it may not take](../kit.md#render-and-what-it-may-not-take).
 
 Reversing the deviation itself — ignoring `render` when overflowed — is a two-line
 change if the guarantee is later preferred over the consistency.
@@ -143,7 +181,7 @@ here rather than in a comment in `src/ext/a11y/ui.tsx`.
 | Risk | Likelihood | Impact | Mitigation |
 | --- | --- | --- | --- |
 | **Contravariance.** A view type that is only *read* may gain and lose optional fields freely; as a `render`/`icon`/`name` parameter it becomes contravariant, so renaming a field breaks consumer callbacks, not just consumer readers | High — these types change often | A field rename becomes a breaking change for seven extensions at once | Pass an existing view type only where it genuinely *is* a display type (`MetricView`, `FlagView`); purpose-build a narrow one otherwise, as `DiagnosticsBarView` does rather than welding `DiagnosticsSnapshotState` into the API |
-| A `render` callback paints an icon-only control in the `⋮` menu, giving a visually blank row | Medium — it is what the deviation above permits | A menu row with no visible text, and — on a row named by its content, as `/ext/metrics`' per-metric rows are — named by its `title` alone | The row keeps its `<button>`, its `onClick` and its `title`, so it stays operable and explained; documented as a sharp edge with `ctx.isOverflowed` as the escape hatch. Whether such rows should carry an `aria-label` of their own is deferred: it changes the default DOM and the announced name |
+| A `render` callback paints an icon-only control in the `⋮` menu, giving a visually blank row | Medium — it is what the deviation above permits | A menu row with no visible text, and — on a row named by its content, as `/ext/metrics`' per-metric rows are — named by its `title` alone | The row keeps its `<button>`, its `onClick` and its `title`, so it stays operable and explained; documented as a sharp edge with `ctx.isOverflowed` as the escape hatch. Whether such rows should carry an `aria-label` of their own is left open: it changes the default DOM and the announced name for every user, to cure an opt-in edge |
 | A future refactor widens something into a snapshot that carries a `ReactNode` | Low, but silent until it throws | A circular-structure throw inside a click handler, or a store that republishes every 250 ms | The hard rule above, plus a serialisation test that promotes a flag with a JSX icon and asserts `JSON.stringify(runtime.diagnostics())` succeeds and contains no React element |
 | Collapse settling. `"icon"` can be ~4× narrower than `"default"`, so nine extensions can each swing tens of pixels between bar and overflow | Medium at one specific window width | Chips appear to flicker, or more items stay in `⋮` than need to | The collapse machine terminates the 2-cycle by design and reports `latched`; a `collapse.test.ts` case drives a 4× swing on one id and asserts it settles |
 | An icon-only preset on a trigger with no `aria-label` leaves a button named only by `title` | Certain, on the four triggers that have none today | An unnamed control — which `/ext/a11y` would flag on the toolbar's own bar | Accessible names are fixed **first**, as their own step with no new API, and a test asserts a non-empty computed name for every trigger across all nine |

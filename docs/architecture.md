@@ -499,7 +499,10 @@ deliberate kinds of exception are whitelisted precisely where they occur:
 ### 4.2 `data-dtb-part`
 
 Every part carries a stable attribute. These are the supported selector hooks; class
-names inside core are not.
+names inside core are not. The table below is **core's** parts — the unprefixed names.
+An extension's own parts are namespaced and documented on that extension's page in
+[docs/ext/](./ext/), which is where the icon and text parts the `presentation` option
+added are listed too; this table does not grow when an extension adds one.
 
 | Part | Element | Notes |
 | --- | --- | --- |

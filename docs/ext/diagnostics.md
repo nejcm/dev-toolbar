@@ -255,7 +255,8 @@ resolve the package to a single format. Nothing in this package can repair it fr
 inside, and the versions of this package that tried made the failure silent instead.
 
 Options: `app` (object or getter), `sources`, `console`, `windowMs`,
-`slowInteractionMs`, `historySize`, `recentSize`, `now`, `redactOptions`, plus the usual
+`slowInteractionMs`, `historySize`, `recentSize`, `now`, `redactOptions`,
+`presentation` (see [Bar presentation](#bar-presentation)), plus the usual
 `id` / `label` / `align` / `order` / `priority` / `hidden` / `keepMounted` /
 `injectStyles` / `styleNonce`.
 
@@ -295,6 +296,33 @@ pre-joined — the reader masks each half and then joins them, the rule the runt
 credential-carrying URL (what `fetch` and axios throw) is judged as the value it is
 rather than as a sentence with `"Error: "` in front of it.
 
+
+## Bar presentation
+
+```tsx
+diagnostics({ presentation: { preset: "icon-value", icon: <BugIcon /> } });
+```
+
+`presentation` changes how the bar control looks, never what it captures.
+The four knobs — a preset, your own `ReactNode` icon, a `render` callback and an
+accessible-name override — the preset-by-preset table and the rules every extension
+shares are in [kit.md](../kit.md#presentation). Two of those rules are worth repeating
+before the specifics: `"default"` is byte-identical to what shipped before the option
+existed, and `presentation`, like every factory option, is **fixed when the factory is
+called** — to change it at runtime, remount the toolbar or reload.
+
+What is specific to this extension:
+
+- **The short bar word is `diagnostics`**; `label` stays the `⋮` and accessible-name
+  identity. The icon lands in `data-dtb-part="diag-icon"` and the word in `diag-label`.
+- **The callbacks receive a narrow `DiagnosticsBarView`** — `captured`, `omissions`,
+  `errors`, `warnings` — rather than the snapshot state, whose `revision`, `capturedAt`
+  and `snapshot` read as implementation detail. A type that is only *read* may gain and
+  lose optional fields freely; as a callback parameter it is contravariant, so every
+  field there is one that cannot be renamed later without breaking your code.
+- **The error/warning badge is not yours to restyle.** It renders outside both the preset
+  and `render`, after the contents, under every preset including `"icon"` — it is live
+  state, and the one thing on the chip that says something is wrong.
 
 ---
 

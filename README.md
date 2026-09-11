@@ -181,7 +181,7 @@ published type are in [docs/api.md](./docs/api.md).
 
 ## Styling
 
-Three ways in, and none of them needs `!important` — core's stylesheet lives in
+Four ways in, and none of the CSS ones needs `!important` — core's stylesheet lives in
 `@layer dev-toolbar`, and unlayered author CSS beats a layered rule whatever the
 specificity.
 
@@ -195,8 +195,11 @@ specificity.
 
 That is the token route. There is also a `data-dtb-part` attribute on every part
 (`bar`, `item`, `trigger`, `panel`, …) and a `classNames` prop for putting your own
-class on one. Details, and the full part list, in
-[docs/styling.md](./docs/styling.md).
+class on one. And every first-party extension takes a `presentation` option, so the
+fourth route is not CSS at all: put your own icon on any chip —
+`metrics({ presentation: "icon-value" })`. Details, and the full part list, in
+[docs/styling.md](./docs/styling.md); the presentation vocabulary is in
+[docs/kit.md](./docs/kit.md#presentation).
 
 ## Keeping it out of production
 
