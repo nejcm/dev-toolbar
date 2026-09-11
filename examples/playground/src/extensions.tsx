@@ -1,7 +1,7 @@
 import { useState } from "react";
 import type { DevToolbarExtension } from "@nejcm/dev-toolbar";
 import { useDevToolbar, useToolbarCommands } from "@nejcm/dev-toolbar";
-import { Action, Chip } from "@nejcm/dev-toolbar/kit";
+import { Chip } from "@nejcm/dev-toolbar/kit";
 import { metrics } from "@nejcm/dev-toolbar/ext/metrics";
 import { environment } from "@nejcm/dev-toolbar/ext/environment";
 import { flags, readStoredOverrides } from "@nejcm/dev-toolbar/ext/flags";
@@ -143,14 +143,21 @@ const commands: DevToolbarExtension = {
   order: 5,
   priority: 85,
   compact: ({ isPanelOpen, togglePanel }) => (
-    <Action
+    // A plain <button>, not the kit's `Action`: `Action` stamps
+    // `data-dtb-kind="action"`, whose kit rule is the *panel* control reset
+    // (1px border, --dtb-control-padding-x). It ties with core's
+    // `data-dtb-part="trigger"` rule on specificity and wins on source order,
+    // because the kit sheet is injected after core's — so an `Action` on the
+    // bar paints a bordered box no other chip has, and measures 8px wider.
+    <button
+      type="button"
       data-dtb-part="trigger"
       aria-expanded={isPanelOpen}
       onClick={togglePanel}
       title="cmds — playground placeholder"
     >
       {placeholderChip("cmds", "aggregated")}
-    </Action>
+    </button>
   ),
   panel: () => <CommandsPanel />,
 };
