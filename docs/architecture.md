@@ -891,7 +891,10 @@ Rules worth stating explicitly:
 - **A modal belongs in `overlay`, not `compact`.**
 - **Style with your own CSS.** Reuse core's `data-dtb-part="trigger"` to inherit the
   bar's look, or ignore it entirely and bring Tailwind. Both work — that is the point
-  of the light DOM.
+  of the light DOM. The trigger is *your* element, though: the kit's `<Action>` is a
+  panel control and stamps the panel geometry, so build the chip out of a plain
+  `<button>` with kit controls inside it
+  ([docs/kit.md](./kit.md#action-is-a-panel-control)).
 - **Register dynamically only for subtree-scoped tools.**
   `useDevToolbar().register(ext)` returns an unregister function; call it on unmount.
 

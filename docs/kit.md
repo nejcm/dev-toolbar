@@ -499,9 +499,9 @@ lets one stylesheet serve every extension. An element usually carries both:
 | `glyph` | a centring inline-flex box whose line box is `--dtb-glyph-size`, clamping its direct child to the same | `<Glyph>`, `<Chip>`'s icon slot |
 | `label` | muted text | `<Row>`'s `<dt>`, opt-in on `<Chip>` |
 | `value` | the mono font | `<Chip>`'s value slot, `<Row>`'s `<dd>` |
-| `action` | the ten-declaration button reset, plus `:hover:not(:disabled)` | `<Action>`, `<CopyButton>` |
+| `action` | the ten-declaration **panel** button reset, plus `:hover:not(:disabled)` — both guarded `:not([data-dtb-part="trigger"])`, see [`Action` is a panel control](#action-is-a-panel-control) | `<Action>`, `<CopyButton>` |
 | `note` | `margin: 0` and muted colour | `<Note>`, `<Field>`, `<CopyButton>`'s status span |
-| `tag` | a small padded inline marker, one step down in size | `<Tag>` |
+| `tag` | a small padded inline marker, one step down in size — guarded `:not([data-dtb-part="trigger"])`, see [`Action` is a panel control](#action-is-a-panel-control) | `<Tag>` |
 | `row` | a bordered, padded grid card | — (hand-written) |
 | `rows` | the `max-content 1fr` key/value grid, plus zero `dd` margins | `<Rows>` |
 | `list` | a flex column with the list marker removed | — (hand-written) |
@@ -705,6 +705,56 @@ is announced to nobody, so give it one.
 
 `Action` defaults `type="button"`, which is the bug it exists to stop: a bare `<button>`
 inside a form submits it.
+
+#### `Action` is a panel control
+
+**`Action` is for panel controls. A bar trigger is your own element.** The kit's
+`action` kind is the *panel* button reset — `--dtb-control-height`,
+`--dtb-control-padding-x`, a 1px border — and the bar paints its chips from core's
+`[data-dtb-part="trigger"]` rule instead: `--dtb-item-padding-x` and no border.
+
+The two used to collide. Both selectors are `(0,2,0)` and both live in
+`@layer dev-toolbar`, so source order decided, and the kit sheet is injected after
+core's — an `Action` used as a `compact` slot silently took the panel reset, painting a
+frame no other bar chip has and measuring **8px wider** (3px more padding a side, plus
+the border a side, at either density). That 8px is enough to tip a chip over the bar's
+collapse threshold and into the `⋮` menu on one machine and not another; it did exactly
+that to this repo's playground.
+
+Both `action` rules now carry `:not([data-dtb-part="trigger"])`, so the reset stops at
+the bar and core's trigger rule styles the chip unopposed — an `Action` on the bar is
+merely redundant rather than wrong. `:not()` takes the specificity of its argument, so
+the guard raises the *kit's* rule to `(0,3,0)`, which is enough to stop matching at the
+bar without changing what it does anywhere else.
+
+**`tag` carries the same guard**, for the same reason and on the same measurement.
+`Tag` renders a `<span>`, and core sanctions `span[data-dtb-part="trigger"]` as a bar
+*readout* — a compact slot with no panel behind it — so a `Tag` used as one is plausible
+authoring rather than absurd. Unguarded it tied core's trigger rule the same way and won
+the same way, taking a live trigger 3px of padding a side and a font step down: **12px
+narrower**.
+
+Those two are the whole list, and it is a list of *kinds*, not parts. `item`,
+`overflow-button`, `overflow-menu-item` and `error-chip` are rendered by core, so no
+extension can put a kind on one, and `trigger` is the only bar part you write yourself.
+Other kinds disagree with the bar's geometry too — `glyph`, `note`, `dot`, `row`,
+`banner`, `stack`, `list`, `toolbar`, `search` — and are deliberately left alone: none of
+them reads as something you would reach for to build a bar chip, and a guard with no
+plausible mistake behind it is a change with no defect behind it. A kit `Chip` on — or
+inside — a trigger is the opposite case: plausible, and already correct, because `chip`
+declares no geometry that core's trigger rule does not already declare.
+See [Writing your own bar control](#writing-your-own-bar-control).
+
+**Why the guard is kit-side and not a specificity bump in core.** Not because a consumer
+would start losing: both sheets live in `@layer dev-toolbar`, and unlayered author CSS
+beats *any* layered rule regardless of specificity ([README](../README.md#styling),
+[architecture](./architecture.md#light-dom-not-shadow-dom)), so core's number is invisible to
+anyone styling from outside the layer. The real reasons are three. Raising it would edit
+`src/styles.css` and `src/core/css.ts` — the byte-identity ritual — to fix a kit-side
+mistake. It would settle one tie rather than the class: every kit kind that disagrees
+with the bar would need core to out-specify it in turn. And `:not()` puts the exclusion
+where the knowledge lives — the kit knows `action` is a panel control, and core has no
+business knowing kit kinds exist at all.
 
 ### `SearchField`
 
@@ -1032,6 +1082,10 @@ cheapest icon there is; the glyph's own line box is `--dtb-glyph-size`, so a bar
 `[data-dtb-kind="glyph"] > *` and a bare text node is not an element for it to match.
 
 ### Writing your own bar control
+
+The trigger is **your** element — a `<button>` (or a `<span>`, for a readout with no
+panel) carrying `data-dtb-part="trigger"`, with kit controls *inside* it. Do not reach
+for `<Action>` here; see [`Action` is a panel control](#action-is-a-panel-control).
 
 An extension outside this package resolves the same option with the same helpers. Two
 shapes it has to supply itself: `CompactParts` — `{ icon, text, value }`, where `text`
