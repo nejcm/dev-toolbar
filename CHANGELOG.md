@@ -14,6 +14,13 @@
   style break at the boundary is accepted, not an oversight.
 -->
 
+## [0.10.0](https://github.com/nejcm/dev-toolbar/compare/v0.9.0...v0.10.0) (2026-09-11)
+
+
+### Features
+
+* **kit,ext:** per-extension bar presentation with consumer-supplied icons ([#103](https://github.com/nejcm/dev-toolbar/issues/103)) ([1a0df64](https://github.com/nejcm/dev-toolbar/commit/1a0df64517412f2fa40b6dc23fb16c85891028c4))
+
 ## [0.9.0](https://github.com/nejcm/dev-toolbar/compare/v0.8.1...v0.9.0) (2026-09-10)
 
 
