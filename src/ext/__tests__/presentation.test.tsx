@@ -40,18 +40,24 @@ import { themeEditor } from "../theme-editor";
  * `flag-overflow-trigger`, metrics' `metrics-overflow-row` list), so the
  * un-collapsed pass alone never looks at them.
  *
- * Two deliberate exemptions, both from (3) only:
+ * One deliberate exemption, from (3) only:
  *
- * - `/ext/agent`'s trigger is a bare `<span>` with no role, so it is not a
- *   named node and takes no name from its content: today its `title` is the
- *   only thing naming it, which is exactly the weak fallback (3) exists to
- *   rule out everywhere else. **Delete that branch, do not extend it, when
- *   phase 5 gives agent `role="img"` + `aria-label`:** at that point the span
- *   *is* a named node and has to meet (3) like everything else.
  * - metrics' `⋮` rows are content-named on purpose. The plan guarantees the
  *   overflow menu always paints `"full"` text by construction, so no preset can
  *   ever leave one of those rows icon-only; naming them would duplicate the
  *   text a screen reader already reads.
+ *
+ * `/ext/agent` used to be the second exemption, and is not any more. Its
+ * trigger is a role-less `<span>` until a consumer supplies an icon, and a
+ * role-less span is not a named node: it took its name from its `title`, which
+ * is the weak fallback (3) exists to rule out, and it had no *control* for (3)
+ * to look at. Phase 5 gave it `role="img"` + `aria-label` on the icon path — so
+ * its case below mounts it **with an icon**, which is the configuration in
+ * which it puts a named node in the bar at all, and the exemption is gone
+ * rather than extended. The role-less chip is not unwatched: its literal tree
+ * and its `title`-derived name are pinned in
+ * `src/ext/agent/__tests__/presentation.test.tsx`, through this same
+ * `accessibleName()`.
  *
  * [dev-toolbar/plans/bar-presentation-icons-v1 §Accessible names]
  */
@@ -76,12 +82,11 @@ const BAR_CASES: Record<string, BarCase> = {
   a11y: { id: "a11y", make: () => a11y(), names: ["Accessibility, pending"] },
   agent: {
     id: "agent",
-    make: () => agentBridge(),
-    // Its `title`, not its text: a role-less <span> takes no name from content
-    // (see the exemption below), so `title` is the only thing left naming it.
-    names: [
-      'Agent bridge on __DEV_TOOLBAR__.instances["default"] — reads state only (allowRun is off)',
-    ],
+    // With an icon, which is the only configuration in which this extension
+    // puts a *named node* in the bar: without one its trigger is a role-less
+    // <span> named by its `title`, pinned in the extension's own suite.
+    make: () => agentBridge({ presentation: { icon: <svg viewBox="0 0 16 16" /> } }),
+    names: ["Agent"],
   },
   "command-menu": {
     id: "command-menu",
@@ -229,12 +234,6 @@ describe("first-party bar presentation", () => {
         const { toolbar } = mount();
         const controls = barControls(toolbar.item(id) as HTMLElement).filter(isControl);
 
-        // See the exemptions in the docblock. Delete this branch — do not
-        // extend it — when phase 5 gives agent role="img" + aria-label.
-        if (id === "agent") {
-          expect(controls).toEqual([]);
-          return;
-        }
         expect(controls.length, `${id} rendered no bar control`).toBeGreaterThan(0);
         expectNamedIndependently(controls, id);
       });
@@ -265,9 +264,9 @@ describe("first-party bar presentation", () => {
           .filter(isControl)
           .filter((control) => !isMetricsOverflowRow(control));
 
-        // See the exemptions in the docblock. Delete this branch — do not
-        // extend it — when phase 5 gives agent role="img" + aria-label.
-        if (id === "agent" || id === "metrics") {
+        // See the exemption in the docblock: metrics' `⋮` rows are content-named
+        // on purpose, and they are all it renders there.
+        if (id === "metrics") {
           expect(controls).toEqual([]);
           return;
         }
