@@ -24,6 +24,7 @@
 import { useEffect } from "react";
 import {
   ensureKitStyles,
+  hasPaintableIcon,
   renderCompactParts,
   resolveAccessibleName,
   resolveIcon,
@@ -284,11 +285,14 @@ export function agentBridge(options: AgentBridgeOptions = {}): DevToolbarExtensi
 
     compact: ({ isOverflowed, styleNonce }) => {
       const icon = resolveIcon(presentation.icon, view);
-      // The same `undefined | null` guard the kit `Chip` applies to its slots,
+      // Kit's one emptiness rule — `false`, `true`, `null`, `undefined` and
+      // `""` are all "no icon", because React paints nothing for any of them —
       // and the reason this is a branch rather than a parts table: with no icon
       // the chip is the span it has always been, down to the byte — no role, no
       // `aria-label`, and the label as a bare text child rather than wrapped.
-      if (icon === undefined || icon === null) {
+      // So `icon: (view) => view.busy && <Spinner />` returns to that span when
+      // it declines, rather than to a `role="img"` chip with nothing in it.
+      if (!hasPaintableIcon(icon)) {
         return (
           <span data-dtb-part="trigger" data-dtb-agent-mode={agentMode} title={title}>
             {label}

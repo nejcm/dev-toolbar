@@ -12,6 +12,7 @@ import {
   renderCompactParts,
   resolveAccessibleName,
   resolveCompactControl,
+  resolveNameOverride,
   useExtensionSurface,
 } from "@nejcm/dev-toolbar/kit";
 import type {
@@ -36,13 +37,16 @@ import type { CollectorId, MetricView, MetricsSnapshot } from "./types";
  * `resolveCompactControl` and `renderCompact`, so the `hasIcon` guard, the
  * `"default"` fallback, the `CompactRenderContext` and the `undefined`
  * fall-through live in one place for all nine extensions rather than nine.
- * What stays here is the DOM: a consumer's `render` supplies the children of
- * the element carrying that metric's `data-dtb-metric` and
- * `data-dtb-severity` — the chip in the bar, the row `<button>` in the `⋮`
- * menu — so no callback can cost a control its state attributes. In the bar
- * that also keeps the chip's dot, which in a `⋮` row lives inside the replaced
- * content and so is the callback's to paint (it is in `ctx.fallback`). Both
- * halves are pinned in `__tests__/presentation.test.tsx`.
+ * What stays here is the DOM: a consumer's `render` supplies the *chip's*
+ * children in both places, so the element carrying that metric's
+ * `data-dtb-metric` and `data-dtb-severity`, the chip and its severity dot all
+ * sit outside the callback's reach — in the `⋮` menu exactly as in the bar and
+ * in the five Group A chips. A preset changes text, not state, and neither does
+ * a callback (ADR-004). The `⋮` row's value span keeps the *position* it has
+ * always had, outside the chip — but not the painting: `render` owns icon, text
+ * and value in both places, so the row drops the span when a callback painted,
+ * exactly as the bar does by having the span inside the chip. Pinned in
+ * `__tests__/presentation.test.tsx`.
  */
 
 /**
@@ -135,28 +139,26 @@ export function MetricsChips({
             isOverflowed: true,
             defaults: DEFAULTS,
           });
-          const fallback = (
-            <>
-              <Chip
-                severity={view.severity}
-                data-dtb-part="metrics-chip"
-                dotProps={{ "data-dtb-part": "metrics-dot" }}
-              >
-                {iconAndText(view, control.parts, control.icon)}
-              </Chip>
-              {/* Attribute order is what this row shipped with, which is not the
-                  bar chip's order below — both are pinned as literal strings in
-                  `__tests__/presentation.test.tsx`. */}
-              {control.parts.value ? (
-                <span
-                  data-dtb-part="metrics-value"
-                  data-dtb-kind="value"
-                  data-dtb-severity={view.severity}
-                >
-                  {view.display}
-                </span>
-              ) : null}
-            </>
+          // One text override per row, not one per trigger: the bar button is
+          // one control naming N metrics, a `⋮` row *is* one metric. A row
+          // carries no `aria-label` of its own — it is named by its content, and
+          // ADR-004 leaves naming these rows outright a separate, open decision
+          // — so this writes the attribute only when the consumer supplied a
+          // name that says something, and writes nothing otherwise.
+          const rowName = resolveNameOverride(presentation.name, view);
+          const fallback = iconAndText(view, control.parts, control.icon);
+          // Invoked once, above the tree, because the value span below has to
+          // know whether it ran. `renderCompact` returns *this* `fallback`
+          // reference — not a copy — when there is no callback and when the
+          // callback returned `undefined`, so `=== fallback` is exactly "the
+          // consumer did not paint here". A callback that deliberately returns
+          // `ctx.fallback` lands in the same branch, which is what it asked for:
+          // "paint what the preset would have".
+          const rendered = renderCompact(
+            presentation,
+            view,
+            { icon: control.icon, isOverflowed: true, isPanelOpen },
+            fallback,
           );
           return (
             <button
@@ -165,15 +167,43 @@ export function MetricsChips({
               data-dtb-part="metrics-overflow-row"
               data-dtb-metric={id}
               data-dtb-severity={view.severity}
+              {...(rowName === undefined ? {} : { "aria-label": rowName })}
               onClick={onToggle}
               title={view.hint}
             >
-              {renderCompact(
-                presentation,
-                view,
-                { icon: control.icon, isOverflowed: true, isPanelOpen },
-                fallback,
-              )}
+              {/* The chip and its dot sit outside the callback's reach, exactly
+                  as they do in the bar and in the five Group A chips: the dot is
+                  severity — state, not text — and a preset changes text, not
+                  state (ADR-004). So `render` supplies the chip's *children*
+                  here, which is the icon and the text. */}
+              <Chip
+                severity={view.severity}
+                data-dtb-part="metrics-chip"
+                dotProps={{ "data-dtb-part": "metrics-dot" }}
+              >
+                {rendered}
+              </Chip>
+              {/* Outside the chip, as this row has always shipped — the chip is
+                  where the dot and the severity attributes live, and those are
+                  not a callback's to lose. But `render` still owns the icon, the
+                  text *and* the value, here as in the bar: the bar's value span
+                  sits inside the chip and so is replaced, and a row that painted
+                  it anyway would duplicate the readout for the most ordinary
+                  callback there is — `render: (m) => <b>{m.display} used</b>`
+                  reads "48 MB used48 MB". So the span is the preset's to drop
+                  and the callback's to replace, and it paints only when
+                  `renderCompact` fell through to the fallback. Attribute order
+                  is this row's own, not the bar chip's below; both are pinned as
+                  literal strings in `__tests__/presentation.test.tsx`. */}
+              {control.parts.value && rendered === fallback ? (
+                <span
+                  data-dtb-part="metrics-value"
+                  data-dtb-kind="value"
+                  data-dtb-severity={view.severity}
+                >
+                  {view.display}
+                </span>
+              ) : null}
             </button>
           );
         })}

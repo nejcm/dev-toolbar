@@ -6,6 +6,7 @@ export {
   EmptyState,
   Field,
   Glyph,
+  hasPaintableIcon,
   Note,
   Row,
   Rows,
@@ -61,6 +62,7 @@ export {
   resolveCompactControl,
   resolveCompactParts,
   resolveIcon,
+  resolveNameOverride,
   resolvePresentation,
 } from "./presentation";
 export type {

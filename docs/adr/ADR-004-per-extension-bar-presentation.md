@@ -120,19 +120,50 @@ their output in one of two locations is a worse surprise than a documented sharp
 
 The residual harm is **not** bounded to "only visually bare", and an earlier draft of
 this record said it was. A menu row keeps the element the extension gave it — its
-`<button>`, its `onClick` and its `title` — but not every row carries an
-`aria-label`: `/ext/metrics`' per-metric `⋮` rows are named by their content, with
-`title` as the fallback, because a row named after the metric alone would replace the
-announced *"Memory 48 MB"* with *"Memory"*. So a callback that paints no text in the
-menu leaves that row named by its `title` and nothing else — the weak fallback the
-accessible-names step removed from the four unnamed triggers, reintroduced by consumer
-choice on one row. Naming those rows outright is a separate decision, **left open**: it
-would change the default DOM and the announced name for every user under `"default"` —
-*"Memory 48 MB"* becomes whatever is chosen — to cure an edge a consumer has to opt into,
-so it belongs in a step with its own e2e rather than this one. What this change ships
-instead is documentation: `docs/kit.md` names the edge and gives `ctx.isOverflowed` as
-the escape hatch, under
+`<button>`, its `onClick`, its `title`, and (as the paragraph below now records) its
+chip and its severity dot — but no row carries an `aria-label` **of its own**:
+`/ext/metrics`' per-metric `⋮` rows are named by their content, with `title` as the
+fallback, because a row named after the metric alone would replace the announced
+*"Memory 48 MB"* with *"Memory"*. So a callback that paints no text in the menu leaves
+that row named by its `title` and nothing else — the weak fallback the accessible-names
+step removed from the four unnamed triggers, reintroduced by consumer choice on one row.
+Naming those rows **by default** is a separate decision, **left open**: it would change
+the default DOM and the announced name for every user under `"default"` — *"Memory 48
+MB"* becomes whatever is chosen — to cure an edge a consumer has to opt into, so it
+belongs in a step with its own e2e rather than this one. What a consumer's **own** `name`
+says is a different question, and it is honoured: the override reaches each `⋮` row,
+resolved against that row's own metric, and a row with no usable override is left with no
+`aria-label` at all rather than an empty one. Losing an explicitly supplied name the
+moment a control collapses would have been a defect, not an open decision. What this
+change ships for the default case instead is documentation: `docs/kit.md` names the edge
+and gives `ctx.isOverflowed` as the escape hatch, under
 [`render`, and what it may not take](../kit.md#render-and-what-it-may-not-take).
+
+### The chip and its dot are outside `render` in the `⋮` menu too
+
+`/ext/metrics`' overflow row first shipped with the whole `Chip` — its
+`data-dtb-part="metrics-chip"` and its `metrics-dot` — *inside* the content a callback
+replaces, so a `render` removed the severity dot there while the bar kept it. That was
+accepted when metrics was the only converted extension and read as the model. It is not:
+the other eight put the dot and the state attributes outside the callback's reach, and
+**a preset changes text, not state** is this record's own invariant. With eight built the
+other way the inconsistency was the defect, so the row now hands `render` the *chip's
+children*, exactly as the bar and the five Group A chips do.
+
+The row's value span keeps the *position* it has always had — outside the chip, so the
+dot and the severity attributes are out of the callback's reach — but it is not outside
+`render`. **`render` owns the icon, the text and the value, in both places.** An earlier
+pass left the span painted unconditionally, which the bar does not do (its value span
+sits inside the chip, and a callback replaces it), and the asymmetry landed on the most
+ordinary callback there is: `render: (m) => <b>{m.display} used</b>` painted `48 MB used`
+in the bar and `48 MB used48 MB` in the menu. So the row paints the span only when
+`renderCompact` fell through to the fallback — no callback, or one that returned
+`undefined` or `ctx.fallback` — which restores `docs/kit.md`'s promise of "full control
+over the control's children" in the one place it did not hold. It is still the preset's
+to drop.
+
+No default-path byte moved: the literals in
+`src/ext/metrics/__tests__/presentation.test.tsx` pass unchanged.
 
 Reversing the deviation itself — ignoring `render` when overflowed — is a two-line
 change if the guarantee is later preferred over the consistency.
@@ -162,6 +193,14 @@ The count is measured, not predicted: the expected first-party importer count is
 and kit's admission bar is "three users, or a third party asking". If no third party
 asks, removal stays a live option — and because that is the standing reason, it belongs
 here rather than in a comment in `src/ext/a11y/ui.tsx`.
+
+Being third-party surface is why the slot's guard was moved onto `hasPaintableIcon`
+rather than left as the `undefined | null` presence test the two *text* slots keep. No
+first-party output moves — there are no first-party callers — but the third party this
+slot exists for is exactly the author who writes `icon={cond && <I />}`, and a presence
+test would call that `false` an icon and paint the empty `Glyph` the emptiness rule was
+written to prevent. `label` and `value` stay presence-tested: they are text a site
+passes explicitly, not an expression a consumer guards.
 
 ### Alternatives considered
 

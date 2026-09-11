@@ -310,7 +310,17 @@ What is specific to this extension:
   forces the *text* on, never the value, so a menu row reads `Memory` where the default
   reads `Memory 53 MB`. Use `"icon-value"` to keep the number in both places.
 - **`data-dtb-metric`, `data-dtb-severity` and the chip's dot never depend on the
-  preset.** A preset changes text, not state.
+  preset** — nor on a `render` callback, in the bar and in the `⋮` menu alike. A
+  callback supplies the chip's *children*; the row's value span sits outside the chip so
+  the dot and the state attributes stay out of its reach, but `render` still owns icon,
+  text **and** value in both places — the row drops the span when a callback painted, so
+  `render: (m) => <b>{m.display} used</b>` does not read `48 MB used48 MB` there. It is
+  still the preset's to drop. A preset changes text, not state.
+- **The accessible-name override is per control, and it reaches the `⋮` rows.** The bar
+  button is one control naming N metrics, so it resolves `name` against the first metric
+  in bar order; each `⋮` row is one metric and resolves against its own. A row with no
+  usable override keeps no `aria-label` at all — those rows are named by their content
+  today.
 
 ---
 

@@ -559,6 +559,33 @@ describe("the back-compat string icon", () => {
     expect(button.textContent).toBe("");
   });
 
+  it.each([
+    ["false, from a && guard", false],
+    ["true", true],
+    ["an empty string", ""],
+  ])("fills the slot when a rich icon declines with %s", (_name, value) => {
+    // One rule, both suppliers. "Declines" is `hasPaintableIcon`, so a rich
+    // `icon: (v) => v.overridden && <I />` returning `false` falls back to the
+    // legacy glyph exactly as `undefined` does — rather than blocking the
+    // fallback *and* counting as an icon, which would have painted an empty
+    // span and suppressed guarantee 1 under `preset: "icon"`.
+    const button = promotedOf(
+      barItem(
+        promotedWith(
+          "checkout.tier",
+          { preset: "icon", icon: () => value as never },
+          { icon: "A" },
+        ),
+      ),
+      "checkout.tier",
+    );
+    expect(promotedText(button)).toBeNull();
+    expect(countIn(button, '[data-dtb-part="flag-promoted-icon"]')).toBe(0);
+    expect(
+      button.querySelector(":scope > span[aria-hidden]:not([data-dtb-part])")?.textContent,
+    ).toBe("A");
+  });
+
   it('does not fill the icon slot with "", which would leave the control blank', () => {
     // The other half of the same rule. `""` is not an icon, so `hasIcon` is
     // false and kit's guarantee 1 fires: an icon-only preset with no icon

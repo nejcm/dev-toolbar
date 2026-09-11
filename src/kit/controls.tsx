@@ -65,6 +65,43 @@ export const Glyph = forwardRef<HTMLSpanElement, GlyphProps>(function Glyph(
 });
 
 /**
+ * Whether a resolved icon is one of the **primitives React paints nothing
+ * for** — `false`, `true`, `null`, `undefined` and `""`.
+ *
+ * **The one rule**, and the reason it is a function rather than an inline
+ * `!== undefined && !== null` at each of the five sites that need it: a
+ * presence test that only rejects the middle two calls the first, fourth and
+ * fifth an icon. That is not a cosmetic mistake — it is the hole guarantee 1
+ * exists to close. `icon: (view) => view.enabled && <Icon />` is an ordinary
+ * callback that returns `false` for a disabled control, and under
+ * `preset: "icon"` a truthy `hasIcon` then suppresses the text *and* paints an
+ * empty `<span data-dtb-kind="glyph">`, leaving a control that is blank but for
+ * its dot and still eating a `gap`.
+ *
+ * `0` is deliberately **paintable**: React renders it as the character `0`, and
+ * a numeric badge is a legitimate icon. So this is emptiness, not falsiness.
+ *
+ * **Not every icon that paints nothing is caught, and none can be.** A *node*
+ * is an icon here: `[]`, `<></>` and `[null]` all answer `true` and produce the
+ * blank glyph above, as does `<Badges />` when that component returns `null` —
+ * and the last of those is undecidable without rendering it, which a value test
+ * cannot do. So the line is drawn where a value test can see: the five
+ * primitives, and nothing deeper. Half-recursing into arrays and fragments
+ * would move the boundary without reaching it and would make `[]` and `[null]`
+ * disagree for no reason a consumer could predict; `icon: () => undefined` is
+ * the supported way to say "no icon here", and every preset but `"icon"` still
+ * has its text or value to paint regardless.
+ *
+ * `/ext/flags` reaches the same answer from the other direction: its legacy
+ * `PromotedFlag.icon` is a `string | undefined` it has always painted on
+ * truthiness, so `""` has never been an icon there either. Over that type the
+ * two rules agree exactly, which is what lets that call site read this one.
+ */
+export function hasPaintableIcon(icon: ReactNode): boolean {
+  return icon !== undefined && icon !== null && icon !== false && icon !== true && icon !== "";
+}
+
+/**
  * Props for a bar chip: a decorative dot, an optional icon, an optional label
  * and an optional value.
  */
@@ -76,8 +113,18 @@ export interface ChipProps extends SpanProps {
    */
   label?: ReactNode;
   /**
-   * A consumer-supplied icon, rendered after the dot inside a `Glyph`. Same
-   * `undefined | null` guard, for the same gap reason.
+   * A consumer-supplied icon, rendered after the dot inside a `Glyph`.
+   *
+   * Guarded by `hasPaintableIcon` rather than by the presence test the two text
+   * slots use, and the difference is the slot's audience: `label` and `value`
+   * are text a site passes explicitly, while an icon is what a consumer writes
+   * `icon={enabled && <I />}` for (ADR-004 records this slot as third-party
+   * surface). That expression is `false` half the time, and a presence test
+   * would call it an icon and paint an empty `Glyph` that still eats the gap —
+   * the same hole the `presentation` vocabulary's guarantee 1 exists to close,
+   * reached here through the same one rule. Note the rule is the five
+   * primitives React paints nothing for and nothing deeper: `icon={[]}` is a
+   * node, and still paints the empty `Glyph`.
    */
   icon?: ReactNode;
   /** Props for the icon's `Glyph` wrapper. */
@@ -125,7 +172,7 @@ export const Chip = forwardRef<HTMLSpanElement, ChipProps>(function Chip(
   return (
     <span {...rest} ref={ref} data-dtb-kind="chip">
       <span data-dtb-kind="dot" data-dtb-severity={severity} aria-hidden="true" {...dotProps} />
-      {icon === undefined || icon === null ? null : <Glyph {...iconProps}>{icon}</Glyph>}
+      {hasPaintableIcon(icon) ? <Glyph {...iconProps}>{icon}</Glyph> : null}
       {label === undefined || label === null ? null : <span {...labelProps}>{label}</span>}
       {value === undefined || value === null ? null : (
         <span data-dtb-kind="value" data-dtb-severity={severity} {...valueProps}>

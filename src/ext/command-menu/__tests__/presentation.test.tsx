@@ -178,6 +178,19 @@ describe("a function icon", () => {
       `${OPEN}${CMD_HTML}${HINT}</button>`,
     );
   });
+
+  // Kit's one emptiness rule, not a presence test: `icon: (s) => s.open && <X />`
+  // is an ordinary callback and it returns `false`, which React paints nothing
+  // for. Accepting it would have replaced the `⌘` with an empty glyph.
+  it.each([
+    ["false, from a && guard", false],
+    ["true", true],
+    ["an empty string", ""],
+  ])("returning %s leaves the ⌘ in place", (_name, value) => {
+    expect(barTrigger({ presentation: { icon: () => value as never } }).outerHTML).toBe(
+      `${OPEN}${CMD_HTML}${HINT}</button>`,
+    );
+  });
 });
 
 describe("a name override", () => {

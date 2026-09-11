@@ -10,6 +10,7 @@ import {
   Select,
   Tag,
   TextInput,
+  hasPaintableIcon,
   renderCompact,
   renderCompactParts,
   resolveAccessibleName,
@@ -184,15 +185,17 @@ function PromotedControl({
   // also what lets `hasIcon` — and so the "an icon-only preset with no icon
   // paints text" guarantee — see the string glyph at all.
   const rich = resolveIcon(presentation.icon, view);
-  // Truthiness, not presence — this control has painted the glyph on
-  // `view.promotedIcon ? … : null` since it existed, so `icon: ""` has always
-  // painted *nothing*. Testing `!== undefined` instead would give `""` a slot:
-  // an empty `<span aria-hidden="true">` that still eats a `gap` in the bar,
-  // and — worse — a truthy `hasIcon` under `preset: "icon"`, which suppresses
-  // kit's guarantee 1 and leaves the control blank but for its dot. An empty
-  // string is not an icon.
+  // Both halves are kit's one emptiness rule, `hasPaintableIcon` — every node
+  // React paints nothing for, `""` and `false` included. Over the legacy
+  // glyph's `string | undefined` that is exactly the truthiness this control
+  // has always applied (`view.promotedIcon ? … : null` since it existed), so
+  // `icon: ""` still paints nothing rather than getting a slot: an empty
+  // `<span aria-hidden="true">` that eats a `gap`, and — worse — a truthy
+  // `hasIcon` under `preset: "icon"`, which would suppress kit's guarantee 1
+  // and leave the control blank but for its dot. An empty string is not an
+  // icon, and neither is `false`.
   const legacy =
-    (rich === undefined || rich === null) && view.promotedIcon ? view.promotedIcon : undefined;
+    !hasPaintableIcon(rich) && hasPaintableIcon(view.promotedIcon) ? view.promotedIcon : undefined;
   // The already-resolved node goes back in, so a function `icon` is invoked
   // once per control rather than twice.
   const control = resolveCompactControl({ ...presentation, icon: legacy ?? rich }, view, {

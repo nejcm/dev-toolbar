@@ -67,4 +67,7 @@ the factory closure and travel as props.
 `__tests__/` covers each collector in isolation, the runtime's scheduling, the
 network commands, the cURL formatter and the documented examples.
 `presentation.test.tsx` pins the default bar and `⋮` markup as literal strings,
-every preset in both places, and the three callbacks.
+every preset in both places, the three callbacks, the emptiness rule that keeps
+`icon: (v) => v.on && <I />` from painting a blank chip, and that a callback
+which throws degrades only this extension's slot — the bar and its neighbours
+survive, because every slot renders beneath the shell's `ExtensionBoundary`.

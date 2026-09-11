@@ -3,6 +3,7 @@ import type { KeyboardEvent as ReactKeyboardEvent, ReactNode } from "react";
 import {
   EmptyState,
   Glyph,
+  hasPaintableIcon,
   resolveAccessibleName,
   resolveIcon,
   useExtensionSurface,
@@ -60,9 +61,12 @@ export function CommandMenuTrigger({
   const hint = describeHotkey(runtime.shortcut, apple);
   const keyshortcuts = ariaKeyshortcuts(runtime.shortcut, apple);
   const icon = resolveIcon(presentation.icon, snapshot);
-  // The kit `Chip`'s slot guard: a function `icon` that returns nothing for
-  // this render leaves the hardcoded symbol in place rather than a gap.
-  const hasIcon = icon !== undefined && icon !== null;
+  // Kit's one emptiness rule: a function `icon` that returns nothing for this
+  // render leaves the hardcoded symbol in place rather than a gap — and
+  // "nothing" is every node React paints nothing for, so
+  // `icon: (s) => s.open && <X />` falls back to the `⌘` rather than to an
+  // empty glyph where the symbol used to be.
+  const hasIcon = hasPaintableIcon(icon);
 
   return (
     <button

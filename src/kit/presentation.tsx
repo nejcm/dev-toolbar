@@ -18,7 +18,7 @@
  * its rejected alternatives are `docs/adr/ADR-004-per-extension-bar-presentation.md`.
  */
 import type { ReactNode } from "react";
-import { Glyph } from "./controls";
+import { Glyph, hasPaintableIcon } from "./controls";
 import type { SpanProps } from "./controls";
 
 /**
@@ -152,7 +152,9 @@ export interface CompactPartsOptions {
  *
  * 1. **An icon-only preset with no icon supplied paints text.** A blank control
  *    is worse than an unstyled one. Only `"icon"` needs this: the other
- *    icon-bearing presets still have their text or value to paint.
+ *    icon-bearing presets still have their text or value to paint. "No icon"
+ *    is `hasPaintableIcon`'s answer — `false` and `""` are as absent as
+ *    `undefined`, since React paints nothing for any of them.
  * 2. **The `⋮` menu always paints `"full"` text.** The same reasoning `/ext/a11y`
  *    already applies by hand. It holds for every preset by construction; it is
  *    deliberately *not* enforced for `render`, which is honoured in both places
@@ -245,10 +247,11 @@ export interface CompactControl {
  * One control's icon and parts, with the `hasIcon` guard and the
  * `"default"` fallback in one place.
  *
- * The guard is the same `undefined | null` test the kit `Chip` applies to its
- * slots, and it has to happen here rather than in `resolveCompactParts`: a
- * function `icon` can return nothing for one control and a node for the next,
- * so guarantee 1 applies per control, not per extension.
+ * The guard is `hasPaintableIcon` — every node React paints nothing for, `""`
+ * and `false` included — and it has to happen here rather than in
+ * `resolveCompactParts`: a function `icon` can return nothing for one control
+ * and a node for the next, so guarantee 1 applies per control, not per
+ * extension.
  *
  * The other half of the point is `defaults`: `resolveCompactParts` answers
  * `null` for `"default"`, and every caller then owes the same
@@ -271,7 +274,7 @@ export function resolveCompactControl<TView>(
   { isOverflowed, defaults }: CompactControlOptions,
 ): CompactControl {
   const icon = resolveIcon(presentation.icon, view);
-  const hasIcon = icon !== undefined && icon !== null;
+  const hasIcon = hasPaintableIcon(icon);
   const parts = resolveCompactParts(presentation.preset, { hasIcon, isOverflowed });
   const chosen = parts ?? (isOverflowed ? defaults.overflow : defaults.bar);
   return { icon, parts: chosen.icon && !hasIcon ? { ...chosen, icon: false } : chosen };
@@ -396,6 +399,29 @@ export function renderCompact<TView>(
 }
 
 /**
+ * The `name` override, when there is one that says something — `undefined`
+ * otherwise.
+ *
+ * The whitespace rule lives here so that the two callers cannot drift on it:
+ * `resolveAccessibleName` below, which has an extension-supplied name to fall
+ * back to, and a control that has **none** and must therefore write no
+ * `aria-label` at all rather than an empty one. `/ext/metrics`' `⋮` rows are
+ * that second case: they are named by their content today, and ADR-004 leaves
+ * naming them outright a separate, open decision — but a consumer who supplies
+ * one should not lose it the moment the control collapses.
+ */
+export function resolveNameOverride<TView>(
+  name: ((data: TView) => string) | undefined,
+  data: TView,
+): string | undefined {
+  if (name === undefined) {
+    return undefined;
+  }
+  const overridden = name(data);
+  return overridden.trim() === "" ? undefined : overridden;
+}
+
+/**
  * The control's accessible name: the override when it says something, the
  * extension's own name otherwise.
  *
@@ -408,9 +434,5 @@ export function resolveAccessibleName<TView>(
   data: TView,
   fallback: string,
 ): string {
-  if (name === undefined) {
-    return fallback;
-  }
-  const overridden = name(data);
-  return overridden.trim() === "" ? fallback : overridden;
+  return resolveNameOverride(name, data) ?? fallback;
 }

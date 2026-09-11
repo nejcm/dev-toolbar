@@ -231,6 +231,17 @@ describe("a function icon", () => {
   it("returning null leaves the chip exactly as it was", () => {
     expect(barChip({ presentation: { icon: () => null } }).outerHTML).toBe(DEFAULT_CHIP);
   });
+
+  // Kit's one emptiness rule, not a presence test. Accepting `false` would have
+  // given this chip `role="img"` and an `aria-label` around an empty glyph —
+  // an image named "Agent" that is not there.
+  it.each([
+    ["false, from a && guard", false],
+    ["true", true],
+    ["an empty string", ""],
+  ])("returning %s leaves the chip exactly as it was", (_name, value) => {
+    expect(barChip({ presentation: { icon: () => value as never } }).outerHTML).toBe(DEFAULT_CHIP);
+  });
 });
 
 describe("a name override", () => {

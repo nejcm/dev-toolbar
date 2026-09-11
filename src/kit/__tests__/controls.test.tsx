@@ -8,6 +8,7 @@ import {
   EmptyState,
   Field,
   Glyph,
+  hasPaintableIcon,
   Note,
   Row,
   Rows,
@@ -144,6 +145,24 @@ describe("Chip", () => {
     expect(chip.querySelector('[data-dtb-kind="glyph"]')).toBeNull();
     expect(chip.children).toHaveLength(2);
   });
+
+  // The icon slot reads kit's one emptiness rule rather than the presence test
+  // the two text slots use, because `icon={enabled && <I />}` is how a consumer
+  // writes it and that expression is `false` half the time. A presence test
+  // would paint an empty `Glyph` that still eats the chip's gap.
+  it.each([false, true, ""])("takes %p as no icon at all, not as an icon", (icon) => {
+    const { container } = render(<Chip icon={icon} label="metrics" />);
+
+    expect(container.querySelector('[data-dtb-kind="glyph"]')).toBeNull();
+  });
+
+  // Emptiness, not falsiness: React paints `0` as the character, and a numeric
+  // badge is a legitimate icon.
+  it("paints 0 as an icon", () => {
+    const { container } = render(<Chip icon={0} label="metrics" />);
+
+    expect(container.querySelector('[data-dtb-kind="glyph"]')?.textContent).toBe("0");
+  });
 });
 
 describe("Glyph", () => {
@@ -170,6 +189,38 @@ describe("Glyph", () => {
     );
 
     expect(getByRole("img", { name: "memory" }).getAttribute("data-dtb-kind")).toBe("glyph");
+  });
+});
+
+describe("hasPaintableIcon", () => {
+  // Emptiness, not falsiness. The five below are every *primitive* React paints
+  // nothing for; `0` is a node that paints the character `0`, and a numeric
+  // badge is a legitimate icon, so a truthiness test would be wrong.
+  it.each([[undefined], [null], [false], [true], [""]])("%j is not an icon", (empty) => {
+    expect(hasPaintableIcon(empty)).toBe(false);
+  });
+
+  it.each([[0], ["*"], ["0"], [NaN]])("%j is an icon", (node) => {
+    expect(hasPaintableIcon(node)).toBe(true);
+  });
+
+  // The boundary, pinned so the docs' claim stays the narrow one. A node that
+  // happens to paint nothing is still an icon here: an empty array is the
+  // readable case, and a component returning `null` is the case no value test
+  // could ever reach without rendering it. Recursing halfway would move the
+  // line without reaching it, so it is drawn at the primitives above —
+  // `icon: () => undefined` is how a consumer says "no icon for this one".
+  it.each([[[]], [[null]], [[undefined, false]]])("%j is a node, so it counts", (node) => {
+    expect(hasPaintableIcon(node)).toBe(true);
+  });
+
+  it("agrees with truthiness over the legacy glyph's string | undefined", () => {
+    // `/ext/flags` has painted `PromotedFlag.icon` on truthiness since it
+    // existed. Over that type the two rules must be the same rule, which is
+    // what lets that call site read this one without moving a byte.
+    for (const glyph of [undefined, "", "★", " "]) {
+      expect(hasPaintableIcon(glyph)).toBe(Boolean(glyph));
+    }
   });
 });
 

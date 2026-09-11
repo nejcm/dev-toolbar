@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { hasPaintableIcon } from "../controls";
 import type {
   CompactDefaults,
   CompactParts,
@@ -12,6 +13,7 @@ import {
   resolveCompactControl,
   resolveCompactParts,
   resolveIcon,
+  resolveNameOverride,
   resolvePresentation,
 } from "../presentation";
 
@@ -154,6 +156,20 @@ describe("resolveIcon", () => {
   });
 });
 
+describe("resolveNameOverride", () => {
+  it("is absent when unconfigured, so a control can write no attribute at all", () => {
+    expect(resolveNameOverride<number>(undefined, 1)).toBeUndefined();
+  });
+
+  it("returns the override when it says something", () => {
+    expect(resolveNameOverride<number>((value) => `Memory ${value}`, 3)).toBe("Memory 3");
+  });
+
+  it.each(["", " ", "\t\n "])("treats the whitespace-only override %j as absent", (blank) => {
+    expect(resolveNameOverride<number>(() => blank, 1)).toBeUndefined();
+  });
+});
+
 describe("resolveAccessibleName", () => {
   it("keeps the extension's own name when unconfigured", () => {
     expect(resolveAccessibleName<number>(undefined, 1, "Metrics")).toBe("Metrics");
@@ -193,10 +209,17 @@ describe("resolveCompactControl", () => {
     expect(control.parts).toEqual({ icon: true, text: "none", value: true });
   });
 
+  // Everything React paints nothing for — `hasPaintableIcon`'s rule, per
+  // control. `false` is the one that matters most: `icon: (v) => v.on && <I />`
+  // is an ordinary callback, and it returns `false`, not `undefined`.
   const NO_ICON: readonly [string, CompactPresentation<number>["icon"]][] = [
     ["an absent icon", undefined],
     ["an icon a function declined to supply", () => undefined],
     ["a null icon", null],
+    ["false, from a && guard", false],
+    ["a function returning false", () => false],
+    ["true", true],
+    ["an empty string", ""],
   ];
 
   it.each(NO_ICON)("applies guarantee 1 per control, given %s", (_case, icon) => {
@@ -205,7 +228,7 @@ describe("resolveCompactControl", () => {
       defaults: DEFAULTS,
     });
 
-    // The `undefined | null` guard is here rather than in `resolveCompactParts`
+    // The `hasPaintableIcon` guard is here rather than in `resolveCompactParts`
     // because a function icon can decline for one control and supply for the
     // next, so `hasIcon` is per control.
     expect(control.parts).toEqual({ icon: false, text: "short", value: false });
@@ -246,7 +269,7 @@ describe("resolveCompactControl", () => {
         defaults: DEFAULTS,
       });
 
-      expect(control.icon == null).toBe(true);
+      expect(hasPaintableIcon(control.icon)).toBe(false);
       expect(control.parts).toEqual({ ...DEFAULTS.overflow, icon: false });
       // The rest of the extension's own tree is untouched: the clause only ever
       // turns a `true` into `false`, so defaults naming no icon slot cannot move.

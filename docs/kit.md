@@ -97,7 +97,7 @@ of the exact kit specifier, not same-name locals:
 | Copy actions | `CopyButton`: 2; `useCopyStatus`: 2 | `CopyButton` owns the button/status-region pairing. `useCopyStatus` is the shared status state for panels with several copy buttons. |
 | Filtering | `matchesQuery`: 2 | It is the string-level predicate shared by the flags and theme-editor view wrappers. |
 | Labelled control | `Field`: 1 | It names the wrapping-label pattern that associates a control without generating or synchronising an `id`. |
-| Bar presentation | `resolvePresentation`: 9; `resolveAccessibleName`: 9; `renderCompactParts`: 8; `resolveCompactControl`: 7; `renderCompact`: 7; `resolveIcon`: 3; `Glyph`: 1; `resolveCompactParts`: 0 | Every bar control a consumer can restyle resolves its [`presentation`](#presentation) option through the same helpers, so the two guarantees — an icon-only preset with no icon paints text, and the `⋮` menu always paints full text — hold once rather than nine times. `resolvePresentation` normalises the bare-preset shorthand in the factory and `resolveAccessibleName` guards the name override, which is why those two read **9**: they are the pair every extension needs, the two that take no icon and no preset included. `resolveCompactControl` is the one a value-bearing extension calls: it composes `resolveIcon` and `resolveCompactParts`, owns the per-control `undefined \| null` icon guard, and takes the extension's own `"default"` parts as an argument, because `"default"` means *whatever this extension renders today* and that differs across the nine. `renderCompact` assembles the `CompactRenderContext` and applies the `undefined` fall-through, which is precisely what seven copies would drift on. Both read **7** rather than 9 because `/ext/agent` and `/ext/command-menu` take [the narrowed two-knob option](#the-narrowed-option-agent-and-command-menu) — no presets to resolve, no callback to invoke. `renderCompactParts` paints the icon and the text — the one function here that renders anything — and it reads **8**: the seven plus agent, which is icon-and-text without being preset-driven. It was promoted only after six extensions had written the same fragment by hand, which is the *three users* bar met twice over rather than a shape predicted for them. `resolveIcon` reads **3** — the three sites that resolve an icon without going through `resolveCompactControl`: command-menu and agent, which have no parts to resolve, and `/ext/flags`, which resolves the rich icon first so it can fall back to the legacy `PromotedFlag.icon` string. `Glyph` reads **1** and did not fall: it read 6 until `renderCompactParts` took the wrapper over, and what is left is `/ext/command-menu`, whose trigger is hand-written and paints an icon beside a hotkey hint that is neither a short nor a full text. It stays exported because it owns the `aria-hidden` default and the direct-child clamp that keeps a 24px `<svg>` from setting the bar's height, and because `Chip`'s icon slot and `renderCompactParts` are both callers inside kit itself — every glyph in the bar is one of its instances whether or not an extension named it. `resolveCompactParts` finished the rollout at **0**, which the row above said was the moment to ask whether it should stay. It stays, and the count is 0 *by construction* rather than for want of adoption: `resolveCompactControl` composes it, so a first-party extension has no reason to call it directly and never will. It is the third-party half of the bar — an author whose control is not icon-plus-text-plus-value needs the truth table itself — and it is the one function carrying both guarantees, so a userland re-derivation is exactly the drift the kit exists to prevent. Removal stays a live option on the same terms `Chip`'s `icon` / `iconProps` are kept under (ADR-004): if no third party asks, it can go. |
+| Bar presentation | `resolvePresentation`: 9; `resolveAccessibleName`: 9; `renderCompactParts`: 8; `resolveCompactControl`: 7; `renderCompact`: 7; `hasPaintableIcon`: 3; `resolveIcon`: 3; `Glyph`: 1; `resolveNameOverride`: 1; `resolveCompactParts`: 0 | Every bar control a consumer can restyle resolves its [`presentation`](#presentation) option through the same helpers, so the two guarantees — an icon-only preset with no icon paints text, and the `⋮` menu always paints full text — hold once rather than nine times. `resolvePresentation` normalises the bare-preset shorthand in the factory and `resolveAccessibleName` guards the name override, which is why those two read **9**: they are the pair every extension needs, the two that take no icon and no preset included. `resolveCompactControl` is the one a value-bearing extension calls: it composes `resolveIcon` and `resolveCompactParts`, owns the per-control `hasPaintableIcon` guard, and takes the extension's own `"default"` parts as an argument, because `"default"` means *whatever this extension renders today* and that differs across the nine. `renderCompact` assembles the `CompactRenderContext` and applies the `undefined` fall-through, which is precisely what seven copies would drift on. Both read **7** rather than 9 because `/ext/agent` and `/ext/command-menu` take [the narrowed two-knob option](#the-narrowed-option-agent-and-command-menu) — no presets to resolve, no callback to invoke. `renderCompactParts` paints the icon and the text — the one function here that renders anything — and it reads **8**: the seven plus agent, which is icon-and-text without being preset-driven. It was promoted only after six extensions had written the same fragment by hand, which is the *three users* bar met twice over rather than a shape predicted for them. `resolveIcon` reads **3** — the three sites that resolve an icon without going through `resolveCompactControl`: command-menu and agent, which have no parts to resolve, and `/ext/flags`, which resolves the rich icon first so it can fall back to the legacy `PromotedFlag.icon` string. `hasPaintableIcon` reads **3** for exactly that reason: those same three then have to answer *is this an icon?* themselves, and the answer has to be the one the resolver uses — `false`, `true`, `null`, `undefined` and `""` are all empty, `0` is not — or a `&&` guard paints an empty glyph on three of the nine and nowhere else. Flags is the case that proves it is one rule rather than a lookalike: the legacy glyph is a `string | undefined` painted on truthiness since that control existed, and over that type the two rules agree byte for byte. `resolveNameOverride` reads **1** and is not expected to rise far: it is `resolveAccessibleName` without the fallback, for a control that has no name of its own and so must write no `aria-label` rather than an empty one — `/ext/metrics`' `⋮` rows, today. It exists so the whitespace rule is defined once; `resolveAccessibleName` is a one-liner over it. `Glyph` reads **1** and did not fall: it read 6 until `renderCompactParts` took the wrapper over, and what is left is `/ext/command-menu`, whose trigger is hand-written and paints an icon beside a hotkey hint that is neither a short nor a full text. It stays exported because it owns the `aria-hidden` default and the direct-child clamp that keeps a 24px `<svg>` from setting the bar's height, and because `Chip`'s icon slot and `renderCompactParts` are both callers inside kit itself — every glyph in the bar is one of its instances whether or not an extension named it. `resolveCompactParts` finished the rollout at **0**, which the row above said was the moment to ask whether it should stay. It stays, and the count is 0 *by construction* rather than for want of adoption: `resolveCompactControl` composes it, so a first-party extension has no reason to call it directly and never will. It is the third-party half of the bar — an author whose control is not icon-plus-text-plus-value needs the truth table itself — and it is the one function carrying both guarantees, so a userland re-derivation is exactly the drift the kit exists to prevent. Removal stays a live option on the same terms `Chip`'s `icon` / `iconProps` are kept under (ADR-004): if no third party asks, it can go. |
 | Live input | `isReadable`: 2; `readInput`: 2; `createSource`: 0; `derive`: 0; `useSource`: 0 | Admitted on the *third party asking* half of the bar: the first real integration hand-rolled a module-scope holder, reader functions and an effect to bridge React-owned state into `environment()` and `flags()`. `isReadable`/`readInput` are what those two runtimes use to accept the result; `createSource`, `derive` and `useSource` are the consumer's end of the same bridge and have no first-party caller by construction — no first-party extension owns app state. |
 
 One helper is admitted as an explicit exception to that bar rather than on either half
@@ -845,6 +845,25 @@ hold once rather than nine times:
    node for the next, so the guard is per control.
 2. **The `⋮` menu always paints full text** under every preset, by construction.
 
+**"No icon" means emptiness, not `undefined`.** `icon: (view) => view.enabled && <Icon />`
+is an ordinary callback, and it returns `false` for a disabled control — so `false`,
+`true`, `null`, `undefined` and `""` are all *no icon*, because React paints nothing for
+any of them. That is `hasPaintableIcon`, one exported rule that the resolver, `Chip`'s
+`icon` slot and the three hand-written controls (`/ext/agent`, `/ext/command-menu` and
+`/ext/flags`' legacy `PromotedFlag.icon` glyph) all read, so a `&&` guard falls back to
+text or to the control's own symbol rather than to an empty
+`<span data-dtb-kind="glyph">` that still eats a `gap`. **`0` is an icon**: React renders
+it as the character `0`, and a numeric badge is a legitimate one — so the rule is
+emptiness, never truthiness.
+
+The rule is those five **primitives**, and it stops there. An empty array, an empty
+fragment and `[null]` are *nodes*, so they count as an icon and still paint the blank
+glyph — as does a component that returns `null`, which no value test can detect without
+rendering it. Recursing halfway would move the boundary without reaching it, so
+`icon: () => undefined` is the supported way to say "no icon for this one", and
+`icon: (view) => view.badges.map(…)` should return `undefined` rather than `[]` when
+there is nothing to show.
+
 **Sharp edge: the menu row drops the *value* under `"icon"` and `"label"`.** The
 overflow rule forces the text on, never the value — so under `presentation: "icon"` a
 metrics row in the `⋮` menu reads `Memory` where the default reads `Memory 53 MB`. That
@@ -866,6 +885,13 @@ chip's dot, every `data-dtb-*` state attribute and the severity children an exte
 paints after the contents — diagnostics' badge, environment's `impersonating` marker,
 overlays' error tag — all stay the extension's, under every preset including `"icon"`.
 **A preset changes text, not state.**
+
+What a callback *does* own is the icon, the text and the value — the three parts a preset
+selects — wherever the control is painted. `/ext/metrics`' `⋮` row is the one place that
+takes explaining: its value span sits outside the chip rather than inside it, so the dot
+and the severity attributes are out of reach, but the span is still dropped when a
+callback painted. Otherwise `render: (m) => <b>{m.display} used</b>` would read
+`48 MB used` in the bar and `48 MB used48 MB` in the menu.
 
 ```ts
 interface CompactRenderContext {
@@ -906,7 +932,15 @@ what reversing it would cost.
 
 `name` overrides the control's `aria-label`; a whitespace-only return is ignored, so no
 override can leave an icon-only control unnamed. `title` is **not** overridable — it
-explains, it does not name.
+explains, it does not name. It is invoked **once per bar control**, exactly as `icon` and
+`render` are: `/ext/metrics`' bar button is one control naming N metrics, so it resolves
+against the first metric in bar order, while each `⋮` row *is* one metric and resolves
+against its own. A row that gets no usable override is left with **no `aria-label` at
+all** rather than an empty one — those rows are named by their content today, and whether
+they should be named outright is the open decision ADR-004 records. `resolveNameOverride`
+is the helper for a control in that position; `resolveAccessibleName` is the one for a
+control with a name of its own to fall back to, and it is defined in terms of it, so the
+whitespace rule is one rule.
 
 ### A factory option cannot be changed at runtime
 
@@ -1022,7 +1056,7 @@ compact: ({ isOverflowed, isPanelOpen, togglePanel }) => {
 ```
 
 `resolveCompactControl` is the one to reach for: it composes `resolveIcon` and
-`resolveCompactParts`, owns the `undefined | null` icon guard per control, and takes
+`resolveCompactParts`, owns the `hasPaintableIcon` guard per control, and takes
 **your** `"default"` parts as `defaults`, because `"default"` means *whatever this
 extension renders today* and the kit cannot know what that is for you. Its output
 guarantees that `parts.icon` implies a paintable icon — which is
