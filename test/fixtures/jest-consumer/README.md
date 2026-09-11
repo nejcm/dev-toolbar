@@ -52,12 +52,20 @@ dynamic-import-only load that broke every Jest consumer even with it installed.
 | `render.test.js` | The DOM-free helpers work; `renderWithToolbar()` renders **with no `setTestingLibrary()` call**; and Testing Library's `cleanup()`, called through the *test file's own* `require`, unmounts what the toolbar rendered — proving one shared registry copy rather than two instances. |
 | `shared-instance.test.js` | The main entry and `./testing` resolve to **one** core, and extensions resolve the consumer's `./kit` instance. It checks function identity, the main entry's `useDevToolbar()` inside `renderWithToolbar()`, `<DevToolbarInset>` layout, and an extension call through a spied kit export. CJS has no code splitting, so relative imports silently create duplicate module instances. Invisible to vitest, which aliases package specifiers to `src/`. |
 | `missing-rtl.test.js` | With Testing Library mocked unresolvable: the subpath still imports and the non-DOM helpers still work, and `renderWithToolbar()` throws a message naming the `require(...)` remedy and the `setupFilesAfterEnv` note — not the `await import(...)` form, which is the one thing that cannot work here. |
+| `presentation.test.js` | `presentation: "icon"` on `ext/environment` renders the consumer's own node inside the kit's `Glyph` out of `dist/*.cjs`, paints no word and no value, and keeps the chip's dot, severity and `aria-label` — the rendered half of what the vitest suite cannot see, since it aliases `/kit` to `src/`. The DOM alone proves the preset was **honoured**, not that there is one copy of the helpers: a second inlined copy would emit byte-identical DOM. Duplication is caught by the spy on `renderCompactParts`, which `dist/ext/environment.cjs` reaches through a live `require` binding. |
+| `presentation.types.ts` | Not a test — a compile. `presentation` type-checks through the **`require`** condition of the `exports` map under `moduleResolution: node16`, including the callback view types that arrive via the shared `dist/presentation-*.d.cts` chunk. Its `@ts-expect-error` lines are the point: lose that chunk and `skipLibCheck` swallows the broken import, the vocabulary widens to `any`, and `tsc` fails — the first directive reported unused, the second satisfied by an implicit-`any` parameter instead. It does *not* police the `exports` map, which `attw` covers inside `check:package`: a wrong `types` path falls back to the sibling `.d.cts` and compiles clean. |
 
 ## Running it
 
 ```bash
 bun run test:jest-consumer     # from the repo root; builds first
 ```
+
+The `test` script runs `sync-package.mjs`, then `tsc --noEmit` over
+`presentation.types.ts`, then Jest. The compiler is the **repo root's own**
+(`../../../node_modules/typescript/bin/tsc`): this fixture takes no TypeScript
+dependency of its own, and the file under `node16` resolution is precisely what
+a CommonJS consumer's compiler does with the `exports` map.
 
 It is a **standalone script, deliberately outside `bun run test`**: it needs a fresh
 `dist/`, and a second test runner inside the vitest run would confuse both.

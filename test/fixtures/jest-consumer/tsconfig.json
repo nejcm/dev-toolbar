@@ -1,0 +1,14 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "module": "node16",
+    "moduleResolution": "node16",
+    "strict": true,
+    "noEmit": true,
+    "skipLibCheck": true,
+    "noUnusedLocals": true,
+    "types": []
+  },
+  "include": ["presentation.types.ts"]
+}

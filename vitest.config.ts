@@ -52,16 +52,18 @@ export default defineConfig({
       // logic and are genuinely tested — don't exclude them without measuring
       // coverage both ways first (it previously put ~1,700 lines out of reach).
       exclude: ["src/**/*.test.{ts,tsx}", "src/test-utils/**"],
-      // Floors, not targets. Measured: statements 93.84, branches 86.40,
-      // functions 95.08, lines 96.09 — up from 93.06 / 85.26 / 93.57 / 95.38
-      // because the kit is small, densely tested code that the extensions now
-      // delegate branches to instead of carrying them individually. The floors
-      // keep roughly two to three points of room for ordinary movement while a
-      // real regression still fails the build; `branches` and `functions` are
-      // raised here to hold the gain rather than let it drain away unnoticed.
-      // `statements` already sat at that margin, so it stays. `functions` is
-      // tightest in practice — if it fires on ordinary work, add tests rather
-      // than lowering the number.
+      // Floors, not targets. Measured: statements 95.64, branches 89.80,
+      // functions 97.01, lines 97.32 — up from 93.84 / 86.40 / 95.08 / 96.09,
+      // again for the same reason: the bar-presentation work moved another
+      // layer of per-extension branching into `src/kit` (100% statements,
+      // 99.48% branches), where one densely tested truth table stands in for
+      // nine hand-written ones. The floors are deliberately *not* raised to
+      // match. They were last set with two to three points of room and now
+      // carry three to six, which is slack rather than a ratchet — but the
+      // headroom is what lets ordinary work land without a coverage argument,
+      // and the numbers above are the thing to read when judging a drop.
+      // `functions` is still tightest in practice — if it fires on ordinary
+      // work, add tests rather than lowering the number.
       thresholds: {
         statements: 91,
         branches: 84,

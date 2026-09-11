@@ -43,7 +43,7 @@ test("one React across core, /kit and ext/* under the optimizer", async ({ page 
   const errorChips = root.locator('[data-dtb-part="error-chip"]');
   const panel = root.locator('[data-dtb-part="panel"][data-dtb-active="true"]');
 
-  const env = page.getByRole("button", { name: /^env/ });
+  const env = page.getByRole("button", { name: /^Environment, / });
   const flags = page.getByRole("button", { name: /^Flags/ });
   const vendorLive = page.getByRole("button", { name: /^vendor-live/ });
   const vendor = page.getByRole("button", { name: "vendor", exact: true });
