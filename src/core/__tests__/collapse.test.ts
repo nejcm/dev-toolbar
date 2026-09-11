@@ -2,8 +2,16 @@ import { describe, expect, it } from "vitest";
 import { CollapseMachine } from "../collapse";
 import type { CollapseItem, CollapseReading } from "../collapse";
 
-const start = (id: string, priority: number): CollapseItem => ({ id, priority, region: "start" });
-const end = (id: string, priority: number): CollapseItem => ({ id, priority, region: "end" });
+const start = (id: string, priority: number): CollapseItem => ({
+  id,
+  priority,
+  region: "start",
+});
+const end = (id: string, priority: number): CollapseItem => ({
+  id,
+  priority,
+  region: "end",
+});
 
 // The same three chips the shell tests use: 60 wide, 2px gap, a 28px ⋮ button.
 const items = [start("a", 3), start("b", 1), start("c", 2)];
@@ -69,7 +77,11 @@ describe("CollapseMachine decision", () => {
 
   it("breaks priority ties toward the later item", () => {
     const m = machine();
-    m.measure({ items: [start("a", 0), start("b", 0)], barWidth: 100, widths: sixty });
+    m.measure({
+      items: [start("a", 0), start("b", 0)],
+      barWidth: 100,
+      widths: sixty,
+    });
     expect(ids(m)).toEqual(["b"]);
   });
 
@@ -353,6 +365,112 @@ describe("CollapseMachine cycle detection", () => {
     expect(ids(m)).toEqual(["b"]);
   });
 
+  it("a presentation flip — one exogenous shrink, not a width that depends on the decision — can latch", () => {
+    // The presentation presets put a real number on the swing this machine has
+    // to survive, and it is a different swing from the 2-cycle above. An icon
+    // preset is *exogenous*: the consumer changes what a control paints, the
+    // control is one width before and another after, and that width does not
+    // depend on whether it collapsed. The bar's own box and the roster do not
+    // move, so every one of those readings is an item reading.
+    //
+    // 160 → 40 is roughly the ratio an icon-only control has against the short
+    // word plus value it replaces (`plans/bar-presentation-icons-v1.md`,
+    // Verification). Available width is the bar minus one inter-region gap,
+    // since this roster has no end items: 280 − 2 = 278.
+    const m = machine();
+    /** One preset flip: the control's new width, and nothing else, arrives. */
+    const flip = (width: number) => m.measure({ widths: [["a", width]] });
+
+    // Rest, at `default`. 160 + 60 + 60 + 2×2 = 284 > 278 → `b` collapses.
+    expect(
+      m.measure({
+        items,
+        barWidth: 280,
+        widths: [
+          ["a", 160],
+          ["b", 60],
+          ["c", 60],
+        ],
+      }),
+    ).toBe(true);
+    expect(ids(m)).toEqual(["b"]);
+
+    // Flip to `icon`: the first shrink is a decision never held since the last
+    // honest reading, so it is heard and `b` comes back.
+    expect(flip(40)).toBe(true);
+    expect(ids(m)).toEqual([]);
+
+    // Flip back to `default`: growth is always heard, whatever the history.
+    expect(flip(160)).toBe(true);
+    expect(ids(m)).toEqual(["b"]);
+
+    // Flip to `icon` a second time, still without an honest reading between.
+    // The empty set has now been held since, so the return is refused.
+    expect(flip(40)).toBe(false);
+    expect(m.latched).toBe(true);
+    expect(ids(m)).toEqual(["b"]);
+
+    // What `latched` costs, stated by the machine rather than by arithmetic on
+    // literals: a machine with no history, given exactly this reading, collapses
+    // nothing. `b` is held in the `⋮` anyway — safe, reachable, not minimal, and
+    // exactly the "refusing a smaller state can retain extra collapsed items
+    // that would fit" the class comment warns about.
+    const fresh = machine();
+    expect(
+      fresh.measure({
+        items,
+        barWidth: 280,
+        widths: [
+          ["a", 40],
+          ["b", 60],
+          ["c", 60],
+        ],
+      }),
+    ).toBe(false);
+    expect(ids(fresh)).toEqual([]);
+
+    // An honest reading clears the history and recomputes from the cached
+    // widths, which is what releases it — the bar moving by one pixel is enough.
+    expect(m.measure({ barWidth: 281 })).toBe(true);
+    expect(ids(m)).toEqual([]);
+    expect(m.latched).toBe(false);
+  });
+
+  it("a single presentation flip latches too, once a live value has grown since the last honest reading", () => {
+    // The cheaper version of the same cost, and the likelier one: nothing is
+    // flipped twice. A metrics chip's own readout grows between resizes — a
+    // longer number, a slower request — which collapses `b`; then one click on
+    // the icon preset proposes the empty set the honest reading already held,
+    // and that single flip is refused.
+    const m = machine();
+
+    // Honest, and everything fits: ∅ is recorded as held.
+    expect(
+      m.measure({
+        items,
+        barWidth: 280,
+        widths: [
+          ["a", 100],
+          ["b", 60],
+          ["c", 60],
+        ],
+      }),
+    ).toBe(false);
+    expect(ids(m)).toEqual([]);
+
+    // The live value grows. Growth is never a return, so it is heard.
+    expect(m.measure({ widths: [["a", 160]] })).toBe(true);
+    expect(ids(m)).toEqual(["b"]);
+
+    // One flip to the icon preset. ∅ fits, ∅ has been held — refused.
+    expect(m.measure({ widths: [["a", 40]] })).toBe(false);
+    expect(m.latched).toBe(true);
+    expect(ids(m)).toEqual(["b"]);
+
+    expect(m.measure({ barWidth: 281 })).toBe(true);
+    expect(ids(m)).toEqual([]);
+  });
+
   it("the synchronous case — a chip measurably different on the very next layout — terminates on the fitting side", () => {
     // The layout-effect path: a full reading per commit, bar width and roster
     // unchanged, the chip's width already reflecting the last decision. This
@@ -371,7 +489,11 @@ describe("CollapseMachine cycle detection", () => {
     // ∅ is new — accepted. Back in the bar `a` is 900 again: {b} is a return,
     // but ∅ has overflowed, so the return is the one move a cycle may make.
     const m = machine();
-    m.measure({ items, barWidth: 1000, widths: Object.entries({ a: 900, b: 60, c: 60 }) });
+    m.measure({
+      items,
+      barWidth: 1000,
+      widths: Object.entries({ a: 900, b: 60, c: 60 }),
+    });
     expect(ids(m)).toEqual(["b"]);
     expect(m.measure({ widths: [["a", 60]] })).toBe(true);
     expect(ids(m)).toEqual([]);

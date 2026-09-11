@@ -160,8 +160,13 @@ actually returns as a finding about the recipe, and fix it here.
   unit tests, never driven in a browser), the `⌘K`-skips-input assertion in
   [command-menu.md](./command-menu.md), clipboard assertions anywhere, the
   environment impersonation and empty-context fixtures, the focus-order
-  overlay's markings, the overflow loop check's stepping sequence, and every
-  feature listed as unmapped below.
+  overlay's markings, the overflow loop check's stepping sequence, every
+  feature listed as unmapped below, and the parts of
+  [presentation.md](./presentation.md) its spec cannot see —
+  `e2e/presentation.spec.ts` drives the flip, measures the clamped `<svg>`s and
+  checks the names, but the side-by-side *look* of the text glyph against them
+  and the axe scan of an icon-only bar are written from the source and not
+  hand-driven.
 - **Not verifiable from the playground as it stands:** core's `styleNonce`
   prop (arriving with the pending PR stack #21–#28 — it sets the `nonce`
   *property* on core's injected `<style>` so a `style-src 'nonce-…'` policy
@@ -197,6 +202,9 @@ handles, required state, calls and observable proof.
 - [Accessibility scans](./a11y.md) — axe on demand and never on a timer, the
   impact grouping, click-to-highlight, the masked markup, and the panel state a
   consumer without the optional `axe-core` peer sees.
+- [Bar presentation](./presentation.md) — the `presentation` option: consumer
+  icons in the bar, the glyph clamp, an icon-only control's name, and the
+  collapse decision settling after a preset flip.
 - [The console error tail](./diagnostics.md) — the four watched sources,
   grouping, `console.log` staying unpatched, redaction on the way in, the two
   console commands, and the chip badge (which needs the `⋮` menu open at

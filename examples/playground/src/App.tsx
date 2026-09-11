@@ -2,11 +2,13 @@ import { Profiler, useEffect, useState } from "react";
 import { DevToolbar, DevToolbarInset, useDevToolbar } from "@nejcm/dev-toolbar";
 import type { ToolbarDensity } from "@nejcm/dev-toolbar";
 import {
+  BAR_PRESENTATION_MODES,
   reactProfiler,
   playgroundContext,
-  playgroundExtensions,
+  playgroundExtensionsFor,
   playgroundFlags,
 } from "./extensions";
+import type { BarPresentationMode } from "./extensions";
 import { EmbedDemoProvider, QueryPlayground } from "./embedDemo";
 import { TanStackShell, TanStackShellCard } from "./tanstackDemo";
 import { CanvasStage, HeroFigure, MediaGallery, VideoEmbed } from "./mediaDemo";
@@ -635,6 +637,17 @@ export function App() {
   const [inset, setInset] = useState(true);
   const [density, setDensity] = useState<ToolbarDensity>("compact");
   const [enabled, setEnabled] = useState(true);
+  /**
+   * Which `presentation` the three icon-bearing extensions are built with.
+   *
+   * `"default"` on load, deliberately: the resting playground passes no
+   * `presentation` at all, so every chip is the width it has always been and
+   * nothing that measured this app at a pinned viewport has to be re-measured.
+   * The icons are one click away instead — and the click is the interesting
+   * part, because a control several times narrower arriving with no change to
+   * the bar's own box is exactly what the collapse machine has to survive.
+   */
+  const [barPresentation, setBarPresentation] = useState<BarPresentationMode>("default");
 
   useEffect(() => {
     document.documentElement.toggleAttribute("data-pg-restyle", restyled);
@@ -817,6 +830,21 @@ export function App() {
           >
             Density: {density}
           </button>
+          <button
+            type="button"
+            className="pg-button"
+            data-testid="toggle-bar-icons"
+            onClick={() =>
+              setBarPresentation(
+                (value) =>
+                  BAR_PRESENTATION_MODES[
+                    (BAR_PRESENTATION_MODES.indexOf(value) + 1) % BAR_PRESENTATION_MODES.length
+                  ] as BarPresentationMode,
+              )
+            }
+          >
+            Bar icons: {barPresentation}
+          </button>
           <ShellControls />
           <button
             type="button"
@@ -834,7 +862,15 @@ export function App() {
   return (
     <EmbedDemoProvider>
       <DevToolbar
-        extensions={playgroundExtensions}
+        // A factory option cannot be changed on a *running* extension: same id
+        // plus a new object means core keeps the first object's `start()` and
+        // warns, leaving what the bar renders wired to a runtime nobody is
+        // driving. `key` makes the flip what it really is — a config change —
+        // so the shell unmounts, every extension is stopped, and the new
+        // objects are started. Remounting is the supported way to change any
+        // factory option at runtime.
+        key={barPresentation}
+        extensions={playgroundExtensionsFor(barPresentation)}
         enabled={enabled}
         instanceId="playground"
         density={density}

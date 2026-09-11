@@ -1,6 +1,7 @@
 import { useState } from "react";
 import type { DevToolbarExtension } from "@nejcm/dev-toolbar";
 import { useDevToolbar, useToolbarCommands } from "@nejcm/dev-toolbar";
+import { Action, Chip } from "@nejcm/dev-toolbar/kit";
 import { metrics } from "@nejcm/dev-toolbar/ext/metrics";
 import { environment } from "@nejcm/dev-toolbar/ext/environment";
 import { flags, readStoredOverrides } from "@nejcm/dev-toolbar/ext/flags";
@@ -14,6 +15,7 @@ import type { DesignTokenDefinition } from "@nejcm/dev-toolbar/ext/theme-editor"
 import type { FlagReading, FlagValue } from "@nejcm/dev-toolbar/ext/flags";
 import { createReactProfilerCollector } from "./collectors/reactProfiler";
 import { createWebVitalsCollector } from "./collectors/webVitals";
+import { A11Y_ICON, FLAGS_ICON, METRIC_ICONS, PROMOTED_FLAG_ICON } from "./barIcons";
 import { kitDemo } from "./kitDemo";
 import { tanstackQuery } from "./embedDemo";
 import { tanstackDevtools } from "./tanstackDemo";
@@ -26,6 +28,27 @@ import { tanstackDevtools } from "./tanstackDemo";
 const runtimeKitDemo = kitDemo({ order: 40, priority: 60, pollMs: 1000 });
 
 /**
+ * How the bar presents the three extensions this app supplies icons for. [playground]
+ *
+ * `"default"` passes no `presentation` at all, so `metrics`, `flags` and `a11y`
+ * paint exactly what they painted before the option existed — which is what
+ * keeps every measurement the browser suite and the verification map took at a
+ * pinned viewport valid. The other two are the option: `"icon-value"` swaps each
+ * short bar word for {@link ./barIcons.tsx} and keeps the number, and `"icon"`
+ * drops the number too, leaving a control several times narrower than the one it
+ * replaced. Flipping between them is a real workout for the collapse machine,
+ * which is the point of the browser case that drives it.
+ */
+export type BarPresentationMode = "default" | "icon-value" | "icon";
+
+/** In cycle order, which is the order the playground's own toggle walks. */
+export const BAR_PRESENTATION_MODES: readonly BarPresentationMode[] = [
+  "default",
+  "icon-value",
+  "icon",
+];
+
+/**
  * Deliberately varied `priority` so narrowing the window collapses extensions into `⋮` in order:
  * agent (-1) → boom (5) → diagnostics (10) → hydr (20) → a11y (25) → metrics (35) → theme (45)
  * → overlays (55) → kit (60) → query (65) → tanstack (66) → tw (70) → flags (80) → cmds (85) → env (90) → user (100,
@@ -34,62 +57,36 @@ const runtimeKitDemo = kitDemo({ order: 40, priority: 60, pollMs: 1000 });
  * metrics/env/flags are the real extensions, `query` is a real third-party panel and `tanstack` opens TanStack's own shell; the rest are placeholders.
  */
 
-function Chip({
-  label,
-  value,
-  tone = "neutral",
-  onClick,
-  expanded,
-}: {
-  label: string;
-  value: string;
-  tone?: "neutral" | "ok" | "warn" | "error";
-  onClick?: () => void;
-  expanded?: boolean;
-}) {
-  const color = {
-    neutral: "var(--dtb-muted)",
-    ok: "#3fa96b",
-    warn: "#c8971f",
-    error: "var(--dtb-danger)",
-  }[tone];
-
-  const body = (
-    <>
-      <span
-        aria-hidden="true"
-        style={{
-          width: 6,
-          height: 6,
-          borderRadius: 999,
-          background: color,
-          display: "inline-block",
-        }}
-      />
-      <span style={{ color: "var(--dtb-muted)" }}>{label}</span>
-      <span style={{ fontFamily: "var(--dtb-font-mono)" }}>{value}</span>
-    </>
-  );
-  const title = `${label} — playground placeholder`;
-  // No handler means nothing to expand: a readout, not a control. Core renders a
-  // panel-less extension the same way, so the chip must not look clickable.
-  if (!onClick) {
-    return (
-      <span data-dtb-part="trigger" title={title}>
-        {body}
-      </span>
-    );
-  }
+/**
+ * The placeholders' chip, from `@nejcm/dev-toolbar/kit`.
+ *
+ * This app used to hand-roll its own `Chip` — a dot, a muted label and a
+ * monospace value, all inline styles — because the kit was not a published
+ * subpath when the placeholders were written. It is now, and this *is* that
+ * chip: `Chip` paints the same dot/label/value in the same order, styled by the
+ * sheet every extension already injects, so the local copy is gone and the
+ * three placeholders below use the real control. The trigger element stays
+ * theirs, which is the same division the nine first-party extensions keep:
+ * the extension owns the `<button>`/`<span>` and its `data-dtb-part`, the kit
+ * owns what is inside it.
+ */
+function placeholderChip(label: string, value: string) {
   return (
-    <button
-      type="button"
-      data-dtb-part="trigger"
-      aria-expanded={expanded ?? false}
-      onClick={onClick}
-      title={title}
-    >
-      {body}
-    </button>
+    <Chip
+      label={label}
+      labelProps={{ "data-dtb-kind": "label" }}
+      value={value}
+      severity="unknown"
+    />
+  );
+}
+
+/** A readout, not a control: core renders a panel-less extension the same way, so it must not look clickable. */
+function PlaceholderReadout({ label, value }: { label: string; value: string }) {
+  return (
+    <span data-dtb-part="trigger" title={`${label} — playground placeholder`}>
+      {placeholderChip(label, value)}
+    </span>
   );
 }
 
@@ -156,13 +153,14 @@ const commands: DevToolbarExtension = {
   order: 5,
   priority: 85,
   compact: ({ isPanelOpen, togglePanel }) => (
-    <Chip
-      label="cmds"
-      value="aggregated"
-      tone="neutral"
-      expanded={isPanelOpen}
+    <Action
+      data-dtb-part="trigger"
+      aria-expanded={isPanelOpen}
       onClick={togglePanel}
-    />
+      title="cmds — playground placeholder"
+    >
+      {placeholderChip("cmds", "aggregated")}
+    </Action>
   ),
   panel: () => <CommandsPanel />,
 };
@@ -330,7 +328,8 @@ const CATALOGUE: Omit<FlagReading, "value">[] = [
   { key: "checkout.apiToken", label: "Checkout API token", type: "string" },
 ];
 
-const runtimeFlags = flags({
+const buildFlags = (mode: BarPresentationMode) =>
+  flags({
   order: 10,
   priority: 80,
   pollMs: 400,
@@ -360,7 +359,11 @@ const runtimeFlags = flags({
     flagKey: "ui-facelift",
     label: "UI Facelift 2026",
     icon: "\u25c8",
+    // The text glyph, kept beside the SVG one on the chip next to it. See
+    // PROMOTED_FLAG_ICON for what to look at when the two are side by side.
+    ...(mode === "default" ? {} : { presentation: { preset: mode, icon: PROMOTED_FLAG_ICON } }),
   },
+  ...(mode === "default" ? {} : { presentation: { preset: mode, icon: FLAGS_ICON } }),
 });
 
 const hydration: DevToolbarExtension = {
@@ -368,7 +371,7 @@ const hydration: DevToolbarExtension = {
   label: "Hydration",
   order: 50,
   priority: 20,
-  compact: () => <Chip label="hydr" value="NA" tone="neutral" />,
+  compact: () => <PlaceholderReadout label="hydr" value="NA" />,
 };
 
 /** Shadow DOM regression test: classes come from the Tailwind Play CDN in `document.head`, which only applies because the bar renders in the light DOM. */
@@ -433,7 +436,7 @@ const user: DevToolbarExtension = {
   align: "end",
   order: 0,
   priority: 100,
-  compact: () => <Chip label="user" value="internal" tone="neutral" />,
+  compact: () => <PlaceholderReadout label="user" value="internal" />,
 };
 
 /**
@@ -643,25 +646,42 @@ const runtimeThemeEditor = themeEditor({
  * can watch the network for the peer's chunk without moving the baseline everybody else
  * measures against, which keeps the eager default.
  */
-const runtimeA11y = a11y({
-  order: 18,
-  priority: 25,
-  rules: { region: { enabled: false } },
-  ...(new URLSearchParams(location.search).get("a11y-load-on") === "scan"
-    ? { loadOn: "scan" as const }
-    : {}),
-});
+const buildA11y = (mode: BarPresentationMode) =>
+  a11y({
+    order: 18,
+    priority: 25,
+    rules: { region: { enabled: false } },
+    ...(new URLSearchParams(location.search).get("a11y-load-on") === "scan"
+      ? { loadOn: "scan" as const }
+      : {}),
+    ...(mode === "default" ? {} : { presentation: { preset: mode, icon: A11Y_ICON } }),
+  });
 
 /** Built once at module scope — calling `metrics()` inside a component would hand the bar a new object every render while collectors stayed with the first one; core warns about this. */
 export const reactProfiler = createReactProfilerCollector();
 
-const runtimeMetrics = metrics({
-  collectors: [reactProfiler.collector, createWebVitalsCollector()],
-  order: 30,
-  priority: 35,
-  network: { slowMs: 400 },
-  jank: { windowMs: 5000 },
-});
+/**
+ * Built once too, and shared by every mode's `metrics()` — only one of them is
+ * ever mounted. Module scope for the same reason `reactProfiler` is, not as a
+ * way to survive a presentation flip: the flip remounts the toolbar (`key` in
+ * `App.tsx`), and a remounted `metrics()` restarts every collector regardless.
+ */
+const webVitals = createWebVitalsCollector();
+
+const buildMetrics = (mode: BarPresentationMode) =>
+  metrics({
+    collectors: [reactProfiler.collector, webVitals],
+    order: 30,
+    priority: 35,
+    network: { slowMs: 400 },
+    jank: { windowMs: 5000 },
+    // One control per metric, so the icon is a *function* of the view: no
+    // `icons: Record<CollectorId, ReactNode>` option, and a metric with no entry
+    // falls back to its own short label rather than to a blank chip.
+    ...(mode === "default"
+      ? {}
+      : { presentation: { preset: mode, icon: (metric) => METRIC_ICONS[metric.id] } }),
+  });
 
 /**
  * The real `@nejcm/dev-toolbar/ext/agent`. It publishes this instance's commands and
@@ -685,22 +705,54 @@ const runtimeAgent = agentBridge({
   ...(import.meta.env.DEV ? { report: { url: "/__dev-toolbar/state" } } : {}),
 });
 
-export const playgroundExtensions: DevToolbarExtension[] = [
-  runtimeAgent,
-  runtimeCommandMenu,
-  runtimeDiagnostics,
-  runtimeEnvironment,
-  commands,
-  runtimeFlags,
-  runtimeOverlays,
-  runtimeA11y,
-  runtimeThemeEditor,
-  runtimeMetrics,
-  runtimeKitDemo,
-  tanstackQuery,
-  tanstackDevtools,
-  hydration,
-  tailwind,
-  broken,
-  user,
-];
+/**
+ * The roster, with `metrics`, `flags` and `a11y` built for one presentation mode.
+ *
+ * `presentation` is a **factory option**, held in the extension's own closure —
+ * so changing it means handing `<DevToolbar>` a new extension object for that
+ * id, exactly as a consumer would who changed any other option. The rest of the
+ * roster is the same object in every mode, and each mode's array is built once
+ * and cached: an array rebuilt per render would hand the bar a new object every
+ * time, which is the thing core warns about.
+ *
+ * A new object for a *running* id is not enough on its own. Core never restarts
+ * a same-id extension (`src/core/useExtensionLifecycle.ts`): it keeps the first
+ * object's `start()`, warns that the bar now renders something whose lifecycle
+ * it cannot reach, and the new closure's runtime never runs — no axe, no
+ * collectors, no flag poll, with only module-scope collectors still ticking to
+ * disguise it. So `<App>` gives `<DevToolbar>` a `key` of the mode: the flip
+ * remounts the shell, every extension is stopped and started, and the three
+ * rebuilt ones come up live. That costs what a remount costs — the a11y scan
+ * results, the in-flight metric samples — while the flag overrides survive
+ * (they live in this app and in `localStorage`).
+ */
+const ROSTERS = new Map<BarPresentationMode, DevToolbarExtension[]>();
+
+export function playgroundExtensionsFor(mode: BarPresentationMode): DevToolbarExtension[] {
+  const cached = ROSTERS.get(mode);
+  if (cached) return cached;
+  const built: DevToolbarExtension[] = [
+    runtimeAgent,
+    runtimeCommandMenu,
+    runtimeDiagnostics,
+    runtimeEnvironment,
+    commands,
+    buildFlags(mode),
+    runtimeOverlays,
+    buildA11y(mode),
+    runtimeThemeEditor,
+    buildMetrics(mode),
+    runtimeKitDemo,
+    tanstackQuery,
+    tanstackDevtools,
+    hydration,
+    tailwind,
+    broken,
+    user,
+  ];
+  ROSTERS.set(mode, built);
+  return built;
+}
+
+/** The resting roster. Everything measured at a pinned viewport was measured against this one. */
+export const playgroundExtensions: DevToolbarExtension[] = playgroundExtensionsFor("default");
