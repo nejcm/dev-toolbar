@@ -21,9 +21,9 @@ const machine = () => new CollapseMachine({ gap: 2, buttonWidth: 28 });
 const ids = (m: CollapseMachine) => [...m.collapsed].sort();
 
 /**
- * Drives `m` the way the layout effect does after every commit — one full
- * reading per pass, with `a`'s width answered by `widthOfA` from the decision
- * the previous pass left — until a pass changes nothing.
+ * Drives `m` like the layout effect after every commit: one full reading per
+ * pass, `a`'s width answered by `widthOfA` from the prior pass's decision,
+ * until a pass changes nothing.
  *
  * @returns how many passes flipped the decision.
  */
@@ -202,11 +202,9 @@ describe("CollapseMachine reserved width", () => {
 
 /**
  * A chip whose width depends on the collapse decision has no fixed point:
- * collapsing its neighbour changes its width, which changes the decision. The
- * machine detects the cycle instead of debouncing it — an item reading may not
- * return to a decision held since the last honest reading while the current one
- * fits — and every source of item widths, a ResizeObserver delivery or the
- * layout effect after a commit, is filtered alike.
+ * collapsing a neighbour changes its width, which changes the decision back.
+ * The machine breaks the cycle by refusing to return to a decision already
+ * held since the last honest reading, from any width source alike.
  */
 describe("CollapseMachine cycle detection", () => {
   const overCollapseReadings: CollapseReading[] = [
@@ -633,13 +631,10 @@ describe("CollapseMachine cycle detection", () => {
 });
 
 /**
- * What bounds the memory cycle detection keeps, driven rather than argued.
- *
- * Every decision is a prefix of one fixed order — lowest priority first, later
- * roster index first on a tie — so a roster of `n` items admits at most `n + 1`
- * distinct decisions, and therefore at most `n + 1` signatures. The set is
- * cleared on every honest reading, so nothing carries across a resize, a
- * spacing change or a roster change either.
+ * Every decision is a prefix of one fixed order (lowest priority first, later
+ * index on a tie), so a roster of `n` items admits at most `n + 1` decisions —
+ * the bound on how many signatures cycle detection can hold, cleared on every
+ * honest reading.
  */
 describe("CollapseMachine under a random walk", () => {
   const roster: CollapseItem[] = [

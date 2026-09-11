@@ -18,36 +18,21 @@
  * ];
  * ```
  *
- * ## It aggregates; it does not re-collect
+ * It aggregates rather than re-collecting: flags, metrics and session context
+ * are already owned by extensions that know more about them, so the snapshot
+ * reads the roster via `api.getDiagnostics()` and collects for itself only
+ * what no other extension owns — page facts and §3E's `PerformanceObserver`
+ * data.
  *
- * Flags, metrics and session context are already owned by extensions that
- * know more about them than this one could, so the snapshot *asks*: core
- * aggregates `DevToolbarExtension.diagnostics()` the way it aggregates
- * `commands`, and this extension reads the roster via `api.getDiagnostics()`.
- * It collects for itself only what no other extension owns — page facts and
- * §3E's `PerformanceObserver` data.
- *
- * ## What it promises
- *
- * - **Nothing leaves the machine on its own.** The panel shows the exact text
- *   the copy/download buttons would produce, before either is pressed.
- * - **Redaction happens on the way in**, once — panel, clipboard, download and
- *   every command read the same already-redacted object (§11.3: serialise
- *   before redacting and nested keys become invisible to the matcher).
- * - **Omissions are visible.** A contributing extension that throws or fails
- *   to serialise gets a status, a line in top-level `omissions`, a panel
- *   banner and a Markdown heading — never a silent drop.
- * - **It never claims to know what it does not.** §3E entry types vary by
- *   engine, so counts are `null` rather than `0` when unobservable, each with
- *   a note explaining why.
- * - **It says what went wrong on the way here.** `window`'s `error` and
- *   `unhandledrejection` events and patched `console.error`/`console.warn` go
- *   into a bounded, grouped tail that the snapshot carries and the chip
- *   counts. The patch always calls through, restores by identity on teardown,
- *   is opt-out-able per method (`console: false` for all of it), and never
- *   touches `console.log`. See `./console.ts`.
- *
- * ## What it is not
+ * What it promises: nothing leaves the machine until copy/download is
+ * pressed, and the panel shows exactly that text beforehand; redaction
+ * happens once on the way in, so panel/clipboard/download/commands all read
+ * the same already-redacted object; a contributing extension that throws or
+ * fails to serialise gets a visible status rather than a silent drop; counts
+ * that can't be observed are `null`, never a `0` that reads as "none
+ * happened"; and window errors, rejections and patched
+ * `console.error`/`console.warn` feed a bounded, grouped tail (see
+ * `./console.ts`).
  *
  * Not a security boundary — `redact()` is key/value-shape matching, so a
  * credential under an innocent key can survive. The panel shows you the text
@@ -253,41 +238,25 @@ export function diagnostics(options: DiagnosticsOptions = {}): DevToolbarExtensi
     ),
 
     /**
-     * A **summary** of the last capture — `capturedAt`, `revision`, how many
-     * contributions and how many omissions — never the snapshot itself
-     * (`plans/agent-readable-toolbar.md` § Phase 1).
-     *
-     * The snapshot is built *from* `api.getDiagnostics()`, so returning it
-     * here would make every roster read quadratic and embed one snapshot
-     * inside the next. The full object stays reachable through the commands
-     * below.
-     *
-     * The gather step skips its own id, so this summary never appears in the
-     * bug report; it is published for the readers that enumerate the roster
-     * directly — `/ext/agent`, and anything else built on
-     * `api.getDiagnostics()`.
+     * A **summary** of the last capture — never the snapshot itself
+     * (`plans/agent-readable-toolbar.md` § Phase 1): the snapshot is built
+     * *from* `api.getDiagnostics()`, so returning it here would make every
+     * roster read quadratic. The gather step skips its own id, so this
+     * summary never appears in the bug report itself.
      */
     diagnostics: () => runtime.summary(),
 
     /**
-     * Four commands. `capture` freezes state now (mid-repro) for reading
-     * later; it does not copy. The copy/download commands re-capture fresh
-     * rather than reuse a stale snapshot, and since redaction happens on the
-     * way in, `runtime.copy()` can only ever reach the same masked object the
-     * panel renders — a blind copy is still one you can go back and read,
-     * because every command captures into the same store the panel shows.
-     *
-     * (A command can't open its own panel — `ExtensionRuntimeApi` exposes no
-     * panel control, since core owns single-active-panel state.)
+     * `capture` freezes state now for reading later; it does not copy. The
+     * copy/download commands re-capture fresh rather than reuse a stale
+     * snapshot. A command can't open its own panel — core owns
+     * single-active-panel state.
      */
     commands: [
       /**
-       * The one command that returns something (contract v2). It writes to
-       * this extension's own store, so before v2 a caller who was not looking
-       * at the panel had no way to read back what it produced — the plan's
-       * "dead end for a tool call". It now resolves the captured snapshot,
-       * which is already redacted on the way in, so this is not a second path
-       * around the panel's masks.
+       * The one command that returns something (contract v2) — it resolves
+       * the captured, already-redacted snapshot, so a caller not looking at
+       * the panel can still read back what a capture produced.
        */
       {
         id: `${id}.capture`,

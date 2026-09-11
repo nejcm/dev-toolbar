@@ -1,10 +1,3 @@
-/**
- * The fourth copy of six lines, moved here instead of written again — the same
- * rule `ensureStyleSheet` moved under in §11.2.
- *
- * What is worth asserting is only the failure half: that nothing throws out of
- * a click handler, and that a write which did not happen is reported as one.
- */
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { writeClipboardText, writeClipboardTextOrThrow } from "../clipboard";
 
@@ -73,10 +66,9 @@ describe("writeClipboardTextOrThrow", () => {
   });
 
   it("throws when it did not, so a palette has something to report", async () => {
-    // A `ToolbarCommand` returns void, and §13.4 established that the palette
-    // shows the message for a command that throws and closes over one that
-    // resolves. Resolving here is how five first-party copy commands used to
-    // silently do nothing while the palette closed as though they had worked.
+    // A silent resolve here is how copy commands used to appear to succeed
+    // while doing nothing — the palette only surfaces a message when the
+    // command throws.
     vi.stubGlobal("navigator", {});
     await expect(writeClipboardTextOrThrow("x")).rejects.toThrow("The clipboard is unavailable");
   });

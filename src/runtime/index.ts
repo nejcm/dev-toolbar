@@ -2,13 +2,14 @@
  * `@nejcm/dev-toolbar/runtime`
  *
  * Opt-in machinery for extensions that *measure* something: an event bus,
- * bounded ring buffers, a store that coalesces high-frequency writes, a derived
- * store that owns snapshot revisions, one shared `fetch`/`XMLHttpRequest`
- * interceptor, and `redact()`. The root entry never
- * imports this subpath, so a toolbar that is three buttons doesn't ship a ring buffer.
+ * bounded ring buffers, a store that coalesces high-frequency writes, a
+ * derived store that owns snapshot revisions, one shared
+ * `fetch`/`XMLHttpRequest` interceptor, and `redact()`. The root entry never
+ * imports this subpath, so a toolbar that is three buttons doesn't ship a
+ * ring buffer.
  *
- * Framework-free on purpose — nothing here imports React, so a collector
- * can run in a worker. `createThrottledStore()` exposes the `subscribe` /
+ * Framework-free on purpose — nothing here imports React, so a collector can
+ * run in a worker. `createThrottledStore()` exposes the `subscribe`/
  * `getSnapshot` pair `useSyncExternalStore` wants.
  */
 

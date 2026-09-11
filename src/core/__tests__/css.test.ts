@@ -37,10 +37,9 @@ describe("core stylesheet", () => {
       );
     });
 
-    // Mutation test: each probe must land in `unguarded` and be named. The
-    // second half is the set an earlier substring-matching classifier waved
-    // through — a token inside a negation, a selector-list branch, or a
-    // quoted value is not a condition the selected element meets.
+    // Mutation test: each probe must land in `unguarded` and be named. The second
+    // half is what an earlier substring-matching classifier waved through — a token
+    // inside a negation, a selector-list branch, or a quoted value.
     it.each([
       [
         "a bare element default",
@@ -180,9 +179,8 @@ describe("core stylesheet", () => {
     });
 
     /**
-     * A statement at-rule the scanner skipped would be a hole the size of
-     * whatever it pulls in: `@import` can add a whole sheet the audit never
-     * sees. Only the statement forms core actually writes are passed over.
+     * A statement at-rule the scanner skipped would be a hole the size of whatever
+     * it pulls in: `@import` can add a whole sheet the audit never sees.
      */
     it.each([
       ["@import", "@import url(unguarded.css);"],

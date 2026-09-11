@@ -3,24 +3,14 @@
  * [dev-toolbar/ext/diagnostics]
  *
  * This extension's entire output is a document that leaves the machine, so
- * §11.3's rules are the design here:
- *
- * 1. **Redact on the way in.** Every foreign value (consumer `app` context,
- *    each `source`, extension contributions, the page URL, error messages) is
- *    redacted the moment it enters the snapshot. Panel, clipboard, download
- *    and commands all read that one already-redacted object.
- * 2. **Never serialise before redacting.** `redact()` walks an object graph;
- *    a pre-stringified value's keys are just characters to it (the bug that
- *    hit `/ext/environment`'s first cut). `render()` only ever takes an
- *    *already redacted* snapshot — the builder is the sole place a raw value
- *    is touched, and it hands `redact()` objects, never JSON.
- * 3. **Masking is visible.** `maskedCount` is derived from the rendered output
- *    and shown next to the copy buttons — invisible redaction is
- *    indistinguishable from a value that was never supplied.
- * 4. **Omission is visible** (this extension's own addition, from §3J).
- *    Every present extension appears with a status; anything not `"ok"` is
- *    repeated in top-level `omissions` and in a Markdown banner, so a
- *    silently-dropped failure can't read as a complete report.
+ * §11.3's rules apply: redact every foreign value on the way in, before it
+ * enters the snapshot, so panel/clipboard/download/commands all read the same
+ * already-redacted object; never serialise before redacting (`redact()` walks
+ * an object graph — a pre-stringified value's keys are just characters to it,
+ * the bug that hit `/ext/environment`'s first cut); make masking visible
+ * (`maskedCount` next to the copy buttons); and make omission visible — every
+ * present extension gets a status, and anything not `"ok"` is repeated in
+ * top-level `omissions` and in a Markdown banner.
  */
 import {
   REDACTED,
@@ -149,14 +139,6 @@ export interface DiagnosticsRuntime {
   writeFormat(format: SnapshotFormat): void;
 }
 
-/**
- * A monotonic-ish timestamp that cannot throw — same rule as `nowIso` below.
- *
- * `capture()` reads this *outside* the build's guard, to stamp the store, so a
- * host with a hostile `performance.now` (an instrumentation shim, a clock mock
- * left on in a dev build) would otherwise throw straight out of a click
- * handler on the one path whose whole job is to survive.
- */
 /**
  * A monotonic-ish timestamp that cannot throw (same rule as `nowIso` below).
  * `capture()` reads this outside the build's guard to stamp the store, so a
@@ -1125,14 +1107,10 @@ export function renderMarkdown(snapshot: DiagnosticSnapshot, mask: string = REDA
 /* -------------------------------------------------------------------------- */
 
 /**
- * How many values the mask replaced, counted once, canonically, from the
- * snapshot's JSON (not the rendered Markdown, whose own footer mentions the
- * mask and would count itself).
- *
- * Also counts the URL-percent-encoded form of the mask: `redactUrl` writes a
- * URL-safe mask directly for the common case, but a custom mask with a URL
- * delimiter or non-ASCII character still gets percent-encoded there, so that
- * form is searched for too when it differs from the literal.
+ * How many values the mask replaced, counted once from the snapshot's JSON —
+ * not the rendered Markdown, whose own footer mentions the mask and would
+ * count itself. Also counts the URL-percent-encoded form, since a mask with a
+ * URL delimiter or non-ASCII character gets encoded there.
  */
 export function countMasked(snapshot: DiagnosticSnapshot, mask: string = REDACTED): number {
   let serialised: string;
@@ -1180,11 +1158,10 @@ function safeDescribe(value: unknown): string {
 
 /**
  * Starts a download and returns its revoker, or `null` when the environment
- * can't do it. The anchor is appended and removed synchronously in the same
- * task, since Firefox has historically ignored `click()` on a detached
- * anchor. The object URL is *not* revoked synchronously — several browsers
- * cancel the download if it is — so revocation is deferred, with the revoker
- * handed back so teardown can run it early rather than retain the Blob.
+ * can't do it. The anchor is appended and removed synchronously (Firefox has
+ * historically ignored `click()` on a detached anchor); the object URL is
+ * *not* revoked synchronously, since several browsers cancel the download if
+ * it is — revocation is deferred and handed back so teardown can run it early.
  */
 /** A revoker that can be asked whether it has already run. */
 export interface Revoker {

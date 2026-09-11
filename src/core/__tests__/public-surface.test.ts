@@ -1,15 +1,9 @@
 /**
- * The root entry's export list, pinned against the documentation.
- *
- * Every name `src/index.ts` exports is a semver commitment, and an export
- * nobody wrote down is the worst kind: it binds the package without ever
- * having been offered to anyone. So the rule is mechanical — if it is
- * exported, it is written down in the README or in `docs/api.md` — and this
- * test is what makes it a gate rather than an intention.
- *
- * The list is read out of the source rather than restated here on purpose. A
- * hand-maintained copy of the surface is a second thing to forget, and the
- * failure it hides ("we added an export") is the one worth catching.
+ * The root entry's export list, pinned against the documentation. Every
+ * export is a semver commitment, so the rule is mechanical: exported means
+ * written down in the README or `docs/api.md`, and this test is the gate.
+ * The list is read out of the source rather than restated here — a
+ * hand-maintained copy of the surface is a second thing to forget.
  */
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
@@ -48,10 +42,9 @@ const types = exportedNames(true);
 
 describe("root entry surface", () => {
   it("is a barrel, so the parser above sees the whole surface", () => {
-    // A declaration in `src/index.ts` would be exported without appearing in
-    // any `export { … }` block, and every assertion below would miss it. The
-    // type-level forms matter as much as the value ones: an `export interface`
-    // written here would be just as public and just as undocumented.
+    // A bare declaration would be exported without appearing in any
+    // `export { … }` block, and every assertion below would miss it —
+    // type-level forms (`export interface`) are just as public and undocumented.
     expect(source).not.toMatch(
       // `\b(?!\s*\{)` so the legitimate `export type { … }` re-export block
       // below is not read as a `type X =` declaration.
@@ -78,13 +71,11 @@ describe("root entry surface", () => {
 
   it("keeps the aggregation helpers off the public surface", () => {
     // `collectCommands`, `resolveExtensionCommands` and `collectDiagnostics`
-    // only ever see the array they are handed, which is never the merged list
-    // the toolbar renders — props plus dynamic registrations, `hidden` removed.
-    // Extensions read the aggregation through `api.getCommands()` /
-    // `api.getDiagnostics()`, the host through `useToolbarCommands()` /
-    // `useDevToolbar().getCommands()`. Re-exporting one of these from the root
-    // advertises a staler answer under the same name; documenting it would not
-    // make it a better one.
+    // only ever see the array they're handed, never the toolbar's merged list
+    // (props + dynamic registrations, `hidden` removed) — that's read through
+    // `api.getCommands()`/`api.getDiagnostics()` or `useToolbarCommands()`/
+    // `useDevToolbar().getCommands()`. Re-exporting one of these would
+    // advertise a staler answer under the same name.
     for (const name of ["collectCommands", "resolveExtensionCommands", "collectDiagnostics"]) {
       expect(values, name).not.toContain(name);
       expect(root, name).not.toHaveProperty(name);

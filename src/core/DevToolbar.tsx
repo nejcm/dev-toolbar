@@ -244,15 +244,11 @@ function DevToolbarRoot({
     ensureStyles(undefined, undefined, undefined, styleNonce);
   }, [enabled, injectStyles, styleNonce]);
 
-  // Order against extensions matters and is deliberate: this effect is
-  // declared *after* the `start(api)` effect, so a listener an extension put
-  // up in `start()` is registered first and wins a chord both claim — its
-  // `preventDefault()` makes this one bail on `defaultPrevented`. That is why
-  // `/ext/command-menu`'s `Mod+K` beats a command bound to `Mod+K`, and why
-  // core's binding gets the chord only in the case the palette declines it
-  // (while the bar is hidden). Keep the declaration order. Core cannot warn
-  // about the collision: it does not know which chords extension listeners
-  // claim, and it may not import `ext/` to find out.
+  // Declaration order matters: this effect runs *after* the `start(api)`
+  // effect, so a listener an extension registers in `start()` wins a shared
+  // chord via `preventDefault()` — this one bails on `defaultPrevented`.
+  // That's why `/ext/command-menu`'s `Mod+K` beats a command bound to the
+  // same chord. Core can't warn about the collision; it may not import `ext/`.
   useToolbarShortcuts({
     enabled,
     shortcut,

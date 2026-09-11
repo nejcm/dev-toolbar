@@ -320,12 +320,8 @@ describe("the host stylesheet", () => {
 
   it("releases every copy it can see, and releasing twice is not an error", () => {
     setHostOutlines(true);
-    // A second element with the same key, as a second bundled copy would leave.
-    // It carries no count, so it reads as one holder — which is why the single
-    // release below takes both away rather than only the counted one. That is
-    // the intended behaviour, not the coincidence the test's old name implied:
-    // release walks every matching element and decrements each, and a sheet
-    // nobody counted has nobody left to hold it after one release.
+    // A second element with the same key, as a second bundled copy would leave. It carries no
+    // count, so it reads as one holder — release walks every matching element and decrements each.
     const stray = document.createElement("style");
     stray.setAttribute("data-dev-toolbar-styles", BOXES_STYLE_ENTRY);
     document.head.appendChild(stray);
@@ -335,8 +331,7 @@ describe("the host stylesheet", () => {
 
     setHostOutlines(false);
     expect(sheets()).toHaveLength(0);
-    // And again on an empty document: a release with nothing to release is a
-    // no-op, which is what makes the teardown path safe to run twice.
+    // And again on an empty document: a release with nothing to release is a no-op.
     setHostOutlines(false);
     expect(sheets()).toHaveLength(0);
   });
@@ -703,10 +698,9 @@ describe("geometry observation", () => {
     expect([...observer.targets.keys()]).toContain(button);
 
     button.remove();
-    // Past the mutation debounce, not a single frame: removal is noticed by a
-    // rescan, which `onMutation` debounces, so a 32ms frame races the 250ms
-    // timer and only wins on a fast machine. This failed in CI and passed
-    // locally until the wait was made longer than the debounce.
+    // Removal is noticed by a debounced rescan; a single 32ms frame races the
+    // 250ms timer and only wins on a fast machine — this flaked in CI until
+    // the wait was made longer than the debounce.
     await settleMutations();
     expect([...observer.targets.keys()]).not.toContain(button);
 
@@ -729,10 +723,8 @@ describe("hover name caching", () => {
     await frame();
     expect(runtime.store.peek().hover?.name).toBe("Save");
 
-    // Spend the debounce the `html()` insertion started before counting. The
-    // loop below is ~160ms of frames, so on a slow runner that timer fired
-    // mid-loop, invalidated the cache and bought one extra lookup — the test
-    // was measuring which of the two won the race, not whether the cache holds.
+    // Spend the debounce the html() insertion started before counting, or a
+    // slow runner's timer firing mid-loop buys one spurious extra lookup.
     await settleMutations();
     fireEvent.pointerMove(window, { clientX: 10, clientY: 10 });
     await frame();
@@ -1046,10 +1038,9 @@ describe("publication guarantees", () => {
     assertFocusPublication,
   );
 
-  // Pins missing focusItems.tabIndex in sameSnapshot() (types.ts:463), the equality
-  // used at runtime.ts:318; ui.tsx:338 keeps the old tabindex badge when order stays equal.
-  // When covered, change the tabIndex count to 1 in both notification assertions and
-  // getSnapshot() toBe(peek()); the other rows already require one notification.
+  // Pins a bug: sameSnapshot() (types.ts) omits focusItems.tabIndex, so a
+  // tabIndex-only change never publishes and ui.tsx keeps the old badge. Once
+  // fixed, change the expected notification count to 1 here.
   it("BUG: focus.tabIndex changes without publishing", () => assertFocusPublication("tabIndex"));
 
   it.each(OVERLAY_IDS)("publishes enabled.%s and activeCount synchronously", (id) => {

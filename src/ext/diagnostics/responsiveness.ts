@@ -7,12 +7,12 @@
  * None of the three entry types is universally supported, and even feature
  * detection is unreliable (`supportedEntryTypes` isn't everywhere; `observe()`
  * throws on some engines, no-ops on others). So every count is `number | null`
- * — **never report zero when the browser simply can't count them**; "unknown"
- * keeps a bug report's line of investigation open where a false "0" closes it.
+ * — never report zero when the browser simply can't count them, since a false
+ * "0" closes a bug report's line of investigation that "unknown" keeps open.
  *
- * Per §14.2: the observer callback is wrapped (nothing upstream catches a
- * throw there), and `observe()` is attempted per entry type in its own `try`
- * so one unsupported type doesn't cost the others.
+ * Per §14.2: the observer callback is wrapped, and `observe()` is attempted
+ * per entry type in its own `try` so one unsupported type doesn't cost the
+ * others.
  */
 import { createRingBuffer, describeError, redact, redactUrl } from "../../runtime";
 import { describeSupport } from "./types";
@@ -63,15 +63,9 @@ interface TimedSample {
   label?: string;
   attribution?: string | null;
   /**
-   * `PerformanceEventTiming.interactionId`: non-zero groups entries; `0` means no interaction;
-   * `undefined` means the engine does not report it.
-   *
-   * Per the Event Timing specification's *computing interactionId* algorithm, non-zero ids go to
-   * `keydown`/`keyup`, `pointerdown`/`pointerup`, `click`, `contextmenu`, and IME-composition
-   * `input`; `keydown`/`pointerdown` inherit the completing `keyup`/`pointerup` id. All
-   * other events get 0, including `mousedown`/`mouseup`, `mouseover`/`pointerover`/`pointermove`,
-   * `keypress`, `compositionstart`/`update`/`end`, non-composition `input`, and `pointercancel`,
-   * which leaves `pointerdown` at 0.
+   * `PerformanceEventTiming.interactionId`: non-zero groups entries; `0` means no interaction
+   * (per the Event Timing spec, most non-pointer/key events); `undefined` means the engine does
+   * not report it.
    */
   interactionId?: number;
   /** Raw `event` entries folded into this sample; `1` for ungrouped samples and other rings. */
@@ -126,14 +120,11 @@ const part = (value: string): string => {
 };
 
 /**
- * `TaskAttributionTiming` reduced to one line, or `null`.
- *
- * Fields come from the host page's own markup, so they're foreign data.
- * `containerSrc` is a URL and gets `redactUrl` explicitly (like `location.href`
- * in `/ext/metrics`). The other three are masked **individually, before the
- * join** (§11.3): `redact()`'s matching is anchored, so it masks a string that
- * *is* `Bearer …`, not one that merely contains it — masking the assembled
- * sentence would find nothing. Redact the parts, then build the sentence.
+ * `TaskAttributionTiming` reduced to one line, or `null`. Fields come from the
+ * host page's own markup, so they're foreign data: `containerSrc` gets
+ * `redactUrl` explicitly, and the rest are masked individually before the
+ * join (§11.3) — `redact()`'s anchored matching would find nothing in the
+ * assembled sentence.
  */
 function describeAttribution(raw: unknown): string | null {
   if (!Array.isArray(raw) || raw.length === 0) return null;

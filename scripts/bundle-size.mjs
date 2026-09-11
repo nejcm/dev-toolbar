@@ -1,14 +1,11 @@
 /**
  * Per-entrypoint size report for `dist/`.
  *
- * Naive `find dist -name '*.js' | wc -c` is misleading here because tsup
- * code-splits the ESM build (e.g. `dist/index.js` is a thin re-export in
- * front of a large shared chunk). So each entry is measured as the transitive
- * closure of its own relative imports -- the set a bundler actually pulls in
- * for that subpath. Source maps are excluded (published but never loaded).
- *
- * Entries come from `package.json` `exports`, not a hardcoded list, so a new
- * subpath appears automatically once it's publishable.
+ * A naive byte count is misleading here because tsup code-splits the ESM
+ * build (e.g. `dist/index.js` is a thin re-export in front of a large shared
+ * chunk), so each entry is measured as the transitive closure of its own
+ * relative imports instead. Entries come from `package.json` `exports`, not a
+ * hardcoded list.
  */
 import { gzipSync } from "node:zlib";
 import { readFileSync, statSync } from "node:fs";
@@ -18,27 +15,16 @@ import { fileURLToPath } from "node:url";
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const pkg = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));
 
-/**
- * Matches relative specifiers in every form bundlers emit: `from "./x"`,
- * `import "./x"`, `require("./x")`, `import("./x")`. Dynamic `import(` is
- * kept even though nothing uses it today, so a future lazy chunk doesn't
- * silently go unreported.
- *
- * The leading `(?<![\w$.])` prevents matching identifier suffixes like
- * `reimport(...)` or `obj.import(...)`, which would over-report size by
- * attributing a chunk to an entry that never imports it.
- *
- * This is a regex over text, not a parser, so it could follow a specifier
- * written inside a comment -- accepted since esbuild's banner comments don't
- * start with `.` and this only ever scans built output, not hand-written src.
- */
+// Matches relative specifiers in every form bundlers emit: `from "./x"`,
+// `import "./x"`, `require("./x")`, `import("./x")`. The leading
+// `(?<![\w$.])` avoids matching identifier suffixes like `reimport(...)` or
+// `obj.import(...)`, which would over-report by attributing a chunk to an
+// entry that never imports it.
 const RELATIVE_SPECIFIER = /(?<![\w$.])(?:from|import|require\(|import\()\s*["'](\.[^"']*)["']/g;
 
-/**
- * Files reachable from `entryFile` via relative specifiers (absolute paths,
- * entry included). Missing targets are skipped rather than thrown -- a broken
- * `dist/` is the build's problem to report, not this script's.
- */
+// Files reachable from `entryFile` via relative specifiers (absolute paths,
+// entry included). Missing targets are skipped rather than thrown -- a broken
+// `dist/` is the build's problem to report, not this script's.
 const closure = (entryFile) => {
   const seen = new Set();
   const queue = [entryFile];
@@ -61,7 +47,7 @@ const closure = (entryFile) => {
   return [...seen];
 };
 
-/** Raw and gzipped byte totals for a set of files, or null if none exist. */
+// Raw and gzipped byte totals for a set of files, or null if none exist.
 const measure = (files) => {
   const buffers = [];
   for (const file of files) {
@@ -86,12 +72,9 @@ const size = (file) => {
   }
 };
 
-/**
- * `exports` values are either a bare path (`./styles.css`) or a conditions
- * object, and each condition may itself be a path or a nested
- * `{ types, default }` object -- both forms are handled here. `./package.json`
- * is excluded as it's not a shipped artifact.
- */
+// `exports` values are either a bare path or a conditions object (each
+// condition itself a path or a nested `{ types, default }` object); both
+// forms are handled here. `./package.json` is excluded as it's not shipped.
 const entries = Object.entries(pkg.exports)
   .filter(([subpath]) => subpath !== "./package.json")
   .map(([subpath, value]) => {

@@ -1,8 +1,8 @@
 /**
- * The scan, the masking and the highlight, driven rather than described: axe's
- * results are foreign data, so every claim about what reaches the report is
- * made by running the code that builds it — including against the real
- * `axe-core` peer, which jsdom is enough of a browser for.
+ * The scan, the masking and the highlight, driven rather than described: every
+ * claim about what reaches the report is proven by running the code that
+ * builds it — including against the real `axe-core` peer, which jsdom is
+ * enough of a browser for.
  */
 import { afterEach, describe, expect, it, vi } from "vitest";
 import axe from "axe-core";
@@ -98,7 +98,7 @@ describe("the optional peer", () => {
     const stop = runtime.start(fake.api);
     await vi.waitFor(() => expect(load).toHaveBeenCalledTimes(1));
     expect(runtime.report().axeVersion).toBe("4.10.0");
-    // Loaded is not scanned: the expensive half still waits to be asked.
+    // Loaded is not scanned: the expensive half still waits.
     expect(runtime.report().status).toBe("pending");
     expect(runtime.report().scans).toBe(0);
     stop();
@@ -187,8 +187,8 @@ describe("loadOn", () => {
     finish({ violations: [], passes: [], incomplete: [] });
     await scanning;
 
-    // Nothing in the report says axe is here — no version, no scan, pending —
-    // yet it is, and the panel must not invite a load that already happened.
+    // Nothing in the report says axe is here, yet it is — the panel must not
+    // invite a load that already happened.
     expect(runtime.report()).toMatchObject({ status: "pending", axeVersion: null, scans: 0 });
     expect(runtime.store.getSnapshot().axeLoaded).toBe(true);
     stop();
@@ -261,7 +261,7 @@ describe("grouping and counts", () => {
     async (result) => {
       const { load } = stubAxe(result);
       const report = await createA11yRuntime({ load }).scan();
-      // A green `0` from a module that is not axe is worse than an error.
+      // A confident `0` from a module that is not axe is worse than an error.
       expect(report.status).toBe("failed");
       expect(report.error).toContain("not an axe result");
       expect(report.total).toBe(0);
@@ -290,7 +290,7 @@ describe("grouping and counts", () => {
 
   it("describes a thrown value that is not an Error", async () => {
     const runtime = createA11yRuntime({
-      // A non-Error rejection, which is what a hostile page can produce.
+      // A non-Error rejection — what a hostile page can produce.
       load: () => Promise.resolve({ run: () => Promise.reject("just a string") }),
     });
     const report = await runtime.scan();
@@ -313,7 +313,7 @@ describe("grouping and counts", () => {
     release({ violations: [violation("late", "critical", [{}])] });
     await scan;
 
-    // The results are dropped, not applied to a torn-down extension.
+    // Dropped, not applied to a torn-down extension.
     expect(runtime.report().total).toBe(0);
     expect(runtime.report().status).not.toBe("ok");
   });
@@ -333,8 +333,7 @@ describe("grouping and counts", () => {
     release({ violations: [] });
     const [a, b] = await Promise.all([first, second]);
 
-    // axe refuses to run twice at once, so a second caller must join the pass
-    // rather than start one — and must get the result, not a stale report.
+    // A second caller must join the pass, not start one, and get the result.
     expect(run).toHaveBeenCalledTimes(1);
     expect(a.status).toBe("ok");
     expect(b).toBe(a);
@@ -343,9 +342,8 @@ describe("grouping and counts", () => {
   });
 
   it("guards the second caller before the peer is even loaded", async () => {
-    // Both calls happen in one tick, so the guard has to be in place *before*
-    // the `await` that loads axe — axe's own "already running" error is what
-    // reaching `run()` twice produces.
+    // The guard must be in place before the `await` that loads axe, or two
+    // calls in one tick would both reach `run()` and hit axe's own error.
     const run = vi.fn(async () => ({ violations: [] }));
     const runtime = createA11yRuntime({ load: () => Promise.resolve({ run }) });
 
@@ -403,7 +401,7 @@ describe("what reaches the report", () => {
     }
 
     const nodes = report.groups[0]?.violations[0]?.nodes ?? [];
-    // The a11y-relevant attributes are what the panel is for, so they survive.
+    // The a11y-relevant attributes survive: they're what the panel is for.
     expect(nodes[0]?.html).toContain('aria-label="Password"');
     expect(nodes[0]?.html).toContain('class="field"');
     expect(nodes[0]?.html).toContain('type="password"');
@@ -460,8 +458,8 @@ describe("what reaches the report", () => {
   });
 
   it("masks a sensitive query parameter in a *relative* href or src", async () => {
-    // The common SPA shape. A substring pass keyed on `scheme://` never sees
-    // one, so `href`/`src` go through the URL redactor as whole values.
+    // The common SPA shape — a substring pass keyed on `scheme://` never sees
+    // a relative URL, so `href`/`src` go through the redactor as whole values.
     const { load } = stubAxe({
       violations: [
         violation("link-name", "serious", [
@@ -500,8 +498,8 @@ describe("what reaches the report", () => {
   });
 
   it("masks a `data-*` value that contains a quoted `>`", async () => {
-    // Ending a tag at the first `>` ends it *inside* the quotes and carries the
-    // tail through unmasked. Real axe exports exactly this markup.
+    // Ending a tag at the first `>` ends it inside the quotes and carries the
+    // tail through unmasked — real axe exports exactly this markup.
     document.body.innerHTML = `<main><img src="/logo.png" data-secret="prefix>MY_SECRET"></main>`;
     const report = await createA11yRuntime({
       load: () => Promise.resolve(realAxe),
@@ -536,8 +534,7 @@ describe("what reaches the report", () => {
     expect(nodes[0]?.html).toContain("[truncated]");
     expect(nodes[0]?.summary?.length).toBeLessThan(10_000);
     expect(nodes[1]?.html).toContain("[truncated]");
-    // Truncating an attribute value could split a token, so an oversized one
-    // goes wholesale instead.
+    // Truncating could split a token, so an oversized value goes wholesale.
     expect(nodes[2]?.html).toBe('<img alt="[redacted]">');
   });
 });
@@ -560,8 +557,8 @@ describe("axe's arguments", () => {
   });
 
   it("asks for violations in full even when `resultTypes` leaves them out", async () => {
-    // axe truncates an omitted type's nodes to one, with nothing in the output
-    // to say so, which would quietly make `nodeCount` a lie.
+    // axe truncates an omitted type's nodes to one, which would quietly make
+    // `nodeCount` a lie.
     document.body.innerHTML = `<main><img src="/a.png"><img src="/b.png"></main>`;
     const report = await createA11yRuntime({
       load: () => Promise.resolve(realAxe),
@@ -664,7 +661,7 @@ describe("the highlight", () => {
     runtime.select(selectionKey("label", 0));
     runtime.store.flush();
     expect(runtime.store.getSnapshot().highlight).toEqual([]);
-    // Still selected: the report says which element, the geometry says it is gone.
+    // Still selected: the report says which element, the geometry says it's gone.
     expect(runtime.report().selected).toBe(selectionKey("label", 0));
   });
 
@@ -714,7 +711,7 @@ describe("clearing", () => {
     expect(report.scans).toBe(1);
     runtime.store.flush();
     expect(runtime.store.getSnapshot().highlight).toEqual([]);
-    // A cleared scan cannot be re-highlighted from its old keys.
+    // Cannot be re-highlighted from a cleared scan's old keys.
     expect(runtime.select(selectionKey("label", 0)).selected).toBeNull();
   });
 
@@ -735,7 +732,7 @@ describe("with the real axe-core peer", () => {
     `;
 
     const runtime = createA11yRuntime({
-      // Two rules, so the assertion is about this page and the run stays quick.
+      // Two rules keeps the run quick and the assertion about this page.
       axeOptions: { runOnly: ["image-alt", "label"] },
     });
     const report = await runtime.scan();
@@ -744,7 +741,7 @@ describe("with the real axe-core peer", () => {
     expect(report.status).toBe("ok");
     expect(report.axeVersion).toBe(realAxe.version);
     expect(rules.sort()).toEqual(["image-alt", "label"]);
-    // One each: the toolbar's img and input are excluded, or these would be two.
+    // One each — the toolbar's img and input are excluded, or these'd be two.
     expect(report.nodeTotal).toBe(2);
     for (const group of report.groups) {
       for (const entry of group.violations) {
@@ -823,7 +820,7 @@ describe("two runtimes over one engine", () => {
     const [a, b] = await Promise.all([first.scan(), second.scan()]);
 
     expect([a.status, b.status]).toEqual(["ok", "ok"]);
-    // Serialised, not shared: each runtime keeps its own report.
+    // Each runtime keeps its own report.
     expect(a).not.toBe(b);
     expect(a.total).toBe(1);
     expect(b.total).toBe(1);
@@ -875,7 +872,7 @@ describe("the scan's lifecycle", () => {
     const report = await fresh;
     restop();
 
-    // A fresh scan, not the previous mount's promise, and not its result.
+    // A fresh scan, not the previous mount's promise or result.
     expect(run).toHaveBeenCalledTimes(2);
     expect(report.total).toBe(0);
     expect(runtime.report().total).toBe(0);
@@ -995,9 +992,9 @@ describe("credential-redaction export regressions", () => {
     expect(json).toContain("[unreadable]");
   });
 
-  // `href` and `src` are tried as one URL, but a value with whitespace in it hides
-  // the rest of itself from that parse — after a `#` the query has ended, and
-  // neither userinfo nor the path is inspected. The embedded-URL scan runs as well.
+  // A whitespace-bearing `href`/`src` value hides the rest of itself from the
+  // whole-value URL parse — after a `#` the query has ended, and neither
+  // userinfo nor path is inspected — so the embedded-URL scan runs as well.
   it.each([
     '<a href="https://a.test/?x=1 https://b.test/?token=LEAK_SECRET_123">x</a>',
     '<a href="/a b?x=https://b.test/?token=LEAK_SECRET_123">x</a>',
@@ -1059,9 +1056,9 @@ describe("credential-redaction export regressions", () => {
   });
 
   it("reads redactOptions filled in after the runtime was built", async () => {
-    // Regression: caching the URL options at construction let a caller who filled
-    // `redactOptions` in later see `href`/`src` masked differently from the
-    // attribute beside them — the name masked, the query value leaking.
+    // Regression: caching the URL options at construction let a caller who
+    // fills `redactOptions` in later see `href`/`src` leak — masked
+    // differently from the attribute beside them.
     const redactOptions: RedactOptions = {};
     const html =
       '<a href="/x?privateCode=SECRET"><img src="/i?privateCode=SECRET" privateCode="v"></a>';

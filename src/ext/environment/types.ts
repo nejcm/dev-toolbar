@@ -1,11 +1,9 @@
 /**
  * Shared vocabulary for `/ext/environment`. [dev-toolbar/ext/environment]
  *
- * Everything in `plans/dev-bar.md` §3B is **consumer-supplied**: no `process.env`,
- * no globals. What the consumer told it, plus facts the browser itself can
- * answer (route, viewport, connection), labelled `"detected"` so they're never
- * mistaken for something the deploy asserted. Nothing supplied → `"unknown"`,
- * spelled out rather than guessed from the hostname.
+ * Everything here is consumer-supplied — no `process.env`, no globals — plus
+ * facts the browser itself can answer (route, viewport, connection), labelled
+ * `"detected"` so they're never mistaken for something the deploy asserted.
  */
 import type { Severity } from "@nejcm/dev-toolbar/kit";
 
@@ -153,24 +151,16 @@ export const GROUP_LABELS: Record<EnvironmentGroup, string> = {
 
 /**
  * The one word the bar chip paints as its value — `"unknown"` unless the
- * consumer supplied a kind.
- *
- * Exported because `presentation` hands a consumer's `icon` / `render` / `name`
- * the whole `EnvironmentSnapshot`, and a callback that wants to paint the same
- * value the preset does should not have to re-derive the
- * `supplied && kind !== "unknown"` rule and drift from it
- * (`plans/bar-presentation-icons-v1.md`, "The callback goes on all seven").
- * It lives here rather than in `ui.tsx` because it is vocabulary, not DOM.
+ * consumer supplied a kind. Exported because `presentation` hands a consumer's
+ * `icon` / `render` / `name` the whole snapshot, and a callback painting the
+ * same value the preset does should not re-derive this rule and drift from it.
+ * Vocabulary, not DOM, so it lives here rather than in `ui.tsx`.
  */
 export function kindLabel(snapshot: EnvironmentSnapshot): string {
   return snapshot.supplied && snapshot.kind !== "unknown" ? String(snapshot.kind) : "unknown";
 }
 
-/**
- * Folds real-world spellings (`"Production"`, `" prod "`, `"PROD"`) onto the
- * canonical names, so §6's "mark production conspicuously" isn't missed by a
- * casing mismatch. Anything unrecognised comes back trimmed/lowercased.
- */
+/** Folds real-world spellings (`"Production"`, `" prod "`, `"PROD"`) onto the canonical names. */
 export function normaliseKind(kind: string): string {
   const value = kind.trim().toLowerCase();
   switch (value) {
@@ -186,11 +176,8 @@ export function normaliseKind(kind: string): string {
 }
 
 /**
- * Severity by environment. Production is `"bad"` on purpose — §6's "mark
- * production conspicuously" — not because anything is wrong with it.
- *
- * Impersonation outranks everything: there is no route to a reassuring green
- * while you are acting as somebody else.
+ * Production is `"bad"` on purpose, to mark it conspicuously — not because
+ * anything is wrong with it. Impersonation outranks everything else.
  */
 export function severityForKind(kind: string, impersonating: boolean): EnvironmentSeverity {
   if (impersonating) return "bad";

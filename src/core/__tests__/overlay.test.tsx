@@ -122,9 +122,8 @@ describe("overlay slot", () => {
       ],
     });
     const before = renders;
-    // A panel-height drag is one of these per pointermove, and an overlay has
-    // no interest in any of it. Without the memo the palette's whole dialog
-    // re-renders on each frame.
+    // A panel-height drag fires one of these per pointermove; without the memo
+    // the overlay's whole dialog would re-render on each frame.
     toolbar.openPanel("b");
     toolbar.setPanelHeight(240);
     toolbar.setPanelHeight(260);
@@ -135,12 +134,11 @@ describe("overlay slot", () => {
   });
 
   it("is laid out with display: contents, so it adds no box of its own", () => {
-    // What this used to assert was that `--dev-toolbar-height` did not change
-    // with an overlay present — which passed no matter what, because
-    // `/testing`'s fake layout stubs the root's getBoundingClientRect to a
-    // fixed height. Under jsdom there is no layout to measure, so the honest
-    // assertion is on the rule that produces the behaviour. The real-browser
-    // half of it is checked by hand in the playground.
+    // This used to assert `--dev-toolbar-height` was unchanged with an overlay
+    // present, but that passed regardless — `/testing`'s fake layout stubs a
+    // fixed height. Under jsdom there's no real layout to measure, so the
+    // honest assertion is on the CSS rule itself; the real-browser half is
+    // checked by hand in the playground.
     for (const [name, css] of [
       ["CORE_CSS", CORE_CSS],
       ["styles.css", readFileSync(resolve(process.cwd(), "src/styles.css"), "utf8")],
@@ -153,11 +151,10 @@ describe("overlay slot", () => {
 
   it("puts a throwing overlay's chip in the root's own flex column", () => {
     // Documented rather than fixed: the error chip is a plain child of the
-    // root, which is `flex-direction: column`, so in a real browser it lands as
-    // a row between the bar and the panel and *does* add to
-    // `--dev-toolbar-height`. Error path only, and a visible failure beats a
-    // hidden one — but it is the one case where "an overlay adds no layout" is
-    // not true, so it is pinned here rather than left to be rediscovered.
+    // root (`flex-direction: column`), so it lands as a row between the bar
+    // and the panel and does add to `--dev-toolbar-height`. Error path only —
+    // a visible failure beats a hidden one — but it's the one case where "an
+    // overlay adds no layout" isn't true.
     const { toolbar } = mount(null, {
       extensions: [makeExtension({ id: "boom", throwInOverlay: true })],
     });

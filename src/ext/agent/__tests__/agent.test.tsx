@@ -27,7 +27,7 @@ afterEach(() => {
 
 describe("installation", () => {
   it("touches no global until the toolbar mounts", () => {
-    // The factory may run during SSR, before any client global exists (decision 5).
+    // The factory may run during SSR, before any client global exists.
     const extension = agentBridge();
     expect(scope[DEFAULT_GLOBAL_NAME]).toBeUndefined();
     expect(typeof extension.start).toBe("function");
@@ -471,10 +471,8 @@ describe("the chip", () => {
   });
 
   it("collapses into the overflow menu before an ordinary extension does", () => {
-    // The bridge is a transport: when the bar runs out of room its chip must
-    // yield before a metrics sparkline or an environment badge, both of which
-    // sit at core's default priority of 0. Lowest priority collapses first, so
-    // the default here has to be *below* 0 — `1` did the exact opposite.
+    // Lowest priority collapses first, so the default here must be below
+    // core's default of 0 — `1` did the exact opposite.
     const { toolbar } = renderWithToolbar(undefined, {
       instanceId: "narrow",
       extensions: [

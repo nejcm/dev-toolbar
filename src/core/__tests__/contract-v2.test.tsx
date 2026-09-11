@@ -1,13 +1,9 @@
 /**
  * Contract v2, from core's side (`plans/agent-readable-toolbar.md` § Phase 2).
  *
- * The plan's line is "compatibility is the real work, not the type", so the
- * headline case here is a **v1-shaped extension** — written the way an author
- * would have written it before this change, declaring `contractVersion: 1`,
- * with zero-argument `run()`s and no `input` anywhere — mounted in a v2 host.
- * It is deliberately *not* a v2 extension with fields omitted: the point is
- * that source written against the old shape still works, and a v2 object with
- * optional fields left out would not test that.
+ * The headline case is a v1-shaped extension — declaring `contractVersion: 1`,
+ * zero-argument `run()`s, no `input` — mounted in a v2 host, not a v2 object with
+ * fields merely omitted: source written against the old shape must still work.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { MockInstance } from "vitest";
@@ -28,11 +24,9 @@ describe("the version", () => {
     expect(CONTRACT_VERSION).toBe(2);
   });
 
-  // The matching assertion — that every first-party extension declares
-  // this same number — lives in `src/ext/__tests__/contract-version.test.ts`.
-  // It cannot live here: `boundary.test.ts` forbids anything under `src/core`
-  // from naming `ext/`, tests included, and that rule is worth more than the
-  // convenience of one file.
+  // The matching assertion for extensions lives in
+  // `src/ext/__tests__/contract-version.test.ts`: boundary.test.ts forbids anything
+  // under src/core from naming ext/, tests included.
 });
 
 /* -------------------------------------------------------------------------- */
@@ -40,12 +34,9 @@ describe("the version", () => {
 /* -------------------------------------------------------------------------- */
 
 /**
- * Written against contract v1 and left alone. Nothing here mentions `input`,
- * `description`, a `run` parameter or a return value, and it declares `1`.
- *
- * The type annotations are v1's too: `ToolbarCommand[]`, which under v2 means
- * `ToolbarCommand<void, void>[]`. That this still compiles *is* half the
- * assertion, and it is checked by `tsc`, not by an expectation below.
+ * Written against contract v1: no `input`, `description`, run parameter, or return
+ * value, and `ToolbarCommand[]` typing (which under v2 means `ToolbarCommand<void, void>[]`).
+ * That this still compiles is half the assertion, checked by tsc, not an expectation below.
  */
 function makeV1Extension(ran: string[]): DevToolbarExtension {
   const commands: ToolbarCommand[] = [
@@ -211,9 +202,8 @@ describe("invokeCommand", () => {
   });
 
   it("does not reinterpret runCommand's second argument", async () => {
-    // The whole reason `invokeCommand` takes an options bag: `runCommand(id, scope)`
-    // is published, and a third positional `input` would have made every
-    // existing two-argument call mean something new.
+    // Why invokeCommand takes an options bag: runCommand(id, scope) is published,
+    // and a third positional input would silently change every existing call.
     const ran: string[] = [];
     const scope = collectCommands([
       {

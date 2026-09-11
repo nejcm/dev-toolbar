@@ -1,10 +1,7 @@
 /**
  * `<DevToolbar bindCommandShortcuts>` — opt-in binding of `ToolbarCommand.shortcut`
- * (`plans/extension-customization.md` § Phase 4).
- *
- * The default is off: existing `shortcut` strings are often display-only, and
- * some describe a host's own listener. These tests pin the six rules and the
- * three event guards that a reimplementation tends to drop.
+ * (`plans/extension-customization.md` § Phase 4). Default is off because
+ * existing `shortcut` strings are often display-only or describe a host's own listener.
  */
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -183,10 +180,8 @@ describe("bindCommandShortcuts", () => {
       </DevToolbar>,
     );
 
-    // Once, deliberately: a second press only papered over the ordering bug,
-    // where the toggle listener's `preventDefault()` made the command
-    // listener bail before it could warn, until a visibility flip happened to
-    // re-register the two in the other order.
+    // Once, deliberately: a second press only worked around an ordering bug where
+    // the toggle listener's preventDefault() made the command listener bail before it could warn.
     fireToggleShortcut();
 
     expect(run).not.toHaveBeenCalled();
@@ -199,9 +194,8 @@ describe("bindCommandShortcuts", () => {
   it("warns on the first press even when visibility is controlled and inert", () => {
     const run = vi.fn();
     render(
-      // Controlled `visible` with no `onVisibleChange`: visibility never
-      // flips, so nothing ever re-registers the listeners. The warning has to
-      // come from the first press or never.
+      // Controlled `visible` with no `onVisibleChange` never flips, so the warning
+      // has to come from the first press or never.
       <DevToolbar
         instanceId="bind-toggle-warn-controlled"
         storage={null}

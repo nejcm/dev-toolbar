@@ -28,11 +28,10 @@ describe("ensureStyles", () => {
   });
 
   /**
-   * Original bug: `entry` was interpolated raw into
-   * `style[data-dev-toolbar-styles="${entry}"]`. A `"` in it closed the
-   * attribute value early, so the selector either changed meaning or — more
-   * usually — was invalid and `querySelector` threw a `SyntaxError` straight
-   * out of the effect that called it.
+   * Regression: `entry` was interpolated raw into
+   * `style[data-dev-toolbar-styles="${entry}"]`; a `"` in it closed the
+   * attribute value early, usually making `querySelector` throw a
+   * `SyntaxError` straight out of the calling effect.
    */
   it("dedupes an entry containing a quote instead of throwing an invalid selector", () => {
     const hostile = 'a"], style[data-dev-toolbar-styles="b';

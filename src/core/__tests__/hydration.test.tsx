@@ -1,11 +1,7 @@
 /**
- * The client half of `docs/architecture.md` §8: server HTML carries no bar,
- * hydrating over that HTML mounts one, and React reports no mismatch.
- *
- * This file runs under jsdom on purpose — hydration needs a document. The
- * DOM-free half of the SSR promise is `ssr.test.tsx`, which runs under `node`.
- * `renderToString` here still produces the same string it does on a server,
- * because the bar is gated on an effect and `renderToString` runs none.
+ * Client half of `docs/architecture.md` §8: server HTML carries no bar;
+ * hydrating over it mounts one with no mismatch. Runs under jsdom, since
+ * hydration needs a document — the DOM-free half is `ssr.test.tsx`, under `node`.
  */
 import { act } from "@testing-library/react";
 import { hydrateRoot } from "react-dom/client";
@@ -77,9 +73,9 @@ describe("hydration over server HTML", () => {
   });
 
   it("keeps the inset agreeing with the server on the first client render", () => {
-    // The inset is the one piece of core that *is* in server HTML, so it is
-    // the only place a mismatch could come from. It holds bottom/0px through
-    // hydration and only then picks up the real height variable.
+    // The inset is the only piece of core present in server HTML, so it's the
+    // only place a mismatch could show up; it holds bottom/0px until the mount
+    // effect picks up the real height variable.
     const html = renderToString(app([]));
     expect(html).toContain('data-dtb-position="bottom"');
 
@@ -96,14 +92,11 @@ describe("hydration over server HTML", () => {
 });
 
 /**
- * Original bug: `createToolbarStore` reads storage eagerly at construction and
- * `getSnapshot` was passed to `useSyncExternalStore` as `getServerSnapshot`
- * too. A server has no storage, so it rendered the defaults; the first client
- * render then read the *persisted* values and every consumer of
- * `useDevToolbar()` rendered something the server HTML did not contain.
- *
- * `DevToolbarInset` cannot show this — it gates on `mounted` — so this drives
- * an ordinary consumer instead, which is what the context is for.
+ * Regression test: `getSnapshot` was passed to `useSyncExternalStore` as
+ * `getServerSnapshot` too, so a server (no storage) rendered defaults while the
+ * first client render read persisted values, mismatching every
+ * `useDevToolbar()` consumer. `DevToolbarInset` gates on `mounted` and can't
+ * show this, hence the plain consumer below.
  */
 describe("hydration with persisted preferences", () => {
   /** Values a returning user would already have in localStorage. */
@@ -145,9 +138,7 @@ describe("hydration with persisted preferences", () => {
     });
     unmount = () => root.unmount();
 
-    // The first client render matches the server HTML…
     expect(seen[0]).toBe("bottom/320");
-    // …and the persisted values arrive right after, without a mismatch.
     expect(seen.at(-1)).toBe("top/500");
     expect(container.querySelector('[data-testid="consumer"]')!.textContent).toBe("top/500");
     expect(error!.mock.calls.map((call) => String(call[0]))).toEqual([]);

@@ -23,12 +23,12 @@ const styleCount = (entry: string): number =>
 
 /**
  * jsdom's CSSOM drops every rule inside an `@layer` block, so `getComputedStyle`
- * sees nothing of a sheet shipped the way this repo ships all of them. Stripping
- * the wrapper leaves the selectors and declarations byte-identical — the layer
- * only orders KIT_CSS against *unlayered consumer* CSS, never its own rules
- * against each other — so the cascade this installs is the one a browser runs.
- * jsdom also leaves `var(--dtb-…)` unresolved, which is what makes it readable:
- * a colour rule that matched reports the literal `var(--dtb-danger)`.
+ * sees nothing of a sheet shipped the way this repo ships all of them.
+ * Stripping the wrapper leaves selectors and declarations byte-identical — the
+ * layer only orders KIT_CSS against unlayered consumer CSS, never its own
+ * rules against each other. jsdom also leaves `var(--dtb-…)` unresolved,
+ * which is what makes this readable: a matched colour rule reports the
+ * literal `var(--dtb-danger)`.
  */
 function installUnlayeredKitCss(): void {
   const style = document.createElement("style");
@@ -132,9 +132,9 @@ describe("migrated extension kit styles", () => {
     const chipValue = toolbar.item("environment")?.querySelector('[data-dtb-part="env-value"]');
     const chipDot = toolbar.item("environment")?.querySelector('[data-dtb-part="env-dot"]');
     const rowValues = Array.from(panel?.querySelectorAll('[data-dtb-part="env-row-value"]') ?? []);
-    // The panel root is the element that carries data-dtb-severity="bad" and no
-    // data-dtb-kind, so KIT_CSS gives it no colour of its own: it is the default
-    // foreground every row value must still be rendering in.
+    // The panel root carries data-dtb-severity="bad" but no data-dtb-kind, so
+    // KIT_CSS gives it no colour of its own — the default foreground every
+    // row value must still render in.
     const uncoloured = getComputedStyle(
       panel?.querySelector('[data-dtb-part="env-panel"]') as HTMLElement,
     ).color;

@@ -1,9 +1,6 @@
 /**
- * `/ext/theme-editor`'s runtime, without React.
- *
- * The two things worth the most attention here are the ones this extension
- * inherits from earlier phases and has to keep for itself: **exact reversal**
- * of everything it wrote to the host document, and **fail-closed** treatment of
+ * `/ext/theme-editor`'s runtime, without React. Covers exact reversal of
+ * everything written to the host document, and fail-closed treatment of
  * every foreign input — a token name, a token value, a pasted recipe, a URL.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -193,9 +190,8 @@ describe("name validation — the guard that keeps the toolbar out of it", () =>
   });
 
   it("never writes a reserved name onto the surface, even when declared", () => {
-    // This is the whole "an app edit must not restyle the toolbar" guarantee,
-    // asserted against the DOM rather than against the refusal helper — the
-    // §14.7 lesson about a test that only ever compares a rule to itself.
+    // Asserted against the DOM, not the refusal helper — a test that only
+    // compares a rule to itself proves nothing.
     const runtime = createThemeEditorRuntime({
       tokens: [{ name: "--dtb-bg", type: "color", value: "#000" }],
     });
@@ -266,9 +262,8 @@ describe("applying and reversing", () => {
   });
 
   it("restores the document byte-for-byte, style attribute included", () => {
-    // Byte equality, not "no obvious change" — the /ext/overlays §14.2
-    // standard. `setProperty` then `removeProperty` leaves `style=""` behind,
-    // which this assertion is specifically here to catch.
+    // Byte equality, not "no obvious change": `setProperty` then
+    // `removeProperty` leaves `style=""` behind, which this catches.
     const before = root().outerHTML.slice(0, 200);
     expect(root().hasAttribute("style")).toBe(false);
 
@@ -300,14 +295,9 @@ describe("applying and reversing", () => {
   });
 
   it("restores an `!important` inline declaration with its priority", () => {
-    // jsdom drops `!important` on custom properties entirely — the attribute it
-    // writes for `setProperty("--x", "red", "important")` is `--x: red;` and
-    // `getPropertyPriority` comes back `""`. So the ambient document cannot
-    // observe this at all, and asserting against it would be a test that passes
-    // whether or not the priority is carried. §14.6 and §10.6's rule, met a
-    // third time: a platform difference makes a real guarantee untestable in
-    // the place you would naturally test it. The declaration is driven directly
-    // instead, and the browser pass covers the real cascade.
+    // jsdom drops `!important` on custom properties entirely, so the ambient
+    // document can't observe this — a fake `style` object drives the
+    // declaration directly instead, while the browser pass covers the real cascade.
     const calls: string[] = [];
     const style = {
       _v: new Map<string, [string, string]>(),
@@ -390,9 +380,8 @@ describe("applying and reversing", () => {
   });
 
   it("keeps the edits applied while the bar is hidden", () => {
-    // The deliberate difference from /ext/overlays, which detaches everything
-    // on the same signal. Repainting the application every time somebody
-    // pressed the hide shortcut would make the extension unusable.
+    // Unlike /ext/overlays, which detaches on the same signal: repainting the
+    // application every time the hide shortcut is pressed would be unusable.
     const notify: ((visible: boolean) => void)[] = [];
     const runtime = createThemeEditorRuntime({ tokens: TOKENS });
     runtime.start({
@@ -458,9 +447,8 @@ describe("before and after", () => {
   });
 
   it("captures the computed value before the write when no `value` was supplied", () => {
-    // The §12.1 trap from the other direction: once the property is on the
-    // element, the computed value *is* the edit, so a row that re-read it would
-    // claim the application already agreed.
+    // Once the property is on the element, the computed value *is* the edit,
+    // so re-reading it would falsely claim the application already agreed.
     root().style.setProperty("--computed-only", "rgb(1, 2, 3)");
     const runtime = createThemeEditorRuntime({
       tokens: [{ name: "--computed-only", type: "color" }],
@@ -477,9 +465,8 @@ describe("before and after", () => {
 
 describe("redaction", () => {
   it("leaves colours, lengths and numbers readable whatever they are called", () => {
-    // `session` is in DEFAULT_SENSITIVE_KEYS, and `--session-panel-bg`
-    // normalises to `sessionpanelbg`. Masking it would make the token you most
-    // need to see the one you cannot — /ext/flags' §12.6 argument for booleans.
+    // `--session-panel-bg` normalises to `sessionpanelbg`, matching a
+    // sensitive key by name — masking it would hide the token you most need to see.
     const runtime = createThemeEditorRuntime({
       tokens: [
         { name: "--session-panel-bg", type: "color", value: "#123456" },
@@ -535,7 +522,7 @@ describe("redaction", () => {
     expect(runtime.cssText()).toContain("[redacted]");
     expect(runtime.figmaText()).not.toContain("sk-live-should-never-appear");
     expect(JSON.stringify(runtime.diagnostics())).not.toContain("sk-live-should-never-appear");
-    // The recipe is *executable*, so it omits what it cannot represent rather
+    // The recipe is executable, so it omits what it can't represent rather
     // than carrying the mask into a document a machine applies.
     const recipe = JSON.parse(runtime.recipeText()) as {
       overrides: Record<string, string>;
@@ -546,29 +533,15 @@ describe("redaction", () => {
   });
 
   it("does not mask its own structural fields, at any depth", () => {
-    // Found by writing the test above. `redact()` matches key names by word
-    // segment, so this field was first called `omittedMaskedTokens` — whose
-    // `Tokens` segment matches `token` — and came back as `"[redacted]"` where
-    // a count belongs.
-    // A count that reads as a credential is a wrong fact in an outbound
-    // document, which is exactly what §15.3 is about; the difference is only
-    // that the foreign key here was *ours*.
-    //
-    // **Recursive, not top-level.** The first version of this scan looked only
-    // at the outermost keys, which is why it passed while `recipe.overrides` —
-    // one level down, keyed by token names — was being re-masked wholesale. A
-    // scan that stops at the depth where the last bug happened only ever
-    // catches the last bug.
+    // `redact()` matches key names by word segment, so a field named e.g.
+    // `omittedMaskedTokens` would itself come back as `"[redacted]"` where a
+    // count belongs. Recursive, not top-level: `recipe.overrides`, one level
+    // down and keyed by token names, is exactly where this was missed before.
     const runtime = createThemeEditorRuntime({
       tokens: [
         { name: "--api-token", type: "string", value: "public" },
-        // Ordinary names whose *segments* are credential words — `session`,
-        // `token` and `auth` each stand alone here, so the word list matches
-        // them however carefully it is matched. (The names this test was
-        // written with, `--sidebar-bg` and `--spinner-size`, collided only
-        // while the list was tested as a substring of the normalised key; they
-        // stopped colliding, and stopped testing anything, when it became
-        // segment matching.)
+        // Ordinary names whose segments (`session`, `token`, `auth`) are
+        // credential words on their own.
         { name: "--session-panel-bg", type: "color", value: "#ffffff" },
         { name: "--token-color", type: "color", value: "#000000" },
         { name: "--auth-panel-radius", type: "length", value: "2px" },
@@ -598,9 +571,8 @@ describe("redaction", () => {
       }
     };
 
-    // Both documents something *applies*: the recipe JSON and the share link's
-    // payload. `diagnostics()` is deliberately not here — it is a human-read
-    // report and a mask in it is the feature.
+    // Only documents something *applies* — `diagnostics()` is a human-read
+    // report, where a mask is the feature, not the bug.
     walk(JSON.parse(runtime.recipeText()), "recipe");
     const link = runtime.shareLink();
     if (link !== null) {
@@ -611,19 +583,11 @@ describe("redaction", () => {
   });
 
   it("round-trips a colour whose own name is a credential word", () => {
-    // The acceptance criterion this defect broke: `plans/dev-bar.md` says the
-    // JSON round-trips without loss. It did not, because a belt-and-braces
-    // `redact()` pass downstream of the classified join re-applied key matching
-    // to the token names — masking them in the one document that gets applied,
-    // where `sanitize()` then refuses the mask sentinel and drops them
-    // entirely.
-    //
-    // The names are `--session-panel-bg` and `--token-color`: a `session` and a
-    // `token` segment, so they collide with the word list on their own terms
-    // rather than through the substring rule the original repro
-    // (`--sidebar-bg`, `--spinner-size`) depended on. A colour is a colour —
-    // §16.3 classifies both out of name matching, and the two-piece split in
-    // `executablePayload` is what keeps that true one level down.
+    // `--session-panel-bg` and `--token-color` collide with the sensitive-key
+    // word list on their own segments. A belt-and-braces `redact()` pass that
+    // re-applied key matching to token names used to mask them here, and
+    // `sanitize()` then refused the mask sentinel and dropped them entirely —
+    // the two-piece split in `executablePayload` is what keeps them out of name matching.
     const runtime = createThemeEditorRuntime({
       tokens: [
         { name: "--session-panel-bg", type: "color", value: "#ffffff" },
@@ -652,10 +616,8 @@ describe("redaction", () => {
   });
 
   it("keeps the two executable documents in agreement", () => {
-    // The disagreement is what proved the mask was a defect rather than a
-    // policy: the link carried raw values while the recipe carried masks. They
-    // are now built by one function, so a difference is impossible rather than
-    // unlikely.
+    // The link used to carry raw values while the recipe carried masks; both
+    // are now built by one function, so a difference is impossible.
     const runtime = createThemeEditorRuntime({
       tokens: [
         { name: "--sidebar-bg", type: "color", value: "#ffffff" },
@@ -670,13 +632,8 @@ describe("redaction", () => {
     const link = runtime.shareLink();
     expect(link).not.toBeNull();
     const fromLink = new URL(link as string).searchParams.get("dtb-theme");
-    // Full equality holds here because the clock is frozen (`now: () => 0`).
-    // In production two reads seconds apart carry different `createdAt` and
-    // `name` values, which is correct — they were produced at different times.
-    // What must never differ is anything describing the *theme*, and this
-    // assertion covers that as a subset.
+    // Full equality holds only because the clock is frozen (`now: () => 0`).
     expect(JSON.parse(fromLink as string)).toEqual(JSON.parse(runtime.recipeText()));
-    // And the genuinely masked one is still omitted from both, with the count.
     const parsed = JSON.parse(runtime.recipeText()) as {
       overrides: Record<string, string>;
       maskedValuesOmitted?: number;
@@ -768,10 +725,8 @@ describe("foreign recipes", () => {
   });
 
   it("says how many of the developer's own edits an import replaced", () => {
-    // `adopt()` replaces rather than merges — a recipe is a whole theme — which
-    // sits awkwardly next to `sanitize()`'s own argument, two functions up, that
-    // the developer's work is not silently discarded. There is no undo, so the
-    // minimum is to say what happened in the same sentence.
+    // `adopt()` replaces rather than merges — a recipe is a whole theme —
+    // and there is no undo, so the minimum is to say what happened.
     const runtime = mounted();
     runtime.setOverride("--brand-500", "#111111");
     runtime.setOverride("--radius-md", "1px");
@@ -858,8 +813,8 @@ describe("the URL", () => {
       const runtime = createThemeEditorRuntime({ tokens: TOKENS });
       runtime.start(fakeApi(storage));
       expect(runtime.overrides()).toEqual({});
-      // The point of "before": the wedging edit must never reach the page on
-      // the reset load, not merely be removed afterwards.
+      // The wedging edit must never reach the page on the reset load, not
+      // merely be removed afterwards.
       expect(root().style.getPropertyValue("--brand-500")).toBe("");
       expect(storage.getItem(OVERRIDES_KEY)).toBeNull();
     });
@@ -935,8 +890,8 @@ describe("failing closed", () => {
     runtime.setOverride("--radius-md", "16px");
 
     const snapshot = runtime.store.peek();
-    // Per token, not one global slot — the §12.4 defect. A success on
-    // `--radius-md` must not erase the failure on `--brand-500`.
+    // Per token, not one global slot: a success on `--radius-md` must not
+    // erase the failure on `--brand-500`.
     expect(snapshot.applyErrors["--brand-500"]).toContain("provider offline");
     expect(snapshot.applyErrors["--radius-md"]).toBeUndefined();
     expect(snapshot.tokens.find((token) => token.name === "--brand-500")?.applyError).toBeDefined();
@@ -1027,10 +982,9 @@ describe("persistence", () => {
   });
 
   it("keeps a session edit across a restart when every storage call throws", () => {
-    // The read fallback is the serialised *empty* map, so a throw and "nothing
-    // stored" arrive at `start` looking identical. Overwriting the session map
-    // with that fallback loses an edit that only ever lived in memory, because
-    // the throwing adapter never let it be persisted in the first place.
+    // The read fallback is the serialised empty map, so a throw and "nothing
+    // stored" look identical at `start` — overwriting the session map with
+    // that fallback would lose an edit the throwing adapter never persisted.
     const blocked = () => {
       throw new Error("blocked");
     };
@@ -1045,14 +999,13 @@ describe("persistence", () => {
     const snapshot = runtime.store.getSnapshot();
     expect(snapshot.overriddenCount).toBe(1);
     expect(snapshot.tokens.find((view) => view.name === "--brand-500")?.overridden).toBe(true);
-    // The retained map is re-applied to the page, not merely remembered.
     expect(root().style.getPropertyValue("--brand-500")).toBe("#ff0000");
     stopAgain();
   });
 
   it("clears the session map on a restart when readable storage has no edits", () => {
-    // The other half of the guard above: storage that answers, with the key
-    // gone, is a real "no edits stored" and must still win over the session.
+    // Storage that answers, with the key gone, is a real "no edits stored"
+    // and must still win over the session.
     const storage = createMemoryStorage();
     const runtime = createThemeEditorRuntime({ tokens: TOKENS });
     const stop = runtime.start(fakeApi(storage));
@@ -1081,9 +1034,8 @@ describe("persistence", () => {
   });
 
   it("shows and clears an edit whose token the catalogue no longer declares", () => {
-    // Anything you apply must appear in what you display (§12.4). An orphan is
-    // still written to the page on every mount, so a panel that dropped it
-    // would make it invisible *and* unclearable.
+    // An orphan is still written to the page on every mount, so a panel that
+    // dropped it would make it invisible and unclearable.
     const storage = createMemoryStorage();
     storage.setItem(OVERRIDES_KEY, JSON.stringify({ "--renamed-token": "#ff0000" }));
     const runtime = createThemeEditorRuntime({ tokens: TOKENS });
@@ -1099,11 +1051,8 @@ describe("persistence", () => {
   });
 
   it("drops a reserved name out of storage instead of carrying it forever", () => {
-    // A reserved name is dropped by `vetStored`, unlike an orphan. It can never
-    // be written by anything, so keeping it was pure residue — and residue with
-    // no exit: `writeOne` refused it on every load, and its row had no editor
-    // and so no per-row clear, leaving "Reset everything" or the kill switch as
-    // the only way out.
+    // Unlike an orphan, a reserved name is dropped by `vetStored`: it can
+    // never be written, and its row would have no editor and so no per-row clear.
     const storage = createMemoryStorage();
     storage.setItem(
       OVERRIDES_KEY,
@@ -1114,18 +1063,15 @@ describe("persistence", () => {
 
     expect(runtime.overrides()).toEqual({ "--brand-500": "#00ff00" });
     expect(runtime.store.peek().notice).toContain("--dtb-bg");
-    // Written back, so it does not come round again on the next load.
     expect(JSON.parse(storage.getItem(OVERRIDES_KEY) as string) as unknown).toEqual({
       "--brand-500": "#00ff00",
     });
   });
 
   it("re-applies every edit when the surface element is replaced", () => {
-    // The panel says `override ?? base` for every row. If an SPA re-renders the
-    // subtree a surface selects, the hold goes with the old node — and writing
-    // only the token the developer just touched would leave every other row
-    // claiming an edit the page had reverted. §12.4's honesty rule in reverse,
-    // and invisible, because the panel is the thing that would be wrong.
+    // If an SPA re-renders the subtree a surface selects, the hold goes with
+    // the old node — writing only the token just touched would leave every
+    // other row claiming an edit the page had reverted.
     const first = document.createElement("div");
     first.id = "surface";
     document.body.appendChild(first);
@@ -1200,8 +1146,7 @@ describe("persistence", () => {
       runtime.selectSurface("app");
       expect(storage.getItem(SURFACE_KEY)).toBe("app");
       runtime.selectSurface("root");
-      // The default is whatever the consumer lists first, so "chose the
-      // default" and "never chose" must stay distinguishable: the id is kept.
+      // "Chose the default" and "never chose" must stay distinguishable.
       expect(storage.getItem(SURFACE_KEY)).toBe("root");
 
       // …and when the consumer later puts another surface first, the explicit
@@ -1243,7 +1188,7 @@ describe("persistence", () => {
         removeItem: () => {},
       },
     });
-    // §12.5: a null-prototype map across a public API breaks `hasOwnProperty`.
+    // A null-prototype map across a public API breaks `hasOwnProperty`.
     expect(result.hasOwnProperty("--brand-500")).toBe(true);
   });
 
@@ -1274,11 +1219,9 @@ describe("type inference", () => {
 
 describe("structural validation — the half a character deny list cannot see", () => {
   it("refuses a value whose brackets never close — a truncated `calc(` used to be accepted", () => {
-    /* Regression: `checkTokenValue` short-circuited on the `FUNCTIONAL`
-       prefix before anything looked at structure, so `calc(` returned `null`,
-       was written to the surface as a live declaration, and was printed into
-       `cssText()` — where an unclosed function swallows every declaration
-       after it. */
+    // Regression: short-circuiting on the `FUNCTIONAL` prefix before looking
+    // at structure let `calc(` through, where an unclosed function swallows
+    // every declaration after it in `cssText()`.
     expect(checkTokenValue("color", "calc(")).toBe("syntax");
     expect(checkTokenValue("length", "clamp(1px, 2vw")).toBe("syntax");
     expect(checkTokenValue("string", "var(--a")).toBe("syntax");
@@ -1312,11 +1255,8 @@ describe("structural validation — the half a character deny list cannot see", 
   });
 
   it("denies a backslash before the scanner sees it — which is why the scanner has no escape state", () => {
-    /* Ordering pin. `structurallySound` runs *after* `VALUE_FORBIDDEN` and
-       treats `\` as an ordinary character, so `"a\("` reads to it as a
-       balanced quoted string and would be accepted on its own. Only the
-       earlier deny list refuses it. Drop `\` from `VALUE_FORBIDDEN`, or move
-       the scanner in front of it, and this value reaches the page. */
+    // Ordering pin: `structurallySound` treats `\` as ordinary, so `"a\("`
+    // reads as balanced on its own — only `VALUE_FORBIDDEN`, which runs first, refuses it.
     expect(checkTokenValue("string", '"a\\("')).toBe("syntax");
     expect(checkTokenValue("string", '"a\\""')).toBe("syntax");
   });
@@ -1324,11 +1264,9 @@ describe("structural validation — the half a character deny list cannot see", 
 
 describe("write verification — a declaration the page refused is not a success", () => {
   it("records an applyError when the value does not read back off the element", () => {
-    /* Regression: `writeOne` ended with an unconditional
-       `applyErrors.delete(name)`, so a declaration CSSOM dropped — which is
-       what a real browser does with `red !important`, where priority is a
-       separate argument to `setProperty` — was laundered into an applied
-       edit, and the row went on reporting `overridden: true`. */
+    // Regression: `writeOne` ended with an unconditional
+    // `applyErrors.delete(name)`, laundering a declaration CSSOM silently
+    // dropped into a reported success.
     const runtime = createThemeEditorRuntime({ tokens: TOKENS });
     runtime.start(fakeApi(null));
     const refuse = vi.spyOn(root().style, "setProperty").mockImplementation(() => {});
@@ -1370,10 +1308,9 @@ describe("`readStoredThemeOverrides` — the pre-mount door", () => {
   });
 
   it("vets what it hands back — it used to return raw storage", () => {
-    /* Regression: the helper returned `parseOverrides()` verbatim while
-       `start()` vetted the same bytes, and README § "It changes what your app
-       looks like" tells consumers to feed the result into their own theme
-       provider — so the app applied values the panel had already refused. */
+    // Regression: this helper returned `parseOverrides()` verbatim while
+    // `start()` vetted the same bytes, so a consumer feeding the result into
+    // its own theme provider applied values the panel had already refused.
     const result = readStoredThemeOverrides({
       instanceId: "test",
       storage: reader({
@@ -1390,12 +1327,9 @@ describe("`readStoredThemeOverrides` — the pre-mount door", () => {
   });
 
   it("reaches the mounted runtime's answer when handed the catalogue, and says where it cannot", () => {
-    /* The residual divergence, pinned on purpose so nobody closes it by
-       copying validation into a second place: without `tokens` every value is
-       checked as a `"string"`, the loosest type, so a value the catalogue
-       declares `number`/`length` and would refuse as one survives here.
-       `color` and `string` cannot diverge at all — `checkTokenValue`
-       short-circuits before any type branch. */
+    // Without `tokens`, every value is checked as the loosest type
+    // (`"string"`), so a value the catalogue would refuse as `number`/`length`
+    // survives here.
     const stored = { "--radius-md": "wide", "--brand-500": "not-a-colour" };
 
     expect(readStoredThemeOverrides({ instanceId: "test", storage: reader(stored) })).toEqual({
@@ -1410,7 +1344,7 @@ describe("`readStoredThemeOverrides` — the pre-mount door", () => {
     });
     expect(withCatalogue).toEqual({ "--brand-500": "not-a-colour" });
 
-    // …and that is exactly what `start()` keeps out of the same bytes.
+    // ...and that is exactly what `start()` keeps out of the same bytes.
     const storage = createMemoryStorage();
     storage.setItem(OVERRIDES_KEY, JSON.stringify(stored));
     const runtime = createThemeEditorRuntime({ tokens: TOKENS });
@@ -1499,11 +1433,9 @@ describe("surface migration — one reconciler, one owner", () => {
   };
 
   it("moves the edits onto a replaced surface element on publish, not only on the next write", () => {
-    /* Regression: migration ran only inside `writeOne`, driven by a
-       `surfaceReplaced` flag set in `currentHold()`. An SPA that re-rendered
-       `#app` therefore stranded every edit on the detached node until
-       somebody happened to type another value, while the snapshot went on
-       reporting `overridden: true`. */
+    // Regression: migration used to run only inside `writeOne`, so an SPA
+    // re-rendering `#app` stranded every edit on the detached node until the
+    // next write, while the snapshot went on reporting `overridden: true`.
     const first = makeApp();
     const runtime = started();
     runtime.setOverride("--brand-500", "#ff0000");
@@ -1556,9 +1488,9 @@ describe("surface migration — one reconciler, one owner", () => {
   });
 
   it("polls a static catalogue on a non-root surface — the timer used to need a function", () => {
-    /* Regression: the reconcile timer existed only when `tokens` was a
-       function, so an application with a fixed catalogue and a `#app` surface
-       never noticed the element being replaced. */
+    // Regression: the reconcile timer existed only when `tokens` was a
+    // function, so a fixed catalogue on a `#app` surface never noticed the
+    // element being replaced.
     vi.useFakeTimers();
     try {
       const first = makeApp();
@@ -1593,8 +1525,7 @@ describe("surface migration — one reconciler, one owner", () => {
   });
 
   it("does not touch the page from an export helper", () => {
-    // The rejected fix was to reconcile inside `buildSnapshot()`, which would
-    // make `cssText()`, `diagnostics()` and every export mutate the document.
+    // Reconciling inside `buildSnapshot()` would make every export mutate the document.
     const first = makeApp();
     const runtime = started();
     runtime.setOverride("--brand-500", "#ff0000");
@@ -1626,9 +1557,8 @@ describe("surface migration — the guards on the reconciler itself", () => {
       defaultView: null,
       querySelector: () => {
         calls += 1;
-        // It settles eventually, so an unguarded reconciler *terminates* here
-        // rather than hanging the suite — the evidence is the call count, not
-        // a timeout.
+        // Settles eventually, so an unguarded reconciler terminates here
+        // instead of hanging the suite.
         if (calls > alternations) return b;
         return calls % 2 === 0 ? a : b;
       },
@@ -1637,13 +1567,10 @@ describe("surface migration — the guards on the reconciler itself", () => {
   };
 
   it("terminates against a resolver that never returns the same element twice", () => {
-    /* The `migrating` latch is a termination guarantee, not a redundancy.
-       Without it every re-applied write re-enters the reconciler with a fresh
-       element, and `writeOne`'s try/catch swallows the eventual RangeError
-       and keeps going — so the re-entry is exponential rather than a fast
-       stack overflow. */
-    // One override, so an unguarded reconciler recurses *linearly* — with two
-    // it branches, and 300 alternations would not finish this century.
+    // Without the `migrating` latch, every re-applied write would re-enter
+    // the reconciler with a fresh element and recurse exponentially rather
+    // than overflow the stack quickly. One override keeps the recursion
+    // linear; 300 alternations would not finish this century unguarded.
     const { target, calls } = alternatingDocument(detached(), detached(), 300);
     const runtime = createThemeEditorRuntime({
       tokens: [{ name: "--brand-500", type: "color", value: "#3355ff" }],
@@ -1660,11 +1587,9 @@ describe("surface migration — the guards on the reconciler itself", () => {
   });
 
   it("writes nothing to the page once the runtime has been disposed", () => {
-    /* Regression: `publish()` gained a `reconcileSurface()` call, and
-       `refresh()` is `publish` — and also the `${id}.refresh` command's body.
-       A consumer holding the runtime handle could therefore re-apply every
-       edit *after* teardown had restored the page, breaking "unmounting the
-       toolbar must leave the page exactly as it found it". */
+    // Regression: `publish()`'s `reconcileSurface()` call meant a consumer
+    // holding the runtime handle could re-apply every edit through
+    // `refresh()` after teardown had restored the page.
     const element = document.createElement("div");
     element.id = "app";
     document.body.appendChild(element);

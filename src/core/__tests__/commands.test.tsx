@@ -1,10 +1,7 @@
 /**
- * The `commands` contract, widened by P2's third extension to `array | (() => array)`.
- *
- * The thing being pinned down is not "a function is called" — it is that a
- * function which lies, throws or returns junk cannot reach the host
- * application, and that an extension whose command list *grows after mount* is
- * reachable without a reload. That was the whole reason for the change.
+ * `commands` accepts `array | (() => array)`. These tests pin that a misbehaving
+ * function (throws, returns junk) cannot reach the host, and that a command list
+ * which grows after mount is reachable without a reload.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act } from "@testing-library/react";

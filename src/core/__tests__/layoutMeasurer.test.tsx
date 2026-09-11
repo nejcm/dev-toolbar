@@ -8,16 +8,11 @@ import type { Measurer } from "../measurer";
 import { domMeasurer, ITEM_SELECTOR, MEASURER_SLOT, resolveMeasurer } from "../measurer";
 
 /**
- * Every step is guaranteed, because `cleanup()` unmounts consumer trees and a
- * component's own effect cleanup can throw from inside it. The measurer slot is
- * a key in the *process-wide* symbol registry, so skipping its deletion does
- * not fail here — it silently answers a later suite's measurements, which is
- * the class of hazard `src/testing/layout.ts` documents for the shared state an
- * install writes. Vitest stops running the remaining `afterEach` hooks once one
- * throws, so `vitest.setup.ts`'s `cleanupToolbar()` is not a second net.
- *
- * The `finally` blocks only guarantee the ordering; they swallow nothing, so a
- * test whose teardown throws still fails with its own error.
+ * Nested `finally`s guarantee the measurer slot is always deleted, even if
+ * `cleanup()` throws (an unmounting tree's own effect cleanup can throw). The
+ * slot lives in the process-wide symbol registry, so leaving it behind would
+ * silently answer a later suite's measurements — Vitest skips remaining
+ * `afterEach` hooks once one throws, so `cleanupToolbar()` is not a second net.
  */
 function teardown(): void {
   try {
@@ -77,16 +72,14 @@ describe("the published layout fake's measurer", () => {
     const b = part("item", "b");
     const button = part("overflow-button");
     const root = part("root");
-    // The install no longer patches a DOM read, so the DOM stays at jsdom's
-    // zeros while the measurer reports the options — the inverse of what this
-    // asserted when the fake also patched the prototype and the two had to
-    // agree number for number.
+    // The install doesn't patch DOM reads, so the DOM stays at jsdom's zeros
+    // while the measurer reports the configured options.
     const untouched = () => {
       expect(bar.clientWidth).toBe(0);
       expect(a.offsetWidth).toBe(0);
       expect(button.offsetWidth).toBe(0);
       expect(root.getBoundingClientRect().height).toBe(0);
-      // Against a control element rather than a literal: the assertion is
+      // Compared against a control element, not a literal: the assertion is
       // "no interception", not jsdom's particular initial value.
       expect(getComputedStyle(bar).paddingLeft).toBe(
         getComputedStyle(document.createElement("div")).paddingLeft,
@@ -164,8 +157,7 @@ describe("the published layout fake's measurer", () => {
     outer.restore();
     expect(Object.hasOwn(globalThis, MEASURER_SLOT)).toBe(false);
     expect(resolveMeasurer()).toBe(domMeasurer);
-    // The DOM read core falls back to was never patched, so an emptied stack
-    // means jsdom's own zero, measured through `domMeasurer` itself.
+    // Never patched, so an emptied stack falls back to jsdom's own zero.
     expect(domMeasurer.barWidth(bar)).toBe(0);
 
     reinstallToolbarLayout(outer);
@@ -187,10 +179,8 @@ describe("the published layout fake's measurer", () => {
   });
 
   it("parses a non-finite override away exactly as a computed style would", () => {
-    // Not a realistic option value; the point is that a non-finite override
-    // reads as "unresolved" rather than as a pixel count, which is what
-    // `Number.parseFloat` gave the fake back when the number reached core as
-    // `${gap}px` through a patched computed style.
+    // Not a realistic option value — the point is that a non-finite override
+    // reads as "unresolved" rather than as a pixel count.
     const bar = part("bar");
     bar.append(part("region"));
     const layout = installToolbarLayout();
@@ -295,24 +285,22 @@ describe("the published layout fake's measurer", () => {
       observers.map((observer) =>
         observer.getTargets().map((node) => (node as HTMLElement).dataset["dtbPart"]),
       ),
-      // The middle observer holds the item hosts *and* both regions: the hosts
-      // catch a chip resizing itself, the regions catch a gap-only change,
-      // which resizes no host when several share a region.
+      // The middle observer holds the item hosts and both regions: hosts catch
+      // a chip resizing itself, regions catch a gap-only change that resizes
+      // no host when several share a region.
     ).toEqual([["bar"], ["item", "item", "item", "region", "region"], ["root"]]);
     const [bar, items, height] = observers;
     expect(visibleIds()).toEqual(["a", "b", "c"]);
     layout.resize(100, false);
-    // The height observer is the isolated one: it feeds `--dev-toolbar-height`
-    // and nothing the collapse machine reads.
+    // Isolated: feeds `--dev-toolbar-height` and nothing the collapse machine reads.
     act(() => height!.flush());
     expect(visibleIds()).toEqual(["a", "b", "c"]);
-    // The item observer is not isolated from the bar's width, and deliberately
-    // so: its callback takes a *full* bar reading, so it sees the new
-    // `barWidth` and collapses on this flush rather than waiting for the bar's
-    // own. That is what stops a gap-only change deciding from a stale gap.
+    // Deliberately not isolated from the bar's width: its callback takes a
+    // full bar reading, so it collapses on this flush against the new
+    // `barWidth` instead of deciding from a stale gap.
     act(() => items!.flush());
     expect(visibleIds()).toEqual(["a"]);
-    // The bar's own delivery then has nothing left to change.
+    // Nothing left for the bar's own delivery to change.
     act(() => bar!.flush());
     expect(visibleIds()).toEqual(["a"]);
     act(() => layout.setRootHeight(57));
@@ -327,22 +315,20 @@ describe("the published layout fake's measurer", () => {
   });
 
   it("hands the slot back even when the teardown's own cleanup throws", () => {
-    // The hazard in one test: a fake registered before the install (so the
-    // install's baseline restores *it*, not nothing), then a tree whose effect
-    // cleanup throws out of `cleanup()`. Running the real `teardown()` here
-    // rather than leaving the throw to the `afterEach` keeps the proof inside
-    // one test — an `afterEach` that throws fails the test it follows, and a
-    // permanently red test proves nothing to the next reader.
+    // A fake registered before the install (so the install's baseline restores
+    // it, not nothing), plus a tree whose effect cleanup throws out of
+    // `cleanup()`. `teardown()` is invoked directly rather than through
+    // `afterEach`, since an `afterEach` that throws fails the *next* test.
     const prior: Measurer = { ...domMeasurer, barWidth: () => 17 };
     (globalThis as { [MEASURER_SLOT]?: Measurer | undefined })[MEASURER_SLOT] = prior;
     installToolbarLayout({ barWidth: 400 });
     render(<ThrowOnCleanup />);
 
-    // The original error, unmasked and unreplaced by the teardown machinery.
+    // The original error, unmasked by the teardown machinery.
     expect(teardown).toThrow("dev-toolbar layout teardown probe");
 
-    // Both process-wide steps happened anyway: the install is retired, and the
-    // slot is empty rather than holding the fake the baseline restored.
+    // Both process-wide steps still happened: install retired, slot empty
+    // rather than holding the fake the baseline restored.
     expect(Object.hasOwn(globalThis, MEASURER_SLOT)).toBe(false);
     expect(resolveMeasurer()).toBe(domMeasurer);
   });

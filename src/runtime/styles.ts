@@ -34,9 +34,8 @@ export function ensureStyleSheet(
   const target = doc ?? (typeof document === "undefined" ? null : document);
   if (!target?.head) return null;
   // `entry` is developer-supplied, not attacker-controlled — this is about
-  // correctness, not injection: a raw string in an attribute selector could
-  // change the selector's meaning on a `"`. Comparing the attribute directly
-  // sidesteps escaping entirely, and is O(n) over a handful of elements.
+  // correctness, not injection: comparing the attribute directly sidesteps
+  // escaping a raw string into a selector.
   const existing = Array.from(
     target.head.querySelectorAll<HTMLStyleElement>(`style[${STYLE_ATTRIBUTE}]`),
   ).find((node) => node.getAttribute(STYLE_ATTRIBUTE) === entry);

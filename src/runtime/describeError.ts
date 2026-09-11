@@ -15,10 +15,7 @@ export interface ErrorDescription {
 
 type PropertyRead = { ok: true; value: unknown } | { ok: false };
 
-/**
- * One property, read exactly once and never again: a hostile getter gets a
- * single chance to answer and no chance to throw out of here.
- */
+/** Read exactly once: a hostile getter gets one chance to answer, never a chance to throw out. */
 function readProperty(source: object, key: "name" | "message"): PropertyRead {
   try {
     return { ok: true, value: (source as Record<string, unknown>)[key] };
@@ -37,11 +34,9 @@ function stringify(value: unknown): string {
 }
 
 /**
- * How an object with no string `message` is described: its `[object Tag]`, by
- * `Object.prototype.toString` — never by the object's own `toString`, which for
- * an `Error` is `Error.prototype.toString` and would read `name` and `message`
- * a second time, and for anything else is code the thrower controls. The only
- * thing this reads is `Symbol.toStringTag`, guarded.
+ * `[object Tag]` via `Object.prototype.toString`, never the object's own
+ * `toString` — for an `Error` that's `Error.prototype.toString`, which would
+ * re-read `name`/`message`; for anything else it's code the thrower controls.
  */
 function tagOf(value: object): string {
   try {
@@ -57,21 +52,15 @@ function withName(name: string | undefined, message: string): ErrorDescription {
 
 /**
  * The raw `{ name, message }` of a thrown value, unmasked — for the
- * developer's own console, which logs the raw thrown value on a failure path by
- * design (`docs/architecture.md` §10). Anything that leaves the page goes
+ * developer's own console, which logs the raw thrown value on a failure path
+ * by design (`docs/architecture.md` §10). Anything that leaves the page goes
  * through `describeError()` instead.
  *
- * Duck-typed, not `instanceof Error`: that is false for an error from another
- * realm (an iframe, a worker) and *throws* for a revoked Proxy or a
- * `getPrototypeOf` trap that throws, so classification never asks the value
- * what it is. `message` and `name` are each read exactly once, guarded, and
- * nothing afterwards touches the object again: a read that throws makes that
- * field `UNREADABLE` and nothing else — unless both throw, when nothing about
- * the value is legible and it is one `UNREADABLE` message with no name; a
- * `name` that is not a non-empty string is omitted. A value with no string
- * `message` is not error-like — a primitive
- * is stringified, an object is described by its tag (`tagOf`), so a hostile
- * `toString` never runs and a getter never gets a second question.
+ * Duck-typed, not `instanceof Error`: that's false for an error from another
+ * realm and *throws* for a revoked Proxy or a throwing `getPrototypeOf` trap.
+ * `message`/`name` are each read exactly once and guarded; a value with no
+ * string `message` is not error-like (a primitive is stringified, an object
+ * described by its tag) so a hostile `toString` never runs.
  */
 export function describeErrorUnmasked(error: unknown): ErrorDescription {
   if (error === null || (typeof error !== "object" && typeof error !== "function")) {
@@ -93,14 +82,11 @@ export function describeErrorUnmasked(error: unknown): ErrorDescription {
  * A thrown value as a masked `{ name, message }`, ready for a snapshot, a
  * `title` attribute or a status line.
  *
- * - `name` and `message` are masked **separately**, never as a joined
- *   sentence, and each with `redactProse()`, so a message that *is* a
- *   credential-carrying URL and a message that merely *contains* one are both
- *   masked, and `Unexpected token export` is not.
- * - `name` is a writable own property, not a class identifier, so it is
- *   masked too: `error.name = "https://x/?token=abc"` comes back masked.
- * - Never throws: extraction is `describeErrorUnmasked`, masking is
- *   `redactProse`, and neither does.
+ * `name` and `message` are masked **separately** with `redactProse()`, never
+ * as a joined sentence, so a message that merely *contains* a credential URL
+ * is still masked. `name` is masked too, since it's a writable own property,
+ * not a class identifier (`error.name = "https://x/?token=abc"` is masked).
+ * Never throws.
  */
 export function describeError(error: unknown, options?: RedactOptions): ErrorDescription {
   const raw = describeErrorUnmasked(error);

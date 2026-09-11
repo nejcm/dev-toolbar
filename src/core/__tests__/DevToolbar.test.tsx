@@ -1091,9 +1091,8 @@ describe("lifecycle", () => {
       </DevToolbar>,
     );
 
-    // The instance's own name is the one it would have written; the unsuffixed
-    // name is what it would have taken as the only toolbar on the page, had it
-    // been enabled — a disabled instance is not mounted for that purpose.
+    // A disabled instance never registers, so it publishes neither its own
+    // name nor the unsuffixed one.
     expect(document.documentElement.style.getPropertyValue("--dev-toolbar-height-t")).toBe("");
     expect(document.documentElement.style.getPropertyValue("--dev-toolbar-height")).toBe("");
     expect(warn).not.toHaveBeenCalled();
@@ -1290,10 +1289,9 @@ describe("the height variable", () => {
   });
 
   /**
-   * The unsuffixed name belongs to whichever instance is the *only* one mounted
-   * and enabled, and to nobody while there are two. `docs/api.md` states it;
-   * these pin it across every order two toolbars can come and go in, because
-   * React promises nothing about effect order across components.
+   * The unsuffixed name belongs only to a lone mounted-and-enabled instance
+   * (`docs/api.md`); these pin it across every mount/unmount order, since React
+   * promises nothing about effect order across components.
    */
   describe("the unsuffixed variable with two instances", () => {
     const mount = (instanceId: string, props: { enabled?: boolean } = {}) =>
@@ -1395,9 +1393,8 @@ describe("the height variable", () => {
     });
 
     it("withdraws it from the default instance too, once a named one mounts", () => {
-      // Before this change the unsuffixed name was the default instance's whatever
-      // else was mounted; unsuffixed inset CSS on a default-plus-named page now
-      // reads `0px` until it switches to the suffixed name (docs/api.md).
+      // Unsuffixed inset CSS on a default-plus-named page reads `0px` until it
+      // switches to the suffixed name (docs/api.md).
       const rect = stubHeights({ default: 24, admin: 36 });
       render(
         <DevToolbar extensions={[]}>
@@ -1450,9 +1447,8 @@ describe("the height variable", () => {
     });
 
     it("counts toolbars, not ids: two instances sharing an id are still two", () => {
-      // Sharing an id is the consumer's mistake (architecture.md §3), and the
-      // suffixed name collides as documented. What must not happen is the
-      // registry forgetting the second when the first leaves.
+      // Sharing an id is the consumer's mistake (architecture.md §3); what must
+      // not happen is the registry forgetting the second when the first leaves.
       const rect = stubHeights({ twin: 24 });
       const first = mount("twin");
       mount("twin");
@@ -1512,12 +1508,11 @@ describe("the height variable", () => {
 
 describe("duplicate extension ids", () => {
   /**
-   * The merge in `DevToolbar` is documented in `docs/architecture.md` §3 only
-   * as "props first, then dynamic registrations, de-duplicated by `id`". That
-   * fixes which *source* wins; which entry wins inside one `extensions` array
-   * is not written down anywhere, so the first two tests pin what the code
-   * does rather than specify it: the first occurrence wins and the later one is
-   * dropped whole — no render, no `start()`, no commands, and no warning.
+   * `docs/architecture.md` §3 documents which *source* wins ("props first,
+   * then dynamic registrations"), but not which entry wins within one
+   * `extensions` array. These pin the undocumented behavior: the first
+   * occurrence wins and the later one is dropped whole — no render, `start()`,
+   * commands, or warning.
    */
   const dup = (
     label: string,
@@ -1664,10 +1659,9 @@ describe("the container prop", () => {
 
 describe("an extension list with nothing visible in it", () => {
   it("renders the bar chrome empty rather than dropping it", () => {
-    // Not written down as such, but it follows from §2's `hidden` table plus
-    // the fact that the bar is chrome: a hidden extension is absent, and an
-    // empty bar is still a bar. Pins that the toolbar does not collapse to
-    // nothing — the height variable a consumer insets by stays published.
+    // Follows from §2's `hidden` table plus the bar being chrome, but isn't
+    // written down: an empty bar still publishes the height variable a
+    // consumer insets by.
     render(
       <DevToolbar
         instanceId="t"

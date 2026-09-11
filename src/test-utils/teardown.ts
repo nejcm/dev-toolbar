@@ -2,14 +2,10 @@
  * This repository's per-test teardown, extracted from `vitest.setup.ts` so a
  * test can reach it.
  *
- * Vitest abandons the remaining `afterEach` hooks once one throws, and this one
- * runs last (the setup file registers first) while being the only place that
- * resets `documentElement`'s style, forgets core's mounted-instance registry,
- * removes injected sheets and clears `localStorage`. A skipped step is state every later test in that file
- * inherits. So every step runs, and nothing is swallowed: one failure re-thrown
- * as itself, several as an `AggregateError`, earliest first.
- *
- * The callables are injected so a test can make either throw.
+ * Vitest abandons the remaining `afterEach` hooks once one throws, and a
+ * skipped reset step here becomes state the next test in the file inherits.
+ * So every step always runs: one failure is re-thrown as itself, several as
+ * an `AggregateError`, earliest first.
  */
 export function resetToolbarTestEnvironment(steps: {
   /** `cleanupToolbar()` from `@nejcm/dev-toolbar/testing`. */
@@ -24,8 +20,7 @@ export function resetToolbarTestEnvironment(steps: {
   resetMountedInstances: () => void;
 }): void {
   const errors: unknown[] = [];
-  // Toolbar mounts first: RTL's `cleanup()` unmounts the trees whose `unmount`
-  // functions the tracked list is still holding.
+  // Toolbar mounts first, so RTL's cleanup() unmounts the trees still tracked.
   for (const step of [
     steps.cleanupToolbar,
     steps.cleanup,
