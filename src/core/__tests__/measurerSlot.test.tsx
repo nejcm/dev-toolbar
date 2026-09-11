@@ -1,15 +1,12 @@
 /**
  * The seam a test uses to hand core its own {@link Measurer}: the well-known
- * global symbol `Symbol.for("@nejcm/dev-toolbar.measurer")`.
- *
- * Imported relatively on purpose — `resolveMeasurer` and the slot are internal
- * and re-exported from no entry point, so reaching them here adds nothing to
- * the published surface (a colocated core test is not a consumer).
- *
- * The slot lives in the *process-wide* symbol registry — the same shared
- * state `src/testing/layout.ts` installs into, and warns about — so every test
- * below leaves it empty again: a leaked fake would silently answer every later
- * suite's measurements.
+ * global symbol `Symbol.for("@nejcm/dev-toolbar.measurer")`. Imported
+ * relatively on purpose — `resolveMeasurer` and the slot are internal and
+ * re-exported from no entry point, so a colocated core test reaching them adds
+ * nothing to the published surface. The slot lives in the process-wide symbol
+ * registry (the same shared state `src/testing/layout.ts` warns about), so
+ * every test below leaves it empty again — a leaked fake would silently
+ * answer every later suite's measurements.
  */
 import { act, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -28,17 +25,16 @@ function registerMeasurer(measurer: Measurer): void {
 
 afterEach(() => {
   delete (globalThis as Slot)[MEASURER_SLOT];
-  // Teardown, not the end of each test: a geometry spy below asserts it was
-  // never called, and an assertion that *fails* would otherwise leak the spy
-  // into every later test in this file — turning one failure into a cascade.
+  // A geometry spy below asserts it was never called; if that assertion fails,
+  // this restore still prevents the spy leaking into every later test.
   vi.restoreAllMocks();
 });
 
 /**
- * A hand-written measurer: fixed numbers, no DOM reads at all. `observe`
- * reports no subscription, which is the documented "host without
- * `ResizeObserver`" path — the layout effect still measures every commit, so
- * the collapse below is the fake's numbers and nothing else.
+ * A hand-written measurer: fixed numbers, no DOM reads. `observe` returning no
+ * subscription is the documented "host without `ResizeObserver`" path — the
+ * layout effect still measures every commit, so the collapse below reflects
+ * only the fake's numbers.
  */
 function fakeMeasurer(overrides: Partial<Measurer> = {}): Measurer {
   return {
@@ -54,11 +50,9 @@ function fakeMeasurer(overrides: Partial<Measurer> = {}): Measurer {
 }
 
 /**
- * An `observe` that keeps the callbacks handed to it, plus the `notify` a test
- * uses to deliver again. A fake returning `undefined` can only ever be
- * measured once, at effect setup, which is exactly the blind spot that let a
- * captured measurer through: *when* a callback resolves the slot is only
- * visible across two deliveries.
+ * An `observe` that keeps its callbacks, plus a `notify` to redeliver them.
+ * A fake returning `undefined` can only be measured once, at effect setup —
+ * whether a callback re-resolves the slot only shows up across two deliveries.
  */
 function recordingObserve(): { observe: Measurer["observe"]; notify: () => void } {
   const callbacks: (() => void)[] = [];
@@ -112,8 +106,8 @@ const overflowButton = () => screen.queryByRole("button", { name: /More develope
 
 describe("the measurer slot", () => {
   it("is the well-known symbol, and answers with the DOM while empty", () => {
-    // The string is the contract between a test and core, so it is pinned
-    // here rather than only read back off the constant.
+    // The string is the contract between a test and core, pinned here rather
+    // than only read back off the constant.
     expect(MEASURER_SLOT).toBe(Symbol.for("@nejcm/dev-toolbar.measurer"));
     expect((globalThis as Slot)[MEASURER_SLOT]).toBeUndefined();
     expect(resolveMeasurer()).toBe(domMeasurer);
@@ -130,15 +124,13 @@ describe("the measurer slot", () => {
   });
 
   it("collapses the bar on the registered measurer's widths, touching no DOM geometry", () => {
-    // jsdom reports 0x0, so a run that read the real DOM cannot collapse at
-    // all — the `⋮` button below is proof the fake's numbers were used.
+    // jsdom reports 0x0, so a run reading the real DOM couldn't collapse at
+    // all — the `⋮` button below proves the fake's numbers were used.
     const offsetWidth = vi.spyOn(HTMLElement.prototype, "offsetWidth", "get");
     registerMeasurer(fakeMeasurer());
 
     renderBar();
 
-    // 100px bar, three 60px items: the two lowest priorities go, leaving the
-    // highest beside a `⋮` button.
     expect(visibleIds()).toEqual(["a"]);
     expect(overflowButton()).not.toBeNull();
     expect(offsetWidth).not.toHaveBeenCalled();
@@ -176,8 +168,8 @@ describe("the measurer slot", () => {
     expect(document.documentElement.style.getPropertyValue("--dev-toolbar-height")).toBe("42px");
 
     // Only the slot changes: the rerender touches no effect dependency, so the
-    // effect does not run again and the observer callback made on mount is the
-    // one that answers. It has to resolve now, not remember mount.
+    // mount-time observer callback is the one that answers, and must resolve
+    // the slot fresh rather than remember mount.
     registerMeasurer(fakeMeasurer({ height: () => 99, observe: deliveries.observe }));
     view.rerender(
       <DevToolbar extensions={[]}>
@@ -196,9 +188,9 @@ describe("the measurer slot", () => {
     renderBar();
     expect(visibleIds()).toEqual(["a"]);
 
-    // Both observer callbacks outlive the commit that created them. Only the
-    // bar one takes a full reading, so it is the one a wider measurer reaches:
-    // 300px for three sticky 60px items brings b and c back.
+    // Both observer callbacks outlive the commit that created them; only the
+    // bar one takes a full reading, so a wider measurer (300px for three
+    // sticky 60px items) brings b and c back through it.
     registerMeasurer(fakeMeasurer({ barWidth: () => 300, observe: deliveries.observe }));
     act(() => deliveries.notify());
 

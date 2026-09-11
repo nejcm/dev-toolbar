@@ -58,11 +58,10 @@ describe("shortcut parsing", () => {
 });
 
 /**
- * Original bug: every token `parseShortcut` did not recognise as a modifier was
- * assigned to `key`, last one winning, silently. So `"Ctrl+Shfit+K"` bound
- * plain Ctrl+K, and a modifier-only input like `"Mod+Shift"` returned `null` —
- * which `DevToolbar` cannot tell apart from the documented `shortcut={null}`
- * opt-out, so the toggle simply never worked and nothing said why.
+ * Regression: every unrecognized token was silently assigned to `key`, last
+ * one winning, so `"Ctrl+Shfit+K"` bound plain Ctrl+K, and a modifier-only
+ * input like `"Mod+Shift"` returned `null` — indistinguishable from the
+ * documented `shortcut={null}` opt-out, so the toggle just stopped working.
  */
 describe("parseShortcut diagnostics", () => {
   let warn: MockInstance<typeof console.warn>;

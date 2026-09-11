@@ -183,15 +183,12 @@ describe("OverflowBar", () => {
 });
 
 /**
- * The `⋮` button lives *inside* the end region, sharing its width with
- * whatever end-aligned items stayed in the bar. Every case above passes
- * `endItems={[]}`, so none of them exercises that.
- *
- * `docs/architecture.md` §5 documents the parts these pin — `align` picks a
- * region, lowest `priority` collapses first, and the button's width is read
- * back out of the DOM so it counts against the space available. That the
- * button sits in the end region rather than a region of its own is a fact
- * about the markup (`Overflow.tsx`), not something the docs promise.
+ * The `⋮` button lives inside the end region, sharing its width with whatever
+ * end-aligned items stayed in the bar — none of the cases above exercise that,
+ * since they all pass `endItems={[]}`. `docs/architecture.md` §5 pins `align`
+ * picking a region, lowest `priority` collapsing first, and the button's width
+ * counting against available space; the button living in the end region is
+ * just a fact of the markup (`Overflow.tsx`), not a documented promise.
  */
 describe("OverflowBar with a non-empty end region", () => {
   const setUp = (width: number) => {
@@ -199,13 +196,10 @@ describe("OverflowBar with a non-empty end region", () => {
   };
 
   it("collapses across both regions by priority, ignoring which region an item is in", () => {
-    // Every item is 60 wide, the gap is 2 and the ⋮ button 28. At an
-    // available 160 the two lowest priorities have to go — b (start, 1) then
-    // e (end, 2) — and the sums are what force it:
-    //   drop b:        3×60 + 2×2 + 2 + 28 = 214 > 160, so keep going
-    //   drop b and e:  2×60 + 2   + 2 + 28 = 152 ≤ 160, so stop
-    // (`remaining widths + inter-item gaps + one gap before the button + the
-    // button`, which is the arithmetic in `computeOverflow`.)
+    // Every item is 60 wide, gap 2, button 28. At 160 available the two
+    // lowest priorities must go — b (start, 1) then e (end, 2):
+    //   drop b:        3×60 + 2×2 + 2 + 28 = 214 > 160
+    //   drop b and e:  2×60 + 2   + 2 + 28 = 152 ≤ 160
     setUp(160);
     renderRegions([ext("a", 3), ext("b", 1)], [ext("d", 5), ext("e", 2)]);
 
@@ -218,9 +212,8 @@ describe("OverflowBar with a non-empty end region", () => {
   });
 
   it("puts the ⋮ button in the end region, after the end items that stayed", () => {
-    // 60 more room than above, and one item's worth of collapse now suffices:
-    //   drop b: 3×60 + 2×2 + 2 + 28 = 214 ≤ 220, so e stays in the end region
-    // next to the button, which is the arrangement this test is about.
+    // 60 more room than above; one collapse now suffices:
+    //   drop b: 3×60 + 2×2 + 2 + 28 = 214 ≤ 220 — e stays next to the button.
     setUp(220);
     renderRegions([ext("a", 3), ext("b", 1)], [ext("d", 5), ext("e", 2)]);
 
@@ -291,12 +284,11 @@ describe("OverflowBar available width", () => {
   });
 
   it("charges that gap once every start item has collapsed out of the bar", () => {
-    // Both regions hold items to begin with, so the flattened item math covers
-    // the gap between them. Once b collapses the start region renders empty and
-    // still takes that gap, which is enough to force d out too:
+    // Once b collapses, the now-empty start region still takes the
+    // inter-region gap, which is enough to force d out too:
     //   as rendered:  3×60 + 2×2 = 184 > 153
-    //   drop b:       2×60 + 2 + 2 + 28 = 152 ≤ 153, so the first pass stops
-    //   start is now empty: 153 − 2 = 151 < 152, so the next pass continues
+    //   drop b:       2×60 + 2 + 2 + 28 = 152 ≤ 153
+    //   empty start:  153 − 2 = 151 < 152
     //   drop b and d: 60 + 2 + 28 = 90 ≤ 151
     layout = layoutOf(153);
 
@@ -310,19 +302,17 @@ describe("OverflowBar available width", () => {
   });
 
   it("recollapses when --dtb-padding-x is overridden after mount, because the bar's own reading carries it", () => {
-    // The bar's padding is read back out of the DOM on every reading of the
-    // bar, not once at mount: a `--dtb-padding-x` override applied later is
-    // the bar's own box changing, and the collapse math has to follow it.
+    // The bar's padding is re-read on every measurement, not cached at mount,
+    // so a later `--dtb-padding-x` override changes the collapse math too.
     //   200 − 2 (the empty end region's gap) = 198 ≥ 3×60 + 2×2 = 184
     layout = layoutOf(200);
     renderBar();
     expect(regionIds("start")).toEqual(["a", "b", "c"]);
 
-    // 40 a side. Nothing resizes an item and the padding box is unchanged, so
-    // the only reading that can see this is the bar's own — which now reports
-    // its padding alongside its width.
+    // 40px a side; nothing resizes an item, so only the bar's own reading
+    // (now reporting the new padding) can see this.
     //   200 − 80 (padding) − 2 = 118 < 184
-    //   drop b:       2×60 + 2 + 2 + 28 = 152 > 118, so one item is not enough
+    //   drop b:       2×60 + 2 + 2 + 28 = 152 > 118
     //   drop b and c: 60 + 2 + 28 = 90 ≤ 118
     act(() => layout!.setPaddingX(40));
 
@@ -357,9 +347,9 @@ describe("OverflowBar available width", () => {
   });
 
   it("charges the gap the empty region still takes between the two regions", () => {
-    // End-only bar, no padding this time. `computeOverflow` charges one gap
-    // between adjacent items — which covers the gap *between* the regions only
-    // when both hold items. Here the empty start region takes one anyway:
+    // `computeOverflow` charges one gap between adjacent items, which covers
+    // the inter-region gap only when both hold items; the empty start region
+    // takes one anyway:
     //   as rendered: 2×60 + 2 = 122 ≤ 123, but 123 − 2 = 121 < 122
     //   drop e:      60 + 2 + 28 = 90 ≤ 121
     layout = layoutOf(123);
@@ -501,16 +491,13 @@ describe("OverflowBar ⋮ popup", () => {
 });
 
 /**
- * Original bug: `widthsRef` was written only by a dependency-less
- * `useLayoutEffect`, i.e. only on renders of `OverflowBar` itself, and the one
- * `ResizeObserver` watched the bar — which is fixed-height and full-width, so
- * it never fires for anything a chip does. A chip that re-rendered wider on its
- * own store change therefore grew invisibly: the cached width stayed stale and
- * the bar never collapsed, so the chip clipped or pushed the row.
- *
- * The item hosts are `flex: 0 0 auto; max-width: 100%`, so unlike the
- * flex-constrained region elements they really are content-sized and a
- * `ResizeObserver` on them reports the growth.
+ * Regression: `widthsRef` was written only by a dependency-less
+ * `useLayoutEffect`, and the one `ResizeObserver` watched the bar — fixed-height
+ * and full-width, so it never fired for a chip growing on its own store
+ * change; the cached width stayed stale and the bar never collapsed.
+ * Item hosts are `flex: 0 0 auto; max-width: 100%`, so unlike the
+ * flex-constrained regions they're genuinely content-sized, and an observer on
+ * them catches the growth.
  */
 describe("OverflowBar per-item width observation", () => {
   const setUp = (width: number) => {
@@ -536,10 +523,8 @@ describe("OverflowBar per-item width observation", () => {
     //   drop b:      900 + 60 + 2 + 2 + 28 = 992 ≤ 998
     layout!.setItemWidth("a", 900, false);
 
-    // Only the item observer fires. The bar's own box is unchanged, so in a
-    // browser its observer stays silent — and firing it here would let the
-    // `measureWidths` call in `read()` carry the test, proving nothing about
-    // the item-observer path this case is named for.
+    // Only the item observer fires — the bar's box is unchanged, so firing it
+    // too would let `read()`'s own remeasure carry the test instead of this path.
     act(() => item.flush());
 
     expect(idsInBar()).toEqual(["a", "c"]);
@@ -552,10 +537,9 @@ describe("OverflowBar per-item width observation", () => {
     const item = observerOf("item");
     const bar = observerOf("bar");
 
-    // The hosts, because a flex-constrained region does not resize when a
-    // child grows. The regions, because the gap is taken out of them: an item
-    // is `max-width: 100%` of its region, so several hosts sharing one keep
-    // their widths while a wider gap shrinks the region under them.
+    // Hosts: a flex-constrained region doesn't resize when a child grows.
+    // Regions: an item is max-width:100% of its region, so a wider gap shrinks
+    // the region under several hosts without changing their own widths.
     const hosts = [
       ...document.querySelectorAll('[data-dtb-part="region"] > [data-dtb-part="item"]'),
     ];
@@ -573,9 +557,8 @@ describe("OverflowBar per-item width observation", () => {
     const item = observerOf("item");
     const bar = observerOf("bar");
 
-    // b and c collapsed into the popup; only `a` is still an item host in a
-    // region, and the popup copies carry a different part name. The two
-    // regions stay observed throughout — they are not roster-dependent.
+    // b and c collapsed into the popup (different part name); only `a` remains
+    // an item host in a region. Regions stay observed throughout regardless.
     const observed = () =>
       [...item.getTargets()]
         .filter((node) => part(node) === "item")
@@ -598,10 +581,9 @@ describe("OverflowBar per-item width observation", () => {
     const bar = observerOf("bar");
     expect(idsInBar()).toEqual(["a", "b", "c"]);
 
-    // A chip whose width depends on whether it is collapsed: the pathological
-    // case cycle detection exists for, with no fixed point to settle on. Only
-    // the *item* observer fires, because the bar's own box is unchanged
-    // throughout — which is the whole premise.
+    // A chip whose width depends on whether it's collapsed — the pathological
+    // case cycle detection exists for, with no fixed point. Only the item
+    // observer fires; the bar's own box never changes.
     //   available: 1000 − 2 (the empty end region's gap) = 998
     //   a at 900, everything in the bar: 900 + 60 + 60 + 2×2 = 1024 > 998
     //   a at 900, b collapsed:          900 + 60 + 2 + 2 + 28 = 992 ≤ 998
@@ -613,26 +595,22 @@ describe("OverflowBar per-item width observation", () => {
 
     expect(flip(900)).toEqual(["a", "c"]);
 
-    // The other half of the 2-cycle is a *return* to a decision already held
-    // since the bar last reported its own width, while the one in hand fits.
-    // That is the cycle, and it is refused — so the bar settles on the side
-    // that fits rather than on whichever side a flip count happened to land
-    // on, and no further delivery moves it.
+    // The other half of the 2-cycle returns to a decision already held while
+    // the one in hand fits — refused, so the bar settles on the fitting side
+    // rather than wherever a flip count lands.
     expect(flip(60)).toEqual(["a", "c"]);
     expect(flip(900)).toEqual(["a", "c"]);
     expect(flip(60)).toEqual(["a", "c"]);
 
-    // Settled is not frozen. A chip that genuinely *grows* never returns to a
-    // decision already held, so it is heard even mid-cycle — the case a flat
-    // flip count could not tell from the cycle, and where it left 314px of
-    // chips clipped in a bar with no `⋮` to reach them.
+    // Settled isn't frozen: a chip that genuinely grows never returns to a
+    // decision already held, so it's heard even mid-cycle — the case a flat
+    // flip count couldn't tell from the cycle, previously leaving chips clipped.
     //   a at 950, b collapsed:      950 + 60 + 2 + 2 + 28 = 1042 > 998
     //   a at 950, b and c collapsed: 950 + 2 + 28 = 980 ≤ 998
     expect(flip(950)).toEqual(["a"]);
 
-    // The bar's own observer reporting a new width forgets the cycle outright,
-    // and its `read()` re-measures — which is where a width set during the
-    // refused passes is finally acted on.
+    // The bar's own observer forgets the cycle outright; its `read()`
+    // re-measures, finally acting on the width set during the refused passes.
     layout!.resize(999, false);
     layout!.setItemWidth("a", 900, false);
     act(() => bar.flush());
@@ -646,12 +624,11 @@ describe("OverflowBar per-item width observation", () => {
     const bar = observerOf("bar");
     expect(idsInBar()).toEqual(["a", "b", "c"]);
 
-    // `a` is 900 wide exactly while `b` is in the bar and 60 once `b` has
-    // collapsed: measurably different on the very next layout, with no
-    // ResizeObserver delivery in between. Before the layout effect's readings
-    // were filtered too this looped straight into React's "Maximum update
-    // depth exceeded" and an unmounted tree. An instance getter, so the fake
-    // layout in `src/testing/layout.ts` is untouched.
+    // `a` is 900 wide while `b` is in the bar, 60 once `b` collapses — different
+    // on the very next layout, with no ResizeObserver delivery in between.
+    // Before the layout effect's readings were filtered too, this looped into
+    // React's "Maximum update depth exceeded". An instance getter, so the fake
+    // layout in `src/testing/layout.ts` stays untouched.
     const host = document.querySelector<HTMLElement>('[data-dtb-ext-id="a"]')!;
     Object.defineProperty(host, "offsetWidth", {
       configurable: true,

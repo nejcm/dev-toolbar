@@ -2,8 +2,8 @@
  * A tiny typed event bus. [dev-toolbar/runtime]
  *
  * Deliberately not a singleton: create one per toolbar instance (or per
- * extension) and pass it around, to avoid leaking between SSR requests,
- * toolbars on one page, or tests.
+ * extension) to avoid leaking state between SSR requests, toolbars on one
+ * page, or tests.
  */
 
 /**
@@ -11,7 +11,6 @@
  *
  * `K` carries the event name as a literal, so `emit("network-end", …)` hands
  * back a `BusEvent<…, "network-end">` rather than one widened to `string`.
- * Defaults to `string`, so `BusEvent<Payload>` still means what it did.
  */
 export interface BusEvent<T = unknown, K extends string = string> {
   type: K;
@@ -23,19 +22,13 @@ export interface BusEvent<T = unknown, K extends string = string> {
 export type BusHandler<T = unknown> = (payload: T, event: BusEvent<T>) => void;
 
 /**
- * The names an event map actually declares.
- *
- * `Events extends Record<string, unknown>` lets an *interface* serve as an
- * event map (interfaces have no implicit index signature otherwise — why
- * `ToolbarEventMap` extends it), but that widens `keyof Events & string` to
- * `string`, collapsing a mapped type over it to a single index signature and
- * leaving `AnyBusEvent` un-narrowable. So strip the index signature back off.
- * A map that really is bare `Record<string, unknown>` (the default with no
- * event map) declares no names, so `string` is the honest fallback there.
- *
- * Only bare `string`/`number` signatures are stripped — a template-literal
- * pattern (`` [k: \`evt:${string}\`]: Payload ``) is kept, since `string`
- * doesn't extend it and it's a name the map means to declare.
+ * The names an event map actually declares, with the index signature that
+ * `Events extends Record<string, unknown>` requires (so an interface can
+ * serve as an event map) stripped back off — otherwise `keyof Events &
+ * string` widens to `string` and `AnyBusEvent` can't narrow. A bare
+ * `Record<string, unknown>` (no event map given) declares no names, so
+ * `string` is the fallback. A template-literal signature (`` [k:
+ * \`evt:${string}\`]: Payload ``) is kept, since `string` doesn't extend it.
  */
 type DeclaredEventName<Events> = keyof {
   [K in keyof Events as string extends K ? never : number extends K ? never : K]: 0;
@@ -52,12 +45,9 @@ export type BusEventName<Events> = [DeclaredEventName<Events>] extends [never]
  * `type`. `onAny` handlers can narrow `event.payload` via
  * `if (event.type === "network-end")`.
  *
- * The union covers only *declared* names — `emit`/`on` still accept
- * `keyof Events & string`, which widens to `string` on a
- * `Record<string, unknown>`-extending map, so `bus.emit("not-declared", …)`
- * compiles and an `onAny` handler can see a `type` this union doesn't list.
- * The narrowing is optimistic on purpose: switch on names you care about,
- * don't `assertNever` on `event.type` in a default branch.
+ * Covers only *declared* names, so `emit("not-declared", …)` still compiles
+ * and an `onAny` handler can see a `type` outside this union. Don't
+ * `assertNever` on `event.type` in a default branch.
  */
 export type AnyBusEvent<Events extends Record<string, unknown>> = {
   [K in BusEventName<Events>]: BusEvent<Events[K], K>;
@@ -81,11 +71,10 @@ export interface BusSubscribeOptions {
 /**
  * The two methods a consumer of a bus actually needs: publish and subscribe.
  *
- * Lets an option like `metrics`' `bus` be typed *structurally* rather than
- * as the whole `EventBus`. `./testing` may not import `./runtime`, so
- * `createMockBus()` reimplements this contract by hand — take `BusLike<…>`
- * in an option, not `EventBus<…>`, unless you really need the rest, so the
- * real bus, the mock, or an app's own emitter adapter can all drive it.
+ * Lets an option like `metrics`' `bus` be typed *structurally* rather than as
+ * the whole `EventBus`, so the real bus, `./testing`'s `createMockBus()`, or
+ * an app's own emitter adapter can all drive it. Take `BusLike<…>` in an
+ * option unless you really need the rest of `EventBus`.
  */
 export interface BusLike<Events extends Record<string, unknown>> {
   emit<K extends keyof Events & string>(type: K, payload: Events[K]): BusEvent<Events[K], K>;
@@ -106,10 +95,9 @@ export interface EventBus<Events extends Record<string, unknown>> extends BusLik
   /** Live subscribers, optionally for one type. `onAny` counts toward the total. */
   listenerCount(type?: keyof Events & string): number;
   /**
-   * Drops every subscriber, including the `AbortSignal` `abort` listeners that
-   * signal-bound subscriptions installed — so a later abort of a pre-`clear()`
-   * signal does nothing rather than reaching into whatever has been subscribed
-   * since.
+   * Drops every subscriber, including signal-bound subscriptions' `abort`
+   * listeners — so a pre-`clear()` signal aborting later touches nothing
+   * subscribed since.
    */
   clear(): void;
 }
@@ -122,11 +110,10 @@ export interface CreateEventBusOptions {
    * remaining subscribers or propagate into the emitter (usually a `fetch`
    * wrapper or `PerformanceObserver` callback).
    *
-   * `onError` itself is called **outside** the try/catch, so if it throws the
-   * throw propagates out of `emit()` and the handlers after the failing one
-   * are not called for that event — same as `throttledStore`'s `onError`, and
-   * for the same reason: swallowing an error reporter's own failure would hide
-   * the one thing left that could report it. Keep an `onError` total.
+   * Called **outside** the try/catch, so a throwing `onError` propagates out
+   * of `emit()` and skips the remaining handlers for that event — same as
+   * `throttledStore`'s `onError`: swallowing an error reporter's own failure
+   * would hide the one thing left that could report it. Keep it total.
    */
   onError?: (error: unknown, event: BusEvent) => void;
 }
@@ -150,11 +137,8 @@ export function createEventBus<Events extends Record<string, unknown> = Record<s
   const handlers = new Map<string, Set<BusHandler<never>>>();
   const anyHandlers = new Set<BusHandler<never>>();
 
-  // No listeners: bail early. One listener: read `handler` out of `set`
-  // before calling it (not via a live `for...of`, which would also visit a
-  // handler subscribed mid-call). Two or more: a handler may unsubscribe
-  // itself or another mid-dispatch, so iterate a copy (`Array.from`), not
-  // the live set.
+  // A handler may unsubscribe itself or another mid-dispatch, so multi-handler
+  // sets are iterated over a copy (`Array.from`), not the live set.
   const dispatch = <T>(set: Set<BusHandler<never>> | undefined, payload: T, event: BusEvent<T>) => {
     if (!set || set.size === 0) return;
     if (set.size === 1) {
@@ -176,17 +160,11 @@ export function createEventBus<Events extends Record<string, unknown> = Record<s
   };
 
   /**
-   * Every live subscription's teardown, so `clear()` can run them rather than
-   * just emptying the handler sets.
-   *
-   * Emptying the sets alone left each signal-bound subscription's `abort`
-   * listener attached and its unsubscribe un-run. `on`'s stale-unsubscribe
-   * guard (`handlers.get(type) === set`) covers the typed path, because
-   * `clear()` drops the whole `Map` entry and a later `on` builds a fresh
-   * `Set` the stale closure no longer points at — but `anyHandlers` is one
-   * `Set` for the life of the bus, so an old signal aborting after a `clear()`
-   * deleted an `onAny` handler registered *after* it. Running the teardowns
-   * here trips each `live` latch and detaches each listener, which closes both.
+   * Every live subscription's teardown, so `clear()` can run them instead of
+   * just emptying the handler sets — which would leave signal-bound
+   * subscriptions' `abort` listeners attached (an old signal aborting after
+   * `clear()` could otherwise delete an `onAny` handler registered after it,
+   * since `anyHandlers` is one `Set` for the life of the bus).
    */
   const teardowns = new Set<() => void>();
 
@@ -195,9 +173,8 @@ export function createEventBus<Events extends Record<string, unknown> = Record<s
       unsubscribe();
       return () => {};
     }
-    // One wrapper for all three exits — manual unsubscribe, abort, and
-    // `clear()` — so each of them removes the other two's hold. Idempotent:
-    // re-running it re-deletes nothing and `unsubscribe` is latched.
+    // One wrapper for all three exits — manual unsubscribe, abort, `clear()` —
+    // so each removes the other two's hold. Idempotent.
     const off = () => {
       teardowns.delete(off);
       signal?.removeEventListener("abort", off);
@@ -216,10 +193,9 @@ export function createEventBus<Events extends Record<string, unknown> = Record<s
     const set = handlers.get(type) ?? new Set<BusHandler<never>>();
     handlers.set(type, set);
     set.add(handler as unknown as BusHandler<never>);
-    // Unsubscribing twice must be a no-op: `once()` hands back the function
-    // it calls on delivery, and a React effect cleanup or a post-abort manual
-    // call can run it again. Without the latch, the second run could evict
-    // someone else's subscribers from a since-reused set.
+    // Unsubscribing twice must be a no-op (e.g. `once()`'s handler plus a
+    // React cleanup) — without the latch, a second run could evict someone
+    // else's subscribers from a since-reused set.
     let live = true;
     return bind(() => {
       if (!live) return;
@@ -250,8 +226,7 @@ export function createEventBus<Events extends Record<string, unknown> = Record<s
     },
     onAny(handler, subscribeOptions) {
       anyHandlers.add(handler as unknown as BusHandler<never>);
-      // Latched for the same reason as `on`: a stale second call could
-      // delete the handler out from under a later `onAny(sameHandler)`.
+      // Latched for the same reason as `on`.
       let live = true;
       return bind(() => {
         if (!live) return;
@@ -278,8 +253,8 @@ export function createEventBus<Events extends Record<string, unknown> = Record<s
 }
 
 /**
- * Shared event vocabulary so extensions don't invent separate names for
- * the same thing (e.g. "a request finished"). Not required —
+ * Shared event vocabulary so extensions don't invent separate names for the
+ * same thing (e.g. "a request finished"). Not required —
  * `createEventBus<YourEvents>()` is the general case — but `/ext/metrics`
  * reads `network-start`/`network-end` off a bus shaped like this, letting an
  * app instrument its own HTTP client instead of being monkey-patched.

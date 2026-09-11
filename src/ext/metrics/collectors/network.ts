@@ -87,19 +87,17 @@ export type { NetworkSink, NetworkSinkResult } from "../../../runtime";
 
 // An absolute-URL substring inside free text (unanchored, unlike `redact()`'s
 // `ABSOLUTE_URL`). Closing delimiters `)`/`]` and `.,;:!?` end the match only
-// as its last character, so a URL wrapped in punctuation still stops cleanly
-// without truncating a query like `?ids[]=1&access_token=abc` at the first `]`.
-// The leading lookbehind keeps this linear: without it, a long app-supplied
-// alphanumeric run (e.g. base64) is quadratic to fail on — measured at 5.4s
-// for 200k letters. Cost: a URL glued to a preceding digit/`.`/`-`/`+` with no
-// separator is not matched; do not remove the lookbehind to catch that case.
+// as its last character, so a URL wrapped in punctuation stops cleanly without
+// truncating a query like `?ids[]=1&access_token=abc` at the first `]`. The
+// leading lookbehind keeps matching linear (without it a long alphanumeric run
+// is quadratic to fail on — 5.4s for 200k letters), at the cost of not
+// matching a URL glued to a preceding digit/`.`/`-`/`+` with no separator.
 //
 // Byte-identical to `TEXT_URL` in `src/runtime/redact.ts`; keep them in step.
-// This is the one URL scanner outside `/runtime`, kept on purpose: the error
-// column is the panel's own sentence about a request, and `redactProse()`'s
-// whitespace-delimited sweep would (a) pull sentence punctuation into the mask
-// and (b) read two URLs glued together by a `,` or `"` as one, leaving the
-// second one's credential in place — both pinned in `network.test.ts`.
+// Kept as its own scanner rather than reusing `redactProse()`: that sweep is
+// whitespace-delimited, so it would pull sentence punctuation into the mask
+// and read two URLs glued by a `,` or `"` as one, leaving the second one's
+// credential in place (both pinned in `network.test.ts`).
 const URL_IN_TEXT =
   /(?<![A-Za-z0-9+.-])[A-Za-z][A-Za-z0-9+.-]*:\/\/[^\s"'`<>]*[^\s"'`<>)\].,;:!?]/g;
 
@@ -135,19 +133,16 @@ export function createNetworkCollector(options: NetworkCollectorOptions = {}): N
 
   // Error text is foreign (a rejection routinely names the failed request's
   // URL), so only URL-shaped substrings are rewritten — `redactUrl()` on the
-  // whole sentence would resolve it against a base and mangle the message, and
-  // `redactText()`'s JWT rule would mask a three-label hostname like
-  // `frontend.production.internal`, the one thing this column is for. Nothing
-  // else in the text is judged: a message that *is* a bare credential stays as
-  // written (pinned). Each match is guarded, because `redactUrl()` throws on
-  // its fallback path for an unparseable URL under a mask
-  // `encodeURIComponent()` rejects; unguarded, that throw escaped `finish()`
-  // after `completedAt` was set and before the totals moved, leaving the entry
-  // `ok` with no error and nothing counted. A URL that could not be inspected
-  // is replaced in place — never handed back raw — while the words around it
-  // and any other URL in the sentence are kept and masked as usual. Only text
-  // *outside* a match survives a failure, and that text is retained on the
-  // non-throwing path too. The outer guard is for `replace` itself failing.
+  // whole sentence would mangle it, and `redactText()`'s JWT rule would mask a
+  // three-label hostname like `frontend.production.internal`, the one thing
+  // this column is for. A bare credential with no URL around it is left as
+  // written (pinned): nothing else in the text is judged. Each match is
+  // guarded because `redactUrl()` can throw on an unparseable URL under a
+  // mask `encodeURIComponent()` rejects; unguarded, that throw used to escape
+  // `finish()` after `completedAt` was set, leaving the entry `ok` with no
+  // error counted. A URL that fails is replaced with `UNREADABLE` in place —
+  // never handed back raw — while the rest of the sentence keeps its usual
+  // masking. The outer guard is for `replace` itself failing.
   const cleanErrorText = (text: string): string => {
     try {
       return text.replace(URL_IN_TEXT, (url) => {

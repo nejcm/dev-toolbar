@@ -29,9 +29,9 @@ describe("storage adapters", () => {
 
   it("pins current behaviour: an unescaped `:` in instanceId aliases another scope", () => {
     // Not a spec — `:` is documented (contract.ts, DevToolbar.tsx, architecture.md
-    // §3) as an unescaped delimiter that ids should avoid. This pins what actually
-    // happens today if one is used anyway, so a future change to the key format is
-    // a deliberate, visible decision rather than an accidental fix.
+    // §3) as an unescaped delimiter ids should avoid. This pins today's actual
+    // behavior, so a future format change is a deliberate decision, not an
+    // accidental fix.
     const backing = createMemoryStorage();
     const aliasedInstance = createInstanceStorage(backing, "a:ext:b");
     const nestedExtension = createExtensionStorage(backing, "a", "b");

@@ -97,11 +97,9 @@ describe("Testing Library cleanup()", () => {
       renderOptions: { wrapper: StrictMode },
     });
 
-    // StrictMode runs *every* cleanup in tree order and only then every
-    // re-mount, so the whole second pass of the subtree must still see the
-    // fake. With the owner rendered after the toolbar it did not: an effect
-    // that constructs a ResizeObserver threw ReferenceError on the second
-    // pass, because the owner's own cleanup had already deleted the global.
+    // StrictMode runs every cleanup in tree order, then every re-mount, so the
+    // second pass must still see the fake — with the owner rendered after the
+    // toolbar it didn't, throwing ReferenceError.
     expect(seen).toEqual(["function", "function"]);
 
     // The owner effect ran mount → cleanup → mount. A cleanup-only owner would

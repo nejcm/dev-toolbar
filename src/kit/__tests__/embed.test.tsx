@@ -2,11 +2,10 @@
  * `embed()` against the real shell, through the `/testing` surface a stranger
  * embedding a third-party panel would use.
  *
- * Two of the guarantees below are core's, not the helper's — the error chip
- * with a working retry, and a closed panel unmounting unless `keepMounted`.
- * They are asserted here on purpose (plans/ecosystem-extensions.md §0C): the
- * recipe in `docs/embedding.md` leans on them, so a regression in core would
- * break an embedded tool, and this is the file that says so.
+ * Two guarantees below are core's, not the helper's — the error chip with a
+ * working retry, and a closed panel unmounting unless `keepMounted`. Asserted
+ * here on purpose: `docs/embedding.md`'s recipe leans on them, so a core
+ * regression breaking an embedded tool shows up in this file.
  */
 import { useState } from "react";
 import type { ReactNode } from "react";
@@ -305,13 +304,8 @@ describe("embed()", () => {
     expect(node?.className).toBe("");
     expect(node?.children).toHaveLength(1);
     expect(node?.firstElementChild?.className).toBe("vendor-devtools");
-    // Not a list of the three attribute names that exist today: *no* data-dtb-*
-    // attribute appears below the frame. Core's structural invariant
-    // (src/core/__tests__/css.test.ts) exempts a rule whose *selected* element
-    // must carry one; this checks the helper writes none below its frame for
-    // this fixture, which is what keeps that exemption honest here. It says
-    // nothing about arbitrary vendor markup — a tool that sets a data-dtb-*
-    // attribute on its own elements would be outside the promise.
+    // No data-dtb-* attribute of any kind appears below the frame for this fixture —
+    // what keeps core's exemption (src/core/__tests__/css.test.ts) honest here.
     const inside = Array.from(node?.querySelectorAll("*") ?? []);
     expect(inside.length).toBeGreaterThan(0);
     expect(
@@ -323,23 +317,13 @@ describe("embed()", () => {
 
   describe("the stylesheet rule: no core or kit selector reaches the embedded subtree", () => {
     /*
-     * docs/embedding.md promises that the toolbar does not scope, reset or
-     * restyle an embedded tool. Core states element-level defaults for every
-     * descendant of the root — `[data-dev-toolbar] :where(button)`, the
-     * box-sizing `*`, field geometry — so that promise holds only because each
-     * of those rules is guarded with `:where(:not([data-dtb-embed] *))`. This
-     * walks every rule in every injected sheet against a vendor DOM containing
-     * one of each element those rules name, and fails on the first that
-     * matches.
-     *
-     * What this proves is that the guard *works*. The two `:focus-visible`
-     * rules select nothing until something is focused, so they get their own
-     * test below. What none of it proves is that core applies the guard
-     * everywhere:
-     * these are the elements this fixture happens to contain, and a new
-     * unguarded rule naming one it does not have would sail through. That is
-     * the job of the structural invariant over core's selectors in
-     * `src/core/__tests__/css.test.ts`, which needs no fixture at all.
+     * docs/embedding.md promises the toolbar never scopes, resets or restyles an
+     * embedded tool. That holds because every core rule with an element-level
+     * default is guarded with `:where(:not([data-dtb-embed] *))`; this walks the
+     * injected sheets against a vendor DOM containing one of each named element
+     * and fails on the first match. It proves the guard works for this fixture's
+     * elements, not that every core rule is guarded — that's
+     * `src/core/__tests__/css.test.ts`'s job.
      */
     const vendorElements = (): Element[] => {
       const root = frame()?.querySelector(".vendor-devtools");
@@ -360,10 +344,7 @@ describe("embed()", () => {
       return mounted;
     };
 
-    // Core's `:focus-visible` rules select nothing until something is
-    // focused, so this focuses one vendor element and checks which rules
-    // reach it. Rewritten to `:focus` first — jsdom answers `:focus-visible`
-    // inconsistently, while `:focus` is exact and preserves what's under test.
+    // Rewritten to `:focus` — jsdom answers `:focus-visible` inconsistently.
     const focusRings = (): string[] =>
       injectedSelectors()
         .filter((selector) => selector.includes(":focus-visible"))
@@ -404,11 +385,7 @@ describe("embed()", () => {
 
       expect(reaching(selectors, vendorElements())).toEqual([]);
 
-      // Negative control, so a guard that stopped guarding cannot pass by
-      // accident: with the frame's attribute gone, the same vendor elements
-      // are matched by core's box-sizing rule, its button reset and its field
-      // geometry. It says nothing about the two focus rings, which select
-      // nothing here because nothing is focused — that is the next test.
+      // Negative control: with the frame's attribute gone, the same rules do match.
       frame()?.removeAttribute("data-dtb-embed");
       const unguarded = reaching(selectors, vendorElements());
       expect(unguarded).toContainEqual(expect.stringContaining(":where(button)"));
@@ -421,10 +398,7 @@ describe("embed()", () => {
       expect(ringsReaching("link", false)).toEqual([]);
       expect(ringsReaching("field", false)).toEqual([]);
 
-      // Negative control: the same two elements, focused the same way, on a
-      // frame whose opt-out has been removed. Each ring is then the one rule
-      // that reaches its element — so a guard dropped from either of them
-      // fails the two assertions above rather than passing unnoticed.
+      // Negative control: same elements, opt-out removed — each ring now reaches its element.
       expect(ringsReaching("link", true)).toEqual([
         expect.stringContaining(':where(a, button, summary, [role="button"], [tabindex])'),
       ]);

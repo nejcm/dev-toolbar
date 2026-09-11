@@ -4,12 +4,10 @@
  * only the fiddly parts — a native-looking chip when asked for one, panel
  * height, deferred `render()`, `keepMounted` — and deliberately does not
  * scope, reset or restyle the embedded subtree (the frame carries
- * `data-dtb-embed`, core's opt-out). See docs/embedding.md for the recipe and
- * the full rationale.
+ * `data-dtb-embed`, core's opt-out). See docs/embedding.md.
  *
- * Without `value` or `compact` there is no compact slot: core's trigger, no kit
- * hook on the bar (why that matters under Vite: docs/embedding.md, "Vite and
- * `/kit`").
+ * Without `value` or `compact` there is no compact slot: core's trigger, no
+ * kit hook on the bar.
  */
 import { useEffect } from "react";
 import type { CSSProperties, ReactNode } from "react";
@@ -36,32 +34,27 @@ export interface EmbedOptions {
   /** Bar label. The default chip reads it; the panel region is named by it. */
   label: string;
   /**
-   * The third-party panel. Called with the live `PanelSlotProps` — `height`
-   * is the panel's current height in pixels, `close()` closes it — and **not
-   * before the panel first opens**. Size the tool to the frame
-   * (`style={{ height: "100%" }}`) or to `height` when it wants a number.
+   * The third-party panel. Called with live `PanelSlotProps` — `height` is
+   * the panel's current height in pixels, `close()` closes it — and **not
+   * before the panel first opens**.
    */
   render: (props: PanelSlotProps) => ReactNode;
   /**
    * Something for the kit's chip to show beside the label — a count, a status
-   * word. Pass an element that subscribes to the tool's own state for a live
-   * value. Giving it is what opts into that chip: without it (and without
-   * `compact`) the extension has no compact slot and core renders its plain
-   * labelled trigger. Ignored when `compact` is supplied.
+   * word. Giving it opts into that chip; without it (and without `compact`)
+   * core renders its plain labelled trigger. Ignored when `compact` is supplied.
    */
   value?: ReactNode;
   /** Replace the trigger — core's, or the kit's chip — with your own compact slot. */
   compact?: (props: CompactSlotProps) => ReactNode;
   /**
    * Keep the embedded tool mounted, hidden, while the panel is closed — for a
-   * tool that loses state or re-fetches on every mount. Default `false`: a
-   * closed panel unmounts, as it does for every other extension.
+   * tool that loses state or re-fetches on every mount. Default `false`.
    */
   keepMounted?: boolean;
   /**
-   * The frame's `min-height` in pixels. Default `240`. A tool that sizes itself
-   * from an auto-height container collapses to nothing without it; with it, a
-   * panel dragged shorter scrolls the frame rather than crushing the tool.
+   * The frame's `min-height` in pixels. Default `240`. Without it, a tool that
+   * sizes itself from an auto-height container collapses to nothing.
    */
   minHeight?: number;
   align?: ToolbarAlign;
@@ -70,8 +63,7 @@ export interface EmbedOptions {
   hidden?: boolean;
   /**
    * Ensure the kit stylesheet for the chip `value` opts into. Default `true`.
-   * This is the only sheet the helper touches, and only then; nothing is
-   * injected for core's trigger or for the embedded tool.
+   * Injected only for that chip — never for core's trigger or the embedded tool.
    */
   injectStyles?: boolean;
   /** CSP nonce for that sheet. Wins over the `styleNonce` slot prop core forwards. */

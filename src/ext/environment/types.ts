@@ -1,11 +1,9 @@
 /**
  * Shared vocabulary for `/ext/environment`. [dev-toolbar/ext/environment]
  *
- * Everything in `plans/dev-bar.md` §3B is **consumer-supplied**: no `process.env`,
- * no globals. What the consumer told it, plus facts the browser itself can
- * answer (route, viewport, connection), labelled `"detected"` so they're never
- * mistaken for something the deploy asserted. Nothing supplied → `"unknown"`,
- * spelled out rather than guessed from the hostname.
+ * Everything here is consumer-supplied — no `process.env`, no globals — plus
+ * facts the browser itself can answer (route, viewport, connection), labelled
+ * `"detected"` so they're never mistaken for something the deploy asserted.
  */
 import type { Severity } from "@nejcm/dev-toolbar/kit";
 
@@ -151,11 +149,7 @@ export const GROUP_LABELS: Record<EnvironmentGroup, string> = {
   client: "Client",
 };
 
-/**
- * Folds real-world spellings (`"Production"`, `" prod "`, `"PROD"`) onto the
- * canonical names, so §6's "mark production conspicuously" isn't missed by a
- * casing mismatch. Anything unrecognised comes back trimmed/lowercased.
- */
+/** Folds real-world spellings (`"Production"`, `" prod "`, `"PROD"`) onto the canonical names. */
 export function normaliseKind(kind: string): string {
   const value = kind.trim().toLowerCase();
   switch (value) {
@@ -171,11 +165,8 @@ export function normaliseKind(kind: string): string {
 }
 
 /**
- * Severity by environment. Production is `"bad"` on purpose — §6's "mark
- * production conspicuously" — not because anything is wrong with it.
- *
- * Impersonation outranks everything: there is no route to a reassuring green
- * while you are acting as somebody else.
+ * Production is `"bad"` on purpose, to mark it conspicuously — not because
+ * anything is wrong with it. Impersonation outranks everything else.
  */
 export function severityForKind(kind: string, impersonating: boolean): EnvironmentSeverity {
   if (impersonating) return "bad";

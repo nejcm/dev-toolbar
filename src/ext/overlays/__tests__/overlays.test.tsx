@@ -205,9 +205,7 @@ describe("toggling, off and on, from every surface", () => {
     expect(storage.getItem(STORAGE_KEY)).not.toBeNull();
     toggleRow("grid");
     // All off *is* the default here, and the entry stays anyway: the map
-    // records that the developer chose, not merely what they chose. Without
-    // it, a consumer adding `defaults: { grid: true }` later would revive the
-    // grid for someone who had explicitly turned it off.
+    // records what the developer chose, not merely what it equals.
     expect(JSON.parse(storage.getItem(STORAGE_KEY) as string)).toEqual({
       boxes: false,
       grid: false,
@@ -217,9 +215,6 @@ describe("toggling, off and on, from every surface", () => {
   });
 
   it("persists disableAll with no defaults configured, and no later default revives a layer", async () => {
-    // The playground's configuration: `overlays({ grid })`, no `defaults`. All
-    // off is then indistinguishable from "never touched" by value alone — the
-    // stored entry is what makes the explicit choice outlive a reload.
     const storage = createMemoryStorage();
     const first = mount({}, storage);
     await first.toolbar.runCommand("overlays.toggle.grid");
@@ -241,9 +236,6 @@ describe("toggling, off and on, from every surface", () => {
   });
 
   it("stores all-off when the consumer's defaults turn something on", () => {
-    // The default worth comparing against is the *configured* one: with
-    // `defaults: { boxes: true }`, "everything off" differs from it and has to
-    // survive a remount, or the next mount would revive the boxes.
     const storage = createMemoryStorage();
     const first = mount({ defaults: { boxes: true } }, storage);
     expect(boxesSheets()).toHaveLength(1);
@@ -260,8 +252,7 @@ describe("toggling, off and on, from every surface", () => {
     mount({ defaults: { boxes: true } }, storage);
     expect(boxesSheets()).toHaveLength(0);
 
-    // …and turning boxes back on equals the default again, yet the entry stays:
-    // the choice is what is persisted, whatever it happens to equal.
+    // Turning boxes back on equals the default again, yet the entry stays.
     cleanupToolbar();
     const third = mount({ defaults: { boxes: true } }, storage);
     act(() => third.toolbar.openPanel("overlays"));
@@ -278,9 +269,7 @@ describe("toggling, off and on, from every surface", () => {
     const storage = createMemoryStorage();
     storage.setItem(STORAGE_KEY, "{not json");
     mount({ defaults: { grid: true } }, storage);
-    // Fail-closed, and it beats `defaults` too: a stored map that exists but
-    // cannot be read means "the developer chose something we cannot recover",
-    // and covering their page in overlays is the wrong guess.
+    // Fail-closed, and it beats `defaults` too — an unreadable stored map must not be guessed at.
     expect(surface()).toBeNull();
   });
 });
@@ -289,9 +278,7 @@ describe("toggling, off and on, from every surface", () => {
 
 describe("what it refuses to touch", () => {
   it("leaves the host DOM byte-for-byte as it found it", async () => {
-    // Outside Testing Library's container, so it is host markup that survives
-    // the unmount — the container itself is emptied by `cleanup`, which would
-    // make an assertion about it prove nothing.
+    // Outside Testing Library's container, so it survives the unmount — the container itself gets emptied by `cleanup`.
     const host = document.createElement("section");
     host.innerHTML = `<h2 class="title">Host</h2><a href="#x">link</a>`;
     document.body.appendChild(host);
@@ -304,33 +291,25 @@ describe("what it refuses to touch", () => {
     for (const id of ["boxes", "grid", "inspect", "focus"]) toggleRow(id);
     await frame();
 
-    // Every overlay is on. The application's own markup has not been touched:
-    // no injected classes, no inline styles, no wrapper elements.
+    // Every overlay is on; the application's own markup is untouched.
     expect(getByTestId("app").outerHTML).toBe(appBefore);
     expect(host.outerHTML).toBe(hostBefore);
 
     cleanupToolbar();
 
-    // Exactly as it was found: same host markup, no toolbar root left in the
-    // body, and the one stylesheet it adds to a document it does not own gone.
     expect(host.outerHTML).toBe(hostBefore);
-    // Nothing of this package is left anywhere in the document: no toolbar
-    // root, no part, no attribute. (Testing Library's own now-empty container
-    // stays, which is the runner's, not ours.)
+    // Nothing of this package is left anywhere in the document.
     expect(document.querySelector("[data-dev-toolbar]")).toBeNull();
     expect(document.querySelector("[data-dtb-part]")).toBeNull();
     expect(surface()).toBeNull();
     expect(boxesSheets()).toHaveLength(0);
     expect(document.head.innerHTML).not.toContain(BOXES_STYLE_ENTRY);
-    // The extension's *own* stylesheet stays, like core's and every other
-    // extension's: it styles only `[data-dev-toolbar]` descendants, so with the
-    // toolbar gone it matches nothing, and re-injecting it on every mount would
-    // be the more surprising behaviour.
+    // The extension's own stylesheet stays, like core's: it matches only
+    // `[data-dev-toolbar]` descendants, so with the toolbar gone it matches nothing.
     expect(
       document.head.querySelector('style[data-dev-toolbar-styles="ext-overlays"]'),
     ).not.toBeNull();
-    // Appended outside Testing Library's container, so `cleanup` will not take
-    // it away — and a stray tabbable node would change what later tests scan.
+    // Outside Testing Library's container, so `cleanup` won't remove it — and a stray tabbable node would affect later tests.
     host.remove();
   });
 
@@ -350,28 +329,17 @@ describe("what it refuses to touch", () => {
   });
 
   /**
-   * The half that matters, and the one the original test got wrong.
+   * A prior version of this test was a regex over the stylesheet's own text,
+   * which stayed green while the guarantee it described was defeated: the
+   * declarations sat inside `@layer dev-toolbar`, designed by §4.1 to *lose*
+   * to unlayered author rules, so `div { pointer-events: auto }` turned a
+   * viewport-sized overlay into a click trap.
    *
-   * That test was a regular expression over the stylesheet's own text. It
-   * passed happily while the guarantee it described was defeated by one line of
-   * app CSS: the declarations sat inside `@layer dev-toolbar`, which §4.1
-   * designed to *lose* to unlayered author rules, so `div { pointer-events:
-   * auto }` — the weakest rule CSS can express — turned a viewport-sized
-   * overlay into a click trap. A rule only ever compared to itself is not
-   * tested.
-   *
-   * The honest test here would read `getComputedStyle` off the surface with a
-   * hostile rule installed. **jsdom cannot answer that question**: its cascade
-   * is last-declaration-wins and ignores both specificity and `!important`
-   * (verified — an `!important` rule loses to a later normal one), so a
-   * computed-style assertion in this environment would be asserting jsdom's
-   * behaviour rather than ours, in whichever direction jsdom happened to fall.
-   *
-   * So this asks the **CSS parser** instead of the text: it reads the parsed
-   * declarations back out of the CSSOM and asserts the priority the cascade
-   * will act on. That fails against the pre-fix stylesheet, which is the point.
-   * The cascade itself — a hostile unlayered rule losing to these declarations
-   * in a real engine — is verified in a browser, and recorded in §14.7.
+   * jsdom's cascade is last-declaration-wins and ignores specificity and
+   * `!important`, so a `getComputedStyle` assertion here would test jsdom, not
+   * us. Instead this reads the parsed declarations back out of the CSSOM and
+   * asserts the priority the cascade will act on — the cascade itself is
+   * verified in a browser and recorded in §14.7.
    */
   it("marks its safety declarations !important, so app CSS cannot undo them", () => {
     // jsdom rejects a sheet containing `@layer` outright, so the self-contained
@@ -390,24 +358,19 @@ describe("what it refuses to touch", () => {
     };
 
     const surfaceRule = ruleFor('[data-dev-toolbar] [data-dtb-part="ovl-surface"]');
-    // A click must always reach the page; the surface must stay below the bar
-    // and the palette; and it must stay out of the toolbar's own layout.
     for (const property of ["pointer-events", "z-index", "position", "inset"]) {
       expect(surfaceRule.getPropertyPriority(property), `${property} on the surface`).toBe(
         "important",
       );
     }
-    // Descendants are covered by their own rule rather than by inheritance, so
-    // a hostile rule matching them has to be beaten separately.
+    // Descendants are covered by their own rule, not inheritance, so a hostile rule matching them must be beaten separately.
     expect(
       ruleFor('[data-dev-toolbar] [data-dtb-part="ovl-surface"] *').getPropertyPriority(
         "pointer-events",
       ),
     ).toBe("important");
 
-    // And the guard stays narrow: everything else is ordinary layered CSS a
-    // consumer can override, which is what makes the five above legible as
-    // deliberate rather than as a habit.
+    // And the guard stays narrow: everything else is ordinary layered CSS a consumer can override.
     const important = rules.filter((rule) => {
       const declarations = rule.style as unknown as Record<number, string>;
       for (let index = 0; index < rule.style.length; index += 1) {
@@ -435,9 +398,7 @@ describe("what it refuses to touch", () => {
       "button",
     );
 
-    // The pointer moves over the bar. `elementFromPoint` hit-tests the real
-    // page, so it returns the toolbar — and inspecting the tool instead of the
-    // application is never what was asked for.
+    // The pointer moves over the bar; elementFromPoint returns the toolbar.
     pointAt(toolbar.bar());
     fireEvent.pointerMove(window, { clientX: 5, clientY: 760 });
     await frame();
@@ -450,8 +411,7 @@ describe("what it refuses to touch", () => {
     const unnamed = document.querySelector('[data-testid="unnamed"]') as Element;
     withRect(named, { x: 10, y: 40, width: 80, height: 24 });
     withRect(unnamed, { x: 100, y: 40, width: 24, height: 24 });
-    // The toolbar's own trigger is a real, tabbable button with a real rect.
-    // The only reason it is not numbered is that the scan excludes it.
+    // A real, tabbable button with a real rect — excluded only by the scan.
     const trigger = toolbar.item("overlays")?.querySelector("button") as HTMLElement;
     withRect(trigger, { x: 0, y: 700, width: 60, height: 20 });
 
@@ -471,15 +431,13 @@ describe("visibility and teardown", () => {
     expect(boxesSheets()).toHaveLength(1);
 
     act(() => toolbar.setVisible(false));
-    // Core does not render the overlay slot while the bar is hidden, so a
-    // stylesheet left on would be an overlay with no toolbar to remove it from.
     expect(boxesSheets()).toHaveLength(0);
     expect(surface()).toBeNull();
 
     act(() => toolbar.setVisible(true));
     await frame();
     expect(boxesSheets()).toHaveLength(1);
-    // ...and the toggles survived being hidden, rather than being reset.
+    // Toggles survived being hidden, rather than being reset.
     expect(
       toolbar
         .context()
@@ -500,8 +458,7 @@ describe("visibility and teardown", () => {
   });
 
   it("removes every listener it added, so nothing survives as a ghost", async () => {
-    // The types this extension binds. Core binds none of them outside a panel
-    // drag, so an outstanding one here belongs to the overlays.
+    // Core binds none of these outside a panel drag, so an outstanding one belongs to the overlays.
     const watched = new Set(["pointermove", "pointerdown", "pointerleave", "scroll", "resize"]);
     const outstanding = new Map<string, number>();
     const key = (type: string, options: unknown) =>
@@ -562,8 +519,7 @@ describe("visibility and teardown", () => {
 
 describe("what it costs, asserted rather than claimed", () => {
   it("resolves accessible names once per scan, not once per element per frame", async () => {
-    // `aria-labelledby` is the branch that reaches outside the element, so
-    // counting `getElementById` counts name resolutions.
+    // aria-labelledby reaches outside the element, so counting getElementById counts name resolutions.
     const named = document.createElement("div");
     named.innerHTML = `<span id="lbl">Save</span>`;
     document.body.appendChild(named);
@@ -575,17 +531,11 @@ describe("what it costs, asserted rather than claimed", () => {
     withRect(target, { x: 10, y: 40, width: 80, height: 24 });
     await frame();
     expect(badges()).toHaveLength(1);
-    // Let the mutation debounce from setting the attribute above drain, so the
-    // count below measures scroll frames and nothing else.
+    // Drain the mutation debounce from setting the attribute above, so the count below measures scroll frames only.
     await settle();
 
     const lookups = vi.spyOn(document, "getElementById");
-    // Ten scroll frames. Nothing here is a mutation, so nothing may resolve a
-    // name: the cost line promises one rect per element per scroll frame and
-    // nothing else. (What makes the cache *correct* rather than merely cheap is
-    // the observer covering every mutation that can change a name — the test
-    // below is the one that pins that, and it is the half this comment used to
-    // assert instead of check.)
+    // Ten scroll frames, no mutations — nothing here should resolve a name.
     for (let index = 0; index < 10; index += 1) {
       fireEvent.scroll(window);
       await frame();
@@ -593,8 +543,7 @@ describe("what it costs, asserted rather than claimed", () => {
     expect(badges()).toHaveLength(1);
     expect(lookups).not.toHaveBeenCalled();
 
-    // A mutation, though, must re-resolve — or the cache would be a bug rather
-    // than an optimisation.
+    // A mutation, though, must re-resolve.
     await act(async () => {
       target.setAttribute("aria-label", "Renamed");
     });
@@ -613,13 +562,9 @@ describe("what it costs, asserted rather than claimed", () => {
     await settle();
     expect(badges()[0]?.dataset["dtbNamed"]).toBe("true");
 
-    // How React updates `<button>{label}</button>` when only the label changed:
-    // it writes `nodeValue` on the existing Text node. That is a characterData
-    // record and nothing else — no childList, no attribute — so an observer
-    // that did not ask for it saw nothing at all, and the cached name went on
-    // saying "named" over a button with no text. Before names were cached this
-    // self-healed on the next scroll frame, which is why caching them is what
-    // turned a blind spot into a lasting lie.
+    // React writes nodeValue on the existing Text node for `<button>{label}</button>` —
+    // a characterData record, no childList/attribute, so an observer not
+    // watching for it would leave the cached name lying.
     const text = target.firstChild as Text;
     expect(text.nodeType).toBe(3);
     await act(async () => {
@@ -630,7 +575,7 @@ describe("what it costs, asserted rather than claimed", () => {
     expect(badges()[0]?.dataset["dtbNamed"]).toBe("false");
     expect(badges()[0]?.textContent).toContain("unnamed");
 
-    // ...and back again, so this is a live cache and not a one-way latch.
+    // And back again — a live cache, not a one-way latch.
     await act(async () => {
       text.nodeValue = "Save again";
     });
@@ -652,9 +597,7 @@ describe("what it costs, asserted rather than claimed", () => {
         ([selector]) => typeof selector === "string" && selector.includes("audio[controls]"),
       ).length;
 
-    // A mutation whose every record is inside the toolbar — which is exactly
-    // what drawing and removing badges looks like to the observer, since the
-    // surface is portaled into `body`.
+    // A mutation whose every record is inside the toolbar — what drawing/removing badges looks like since the surface is portaled into `body`.
     const chip = document.querySelector('[data-dtb-part="ovl-chip"]') as Element;
     await act(async () => {
       chip.appendChild(document.createElement("span"));
@@ -692,9 +635,7 @@ describe("two toolbars on one page", () => {
     expect(sheet()?.getAttribute(BOXES_REFS_ATTRIBUTE)).toBe("2");
 
     second.unmount();
-    // The first instance's chip and panel still say boxes is on, so the
-    // outlines have to still be there. Unconditional removal used to make those
-    // two disagree.
+    // The first instance's chip/panel still say boxes is on; unconditional removal used to disagree with that.
     expect(sheet(), "the surviving instance still has boxes on").not.toBeNull();
     expect(sheet()?.getAttribute(BOXES_REFS_ATTRIBUTE)).toBe("1");
 
@@ -707,8 +648,7 @@ describe("two toolbars on one page", () => {
     stray.setAttribute("data-dev-toolbar-styles", BOXES_STYLE_ENTRY);
     document.head.appendChild(stray);
     setHostOutlines(true);
-    // One insert, one release: an older or foreign sheet counts as one holder,
-    // so the release balances rather than deleting somebody else's.
+    // An older or foreign sheet counts as one holder, so the release balances rather than deleting somebody else's.
     expect(sheet()?.getAttribute(BOXES_REFS_ATTRIBUTE)).toBe("2");
     setHostOutlines(false);
     expect(sheet()).not.toBeNull();
@@ -728,9 +668,7 @@ describe("the focus scan describes the real tab sequence", () => {
     withRect(unnamed, { x: 100, y: 40, width: 24, height: 24 });
     await frame();
 
-    // aria-disabled is a promise to assistive technology, not a change to focus
-    // behaviour: leaving it out described a sequence with a missing stop. The
-    // `disabled` attribute on a button genuinely does remove it.
+    // aria-disabled is a promise to assistive tech, not a focus-behaviour change; `disabled` genuinely removes the stop.
     expect(badges().map((badge) => badge.textContent)).toEqual(["1Save the document"]);
   });
 
@@ -752,9 +690,7 @@ describe("the focus scan describes the real tab sequence", () => {
     withRect(named, { x: 10, y: 40, width: 80, height: 24 });
     await frame();
 
-    // A disabled fieldset disables everything it contains — except controls in
-    // its first legend, which stay tabbable so a section can be switched back
-    // on. Numbering the disabled ones would describe stops that do not exist.
+    // A disabled fieldset disables everything it contains except controls in its first legend.
     expect(badges().map((badge) => badge.textContent)).toEqual([
       "1Enable section",
       "2Save the document",
@@ -805,8 +741,7 @@ describe("the focus scan describes the real tab sequence", () => {
     withRect(unnamed, { x: 100, y: 40, width: 24, height: 24 });
     await frame();
 
-    // Both hidden inputs used to fill the limit and then be dropped at measure
-    // time: a scan that stopped early over elements it was never going to draw.
+    // Both hidden inputs used to fill the limit and then be dropped at measure time.
     expect(badges()).toHaveLength(2);
     hidden.remove();
   });
@@ -827,9 +762,6 @@ describe("failing closed", () => {
     fireEvent.pointerMove(window, { clientX: 20, clientY: 50 });
     await frame();
 
-    // A measurement runs inside an animation frame, where nobody upstream can
-    // catch it and where it would recur every frame. Off is the only honest
-    // response, and the toolbar is still standing.
     expect(error).toHaveBeenCalled();
     expect(surface()).toBeNull();
     expect(toolbar.bar()).not.toBeNull();
@@ -863,8 +795,7 @@ describe("failing closed", () => {
     await frame();
 
     expect(surface()).toBeNull();
-    // Off in memory, unchanged on disk: one transient throw must not cost the
-    // developer the toggles they chose on every future load.
+    // Off in memory, unchanged on disk — a transient throw must not cost the developer their toggles.
     expect(storage.getItem(STORAGE_KEY)).toBe(chosen);
   });
 
@@ -928,10 +859,7 @@ describe("styleNonce", () => {
   });
 
   it("inserts no un-nonced sheet before the overlay surface has mounted", () => {
-    // A hidden bar renders no overlay surface, so nothing has told the runtime
-    // the nonce yet — and the sheet must not be written un-nonced, since it is
-    // first-writer-wins. Making the bar visible mounts the surface and the
-    // sheet appears stamped.
+    // A hidden bar renders no overlay surface, so nothing has told the runtime the nonce yet.
     const extension = overlays({ defaults: { boxes: true } });
     const { toolbar } = mountToolbar(app, {
       extensions: [extension],

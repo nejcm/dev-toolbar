@@ -1,9 +1,8 @@
 /**
  * `/ext/a11y` against the real shell, through the same `/testing` surface a
- * stranger writing an extension would use — plus the two conformance
- * requirements that are not about React: every command declares what a reader
- * needs to decide whether to call it, and `diagnostics()` hands back the very
- * object the panel is rendering.
+ * stranger writing an extension would use, plus two conformance checks: every
+ * command declares what a reader needs to call it, and `diagnostics()` hands
+ * back the very object the panel renders.
  */
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { act, fireEvent } from "@testing-library/react";
@@ -203,7 +202,7 @@ describe("the panel", () => {
     expect(part("a11y-unchecked")).toBeNull();
     expect(parts("a11y-rule-id").map((rule) => rule.textContent)).toEqual(["label", "region"]);
 
-    // Cleared is not unchecked: axe stayed loaded, so the invitation must not come back.
+    // Cleared is not unchecked: axe stayed loaded.
     act(() => {
       fireEvent.click(part("a11y-clear") as HTMLElement);
     });
@@ -220,8 +219,7 @@ describe("the panel", () => {
     const { toolbar } = mount({ load });
     act(() => toolbar.openPanel("a11y"));
 
-    // Pending and not yet loaded, exactly the state the note is for — but the
-    // check is under way, not deferred, so claiming otherwise would be wrong.
+    // Pending and not yet loaded, but the check is under way, not deferred.
     expect(part("a11y-unchecked")).toBeNull();
 
     await act(async () => {
@@ -313,8 +311,8 @@ describe("the agent surface", () => {
       expect(command.group, command.id).toBe("Accessibility");
     }
 
-    // The two argument-taking commands declare a v2 schema; the other two must
-    // not, or a palette would refuse to run them from a keypress.
+    // Only the argument-taking commands declare a v2 schema, or a palette
+    // would refuse to run the others from a keypress.
     expect(
       commands.filter((command) => command.input !== undefined).map((command) => command.id),
     ).toEqual(["a11y.export", "a11y.highlight"]);
@@ -344,7 +342,7 @@ describe("the agent surface", () => {
       toolbar.invokeCommand<A11yReport>("a11y.export", { copy: false }),
     );
     expect(exported.ok && exported.result?.total).toBe(2);
-    // Reading is not scanning: export must not have run axe a second time.
+    // Reading is not scanning: must not have run axe a second time.
     expect(exported.ok && exported.result?.scans).toBe(1);
 
     await expect(toolbar.invokeCommand("a11y.export", { copy: "yes" })).rejects.toThrow(
@@ -416,8 +414,7 @@ describe("diagnostics() and the panel", () => {
     await runtime.scan();
     runtime.store.flush();
 
-    // The panel's only source is `useExtensionSurface(runtime.store).report`
-    // (see ui.tsx); this is that object, by reference.
+    // The panel's only source is `useExtensionSurface(runtime.store).report`.
     expect(Object.is(runtime.diagnostics(), runtime.store.getSnapshot().report)).toBe(true);
   });
 
@@ -438,8 +435,7 @@ describe("diagnostics() and the panel", () => {
         expect(rendered, entry.help).toContain(entry.help);
         for (const node of entry.nodes) {
           expect(rendered).toContain(node.html);
-          // The summary is in the export, so it has to be on the screen: the
-          // documented mitigation is "read the panel before you share this".
+          // The summary is in the export, so it must be on screen too.
           if (node.summary !== null) expect(rendered).toContain(node.summary);
         }
       }
@@ -481,8 +477,7 @@ describe("diagnostics() and the panel", () => {
   });
 
   it("reaches core's roster, which is what /ext/agent and /ext/diagnostics read", async () => {
-    // Read the way a neighbouring extension reads it, through `start(api)` —
-    // the path `/ext/agent` and `/ext/diagnostics` both take.
+    // The path `/ext/agent` and `/ext/diagnostics` both take, via `start(api)`.
     let roster: (() => readonly { id: string; status: string; data?: unknown }[]) | null = null;
     const extension = a11y({ load: () => Promise.resolve(stub()) });
     const { toolbar } = mountToolbar(app, {

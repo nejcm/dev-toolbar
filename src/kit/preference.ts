@@ -1,24 +1,16 @@
 /**
  * A named, validated, persisted preference — the one guarded interface over
  * `api.storage` that every first-party extension reads and writes through.
+ * Read returns the fallback when nothing valid is stored; write removes the
+ * key instead of storing the fallback, so storage only holds what differs
+ * from default.
  *
- * Three operations and two encodings, deliberately nothing more:
+ * A storage adapter is consumer code, so every throwing `getItem`/`setItem`/
+ * `removeItem` (blocked site data, a full quota, a sandboxed iframe) is
+ * swallowed here rather than allowed to take down a panel or click handler.
  *
- * - **read** — the stored value if it passes the type guard, else the fallback;
- * - **write** — store the value, or *remove* it when it equals the fallback, so
- *   storage holds only what differs from the default;
- * - **remove** — drop the key.
- *
- * A storage adapter is consumer code, and a throwing `getItem`/`setItem`/
- * `removeItem` (a browser with site data blocked, a full quota, a sandboxed
- * iframe) must never take down a panel or a click handler. Every path here
- * swallows the throw and degrades: a read returns the fallback, a write or
- * remove does nothing. `null`/`undefined` storage degrades the same way.
- *
- * Encodings: `"string"` stores the value byte-for-byte (what `tab`, `format`
- * and the override maps write today), `"json"` runs it through `JSON`. A raw
- * value is never JSON-wrapped, so a consumer's persisted `tab` from before an
- * extension adopted this module still reads back.
+ * Encodings: `"string"` stores byte-for-byte so a pre-existing raw value
+ * (e.g. a persisted `tab`) still reads back; `"json"` runs it through `JSON`.
  */
 import type { ToolbarStorage } from "../core/contract";
 
@@ -83,25 +75,18 @@ export type PreferenceEncoding = "string" | "json";
 /**
  * A named, validated, persisted preference.
  *
- * `fallback` is both what a read returns when nothing valid is stored and the
- * value a write treats as "nothing to store" — writing it removes the key.
- * `isValue` vets what comes back out of storage; a value that fails it reads
- * as the fallback. `encoding: "string"` is only available when `T` is a string
- * (or `null` for "nothing chosen yet"); anything else has to be `"json"`. The
- * conditional is tuple-wrapped so it does not distribute over a union: a
- * `Preference<string | number>` must resolve to `"json"`, not admit `"string"`
- * and hand `setItem` a number.
+ * `fallback` is both what a read returns when nothing valid is stored and
+ * what a write treats as "nothing to store" (removes the key instead).
+ * `isValue` vets what comes back out of storage; a failing value reads as the
+ * fallback. `encoding: "string"` is only available when `T` is a string (or
+ * `null`); the conditional is tuple-wrapped so it doesn't distribute over a
+ * union — `Preference<string | number>` must resolve to `"json"`.
  *
- * Two edges of "remove when it equals the fallback" worth knowing:
- *
- * - A `"string"` preference removes on `null` *regardless of* `fallback`. With a
- *   non-null fallback, `write(null)` then `read()` returns the fallback, not
- *   `null` — write and read are not inverses for that shape. No first-party
- *   preference has it; every raw-string default is `null` or a real string.
- * - A `"json"` preference compares its `JSON.stringify` output, so the
- *   comparison is key-order sensitive: with `fallback: { a: 1, b: 2 }`, writing
- *   `{ a: 1, b: 2 }` removes but `{ b: 2, a: 1 }` stores. Inert while every
- *   first-party default is `{}`, `[]` or a scalar.
+ * Two edges worth knowing: a `"string"` preference removes on `null`
+ * regardless of `fallback`, so write/read aren't inverses when `fallback` is
+ * non-null; a `"json"` preference compares `JSON.stringify` output, which is
+ * key-order sensitive (`{a:1,b:2}` and `{b:2,a:1}` are not equal). Neither
+ * edge is hit by any first-party preference today.
  */
 export interface Preference<T> {
   readonly key: string;
@@ -272,10 +257,8 @@ export interface StoredRecordOptions {
   /** Where to read. Default: `localStorage` when there is one, else nothing. */
   storage?: Pick<ToolbarStorage, "getItem"> | null;
   /**
-   * Query parameter of the kill switch; see `resetRequested`. **Default `null`:
-   * the switch is off.** A caller that wants the escape hatch — and a reader of
-   * a map that mutates the app should — passes its own param, as the flags and
-   * theme-editor factories do with `DEFAULT_RESET_PARAM` / `DEFAULT_THEME_PARAM`.
+   * Query parameter of the kill switch; see `resetRequested`. Default `null`
+   * (off) — pass one to opt in, as the flags and theme-editor factories do.
    */
   resetParam?: string | null;
 }
@@ -284,16 +267,11 @@ export interface StoredRecordOptions {
  * Reads a persisted map **without mounting anything** — for an app that has
  * to agree with the panel on first paint, before `start()` has run.
  *
- * `isEntry` vets each entry by value *and name*: the mounted runtime's own
- * validators go here, so what the app seeds itself with is exactly what the
- * panel will accept. Entries that fail are dropped, not the whole map.
- *
- * Returns a plain object, never the null-prototype map the parsers build:
- * this crosses a public API, where `.hasOwnProperty()` on the result must not
- * throw.
- *
- * The `?…=reset` kill switch is **off unless `resetParam` is passed**; see
- * `StoredRecordOptions.resetParam`.
+ * `isEntry` should be the same validator the mounted runtime uses, so seeded
+ * state is exactly what the panel will accept; failing entries are dropped,
+ * not the whole map. Returns a plain object (not the null-prototype map the
+ * parsers build) since this crosses a public API where `.hasOwnProperty()`
+ * must not throw. The `?…=reset` kill switch is off unless `resetParam` is passed.
  */
 export function readStoredRecord<T>(
   options: StoredRecordOptions,

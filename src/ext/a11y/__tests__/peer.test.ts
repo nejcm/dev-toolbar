@@ -2,12 +2,12 @@
  * The promise the docs make — install nothing, nothing throws — proven against
  * a consumer where `axe-core` is genuinely unresolvable.
  *
- * `test/fixtures/jest-consumer` reaches the same `"unsupported"` state, but for
- * a different reason: Node walks up to this repo's own root, where axe is a
- * devDependency, so what that fixture exercises is Jest's inability to run a
- * native `import()`. This copies the built package into a temporary directory
- * outside the checkout, which is the only place `import("axe-core")` really
- * fails to resolve. Nothing under `node_modules/` is moved or modified.
+ * `test/fixtures/jest-consumer` reaches the same `"unsupported"` state for a
+ * different reason: Node walks up to this repo's own root, where axe is a
+ * devDependency, so that fixture really just exercises Jest's inability to run
+ * a native `import()`. This copies the built package into a temporary
+ * directory outside the checkout — the only place the import really fails to
+ * resolve — without touching anything under `node_modules/`.
  */
 import { execFileSync } from "node:child_process";
 import { cpSync, existsSync, mkdirSync, mkdtempSync, rmSync, symlinkSync } from "node:fs";
@@ -28,7 +28,7 @@ const PROBE =
 
 const consumers: string[] = [];
 
-/** A real copy, outside the checkout: a symlink would resolve back into it. */
+/** A real copy: a symlink would resolve back into the checkout. */
 const consumer = (withPeer: boolean): string => {
   const directory = mkdtempSync(join(tmpdir(), "dev-toolbar-peer-"));
   consumers.push(directory);
@@ -37,8 +37,8 @@ const consumer = (withPeer: boolean): string => {
   mkdirSync(installed, { recursive: true });
   cpSync(resolve(root, "dist"), join(installed, "dist"), { recursive: true });
   cpSync(resolve(root, "package.json"), join(installed, "package.json"));
-  // React is the extension's own peer and must resolve either way; a symlink is
-  // enough, because what it resolves to cannot reach `axe-core` from here.
+  // React is the extension's own peer and must resolve either way; a symlink
+  // is enough since it can't reach `axe-core` from here.
   symlinkSync(resolve(root, "node_modules/react"), join(modules, "react"));
   if (withPeer) symlinkSync(resolve(root, "node_modules/axe-core"), join(modules, "axe-core"));
   return directory;
@@ -74,8 +74,8 @@ if (!built && mustBeBuilt) {
     });
 
     it("loads the peer in the same consumer once it is installed", () => {
-      // Non-vacuity: the test above must fail because axe is missing, not
-      // because the temporary consumer cannot import the package at all.
+      // Non-vacuity: proves the test above fails because axe is missing, not
+      // because the consumer can't import the package at all.
       const result = probe(consumer(true));
 
       expect(result.peer).toBe("resolved");

@@ -1,8 +1,8 @@
 import type { RenderOptions, RenderResult } from "@testing-library/react";
 import { useEffect } from "react";
 import type { ReactNode } from "react";
-// Core values via the package's own specifier, types relatively: a relative
-// value import would inline a second core into `dist/testing.cjs` (AGENTS.md, *Conventions*).
+// Core values via the package's own specifier, types relatively — see
+// src/testing/index.ts's header (AGENTS.md).
 import {
   DevToolbar,
   HEIGHT_VARIABLE,
@@ -43,18 +43,15 @@ export interface RenderWithToolbarOptions extends Omit<DevToolbarProps, "childre
  */
 export interface ToolbarHandle {
   /**
-   * The live context value. Throws if the toolbar is not mounted — meaning
-   * this handle's own `unmount()` ran, or `render()` threw. Testing Library's
-   * `cleanup()` (including RTL auto-cleanup) unmounts without going through
-   * that wrapper, so after a teardown you didn't trigger yourself this still
-   * returns a stale context whose setters reach nothing. Call `unmount()`
-   * yourself when a test needs the throw.
+   * The live context value. Throws if the toolbar is not mounted via this
+   * handle's own `unmount()`, or if `render()` threw — but not after
+   * Testing Library's `cleanup()`/auto-cleanup, which unmounts without going
+   * through that wrapper and leaves this returning a stale, dead context.
    */
   context(): DevToolbarContextValue;
   /**
    * The mounted toolbar's root, or `null` when hidden or disabled. Two toolbars
-   * sharing an `instanceId` in the same container resolve to the first, and share
-   * its storage namespace and height variable.
+   * sharing an `instanceId` in the same container resolve to the first.
    */
   root(): HTMLElement | null;
   bar(): HTMLElement | null;
@@ -149,22 +146,16 @@ export interface RenderWithToolbarResult extends RenderResult {
 }
 
 /**
- * Ties the fake layout's lifetime to the React tree. Testing Library exposes
- * no hook into `cleanup()`, but it does unmount every tree it rendered, so an
- * effect cleanup here *is* that hook — it's what makes `cleanup()` (and RTL
- * auto-cleanup) unregister the fake instead of leaving it installed for the
- * rest of the file.
+ * Ties the fake layout's lifetime to the React tree via effect cleanup, since
+ * Testing Library exposes no hook into `cleanup()` but does unmount every
+ * tree it rendered. Re-installs on mount too, because StrictMode invokes
+ * effects mount → cleanup → mount and a cleanup-only owner would leave the
+ * layout restored mid-test.
  *
- * Re-installs on mount because StrictMode invokes effects mount → cleanup →
- * mount, and a cleanup-only owner would leave the layout restored mid-test.
- *
- * Rendered as the **first** sibling, which is load-bearing under StrictMode:
- * React runs every cleanup in tree order and only then every re-mount, so an
- * owner rendered last would have already deleted `globalThis.ResizeObserver`
- * before the rest of the tree re-mounts — ordinary consumer code constructing
- * one in a mount effect would throw `ReferenceError` on the second pass. Being
- * first means the reinstall leads instead, at no cost: core's own teardown
- * only calls `disconnect()` on fakes it already holds.
+ * Must render as the **first** sibling: React runs every cleanup in tree
+ * order and only then every re-mount, so a later owner would have already
+ * deleted `globalThis.ResizeObserver` before the rest of the tree re-mounts,
+ * throwing in consumer code that constructs one in its own mount effect.
  */
 function LayoutOwner({ handle }: { handle: ToolbarLayoutHandle }): null {
   useEffect(() => {
@@ -193,8 +184,8 @@ export function renderWithToolbar(
   ui?: ReactNode,
   options: RenderWithToolbarOptions = {},
 ): RenderWithToolbarResult {
-  // Resolved first so a missing optional peer fails with an actionable
-  // message rather than a ReferenceError three frames deep.
+  // Resolved first: a missing optional peer should fail with an actionable
+  // message, not a ReferenceError three frames deep.
   const { act, render } = requireTestingLibrary();
 
   const { layout, renderOptions, ...toolbarProps } = options;
@@ -215,9 +206,8 @@ export function renderWithToolbar(
     latest = value;
   };
 
-  // One place builds the tree, so `rerender()` below can't drift from the
-  // initial render, including `LayoutOwner`'s load-bearing first-sibling
-  // position (see its own comment).
+  // One place builds the tree so `rerender()` can't drift from the initial
+  // render, including `LayoutOwner`'s first-sibling position.
   const tree = (children: ReactNode) => (
     <>
       {layoutHandle ? <LayoutOwner handle={layoutHandle} /> : null}
@@ -240,11 +230,10 @@ export function renderWithToolbar(
     return latest;
   };
 
-  // Extension ids are arbitrary strings; a `"` or `\` in one would end the
-  // attribute selector's quoted value early (SyntaxError, or a selector that
-  // quietly matches the wrong thing). `CSS.escape` handles this — called as a
-  // method since jsdom's implementation throws otherwise — with a fallback for
-  // hosts without it, hex-escaping what a quoted CSS string can't hold literally.
+  // Extension ids are arbitrary strings; a `"` or `\` would end the attribute
+  // selector's quoted value early. `CSS.escape` handles this (called as a
+  // method since jsdom's implementation throws otherwise), with a fallback
+  // for hosts without it.
   const escape = (value: string): string =>
     typeof globalThis.CSS?.escape === "function"
       ? globalThis.CSS.escape(value)
@@ -376,14 +365,12 @@ export function renderWithToolbar(
 
   const unmount = () => {
     result.unmount();
-    // Dropped so `context()` throws "not mounted" instead of handing out a
-    // dead context. `Probe` can't do this itself: its effect cleanup would
-    // also fire on StrictMode's remount pass.
+    // Dropped here, not in `Probe`'s effect cleanup, since that would also
+    // fire on StrictMode's remount pass.
     latest = null;
-    // Redundant with `LayoutOwner`'s cleanup in the ordinary case; kept since
-    // `restore()` is idempotent and free, covering the case where the owner
-    // never mounted (e.g. a consumer `wrapper` whose error boundary swallowed
-    // the first render).
+    // Redundant with `LayoutOwner`'s cleanup in the ordinary case; kept as a
+    // free, idempotent safety net for when the owner never mounted (e.g. a
+    // consumer `wrapper` whose error boundary swallowed the first render).
     layoutHandle?.restore();
   };
 

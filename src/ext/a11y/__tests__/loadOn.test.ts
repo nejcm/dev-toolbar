@@ -1,13 +1,13 @@
-// One test on purpose: the mock factory runs once per file and vitest caches
-// its module, so a second test could not observe another initialisation.
+// One test on purpose: vitest caches the mocked module, so a second test
+// could not observe another initialisation.
 import { describe, expect, it, vi } from "vitest";
 import { fakeExtensionApi } from "@nejcm/dev-toolbar/testing";
 import { createA11yRuntime } from "../runtime";
 
 const peer = vi.hoisted(() => ({ imports: 0 }));
 
-// Both shapes, as the real CJS interop exposes them: vitest throws on a read of
-// an export the factory did not define, and `unwrap()` probes `run` first.
+// Both interop shapes: vitest throws on a read of an export the factory did
+// not define, and `unwrap()` probes `run` first.
 vi.mock("axe-core", () => {
   peer.imports += 1;
   const stub = {
@@ -35,8 +35,8 @@ describe("the peer import, counted", () => {
     expect(deferred.store.getSnapshot().axeLoaded).toBe(true);
     stopDeferred();
 
-    // Non-vacuity: the default path reaches the same module through the same
-    // expression, so what the count above measured is the import this option defers.
+    // Non-vacuity: the default path imports through the same expression, so
+    // the count above measures the import this option defers.
     const eager = createA11yRuntime();
     const stopEager = eager.start(fakeExtensionApi().api);
     await vi.waitFor(() => expect(eager.store.getSnapshot().axeLoaded).toBe(true));

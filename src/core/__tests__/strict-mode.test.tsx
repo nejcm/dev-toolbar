@@ -1,14 +1,12 @@
 /**
- * `<StrictMode>` double-invokes renders and mount effects in development, and
- * `docs/architecture.md` §8 records that the Next verification ran with
- * `reactStrictMode: true`. Nothing pinned that, so this file does.
+ * `<StrictMode>` double-invokes renders and mount effects in development;
+ * `docs/architecture.md` §8 records the Next verification ran with
+ * `reactStrictMode: true`, but nothing pinned that until this file.
  *
- * Two shapes of bug are in scope. First, a lifecycle that leaks: `start()` runs
- * twice under the double-invoked effect and must be balanced by exactly one
- * teardown, leaving one live run. Second, render-time bookkeeping — the
- * `openedRef` mutation in `PanelHost.tsx` and the `extensionsRef` write in
- * `DevToolbar.tsx` — which a doubled render is precisely the thing that
- * exposes.
+ * Two bug shapes are in scope: a leaking lifecycle (`start()` runs twice under
+ * the double-invoked effect and must be balanced by exactly one teardown), and
+ * render-time bookkeeping (`openedRef` in `PanelHost.tsx`, `extensionsRef` in
+ * `DevToolbar.tsx`) that a doubled render is precisely built to expose.
  */
 import { StrictMode } from "react";
 import { fireEvent, render, screen } from "@testing-library/react";
@@ -104,13 +102,10 @@ describe("DevToolbar under StrictMode", () => {
   });
 
   it("delivers once to an extension that relies on api.signal alone", () => {
-    // `contract.ts` promises `api.signal` is aborted when the extension is
-    // unregistered or the toolbar unmounts, and that `subscribeVisibility`'s
-    // subscription is released automatically when it does. An extension that
-    // keeps only the signal (never calling the returned unsubscribe) must
-    // still hear exactly one delivery per real change, including across the
-    // StrictMode double-invoked mount effect: the torn-down pass's
-    // subscription is released by its aborted signal.
+    // `contract.ts` promises `api.signal` aborts on teardown and releases the
+    // `subscribeVisibility` subscription with it. An extension that keeps only
+    // the signal (never the returned unsubscribe) must still hear exactly one
+    // delivery per change, even across the double-invoked mount effect.
     const seen: boolean[] = [];
     const start = (api: ExtensionRuntimeApi) => {
       api.subscribeVisibility((visible) => seen.push(visible));
@@ -131,9 +126,9 @@ describe("DevToolbar under StrictMode", () => {
   });
 
   it("keeps the render-time openedRef bookkeeping in PanelHost correct", () => {
-    // `opened` is mutated during render, which under StrictMode happens twice
-    // per commit. The `keepMounted` decision it feeds must be unchanged by
-    // that: the panel mounts once, and stays mounted once after closing.
+    // `opened` is mutated during render, doubled under StrictMode; the
+    // `keepMounted` decision it feeds must still mount once and stay mounted
+    // once after closing.
     const extensions: DevToolbarExtension[] = [
       {
         id: "sticky",

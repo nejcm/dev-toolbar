@@ -1,34 +1,25 @@
 /**
  * The collapse decision, as a state machine with no renderer in it.
  *
- * `OverflowBar` feeds it what the DOM reports — the bar's own width, its
- * padding and gap, the `⋮` button's width and every rendered item host's width
- * — and reads back which ids are collapsed. Everything that used to make the
- * decision hard to reason about in the component lives here instead: the
- * sticky width cache, the inter-region gap hysteresis, the cycle detection
- * that settles a chip whose width depends on its own collapse, and the
- * priority arithmetic itself. Nothing here touches a DOM global, so a sequence
- * of readings drives it exactly as the bar would.
+ * `OverflowBar` feeds it DOM measurements (bar width, padding, gap, `⋮` button
+ * width, item widths) and reads back which ids are collapsed. Nothing here
+ * touches a DOM global, so a sequence of readings drives it exactly as the
+ * bar would.
  *
  * Invariants a caller may rely on:
  *
  * - `collapsed` is the same `Set` instance until the decision changes, so
  *   identity is a cheap "did it flip" test and a safe React state value.
- * - A width that is not a positive number never overwrites a cached one. A
- *   collapsed item is not in the bar to be measured, and jsdom measures
- *   everything as 0; both keep the width the item last had in the bar.
- * - An *honest* reading — one that reports the bar's own box (width, padding,
- *   gap) or the roster changing — is the world changing, not an item reacting
- *   to the decision. It always recomputes, and it forgets every decision held
- *   since the last one.
- * - Between honest readings, item measurements may move the decision to any
- *   state not held since, but may not *return* to one already held unless the
- *   current state has overflowed. That is what terminates a chip whose width
- *   depends on the decision: its 2-cycle settles on the side that fits, after
- *   at most one round trip, and `latched` reports the refusal. A chip that
- *   genuinely grows never repeats a state, so it is always heard.
- *   Refusing a smaller state can retain extra collapsed items that would fit;
- *   an honest change clears that history and recomputes with cached widths.
+ * - A width that is not a positive number never overwrites a cached one —
+ *   a collapsed item isn't in the bar to measure, and jsdom measures
+ *   everything as 0.
+ * - An *honest* reading (the bar's own box or the roster changing, as opposed
+ *   to an item reacting to the decision) always recomputes and forgets every
+ *   decision held since the last one. Between honest readings, item
+ *   measurements may move the decision to any state not held since, but may
+ *   not *return* to one already held unless the current state has
+ *   overflowed — this is what terminates a chip whose own width depends on
+ *   the decision, and `latched` reports the refusal.
  * - No bar width, or one that is not positive, collapses nothing: a
  *   non-measuring host (SSR, jsdom without a fake layout) renders everything.
  */
@@ -54,14 +45,11 @@ export interface CollapseReading {
   /** The bar's horizontal padding, both sides summed. */
   readonly padding?: number;
   /**
-   * The gap between items and between the two regions. A gap-only change
-   * resizes no box of the bar's own, so the DOM adapter reports it from the
-   * region observer's reading, which carries the whole bar and not only
-   * widths. A gap *increase* always arrives, because it narrows the regions; a
-   * gap *decrease* while the content already fits resizes nothing, so it can
-   * wait for the next bar reading — leaving the bar more collapsed than it
-   * needs to be, with every item still reachable through the button.
-   * See docs/architecture.md §5.
+   * The gap between items and between the two regions. A gap *increase*
+   * always arrives, since it narrows the regions; a gap *decrease* while
+   * content already fits resizes nothing, so it can wait for the next bar
+   * reading — leaving the bar more collapsed than it needs to be, with every
+   * item still reachable through the button. See docs/architecture.md §5.
    */
   readonly gap?: number;
   /** The `⋮` button's width. Ignored unless positive: the button is only rendered once something has collapsed. */
@@ -80,37 +68,23 @@ export interface CollapseOptions {
 const EMPTY: ReadonlySet<string> = new Set<string>();
 
 /**
- * Why item readings are filtered by *cycle detection* rather than debounced or
- * counted.
+ * Why item readings are filtered by *cycle detection* rather than debounced
+ * or counted.
  *
- * The case this guards is a chip that renders to a width that depends on the
- * collapse state — one wider in the bar than beside a collapsed neighbour, or
- * one sized by a neighbour that comes and goes. Collapsing it changes its
- * width, which changes the decision, so there is no fixed point to settle on
- * and no amount of debouncing converges it. Every source of item widths — a
- * `ResizeObserver` delivery, the layout effect after a commit — feeds the same
- * filter, which is what closes the synchronous case where a chip is measurably
- * different on the very next layout after the collapse: it used to loop
- * through the unlatched layout effect into React's "Maximum update depth
- * exceeded".
+ * A chip can render to a width that depends on the collapse decision itself
+ * (wider in the bar than beside a collapsed neighbour); collapsing it changes
+ * its width, which changes the decision, so there's no fixed point for
+ * debouncing to converge toward. Left unfiltered this used to loop through
+ * the unlatched layout effect into React's "Maximum update depth exceeded".
  *
- * A flat count of flips (the previous design) bounds that loop but cannot tell
- * it apart from a live readout that genuinely changes width several times
- * between resizes: past the count the decision froze, absolutely, until the
- * bar's own width changed — leaving chips clipped with no `⋮` to reach them.
- * Remembering the decisions held since the last honest reading tells the two
- * apart: a cycle *returns* to a decision, growth never does.
- *
- * Every decision is a prefix of one fixed order (lowest priority first, later
- * index first on a tie), so for `n` items there are at most `n + 1` distinct
- * decisions, the set of signatures is bounded by the roster, and it is cleared
- * on every honest reading. Prefixes of one order are nested, so a decision
- * that collapses more is a superset — the size comparison in {@link CollapseMachine.measure}
- * is a fit test: `computeOverflow` proposes a superset exactly when the
- * current content no longer fits, and a subset exactly when it fits with room
- * to spare. Item readings may therefore move the decision at most
- * `n + n(n + 1)` times between honest readings — each move is either to a new
- * signature or strictly larger than the last — and in practice a 2-cycle
+ * A flat flip-count (the previous design) bounds that loop but can't tell it
+ * apart from a live readout that genuinely changes width several times
+ * between resizes — past the count the decision froze until the bar's own
+ * width changed, leaving chips clipped with no `⋮` to reach them. Remembering
+ * the decisions held since the last honest reading tells the two apart: a
+ * cycle *returns* to a decision, growth never does. Every decision is a
+ * prefix of one fixed priority order, so the set of possible decisions (and
+ * so the seen-set) is bounded by the roster size — in practice a 2-cycle
  * settles after one round trip.
  */
 export class CollapseMachine {
@@ -226,27 +200,18 @@ export class CollapseMachine {
   }
 
   /**
-   * Width the items may fill: the padding box minus the padding and minus any
-   * inter-region gap the item math does not already charge for.
-   * `computeOverflow` charges one gap per adjacent item pair plus one before the
-   * `⋮` button, which undercounts when the start region has no items or the
-   * end region has none — both still reserve a gap, since the (empty) region
-   * elements are always rendered.
+   * Width the items may fill: the padding box minus padding, minus any
+   * inter-region gap `computeOverflow`'s per-pair math doesn't already charge
+   * for — both regions reserve a gap since their (possibly empty) elements
+   * are always rendered.
    *
-   * The two emptiness tests differ on purpose, and the asymmetry is the point:
-   *
-   * - the start region is empty when every start item has *collapsed*, per the
-   *   decision this machine currently holds — which is what the bar renders;
-   * - the end region is empty when the roster has no end *items*, because that
-   *   region also hosts the `⋮` button: once anything collapses it is never
-   *   rendered empty, and the button's width is charged separately.
-   *
-   * Both directions therefore only ever *shrink* the available width as items
-   * collapse, which is what stops the decision oscillating: the start term can
-   * flip 0 → gap once, and the end term is fixed for a given roster. The cost
-   * is one gap of hysteresis — a bar whose start region has collapsed empty is
-   * charged a gap the flattened item math would have covered had anything come
-   * back, so re-expansion needs one gap more room than the collapse gave up.
+   * The two emptiness checks differ on purpose: start is empty when every
+   * start item has *collapsed* (per the current decision); end is empty only
+   * when the roster has no end *items*, since that region also hosts the `⋮`
+   * button and is never emptied by collapsing. Both directions only ever
+   * *shrink* available width as items collapse, which is what stops the
+   * decision oscillating — at the cost of one gap of hysteresis on
+   * re-expansion.
    */
   #available(): number {
     if (this.#barWidth === undefined) return 0;

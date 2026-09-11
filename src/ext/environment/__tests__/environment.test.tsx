@@ -265,8 +265,6 @@ describe("redaction of consumer-supplied data", () => {
     expect(html).not.toContain("super-secret");
     expect(html).not.toContain("abcdef123456");
     expect(html).not.toContain("deadbeef");
-    // The mask lands inside a query string and still arrives literally, so the
-    // row reads as a masked URL rather than as escape noise.
     expect(text(row(panel, "apiEndpoint"))).toContain("access_token=[redacted]");
     expect(text(row(panel, "extra:authToken"))).toContain("[redacted]");
   });
@@ -293,9 +291,8 @@ describe("redaction of consumer-supplied data", () => {
   });
 
   it("masks a credential nested inside an `extra` object", () => {
-    // The row is what a reader trusts, so this is asserted against the DOM and
-    // not only against the snapshot: stringifying before redacting used to put
-    // the token on screen under a "masked" tag.
+    // Asserted against the DOM, not just the snapshot: stringifying before
+    // redacting used to put the token on screen under a "masked" tag.
     const { toolbar } = mount({
       detect: false,
       context: {
@@ -445,8 +442,7 @@ describe("live context", () => {
           },
         },
       });
-      // Not an error chip: the bar rendered normally, because `redact()`
-      // contained the throw where it happened (tagging the property
+      // Not an error chip: `redact()` contains the throw (tags the property
       // "[getter threw]") instead of it escaping the factory.
       expect(toolbar.item("environment")).not.toBeNull();
       toolbar.openPanel("environment");
@@ -475,10 +471,7 @@ describe("live context", () => {
   });
 });
 
-/*
- * A1 regression: env-panel was a role-less div with aria-label={label}.
- * Pre-fix: aria-label on [data-dtb-part="env-panel"].
- */
+// Regression: env-panel was a role-less div with aria-label={label}.
 describe("accessibility", () => {
   it("does not put a bare aria-label on the role-less panel root", () => {
     const { toolbar } = mount({ context: { environment: "staging" } });

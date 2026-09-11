@@ -1,11 +1,9 @@
 /**
- * Two *independently loaded* copies of core — the dual-package hazard, or a
- * duplicated dependency — must agree on how many toolbars a page has, or each
- * believes itself alone and both write the unsuffixed `--dev-toolbar-height`.
- * `DevToolbar.test.tsx` imports one module instance throughout, so a
- * module-local registry would pass everything there; a second copy comes from
- * `vi.resetModules()` plus a dynamic `import()`, as
- * `src/testing/__tests__/reactTestingLibrary.test.ts` does.
+ * Two independently loaded copies of core — the dual-package hazard — must
+ * agree on how many toolbars a page has, or each believes itself alone and
+ * both write the unsuffixed `--dev-toolbar-height`. `DevToolbar.test.tsx`'s
+ * single module instance can't exercise that, so a second copy is loaded here
+ * via `vi.resetModules()` plus a dynamic `import()`.
  */
 import { render } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";

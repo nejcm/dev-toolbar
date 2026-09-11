@@ -147,17 +147,15 @@ export function OverflowBar({
 
     // Every delivery reaches the machine, latched or not: a cycling chip is
     // refused inside it, and one that genuinely grows must still be heard.
-    // A full reading, not just widths, so a `--dtb-item-gap` change picked up
-    // here carries the new gap; deciding from a stale gap clips chips under
-    // `overflow: hidden` with no `⋮`. The `offsetWidth` recalc already paid for
-    // dominates the extra `getComputedStyle`, and deliveries are one a frame.
+    // A full reading, not just widths, so a `--dtb-item-gap` change carries
+    // the new gap; deciding from a stale gap clips chips under
+    // `overflow: hidden` with no `⋮`.
     //
     // Safe only because `barWidth` is viewport-driven here — the root is
     // `position: fixed; inset-inline: 0` and the bar `flex: 0 0 auto`, so the
     // bar stretches and its width cannot move because a chip collapsed. A host
-    // that makes the root content-sized would make every reading honest, clear
-    // `#seen`, and stop `CollapseMachine` terminating a chip whose width
-    // depends on its own collapse.
+    // that makes the root content-sized would stop `CollapseMachine`
+    // terminating a chip whose width depends on its own collapse.
     const itemObserver = measurer.observe(() => {
       const node = barRef.current;
       if (!node) return;

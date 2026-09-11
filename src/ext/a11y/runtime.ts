@@ -1,18 +1,12 @@
 /**
  * The scan, the masking and the highlight geometry. [dev-toolbar/ext/a11y]
  *
- * axe runs **only** when something calls `scan()` — a click, a command, an
- * agent. Nothing here is on a timer: a full-document axe pass is tens of
- * milliseconds at best and seconds on a large page.
- *
- * axe's results are foreign data on their way into a bug report, so every
- * string that reaches the report gets credential and URL masking. Snippet
- * text uses `redactText()` to find credentials within prose; other fields
- * (selectors, summaries, rule ids, help text, a thrown reason) go through
- * `redactProse()` — the whole-value pass plus a URL sweep, owned by
- * `/runtime`. An element's HTML snippet is
- * the sharpest edge of that — a `<input type="password" value="...">` is
- * exactly the markup axe flags — so attribute values survive only for the
+ * axe runs only when `scan()` is called — never on a timer. axe's results are
+ * foreign data on their way into a bug report, so every string is masked:
+ * snippet text through `redactText()`, everything else (selectors, summaries,
+ * rule ids, thrown reasons) through `/runtime`'s `redactProse()`. An HTML
+ * snippet is the sharpest edge — `<input type="password" value="...">` is
+ * exactly what axe flags — so attribute values survive only for the
  * attributes accessibility is about.
  */
 import {
@@ -46,9 +40,8 @@ export const DEFAULT_LOAD_ON: NonNullable<A11yRuntimeOptions["loadOn"]> = "start
 /** Everything the toolbar draws, and the toolbar itself, is not the app's markup. */
 export const TOOLBAR_EXCLUDE = "[data-dev-toolbar]";
 
-// Kept verbatim: the attributes a11y is about. Everything else — `value`,
-// every `data-*`, anything a framework invented — is masked, because the
-// element axe is complaining about is often the one holding the secret.
+// Everything else — `value`, every `data-*`, anything a framework invented —
+// is masked: the flagged element is often the one holding the secret.
 const KEPT_ATTRIBUTES = new Set([
   "id",
   "class",
@@ -81,9 +74,9 @@ const KEPT_ATTRIBUTES = new Set([
   "height",
 ]);
 
-// Kept attributes whose value *is* a URL, so the URL redactor runs on the whole
-// value rather than only on the `scheme://` substrings a free-text pass can
-// recognise — `href="/reset?token=…"` is the common SPA shape.
+// Kept attributes whose value *is* a URL: the whole value goes through the URL
+// redactor rather than only its `scheme://` substrings, since a relative
+// `href="/reset?token=…"` is the common SPA shape a substring pass would miss.
 const URL_ATTRIBUTES = new Set(["href", "src"]);
 
 const asArray = (value: unknown): readonly unknown[] => (Array.isArray(value) ? value : []);
@@ -93,9 +86,8 @@ const asRecord = (value: unknown): Readonly<Record<string, unknown>> =>
 
 const asText = (value: unknown): string | null => (typeof value === "string" ? value : null);
 
-// axe truncates its own snippets, but only to the element's own start tag plus
-// a little; a single attribute can still carry a hundred kilobytes into the
-// report, and no reader and no agent has a use for that much markup.
+// axe's own snippet truncation stops at the start tag plus a little; a single
+// attribute can still carry a hundred kilobytes into the report.
 const TEXT_LIMIT = 4096;
 
 // axe nests a selector array inside `target` when the element is in a shadow root.
@@ -109,24 +101,22 @@ interface Masks {
 const isSpace = (char: string): boolean =>
   char === " " || char === "\t" || char === "\n" || char === "\r" || char === "\f";
 
-// Cut back to a whitespace boundary so a truncated run can never emit half a
-// token: `redact()` matches whole values, and half a credential is still one.
+// A truncated run must never emit half a token: `redact()` matches whole
+// values, and half a credential is still one.
 const head = (text: string): string => {
   const cut = text.slice(0, TEXT_LIMIT);
   const lastSpace = cut.search(/\s\S*$/);
   return lastSpace === -1 ? "" : cut.slice(0, lastSpace);
 };
 
-// Redacting is a regex pass per value, so an oversized run is truncated
-// *before* it is masked, not after: masking 100 KB of markup takes seconds.
+// Truncated before masking, not after: regexing 100 KB of markup takes seconds.
 const maskText = (text: string, mask: (value: string) => string): string =>
   text.length <= TEXT_LIMIT ? mask(text) : `${mask(head(text))}… [truncated]`;
 
-// A tag ends at the first `>` *outside* an attribute value, which is why this
-// walks the markup instead of matching `<[^>]*>`: with a regex,
-// `data-secret="a>SECRET"` ends the tag early and carries the tail through
-// unmasked. `null` means "not confidently parseable" — the caller drops the
-// snippet rather than emitting it raw.
+// Walks the markup instead of matching `<[^>]*>`: a regex would end
+// `data-secret="a>SECRET"` at the inner `>` and carry the tail through
+// unmasked. `null` means "not confidently parseable"; the caller drops the
+// snippet rather than emit it raw.
 const readTag = (
   html: string,
   start: number,
@@ -207,8 +197,7 @@ const readTag = (
       while (i < html.length && !isSpace(html.charAt(i)) && html.charAt(i) !== ">") i += 1;
       raw = html.slice(valueStart, i);
     }
-    // An attribute value this long has no accessibility use, and truncating it
-    // could split a token, so it is dropped whole.
+    // Too long to have a11y use, and truncating could split a token, so dropped whole.
     const value = raw.length > TEXT_LIMIT ? "[redacted]" : masks.attribute(name, raw);
     out += ` ${name}="${value.replace(/"/g, "&quot;")}"`;
   }
@@ -239,9 +228,8 @@ const targetPath = (value: unknown): readonly (readonly string[])[] =>
     )
     .filter((step) => step.length > 0);
 
-// axe refuses to run twice at once, and the normal arrangement is one engine
-// shared by every runtime in the page, so the queue has to live on the engine
-// rather than on the runtime. Each runtime keeps its own context and report.
+// axe refuses to run twice at once, and one engine is normally shared by every
+// runtime in the page, so the queue lives on the engine, not the runtime.
 const engineQueue = new WeakMap<AxeLike, Promise<void>>();
 
 const queueOnEngine = (engine: AxeLike, run: () => Promise<unknown>): Promise<unknown> => {
@@ -286,17 +274,13 @@ export interface A11yRuntimeOptions {
    */
   scanOnStart?: boolean;
   /**
-   * When the axe-core peer is imported. `"start"` (default) imports it when the
-   * toolbar mounts, so the panel can say "not installed" before anybody clicks
-   * a button that cannot work — at the price of the peer's chunk (~160 KB
-   * gzipped) on every page load. `"scan"` defers the import to the first
-   * `scan()`; until then the panel says axe has not been checked yet, and a
-   * missing peer surfaces as `"unsupported"` from that first scan instead.
+   * When the axe-core peer is imported. `"start"` (default) imports it at
+   * mount, so the panel can say "not installed" before anyone clicks a button
+   * that cannot work — at the cost of the peer's chunk (~160 KB gzipped) on
+   * every page load. `"scan"` defers the import to the first `scan()`.
    *
-   * `scanOnStart: true` is a request for a scan at start, and a scan needs
-   * axe, so with `loadOn: "scan"` it imports at start too — because a scan was
-   * asked for, not ahead of one. Leave `scanOnStart` off if the point is a
-   * cheap mount.
+   * `scanOnStart: true` still imports at start under `loadOn: "scan"`, since a
+   * scan was asked for and a scan needs axe.
    */
   loadOn?: "start" | "scan";
 }
@@ -343,11 +327,10 @@ export function createA11yRuntime(options: A11yRuntimeOptions = {}): A11yRuntime
     loadOn = DEFAULT_LOAD_ON,
   } = options;
 
-  // Snapshotted on first use rather than at construction: `redactOptions` is the
-  // caller's own object and every other path reads it lazily, so spreading it here
-  // would let a caller that fills it in after `a11y()` returns see `href`/`src`
-  // masked differently from the attribute beside them. Cached once taken, so
-  // `resolveCached` hits per scan instead of per attribute.
+  // Snapshotted on first use, not at construction: `redactOptions` is the
+  // caller's own object, and every other path reads it lazily too — spreading
+  // it here would let a caller who fills it in after `a11y()` returns see
+  // `href`/`src` masked differently from the attribute beside them.
   let urlRedactOptionsCache: RedactTextOptions | null = null;
   const urlRedactOptions = (): RedactTextOptions =>
     (urlRedactOptionsCache ??= { ...redactOptions, url: true });
@@ -360,9 +343,8 @@ export function createA11yRuntime(options: A11yRuntimeOptions = {}): A11yRuntime
   let highlight: readonly A11yHighlightView[] = [];
   let inFlight: Promise<A11yReport> | null = null;
   let inFlightId = 0;
-  // A scan belongs to the mount and the report it started against. A teardown,
-  // a remount and `clear()` all bump this, so a result nobody is waiting on any
-  // more cannot land on the state that replaced it.
+  // Bumped by teardown, remount and `clear()` so a result nobody is waiting on
+  // any more cannot land on the state that replaced it.
   let generation = 0;
   let axe: AxeLike | null = null;
   let loading: Promise<AxeLike | null> | null = null;
@@ -376,18 +358,14 @@ export function createA11yRuntime(options: A11yRuntimeOptions = {}): A11yRuntime
     { intervalMs: 100 },
   );
 
-  // `immediate` for everything a person or an agent just did: the throttle is
-  // there for the scroll re-measure, and a result up to an interval late reads
-  // as a broken button.
+  // `immediate` for anything a person or agent just did — the throttle is for
+  // the scroll re-measure, where a result up to an interval late is fine.
   const publish = (immediate = false): void => {
     revision += 1;
     store.set({ revision, report, highlight, axeLoaded: axe !== null });
     if (immediate) store.flush();
   };
 
-  // Everything that is not markup: the anchored pass, then every `scheme://…`
-  // run — `/runtime`'s `redactProse()`, which never throws and never returns a
-  // non-string, so nothing here wraps it.
   const maskProse = (value: string): string => redactProse(value, redactOptions);
 
   const keepsValue = (name: string): boolean => {
@@ -396,9 +374,9 @@ export function createA11yRuntime(options: A11yRuntimeOptions = {}): A11yRuntime
     return lower.startsWith("aria-") || KEPT_ATTRIBUTES.has(lower);
   };
 
-  // Outside the accessibility set a value becomes `[redacted]` wholesale rather
-  // than being tested for credential shape: the test is the part that has leaked
-  // before, and a `value=` attribute has no a11y meaning.
+  // Outside the accessibility set, a value becomes `[redacted]` wholesale
+  // rather than tested for credential shape — a `value=` attribute has no a11y
+  // meaning, and the shape test is the part that has leaked before.
   const maskAttribute = (name: string, value: string): string => {
     if (!keepsValue(name)) return "[redacted]";
     return URL_ATTRIBUTES.has(name.toLowerCase())
@@ -422,8 +400,6 @@ export function createA11yRuntime(options: A11yRuntimeOptions = {}): A11yRuntime
     }
   };
 
-  // A thrown value for the report: `/runtime`'s describer — duck-typed, every
-  // read guarded, name and message masked separately before the join.
   const describe = (error: unknown): string => formatError(error, redactOptions);
 
   const unsupported = (reason: string): void => {
@@ -431,8 +407,8 @@ export function createA11yRuntime(options: A11yRuntimeOptions = {}): A11yRuntime
     publish(true);
   };
 
-  // axe's CJS export arrives as `default` through some interop paths, and the
-  // module object is foreign: a Proxy or a getter can throw on inspection.
+  // axe's CJS export can arrive as `default` depending on interop, and the
+  // module object is foreign — a Proxy or getter can throw on inspection.
   const unwrap = (loaded: unknown): AxeLike | null => {
     try {
       const module = asRecord(loaded);
@@ -586,8 +562,8 @@ export function createA11yRuntime(options: A11yRuntimeOptions = {}): A11yRuntime
     return { x: box.x, y: box.y, width: box.width, height: box.height };
   };
 
-  // A step past the first is inside the previous element's shadow root, which is
-  // how axe reports an element in an open one.
+  // A step past the first is inside the previous element's shadow root — how
+  // axe reports an element in an open one.
   const findTarget = (path: readonly string[]): Element | null => {
     if (typeof document === "undefined") return null;
     let root: Document | ShadowRoot | null = document;
@@ -666,9 +642,9 @@ export function createA11yRuntime(options: A11yRuntimeOptions = {}): A11yRuntime
     return report;
   };
 
-  // axe truncates a result type's nodes to one when `resultTypes` leaves that
-  // type out, with nothing in the output to say so. `nodeCount` and `nodeTotal`
-  // are documented exact, so violations are always asked for in full.
+  // axe silently truncates a result type's nodes to one when `resultTypes`
+  // leaves it out; `nodeCount`/`nodeTotal` are documented exact, so violations
+  // are always requested in full.
   const runOptions = (): Record<string, unknown> => {
     const merged: Record<string, unknown> = {
       ...axeOptions,
@@ -695,10 +671,8 @@ export function createA11yRuntime(options: A11yRuntimeOptions = {}): A11yRuntime
     } catch (error) {
       failure = `${A11Y_MARKER} axe.run() threw — ${describe(error)}`;
     }
-    // A teardown, a remount or a `clear()` has disowned this pass, so its result
-    // belongs to a report nobody holds any more. Every other path below
-    // finalises the state before returning it, so no caller is handed a report
-    // the store has already replaced.
+    // Disowned by a teardown, remount or clear() — its result belongs to a
+    // report nobody holds any more.
     if (generation !== mine) return report;
     if (failure !== null) {
       report = { ...report, status: "failed", running: false, error: failure };
@@ -706,9 +680,8 @@ export function createA11yRuntime(options: A11yRuntimeOptions = {}): A11yRuntime
       unwatch();
       apply(raw, now() - started);
     } else {
-      // A result with no `violations` array is not axe's, and the wrong answer
-      // to publish is a confident zero. The peer range is `>=4.8`; nothing
-      // enforces that at load time, so this is where a wrong module is noticed.
+      // No `violations` array means this isn't axe's result — a confident zero
+      // would be the wrong answer, and nothing enforces the >=4.8 peer range at load time.
       report = {
         ...report,
         status: "failed",
@@ -720,9 +693,7 @@ export function createA11yRuntime(options: A11yRuntimeOptions = {}): A11yRuntime
     return report;
   };
 
-  // Concurrent callers share one axe pass: axe itself refuses to run twice at
-  // once, so a second `scan()` would otherwise fail a caller whose scan was
-  // really succeeding.
+  // Concurrent callers share one axe pass: axe refuses to run twice at once.
   const scan = (): Promise<A11yReport> => {
     if (inFlight !== null) return inFlight;
     inFlightId += 1;
@@ -737,9 +708,8 @@ export function createA11yRuntime(options: A11yRuntimeOptions = {}): A11yRuntime
     return inFlight;
   };
 
-  // Disowning is not cancelling: axe has no abort, so the pass keeps running and
-  // its result is dropped. What this does buy is that the next caller starts a
-  // fresh scan instead of joining one whose report has been thrown away.
+  // Not cancelling: axe has no abort, so the pass keeps running and its result
+  // is dropped — the next caller starts fresh instead of joining it.
   const disownScan = (): void => {
     generation += 1;
     inFlightId += 1;
@@ -767,12 +737,10 @@ export function createA11yRuntime(options: A11yRuntimeOptions = {}): A11yRuntime
       disownScan();
       const mine = generation;
       if (loadOn === "scan") {
-        // Nothing is imported for a scan nobody asked for. `scanOnStart` asks
-        // for one, and `scan()` itself goes through `ensureAxe()`.
         if (scanOnStart) void scan();
       } else {
-        // The import — not a scan — happens here, so the panel can say "not
-        // installed" before anybody clicks a button that cannot work.
+        // The import, not a scan, so the panel can say "not installed" before
+        // anyone clicks a button that cannot work.
         void ensureAxe().then(
           (loaded) => {
             if (loaded !== null && scanOnStart && generation === mine) void scan();

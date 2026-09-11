@@ -57,9 +57,7 @@ export const KIT_CSS = String.raw`@layer dev-toolbar {
     border-radius: var(--dtb-radius);
   }
 
-  /* The two-column key/value readout. A max-content first track is what makes
-     the values line up as their own column instead of trailing their labels,
-     and the wide column gap is what makes that column scannable. */
+  /* max-content first track lines values up as their own column instead of trailing labels. */
   [data-dev-toolbar] [data-dtb-kind="rows"] {
     display: grid;
     grid-template-columns: max-content 1fr;
@@ -71,14 +69,12 @@ export const KIT_CSS = String.raw`@layer dev-toolbar {
     margin: 0;
   }
 
-  /* An action that follows a value in the same cell — pin, copy, reset — sits
-     one step off the value instead of touching it. */
+  /* Keeps a trailing action (pin, copy, reset) off the value it follows. */
   [data-dev-toolbar] [data-dtb-kind="rows"] dd > [data-dtb-kind="action"] {
     margin-inline-start: var(--dtb-space-2);
   }
 
-  /* A panel's root: its sections stack with the same rhythm every first-party
-     panel uses, and it fills the body so a scroller inside it can take the rest. */
+  /* A panel's root: fills the body so a scroller inside it can take the rest. */
   [data-dev-toolbar] [data-dtb-kind="stack"] {
     display: flex;
     flex-direction: column;
@@ -120,8 +116,7 @@ export const KIT_CSS = String.raw`@layer dev-toolbar {
     border-bottom: 1px solid var(--dtb-border);
   }
 
-  /* A toolbar that ends its panel is a footer: the rule moves above it, so it
-     reads as the floor of the content rather than underlining the edge. */
+  /* A toolbar ending its panel is a footer: the rule moves above it. */
   [data-dev-toolbar] [data-dtb-kind="toolbar"]:last-child:not(:only-child) {
     padding-bottom: 0;
     padding-top: var(--dtb-space-3);

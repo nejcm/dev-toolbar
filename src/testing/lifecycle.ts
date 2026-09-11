@@ -43,19 +43,12 @@ export function mountToolbar(
  * Unmounts everything `mountToolbar()` mounted, newest first, and restores any
  * fake layout still installed. Idempotent, safe with nothing mounted. Anyone
  * using `mountToolbar()` must call this — e.g. from an `afterEach` — since the
- * tracked list never hears about RTL's auto-cleanup.
+ * tracked list never hears about RTL's auto-cleanup. For plain
+ * `renderWithToolbar()` it's only a safety net.
  *
- * For plain `renderWithToolbar()` it's only a safety net: that path already
- * ties unmount and layout teardown to Testing Library's `cleanup()`.
- *
- * **A throwing unmount does not abort the teardown.** `mounted.splice(0)` has
- * already detached the list, so a mount an early exit skipped is unreachable —
- * its tree would stay mounted, fake layout still answering core's measurer
- * slot, for every later test in the file. So every mount is unmounted, the
- * layout restored, and the failure re-thrown after: one as itself, several as
- * an `AggregateError`, newest mount first. `entry.done` is set before the
- * inner `try` — that ordering is what makes this re-entrant, and it drops a
- * mount whose unmount threw rather than retrying a half-torn-down root.
+ * A throwing unmount does not abort the teardown: every mount is still
+ * unmounted and the layout restored, with the failure(s) re-thrown after
+ * (`AggregateError` for more than one).
  */
 export function cleanupToolbar(): void {
   const errors: unknown[] = [];

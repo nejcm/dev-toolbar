@@ -1,15 +1,11 @@
 /**
  * `/ext/a11y` styles. [dev-toolbar/ext/a11y]
  *
- * Same rules as the other extensions: everything inside the `dev-toolbar`
- * cascade layer, scoped by `[data-dev-toolbar]`, colours from `--dtb-*`
- * tokens, parts namespaced `a11y-*`.
- *
- * The highlight surface repeats `/ext/overlays`' four `!important`
- * declarations (`position`, `inset`, `z-index`, `pointer-events`) for the same
- * reason and by deliberate duplication: an extension may not import a
- * sibling's stylesheet, and a stray unlayered `div { pointer-events: auto }`
- * would otherwise turn a viewport-sized layer into a click trap.
+ * The highlight surface deliberately repeats `/ext/overlays`' four
+ * `!important` declarations (`position`, `inset`, `z-index`, `pointer-events`)
+ * rather than importing them: an extension may not import a sibling's
+ * stylesheet, and a stray unlayered `div { pointer-events: auto }` would
+ * otherwise turn a viewport-sized layer into a click trap.
  *
  * Box geometry is set inline from `getBoundingClientRect()`, so no physical
  * `inset-*` value appears here and nothing needs RTL mirroring.

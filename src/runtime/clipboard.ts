@@ -1,22 +1,11 @@
 /**
  * Write text to the clipboard, honestly. [dev-toolbar/runtime]
  *
- * Centralises what several extensions used to hand-roll: feature-detect
- * `navigator.clipboard.writeText`, call it, map the outcome to a status.
- *
- * - A missing API and a rejected write are the same answer to the caller —
- *   `navigator.clipboard` is undefined on an insecure origin and in tests,
- *   and `writeText` rejects when unfocused or permission is denied; either
- *   way nothing reached the clipboard.
- * - It never throws: these run from click handlers, where a synchronous
- *   throw would break the panel rather than just fail the copy.
- * - It resolves `false` rather than pretending — a "Copied" badge over an
- *   empty clipboard is a lie.
- *
- * No fallback to `document.execCommand("copy")`: it needs a live selection
- * in a temporary node (mutating the host document) and is deprecated
- * everywhere it still works. Reporting "clipboard unavailable" is the
- * honest degradation.
+ * Feature-detects `navigator.clipboard.writeText`, calls it, and maps the
+ * outcome to a status — never throws (these run from click handlers) and
+ * resolves `false` rather than showing a "Copied" badge over an empty
+ * clipboard. No `document.execCommand("copy")` fallback: it needs a live
+ * selection in a temporary node and is deprecated everywhere it still works.
  */
 
 interface ClipboardLike {
@@ -24,12 +13,10 @@ interface ClipboardLike {
 }
 
 /**
- * The command-shaped wrapper.
- *
- * A panel button has somewhere to show "clipboard unavailable"; an
- * aggregated `ToolbarCommand` doesn't (it returns `void`), and the command
- * palette reports failure by catching a throw. So this throws deliberately,
- * rather than silently resolving while the palette closes as if it worked.
+ * The command-shaped wrapper: throws deliberately, since an aggregated
+ * `ToolbarCommand` returns `void` and the command palette reports failure by
+ * catching a throw — resolving silently would close the palette as if the
+ * copy had worked.
  */
 export async function writeClipboardTextOrThrow(
   text: string,

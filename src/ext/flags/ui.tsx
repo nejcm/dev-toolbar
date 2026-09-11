@@ -20,10 +20,8 @@ import type { FlagsRuntime } from "./runtime";
 /**
  * The rendered surface. [dev-toolbar/ext/flags]
  *
- * Slot functions must be cheap, so they return these components, which
- * subscribe to the extension's own store. Everything rendered comes from the
- * snapshot, already redacted before it's built — no component here has
- * access to a raw flag value.
+ * Everything rendered comes from the snapshot, already redacted before it's
+ * built — no component here has access to a raw flag value.
  */
 
 /* Bar */
@@ -122,9 +120,8 @@ export function FlagsChip({
       onClick={onToggle}
       title={title}
     >
-      {/* Hand-written, not the kit's <Chip>: this chip has no dot, and the kit
-          chip always renders one. An extra node here would move the whole
-          summary by a dot and a gap. */}
+      {/* Hand-written, not the kit's <Chip>: that always renders a dot, which
+          would shift the summary here by a dot and a gap. */}
       <span
         data-dtb-part="flag-chip"
         data-dtb-kind="chip"
@@ -138,9 +135,8 @@ export function FlagsChip({
     </button>
   );
 
-  // The shell collapses whole extensions, not parts of them, so a collapsed
-  // `/ext/flags` takes its promoted flag with it. Rendered here too, as the
-  // same working switch, so collapsing doesn't cost the capability.
+  // The shell collapses whole extensions, so a collapsed `/ext/flags` takes
+  // its promoted flag with it — rendered here too as the same working switch.
   const promoted = snapshot.promoted.map((view) => (
     <PromotedControl
       key={view.key}
@@ -219,14 +215,11 @@ function Editor({
   }
 
   if (view.type === "variant" && view.variants && view.variants.length > 0) {
-    // Options carry the *index*, never the value: a `<option value>` is DOM
-    // text, so a credential variant would sit in the page unmasked next to a
-    // row the badge claims is masked. The label comes from the redacted
-    // `variantTexts`, and the raw value is resolved back here, on commit.
+    // Options carry the *index*, never the value — an `<option value>` is DOM
+    // text, so a credential variant would sit unmasked in the page. The label
+    // comes from the redacted `variantTexts`; the raw value resolves on commit.
     const variants = view.variants;
     const texts = view.variantTexts;
-    // Same match the old `value={formatValue(view.effective)}` made, kept so a
-    // reading whose type differs from its variant still selects its own row.
     const effectiveText = formatValue(view.effective);
     const selected = variants.findIndex((variant) => formatValue(variant) === effectiveText);
     return (
@@ -279,10 +272,8 @@ function Editor({
         aria-label={`Override ${view.key}`}
         aria-invalid={rejected}
         data-dtb-invalid={rejected ? "true" : "false"}
-        // `text` with a numeric keypad hint, not `type="number"`: a number
-        // input silently discards unparseable text (e.g. "1e" becomes "",
-        // and `Number("")` is `0`), so we parse it ourselves and let the row
-        // say no instead of silently pinning the flag to zero.
+        // `text`, not `type="number"`: a number input silently discards
+        // unparseable text ("1e" -> "" -> 0), which would pin the flag to zero.
         type="text"
         {...(view.type === "number" ? { inputMode: "decimal" as const } : {})}
         // A masked value never round-trips through the editor — that would be

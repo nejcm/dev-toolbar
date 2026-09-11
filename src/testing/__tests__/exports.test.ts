@@ -35,13 +35,9 @@ const built = existsSync(`${root}dist/testing.js`);
 // published artefact is exactly the failure mode worth catching.
 const mustBeBuilt = Boolean(process.env["CI"]);
 
-// The exact, sorted `./testing` surface, asserted against both the ESM
-// (`dist/testing.js`) and CJS (`dist/testing.cjs`) builds below. Exact
-// equality, not arrayContaining: this test exists to prove the published
-// package surface, so both an accidental removal and an accidental addition
-// to the built output must fail it. `bun run verify` builds before testing,
-// so this holds for the committed source too — but the assertion itself
-// reads the built files, not `src/testing/index.ts` directly.
+// The exact, sorted `./testing` surface, asserted against both the ESM and
+// CJS builds below. Exact equality, not arrayContaining: an accidental
+// removal or addition to the built output must fail this.
 const EXPECTED_EXPORTS = [
   "cleanupToolbar",
   "createMemoryStorage",
@@ -102,12 +98,8 @@ if (!built && mustBeBuilt) {
     });
 
     it("exposes the same surface through the require() (CJS) condition", () => {
-      // `__esModule` is defined via `Object.defineProperty` with no
-      // `enumerable: true`, so it defaults to non-enumerable and Node's own
-      // `--input-type=commonjs` `require()` gives exactly the named exports —
-      // no extra `__esModule` entry to filter out. Read the same way as the
-      // ESM case above, so both conditions of the `require` entry
-      // (`dist/testing.cjs`) are locked to the same list.
+      // `__esModule` is a non-enumerable property, so `require()` gives
+      // exactly the named exports with no extra entry to filter out.
       const names = execFileSync(
         process.execPath,
         [

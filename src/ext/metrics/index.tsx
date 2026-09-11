@@ -130,10 +130,8 @@ export function metrics(options: MetricsOptions = {}): DevToolbarExtension {
     network: () => {
       const config = optionsFor(options.network);
       if (config === null) return null;
-      // Kept, so the `network.*` commands below can reach the one collector
-      // that owns the request tail. Null when the collector is switched off or
-      // left out of `only` — and then those commands are not contributed at
-      // all, rather than contributed and throwing when called.
+      // Kept so the `network.*` commands below can reach the one collector
+      // that owns the request tail.
       networkCollector = createNetworkCollector(config);
       return networkCollector;
     },
@@ -152,10 +150,8 @@ export function metrics(options: MetricsOptions = {}): DevToolbarExtension {
   // Built here, not in start(api): slot functions run before any effect fires.
   const runtime = createMetricsRuntime({ collectors, updateHz });
 
-  // Contributed only while the network collector is running — an always-listed
-  // command that always throws is worse than an absent one. All four are reads
-  // or toggles over what the panel already shows; none can reach a header or
-  // body, since the collector never records one.
+  // Contributed only while the network collector is running: an always-listed
+  // command that always throws is worse than an absent one.
   const networkCommands = (network: NetworkCollector): AnyToolbarCommand[] => {
     const requestFor = (requestId: string | undefined): NetworkEntryView => {
       const { requests } = runtime.exportRequests();

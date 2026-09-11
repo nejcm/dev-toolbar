@@ -10,10 +10,8 @@ import type { OverlaysRuntime } from "./runtime";
  * The rendered surfaces. [dev-toolbar/ext/overlays]
  *
  * Everything drawn over the application is React, inside the `overlay` slot —
- * no imperative DOM writing to reverse, so toggling off, hiding, unmounting
- * and hot reload all restore the page by construction. The one exception, the
- * host-outline stylesheet, lives in `runtime.ts` and tears down with the
- * listeners.
+ * no imperative DOM writing to reverse. The one exception, the host-outline
+ * stylesheet, lives in `runtime.ts` and tears down with the listeners.
  */
 
 const box = (rect: RectLike): CSSProperties => ({
