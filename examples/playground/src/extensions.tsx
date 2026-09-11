@@ -15,7 +15,14 @@ import type { DesignTokenDefinition } from "@nejcm/dev-toolbar/ext/theme-editor"
 import type { FlagReading, FlagValue } from "@nejcm/dev-toolbar/ext/flags";
 import { createReactProfilerCollector } from "./collectors/reactProfiler";
 import { createWebVitalsCollector } from "./collectors/webVitals";
-import { A11Y_ICON, AGENT_ICON, FLAGS_ICON, METRIC_ICONS, PROMOTED_FLAG_ICON } from "./barIcons";
+import {
+  A11Y_ICON,
+  AGENT_ICON,
+  FLAGS_ICON,
+  METRIC_ICONS,
+  OVERLAYS_ICON,
+  PROMOTED_FLAG_ICON,
+} from "./barIcons";
 import { kitDemo } from "./kitDemo";
 import { tanstackQuery } from "./embedDemo";
 import { tanstackDevtools } from "./tanstackDemo";
@@ -28,11 +35,13 @@ import { tanstackDevtools } from "./tanstackDemo";
 const runtimeKitDemo = kitDemo({ order: 40, priority: 60, pollMs: 1000 });
 
 /**
- * How the bar presents the four extensions this app supplies icons for.
+ * How the bar presents the five extensions this app supplies icons for.
  * [playground]
  *
  * `"default"` passes no `presentation`, so `metrics`, `flags`, `a11y` and
- * `agent` paint what they always have. `"icon-value"` swaps the short bar word
+ * `agent` paint what they always have — `overlays` is the exception and keeps
+ * its icon in every mode, so the feature is visible without hunting for this
+ * toggle. `"icon-value"` swaps the short bar word
  * for an icon and keeps the number; `"icon"` drops the number too. `agent`
  * takes the narrowed two-knob option — no preset — so it reads both non-default
  * modes as an icon instead of the word; it is the only control whose *role*
@@ -452,11 +461,25 @@ const runtimeCommandMenu = commandMenu();
  * above the app with no pointer events. The grid below matches the playground's own card layout
  * (12/24/1100) so "Column grid" has something real to line up with.
  */
-const runtimeOverlays = overlays({
-  order: 20,
-  priority: 55,
-  grid: { columns: 12, gutter: 24, maxWidth: 1100, baseline: 8 },
-});
+const buildOverlays = (mode: BarPresentationMode) =>
+  overlays({
+    order: 20,
+    priority: 55,
+    grid: { columns: 12, gutter: 24, maxWidth: 1100, baseline: 8 },
+    // The one chip that carries its icon at rest, `"default"` included: this
+    // app's standing demo of `presentation`, so it reads `▤ off` / `▤ 2 on`
+    // without anybody first finding the header toggle. Its value is a word
+    // rather than a number, which makes the icon-plus-value shape easier to
+    // read here than on the counting chips.
+    //
+    // The toggle still reaches it — `"icon"` drops the state and leaves the
+    // glyph alone — and the `⋮` row keeps the configured `label` under every
+    // preset, so nothing is lost when it collapses.
+    presentation: {
+      preset: mode === "icon" ? "icon" : ("icon-value" as const),
+      icon: OVERLAYS_ICON,
+    },
+  });
 
 /**
  * The real `@nejcm/dev-toolbar/ext/diagnostics`. It contributes nothing to the aggregation —
@@ -716,8 +739,8 @@ const buildAgent = (mode: BarPresentationMode) =>
   });
 
 /**
- * The roster, with `metrics`, `flags`, `a11y` and `agent` built for one
- * presentation mode. `presentation` is a factory option held in the
+ * The roster, with `metrics`, `flags`, `overlays`, `a11y` and `agent` built
+ * for one presentation mode. `presentation` is a factory option held in the
  * extension's own closure, so changing it means a new extension object for
  * that id. Each mode's array is built once and cached — rebuilding per render
  * would hand the bar a new object every time, which core warns about.
@@ -738,7 +761,7 @@ export function playgroundExtensionsFor(mode: BarPresentationMode): DevToolbarEx
     runtimeEnvironment,
     commands,
     buildFlags(mode),
-    runtimeOverlays,
+    buildOverlays(mode),
     buildA11y(mode),
     runtimeThemeEditor,
     buildMetrics(mode),

@@ -638,7 +638,7 @@ export function App() {
   const [density, setDensity] = useState<ToolbarDensity>("compact");
   const [enabled, setEnabled] = useState(true);
   /**
-   * Which `presentation` the three icon-bearing extensions are built with.
+   * Which `presentation` the icon-bearing extensions are built with.
    * Defaults to `"default"` so the resting playground passes no
    * `presentation` and every chip keeps its existing width.
    */

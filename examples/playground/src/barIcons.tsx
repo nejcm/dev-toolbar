@@ -141,3 +141,19 @@ export const A11Y_ICON: ReactNode = (
  * character into the `> *` clamp.
  */
 export const PROMOTED_FLAG_ICON: ReactNode = "◈";
+
+/**
+ * Overlays: stacked layers, which is what the four overlays are — sheets drawn
+ * over the page rather than in it.
+ *
+ * Paired with `presentation: { preset, icon }` on `overlays()`, so the bar
+ * reads `▤ off` / `▤ 2 on` instead of `overlays off` — the value span is the
+ * chip's state and stays under `"icon-value"`, while `"icon"` drops it.
+ */
+export const OVERLAYS_ICON: ReactNode = (
+  <svg {...stroke}>
+    <path d="M8 1.5 14.5 5 8 8.5 1.5 5z" />
+    <path d="M1.5 8 8 11.5 14.5 8" />
+    <path d="M1.5 11 8 14.5 14.5 11" />
+  </svg>
+);

@@ -33,7 +33,7 @@ async function setMode(page: Page, mode: "default" | "icon-value" | "icon") {
 
 /**
  * Polls until the bar reports the same ids twice running, then returns them.
- * A preset flip remounts four extensions, and their widths arrive as a
+ * A preset flip remounts five extensions, and their widths arrive as a
  * stream of `ResizeObserver` deliveries, not in one go.
  */
 async function settledBar(toolbar: Toolbar): Promise<string[]> {
