@@ -1,6 +1,13 @@
 import { Fragment, useEffect, useId, useRef } from "react";
 import type { KeyboardEvent as ReactKeyboardEvent, ReactNode } from "react";
-import { EmptyState, useExtensionSurface } from "@nejcm/dev-toolbar/kit";
+import {
+  EmptyState,
+  Glyph,
+  resolveAccessibleName,
+  resolveIcon,
+  useExtensionSurface,
+} from "@nejcm/dev-toolbar/kit";
+import type { ResolvedCompactPresentation } from "@nejcm/dev-toolbar/kit";
 import { ensureCommandMenuStyles } from "./css";
 import { describeHotkey, ariaKeyshortcuts } from "./runtime";
 import type { CommandMenuRuntime, CommandMenuSnapshot } from "./runtime";
@@ -22,6 +29,8 @@ import { sectionsOf } from "./types";
 export interface TriggerProps {
   runtime: CommandMenuRuntime;
   label: string;
+  /** Already through `resolvePresentation`, in the factory closure. */
+  presentation: ResolvedCompactPresentation<CommandMenuSnapshot>;
   isOverflowed: boolean;
   injectStyles: boolean;
   styleNonce?: string;
@@ -36,6 +45,7 @@ export interface TriggerProps {
 export function CommandMenuTrigger({
   runtime,
   label,
+  presentation,
   isOverflowed,
   injectStyles,
   styleNonce,
@@ -49,6 +59,10 @@ export function CommandMenuTrigger({
   );
   const hint = describeHotkey(runtime.shortcut, apple);
   const keyshortcuts = ariaKeyshortcuts(runtime.shortcut, apple);
+  const icon = resolveIcon(presentation.icon, snapshot);
+  // The kit `Chip`'s slot guard: a function `icon` that returns nothing for
+  // this render leaves the hardcoded symbol in place rather than a gap.
+  const hasIcon = icon !== undefined && icon !== null;
 
   return (
     <button
@@ -56,16 +70,43 @@ export function CommandMenuTrigger({
       data-dtb-part="trigger"
       aria-haspopup="dialog"
       aria-expanded={snapshot.open}
-      aria-label={`${label}${hint === "" ? "" : ` (${hint})`}`}
+      // A whitespace-only override is ignored, so no override can leave the
+      // trigger unnamed. `title` explains; it does not name, so it is not
+      // overridable — and it is the only place the hint is spelled out once the
+      // hotkey hint has been swapped for an icon.
+      aria-label={resolveAccessibleName(
+        presentation.name,
+        snapshot,
+        `${label}${hint === "" ? "" : ` (${hint})`}`,
+      )}
       {...(keyshortcuts === undefined ? {} : { "aria-keyshortcuts": keyshortcuts })}
       title={
         hint === "" ? `${label} — search and run every registered command` : `${label} — ${hint}`
       }
       onClick={() => runtime.toggle()}
     >
-      <span aria-hidden="true" data-dtb-part="cmd-glyph">
-        {"⌘"}
-      </span>
+      {/* The icon replaces the hardcoded `⌘` and nothing else: the hotkey hint
+          and the label are still painted after it.
+
+          It takes a part of its own rather than `cmd-glyph`, and that is the
+          decision worth knowing. `cmd-glyph` is not "the leading symbol" — it
+          is *every* Apple modifier symbol this extension paints, including the
+          ones inside each palette row's `cmd-option-hint`, and it exists to set
+          those in the UI face at 1.18em because the monospace faces have no
+          such glyph. That is type-setting for text. Giving it
+          `data-dtb-kind="glyph"` (which `Glyph` pins) would put kit's
+          `line-height: 0` and its `> *` size clamp on text spans down in the
+          dialog, and would scale a consumer's `<svg>` by the 1.18em meant for a
+          font fallback. So the kind lands here, on the one node that is a
+          foreign element — which is what the clamp exists for — and the `⌘`
+          keeps the bytes and the rules it has always had. */}
+      {hasIcon ? (
+        <Glyph data-dtb-part="cmd-icon">{icon}</Glyph>
+      ) : (
+        <span aria-hidden="true" data-dtb-part="cmd-glyph">
+          {"⌘"}
+        </span>
+      )}
       {isOverflowed || hint === "" ? (
         <span>{label}</span>
       ) : (
