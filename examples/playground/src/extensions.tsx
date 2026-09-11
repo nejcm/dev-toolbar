@@ -15,7 +15,7 @@ import type { DesignTokenDefinition } from "@nejcm/dev-toolbar/ext/theme-editor"
 import type { FlagReading, FlagValue } from "@nejcm/dev-toolbar/ext/flags";
 import { createReactProfilerCollector } from "./collectors/reactProfiler";
 import { createWebVitalsCollector } from "./collectors/webVitals";
-import { A11Y_ICON, FLAGS_ICON, METRIC_ICONS, PROMOTED_FLAG_ICON } from "./barIcons";
+import { A11Y_ICON, AGENT_ICON, FLAGS_ICON, METRIC_ICONS, PROMOTED_FLAG_ICON } from "./barIcons";
 import { kitDemo } from "./kitDemo";
 import { tanstackQuery } from "./embedDemo";
 import { tanstackDevtools } from "./tanstackDemo";
@@ -28,16 +28,22 @@ import { tanstackDevtools } from "./tanstackDemo";
 const runtimeKitDemo = kitDemo({ order: 40, priority: 60, pollMs: 1000 });
 
 /**
- * How the bar presents the three extensions this app supplies icons for. [playground]
+ * How the bar presents the four extensions this app supplies icons for. [playground]
  *
- * `"default"` passes no `presentation` at all, so `metrics`, `flags` and `a11y`
- * paint exactly what they painted before the option existed — which is what
- * keeps every measurement the browser suite and the verification map took at a
- * pinned viewport valid. The other two are the option: `"icon-value"` swaps each
- * short bar word for {@link ./barIcons.tsx} and keeps the number, and `"icon"`
- * drops the number too, leaving a control several times narrower than the one it
- * replaced. Flipping between them is a real workout for the collapse machine,
- * which is the point of the browser case that drives it.
+ * `"default"` passes no `presentation` at all, so `metrics`, `flags`, `a11y` and
+ * `agent` paint exactly what they painted before the option existed — which is
+ * what keeps every measurement the browser suite and the verification map took
+ * at a pinned viewport valid. The other two are the option: `"icon-value"` swaps
+ * each short bar word for {@link ./barIcons.tsx} and keeps the number, and
+ * `"icon"` drops the number too, leaving a control several times narrower than
+ * the one it replaced. Flipping between them is a real workout for the collapse
+ * machine, which is the point of the browser case that drives it.
+ *
+ * `agent` takes the narrowed two-knob option — no preset — so it reads both
+ * non-default modes the same way: an icon instead of the word. It is here
+ * because it is the only control in the package whose *role* depends on the
+ * option (`role="img"` with an icon, a role-less `<span>` without), and a role
+ * is a claim about what a browser's accessibility tree says.
  */
 export type BarPresentationMode = "default" | "icon-value" | "icon";
 
@@ -694,19 +700,29 @@ const buildMetrics = (mode: BarPresentationMode) =>
  * page. `instanceId` repeats what `<App>` passes `<DevToolbar>` — the contract hands
  * `start(api)` no instance identity.
  */
-const runtimeAgent = agentBridge({
-  instanceId: "playground",
-  allowRun: true,
-  // Phase 3: the same snapshot, pushed to the dev server so an agent that
-  // never loads this page can `curl localhost:5273/__dev-toolbar/state`. The
-  // receiving half is `plugins/devToolbarAgent.ts`. Gated on `import.meta.env.DEV`
-  // because a production `vite build` has no middleware to answer it — the
-  // reporter would post into the void and warn once.
-  ...(import.meta.env.DEV ? { report: { url: "/__dev-toolbar/state" } } : {}),
-});
+const buildAgent = (mode: BarPresentationMode) =>
+  agentBridge({
+    instanceId: "playground",
+    allowRun: true,
+    // Phase 3: the same snapshot, pushed to the dev server so an agent that
+    // never loads this page can `curl localhost:5273/__dev-toolbar/state`. The
+    // receiving half is `plugins/devToolbarAgent.ts`. Gated on `import.meta.env.DEV`
+    // because a production `vite build` has no middleware to answer it — the
+    // reporter would post into the void and warn once.
+    ...(import.meta.env.DEV ? { report: { url: "/__dev-toolbar/state" } } : {}),
+    // The fourth extension the toggle reaches, and the only one whose option is
+    // the narrowed pair: no `preset`, because this chip has no value and no
+    // short word distinct from its label, so `"icon-value"` and `"icon"` both
+    // mean the same thing here — supply an icon. It is worth driving in a
+    // browser for something the other three cannot show: with an icon this chip
+    // is the one control in the package that becomes `role="img"`, and without
+    // one it stays a role-less `<span>`. A conditional role is exactly the kind
+    // of claim jsdom answers and a browser's own accessibility tree decides.
+    ...(mode === "default" ? {} : { presentation: { icon: AGENT_ICON } }),
+  });
 
 /**
- * The roster, with `metrics`, `flags` and `a11y` built for one presentation mode.
+ * The roster, with `metrics`, `flags`, `a11y` and `agent` built for one presentation mode.
  *
  * `presentation` is a **factory option**, held in the extension's own closure —
  * so changing it means handing `<DevToolbar>` a new extension object for that
@@ -719,10 +735,10 @@ const runtimeAgent = agentBridge({
  * a same-id extension (`src/core/useExtensionLifecycle.ts`): it keeps the first
  * object's `start()`, warns that the bar now renders something whose lifecycle
  * it cannot reach, and the new closure's runtime never runs — no axe, no
- * collectors, no flag poll, with only module-scope collectors still ticking to
- * disguise it. So `<App>` gives `<DevToolbar>` a `key` of the mode: the flip
- * remounts the shell, every extension is stopped and started, and the three
- * rebuilt ones come up live. That costs what a remount costs — the a11y scan
+ * collectors, no flag poll, no agent bridge, with only module-scope collectors
+ * still ticking to disguise it. So `<App>` gives `<DevToolbar>` a `key` of the
+ * mode: the flip remounts the shell, every extension is stopped and started,
+ * and the four rebuilt ones come up live. That costs what a remount costs — the a11y scan
  * results, the in-flight metric samples — while the flag overrides survive
  * (they live in this app and in `localStorage`).
  */
@@ -732,7 +748,7 @@ export function playgroundExtensionsFor(mode: BarPresentationMode): DevToolbarEx
   const cached = ROSTERS.get(mode);
   if (cached) return cached;
   const built: DevToolbarExtension[] = [
-    runtimeAgent,
+    buildAgent(mode),
     runtimeCommandMenu,
     runtimeDiagnostics,
     runtimeEnvironment,
