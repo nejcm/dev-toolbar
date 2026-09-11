@@ -34,32 +34,20 @@ import type { CollectorId, MetricView, MetricsSnapshot } from "./types";
  * publishes (at most `updateHz` times a second).
  *
  * `presentation` arrives already resolved and is read through `/kit`'s
- * `resolveCompactControl` and `renderCompact`, so the `hasIcon` guard, the
- * `"default"` fallback, the `CompactRenderContext` and the `undefined`
- * fall-through live in one place for all nine extensions rather than nine.
- * What stays here is the DOM: a consumer's `render` supplies the *chip's*
- * children in both places, so the element carrying that metric's
- * `data-dtb-metric` and `data-dtb-severity`, the chip and its severity dot all
- * sit outside the callback's reach — in the `⋮` menu exactly as in the bar and
- * in the five Group A chips. A preset changes text, not state, and neither does
- * a callback (ADR-004). The `⋮` row's value span keeps the *position* it has
- * always had, outside the chip — but not the painting: `render` owns icon, text
- * and value in both places, so the row drops the span when a callback painted,
- * exactly as the bar does by having the span inside the chip. Pinned in
+ * `resolveCompactControl` and `renderCompact`. A consumer's `render` supplies
+ * only the chip's children — the metric's `data-dtb-metric`/severity, the chip
+ * and its dot stay outside its reach, in the `⋮` menu as in the bar (ADR-004).
+ * The `⋮` row's value span keeps its position outside the chip but not its
+ * painting: `render` owns icon, text and value in both places, so the row
+ * drops the span when a callback painted. Pinned in
  * `__tests__/presentation.test.tsx`.
  */
 
 /**
- * Today's two trees, expressed as parts.
- *
- * `resolveCompactControl` answers the preset's parts, or these when the preset
- * is `"default"` — which is why they are handed in rather than known to kit:
- * `"default"` means *whatever this extension renders today*, and that differs
- * across the nine. Metrics' defaults happen to be exactly expressible as parts
- * — the bar paints the short label and the value, a `⋮` row the full title and
- * the value, and neither paints an icon — so the fork is a fallback rather than
- * a second tree, and "the default output is byte-identical" stays a structural
- * property rather than a claim.
+ * Today's two trees, expressed as parts — what `resolveCompactControl` falls
+ * back to under `"default"`. The bar paints the short label plus value, a `⋮`
+ * row the full title plus value, neither paints an icon, so "default output is
+ * byte-identical" stays structural rather than asserted.
  */
 const DEFAULTS: CompactDefaults = {
   bar: { icon: false, text: "short", value: true },
@@ -67,26 +55,15 @@ const DEFAULTS: CompactDefaults = {
 };
 
 /**
- * The icon and the text — the two parts the bar chip and the `⋮` row paint
- * identically. Only the value node differs between them, so only it is written
- * twice.
+ * The icon and text as the chip's children, not `Chip`'s `icon`/`label`/
+ * `value` slots (`docs/adr/ADR-004-per-extension-bar-presentation.md`). Same
+ * construction in the bar and the `⋮` menu — only the value node differs, so
+ * only it is written twice.
  *
- * These are the chip's *children* rather than `Chip`'s `icon` / `label` /
- * `value` slots, and deliberately: it is the one construction, handed to a
- * `render` callback as `ctx.fallback` and rendered when there is none, so
- * deferring to the preset is exact by construction instead of by two pieces of
- * markup kept in step. `Chip` renders its children straight after the dot, in
- * the slots' own position, so nothing about the surrounding output moves. The
- * fragment itself is kit's `renderCompactParts` — six extensions wrote it
- * identically, so it is one function now, and the `(short, full)` pair it takes
- * is this extension's per-metric `label`/`title` rather than a module constant.
- *
- * `labelId` is the bar's alone: the bar trigger's `aria-describedby` points at
- * each chip's *label and value* so the readout is announced paired rather than
- * as a positional sequence (see the `describedBy` build below), and an IDREF
- * needs an `id` on the element it names. The `⋮` rows pass none — each row is
- * one metric, named by its own content, and describes nothing — which is also
- * what keeps their pinned literal byte-identical.
+ * `labelId` is the bar's alone: the trigger's `aria-describedby` names each
+ * chip's label and value so the readout is announced paired, and an IDREF needs
+ * an `id`. The `⋮` rows pass none — each row is one metric, named by its own
+ * content.
  */
 function iconAndText(
   view: MetricView,
@@ -167,9 +144,7 @@ export function MetricsChips({
           `${label}: ${snapshot.order.map((id) => metricView(snapshot, id).label).join(", ")}`,
         );
 
-  // In the ⋮ menu there's vertical room, so spell metrics out instead of
-  // shrinking them — which is what the overflow rule already forces on every
-  // preset, so this branch differs from the bar only in its DOM.
+  // In the ⋮ menu there's vertical room, so spell metrics out instead of shrinking them.
   if (isOverflowed) {
     return (
       <div data-dtb-part="metrics-overflow-list">
@@ -179,21 +154,15 @@ export function MetricsChips({
             isOverflowed: true,
             defaults: DEFAULTS,
           });
-          // One text override per row, not one per trigger: the bar button is
-          // one control naming N metrics, a `⋮` row *is* one metric. A row
-          // carries no `aria-label` of its own — it is named by its content, and
-          // ADR-004 leaves naming these rows outright a separate, open decision
-          // — so this writes the attribute only when the consumer supplied a
-          // name that says something, and writes nothing otherwise.
+          // A row is named by its content, not an `aria-label` of its own
+          // (naming them by default is a separate, open decision — ADR-004),
+          // so this writes the attribute only when the consumer supplied one.
           const rowName = resolveNameOverride(presentation.name, view);
           const fallback = iconAndText(view, control.parts, control.icon);
-          // Invoked once, above the tree, because the value span below has to
-          // know whether it ran. `renderCompact` returns *this* `fallback`
-          // reference — not a copy — when there is no callback and when the
-          // callback returned `undefined`, so `=== fallback` is exactly "the
-          // consumer did not paint here". A callback that deliberately returns
-          // `ctx.fallback` lands in the same branch, which is what it asked for:
-          // "paint what the preset would have".
+          // `renderCompact` returns this exact `fallback` reference when there
+          // is no callback or it returned `undefined`, so `=== fallback` below
+          // means "the consumer did not paint here" — including when a
+          // callback deliberately returns `ctx.fallback`.
           const rendered = renderCompact(
             presentation,
             view,
@@ -211,11 +180,8 @@ export function MetricsChips({
               onClick={onToggle}
               title={view.hint}
             >
-              {/* The chip and its dot sit outside the callback's reach, exactly
-                  as they do in the bar and in the five Group A chips: the dot is
-                  severity — state, not text — and a preset changes text, not
-                  state (ADR-004). So `render` supplies the chip's *children*
-                  here, which is the icon and the text. */}
+              {/* The chip and its dot sit outside the callback's reach, as in
+                  the bar: a preset (and a callback) changes text, not state. */}
               <Chip
                 severity={view.severity}
                 data-dtb-part="metrics-chip"
@@ -223,18 +189,12 @@ export function MetricsChips({
               >
                 {rendered}
               </Chip>
-              {/* Outside the chip, as this row has always shipped — the chip is
-                  where the dot and the severity attributes live, and those are
-                  not a callback's to lose. But `render` still owns the icon, the
-                  text *and* the value, here as in the bar: the bar's value span
-                  sits inside the chip and so is replaced, and a row that painted
-                  it anyway would duplicate the readout for the most ordinary
-                  callback there is — `render: (m) => <b>{m.display} used</b>`
-                  reads "48 MB used48 MB". So the span is the preset's to drop
-                  and the callback's to replace, and it paints only when
-                  `renderCompact` fell through to the fallback. Attribute order
-                  is this row's own, not the bar chip's below; both are pinned as
-                  literal strings in `__tests__/presentation.test.tsx`. */}
+              {/* Outside the chip, as this row has always shipped, but `render`
+                  still owns the value — a naive callback would otherwise
+                  duplicate the readout (e.g. "48 MB used48 MB") — so it paints
+                  only when `renderCompact` fell through to the fallback.
+                  Both attribute orders are pinned in
+                  `__tests__/presentation.test.tsx`. */}
               {control.parts.value && rendered === fallback ? (
                 <span
                   data-dtb-part="metrics-value"
@@ -352,22 +312,9 @@ export function MetricsChips({
       // Identity plus the visible short words, never the numbers: WCAG 2.5.3
       // needs the painted word inside the name, and a name that churned with
       // the values would re-speak on every focus. The numbers are described
-      // rather than named — `aria-describedby` points at each chip's label and
-      // value span, so a screen reader still hears the readout `aria-label`
-      // would otherwise have replaced, and hears it paired rather than as a
-      // bare number sequence (the measurement is above the `describedBy`
-      // build). `title` explains; it does not name — though it *is* what a
-      // browser falls back to for the description when there is no
-      // `aria-describedby` at all, which is measured too. That fallback is why
-      // this is the *only* first-party chip carrying an `aria-describedby`: a
-      // description replaces the title rather than adding to it, and every
-      // other chip's title already states its readout (`Feature flags: 6 · 0
-      // locally overridden` against a bare `6`). This one's does not.
-      // `presentation.name` overrides the name, and a whitespace-only override
-      // is ignored so no override can leave the trigger unnamed. One button
-      // names N metrics, so the override is invoked with the first metric in bar
-      // order — it names the control, and the argument is there for symmetry
-      // with the other three knobs.
+      // instead, by the `aria-describedby` built above. `presentation.name`
+      // overrides the name, invoked with the first metric in bar order since
+      // one button names N metrics; with no metrics, `label` stands.
       aria-label={triggerName}
       {...(describedBy === "" ? {} : { "aria-describedby": describedBy })}
       onClick={onToggle}

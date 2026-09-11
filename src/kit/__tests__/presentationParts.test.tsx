@@ -1,12 +1,8 @@
 /**
  * `renderCompactParts`, the one function in `presentation.tsx` that paints.
  *
- * The rest of that module is pure and lives in `presentation.test.ts`; this is
- * a `.tsx` file because these assertions are about markup. What they pin is the
- * fragment six extensions used to write by hand: which of the two texts is
- * painted, that `parts.value` is none of this function's business, and that an
- * omitted `textProps` still writes the bare `<span>` the four Group A chips
- * shipped before their spans were named.
+ * The rest of that module is pure and lives in `presentation.test.ts`; this
+ * file is `.tsx` because these assertions are about markup.
  */
 import type { ReactNode } from "react";
 import { cleanup, render } from "@testing-library/react";

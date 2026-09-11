@@ -392,30 +392,13 @@ export interface ThemeSnapshot {
 /**
  * What a consumer's `presentation` callbacks are told about the bar control.
  *
- * Deliberately *not* `ThemeSnapshot`: `revision` is a store change signal,
- * `groups` is documented "panel rendering only", and `applyErrors`, `notice`,
- * `readError`, `surfaces` and the whole `TokenView[]` are the editor's working
- * state. A view type that is only *read* can gain and lose fields freely, but
- * as a callback parameter it is contravariant — every field here is a field
- * that cannot be renamed without breaking consumer callbacks — so this carries
- * the facts the chip paints and nothing else
- * (`plans/bar-presentation-icons-v1.md`, "The callback goes on all seven";
- * `/ext/diagnostics` narrowed the same way, for the same reason).
- *
- * Why each field is here:
- *
- * - `tokenCount`, `overriddenCount`, `preview` — between them they *are* the
- *   chip: the value word is `!preview ? "paused" : overriddenCount > 0 ?
- *   "N edited" : tokenCount`, `data-dtb-edited` is `overriddenCount > 0` and
- *   `data-dtb-preview` is `preview`.
- * - `supplied`, `writable` — the two states in which the chip is saying it can
- *   do nothing, and the two an icon would most want to draw differently. They
- *   are already spelled out in the control's `title`.
- *
- * Anything derivable is left out: `edited` is `overriddenCount > 0`, and the
- * value word follows from the three above. `surface` is left out too — it is a
- * nested object whose shape would then be contravariant as well, and the chip
- * only ever quotes its id inside a sentence.
+ * Deliberately not `ThemeSnapshot`: as a callback parameter this type is
+ * contravariant, so every field here is one that can never be renamed without
+ * breaking consumer code. It carries only what the chip paints —
+ * `tokenCount`/`overriddenCount`/`preview` drive the value word and the
+ * `data-dtb-edited`/`-preview` attributes; `supplied`/`writable` are the two
+ * states an icon would most want to draw differently. Derivable fields
+ * (`edited`, the value word, `surface`'s shape) are left out.
  */
 export interface ThemeEditorBarView {
   /** How many design tokens the catalogue declares. The value word when nothing is edited. */

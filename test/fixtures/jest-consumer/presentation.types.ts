@@ -1,32 +1,23 @@
 /**
  * The `presentation` option's **types**, through the package's `exports` map,
- * resolved the way a CommonJS consumer on `moduleResolution: node16` resolves
- * them: the `require` condition, so `dist/*.d.cts`, not `dist/*.d.ts`.
+ * resolved as a CommonJS consumer on `moduleResolution: node16` would: the
+ * `require` condition, so `dist/*.d.cts`, not `dist/*.d.ts`. Nothing here
+ * runs — `tsconfig.json` compiles it with `--noEmit`, using the repo root's
+ * own TypeScript.
  *
- * Nothing here runs. `tsconfig.json` compiles it with `--noEmit` as the first
- * step of this fixture's `test` script, using the repo root's own TypeScript —
- * this fixture deliberately adds no dependency of its own for it.
+ * Separate from `presentation.test.js` because the kit vocabulary
+ * (`CompactPresentation`, `CompactPreset`, `CompactRenderContext`) comes from
+ * a shared dts chunk (`dist/presentation-*.d.cts`) that a rendered assertion
+ * can't see silently widen to `any`. The `@ts-expect-error` lines below are
+ * what make this a boundary test: with the chunk missing, `skipLibCheck`
+ * swallows the broken import inside the `.d.cts` and the expected errors
+ * stop happening (verified by deleting the chunk — the failure is loud
+ * either way, but as a different TS code).
  *
- * Why a separate file from `presentation.test.js`, which renders the same
- * option: the new kit vocabulary (`CompactPresentation`, `CompactPreset`,
- * `CompactRenderContext`) is re-exported from a **shared dts chunk**
- * (`dist/presentation-*.d.cts`) that every `ext/*` declaration imports, and a
- * rendered assertion cannot see a type that silently became `any`. The
- * `@ts-expect-error` lines below are what make this a boundary test rather
- * than a shape test: with the chunk missing, `skipLibCheck: true` swallows the
- * broken import *inside* the `.d.cts`, the vocabulary widens to `any`, and the
- * expected errors stop happening. Verified by deleting the chunk: the first
- * directive is then reported unused (TS2578 on line 32) and the second is
- * instead *satisfied* by TS7006 on its now-implicitly-`any` parameter — so the
- * failure is loud either way, but only the first line is the "unused
- * directive" report.
- *
- * The narrower claim is deliberate. This file does **not** detect an
- * `exports`-map typo: pointing `exports["./ext/environment"].require.types` at
- * a missing file still compiles clean, because TypeScript falls back to the
- * sibling `.d.cts` next to the resolved `.cjs`. A wholly unresolvable subpath
- * is a hard TS2307 rather than a silent `any`. The map itself is `attw`'s job,
- * inside `check:package`.
+ * Deliberately narrower than an `exports`-map typo check: TypeScript falls
+ * back to the sibling `.d.cts` next to the resolved `.cjs`, so a bad
+ * `require.types` path still compiles clean. That's `attw`'s job, inside
+ * `check:package`.
  */
 import React = require("react");
 import kit = require("@nejcm/dev-toolbar/kit");
@@ -39,8 +30,8 @@ const icon: React.ReactNode = React.createElement("svg", { viewBox: "0 0 16 16" 
 // The 90% case the plan names: the bare-preset shorthand, on a factory.
 env.environment({ context: () => ({ environment: "test" }), presentation: "icon" });
 
-// @ts-expect-error - "glyph" is not a CompactPreset; if the types had not
-// crossed the boundary, `presentation` would be `any` and this would not error.
+// @ts-expect-error - "glyph" is not a CompactPreset; if the types hadn't
+// crossed the boundary, `presentation` would be `any` and this wouldn't error.
 env.environment({ context: () => ({ environment: "test" }), presentation: "glyph" });
 
 // The full shape, with the view type flowing into the callbacks. `MetricView`

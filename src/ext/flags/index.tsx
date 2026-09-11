@@ -124,20 +124,13 @@ export interface FlagsOptions extends Pick<
    * callback and an accessible-name override. A bare preset is the shorthand —
    * `presentation: "icon-value"`.
    *
-   * This is the chip alone. A promoted flag is its own bar control, so its
-   * presentation is configured next to it, on
-   * {@link PromotedFlag.presentation} — rather than by one callback here
-   * receiving `FlagsSnapshot | FlagView` and making you narrow it.
+   * This is the chip alone; a promoted flag configures its own on
+   * {@link PromotedFlag.presentation}, next to that control.
    *
-   * `render` supplies the children of the span carrying `data-dtb-overridden`,
-   * so the state attributes, `aria-expanded`, `onClick` and `title` stay the
+   * `render` supplies the children of the span carrying `data-dtb-overridden` —
+   * state attributes, `aria-expanded`, `onClick` and `title` stay the
    * extension's; returning `undefined` falls through to the preset. `name`
-   * overrides the trigger's `aria-label`, and a whitespace-only return is
-   * ignored.
-   *
-   * Nothing here reaches the store: the icon and the callbacks are held in this
-   * closure and passed as props, because a `ReactNode` cannot be signed and
-   * this store republishes on a string signature.
+   * overrides the trigger's `aria-label` (a whitespace-only return is ignored).
    *
    * `docs/adr/ADR-004-per-extension-bar-presentation.md`.
    */
@@ -163,22 +156,13 @@ export function flags(options: FlagsOptions = {}): DevToolbarExtension {
     ...runtimeOptions
   } = options;
 
-  // Resolved once, here, rather than per render: this closure is where the
-  // icons and the callbacks live, exactly as `label` and `injectStyles` do —
-  // and the only place they *can* live. `FlagsSnapshot` and `FlagView` are
-  // store snapshots, published on a string signature, and a `ReactNode` cannot
-  // be signed: left out of the signature it would never publish, and
-  // `JSON.stringify`'d it would republish every 250 ms tick and put a React
-  // element into what `diagnostics()` serialises. So `PromotedFlag.icon` stays
-  // `string`, rich icons arrive on `PromotedFlag.presentation`, and both
-  // resolved maps travel to `ui.tsx` as props.
+  // Resolved once, here, in the factory closure — the only place icons and
+  // callbacks can live, since a `ReactNode` can't cross into this extension's
+  // string-signed store (see PromotedFlag.icon). Both resolved maps travel to
+  // `ui.tsx` as props.
   const presentation = resolvePresentation(presentationOption);
-  //
-  // Keyed by *position* in `promoted`, not by `flagKey`: two entries may name
-  // the same key with different `startAt`/`expiresAt`/`audience` windows, and
-  // only the runtime knows which one is in force right now. It says so in
-  // `FlagView.promotedIndex`, and this map is read with that index — keyed by
-  // key instead, an expired entry's icon would paint on the live entry's label.
+  // Keyed by position in `promoted`, matching FlagView.promotedIndex — two
+  // entries can name the same key, only the runtime knows which is live.
   const promotedPresentations = new Map<number, ResolvedCompactPresentation<FlagView>>();
   promotionsOf(runtimeOptions.promoted).forEach((promotion, index) => {
     promotedPresentations.set(index, resolvePresentation(promotion.presentation));

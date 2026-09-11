@@ -85,31 +85,17 @@ export interface DiagnosticsOptions extends Omit<DiagnosticsRuntimeOptions, "id"
   styleNonce?: string;
   /**
    * How the bar control presents itself: a preset, your own icon, a render
-   * callback and an accessible-name override. A bare preset is the shorthand —
-   * `presentation: "icon-value"`.
+   * callback and an accessible-name override. Bare-preset shorthand:
+   * `presentation: "icon-value"`. Presets operate on the short bar word
+   * (`"diagnostics"`); `label` stays the overflow and accessible-name identity.
    *
-   * One control, so each knob is invoked once per render, in the bar and in the
-   * `⋮` menu alike, with a narrow {@link DiagnosticsBarView} rather than the
-   * store state behind it — four facts the chip paints, kept deliberately
-   * minimal because a callback parameter is contravariant and every field here
-   * is one that cannot be renamed later. The presets operate on the **short bar
-   * word** (`"diagnostics"`): `label` stays the overflow and accessible-name
-   * identity, so `"icon-label"` paints `"diagnostics"` in the bar and
-   * `"Diagnostics"` in the menu.
+   * The error/warning badge sits outside both the preset and `render`, after
+   * the contents, under every preset including `"icon"` — it is live state,
+   * not presentation. `name` overrides the `aria-label`; a whitespace-only
+   * return is ignored.
    *
-   * **The error/warning badge is not yours to restyle.** It sits outside both
-   * the preset and `render`, after the contents, under every preset including
-   * `"icon"` — it is live state, and the one thing on the chip that says
-   * something is wrong. `render` supplies the children of the chip carrying
-   * `data-dtb-incomplete` and the dot, so the state attributes,
-   * `aria-expanded` and `title` stay the extension's; returning `undefined`
-   * falls through to the preset. `name` overrides the `aria-label`, and a
-   * whitespace-only return is ignored. Prefer a name that does not change with
-   * the *counts* — `(v) => \`Diagnostics ${v.errors}\`` renames the control on
-   * every caught error and a screen reader re-announces it.
-   *
-   * Nothing here reaches the store: the icon and the callbacks are held in this
-   * closure and passed as props, because a `ReactNode` cannot be signed.
+   * Icon and callbacks are held in this closure and passed as props — a
+   * `ReactNode` cannot be signed into a store snapshot.
    *
    * `docs/adr/ADR-004-per-extension-bar-presentation.md`.
    */
@@ -131,15 +117,12 @@ export function diagnostics(options: DiagnosticsOptions = {}): DevToolbarExtensi
     keepMounted = false,
     injectStyles = true,
     styleNonce: optionNonce,
-    // Destructured out rather than read off `options`: everything this factory
-    // does not name is spread into `createDiagnosticsRuntime` below, and an
-    // icon or a callback has no business reaching the runtime.
+    // Destructured out so it isn't spread into createDiagnosticsRuntime below.
     presentation: presentationOption,
     ...runtimeOptions
   } = options;
 
-  // Resolved once, here, rather than per render: this is the closure the icon
-  // and the callbacks live in, exactly as `label` and `injectStyles` do.
+  // Resolved once, in the closure the icon and callbacks live in.
   const presentation = resolvePresentation(presentationOption);
 
   // Built here, not in start(api): slot functions run on the toolbar's first

@@ -15,50 +15,33 @@ import { accessibleName, overlays } from "../overlays";
 import { themeEditor } from "../theme-editor";
 
 /**
- * Bar presentation, the part that has to hold before any of it is configurable:
- * every control the nine first-party extensions put in the bar has an
- * accessible name. Asserted through `/ext/overlays`' own `accessibleName()` —
- * the same computation its unnamed-control overlay runs over the host app — so
- * the toolbar is held to the standard it reports on, rather than to the weaker
- * "an `aria-label` attribute exists".
+ * Bar presentation must hold before any of it is configurable: every control
+ * the nine first-party extensions put in the bar has an accessible name.
+ * Checked via `/ext/overlays`'s own `accessibleName()` — the toolbar is held
+ * to the standard it reports on, not the weaker "has an `aria-label`".
  *
- * Three assertions per control:
+ * Per control: (1) has a non-empty accessible name; (2) that name matches the
+ * string pinned in `BAR_CASES` exactly — phases 3-5 must keep default output
+ * byte-identical, and a non-empty check alone wouldn't catch a changed name;
+ * (3) for anything that's a *control* (`<button>` or has a `role`), the name
+ * comes from `aria-label`, not chip text or `title` — chip text is about to
+ * become configurable, and `title` is the fallback that would otherwise hide
+ * an unnamed icon-only button.
  *
- * 1. it has a non-empty accessible name at all;
- * 2. that name is exactly the string pinned in `BAR_CASES` — phases 3-5 of the
- *    plan must keep the default output byte-identical, and a non-empty check
- *    would not notice a name that quietly changed; and
- * 3. for anything that is a *control* (a `<button>`, or an element with a
- *    `role`), the name comes from an `aria-label` rather than from the chip
- *    text or the `title`. Chip text is presentation and is about to become
- *    configurable; `title` explains, it does not name, and it is the fallback
- *    that would otherwise hide an unnamed icon-only button.
+ * All three run twice: a wide bar, and a bar too narrow for anything, read out
+ * of the `⋮` menu. The collapsed pass matters because three extensions render
+ * a different element when overflowed (environment's `env-overflow`, flags'
+ * `flag-overflow-trigger`, metrics' `metrics-overflow-row` list).
  *
- * All three run twice: once in a bar wide enough for everything, and once in a
- * bar too narrow for anything, with the control read out of the `⋮` menu. The
- * collapsed pass is not a formality — three of the nine render a *different*
- * element when overflowed (environment's `env-overflow`, flags'
- * `flag-overflow-trigger`, metrics' `metrics-overflow-row` list), so the
- * un-collapsed pass alone never looks at them.
+ * Exemption: metrics' `⋮` rows are content-named by design — the overflow menu
+ * always paints `"full"` text, so no preset can leave a row icon-only, and
+ * naming it would just repeat text a screen reader already reads.
  *
- * One deliberate exemption, from (3) only:
- *
- * - metrics' `⋮` rows are content-named on purpose. The plan guarantees the
- *   overflow menu always paints `"full"` text by construction, so no preset can
- *   ever leave one of those rows icon-only; naming them would duplicate the
- *   text a screen reader already reads.
- *
- * `/ext/agent` used to be the second exemption, and is not any more. Its
- * trigger is a role-less `<span>` until a consumer supplies an icon, and a
- * role-less span is not a named node: it took its name from its `title`, which
- * is the weak fallback (3) exists to rule out, and it had no *control* for (3)
- * to look at. Phase 5 gave it `role="img"` + `aria-label` on the icon path — so
- * its case below mounts it **with an icon**, which is the configuration in
- * which it puts a named node in the bar at all, and the exemption is gone
- * rather than extended. The role-less chip is not unwatched: its literal tree
- * and its `title`-derived name are pinned in
- * `src/ext/agent/__tests__/presentation.test.tsx`, through this same
- * `accessibleName()`.
+ * `/ext/agent` is no longer exempt. Its trigger used to be a role-less `<span>`
+ * named by `title` — the weak fallback (3) rules out — with no *control* for
+ * (3) to check. Phase 5 gave it `role="img"` + `aria-label` on the icon path,
+ * so its case here mounts **with an icon**. The role-less case is still
+ * covered, in `src/ext/agent/__tests__/presentation.test.tsx`.
  *
  * [dev-toolbar/plans/bar-presentation-icons-v1 §Accessible names]
  */
@@ -74,10 +57,10 @@ interface BarCase {
 }
 
 /**
- * One entry per directory in `src/ext`, enforced against the roster below, so a
- * tenth extension cannot ship a bar control this never looks at. Options are
- * the minimum that makes the extension paint the interesting state: a promoted
- * flag, an environment kind, an edited token.
+ * One entry per `src/ext` directory, enforced against the roster below so a
+ * new extension can't ship a bar control this never checks. Options are the
+ * minimum needed to paint the interesting state: a promoted flag, an
+ * environment kind, an edited token.
  */
 const BAR_CASES: Record<string, BarCase> = {
   // `Accessibility (a11y)`, not `Accessibility`: the bar paints `a11y`, so
@@ -87,9 +70,9 @@ const BAR_CASES: Record<string, BarCase> = {
   a11y: { id: "a11y", make: () => a11y(), names: ["Accessibility (a11y), pending"] },
   agent: {
     id: "agent",
-    // With an icon, which is the only configuration in which this extension
-    // puts a *named node* in the bar: without one its trigger is a role-less
-    // <span> named by its `title`, pinned in the extension's own suite.
+    // With an icon: the only configuration where this puts a *named node* in
+    // the bar. Without one, the trigger is a role-less <span> named by
+    // `title` — pinned in the extension's own suite.
     make: () => agentBridge({ presentation: { icon: <svg viewBox="0 0 16 16" /> } }),
     names: ["Agent"],
   },
@@ -114,9 +97,8 @@ const BAR_CASES: Record<string, BarCase> = {
         ],
         promoted: [{ flagKey: "new-header" }, { flagKey: "checkout.tier" }],
       }),
-    // Three names, not one: the chip plus both promoted siblings, which is the
-    // whole reason `barControls()` walks `<button>`s instead of taking the
-    // `trigger` part alone.
+    // Three names: the chip plus both promoted siblings — why `barControls()`
+    // walks every `<button>` instead of just the `trigger` part.
     names: ["Flags", "checkout.tier, gold", "new-header"],
   },
   metrics: {
@@ -134,11 +116,10 @@ const BAR_CASES: Record<string, BarCase> = {
       }),
     // `Metrics: mem`, not `Metrics`: the bar paints `mem`, so WCAG 2.5.3 Label
     // in Name needs that word inside the name. It is the collector's hardcoded
-    // short word, so the name does not churn with the readout — the numbers
-    // reach a screen reader through `aria-describedby` instead.
+    // short word, so the name does not churn with the readout.
     names: ["Metrics: mem"],
-    // The `⋮` rows replace the trigger, and they are named by their own text
-    // — run together, since `accessibleName()` concatenates the chip's spans.
+    // The `⋮` rows replace the trigger and are named by their own text, run
+    // together since `accessibleName()` concatenates the chip's spans.
     overflowNames: ["Memory48 MB"],
   },
   overlays: { id: "overlays", make: () => overlays(), names: ["Overlays, off"] },
@@ -170,10 +151,10 @@ const isMetricsOverflowRow = (element: Element): boolean =>
   element.getAttribute("data-dtb-part") === "metrics-overflow-row";
 
 /**
- * The `⋮` entry for one extension. `data-dtb-ext-id` is a discriminator rather
- * than a unique id, so it is paired with `data-dtb-part` on the same element
- * (AGENTS.md) — five parts carry the same value, and this extension has a bar
- * item and a menu entry at once mid-collapse.
+ * The `⋮` entry for one extension. `data-dtb-ext-id` is a discriminator, not
+ * a unique id (AGENTS.md), so it's paired with `data-dtb-part` on the same
+ * element — an extension can have a bar item and a menu entry at once
+ * mid-collapse.
  */
 function overflowEntry(toolbar: ToolbarHandle, id: string): HTMLElement {
   const entry = toolbar
@@ -273,8 +254,8 @@ describe("first-party bar presentation", () => {
           .filter(isControl)
           .filter((control) => !isMetricsOverflowRow(control));
 
-        // See the exemption in the docblock: metrics' `⋮` rows are content-named
-        // on purpose, and they are all it renders there.
+        // Metrics' `⋮` rows are content-named by design (see docblock) — they're
+        // all it renders here.
         if (id === "metrics") {
           expect(controls).toEqual([]);
           return;

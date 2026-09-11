@@ -639,13 +639,8 @@ export function App() {
   const [enabled, setEnabled] = useState(true);
   /**
    * Which `presentation` the three icon-bearing extensions are built with.
-   *
-   * `"default"` on load, deliberately: the resting playground passes no
-   * `presentation` at all, so every chip is the width it has always been and
-   * nothing that measured this app at a pinned viewport has to be re-measured.
-   * The icons are one click away instead — and the click is the interesting
-   * part, because a control several times narrower arriving with no change to
-   * the bar's own box is exactly what the collapse machine has to survive.
+   * Defaults to `"default"` so the resting playground passes no
+   * `presentation` and every chip keeps its existing width.
    */
   const [barPresentation, setBarPresentation] = useState<BarPresentationMode>("default");
 
@@ -862,13 +857,9 @@ export function App() {
   return (
     <EmbedDemoProvider>
       <DevToolbar
-        // A factory option cannot be changed on a *running* extension: same id
-        // plus a new object means core keeps the first object's `start()` and
-        // warns, leaving what the bar renders wired to a runtime nobody is
-        // driving. `key` makes the flip what it really is — a config change —
-        // so the shell unmounts, every extension is stopped, and the new
-        // objects are started. Remounting is the supported way to change any
-        // factory option at runtime.
+        // A factory option can't change on a running extension — core keeps
+        // the first object's `start()` and warns. `key` forces a remount
+        // instead, the supported way to change a factory option at runtime.
         key={barPresentation}
         extensions={playgroundExtensionsFor(barPresentation)}
         enabled={enabled}

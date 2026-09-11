@@ -149,8 +149,8 @@ const monotonic = (): number =>
 
 /**
  * The `promoted` option as a list. Exported for `index.tsx`, which walks the
- * same entries to resolve each `PromotedFlag.presentation` — config that stays
- * in the factory closure and never reaches a snapshot.
+ * same entries to resolve each `PromotedFlag.presentation` — closure state
+ * that never reaches a snapshot.
  */
 export function promotionsOf(
   promoted: PromotedFlag | readonly PromotedFlag[] | undefined,
@@ -354,14 +354,11 @@ export function createFlagsRuntime(options: FlagsRuntimeOptions = {}): FlagsRunt
   /* Promotion window */
 
   /**
-   * The promotion in force for a key right now, and **where** in `promoted` it
-   * sits.
-   *
-   * The index is the interesting half: two entries can name the same key with
-   * different windows or audiences, so "which entry won" is not answerable from
-   * the key. It is published as {@link FlagView.promotedIndex} so `index.tsx`
-   * can hand the *chosen* entry's `presentation` to the control — keying that
-   * by `flagKey` would paint an expired entry's icon on the live entry's label.
+   * The promotion in force for a key right now, and where in `promoted` it
+   * sits. Two entries can name the same key with different windows or
+   * audiences, so "which entry won" isn't answerable from the key alone —
+   * the index is published as {@link FlagView.promotedIndex} so `index.tsx`
+   * can match the chosen entry's `presentation` rather than the wrong one's.
    * A number is signable, which is what keeps it snapshot state at all.
    */
   const promotionFor = (key: string): { entry: PromotedFlag; index: number } | null => {
@@ -508,12 +505,10 @@ export function createFlagsRuntime(options: FlagsRuntimeOptions = {}): FlagsRunt
     // Bar order follows the consumer's declared promotion order, not the
     // panel's, so a promoted flag's bar position doesn't move on override.
     //
-    // Matched on `promotedIndex`, not on `flagKey`: two entries may name the
-    // same key and only *one* is in force. Keyed by name, every entry naming
-    // that key pushed the same view again — duplicate buttons, React's
-    // same-key error, and a switch whose duplicate cannot be clicked away.
-    // `promotionFor` returns the first eligible entry, so each promoted view
-    // owns exactly one index and those indices ascend with `promotions`.
+    // Matched on promotedIndex, not flagKey: two entries can name the same
+    // key, and matching by name pushed every one of them as duplicate views
+    // (duplicate buttons, React's same-key error). Each promoted view has
+    // exactly one index, ascending with `promotions`.
     const promotedViews: FlagView[] = [];
     for (let index = 0; index < promotions.length; index += 1) {
       const view = sorted.find((candidate) => candidate.promotedIndex === index);

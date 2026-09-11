@@ -28,22 +28,16 @@ import { tanstackDevtools } from "./tanstackDemo";
 const runtimeKitDemo = kitDemo({ order: 40, priority: 60, pollMs: 1000 });
 
 /**
- * How the bar presents the four extensions this app supplies icons for. [playground]
+ * How the bar presents the four extensions this app supplies icons for.
+ * [playground]
  *
- * `"default"` passes no `presentation` at all, so `metrics`, `flags`, `a11y` and
- * `agent` paint exactly what they painted before the option existed — which is
- * what keeps every measurement the browser suite and the verification map took
- * at a pinned viewport valid. The other two are the option: `"icon-value"` swaps
- * each short bar word for {@link ./barIcons.tsx} and keeps the number, and
- * `"icon"` drops the number too, leaving a control several times narrower than
- * the one it replaced. Flipping between them is a real workout for the collapse
- * machine, which is the point of the browser case that drives it.
- *
- * `agent` takes the narrowed two-knob option — no preset — so it reads both
- * non-default modes the same way: an icon instead of the word. It is here
- * because it is the only control in the package whose *role* depends on the
- * option (`role="img"` with an icon, a role-less `<span>` without), and a role
- * is a claim about what a browser's accessibility tree says.
+ * `"default"` passes no `presentation`, so `metrics`, `flags`, `a11y` and
+ * `agent` paint what they always have. `"icon-value"` swaps the short bar word
+ * for an icon and keeps the number; `"icon"` drops the number too. `agent`
+ * takes the narrowed two-knob option — no preset — so it reads both non-default
+ * modes as an icon instead of the word; it is the only control whose *role*
+ * depends on the option (`role="img"` with an icon, a role-less `<span>`
+ * without).
  */
 export type BarPresentationMode = "default" | "icon-value" | "icon";
 
@@ -64,17 +58,11 @@ export const BAR_PRESENTATION_MODES: readonly BarPresentationMode[] = [
  */
 
 /**
- * The placeholders' chip, from `@nejcm/dev-toolbar/kit`.
- *
- * This app used to hand-roll its own `Chip` — a dot, a muted label and a
- * monospace value, all inline styles — because the kit was not a published
- * subpath when the placeholders were written. It is now, and this *is* that
- * chip: `Chip` paints the same dot/label/value in the same order, styled by the
- * sheet every extension already injects, so the local copy is gone and the
- * three placeholders below use the real control. The trigger element stays
- * theirs, which is the same division the nine first-party extensions keep:
- * the extension owns the `<button>`/`<span>` and its `data-dtb-part`, the kit
- * owns what is inside it.
+ * The placeholders' chip, from `@nejcm/dev-toolbar/kit` — replaces a
+ * hand-rolled version now that the kit is a published subpath. The trigger
+ * element stays the extension's own, the same division the first-party
+ * extensions keep: extension owns the `<button>`/`<span>` and its
+ * `data-dtb-part`, kit owns what's inside it.
  */
 function placeholderChip(label: string, value: string) {
   return (
@@ -365,8 +353,8 @@ const buildFlags = (mode: BarPresentationMode) =>
     flagKey: "ui-facelift",
     label: "UI Facelift 2026",
     icon: "\u25c8",
-    // The text glyph, kept beside the SVG one on the chip next to it. See
-    // PROMOTED_FLAG_ICON for what to look at when the two are side by side.
+    // The text glyph, kept beside the SVG one on the chip next to it — see
+    // PROMOTED_FLAG_ICON.
     ...(mode === "default" ? {} : { presentation: { preset: mode, icon: PROMOTED_FLAG_ICON } }),
   },
   ...(mode === "default" ? {} : { presentation: { preset: mode, icon: FLAGS_ICON } }),
@@ -667,10 +655,10 @@ const buildA11y = (mode: BarPresentationMode) =>
 export const reactProfiler = createReactProfilerCollector();
 
 /**
- * Built once too, and shared by every mode's `metrics()` — only one of them is
- * ever mounted. Module scope for the same reason `reactProfiler` is, not as a
- * way to survive a presentation flip: the flip remounts the toolbar (`key` in
- * `App.tsx`), and a remounted `metrics()` restarts every collector regardless.
+ * Shared by every mode's `metrics()` — only one is ever mounted. Module
+ * scope for the same reason as `reactProfiler`, not to survive a
+ * presentation flip: the flip remounts the toolbar (`key` in `App.tsx`) and
+ * restarts every collector regardless.
  */
 const webVitals = createWebVitalsCollector();
 
@@ -681,9 +669,8 @@ const buildMetrics = (mode: BarPresentationMode) =>
     priority: 35,
     network: { slowMs: 400 },
     jank: { windowMs: 5000 },
-    // One control per metric, so the icon is a *function* of the view: no
-    // `icons: Record<CollectorId, ReactNode>` option, and a metric with no entry
-    // falls back to its own short label rather than to a blank chip.
+    // One control per metric, so the icon is a function of the view; a
+    // metric with no entry falls back to its own short label.
     ...(mode === "default"
       ? {}
       : { presentation: { preset: mode, icon: (metric) => METRIC_ICONS[metric.id] } }),
@@ -722,25 +709,15 @@ const buildAgent = (mode: BarPresentationMode) =>
   });
 
 /**
- * The roster, with `metrics`, `flags`, `a11y` and `agent` built for one presentation mode.
+ * The roster, with `metrics`, `flags`, `a11y` and `agent` built for one
+ * presentation mode. `presentation` is a factory option held in the
+ * extension's own closure, so changing it means a new extension object for
+ * that id. Each mode's array is built once and cached — rebuilding per render
+ * would hand the bar a new object every time, which core warns about.
  *
- * `presentation` is a **factory option**, held in the extension's own closure —
- * so changing it means handing `<DevToolbar>` a new extension object for that
- * id, exactly as a consumer would who changed any other option. The rest of the
- * roster is the same object in every mode, and each mode's array is built once
- * and cached: an array rebuilt per render would hand the bar a new object every
- * time, which is the thing core warns about.
- *
- * A new object for a *running* id is not enough on its own. Core never restarts
- * a same-id extension (`src/core/useExtensionLifecycle.ts`): it keeps the first
- * object's `start()`, warns that the bar now renders something whose lifecycle
- * it cannot reach, and the new closure's runtime never runs — no axe, no
- * collectors, no flag poll, no agent bridge, with only module-scope collectors
- * still ticking to disguise it. So `<App>` gives `<DevToolbar>` a `key` of the
- * mode: the flip remounts the shell, every extension is stopped and started,
- * and the four rebuilt ones come up live. That costs what a remount costs — the a11y scan
- * results, the in-flight metric samples — while the flag overrides survive
- * (they live in this app and in `localStorage`).
+ * A new object alone doesn't restart a *running* id (core keeps the first
+ * object's `start()` — `src/core/useExtensionLifecycle.ts`), so `<App>`
+ * gives `<DevToolbar>` a `key` of the mode to force a full remount instead.
  */
 const ROSTERS = new Map<BarPresentationMode, DevToolbarExtension[]>();
 

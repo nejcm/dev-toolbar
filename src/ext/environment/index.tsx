@@ -76,29 +76,22 @@ export interface EnvironmentOptions extends Pick<
   styleNonce?: string;
   /**
    * How the bar control presents itself: a preset, your own icon, a render
-   * callback and an accessible-name override. A bare preset is the shorthand —
-   * `presentation: "icon-value"`.
+   * callback and an accessible-name override. Bare-preset shorthand:
+   * `presentation: "icon-value"`. Callbacks see the redacted
+   * `EnvironmentSnapshot`. Presets operate on the short bar word (`"env"`);
+   * `label` stays the accessible-name identity. Use the exported
+   * `kindLabel(snapshot)` to paint the same value word a preset would.
    *
-   * One control, so each knob is invoked once per render, with the same
-   * redacted `EnvironmentSnapshot` the panel and `diagnostics()` read. The
-   * presets operate on the **short bar word** (`"env"`): `label` stays the
-   * accessible-name identity, so `"icon-label"` paints `"env"` in the bar and
-   * `"Environment"` in the `⋮` menu. Use the exported `kindLabel(snapshot)` to
-   * paint the same value word the preset does rather than re-deriving it.
+   * This extension renders two button wrappers — the bar trigger and the `⋮`
+   * row (no `aria-expanded`) — both driven by this option identically; the
+   * fork is about the element, not the presentation.
    *
-   * This extension renders **two** button wrappers — the bar trigger and the
-   * `⋮` row, which carries no `aria-expanded` — and both are driven by this
-   * option identically; the fork is about the element, not the presentation.
+   * `render` supplies only the chip's children; state attributes, `title` and
+   * the `impersonating` marker stay the extension's. `name` overrides the
+   * `aria-label` on both wrappers; a whitespace-only return is ignored.
    *
-   * `render` supplies the children of the chip carrying `data-dtb-severity`
-   * and the dot, so the state attributes, `title` and the `impersonating`
-   * marker stay the extension's; returning `undefined` falls through to the
-   * preset. `name` overrides the `aria-label` on both wrappers, and a
-   * whitespace-only return is ignored.
-   *
-   * Nothing here reaches the store: the icon and the callbacks are held in
-   * this closure and passed as props, because a `ReactNode` cannot be signed
-   * and the environment store republishes on a signature change.
+   * Icon and callbacks are held in this closure and passed as props — a
+   * `ReactNode` cannot be signed into a store snapshot.
    *
    * `docs/adr/ADR-004-per-extension-bar-presentation.md`.
    */
@@ -125,13 +118,10 @@ export function environment(options: EnvironmentOptions = {}): DevToolbarExtensi
     detect,
     maskPii,
     redactOptions,
-    // Named here rather than read off `options` for the same reason the rest
-    // are: an icon or a callback has no business reaching the runtime.
     presentation: presentationOption,
   } = options;
 
-  // Resolved once, here, rather than per render: this is the closure the icon
-  // and the callbacks live in, exactly as `label` and `injectStyles` do.
+  // Resolved once, in the closure the icon and callbacks live in.
   const presentation = resolvePresentation(presentationOption);
 
   // Built here, not in start(api): slot functions run before any effect fires.

@@ -71,26 +71,17 @@ export interface MetricsOptions {
   styleNonce?: string;
   /**
    * How the bar control presents itself: a preset, your own icon, a render
-   * callback and an accessible-name override. A bare preset is the shorthand —
+   * callback and an accessible-name override. Bare-preset shorthand:
    * `presentation: "icon-value"`.
    *
-   * The callback knobs are invoked **once per metric per render**, in bar
-   * order, in the bar and in the `⋮` menu alike, and the `MetricView` they
-   * receive says which metric it is: `icon: (m) => ICONS[m.id]` needs no icon
-   * map. `render` supplies the children of the element carrying that metric's
-   * `data-dtb-metric` — the chip in the bar, the row `<button>` in the menu —
-   * so the state attributes and `title` stay the extension's; returning
-   * `undefined` falls through to the preset. `name` overrides the `aria-label`
-   * and is invoked with the first metric in bar order, since one trigger names
-   * the whole readout; a whitespace-only return is ignored. Return something
-   * that does not change with the metric's *value*: the `MetricView` carries
-   * `display`, so `(m) => \`Memory ${m.display}\`` renames the control on every
-   * publish and a screen reader re-announces it — the churn the comment on the
-   * trigger's `aria-label` in `ui.tsx` exists to avoid.
+   * Unlike the other extensions, the callback knobs run once per metric per
+   * render — the `MetricView` passed in says which one, so
+   * `icon: (m) => ICONS[m.id]` needs no separate map. `render` supplies only
+   * the children of that metric's element; `name` is invoked with the first
+   * metric in bar order, since one trigger names the whole readout.
    *
-   * Nothing here reaches the store: the icon and the callbacks are held in this
-   * closure and passed as props, because a `ReactNode` cannot be signed and the
-   * metrics store republishes on a signature change.
+   * Icon and callbacks are held in this closure and passed as props — a
+   * `ReactNode` cannot be signed into a store snapshot.
    *
    * `docs/adr/ADR-004-per-extension-bar-presentation.md`.
    */
@@ -128,8 +119,7 @@ export function metrics(options: MetricsOptions = {}): DevToolbarExtension {
     styleNonce: optionNonce,
   } = options;
 
-  // Resolved once, here, rather than per render: this is the closure the icon
-  // and the callbacks live in, exactly as `label` and `injectStyles` do.
+  // Resolved once, in the closure the icon and callbacks live in.
   const presentation = resolvePresentation(options.presentation);
 
   const custom = new Map<CollectorId, Collector>();

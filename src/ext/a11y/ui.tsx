@@ -31,12 +31,11 @@ import type { A11yRuntime } from "./runtime";
  * and the commands return, so the panel and an agent see identical, equally
  * masked facts.
  *
- * `presentation` arrives already resolved and is read through `/kit`'s
- * `resolveCompactControl` and `renderCompact`, so the resolution rules live in
- * one place for all nine extensions. What stays here is the DOM: a consumer's
- * `render` supplies the children of the chip carrying `data-dtb-status`, and
- * `Chip` paints the dot before them, so no callback can cost the control its
- * state attributes or its dot.
+ * `presentation` arrives already resolved and is read via `/kit`'s
+ * `resolveCompactControl` and `renderCompact`, so resolution rules live in one
+ * place for all nine extensions. What stays here is the DOM: `render`
+ * supplies the chip's children, and `Chip` paints the dot before them, so no
+ * callback can cost the control its state attributes or its dot.
  */
 
 const box = (rect: RectLike): CSSProperties => ({
@@ -62,28 +61,20 @@ const chipSeverity = (report: A11yReport) => {
 };
 
 /**
- * The short word the bar paints, and the reason there is one.
- *
- * `label` is the extension's identity — the error chip, the panel's accessible
- * name, the `⋮` row — and it is too long for the bar, so the bar has always
- * painted this instead. Presets operate on *this* word; `label` stays the
- * overflow and accessible-name identity, which is what makes the text axis
- * `"none" | "short" | "full"` rather than a boolean
+ * The short bar word. `label` is the extension's full identity (error chip,
+ * panel name, `⋮` row) and too long for the bar. Presets operate on this word
+ * instead; `label` stays the overflow and accessible-name identity — why the
+ * text axis is `"none" | "short" | "full"`, not a boolean
  * (`plans/bar-presentation-icons-v1.md`, "Which text").
  */
 const SHORT_LABEL = "a11y";
 
 /**
- * Today's tree, expressed as parts.
- *
- * `resolveCompactControl` answers the preset's parts, or these when the preset
- * is `"default"` — handed in rather than known to kit, because `"default"`
- * means *whatever this extension renders today* and that differs across the
- * nine. a11y's default is exactly expressible as parts (short word plus value
- * in the bar, full label plus value in the `⋮` menu, no icon in either), so
- * "the default output is byte-identical" is a structural property rather than
- * a claim — and the hand-rolled `isOverflowed ? label : "a11y"` swing this
- * chip used to write by hand is now just `parts.text`.
+ * Today's tree, expressed as parts. `resolveCompactControl` returns these when
+ * the preset is `"default"` — handed in rather than known to kit, since
+ * `"default"` means *whatever this extension renders today*, and that differs
+ * per extension. Being exactly expressible as parts is what makes "default
+ * output is byte-identical" structural rather than a claim.
  */
 const DEFAULTS: CompactDefaults = {
   bar: { icon: false, text: "short", value: true },
@@ -91,15 +82,12 @@ const DEFAULTS: CompactDefaults = {
 };
 
 /**
- * The icon and the text.
- *
- * These are the chip's *children* rather than `Chip`'s `icon` / `label` /
- * `value` slots, and the reason is recorded in
- * `docs/adr/ADR-004-per-extension-bar-presentation.md`. `Chip` renders its
- * children straight after the dot, in the slots' own position, so nothing
- * about the surrounding output moves. The fragment itself is kit's
- * `renderCompactParts` — six extensions wrote it identically once the text
- * span was named here, so it is one function now.
+ * The icon and the text, as the chip's children rather than `Chip`'s
+ * `icon`/`label`/`value` slots
+ * (`docs/adr/ADR-004-per-extension-bar-presentation.md`). `Chip` renders
+ * children right after the dot, in the slots' own position. The fragment is
+ * kit's `renderCompactParts` — shared now that six extensions wrote it
+ * identically.
  */
 function iconAndText(label: string, parts: CompactParts, icon: ReactNode): ReactNode {
   return renderCompactParts({
@@ -108,10 +96,9 @@ function iconAndText(label: string, parts: CompactParts, icon: ReactNode): React
     iconProps: { "data-dtb-part": "a11y-icon" },
     short: SHORT_LABEL,
     full: label,
-    // `data-dtb-part` only. The kit's `[data-dtb-kind="label"]` rule tints a
-    // labelled span with `--dtb-muted`; this chip has never been tinted, and
-    // whether it should be is a visual decision, not a side effect of naming
-    // the span.
+    // `data-dtb-part` only — `[data-dtb-kind="label"]` tints with
+    // `--dtb-muted`, and this chip has never been tinted; that's a separate
+    // visual decision, not a side effect of naming the span.
     textProps: { "data-dtb-part": "a11y-label" },
   });
 }
@@ -159,18 +146,12 @@ export function A11yChip({
       type="button"
       data-dtb-part="trigger"
       aria-expanded={isPanelOpen}
-      // WCAG 2.5.3 Label in Name: the bar paints `SHORT_LABEL`, so the name has
-      // to contain that word for a speech-input user saying what they see. It
-      // leads with `label` rather than with the abbreviation because a screen
-      // reader reads "a11y" as "a eleven y", while speech-input matching only
-      // needs containment — and `label` is what the `⋮` row paints, which
-      // `${label} (${SHORT_LABEL})` contains too. A consumer-configured `label`
-      // keeps working: `Axe (a11y)`.
-      // `presentation.name` overrides it, and a whitespace-only override is
-      // ignored so no override can leave the trigger unnamed — which is what
-      // this extension would flag on the toolbar's own bar. `title` explains
-      // the state and, with no `aria-describedby` here, is what a browser
-      // reads as the description; it does not name, so it is not overridable.
+      // The name contains the bar's visible word for WCAG 2.5.3 Label in Name.
+      // It leads with `label` because a screen reader reads "a11y" as "a
+      // eleven y", while speech-input matching only needs containment.
+      // `presentation.name` overrides this; a whitespace-only override is
+      // ignored so the trigger is never left unnamed. `title` explains, it
+      // does not name, so it's not overridable.
       aria-label={resolveAccessibleName(
         presentation.name,
         report,

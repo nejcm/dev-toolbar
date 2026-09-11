@@ -89,26 +89,18 @@ export interface OverlaysOptions extends Omit<
    * callback and an accessible-name override. A bare preset is the shorthand —
    * `presentation: "icon-value"`.
    *
-   * One control, so each knob is invoked once per render, in the bar and in the
-   * `⋮` menu alike, with the same `OverlaysSnapshot` the panel and the overlay
-   * surface read — which layers are on, the hover target, the focus scan and
-   * any error. The presets operate on the **short bar word** (`"overlays"`):
-   * `label` stays the overflow and accessible-name identity, so `"icon-label"`
-   * paints `"overlays"` in the bar and `"Overlays"` in the menu.
+   * One control, invoked with the same `OverlaysSnapshot` the panel reads.
+   * Presets operate on the short bar word (`"overlays"`); `label` stays the
+   * overflow and accessible-name identity.
    *
-   * **The error tag is not yours to restyle.** It sits outside both the preset
+   * The error tag is not yours to restyle: it renders outside both the preset
    * and `render`, after the contents, under every preset including `"icon"` —
-   * a measurement that threw switched every overlay off, and that is state
-   * rather than presentation. `render` supplies the children of the chip
-   * carrying `data-dtb-active` and the dot, so the state attributes,
-   * `aria-expanded` and `title` stay the extension's; returning `undefined`
-   * falls through to the preset. `name` overrides the `aria-label`, and a
-   * whitespace-only return is ignored. Prefer a name that does not change with
-   * the *count* — `(s) => \`Overlays ${s.activeCount}\`` renames the control on
-   * every toggle and a screen reader re-announces it.
-   *
-   * Nothing here reaches the store: the icon and the callbacks are held in this
-   * closure and passed as props, because a `ReactNode` cannot be signed.
+   * a measurement that threw switching every overlay off is state, not
+   * presentation. `render` supplies the children of the chip carrying
+   * `data-dtb-active` and the dot; returning `undefined` falls through to the
+   * preset. `name` overrides the `aria-label` (a whitespace-only return is
+   * ignored) — prefer one that doesn't change with the count, or a screen
+   * reader re-announces the control on every toggle.
    *
    * `docs/adr/ADR-004-per-extension-bar-presentation.md`.
    */
@@ -130,15 +122,14 @@ export function overlays(options: OverlaysOptions = {}): DevToolbarExtension {
     keepMounted = false,
     injectStyles = true,
     styleNonce: optionNonce,
-    // Destructured out rather than read off `options`: everything this factory
-    // does not name is spread into `createOverlaysRuntime` below, and an icon
-    // or a callback has no business reaching the runtime.
+    // Destructured out so it isn't part of the ...runtimeOptions spread below —
+    // an icon or callback has no business reaching the runtime.
     presentation: presentationOption,
     ...runtimeOptions
   } = options;
 
-  // Resolved once, here, rather than per render: this is the closure the icon
-  // and the callbacks live in, exactly as `label` and `injectStyles` do.
+  // Resolved once, here, in the factory closure — where the icon and the
+  // callbacks live, same as `label` and `injectStyles`.
   const presentation = resolvePresentation(presentationOption);
 
   // Built here, not in start(api): slot functions run during the toolbar's

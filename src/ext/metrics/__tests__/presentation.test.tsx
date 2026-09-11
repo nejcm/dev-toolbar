@@ -1,31 +1,15 @@
 /**
  * `/ext/metrics`' `presentation` option, against the real shell.
  *
- * Metrics is the hardest of the nine — N controls inside one trigger, a wholly
- * different tree in the `⋮` menu, and a function `icon` so no icon map is
- * needed — so this is where the vocabulary is proved before the other eight
- * consume it.
+ * Metrics is the hardest of the nine — N controls inside one trigger, a
+ * different tree in the `⋮` menu, and a function `icon` needing no icon map.
  *
- * Four things are pinned here that nothing else pins:
- *
- * 1. **The default output is byte-identical** to what shipped before the
- *    option existed, in the bar *and* in the menu, as two literal strings.
- *    `resolveCompactParts` answering `null` for `"default"` is what makes that
- *    structural, but a string is what makes it evidence.
- * 2. **A preset changes text, not state.** `data-dtb-part`,
- *    `data-dtb-metric`, `data-dtb-severity` and the dot are asserted under
- *    every preset, including the icon-only one that paints no text at all.
- * 3. **A `⋮` row under `"icon"`, `"icon-label"` or `"label"` has no value.**
- *    The overflow rule forces *text*, not the value, so those rows lose the
- *    readout today's default row paints. That is intended — pinned so it reads
- *    as a decision rather than surfacing later as a regression.
- * 4. **The dot survives `render` in both places.** It is `Chip`'s in the bar
- *    and `Chip`'s in the `⋮` row, so a callback supplies the chip's children
- *    and never the dot — the same shape the five Group A chips have. Asserted
- *    in both places, because it once held only in the bar and a refactor could
- *    flip either half silently.
- * 5. **A `name` override reaches a `⋮` row.** One override per control: the
- *    bar button is one control naming N metrics, a row *is* one metric.
+ * Pinned here specifically: default output is byte-identical in both the bar
+ * and the menu; a preset changes text, not state (asserted under every
+ * preset, icon-only included); a `⋮` row under `"icon"`/`"icon-label"`/
+ * `"label"` loses its value since the overflow rule only forces text; the dot
+ * survives `render` in both places (it once held only in the bar); and a
+ * `name` override reaches each `⋮` row individually, not just the trigger.
  *
  * [dev-toolbar/plans/bar-presentation-icons-v1 §3]
  */
@@ -50,12 +34,8 @@ const memoryRead = () => ({
 });
 
 /**
- * One metric, so the trees below are short enough to read as literals.
- *
- * It tears down whatever is already mounted first: several tests here compare
- * two presentations of the same extension, and the testing helpers query the
- * document rather than one root, so a leftover toolbar answers for the new one
- * and `resize()` appears not to collapse anything.
+ * One metric, so the trees below are short enough to read as literals. Tears
+ * down first: the testing helpers query the document, not one root.
  */
 const mount = (options: MetricsOptions = {}) => {
   cleanupToolbar();
@@ -109,19 +89,13 @@ const ICON = (
 afterEach(cleanupToolbar);
 
 describe("the default presentation", () => {
-  // The markup that shipped before `presentation` existed, plus the two
-  // accessible-name repairs that followed it — the `aria-label`, and the
-  // generated `id` on each of the label and value spans the trigger's
-  // `aria-describedby` names. Regenerate it only against a deliberate,
-  // documented change to metrics' bar DOM: every consumer's CSS and every
-  // Playwright selector reads these attributes.
-  //
-  // The three `#`s are generated-id *values*, canonicalised by
-  // `canonicaliseIds` — `useId()`'s format differs between React 18 and 19 and
-  // the peer range is `react: ">=18"`, so a literal carrying one would be
-  // unportable. The attributes themselves stay pinned, so losing the `id` or
-  // the `aria-describedby` still fails here; that the one resolves to the other
-  // is asserted separately, under "the description".
+  // The exact markup that shipped before `presentation` existed, plus the
+  // accessible-name repairs that followed: the `aria-label`, and the generated
+  // `id` on each label and value span the trigger's `aria-describedby` names.
+  // Regenerate only by capture, never by hand. The `#`s are those generated id
+  // values, canonicalised by `canonicaliseIds` because `useId()`'s format
+  // differs between React 18 and 19 and the peer range is `react: ">=18"`; the
+  // attributes themselves stay pinned.
   const DEFAULT_TRIGGER =
     '<button type="button" data-dtb-part="trigger" aria-expanded="false"' +
     ' aria-label="Metrics: mem" aria-describedby="#"' +
@@ -159,8 +133,7 @@ describe("the default presentation", () => {
   it('is what an explicit "default" and a bare icon both resolve to', () => {
     const { toolbar } = mount({ presentation: { preset: "default", icon: ICON } });
     const trigger = toolbar.item("metrics")?.querySelector('[data-dtb-part="trigger"]');
-    // An icon with no preset that paints it does nothing — the four knobs are
-    // meaningless apart, which is why they are one option.
+    // An icon with no preset that paints it does nothing.
     expect(canonicaliseIds(trigger?.outerHTML ?? "")).toBe(DEFAULT_TRIGGER);
     expect(canonicaliseIds(overflowRow({ presentation: "default" }).outerHTML)).toBe(
       DEFAULT_OVERFLOW_ROW,
@@ -178,9 +151,8 @@ interface PresetRow {
   bareBar: { label: string | null; value: string | null };
 }
 
-// Every member of the preset union, in both places. Listing them as rows keyed
-// by preset is what keeps the "add a test, don't lower the floor" rule honest:
-// the completeness check below fails if a member goes missing.
+// Every member of the preset union, in both places. The completeness check
+// below fails if a member goes missing.
 const PRESETS: readonly PresetRow[] = [
   {
     preset: "default",
@@ -191,8 +163,7 @@ const PRESETS: readonly PresetRow[] = [
   {
     preset: "icon",
     bar: { icon: true, label: null, value: null },
-    // Guarantee 2 forces text in the menu — and only text, so the row loses
-    // the value the default row paints. See (3) in the docblock.
+    // Guarantee 2 forces text in the menu, so the row loses the value.
     menu: { icon: true, label: "Memory", value: null },
     // Guarantee 1: an icon-only preset with no icon paints text, never nothing.
     bareBar: { label: "mem", value: null },
@@ -334,8 +305,7 @@ describe("the render callback", () => {
 
     const chip = barChip({ presentation: { preset: "icon-value", icon: ICON, render } });
     expect(text(chip, "metrics-custom")).toBe("48 MB used");
-    // The consumer's node replaces the parts, not the chip: the dot and the
-    // state attributes are not theirs to lose.
+    // Replaces the parts, not the chip — the dot and state attributes aren't theirs to lose.
     expect(chip.querySelector('[data-dtb-part="metrics-dot"]')).not.toBeNull();
     expect(chip.getAttribute("data-dtb-metric")).toBe("memory");
     expect(text(chip, "metrics-value")).toBeNull();
@@ -344,35 +314,22 @@ describe("the render callback", () => {
     expect(contexts[0]?.isPanelOpen).toBe(false);
     expect(contexts[0]?.icon).toBe(ICON);
 
-    // Honoured in the ⋮ menu too — ADR-004's deliberate deviation from the
-    // "always paint text" guarantee, with `isOverflowed` as the hook.
+    // Honoured in the ⋮ menu too — ADR-004's deliberate deviation from "always paint text".
     const row = overflowRow({ presentation: { render } });
     expect(text(row, "metrics-custom")).toBe("48 MB used");
-    // **No asymmetry.** The dot is `Chip`'s in the `⋮` row exactly as it is in
-    // the bar (asserted above) and in the five Group A chips: a callback
-    // supplies the chip's children, and the dot is severity — state, not text.
-    // This once read `toBeNull()`, when metrics was the only converted
-    // extension and the whole chip sat inside the replaceable content; with
-    // eight more built the other way the inconsistency was the defect, not the
-    // model. A preset changes text, not state, and neither does a callback.
+    // No asymmetry: the dot stays outside the callback's reach here too — a
+    // preset changes text, not state, and neither does a callback. This once
+    // read `toBeNull()` when metrics was the only converted extension; the
+    // other eight are built this way, so the inconsistency was the defect.
     expect(row.querySelector('[data-dtb-part="metrics-dot"]')).not.toBeNull();
     expect(row.getAttribute("data-dtb-severity")).toBe("ok");
-    // The row's value span sits *outside* the chip — where it has always sat,
-    // so the dot and the severity attributes stay out of the callback's reach —
-    // but `render` still owns icon, text and value, here as in the bar (the
-    // `toBeNull()` above). Painting it anyway would duplicate the readout for
-    // the most ordinary callback there is: this one, whose row would read
-    // "48 MB used48 MB".
+    // The value span sits outside the chip but `render` still owns it, as in
+    // the bar — painting it too would duplicate the readout ("48 MB used48 MB").
     expect(text(row, "metrics-value")).toBeNull();
     expect(row.textContent).toBe("48 MB used");
-    // Recording, not endorsing: with no `name` override metrics' `⋮` rows carry
-    // no `aria-label` of their own — they are named by their content, with
-    // `title` as the fallback, because naming a row "Memory" would replace the
-    // announced "Memory 48 MB". So this row, whose callback painted `<b>` text,
-    // is named by that text; a callback painting an icon alone would leave it
-    // named by `title` only. That is the sharp edge ADR-004's deviation section
-    // records; whether these rows should be named *by default* is a separate
-    // decision, still open. A consumer's own `name` is honoured — see below.
+    // With no `name` override, a `⋮` row carries no `aria-label` of its own —
+    // it's named by its content (naming rows by default is a separate, open
+    // decision — ADR-004). A consumer's own `name` is honoured — see below.
     expect(row.getAttribute("aria-label")).toBeNull();
     expect(contexts.at(-1)?.isOverflowed).toBe(true);
   });
@@ -380,17 +337,13 @@ describe("the render callback", () => {
   it("falls through to the preset when it returns undefined", () => {
     const render = vi.fn(() => undefined);
     const chip = barChip({ presentation: { preset: "icon-label", icon: ICON, render } });
-    // Once per metric *per render pass*: one metric, and no publish lands
-    // between mount and this line. It is not a once-per-mount guarantee.
+    // Once per metric per render pass, not once per mount.
     expect(render).toHaveBeenCalledTimes(1);
     expect(icons(chip)).toBe(1);
     expect(text(chip, "metrics-label")).toBe("mem");
 
-    // And in the `⋮` menu the fall-through restores the value span the row
-    // drops for a callback that painted: the row's default readout is back,
-    // once, because `renderCompact` handed back the very `fallback` reference
-    // the row built. Nothing else in the vocabulary would notice if this
-    // stopped being reference-identity, so it is asserted through the DOM.
+    // In the `⋮` menu, falling through restores the value span the row would
+    // otherwise drop for a callback that painted.
     const row = overflowRow({ presentation: { render } });
     expect(text(row, "metrics-value")).toBe("48 MB");
     expect(row.textContent).toBe("Memory48 MB");
@@ -405,8 +358,6 @@ describe("the render callback", () => {
         render: (_view: MetricView, ctx: CompactRenderContext) => ctx.fallback,
       },
     });
-    // One construction, handed out as `fallback` and rendered as the preset —
-    // so deferring is exact by construction rather than by careful mimicry.
     expect(canonicaliseIds(deferred.outerHTML)).toBe(canonicaliseIds(presetOnly.outerHTML));
 
     const menuPresetOnly = overflowRow({ presentation: { preset: "icon", icon: ICON } });
@@ -470,9 +421,7 @@ describe("the accessible-name override", () => {
     toolbar.resize(60);
     toolbar.openOverflow();
     const rows = [...(toolbar.overflowMenu()?.querySelectorAll("[data-dtb-metric]") ?? [])];
-    // The bar button resolved it against the first metric; a row resolves it
-    // against its own. Losing the override the moment the control collapsed is
-    // what this pins against.
+    // The bar button resolves the override against the first metric; a row against its own.
     expect(rows.map((row) => row.getAttribute("aria-label"))).toEqual([
       "Perf: memory",
       "Perf: jank",
@@ -481,8 +430,6 @@ describe("the accessible-name override", () => {
   });
 
   it("leaves a ⋮ row unnamed when the override says nothing", () => {
-    // No `aria-label` at all rather than an empty one: these rows are named by
-    // their content today, and ADR-004 leaves naming them outright open.
     expect(
       overflowRow({ presentation: { name: () => "  " } }).getAttribute("aria-label"),
     ).toBeNull();
@@ -490,8 +437,7 @@ describe("the accessible-name override", () => {
   });
 
   it("keeps the configured label when there is no metric to name from", () => {
-    // No collectors at all, so no `MetricView` exists to invoke the override
-    // with. The trigger is still a button, and still has to have a name.
+    // No collectors, so no `MetricView` to invoke the override with.
     const name = vi.fn(() => "never");
     const { toolbar } = mount({ only: [], label: "Perf", presentation: { name } });
     const trigger = toolbar.item("metrics")?.querySelector('[data-dtb-part="trigger"]');
@@ -501,11 +447,9 @@ describe("the accessible-name override", () => {
 });
 
 describe("an icon that paints nothing", () => {
-  // The ordinary callback that used to break the control: a `&&` guard returns
-  // `false`, not `undefined`. React paints nothing for `false`, so a presence
-  // test that accepted it left `preset: "icon"` suppressing the text *and*
-  // painting an empty glyph — a blank chip, which is the exact hole guarantee 1
-  // exists to close.
+  // A `&&` guard returns `false`, not `undefined`; React paints nothing for
+  // `false`, so a naive presence check would leave an empty glyph and no text
+  // — the blank chip guarantee 1 exists to close.
   it.each([
     ["false, from a && guard", false],
     ["true", true],
@@ -537,12 +481,7 @@ describe("an icon that paints nothing", () => {
 });
 
 describe("a callback that throws", () => {
-  /**
-   * Every consumer callback runs inside this extension's own render, which the
-   * shell hosts beneath an `ExtensionBoundary` — so a throw degrades this
-   * extension's slot and nothing else. Nothing pinned that until now, and "the
-   * bar survives" is the whole reason the boundary exists.
-   */
+  /** Every consumer callback runs inside this extension's own `ExtensionBoundary`. */
   const other = () =>
     makeExtension({
       id: "bystander",
@@ -573,23 +512,18 @@ describe("a callback that throws", () => {
     ["name", { name: boom }],
   ])("degrades only this extension's slot when %s throws", (_which, presentation) => {
     const { toolbar } = mountWith({ presentation });
-    // The bar is still mounted, and the other extension is untouched.
     expect(toolbar.bar()).not.toBeNull();
     expect(toolbar.item("bystander")?.textContent).toBe("bystander");
-    // Metrics' own slot is replaced by the shell's error chip — an operable,
-    // named retry button carrying the thrown message as its `title`, not a hole.
+    // Metrics' slot is replaced by the shell's error chip, not a hole.
     const chip = toolbar.errorChip("metrics");
     expect(chip?.getAttribute("title")).toBe("consumer callback blew up");
     expect(chip?.querySelector('[data-dtb-part="error-retry"]')?.getAttribute("aria-label")).toBe(
       "Metrics: error. Retry",
     );
-    // And the throw took the slot, not the whole extension's item.
     expect(toolbar.item("metrics")?.querySelector('[data-dtb-part="trigger"]')).toBeNull();
 
-    // The retry is operable, not decorative: clicking it re-renders the slot,
-    // the callback throws again, and the chip comes back rather than the bar
-    // going down or the hole appearing on the second pass. Asserting the
-    // attribute alone would pass against a button wired to nothing.
+    // The retry is operable: clicking it re-renders, throws again, and the
+    // chip comes back rather than the bar going down.
     const retry = chip?.querySelector('[data-dtb-part="error-retry"]') as HTMLElement;
     fireEvent.click(retry);
     expect(toolbar.bar()).not.toBeNull();
