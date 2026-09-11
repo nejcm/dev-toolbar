@@ -90,12 +90,11 @@ afterEach(cleanupToolbar);
 
 describe("the default presentation", () => {
   // The exact markup that shipped before `presentation` existed, plus the
-  // accessible-name repairs that followed: the `aria-label`, and the generated
-  // `id` on each label and value span the trigger's `aria-describedby` names.
-  // Regenerate only by capture, never by hand. The `#`s are those generated id
-  // values, canonicalised by `canonicaliseIds` because `useId()`'s format
-  // differs between React 18 and 19 and the peer range is `react: ">=18"`; the
-  // attributes themselves stay pinned.
+  // accessible-name repairs since: the `aria-label`, and the generated `id`
+  // on each label/value span the trigger's `aria-describedby` names. The `#`s
+  // are those ids, canonicalised because `useId()`'s format differs between
+  // React 18 and 19 and the peer range is `react: ">=18"`. Regenerate only by
+  // capture, never by hand.
   const DEFAULT_TRIGGER =
     '<button type="button" data-dtb-part="trigger" aria-expanded="false"' +
     ' aria-label="Metrics: mem" aria-describedby="#"' +
@@ -536,16 +535,12 @@ describe("a callback that throws", () => {
 /**
  * The accessible name and the described readout, after the Label-in-Name fix.
  *
- * The trigger used to be named `"Metrics"` — the extension's identity and
- * nothing else — while the bar painted `mem 48 MB`. Two things were wrong with
- * that: a speech-input user saying "mem" matched nothing (WCAG 2.5.3), and
- * `aria-label` *replaces* content, so a screen-reader user heard `"Metrics"`
- * and never the numbers the chip exists to show. The name now carries the
- * collectors' short words and `aria-describedby` carries the numbers.
- *
- * The short words are the reason the name does not churn: every collector
- * hardcodes its `MetricView.label`, so this string is a function of the
- * configuration, not of the readout — the property the values would have cost.
+ * The trigger used to be named `"Metrics"` while the bar painted `mem 48 MB`:
+ * a speech-input user saying "mem" matched nothing (WCAG 2.5.3), and
+ * `aria-label` replaces content, so a screen reader never heard the numbers.
+ * The name now carries the collectors' hardcoded short words — a function of
+ * configuration, not readout, so it doesn't churn — and `aria-describedby`
+ * carries the numbers.
  */
 describe("the accessible name and the described readout", () => {
   const triggerOf = (options: MetricsOptions = {}): HTMLElement => {
@@ -592,11 +587,9 @@ describe("the accessible name and the described readout", () => {
 
   it("describes each painted metric as its label span then its value span", () => {
     const trigger = triggerOf({ only: ["memory", "delay"] });
-    // One control, N metrics, two spans each — so `aria-describedby` is a
-    // list, which is the shape only this extension needs. Two per metric is
-    // the decision: `aria-describedby` joins each target's computed name with
-    // a space, so pairing is what turns "48 MB NA" into "mem 48 MB delay NA".
-    // Measured in Chromium; the reasoning is at the call site in `ui.tsx`.
+    // One control, N metrics, two spans each: pairing label with value turns
+    // "48 MB NA" into "mem 48 MB delay NA". Measured in Chromium; reasoning
+    // at the call site in `ui.tsx`.
     expect(describedByIds(trigger)).toHaveLength(4);
     expect(describedBy(trigger), "a dangling aria-describedby").not.toContain(null);
     expect(describedBy(trigger).map((target) => target?.getAttribute("data-dtb-part"))).toEqual([

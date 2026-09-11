@@ -60,10 +60,9 @@ const DEFAULTS: CompactDefaults = {
  * construction in the bar and the `⋮` menu — only the value node differs, so
  * only it is written twice.
  *
- * `labelId` is the bar's alone: the trigger's `aria-describedby` names each
- * chip's label and value so the readout is announced paired, and an IDREF needs
- * an `id`. The `⋮` rows pass none — each row is one metric, named by its own
- * content.
+ * `labelId` is the bar's alone: the trigger's `aria-describedby` pairs each
+ * chip's label with its value, which needs an `id` to point at. The `⋮` rows
+ * pass none — each row is one metric, named by its own content.
  */
 function iconAndText(
   view: MetricView,
@@ -115,26 +114,20 @@ export function MetricsChips({
     styleNonce,
   );
 
-  // Ids for the value spans `aria-describedby` points at. Derived from
-  // `useId()` rather than from the extension id, following the convention
-  // `MetricsPanel` below already uses: two `<DevToolbar>` instances on one page
-  // are supported (`__DEV_TOOLBAR__.instances`), and an id built from the
-  // extension id alone would be duplicated across them — `aria-describedby`
-  // would then resolve to the *other* instance's span.
+  // Ids for the spans `aria-describedby` points at, from `useId()` (as
+  // `MetricsPanel` below already does) rather than the extension id — two
+  // `<DevToolbar>` instances on one page would otherwise share ids and
+  // `aria-describedby` would resolve to the other instance's span.
   const idPrefix = `dtb-metrics-${useId().replace(/:/g, "")}`;
   const valueId = (id: CollectorId) => `${idPrefix}-value-${id}`;
   const labelId = (id: CollectorId) => `${idPrefix}-label-${id}`;
 
   const named = snapshot.order[0];
-  // WCAG 2.5.3 Label in Name: the bar paints each collector's short word
-  // (`mem`, `net`), so a speech-input user saying what they see has to find it
-  // in the name. Those words are `MetricView.label`, which every collector
-  // hardcodes (`"mem"`, `"delay"`, `"jank"`, `"net"`; a custom collector falls
-  // back to its own id) — config-derived, never value-derived, so this name
-  // does not churn as the numbers move and does not re-speak on every focus.
-  // The *values* are not in the name for exactly that reason; they reach a
-  // screen reader through `aria-describedby` below instead. With no metrics at
-  // all there is no view and `label` stands alone.
+  // WCAG 2.5.3 Label in Name: the bar paints each collector's short, hardcoded
+  // word (`mem`, `net`), so the name must contain it. Being config-derived
+  // rather than value-derived, the name doesn't churn as the numbers move; the
+  // numbers themselves reach a screen reader through `aria-describedby`
+  // below. With no metrics there is no view, so `label` stands alone.
   const triggerName =
     named === undefined
       ? label
@@ -211,11 +204,8 @@ export function MetricsChips({
     );
   }
 
-  // Built above the tree rather than inside the map, because the button needs
-  // to know which value spans actually got painted before it can point at
-  // them. `renderCompact` returns *this* `fallback` reference when there is no
-  // callback, so `rendered === fallback` is exactly "the preset painted here" —
-  // the same test the `⋮` row above makes.
+  // Built above the tree, not inside the map, because the button needs to
+  // know which value spans got painted before it can point at them.
   const chips = snapshot.order.map((id) => {
     const view = metricView(snapshot, id);
     const control = resolveCompactControl(presentation, view, {
@@ -250,52 +240,13 @@ export function MetricsChips({
     return { id, view, control, fallback, rendered };
   });
 
-  // The readout the name deliberately does not carry. One control, N metrics,
-  // so this is a space-separated list — and it names each metric's *label span
-  // and then its value span* rather than the value spans alone, because
-  // `aria-describedby` joins each referenced element's computed name with a
-  // space and a bare sequence of numbers cannot be attributed to anything.
-  //
-  // Measured in Chromium (`Accessibility.getPartialAXTree`) against the real
-  // bar in `examples/playground`, with the kit stylesheet loaded and the
-  // playground's six collectors:
-  //
-  //   value spans alone       → "22 MB — — 0 1 ms 348 ms"
-  //   the `metrics-chip`s     → "mem 22 MB delay — jank — net 0 react 1 ms LCP 348 ms"
-  //   label + value, paired   → "mem 22 MB delay — jank — net 0 react 1 ms LCP 348 ms"   ← this
-  //
-  // Only the first option announces anything different. A chip is a flex
-  // container (`[data-dtb-kind="chip"] { display: inline-flex }`, `src/kit/
-  // css.ts`) and accname puts a space between flex-item children, so pointing
-  // at the chips and pointing at their label/value pairs are byte-identical
-  // utterances — an earlier round recorded `mem48 MB` for the middle option,
-  // which was an unstyled fixture, not this bar.
-  //
-  // So the measurement ranks the pairing against the bare numbers, and the
-  // choice between the two identical options is made on other grounds. The
-  // name (`Metrics: mem, delay, …`) does announce the same words immediately
-  // before, so a description that repeats them looks redundant, and the first
-  // round shipped the bare numbers. What the pairing buys is attribution the
-  // name cannot: matching a run of numbers against a list stated earlier in
-  // the same utterance is a working-memory task, and `—` for a collector this
-  // browser cannot support is not a number a user can place at all. The repo's
-  // "never say it twice" rule (`docs/styling.md`) is about the *readout*, and
-  // no readout is repeated here.
-  //
-  // Pointing at the chips instead needs no new ids, and is ruled out on
-  // behaviour rather than on what it announces: a chip is whatever the preset
-  // or a `render` callback painted, so the description would carry a
-  // consumer's own markup and would not be gated by the value span the way the
-  // pairing below is.
-  //
-  // The value span is what gates a chip's contribution, exactly as it did when
-  // the attribute pointed at values alone: a description exists to carry the
-  // readout, so a preset that paints no value (`"icon"`, `"icon-label"`,
-  // `"label"`) and a `render` callback that replaced the span contribute
-  // nothing — an id that dangles announces nothing, and a description of
-  // `"mem delay jank net"` would say the name back. The label id joins it only
-  // when a label actually painted, so `"icon-value"` falls back to the unpaired
-  // sequence: with no word on the bar there is none to point at.
+  // Pairs each chip's label id with its value id rather than pointing at
+  // values alone: a bare "22 MB — — 0" asks the listener to match numbers
+  // positionally against the name, and a collector this browser can't
+  // support has no number to place at all. Measured against the real bar in
+  // Chromium: pairing reads as "mem 22 MB delay — jank — net 0", the same
+  // utterance as pointing at the chips themselves, but gated by the value
+  // span rather than by whatever a `render` callback painted.
   const describedBy = chips
     .flatMap((chip) => {
       if (chip.rendered !== chip.fallback || !chip.control.parts.value) return [];
@@ -309,12 +260,11 @@ export function MetricsChips({
       type="button"
       data-dtb-part="trigger"
       aria-expanded={isPanelOpen}
-      // Identity plus the visible short words, never the numbers: WCAG 2.5.3
-      // needs the painted word inside the name, and a name that churned with
-      // the values would re-speak on every focus. The numbers are described
-      // instead, by the `aria-describedby` built above. `presentation.name`
-      // overrides the name, invoked with the first metric in bar order since
-      // one button names N metrics; with no metrics, `label` stands.
+      // Identity plus the visible short words, never the numbers (WCAG
+      // 2.5.3) — a name derived from the values would re-speak on every
+      // focus. The numbers are described instead, by the `aria-describedby`
+      // built above. `presentation.name` overrides this, invoked with the
+      // first metric in bar order; with no metrics, `label` stands.
       aria-label={triggerName}
       {...(describedBy === "" ? {} : { "aria-describedby": describedBy })}
       onClick={onToggle}

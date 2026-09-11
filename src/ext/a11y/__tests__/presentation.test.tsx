@@ -425,19 +425,16 @@ describe("the accessible-name override", () => {
 /**
  * The accessible name, after the Label-in-Name fix.
  *
- * The trigger used to be named `"Accessibility, pending"` while the bar painted
- * `a11y scan`. A speech-input user saying "a11y" matched nothing (WCAG 2.5.3).
- * The name is now `${label} (a11y)`.
+ * The trigger used to be named `"Accessibility, pending"` while the bar
+ * painted `a11y`, matching nothing for a speech-input user (WCAG 2.5.3). The
+ * name is now `${label} (a11y)`, leading with `label` because a screen reader
+ * reads "a11y" as "a eleven y" — the parenthesised form still contains the
+ * `⋮` row's full text.
  *
- * `label` leads: a screen reader reads "a11y" as "a eleven y", while
- * speech-input matching only needs containment. The parenthesised form also
- * contains the `⋮` row's visible text, which is the full `label`.
- *
- * No `aria-describedby` came with it. The visible `scan` is not in the name,
- * but the *status* it stands for is (`, pending`), and with no
- * `aria-describedby` a browser reads `title` as the description — which states
- * the state with more context than the span does. `docs/styling.md` states the
- * rule; `/ext/metrics` is the one chip that overrides it.
+ * No `aria-describedby` came with it: the status the visible `scan` stands
+ * for is already in the name (`, pending`), and with none, `title` is read as
+ * the description. `/ext/metrics` is the one chip that needs the attribute
+ * instead.
  */
 describe("the accessible name", () => {
   it("contains the short word the bar paints, led by the label", () => {
@@ -458,8 +455,8 @@ describe("the accessible name", () => {
 
   it("leaves the description to title rather than adding an aria-describedby", () => {
     const trigger = barTrigger();
-    // The name carries the status the span abbreviates, and `title` carries it
-    // again with more context — a browser uses `title` as the description when
+    // The name carries the status the span abbreviates; `title` repeats it
+    // with more context, and a browser reads `title` as the description when
     // nothing else supplies one.
     expect(trigger.getAttribute("aria-label")).toContain("pending");
     expect(trigger.getAttribute("title")).toBe("Accessibility: click to scan this page");

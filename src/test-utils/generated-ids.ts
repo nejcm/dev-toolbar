@@ -1,25 +1,18 @@
 /**
  * Generated ids, and how a test may look at them. [dev-toolbar/test-utils]
  *
- * `aria-describedby` needs an `id` on the element it points at, and those ids
- * come from React's `useId()` — the convention `/ext/metrics`' panel already
- * follows, and the only one that stays correct with two `<DevToolbar>`
- * instances on one page (`__DEV_TOOLBAR__.instances`): an id derived from the
- * extension id alone would be duplicated across them, and the IDREF would
- * resolve to the other instance's element.
+ * `aria-describedby` needs an `id` on its target, and those ids come from
+ * React's `useId()` (the convention `/ext/metrics`' panel already follows,
+ * since an id derived from the extension id would collide across two
+ * `<DevToolbar>`s on one page). `useId()`'s format differs between React 18
+ * and 19, and the peer range is `react: ">=18"`, so its value must never end
+ * up inside one of this repo's pinned DOM literals — `canonicaliseIds`
+ * rewrites just the *values* of `id` and `aria-describedby`, so a literal
+ * still fails when one goes missing, moves, or appears where it shouldn't.
  *
- * The cost is that a `useId()` value must never end up inside one of this
- * repo's pinned DOM literals. Its format differs between React 18 and 19 and
- * the peer range is `react: ">=18"`, so such a literal would pass on one and
- * fail on the other. `canonicaliseIds` is the answer: it rewrites the
- * *values* of `id` and `aria-describedby` and leaves the attributes
- * themselves in place, so a literal still fails when one goes missing, moves
- * or appears where it should not.
- *
- * What a canonicalised literal cannot catch is a *mismatch* — an
+ * What a canonicalised literal can't catch is a *mismatch* — an
  * `aria-describedby` pointing at an id nothing carries. `describedBy` and
- * `describedByIds` are for asserting that separately, which is the assertion
- * with the teeth.
+ * `describedByIds` assert that separately; that assertion has the teeth.
  *
  * Nothing under `src/test-utils/` is a published entrypoint (AGENTS.md).
  */

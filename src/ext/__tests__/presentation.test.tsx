@@ -64,9 +64,9 @@ interface BarCase {
  */
 const BAR_CASES: Record<string, BarCase> = {
   // `Accessibility (a11y)`, not `Accessibility`: the bar paints `a11y`, so
-  // WCAG 2.5.3 Label in Name needs that word inside the name. It leads with
-  // `label` because a screen reader reads "a11y" as "a eleven y", and the
-  // parenthesised form contains the `⋮` row's full text too.
+  // WCAG 2.5.3 needs that word in the name. `label` leads because a screen
+  // reader reads "a11y" as "a eleven y"; the parens still contain the `⋮`
+  // row's full text.
   a11y: { id: "a11y", make: () => a11y(), names: ["Accessibility (a11y), pending"] },
   agent: {
     id: "agent",
@@ -114,9 +114,9 @@ const BAR_CASES: Record<string, BarCase> = {
           }),
         },
       }),
-    // `Metrics: mem`, not `Metrics`: the bar paints `mem`, so WCAG 2.5.3 Label
-    // in Name needs that word inside the name. It is the collector's hardcoded
-    // short word, so the name does not churn with the readout.
+    // `Metrics: mem`, not `Metrics`: the bar paints `mem`, so WCAG 2.5.3 needs
+    // that word in the name. It's the collector's hardcoded short word, so
+    // the name doesn't churn with the readout.
     names: ["Metrics: mem"],
     // The `⋮` rows replace the trigger and are named by their own text, run
     // together since `accessibleName()` concatenates the chip's spans.
@@ -270,44 +270,26 @@ describe("first-party bar presentation", () => {
 /**
  * WCAG 2.5.3 Label in Name, and where the readout is announced from.
  *
- * Two claims, one per column of `NAME_CASES`:
+ * `NAME_CASES` checks two things per chip: the bar word is a substring of the
+ * accessible name (case-insensitive, the way speech input matches — `Metrics`
+ * and `Accessibility` didn't used to contain `mem`/`a11y`), and the readout
+ * reaches a screen reader from somewhere, since `aria-label` replaces an
+ * element's content rather than adding to it. Six chips already say it: with
+ * no `aria-describedby`, a browser reads `title` as the description, and each
+ * one's `title` states the readout with more context than its span does.
+ * Only `/ext/metrics` doesn't — its title (`Runtime performance — click for
+ * details`) carries no readout at all — which is why it alone gets an
+ * `aria-describedby`.
  *
- * 1. **The word the bar paints is inside the accessible name.** A speech-input
- *    user says what they can see, and a match is a substring match — so `env`
- *    inside `Environment` passes, while metrics' `Metrics` did not contain
- *    `mem` and a11y's `Accessibility` did not contain `a11y`. Those two names
- *    moved; the other five already passed and are pinned here so they cannot
- *    drift out.
- * 2. **The readout reaches a screen reader from somewhere.** `aria-label`
- *    *replaces* an element's content, so a chip whose name does not repeat its
- *    readout would leave a screen-reader user with no way to hear it — unless
- *    something else describes the control. Something else already does: with
- *    no `aria-describedby`, a browser uses `title` as the accessible
- *    description, and every chip here has one. So each case records *where*:
- *    the name (`Environment, staging`), the `title` (`Feature flags: 2 · 0
- *    locally overridden`, which says more than the `2` the span paints), or an
- *    explicit `aria-describedby`.
- *
- *    Only `/ext/metrics` needs the third. Its `title` is `Runtime performance
- *    — click for details` and carries no readout at all, which is asserted
- *    below rather than asserted about it — it is the whole reason that one chip
- *    overrides the default.
- *
- * `/ext/agent` and `/ext/command-menu` are absent on purpose: neither control
- * has a value, which is the same fact that narrows their `presentation` option
- * to `icon` and `name` (ADR-004, "Group C takes two knobs").
+ * `/ext/agent` and `/ext/command-menu` are absent: neither control has a
+ * value (ADR-004, "Group C takes two knobs").
  */
 interface NameCase {
   /** The word this chip paints in the bar. The accessible name must contain it. */
   barWord: string;
   /** What `aria-describedby` must announce, or `null` for a chip that gets none. */
   description: string | null;
-  /**
-   * For a chip with no description: where its readout is announced from
-   * instead — its accessible name, or the `title` a browser falls back to as
-   * the description. This is the evidence for the exclusion, not a restatement
-   * of it.
-   */
+  /** For a chip with no description: where its readout is announced instead. */
   readoutFrom?: "name" | "title";
   /** The visible readout, which must appear wherever `readoutFrom` says. */
   readout?: string;
@@ -342,12 +324,9 @@ const NAME_CASES: Record<string, NameCase> = {
   flags: { barWord: "flags", description: null, readoutFrom: "title", readout: "2" },
   metrics: {
     barWord: "mem",
-    // The one chip whose description is not the readout alone. Metrics paints
-    // N readouts inside one control, so its `aria-describedby` names each
-    // metric's label span *and* its value span — `aria-describedby` joins
-    // targets with a space, and a run of bare numbers cannot be attributed to
-    // anything. Why, and what the alternatives announce, is at the call site in
-    // `src/ext/metrics/ui.tsx` and in `docs/ext/metrics.md`.
+    // Metrics paints N readouts in one control, so its `aria-describedby`
+    // names each metric's label span and then its value span — a bare run of
+    // numbers can't be attributed to anything. See `src/ext/metrics/ui.tsx`.
     description: "mem 48 MB",
     bare: () =>
       metrics({
