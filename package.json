@@ -21,7 +21,7 @@
   "bugs": {
     "url": "https://github.com/nejcm/dev-toolbar/issues"
   },
-  "homepage": "https://github.com/nejcm/dev-toolbar#readme",
+  "homepage": "https://nejcm.github.io/dev-toolbar/",
   "type": "module",
   "sideEffects": [
     "*.css"
@@ -175,6 +175,10 @@
   "scripts": {
     "build": "tsup",
     "dev": "tsup --watch",
+    "docs": "bun run docs:dev",
+    "docs:dev": "vitepress dev docs",
+    "docs:build": "vitepress build docs",
+    "docs:preview": "vitepress preview docs",
     "playground": "cd examples/playground && bun run dev",
     "playground:install": "rm -rf examples/playground/node_modules/@nejcm && cd examples/playground && bun install",
     "playground:build": "cd examples/playground && bun run build",
@@ -194,6 +198,7 @@
     "size": "bun run build && node scripts/bundle-size.mjs",
     "verify:static": "bun run format:check && bun run typecheck && bun run lint && bun run knip && bun run build && bun run check:package",
     "verify": "bun run verify:static && bun run test",
+    "verify:docs": "bun run docs:build",
     "prepublishOnly": "bun run typecheck && bun run build",
     "prepare": "simple-git-hooks"
   },
@@ -229,6 +234,7 @@
     "simple-git-hooks": "^2.14.0",
     "tsup": "^8.5.1",
     "typescript": "^5.9.3",
+    "vitepress": "~1.6.4",
     "vitest": "^4.1.11"
   },
   "peerDependenciesMeta": {
