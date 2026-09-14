@@ -14,7 +14,7 @@ consumers have written code against.
 ## Format
 
 One file per decision, `ADR-<NNN>-<kebab-name>.md`, numbered in order and never
-renumbered. [`ADR-000-template.md`](./ADR-000-template.md) is the template — the
+renumbered. [`ADR-000-template.md`](https://github.com/nejcm/dev-toolbar/blob/main/docs/adr/ADR-000-template.md) is the template — the
 Nygard sections: Status, Context, Decision, Consequences.
 
 `Status` is one of:
@@ -45,3 +45,4 @@ Rules that matter more than the format:
 | [002](./ADR-002-light-dom.md) | The shell renders in the light DOM | Accepted |
 | [003](./ADR-003-contract-version-policy.md) | `CONTRACT_VERSION` compatibility policy | Proposed |
 | [004](./ADR-004-per-extension-bar-presentation.md) | Per-extension bar presentation | Accepted |
+| [005](./ADR-005-docs-site-over-the-docs-tree.md) | Build the documentation site over the docs tree | Accepted |

@@ -176,7 +176,7 @@ What it does, and all it does:
   `PanelSlotProps` — `height` in pixels, `close()`, `isActive`, `density`,
   `styleNonce`. The frame is a bare `<div data-dtb-part="embed-frame" data-dtb-embed>`
   with `height: 100%` and `min-height: 240px` (or `minHeight`), so a tool that fills its
-  container (`style={{ height: "100%" }}`) tracks the resizer without measuring, and
+  container (<code v-pre>style={{ height: "100%" }}</code>) tracks the resizer without measuring, and
   one that sizes itself from an auto-height parent does not collapse to nothing. When
   the panel is dragged shorter than the floor, the panel body scrolls the frame rather
   than crushing the tool. A tool that wants a number gets `height` and sizes itself.
