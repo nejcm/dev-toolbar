@@ -1,0 +1,85 @@
+name: Docs
+
+on:
+  pull_request:
+    paths:
+      - "docs/**"
+      - ".github/workflows/docs.yml"
+  # The landing page imports package metadata, so every main push can change published output.
+  push:
+    branches: [main]
+  # release.yml merges the version bump with `github.token`, and GitHub suppresses workflow triggers for
+  # pushes made with that token — so the release commit never reaches the `push` trigger above and the
+  # landing page's version badge would stay one release behind. Both release-please steps run under the
+  # PAT, so the release they publish does fire this. Checkout defaults to the release tag, i.e. the bump.
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+
+jobs:
+  # PR verification and deployment share one workflow while keeping Pages permissions deploy-only.
+  build:
+    name: build docs
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up job
+        uses: ./.github/actions/setup-job
+
+      # VitePress config is outside the root tsconfig; formatting, linting and the docs build cover it.
+      - name: Check formatting
+        run: bun run format:check
+
+      - name: Lint
+        run: bun run lint
+
+      - name: Verify docs
+        run: bun run verify:docs
+
+  deploy:
+    name: deploy docs
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    concurrency:
+      group: pages
+      # Only the newest main revision should reach Pages; stale deployments are safe to cancel.
+      cancel-in-progress: true
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up job
+        uses: ./.github/actions/setup-job
+
+      - name: Configure Pages
+        uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0
+
+      - name: Build docs
+        run: bun run docs:build
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
+        with:
+          path: docs/.vitepress/dist
+
+      - name: Deploy Pages
+        id: deployment
+        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1

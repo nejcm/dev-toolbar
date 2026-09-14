@@ -129,10 +129,10 @@ diagnostics shape is unchanged.
 ## Playground examples
 
 Both examples live **outside the published package**, in
-[`examples/playground/src/collectors`](../../examples/playground/src/collectors).
+[`examples/playground/src/collectors`](https://github.com/nejcm/dev-toolbar/blob/main/examples/playground/src/collectors).
 They add no factory exports or dependencies to `/ext/metrics`.
 
-- [`reactProfiler.ts`](../../examples/playground/src/collectors/reactProfiler.ts)
+- [`reactProfiler.ts`](https://github.com/nejcm/dev-toolbar/blob/main/examples/playground/src/collectors/reactProfiler.ts)
   returns `{ collector, onRender }`. The playground registers the collector fifth
   and wraps its app content in `<Profiler onRender={reactProfiler.onRender}>`.
   Each commit writes `actualDuration` and `baseDuration` into paired, bounded
@@ -140,7 +140,7 @@ They add no factory exports or dependencies to `/ext/metrics`.
   sits outside that subtree to avoid measuring its own updates. React's ordinary
   production build disables profiling; use a profiling build to collect there.
   [React Profiler reference](https://react.dev/reference/react/Profiler).
-- [`webVitals.ts`](../../examples/playground/src/collectors/webVitals.ts) registers
+- [`webVitals.ts`](https://github.com/nejcm/dev-toolbar/blob/main/examples/playground/src/collectors/webVitals.ts) registers
   sixth. Three buffered `PerformanceObserver` calls observe LCP, layout shifts
   and events. TTFB comes from Navigation Timing. The chip shows LCP; the panel and
   diagnostics also report CLS session maxima and an INP estimate grouped by

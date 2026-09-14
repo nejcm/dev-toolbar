@@ -1,7 +1,7 @@
 # API reference — `@nejcm/dev-toolbar`
 
 The root entry: what `<DevToolbar>` takes, what else the package exports, and every
-type it publishes. Start at the [README](../README.md) if you just want it mounted.
+type it publishes. Start at the [README](https://github.com/nejcm/dev-toolbar/blob/main/README.md) if you just want it mounted.
 
 ## Props
 
@@ -31,7 +31,7 @@ derived from it can never disagree about where preferences live. Changing either
 prop later is ignored; remount the toolbar (`key={instanceId}`) to move it.
 
 `classNames` is compared **field by field**, not by identity, so writing the object
-inline (`classNames={{ bar: "my-bar" }}`) is fine — it does not defeat the
+inline (<code v-pre>classNames={{ bar: "my-bar" }}</code>) is fine — it does not defeat the
 memoisation of the context value or of the overlay host.
 
 `visible` and `position` are controlled values. Their matching callbacks receive

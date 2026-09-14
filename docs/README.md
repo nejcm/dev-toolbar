@@ -1,6 +1,6 @@
 # Documentation
 
-Everything the [README](../README.md) links to, in one place.
+Everything the [README](https://github.com/nejcm/dev-toolbar/blob/main/README.md) links to, in one place.
 
 ## Using the package
 
@@ -38,12 +38,12 @@ Everything the [README](../README.md) links to, in one place.
 
 Each extension directory carries a README too — the developer's view of the same
 extension: the files in it, what it owns, the decisions that bite, and its
-commands. [`src/ext/README.md`](../src/ext/README.md) indexes all nine.
+commands. [`src/ext/README.md`](https://github.com/nejcm/dev-toolbar/blob/main/src/ext/README.md) indexes all nine.
 
 ## Working on the package itself
 
 | Document | What is in it |
 | --- | --- |
-| [../CONTRIBUTING.md](../CONTRIBUTING.md) | Setup, the one command that matters, commits, PRs, releases |
-| [../AGENTS.md](../AGENTS.md) | The repo map: which folder is which layer, and what may import what |
-| [../CHANGELOG.md](../CHANGELOG.md) | Every release, including each place the extension contract moved |
+| [Contributing guide](https://github.com/nejcm/dev-toolbar/blob/main/CONTRIBUTING.md) | Setup, the one command that matters, commits, PRs, releases |
+| [Agent instructions](https://github.com/nejcm/dev-toolbar/blob/main/AGENTS.md) | The repo map: which folder is which layer, and what may import what |
+| [Changelog](https://github.com/nejcm/dev-toolbar/blob/main/CHANGELOG.md) | Every release, including each place the extension contract moved |

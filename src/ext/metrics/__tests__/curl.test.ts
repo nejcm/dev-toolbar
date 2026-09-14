@@ -3,10 +3,13 @@
  * developer will paste into a shell. Its whole job is to be boring: method and
  * URL, redacted, quoted.
  */
-import { spawnSync } from "node:child_process";
+import { execFile, spawnSync } from "node:child_process";
+import { promisify } from "node:util";
 import { describe, expect, it } from "vitest";
 import { REDACTED } from "@nejcm/dev-toolbar/runtime";
 import { formatCurl } from "../curl";
+
+const execFileAsync = promisify(execFile);
 
 const entry = (url: string, method = "GET") => ({ method, url });
 
@@ -184,10 +187,24 @@ describe.skipIf(!curlAvailable)("the line, handed to curl itself", () => {
   const CONNECT_REFUSED = 7;
   const MALFORMED_URL = 3;
 
-  const run = (line: string) =>
-    spawnSync("sh", ["-c", `${line} --silent --show-error --max-time 5 --output /dev/null`], {
-      encoding: "utf8",
-    });
+  const PROBE = "--silent --show-error --max-time 5 --output /dev/null";
+
+  const run = (line: string) => spawnSync("sh", ["-c", `${line} ${PROBE}`], { encoding: "utf8" });
+
+  // Every line costs a process, and the sweeps below want dozens of them: run
+  // theirs at once, or they outgrow the test budget on a loaded machine.
+  const runAll = <T extends { line: string }>(cases: T[]) =>
+    Promise.all(
+      cases.map((probe) =>
+        execFileAsync("sh", ["-c", `${probe.line} ${PROBE}`], { encoding: "utf8" })
+          .then(({ stderr }) => ({ ...probe, status: 0, stderr }))
+          .catch((error: { code?: number; stderr?: string }) => ({
+            ...probe,
+            status: error.code,
+            stderr: error.stderr ?? "",
+          })),
+      ),
+    );
 
   it("parses a redacted URL, which is the line this feature exists to produce", () => {
     const line = formatCurl(entry("http://127.0.0.1:1/v1?access_token=s3cret"));
@@ -279,32 +296,30 @@ describe.skipIf(!curlAvailable)("the line, handed to curl itself", () => {
     },
   );
 
-  it("parses every control character, in the path, the query and the fragment", () => {
+  it("parses every control character, in the path, the query and the fragment", async () => {
     // 0x01–0x20 plus DEL, in the three positions the app controls. 0x00 is
     // excluded: an argument to `sh -c` cannot carry a NUL, so there is no line
     // to hand over.
     const codes = [...Array.from({ length: 0x20 }, (_, index) => index + 1), 0x7f];
-    const rejected: string[] = [];
-    for (const code of codes) {
-      const raw = String.fromCharCode(code);
-      for (const url of [
-        `http://127.0.0.1:1/p${raw}q`,
-        `http://127.0.0.1:1/v1?q=a${raw}b`,
-        `http://127.0.0.1:1/v1#f${raw}g`,
-      ]) {
-        const line = formatCurl(entry(url));
-        if (run(line).status !== CONNECT_REFUSED) rejected.push(line);
-      }
-    }
-    expect(rejected).toEqual([]);
+    const results = await runAll(
+      codes.flatMap((code) => {
+        const raw = String.fromCharCode(code);
+        return [
+          `http://127.0.0.1:1/p${raw}q`,
+          `http://127.0.0.1:1/v1?q=a${raw}b`,
+          `http://127.0.0.1:1/v1#f${raw}g`,
+        ].map((url) => ({ line: formatCurl(entry(url)) }));
+      }),
+    );
+    const rejected = results.filter(({ status }) => status !== CONNECT_REFUSED);
+    expect(rejected.map(({ line }) => line)).toEqual([]);
   });
 
   // Probed, not recalled: every printable ASCII character goes through the
   // platform parser and, if kept verbatim, through curl — pinning the exact
   // WHATWG-vs-curl gap (docs/ext/metrics.md) so either parser changing surfaces here.
-  it("rejects exactly the hostname characters WHATWG keeps and curl will not", () => {
-    const rejected: string[] = [];
-    const reached: string[] = [];
+  it("rejects exactly the hostname characters WHATWG keeps and curl will not", async () => {
+    const probes: { character: string; line: string }[] = [];
     for (let code = 0x21; code <= 0x7e; code += 1) {
       const character = String.fromCharCode(code);
       const recorded = `http://a${character}b.test:49152/v1`;
@@ -317,7 +332,17 @@ describe.skipIf(!curlAvailable)("the line, handed to curl itself", () => {
       // Otherwise the character moved elsewhere in the URL (`#`, `/`, `?`,
       // `@`) and is not a hostname question at all.
       if (hostname !== `a${character}b.test`) continue;
-      const { status, stderr } = run(formatCurl(entry(recorded)));
+      // `--resolve` is read after curl has judged the host, so it changes
+      // nothing here beyond refusing an accepted name locally rather than
+      // spending an uncacheable lookup off the machine on it.
+      probes.push({
+        character,
+        line: `${formatCurl(entry(recorded))} --resolve '*:49152:127.0.0.1'`,
+      });
+    }
+    const rejected: string[] = [];
+    const reached: string[] = [];
+    for (const { character, status, stderr } of await runAll(probes)) {
       if (status === MALFORMED_URL) {
         expect(stderr).toContain("Bad hostname");
         rejected.push(character);

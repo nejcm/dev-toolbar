@@ -4,6 +4,7 @@ An extensible, low-overhead in-app developer toolbar for React — a bottom bar 
 hosts *your* tools.
 
 [![npm](https://img.shields.io/npm/v/@nejcm/dev-toolbar.svg)](https://www.npmjs.com/package/@nejcm/dev-toolbar)
+[![docs](https://img.shields.io/badge/docs-site-b6f06a.svg)](https://nejcm.github.io/dev-toolbar/)
 [![license](https://img.shields.io/npm/l/@nejcm/dev-toolbar.svg)](./LICENSE)
 ![zero runtime dependencies](https://img.shields.io/badge/runtime%20deps-0-brightgreen)
 

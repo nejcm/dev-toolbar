@@ -188,7 +188,7 @@ back `{ ok: false, reason: "run-not-allowed" }`: a consumer who wanted reads get
 reporter, read routes, and no way to run anything.
 
 **The receiving half is not in this package.** It is the playground's own Vite plugin,
-[`examples/playground/plugins/devToolbarAgent.ts`](../../examples/playground/plugins/devToolbarAgent.ts),
+[`examples/playground/plugins/devToolbarAgent.ts`](https://github.com/nejcm/dev-toolbar/blob/main/examples/playground/plugins/devToolbarAgent.ts),
 deliberately a recipe to copy and adapt rather than a published `./vite` subpath: a
 bundler plugin inside a zero-dependency React library is a coupling this does not need
 until somebody asks for it. It serves

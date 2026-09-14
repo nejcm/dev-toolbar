@@ -660,7 +660,7 @@ nothing to copy" branch.
 A dot, an optional icon, an optional label, an optional value, and whatever `children`
 append. Each slot takes its own props so a site keeps its part names. The dot and value
 carry a `data-dtb-kind` by default; the label does not, because most sites leave it
-unstyled — pass `labelProps={{ "data-dtb-kind": "label" }}` to opt in, or
+unstyled — pass <code v-pre>labelProps={{ "data-dtb-kind": "label" }}</code> to opt in, or
 `"data-dtb-kind": undefined` on the others to opt out.
 
 `label`, `icon` and `value` are each optional, and `undefined | null` renders **nothing
@@ -747,7 +747,7 @@ See [Writing your own bar control](#writing-your-own-bar-control).
 
 **Why the guard is kit-side and not a specificity bump in core.** Not because a consumer
 would start losing: both sheets live in `@layer dev-toolbar`, and unlayered author CSS
-beats *any* layered rule regardless of specificity ([README](../README.md#styling),
+beats *any* layered rule regardless of specificity ([README](https://github.com/nejcm/dev-toolbar/blob/main/README.md#styling),
 [architecture](./architecture.md#light-dom-not-shadow-dom)), so core's number is invisible to
 anyone styling from outside the layer. The real reasons are three. Raising it would edit
 `src/styles.css` and `src/core/css.ts` — the byte-identity ritual — to fix a kit-side

@@ -9,5 +9,8 @@
     "src/**/*.test.{ts,tsx}",
     "scripts/*.mjs"
   ],
-  "project": ["src/**/*.{ts,tsx}", "scripts/**/*.mjs"]
+  "project": ["src/**/*.{ts,tsx}", "scripts/**/*.mjs"],
+  "vitepress": {
+    "entry": ["docs/.vitepress/config.ts", "docs/.vitepress/theme/index.ts"]
+  }
 }
