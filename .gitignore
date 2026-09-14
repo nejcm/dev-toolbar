@@ -16,9 +16,6 @@ docs/.vitepress/cache
 # Claude Code: machine-local permissions. .claude/launch.json is shared.
 .claude/settings.local.json
 
-# Working plans: local scratch, not part of the published package.
-plans/
-
 TODO.md
 
 # Verification evidence from .claude/skills/verify-dev-toolbar.
