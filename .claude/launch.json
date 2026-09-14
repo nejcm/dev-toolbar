@@ -6,6 +6,13 @@
       "runtimeExecutable": "sh",
       "runtimeArgs": ["-c", "cd examples/playground && bun run dev"],
       "port": 5273
+    },
+    {
+      "name": "docs",
+      "runtimeExecutable": "bun",
+      "runtimeArgs": ["run", "docs:preview", "--", "--port", "4173"],
+      "port": 4173,
+      "url": "http://localhost:4173"
     }
   ]
 }

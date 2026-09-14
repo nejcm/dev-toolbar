@@ -141,6 +141,28 @@ to destination`. Removing the copy first is what keeps a second install
 working. The files inside the copied `dist/` are symlinks back to the root, so
 the playground still reads whatever was last built.
 
+## Docs site
+
+VitePress builds the published documentation directly from `docs/`.
+
+```sh
+bun run docs:dev
+bun run verify:docs
+```
+
+The first command runs the local docs server. The second builds the site and fails on
+dead links. `docs/README.md` remains the repository index and serves at
+`/README.html`; it is deliberately not rewritten, because the `[Documentation index]`
+footers across `docs/` link to it as `./README.md` and a rewrite would point them at a
+route that is never emitted. Any `docs/<folder>/README.md` intended to serve at
+`/<folder>/` does need its own `<folder>/README.md` to `<folder>/index.md` rewrite in
+`docs/.vitepress/config.ts` — and no file under `docs/` may then link to that folder
+README by name.
+
+Keep links within `docs/` relative. A link from `docs/` to a file elsewhere in the
+repository must use an absolute `https://github.com/nejcm/dev-toolbar/blob/main/…`
+URL, because VitePress cannot resolve a relative link outside its source root.
+
 ## Commits
 
 Commit messages follow [Conventional Commits](https://www.conventionalcommits.org).

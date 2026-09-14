@@ -120,7 +120,7 @@ jobs:
   # 2. The only CI the release commit gets — ci.yml skips it as a PR and has no push trigger, so this is what verifies the version bump before it reaches npm. Relies on ci.yml's `workflow_call` and the `chore(release):` marker (see CONTRIBUTING.md, "Releasing"); don't remove either.
   #
   # It runs the *whole* of CI, and that is deliberate even though a release commit touches only package.json, CHANGELOG.md and .release-please-manifest.json — `src/` is byte-identical to a commit CI already passed, so `unit` and `browser` re-prove nothing about the diff. Two things keep them here anyway:
-  #  - This repository is private on a plan without branch protection, so `main` accepts a direct push, and the `chore(release):` title marker lets a PR opt out of CI by name. Neither path is hypothetical enough to make this the one gate that trusts `main` was already verified.
+  #  - This repository has no branch protection, so `main` accepts a direct push, and the `chore(release):` title marker lets a PR opt out of CI by name. Neither path is hypothetical enough to make this the one gate that trusts `main` was already verified.
   #  - Since ci.yml split into parallel lanes the gate finishes in about the time its slowest lane takes, not the sum — the cost that would have justified trimming it is mostly gone.
   # If that first point ever stops being true (branch protection, required checks), skipping `unit` and `browser` here is the obvious saving.
   gate:
@@ -146,7 +146,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      # Mints the OIDC token that is npm's publish credential; auth itself is npmjs.com's trusted publisher config. No provenance is produced: npm attests only a public source repository, and this one is private.
+      # Mints the OIDC token that is npm's publish credential; auth itself is npmjs.com's trusted publisher config. The public repository makes provenance available, but enabling it is a separate release change.
       id-token: write
     timeout-minutes: 20
     steps:
@@ -196,6 +196,6 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile --ignore-scripts
 
-      # Lifecycle scripts stay on so prepublishOnly (typecheck && build) rebuilds dist/ at pack time, not from leftovers. No --provenance: provenance needs a public source repo, so nothing here is attested and the flag would not change that (see CONTRIBUTING, "How the first publish happened"). npm not `bun publish` — bun supports no OIDC (oven-sh/bun#18611).
+      # Lifecycle scripts stay on so prepublishOnly (typecheck && build) rebuilds dist/ at pack time, not from leftovers. No --provenance: enabling it is a separate PR with a real release behind it. npm not `bun publish` — bun supports no OIDC (oven-sh/bun#18611).
       - name: Publish to npm
         run: npm publish --access public

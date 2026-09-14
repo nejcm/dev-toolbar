@@ -26,9 +26,13 @@ The contract an extension is written against is the real public API.
 | `examples/playground/` | Vite app consuming the built package via `file:../..` | Vite, React | `dist/`, as a real consumer does |
 | `test/fixtures/jest-consumer/` | A real Jest 30 + CommonJS consumer of `dist/` | Jest, bun | `dist/`, as a CommonJS consumer does |
 | `test/fixtures/vite-consumer/` | The packed tarball through a default Vite dev server and its dependency optimizer, in Chromium | Vite, Playwright, bun | the tarball `bun pm pack` produces, as an npm consumer does |
-| `docs/` | The reference: one page per entry point and per first-party extension, plus `architecture.md` and the ADRs | Markdown | — |
+| `docs/` | The published reference: one page per entry point and per first-party extension, plus `architecture.md` and the ADRs | Markdown | — |
+| `docs/.vitepress/` | The GitHub Pages site config and theme over the existing `docs/` tree | VitePress | `docs/` |
 | `scripts/` | Repo tooling with no home in `src/`: currently the per-entrypoint size report | Plain ESM `.mjs`, no deps | `dist/`, `package.json` `exports` |
 | `.github/actions/` | Composite actions the workflows share: `setup-job`, `report-bundle-size`, `knip-check` | GitHub Actions | `.github/workflows/` |
+
+The `docs/` tree is published at <https://nejcm.github.io/dev-toolbar/> by
+`.github/workflows/docs.yml`.
 
 Each extension directory follows the same convention: `index.tsx` (the factory),
 `runtime.ts` (non-React logic), `ui.tsx`, `types.ts`, `css.ts`, `__tests__/`, and a
@@ -53,6 +57,8 @@ bun run lint                 # oxlint --max-warnings=0  (a ratchet, see below)
 bun run lint:fix             # oxlint --fix
 bun run format               # oxfmt — JS, TS and YAML
 bun run format:check         # oxfmt --check — first in `verify`, cheapest failure first
+bun run docs:dev             # VitePress docs server
+bun run verify:docs          # VitePress build and dead-link gate
 bun run test                 # vitest run
 bun run test:watch           # vitest
 bun run test:coverage        # vitest run --coverage — enforces the floors in vitest.config.ts
