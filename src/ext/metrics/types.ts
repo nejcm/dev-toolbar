@@ -118,14 +118,25 @@ export interface Collector {
   /** Why it is unsupported, when it is. */
   readonly unsupportedReason?: string;
   start(context: CollectorContext): void;
-  /** Aggregates the raw buffers into something renderable. Called per tick. */
+  /**
+   * Aggregates the raw buffers into something renderable. Called per tick, and
+   * the result is published by reference, so return plain data that is either
+   * built fresh or never mutated again. Mutate a view the runtime already
+   * published and the store compares that object against itself: the change
+   * never publishes on its own, and reaches the panel only when something else
+   * does. A class instance is compared by identity rather than walked, which
+   * cuts the same two ways — retained, it never publishes on its own; rebuilt
+   * each tick, it publishes every tick. A `detail` value that genuinely changes
+   * each tick — a live counter — is fine, and publishes at the tick rate.
+   */
   read(now: number): MetricView;
   /** History behind the sparkline. */
   readonly series: TimeSeries;
   reset(): void;
   /**
    * Rows for a metric whose detail is a table rather than a handful of
-   * label/value pairs. Only the network collector has one.
+   * label/value pairs. Only the network collector has one. Same ownership
+   * contract as `read()`: the array and its rows are published by reference.
    */
   entries?(now: number): readonly NetworkEntryView[];
   /** JSON-safe, redacted dump for "Copy diagnostic data". */

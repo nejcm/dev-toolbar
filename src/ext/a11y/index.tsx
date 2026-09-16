@@ -89,8 +89,8 @@ export interface A11yOptions extends A11yRuntimeOptions {
    * whitespace-only return is ignored) — prefer a name that doesn't change
    * with the report's `total`, or a screen reader re-announces it every scan.
    *
-   * A `ReactNode` cannot be signed, so the icon and callbacks live in this
-   * closure and travel as props, never into the a11y store's snapshot.
+   * The report is serialised for "copy" and for `diagnostics()`, so the icon and
+   * callbacks live in this closure and travel as props, never into the snapshot.
    *
    * `docs/adr/ADR-004-per-extension-bar-presentation.md`.
    */

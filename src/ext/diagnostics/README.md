@@ -104,9 +104,9 @@ preset and `render`, after the contents, under every preset including `"icon"`
 The parts go in as the kit `Chip`'s *children* rather than its
 `icon` / `label` / `value` slots, so `render` replaces them and never the
 `Chip` — the dot, `data-dtb-incomplete` and the `aria-label` are not a
-callback's to lose. Nothing configured here reaches the store: a `ReactNode`
-cannot be signed, so the icon and the callbacks stay in the factory closure and
-travel as props.
+callback's to lose. Nothing configured here reaches the store: this snapshot is
+`JSON.stringify`d into the report, which a React element does not survive, so the
+icon and the callbacks stay in the factory closure and travel as props.
 [ADR-004](../../../docs/adr/ADR-004-per-extension-bar-presentation.md).
 
 ## Tests

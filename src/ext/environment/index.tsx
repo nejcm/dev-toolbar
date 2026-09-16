@@ -90,8 +90,8 @@ export interface EnvironmentOptions extends Pick<
    * the `impersonating` marker stay the extension's. `name` overrides the
    * `aria-label` on both wrappers; a whitespace-only return is ignored.
    *
-   * Icon and callbacks are held in this closure and passed as props — a
-   * `ReactNode` cannot be signed into a store snapshot.
+   * Icon and callbacks are held in this closure and passed as props — a React
+   * element is not the plain data this store compares and serialises.
    *
    * `docs/adr/ADR-004-per-extension-bar-presentation.md`.
    */

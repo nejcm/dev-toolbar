@@ -58,8 +58,9 @@ metrics need no icon map), a `render` callback over `MetricView` and an
 accessible-name override. It resolves through `/kit`'s `resolveCompactControl`,
 so `"default"` is byte-identical to what shipped before the option existed and
 the `⋮` menu always paints the full title. Nothing configured here reaches the
-store — a `ReactNode` cannot be signed, so the icon and the callbacks stay in
-the factory closure and travel as props.
+store — the store compares the whole snapshot and `diagnostics()` serialises it,
+and a React element survives neither, so the icon and the callbacks stay in the
+factory closure and travel as props.
 [ADR-004](../../../docs/adr/ADR-004-per-extension-bar-presentation.md).
 
 ## Tests

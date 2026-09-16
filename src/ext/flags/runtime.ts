@@ -360,7 +360,7 @@ export function createFlagsRuntime(options: FlagsRuntimeOptions = {}): FlagsRunt
    * audiences, so "which entry won" isn't answerable from the key alone —
    * the index is published as {@link FlagView.promotedIndex} so `index.tsx`
    * can match the chosen entry's `presentation` rather than the wrong one's.
-   * A number is signable, which is what keeps it snapshot state at all.
+   * A number is plain data, which is what keeps it snapshot state at all.
    */
   const promotionFor = (key: string): { entry: PromotedFlag; index: number } | null => {
     const at = now();

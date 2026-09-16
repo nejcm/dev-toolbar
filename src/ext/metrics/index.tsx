@@ -80,8 +80,8 @@ export interface MetricsOptions {
    * the children of that metric's element; `name` is invoked with the first
    * metric in bar order, since one trigger names the whole readout.
    *
-   * Icon and callbacks are held in this closure and passed as props — a
-   * `ReactNode` cannot be signed into a store snapshot.
+   * Icon and callbacks are held in this closure and passed as props — a React
+   * element is not the plain data this store compares and serialises.
    *
    * `docs/adr/ADR-004-per-extension-bar-presentation.md`.
    */
