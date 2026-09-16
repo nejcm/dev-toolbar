@@ -100,8 +100,9 @@ rather than from a kit `severity`, and its count opts out of the kit's `value`
 kind. Those are state, not text: they are written on the `Chip` itself, above
 the children a consumer supplies, so no preset and no `render` can change what
 colour the bar is showing you — only the words next to it. Nothing configured
-here reaches the store or the runtime: a `ReactNode` cannot be signed, so the
-icon and the callbacks stay in the factory closure and travel as props.
+here reaches the store or the runtime: the store compares the whole snapshot and
+the exports serialise it, and a React element survives neither, so the icon and
+the callbacks stay in the factory closure and travel as props.
 [ADR-004](../../../docs/adr/ADR-004-per-extension-bar-presentation.md).
 
 ## Tests

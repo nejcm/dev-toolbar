@@ -195,8 +195,8 @@ export interface FlagView {
    *
    * Two entries can name the same key with different windows, so "which
    * entry won" isn't answerable from the key alone — this tells the UI which
-   * one to pull {@link PromotedFlag.presentation} from. A number is signable;
-   * the presentation itself never enters a snapshot.
+   * one to pull {@link PromotedFlag.presentation} from. A number is plain
+   * snapshot data; the presentation itself never enters a snapshot.
    */
   promotedIndex?: number;
   promotedLabel?: string;

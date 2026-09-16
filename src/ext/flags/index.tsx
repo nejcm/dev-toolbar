@@ -158,8 +158,8 @@ export function flags(options: FlagsOptions = {}): DevToolbarExtension {
 
   // Resolved once, here, in the factory closure — the only place icons and
   // callbacks can live, since a `ReactNode` can't cross into this extension's
-  // string-signed store (see PromotedFlag.icon). Both resolved maps travel to
-  // `ui.tsx` as props.
+  // structurally compared store (see PromotedFlag.icon). Both resolved maps
+  // travel to `ui.tsx` as props.
   const presentation = resolvePresentation(presentationOption);
   // Keyed by position in `promoted`, matching FlagView.promotedIndex — two
   // entries can name the same key, only the runtime knows which is live.

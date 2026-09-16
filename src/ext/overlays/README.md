@@ -74,9 +74,10 @@ measurement that threw switched every overlay off, and that is state rather
 than presentation. The parts go in as the kit `Chip`'s *children* rather than
 its `icon` / `label` / `value` slots, so `render` replaces them and never the
 `Chip` — the dot, `data-dtb-active` and the `aria-label` are not a callback's
-to lose. Nothing configured here reaches the store: a `ReactNode` cannot be
-signed, so the icon and the callbacks stay in the factory closure and travel as
-props.
+to lose. Nothing configured here reaches the store: the store compares the whole
+snapshot on every pointer frame, and a React element is a plain object it would
+walk into, so the icon and the callbacks stay in the factory closure and travel
+as props.
 [ADR-004](../../../docs/adr/ADR-004-per-extension-bar-presentation.md).
 
 ## Tests

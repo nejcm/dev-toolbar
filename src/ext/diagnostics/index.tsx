@@ -94,8 +94,8 @@ export interface DiagnosticsOptions extends Omit<DiagnosticsRuntimeOptions, "id"
    * not presentation. `name` overrides the `aria-label`; a whitespace-only
    * return is ignored.
    *
-   * Icon and callbacks are held in this closure and passed as props — a
-   * `ReactNode` cannot be signed into a store snapshot.
+   * Icon and callbacks are held in this closure and passed as props — a React
+   * element does not survive the JSON this snapshot is reported as.
    *
    * `docs/adr/ADR-004-per-extension-bar-presentation.md`.
    */

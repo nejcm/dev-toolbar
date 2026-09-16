@@ -68,9 +68,10 @@ chip has always shipped.
 The parts go in as the kit `Chip`'s *children* rather than its `icon` / `label`
 / `value` slots, so `render` replaces them and never the `Chip` — the dot,
 `data-dtb-severity`, the `impersonating` marker and the `aria-label` are not a
-callback's to lose. Nothing configured here reaches the store: a `ReactNode`
-cannot be signed, so the icon and the callbacks stay in the factory closure and
-travel as props.
+callback's to lose. Nothing configured here reaches the store: the store compares
+the whole snapshot and the exports serialise it, and a React element survives
+neither, so the icon and the callbacks stay in the factory closure and travel as
+props.
 [ADR-004](../../../docs/adr/ADR-004-per-extension-bar-presentation.md).
 
 ## Tests

@@ -6,12 +6,12 @@
  *    `PromotedFlag.presentation` is one promoted flag, invoked per flag —
  *    rather than one flags-level callback taking `FlagsSnapshot | FlagView`
  *    that every consumer would have to narrow.
- * 2. A `ReactNode` never enters the store. This store republishes on a
- *    string signature, so an unsignable node either never publishes or
- *    republishes every tick, and would sit inside what `diagnostics()`
- *    serialises. `PromotedFlag.icon` therefore stays `string`; rich icons
- *    live on `PromotedFlag.presentation` and reach `ui.tsx` as props from the
- *    factory closure — proved below, in "the hard rule".
+ * 2. A `ReactNode` never enters the store. The store compares the whole
+ *    snapshot, so a React element there is a plain object the comparator walks
+ *    into — in development through `_owner` into a cyclic fiber — and would sit
+ *    inside what `diagnostics()` serialises. `PromotedFlag.icon` therefore stays
+ *    `string`; rich icons live on `PromotedFlag.presentation` and reach `ui.tsx`
+ *    as props from the factory closure — proved below, in "the hard rule".
  * 3. The hand-written chip stays hand-written: it has no dot, so it isn't
  *    routed through `Chip`. It gained kit's `renderCompactParts` slotting
  *    into the span it already had; the default literals prove that slotted
@@ -599,7 +599,7 @@ describe("which promotion is in force", () => {
    * A `presentation` belongs to one entry of `promoted`, not to a flag key —
    * two entries may name the same key under different `startAt`/`expiresAt`/
    * `audience` windows, and only the runtime knows which is eligible now. It
-   * publishes that as `FlagView.promotedIndex`, a number so it stays signable.
+   * publishes that as `FlagView.promotedIndex`, a number so it stays plain data.
    */
   const LIVE = { preset: "icon", icon: ICON } as const;
 
@@ -700,7 +700,7 @@ describe("which promotion is in force", () => {
     expect(tier.promotedIndex).toBe(1);
     expect(header.promoted).toBe(false);
     expect(header.promotedIndex).toBeUndefined();
-    // A number, so it can sit in the snapshot and in `signature()`.
+    // A number: plain data the comparator walks and `diagnostics()` serialises.
     expect(JSON.parse(JSON.stringify(tier))).toEqual(tier);
     runtime.store.destroy();
   });
@@ -824,11 +824,12 @@ describe("the accessible-name override", () => {
 describe("the hard rule: a ReactNode never enters the store", () => {
   /**
    * Why `PromotedFlag.icon` was not widened to `ReactNode`: it is copied into
-   * every snapshot as `FlagView.promotedIcon`, and this store publishes on a
-   * string signature, so a node there would either never publish or
-   * republish every tick — and would sit inside what `diagnostics()`
-   * serialises, one refactor from a circular-structure throw in a click
-   * handler. `presentation` is config in the factory closure instead.
+   * every snapshot as `FlagView.promotedIcon`, and the store compares the whole
+   * snapshot, so a React element there is a plain object the comparator walks
+   * into — in development through `_owner` into a cyclic fiber — and would sit
+   * inside what `diagnostics()` serialises, one refactor from a
+   * circular-structure throw in a click handler. `presentation` is config in the
+   * factory closure instead.
    */
   const RICH: PromotedFlag = {
     flagKey: "checkout.tier",
@@ -896,7 +897,7 @@ describe("the hard rule: a ReactNode never enters the store", () => {
   });
 
   it("does not republish when only the presentation changes", () => {
-    // Not signed because it's not in the snapshot at all — the design, not a
+    // Not compared because it's not in the snapshot at all — the design, not a
     // gap. Changing it after the factory ran is unsupported.
     const promoted: PromotedFlag = { flagKey: "checkout.tier", presentation: "icon" };
     const runtime = createFlagsRuntime({ flags: CATALOGUE, promoted: [promoted], now: () => 0 });

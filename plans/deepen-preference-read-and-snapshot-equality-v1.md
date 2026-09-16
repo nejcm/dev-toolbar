@@ -301,6 +301,10 @@ used ad hoc (flags, metrics, `agent/report.ts:173`).
 
 ### The deepened module
 
+**Superseded in B2 — the `ignore?: readonly string[]` sketched below never
+shipped.** The interface is `ignorePaths`, a list of key paths from the snapshot
+root; `docs/runtime.md` is the built version, and Decision 4 says why.
+
 One comparator module in `src/runtime/`, used two ways:
 
 ```ts
@@ -368,6 +372,10 @@ adopts `snapshotEquals` only if the unchanged-frame compare is within 2× of
 `sameSnapshot` on the 200-item case. flags/environment/theme-editor/metrics
 adopt regardless — at 250–500 ms any plausible result is noise.
 
+**Superseded — see "Re-measuring".** The ratio gate failed at every
+measurement and an absolute frame-budget reading decided overlays instead; and
+"any plausible result is noise" turned out to be too broad for the other four.
+
 - **Estimate: 1 hour.**
 
 #### Phase B1 — snapshot isolation (theme-editor, flags)
@@ -402,8 +410,11 @@ Own the data before comparing it.
   compares the snapshot; list what to ignore; `signature` remains as an
   override. Add a `snapshotEquals` entry with the five rules.
 - **Estimate: half a day.** Own PR: `feat(runtime): a structural snapshot
-  comparison the derived store uses by default`. Additive on `/runtime`; the
-  PR body says so.
+  comparison the derived store uses by default`. Not purely additive on
+  `/runtime`: every existing *call* keeps compiling, but `signature` becoming
+  optional on the exported `CreateDerivedStoreOptions<T>` breaks code that reads
+  `options.signature(x)` off a value of that type. `docs/runtime.md` says so, and
+  the PR body says so.
 
 #### Phase B3 — adopt in the four throttled-at-250–500 ms runtimes
 
@@ -450,14 +461,25 @@ test that pins a runtime-specific decision.
   frames — and the `verify-dev-toolbar` overlays recipe once by hand.
 - **Estimate: 2 hours.**
 
+**Historical — see "Re-measuring".** The two branches above are written against
+the 2× ratio. B4 amended the gate to an absolute frame budget and took the
+adopt branch; the line references here are the pre-B1 ones.
+
 #### Phase B5 — conventions
 
 - `src/ext/README.md` "Every field of a `*Snapshot` … is required" bullet: add
   the second half of the contract — the store compares the whole snapshot;
-  a runtime lists only what must *not* publish, in `ignore`; snapshots hold no
-  reference a consumer can mutate.
-- Per-extension READMEs and `docs/ext/*.md` that mention `signature`: grep and
-  update (`grep -rn "signature" src/ext/*/README.md docs/`).
+  a runtime lists only what must *not* publish, in `ignorePaths`; snapshots hold
+  no alias to mutable consumer input, and a consumer must treat a published
+  snapshot as immutable. Not "no reference a consumer can mutate": metrics
+  publishes `Collector.read()` output by reference, and that ownership contract
+  is documented on the collector instead.
+- Everything that mentions `signature`: grep `src/`, `docs/`, `README.md` and
+  `examples/`, not just `src/ext/*/README.md docs/` — the prose that survived
+  every earlier sweep was in source comments and test docblocks.
+- `docs/adr/ADR-004` describes the signature mechanism in its justification. Its
+  decision is unchanged and `docs/adr/README.md` forbids editing an ADR to match
+  the code, so it stays as written; the live prose carries the new reason.
 - `knip` will catch a leftover export; `bun run verify` is the gate.
 - **Estimate: 1 hour.** Folds into the last B3/B4 PR.
 
@@ -471,15 +493,26 @@ test that pins a runtime-specific decision.
 3. **`signature` stays as an optional override.** `CreateDerivedStoreOptions`
    is a published type; removing the field is a breaking change for a
    hypothetical third party. Mark it `@deprecated` in the docblock and drop it
-   in the next major.
+   in the next major. **Amended in B5: the tag was deliberately not added, and
+   the field is not scheduled for removal.** An explicit `signature` is a
+   legitimate override for a store that wants one field to decide publication,
+   not a mistake to migrate off — and `derivedStore.test.ts` exercises it on
+   purpose, so the tag would flag our own suite. Its docblock warns instead.
 4. **`ignore` by key name at any depth.** Path syntax is a bigger interface
    for one nested case. If a future snapshot has a colliding name, that
-   runtime gets a path-aware comparator then.
+   runtime gets a path-aware comparator then. **Superseded before B2 shipped:**
+   the colliding names were already there — flags' `adapterErrors` is keyed by
+   flag name, and a metric collector id may legally be `revision` or `at` — so
+   the shipped interface is `ignorePaths`, a list of key paths from the snapshot
+   root, with array indices transparent. `docs/runtime.md` states the rule.
 5. **`recentlyUsed` publishes.** It is state the runtime computes and the panel
    can show; the `BUG:` test says so. If the panel should *not* react, that is
    an `ignore` entry with a comment, not a comparator special case.
 6. **Overlays is gated on measurement, not opinion.** 2× on an unchanged
-   200-item frame is the line.
+   200-item frame is the line. **Amended in B4 — see "Re-measuring":** the line
+   is an absolute share of the frame budget, not a ratio against `sameSnapshot`,
+   which is the wrong yardstick for a frame that already forces a layout.
+   Overlays adopted the comparator on it.
 
 ### Cost, in one table
 
@@ -664,8 +697,16 @@ terms. Both `tabIndex` cases again report `sameSnapshot` `true` and
 **Overlays gate: PASS, on an absolute frame budget.** The unchanged 200-item
 frame costs **0.047 ms** in Chromium, 0.28% of a 16.7 ms frame; at the 1,000
 clamp `runtime.ts:232` enforces, **0.232 ms**, 1.39%. Both are far inside the
-~1 ms line B4 set for the 1,000-item case. **Decision 6 is amended: the gate is
-an absolute share of the frame budget, not a 2× ratio against `sameSnapshot`.**
+~1 ms line B4 set for the 1,000-item case — chosen as roughly 6% of a 16.7 ms
+frame, above which this comparison, rather than the layout the same frame
+already forces, becomes the thing worth optimising. Note that the cost scales
+linearly in the item count: 200 → 0.047 ms and 1,000 → 0.232 ms, so the
+`Math.min(1000, …)` at `runtime.ts:232-233` is the only thing holding it there.
+Raise that constant to 5,000 and an unchanged pointer frame costs ~1.2 ms, at
+the line rather than inside it. And the caveat B0 and B2 both carried still
+holds: this is JavaScript cost — here, on `about:blank` — not frame impact.
+**Decision 6 is amended: the gate is an absolute share of the frame budget, not a
+2× ratio against `sameSnapshot`.**
 A ratio against a 1.2 µs hand-rolled loop is the wrong yardstick when the same
 frame already forces a layout and calls `getBoundingClientRect()` once per
 tracked element; and the yardstick had itself drifted — `sameSnapshot` returns
