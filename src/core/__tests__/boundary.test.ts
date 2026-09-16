@@ -616,6 +616,7 @@ if (built || !mustBeBuilt) {
         );
       }
       expect(readFileSync(`${root}dist/runtime.d.ts`, "utf8")).toContain("createRingBuffer");
+      expect(readFileSync(`${root}dist/runtime.d.ts`, "utf8")).toContain("SnapshotEqualsOptions");
       expect(readFileSync(`${root}dist/kit.d.ts`, "utf8")).toContain("createPoller");
       expect(readFileSync(`${root}dist/kit.d.cts`, "utf8")).toContain("createPoller");
       expect(readFileSync(`${root}dist/ext/metrics.d.ts`, "utf8")).toContain("MetricsOptions");
@@ -701,6 +702,7 @@ if (built || !mustBeBuilt) {
           "createRingBuffer",
           "createThrottledStore",
           "redact",
+          "snapshotEquals",
         ]),
       );
       expect(parsed.kit).toEqual([

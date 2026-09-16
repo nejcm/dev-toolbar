@@ -138,6 +138,77 @@ describe("createDerivedStore", () => {
     store.destroy();
   });
 
+  it("compares the whole snapshot when no signature is given", () => {
+    let label = "a";
+    const store = createDerivedStore((revision) => ({ revision, view: { label } }), {
+      intervalMs: 0,
+      ignorePaths: [["revision"]],
+    });
+    const listener = vi.fn();
+    store.subscribe(listener);
+    const initial = store.getSnapshot();
+
+    store.rebuild();
+    expect(store.getSnapshot()).toBe(initial);
+    expect(listener).not.toHaveBeenCalled();
+
+    label = "b";
+    store.rebuild();
+    expect(store.getSnapshot()).toEqual({ revision: 2, view: { label: "b" } });
+    expect(listener).toHaveBeenCalledTimes(1);
+    store.destroy();
+  });
+
+  it("builds with no options at all", () => {
+    const store = createDerivedStore((revision) => ({ revision }));
+    expect(store.getSnapshot()).toEqual({ revision: 0 });
+    store.destroy();
+  });
+
+  it("lets a supplied signature win over the structural comparison", () => {
+    let label = "a";
+    const store = createDerivedStore((revision) => ({ revision, view: { label } }), {
+      intervalMs: 0,
+      signature: (snapshot) => String(snapshot.revision),
+      ignorePaths: [["revision"]],
+    });
+    const listener = vi.fn();
+    store.subscribe(listener);
+
+    // The signature sees only `revision`, which `ignorePaths` would have hidden.
+    label = "b";
+    store.rebuild();
+    expect(store.getSnapshot()).toEqual({ revision: 1, view: { label: "b" } });
+    expect(listener).toHaveBeenCalledTimes(1);
+    store.destroy();
+  });
+
+  it("applies an ignored path at a nested location without hiding its namesake", () => {
+    let promotedLabel = "Pinned";
+    let error = "storage refused";
+    const store = createDerivedStore(
+      (revision) => ({
+        revision,
+        flags: [{ key: "a", promotedLabel }],
+        adapterErrors: { promotedLabel: error },
+      }),
+      { intervalMs: 0, ignorePaths: [["revision"], ["flags", "promotedLabel"]] },
+    );
+    const listener = vi.fn();
+    store.subscribe(listener);
+    const initial = store.getSnapshot();
+
+    promotedLabel = "Renamed";
+    store.rebuild();
+    expect(store.getSnapshot()).toBe(initial);
+    expect(listener).not.toHaveBeenCalled();
+
+    error = "storage still refused";
+    store.rebuild();
+    expect(listener).toHaveBeenCalledTimes(1);
+    store.destroy();
+  });
+
   it("does not write or notify when rebuilt after destruction", () => {
     const build = vi.fn((revision: number) => ({ revision }));
     const store = createDerivedStore(build, {
