@@ -168,7 +168,10 @@ encodings, deliberately nothing more. `readPreference` returns the stored value 
 it passes `isValue`, else `fallback`. `readPreferenceIfReadable` returns a tagged
 `PreferenceRead`: `{ readable: false }` means the adapter threw before answering,
 while `{ readable: true, value: fallback }` means the adapter answered but nothing
-valid was stored. The unreadable result deliberately carries no fallback value.
+valid was stored, or persistence is off. The unreadable result deliberately carries
+no fallback value. Use `readPreferenceIfReadable` only when a runtime holds session
+state that an unreadable adapter must not overwrite on restart; otherwise use
+`readPreference`.
 `writePreference` stores the value or removes the key when the value equals `fallback`,
 so storage holds only what differs from the fallback. A preference whose default is
 consumer-configurable, such as overlay toggles under `defaults` or the theme editor's

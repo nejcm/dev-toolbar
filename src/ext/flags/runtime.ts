@@ -108,8 +108,9 @@ export interface FlagsRuntime {
    * `null` until `start(api)` runs.
    *
    * @deprecated Nothing in the package reads it any more; use
-   * `readPreference`/`writePreference` from `@nejcm/dev-toolbar/kit` with
-   * `api.storage` instead. Removal waits for the next major.
+   * `readPreferenceIfReadable`/`readPreference`/`writePreference` from
+   * `@nejcm/dev-toolbar/kit` with `api.storage` instead. Removal waits for the
+   * next major.
    */
   storage(): ToolbarStorage | null;
   start(api: ExtensionRuntimeApi): () => void;

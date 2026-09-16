@@ -52,8 +52,8 @@ So it behaves like `/ext/flags`, which changes what your app *does*:
   replace the live map. The default `localStorage` adapter reports blocked site data
   as empty instead; [the architecture note](../architecture.md#3-state-storage-and-lifecycle)
   records that distinction and its lifecycle limit. `persist: false` is the deliberate
-  exception and resets the edit map on every `start()`; the preview toggle and surface
-  choice remain session state across a restart.
+  exception and resets the edit map on every `start()`; in that mode, the preview
+  toggle and surface choice remain session state across a restart.
 - **There is a kill switch.** Any page loaded with `?dtb-theme=reset` drops every edit
   *before* any of them is applied, because the edit that makes the page unreadable is
   the one you cannot see the panel to remove.

@@ -5,7 +5,8 @@
  * key instead of storing the fallback, so storage only holds what differs
  * from default.
  *
- * A throwing `getItem` becomes fallback in `readPreference`/`readJson`, or unreadable in `readPreferenceIfReadable`.
+ * A throwing `getItem` becomes fallback in `readPreference`/`readJson`, or
+ * unreadable in `readPreferenceIfReadable`.
  * Write failures are swallowed; no adapter failure escapes into a panel or handler.
  *
  * Encodings: `"string"` stores byte-for-byte so a pre-existing raw value

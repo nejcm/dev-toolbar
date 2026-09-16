@@ -138,10 +138,10 @@ export interface ThemeEditorRuntime {
    * `null` until `start(api)` runs.
    *
    * @deprecated Nothing in the package reads it any more: every persisted
-   * preference goes through `readPreference`/`writePreference` from
-   * `@nejcm/dev-toolbar/kit`, which guard the adapter for you. Use those with
-   * `api.storage` instead. Removal is a published-API change and waits for the
-   * next major.
+   * preference goes through `readPreferenceIfReadable`, `readPreference` or
+   * `writePreference` from `@nejcm/dev-toolbar/kit`, which guard the adapter for
+   * you. Use those with `api.storage` instead. Removal is a published-API change
+   * and waits for the next major.
    */
   storage(): ToolbarStorage | null;
   start(api: ExtensionRuntimeApi): () => void;
@@ -1414,6 +1414,7 @@ export function createThemeEditorRuntime(
         }
 
         if (persist) {
+          // The null fallback preserves the session surface when storage cannot answer.
           const storedSurface = readPreference(storage, surfacePreference);
           const found = surfaces.find((candidate) => candidate.id === storedSurface);
           if (found) surface = found;
