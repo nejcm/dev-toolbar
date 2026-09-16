@@ -16,7 +16,7 @@ import {
   isReadable,
   parseRecord,
   readInput,
-  readPreference,
+  readPreferenceIfReadable,
   writePreference,
 } from "@nejcm/dev-toolbar/kit";
 import type { Preference } from "@nejcm/dev-toolbar/kit";
@@ -760,16 +760,19 @@ export function createFlagsRuntime(options: FlagsRuntimeOptions = {}): FlagsRunt
 
       // Before anything is applied, so a wedging override never reaches the app on the reset load.
       if (resetRequested(resetParam)) {
-        const previous = parseOverrides(readPreference(storage, OVERRIDES_PREFERENCE));
+        const stored = readPreferenceIfReadable(storage, OVERRIDES_PREFERENCE);
+        const previous = stored.readable ? parseOverrides(stored.value) : emptyOverrides();
+        const resetKeys = new Set([...Object.keys(previous), ...Object.keys(overrides)]);
         overrides = emptyOverrides();
-        for (const key of Object.keys(previous)) apply(key, undefined);
+        for (const key of resetKeys) apply(key, undefined);
         persist();
         notifyOverrides();
       } else if (writable) {
-        overrides = vetOverrides(
-          parseOverrides(readPreference(storage, OVERRIDES_PREFERENCE)),
-          readFlags(),
-        );
+        const stored = readPreferenceIfReadable(storage, OVERRIDES_PREFERENCE);
+        // Keep unreadable session entries: they are already applied, and the map is the toolbar's handle for clearing them.
+        if (stored.readable) {
+          overrides = vetOverrides(parseOverrides(stored.value), readFlags());
+        }
         // Re-apply on every mount — this is what makes an override outlive
         // the tab. Applying the same value twice is fine; setting a flag is
         // inherently idempotent.

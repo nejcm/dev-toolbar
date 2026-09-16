@@ -122,12 +122,19 @@ outlives the tab — so:
   the overrides the reset was asked to drop.
 
 - **`?dtb-flags=reset` is the kill switch.** Loading any page with it drops every
-  stored override *before* any of them is applied — the override that breaks the app
+  stored override and every session override held by the same runtime *before* any of
+  them is applied — the override that breaks the app
   is the one you cannot reach the panel to remove. `=clear` and `=off` do the same
   thing. Your adapter is told: `onOverride(key, undefined)` for every key that was
-  stored, then `onOverridesChange({})`, so a mirror the app persisted on its own is
-  emptied too. `readStoredOverrides()` honours it too: while the param is in the URL
-  it returns `{}`. `resetParam: null` disables it, `resetParam: "my-flags"` renames it.
+  stored or held in the session, once per distinct key, then `onOverridesChange({})`,
+  so a mirror the app persisted on its own is emptied too. `readStoredOverrides()`
+  honours it too: while the param is in the URL it returns `{}`. `resetParam: null`
+  disables it, `resetParam: "my-flags"` renames it.
+
+  On another `start()` of the same runtime, session overrides survive when a custom
+  storage adapter cannot be read. The default `localStorage` adapter reports a blocked
+  store as empty, so only custom adapters that throw on reads get this guarantee. A new
+  runtime or page reload cannot recover an override that storage never accepted.
 
   **Known limitation.** The param is honoured on every `start()`, not once per page
   load. While it is still in the URL, any remount — StrictMode, an `enabled` toggle, a

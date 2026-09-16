@@ -509,6 +509,31 @@ describe("the kill switch", () => {
     expect(storage.getItem(OVERRIDES_KEY)).toBeNull();
   });
 
+  it("un-applies the union of stored and session overrides once", () => {
+    const storage = createMemoryStorage();
+    const applied: [string, FlagValue | undefined, Record<string, FlagValue>][] = [];
+    const runtime = createFlagsRuntime({
+      flags: CATALOGUE,
+      onOverride: (key, value) => applied.push([key, value, runtime.overrides()]),
+    });
+    const stop = runtime.start(fakeApi(storage).api);
+    runtime.setOverride("ui-facelift", true);
+    runtime.setOverride("checkout.copy", "new");
+    stop();
+    storage.setItem(OVERRIDES_KEY, JSON.stringify({ "new-header": false, "ui-facelift": false }));
+    applied.length = 0;
+
+    const stopAgain = withResetParam(() => runtime.start(fakeApi(storage).api));
+    stopAgain();
+
+    expect(applied).toEqual([
+      ["new-header", undefined, {}],
+      ["ui-facelift", undefined, {}],
+      ["checkout.copy", undefined, {}],
+    ]);
+    expect(storage.getItem(OVERRIDES_KEY)).toBeNull();
+  });
+
   it("hands a bulk mirror the empty map, after the per-key clears", () => {
     const storage = createMemoryStorage({
       [OVERRIDES_KEY]: JSON.stringify({ "ui-facelift": true }),

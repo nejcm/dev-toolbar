@@ -44,14 +44,19 @@ observing it, which is why three rules hold:
   `dtb:v1:<instanceId>:ext:<id>:overrides` and re-applied through your adapter
   on the next mount. The app boots with its own values first; call
   `readStoredOverrides()` before you render if you need them earlier.
-- **There is a kill switch.** `?dtb-flags=reset` drops every stored override
-  before it is applied — the override that breaks the app is the one you cannot
-  reach the panel to remove. The adapter hears about every dropped key. It is
-  honoured on every `start()`, so a remount while the param is still in the
-  URL drops the overrides set since the reset — a known limitation; strip the
-  param from the URL after using it.
+- **There is a kill switch.** `?dtb-flags=reset` drops every stored override and every
+  session override held by the same runtime before it is applied — the override that
+  breaks the app is the one you cannot reach the panel to remove. The adapter hears
+  about every distinct stored or session key. The reset is honoured on every `start()`,
+  so a remount while the param is still in the URL drops the overrides set since the
+  reset — a known limitation; strip the param from the URL after using it.
 - **An override is never quiet.** The bar counts them, every overridden row is
   marked, and the app's own value stays on screen next to the override.
+
+On another `start()` of the same runtime, session overrides survive when a custom
+storage adapter cannot be read. The default `localStorage` adapter reports a blocked
+store as empty, so only custom adapters that throw on reads get this guarantee. A new
+runtime or page reload cannot recover an override that storage never accepted.
 
 ## Commands
 

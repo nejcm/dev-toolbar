@@ -24,7 +24,7 @@ import {
   describeError,
   ensureStyleSheet,
 } from "../../runtime";
-import { readPreference, writePreference } from "@nejcm/dev-toolbar/kit";
+import { readPreferenceIfReadable, writePreference } from "@nejcm/dev-toolbar/kit";
 import type { Preference } from "@nejcm/dev-toolbar/kit";
 import type { ThrottledStore } from "../../runtime";
 import type { ExtensionRuntimeApi, ToolbarStorage } from "../../core/contract";
@@ -861,19 +861,11 @@ export function createOverlaysRuntime(options: OverlaysRuntimeOptions = {}): Ove
     start(api: ExtensionRuntimeApi) {
       storage = persist ? api.storage : null;
       if (persist) {
-        let readable = false;
-        const stored = readPreference(
-          {
-            getItem(key) {
-              const raw = api.storage.getItem(key);
-              readable = true;
-              return raw;
-            },
-          },
-          enabledPreference,
-        );
+        const stored = readPreferenceIfReadable(storage, enabledPreference);
         // A failed read preserves session choices; a missing key restores defaults.
-        if (readable) flags = stored === null ? { ...initialFlags } : parseFlags(stored);
+        if (stored.readable) {
+          flags = stored.value === null ? { ...initialFlags } : parseFlags(stored.value);
+        }
       }
 
       ready = true;

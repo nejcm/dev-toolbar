@@ -19,6 +19,7 @@ import {
   createPoller,
   parseRecord,
   readPreference,
+  readPreferenceIfReadable,
   readStoredRecord,
   writePreference,
 } from "@nejcm/dev-toolbar/kit";
@@ -1395,52 +1396,30 @@ export function createThemeEditorRuntime(
         persistOverrides();
         notice = `Every theme edit was cleared by ?${themeParam ?? ""}=reset.`;
       } else {
-        // A throwing `getItem` must not be mistaken for "nothing stored" and
-        // wipe the session map; the flag is set only after it returns.
-        let overridesReadable = !persist;
-        const vetted = vetStored(
-          parseOverrides(
-            persist
-              ? readPreference(
-                  {
-                    getItem(key) {
-                      const raw = api.storage.getItem(key);
-                      overridesReadable = true;
-                      return raw;
-                    },
-                  },
-                  OVERRIDES_PREFERENCE,
-                )
-              : null,
-          ),
+        const storedOverrides = readPreferenceIfReadable(
+          persist ? storage : null,
+          OVERRIDES_PREFERENCE,
         );
-        if (overridesReadable) overrides = vetted.accepted;
-        if (overridesReadable && vetted.dropped.length > 0) {
-          // Persist the cleaned map so refused entries aren't re-read and
-          // re-refused on every load.
-          persistOverrides();
-          notice = `${vetted.dropped.length} stored edit${
-            vetted.dropped.length === 1 ? " was" : "s were"
-          } dropped as unusable: ${vetted.dropped.join(", ")}.`;
+        if (storedOverrides.readable) {
+          const vetted = vetStored(parseOverrides(storedOverrides.value));
+          overrides = vetted.accepted;
+          if (vetted.dropped.length > 0) {
+            // Persist the cleaned map so refused entries aren't re-read and
+            // re-refused on every load.
+            persistOverrides();
+            notice = `${vetted.dropped.length} stored edit${
+              vetted.dropped.length === 1 ? " was" : "s were"
+            } dropped as unusable: ${vetted.dropped.join(", ")}.`;
+          }
         }
 
         if (persist) {
           const storedSurface = readPreference(storage, surfacePreference);
           const found = surfaces.find((candidate) => candidate.id === storedSurface);
           if (found) surface = found;
-          let readable = false;
-          const storedPreview = readPreference(
-            {
-              getItem(key) {
-                const raw = api.storage.getItem(key);
-                readable = true;
-                return raw;
-              },
-            },
-            PREVIEW_PREFERENCE,
-          );
+          const storedPreview = readPreferenceIfReadable(storage, PREVIEW_PREFERENCE);
           // A failed read must preserve session choices; a missing key restores preview on.
-          if (readable) preview = storedPreview !== "0";
+          if (storedPreview.readable) preview = storedPreview.value !== "0";
         }
 
         // Re-apply on every mount: the page reloaded with the application's own
