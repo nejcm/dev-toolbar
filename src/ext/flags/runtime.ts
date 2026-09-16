@@ -563,25 +563,18 @@ export function createFlagsRuntime(options: FlagsRuntimeOptions = {}): FlagsRunt
     }
   };
 
-  const signature = (snapshot: FlagsSnapshot): string =>
-    `${snapshot.readError ?? ""}|${snapshot.reloadPending.join(",")}|` +
-    `${JSON.stringify(snapshot.adapterErrors)}|${snapshot.bulkError ?? ""}|` +
-    `${snapshot.maskedCount}|${snapshot.supplied ? 1 : 0}|` +
-    snapshot.flags
-      .map(
-        (view) =>
-          `${view.key}=${view.label}:${view.description ?? ""}:${view.type}:` +
-          `${view.projectUrl ?? ""}:${view.expiresAt ?? ""}:${view.masked ? 1 : 0}:` +
-          `${view.effectiveText}:${view.baseText}:${view.defaultText}:${view.source}:` +
-          `${view.overridden ? 1 : 0}:${view.promoted ? 1 : 0}:${view.promotedIndex ?? -1}:` +
-          `${view.orphaned ? 1 : 0}:` +
-          `${view.applyError ?? ""}:${view.variants === undefined ? "" : JSON.stringify(view.variants.map(formatValue))}`,
-      )
-      .join("|");
-
   const store = createDerivedStore<FlagsSnapshot>(build, {
     intervalMs: 250,
-    signature,
+    // Counters that change on every build, and the promotion presentation the
+    // consumer passes as config — a change to it alone never publishes.
+    ignorePaths: [
+      ["revision"],
+      ["at"],
+      ["flags", "promotedLabel"],
+      ["flags", "promotedIcon"],
+      ["promoted", "promotedLabel"],
+      ["promoted", "promotedIcon"],
+    ],
   });
 
   const publish = store.rebuild;
