@@ -876,6 +876,68 @@ describe("failing closed", () => {
     expect(spy).toHaveBeenCalled();
   });
 
+  it("owns surface data in a fallback snapshot without rereading consumer getters", () => {
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const selector = vi.fn(() => ":root");
+    const surface: ThemeSurface = {
+      id: "one",
+      label: "One",
+      get selector() {
+        return selector();
+      },
+    };
+    const surfaces: ThemeSurface[] = [surface];
+    const runtime = createThemeEditorRuntime({
+      surfaces,
+      tokens: [
+        {
+          get name(): string {
+            throw new Error("hostile name");
+          },
+        },
+      ],
+    });
+    const snapshot = runtime.store.getSnapshot();
+
+    surface.label = "Changed";
+    surfaces.push({ id: "two", selector: "body" });
+
+    expect(selector).toHaveBeenCalledTimes(1);
+    expect(snapshot.surface.label).toBe("One");
+    expect(snapshot.surfaces).toHaveLength(1);
+    runtime.store.destroy();
+    spy.mockRestore();
+  });
+
+  it("degrades a throwing surface getter to an isolated safe-root snapshot", () => {
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const selector = vi.fn(() => {
+      throw new Error("hostile selector");
+    });
+    const runtime = createThemeEditorRuntime({
+      surfaces: [
+        {
+          id: "panel",
+          get selector(): string {
+            return selector();
+          },
+        },
+      ],
+    });
+
+    expect(selector).toHaveBeenCalledTimes(1);
+    expect(runtime.store.getSnapshot().surface).toEqual({
+      id: "root",
+      label: "Application root",
+      selector: ":root",
+    });
+    expect(runtime.store.getSnapshot().surfaces).toEqual([
+      { id: "root", label: "Application root", selector: ":root" },
+    ]);
+    runtime.store.destroy();
+    spy.mockRestore();
+  });
+
   it("records an onApply failure against its own token and clears it on its own success", () => {
     const spy = vi.spyOn(console, "error").mockImplementation(() => {});
     let broken = true;
@@ -1778,12 +1840,9 @@ describe("publication guarantees", () => {
     runtime.store.destroy();
   });
 
-  // Pins surface aliasing: signature() (runtime.ts:915) omits label/selector and reads
-  // the already-mutated id from both snapshots; ui.tsx:439/442/504 changes without notification.
-  // After snapshot isolation and comparison are fixed, keep the old field before refresh;
-  // after refresh expect toHaveBeenCalledTimes(1) and getSnapshot() toBe(peek()), not before.
-  it.each(["label", "selector", "id"] as const)(
-    "BUG: aliased surface %s mutates the published snapshot without notifying",
+  // Snapshot isolation fixes the pre-refresh mutation; signature() still omits label/selector.
+  it.each(["label", "selector"] as const)(
+    "BUG: changed surface %s stays unpublished after refresh",
     (field) => {
       const surfaces: ThemeSurface[] = [{ id: "one", label: "One", selector: ":root" }];
       const runtime = createThemeEditorRuntime({ surfaces, tokens: [initial] });
@@ -1793,7 +1852,9 @@ describe("publication guarantees", () => {
       const value = field === "selector" ? "html" : "Changed";
       surfaces[0]![field] = value;
       expect(runtime.store.getSnapshot()).toBe(before);
-      expect(runtime.store.getSnapshot().surface[field]).toBe(value);
+      expect(runtime.store.getSnapshot().surface[field]).toBe(
+        field === "selector" ? ":root" : "One",
+      );
       runtime.refresh();
       expect(runtime.store.peek().surface[field]).toBe(value);
       expect(runtime.store.getSnapshot()).toBe(before);
@@ -1802,22 +1863,86 @@ describe("publication guarantees", () => {
     },
   );
 
-  // Pins aliased surfaces membership, omitted by signature() (runtime.ts:915);
-  // ui.tsx:433/442 sees the published list mutate without notification.
-  // After snapshot isolation and comparison are fixed, before.surfaces must retain length 1;
-  // after refresh expect toHaveBeenCalledTimes(1) and getSnapshot() toBe(peek()), not before.
-  it("BUG: aliased surface-list membership mutates the published snapshot without notifying", () => {
+  it("isolates an aliased surface id before refresh and publishes it after refresh", () => {
+    const surfaces: ThemeSurface[] = [{ id: "one", label: "One", selector: ":root" }];
+    const runtime = createThemeEditorRuntime({ surfaces, tokens: [initial] });
+    const before = runtime.store.getSnapshot();
+    const listener = vi.fn();
+    runtime.store.subscribe(listener);
+    surfaces[0]!.id = "Changed";
+    expect(runtime.store.getSnapshot()).toBe(before);
+    expect(runtime.store.getSnapshot().surface.id).toBe("one");
+    runtime.refresh();
+    expect(runtime.store.peek().surface.id).toBe("Changed");
+    expect(runtime.store.getSnapshot()).toBe(runtime.store.peek());
+    expect(listener).toHaveBeenCalledTimes(1);
+    runtime.store.destroy();
+  });
+
+  // Snapshot isolation fixes the pre-refresh mutation; signature() still omits list membership.
+  it("BUG: changed surface-list membership stays unpublished after refresh", () => {
     const surfaces: ThemeSurface[] = [{ id: "one", selector: ":root" }];
     const runtime = createThemeEditorRuntime({ surfaces });
     const before = runtime.store.getSnapshot();
     const listener = vi.fn();
     runtime.store.subscribe(listener);
     surfaces.push({ id: "two", label: "Two", selector: "body" });
-    expect(before.surfaces).toHaveLength(2);
+    expect(before.surfaces).toHaveLength(1);
     runtime.refresh();
     expect(runtime.store.getSnapshot()).toBe(before);
     expect(listener).not.toHaveBeenCalled();
     runtime.store.destroy();
+  });
+
+  it.each(["removal", "replacement", "duplicate"] as const)(
+    "keeps the retained selected surface after a consumer catalogue %s",
+    (change) => {
+      const selected: ThemeSurface = { id: "two", label: "Selected", selector: "#selected" };
+      const surfaces: ThemeSurface[] = [{ id: "one", selector: ":root" }, selected];
+      const runtime = createThemeEditorRuntime({ surfaces, tokens: [initial] });
+      runtime.selectSurface("two");
+
+      if (change === "removal") surfaces.splice(1, 1);
+      if (change === "replacement") {
+        surfaces.splice(1, 1, { id: "two", label: "Replacement", selector: "#replacement" });
+      }
+      if (change === "duplicate") {
+        surfaces.unshift({ id: "two", label: "Duplicate", selector: "#duplicate" });
+      }
+
+      runtime.refresh();
+      const snapshot = runtime.store.peek();
+      expect(snapshot.surface).toEqual(selected);
+      expect(snapshot.surface).not.toBe(selected);
+      const selectedIndex = surfaces.indexOf(selected);
+      if (selectedIndex !== -1) expect(snapshot.surface).toBe(snapshot.surfaces[selectedIndex]);
+      runtime.store.destroy();
+    },
+  );
+
+  it("keeps DOM writes on the retained selected object after catalogue replacement", () => {
+    const selectedElement = document.createElement("div");
+    selectedElement.id = "selected";
+    const replacementElement = document.createElement("div");
+    replacementElement.id = "replacement";
+    document.body.append(selectedElement, replacementElement);
+    const selected: ThemeSurface = { id: "two", selector: "#selected" };
+    const surfaces: ThemeSurface[] = [{ id: "one", selector: ":root" }, selected];
+    const runtime = createThemeEditorRuntime({ surfaces, tokens: [initial] });
+    const dispose = runtime.start(fakeApi(null));
+    try {
+      runtime.selectSurface("two");
+      surfaces.splice(1, 1, { id: "two", selector: "#replacement" });
+      runtime.setOverride("--publication", "b");
+
+      expect(selectedElement.style.getPropertyValue("--publication")).toBe("b");
+      expect(replacementElement.style.getPropertyValue("--publication")).toBe("");
+    } finally {
+      dispose();
+      runtime.store.destroy();
+      selectedElement.remove();
+      replacementElement.remove();
+    }
   });
 
   it("publishes mode, preview, notice and writable changes synchronously", () => {

@@ -902,6 +902,20 @@ describe("the flag list signature", () => {
     unsubscribe();
   });
 
+  it("does not expose consumer variants mutations before refresh", () => {
+    const variants: FlagValue[] = ["a", "b"];
+    const runtime = createFlagsRuntime({
+      flags: () => [{ key: "choice", type: "variant", value: "a", variants }],
+    });
+    const before = runtime.store.getSnapshot();
+
+    variants.push("c");
+
+    expect(runtime.store.getSnapshot()).toBe(before);
+    expect(runtime.store.getSnapshot().flags[0]?.variants).toEqual(["a", "b"]);
+    runtime.store.destroy();
+  });
+
   /* Regression: fixing the omitted variants field must preserve snapshot identity when effectiveText and variants stay put. */
   it("does not notify for unchanged variants and reordered unrelated flag fields", () => {
     let unrelated: FlagReading = { key: "other", type: "boolean", value: false };
