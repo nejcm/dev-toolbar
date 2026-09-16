@@ -422,7 +422,7 @@ export function createFlagsRuntime(options: FlagsRuntimeOptions = {}): FlagsRunt
         ...(reading.variants === undefined
           ? {}
           : {
-              variants: reading.variants,
+              variants: [...reading.variants],
               // Variants get their own trip through render(): `masked` above
               // covers only effective/base/defaultValue, so a raw credential
               // would otherwise leak into the dropdown. Masked ones are
