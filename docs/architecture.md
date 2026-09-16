@@ -315,8 +315,19 @@ already folds non-conforming `instanceId`s down to.
 
 The adapter is a synchronous three-method interface (`getItem`/`setItem`/`removeItem`),
 which is exactly `localStorage`'s shape — that is why `localStorage` is the default.
-`storage={null}` disables persistence. A throwing adapter degrades to defaults rather
-than taking down the render.
+`storage={null}` disables persistence. A throwing adapter does not take down the
+render. Core preference reads degrade to defaults; extensions may distinguish an
+unreadable adapter and preserve their session state instead.
+
+The default `createLocalStorage()` adapter converts every `localStorage` failure to
+"nothing stored" by design. An extension that distinguishes "unreadable" from
+"absent" therefore sees that difference only when a consumer-supplied adapter throws.
+Such an extension can preserve session state across another `start()` on the same
+runtime object; readable-but-empty storage deliberately clears the extension's
+override or edit map, and a new runtime or page reload cannot recover an in-memory map
+that failed to persist.
+Surfacing failures from the default adapter would change what every third-party
+`api.storage.getItem` caller sees and is not proposed.
 
 `storage` and `instanceId` are **read once, on mount**. The store, the context's
 `storage` and every extension's namespaced view all derive from that single captured

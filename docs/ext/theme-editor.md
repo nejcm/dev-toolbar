@@ -46,12 +46,14 @@ So it behaves like `/ext/flags`, which changes what your app *does*:
   will keep. Without `tokens` every value is checked as a `string`, the loosest type: the
   whole security pass still runs, but a value your catalogue declares as a `number` or
   `length` and would refuse as one survives.
-- **Edits outlive a restart the storage cannot serve.** With `persist: true` on a
-  browser that throws from `localStorage` — site data blocked — the edits live only in
-  the session map, and toggling the toolbar off and on keeps them: a read that *threw*
-  is no longer mistaken for "nothing stored" and does not replace the live map
-  (`#91`). `persist: false` is the deliberate exception, and resets the map on every
-  `start()`: a non-persisting editor remembers nothing across a restart by design.
+- **Edits outlive a restart a consumer-supplied adapter cannot serve.** With
+  `persist: true`, edits live only in the session map when that adapter's `getItem`
+  throws, and toggling the toolbar off and on keeps them: an unreadable result does not
+  replace the live map. The default `localStorage` adapter reports blocked site data
+  as empty instead; [the architecture note](../architecture.md#3-state-storage-and-lifecycle)
+  records that distinction and its lifecycle limit. `persist: false` is the deliberate
+  exception and resets the edit map on every `start()`; the preview toggle and surface
+  choice remain session state across a restart.
 - **There is a kill switch.** Any page loaded with `?dtb-theme=reset` drops every edit
   *before* any of them is applied, because the edit that makes the page unreadable is
   the one you cannot see the panel to remove.
