@@ -43,6 +43,9 @@ export type { CreateThrottledStoreOptions, ThrottledStore, Unsubscribe } from ".
 export { createDerivedStore } from "./derivedStore";
 export type { CreateDerivedStoreOptions, DerivedStore } from "./derivedStore";
 
+export { snapshotEquals } from "./snapshotEquals";
+export type { SnapshotEqualsOptions, SnapshotKeyPath } from "./snapshotEquals";
+
 export { instrumentFetch, instrumentXhr } from "./network";
 export type { NetworkSink, NetworkSinkResult } from "./network";
 

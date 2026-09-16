@@ -569,6 +569,69 @@ The shared-reference rows are diagnostic only. Overlay frames allocate new
 focus items and rects, so the 0.50× shared-reference result is not the gate
 input.
 
+### Re-measured in B2 against the shipped comparator
+
+The table above was produced in B0 by a **scratch** comparator. Phase B2 re-ran
+the same script — same machine, Bun 1.4.2 (JavaScriptCore), macOS arm64, same
+10 samples of 10,000 comparisons after 10,000 warm-up comparisons, quiet
+foreground, nothing else running — against the real
+`src/runtime/snapshotEquals.ts` as shipped (own-property guard included) with
+the shipped `ignorePaths` (`[["revision"], ["at"], ["flags", "promotedLabel"],
+["flags", "promotedIcon"], ["promoted", "promotedLabel"], ["promoted",
+"promotedIcon"]]`). The real comparator is **1.6–4.2× faster than the scratch
+one** on every walked case, the widest margins on the overlay shapes: it reads
+own enumerable *string* keys only (no `getOwnPropertySymbols` allocation per
+object), tracks exclusions through a trie built once at creation instead of a
+path array and a predicate call per key, and counts keys instead of allocating
+filtered key arrays.
+
+| Runtime | Size | Case | Existing comparator, median ns/op | B0 scratch `snapshotEquals` | **B2 real `snapshotEquals`** (CV) | B2 ratio vs existing |
+| --- | ---: | --- | ---: | ---: | ---: | ---: |
+| flags | 50 | unchanged, separately allocated | 19,056.0 | 32,849.8 | **21,125.3** (0.5%) | 1.11× |
+| flags | 50 | unchanged, shared nested references | 20,768.5 | 236.8 | **174.1** (3.9%) | 0.01× |
+| flags | 50 | label changed, first item | 17,585.7 | 537.1 | **237.4** (3.5%) | 0.01× |
+| flags | 50 | label changed, last item | 17,517.0 | 28,778.8 | **18,773.1** (0.4%) | 1.07× |
+| flags | 500 | unchanged, separately allocated | 211,977.0 | 353,424.7 | **211,452.8** (0.2%) | 1.00× |
+| flags | 500 | unchanged, shared nested references | 219,126.7 | 264.1 | **179.5** (5.7%) | <0.01× |
+| flags | 500 | label changed, first item | 196,318.6 | 603.4 | **235.8** (4.6%) | <0.01× |
+| flags | 500 | label changed, last item | 196,676.0 | 314,506.4 | **185,173.2** (0.5%) | 0.94× |
+| overlays | 200 | unchanged, separately allocated | 1,167.9 | 103,889.1 | **29,454.2** (0.4%) | 25.22× |
+| overlays | 200 | unchanged, shared nested references | 663.8 | 332.1 | **89.6** (7.7%) | 0.14× |
+| overlays | 200 | rect changed, first item | 37.9 | 1,888.8 | **446.8** (2.0%) | 11.79× |
+| overlays | 200 | rect changed, last item | 1,180.7 | 110,785.4 | **29,251.9** (0.3%) | 24.77× |
+| overlays | 200 | `tabIndex` changed, first item | 1,236.1 | 2,310.8 | **511.6** (2.6%) | 0.41× |
+| overlays | 200 | `tabIndex` changed, last item | 1,191.5 | 111,454.2 | **29,252.8** (0.4%) | 24.55× |
+| overlays | 1,000 | unchanged, separately allocated | 6,074.7 | 558,247.9 | **144,037.3** (0.3%) | 23.71× |
+| overlays | 1,000 | rect changed, last item | 5,992.4 | 591,144.6 | **143,856.5** (0.3%) | 24.01× |
+
+Both `tabIndex` cases still report `sameSnapshot` `true` and `snapshotEquals`
+`false`, reproducing the omission B4 must fix. Every other changed case
+returned `false` from both.
+
+The `Object.hasOwn` guard on the right-hand read — without which an own
+`__proto__` key answers `Object.prototype` and two unequal snapshots compare
+equal — costs a consistent **~6%** across shapes, measured against an otherwise
+identical quiet foreground run of the pre-guard build (overlays 200:
+27,821.9 → 29,454.2; overlays 1,000: 135,224.6 → 144,037.3; flags 500
+unchanged: 199,582.4 → 211,452.8). It is not optional and it does not change
+any conclusion below.
+
+**The flags concern in "what would make this not worth doing" is closed.** At
+500 views the structural comparison is on par with `signature()` on the
+unchanged frame (0.211 ms vs 0.212 ms), slightly cheaper on a last-item change
+(0.185 ms vs 0.197 ms), and ~830× cheaper on a first-item change because it
+short-circuits where a string build cannot. At 50 views it is 1.07–1.11×.
+Nothing here says the comparator is wrong.
+
+**Overlays gate: still FAIL on the ratio as written, now a comfortable PASS on
+the absolute budget.** 25.22× is not within 2×. But the unchanged 200-item
+frame costs 0.029 ms — 0.18% of a 16.7 ms frame, down from B0's 0.104 ms and
+0.62% — and at the clamped 1,000-item ceiling 0.144 ms, 0.86% of a frame, down
+from 0.558 ms and 3.34%. The B4 branch is therefore a judgment between the two
+readings rather than the one-sided call B0 recorded; whichever branch is taken,
+`FocusItem.tabIndex` must start being compared. These remain JavaScriptCore
+numbers and still establish neither Chromium cost nor real frame impact.
+
 BUG-pinned tests at `431d735`:
 
 ```sh
