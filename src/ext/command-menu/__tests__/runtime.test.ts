@@ -5,6 +5,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { fakeExtensionApi } from "@nejcm/dev-toolbar/testing";
 import { fireEvent } from "@testing-library/react";
+import { createMemoryStorage } from "../../../core/storage";
 import {
   ariaKeyshortcuts,
   createCommandMenuRuntime,
@@ -166,6 +167,48 @@ describe("createCommandMenuRuntime", () => {
     expect(last).toHaveLength(RECENT_LIMIT);
     expect(last[0]).toBe(ids.at(-1));
     stop();
+  });
+
+  it("keeps session recents across a restart when every storage call throws", async () => {
+    const blocked = () => {
+      throw new Error("blocked");
+    };
+    const storage = { getItem: blocked, setItem: blocked, removeItem: blocked };
+    const runtime = createCommandMenuRuntime({ shortcut: null });
+    const runtimeApi = api({
+      getCommands: () => [command("a")],
+      runCommand: async () => true,
+      storage,
+    });
+    const stop = runtime.start(runtimeApi);
+    runtime.open();
+    await runtime.run("a");
+    expect(runtime.store.peek().recent).toEqual(["a"]);
+    stop();
+
+    const stopAgain = runtime.start(runtimeApi);
+    expect(runtime.store.peek().recent).toEqual(["a"]);
+    stopAgain();
+  });
+
+  it("clears session recents on a restart when readable storage is empty", async () => {
+    const storage = createMemoryStorage();
+    const runtime = createCommandMenuRuntime({ shortcut: null });
+    const runtimeApi = api({
+      getCommands: () => [command("a")],
+      runCommand: async () => true,
+      storage,
+    });
+    const stop = runtime.start(runtimeApi);
+    runtime.open();
+    await runtime.run("a");
+    expect(runtime.store.peek().recent).toEqual(["a"]);
+    stop();
+    storage.removeItem(RECENT_KEY);
+
+    const stopAgain = runtime.start(runtimeApi);
+    expect(runtime.store.peek().recent).toEqual([]);
+    stopAgain();
   });
 
   it("stops answering the key once its lifecycle has been torn down", () => {
