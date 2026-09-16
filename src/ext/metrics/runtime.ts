@@ -12,7 +12,7 @@
  * `start(api)`), so anything a chip reads must exist by the time the factory
  * returns.
  */
-import { createThrottledStore, redact, redactUrl } from "../../runtime";
+import { createThrottledStore, redact, redactUrl, snapshotEquals } from "../../runtime";
 import { readPreference, writePreference } from "@nejcm/dev-toolbar/kit";
 import type { Preference } from "@nejcm/dev-toolbar/kit";
 import type { ThrottledStore } from "../../runtime";
@@ -81,22 +81,6 @@ function emptyView(id: CollectorId): MetricView {
   };
 }
 
-/** Cheap equality on what is actually painted, so an idle page publishes nothing. */
-function signature(snapshot: MetricsSnapshot): string {
-  let out = `${snapshot.seriesWritten}|`;
-  for (const id of snapshot.order) {
-    const view = metricView(snapshot, id);
-    // Preserve built-in notifications; custom details and raw values can change independently.
-    out += isMetricId(id)
-      ? `${id}:${view.status}:${view.severity}:${view.display};`
-      : JSON.stringify(view);
-  }
-  out += `#${snapshot.requests.length}:${snapshot.requests[0]?.id ?? ""}:${
-    snapshot.requests[0]?.state ?? ""
-  }`;
-  return out;
-}
-
 const TAB_KEY = "tab";
 
 export function createMetricsRuntime(options: MetricsRuntimeOptions): MetricsRuntime {
@@ -132,7 +116,8 @@ export function createMetricsRuntime(options: MetricsRuntimeOptions): MetricsRun
 
   const store = createThrottledStore<MetricsSnapshot>(build(), {
     intervalMs: tickMs,
-    equals: (a, b) => signature(a) === signature(b),
+    // Per-build counters; nothing renders them. Anchored: a collector may be called `revision`.
+    equals: snapshotEquals({ ignorePaths: [["revision"], ["at"]] }),
   });
 
   const publish = () => store.set(build());
