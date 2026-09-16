@@ -1680,7 +1680,7 @@ describe("surface migration — the guards on the reconciler itself", () => {
   });
 });
 
-describe("the token list signature", () => {
+describe("the token list comparison", () => {
   it("republishes when label, group or metadata masking changes", () => {
     let group = "Colour";
     const runtime = createThemeEditorRuntime({
@@ -1796,10 +1796,8 @@ describe("publication guarantees", () => {
     runtime.store.destroy();
   });
 
-  // Pins missing raw effective in signature() (runtime.ts:915): null and a literal em dash
-  // share effectiveText, leaving the swatch condition at ui.tsx:224 stale.
-  // When covered, invert to toHaveBeenCalledTimes(1) and getSnapshot() toBe(peek()).
-  it("BUG: null and a literal em dash hide a raw effective color change", () => {
+  // null and a literal em dash share effectiveText, so only raw `effective` differs.
+  it("publishes a raw effective colour change behind an unchanged effectiveText", () => {
     let value: string | undefined;
     const runtime = createThemeEditorRuntime({
       tokens: () => [{ ...initial, type: "color", value }],
@@ -1813,14 +1811,12 @@ describe("publication guarantees", () => {
     expect(runtime.store.peek().tokens).toEqual([
       { ...before.tokens[0], base: "—", effective: "—" },
     ]);
-    expect(listener).not.toHaveBeenCalled();
-    expect(runtime.store.getSnapshot()).toBe(before);
+    expect(listener).toHaveBeenCalledTimes(1);
+    expect(runtime.store.getSnapshot()).toBe(runtime.store.peek());
     runtime.store.destroy();
   });
 
-  // Pins missing modeWritable in signature() (runtime.ts:915); ui.tsx:476 keeps the button disabled.
-  // When covered, invert to toHaveBeenCalledTimes(1) and getSnapshot() toBe(peek()).
-  it("BUG: changing only the mode setter leaves modeWritable stale", () => {
+  it("publishes modeWritable when only the mode setter appears", () => {
     const mode: { read(): "light"; set?: (value: "light" | "dark") => void } = {
       read: () => "light",
     };
@@ -1835,14 +1831,13 @@ describe("publication guarantees", () => {
       modeWritable: true,
       revision: before.revision + 1,
     });
-    expect(listener).not.toHaveBeenCalled();
-    expect(runtime.store.getSnapshot()).toBe(before);
+    expect(listener).toHaveBeenCalledTimes(1);
+    expect(runtime.store.getSnapshot()).toBe(runtime.store.peek());
     runtime.store.destroy();
   });
 
-  // Snapshot isolation fixes the pre-refresh mutation; signature() still omits label/selector.
   it.each(["label", "selector"] as const)(
-    "BUG: changed surface %s stays unpublished after refresh",
+    "isolates an aliased surface %s before refresh and publishes it after refresh",
     (field) => {
       const surfaces: ThemeSurface[] = [{ id: "one", label: "One", selector: ":root" }];
       const runtime = createThemeEditorRuntime({ surfaces, tokens: [initial] });
@@ -1857,8 +1852,8 @@ describe("publication guarantees", () => {
       );
       runtime.refresh();
       expect(runtime.store.peek().surface[field]).toBe(value);
-      expect(runtime.store.getSnapshot()).toBe(before);
-      expect(listener).not.toHaveBeenCalled();
+      expect(runtime.store.getSnapshot()).toBe(runtime.store.peek());
+      expect(listener).toHaveBeenCalledTimes(1);
       runtime.store.destroy();
     },
   );
@@ -1879,8 +1874,7 @@ describe("publication guarantees", () => {
     runtime.store.destroy();
   });
 
-  // Snapshot isolation fixes the pre-refresh mutation; signature() still omits list membership.
-  it("BUG: changed surface-list membership stays unpublished after refresh", () => {
+  it("publishes changed surface-list membership after refresh", () => {
     const surfaces: ThemeSurface[] = [{ id: "one", selector: ":root" }];
     const runtime = createThemeEditorRuntime({ surfaces });
     const before = runtime.store.getSnapshot();
@@ -1889,8 +1883,9 @@ describe("publication guarantees", () => {
     surfaces.push({ id: "two", label: "Two", selector: "body" });
     expect(before.surfaces).toHaveLength(1);
     runtime.refresh();
-    expect(runtime.store.getSnapshot()).toBe(before);
-    expect(listener).not.toHaveBeenCalled();
+    expect(runtime.store.peek().surfaces).toHaveLength(2);
+    expect(runtime.store.getSnapshot()).toBe(runtime.store.peek());
+    expect(listener).toHaveBeenCalledTimes(1);
     runtime.store.destroy();
   });
 
@@ -2208,10 +2203,7 @@ describe("selected surface publication", () => {
 });
 
 describe("apply-error publication without token rows", () => {
-  // Pins missing applyErrors keys in signature() (runtime.ts:915) when fallback tokens
-  // are empty; ui.tsx:412 never receives the newly failed edit key.
-  // When covered, invert to toHaveBeenCalledTimes(1) and getSnapshot() toBe(peek()).
-  it("BUG: a failed edit under an unreadable catalogue adds an invisible error key", () => {
+  it("publishes a failed edit's error key when the catalogue is unreadable", () => {
     const log = vi.spyOn(console, "error").mockImplementation(() => {});
     const runtime = createThemeEditorRuntime({
       tokens: [
@@ -2238,8 +2230,8 @@ describe("apply-error publication without token rows", () => {
       applyErrors: { "--publication": expect.stringContaining("adapter failed") },
       revision: before.revision + 1,
     });
-    expect(listener).not.toHaveBeenCalled();
-    expect(runtime.store.getSnapshot()).toBe(before);
+    expect(listener).toHaveBeenCalledTimes(1);
+    expect(runtime.store.getSnapshot()).toBe(runtime.store.peek());
     runtime.store.destroy();
     log.mockRestore();
   });

@@ -922,23 +922,10 @@ export function createThemeEditorRuntime(
     }
   };
 
-  const signature = (snapshot: ThemeSnapshot): string =>
-    `${snapshot.readError ?? ""}|${snapshot.notice ?? ""}|${snapshot.preview ? 1 : 0}|` +
-    `${snapshot.surface.id}|${snapshot.mode ?? ""}|${snapshot.writable ? 1 : 0}|` +
-    `${snapshot.maskedCount}|${snapshot.supplied ? 1 : 0}|` +
-    snapshot.tokens
-      .map(
-        (view) =>
-          `${view.name}=${view.label}:${view.description ?? ""}:${view.group}:${view.type}:` +
-          `${view.masked ? 1 : 0}:${view.metadataMasked ? 1 : 0}:` +
-          `${view.effectiveText}:${view.baseText}:${view.defaultText}:` +
-          `${view.overridden ? 1 : 0}:${view.orphaned ? 1 : 0}:${view.refusal ?? ""}:${view.applyError ?? ""}`,
-      )
-      .join("|");
-
   const store = createDerivedStore<ThemeSnapshot>(build, {
     intervalMs: 250,
-    signature,
+    // A per-build counter; nothing renders it.
+    ignorePaths: [["revision"]],
   });
 
   const publish = () => {
