@@ -407,8 +407,7 @@ export function createNetworkCollector(options: NetworkCollectorOptions = {}): N
         title: "Network",
         status: totals.started === 0 ? "pending" : "ok",
         severity: window.failed > 0 ? "bad" : window.slow > 0 ? "warn" : "ok",
-        // "paused" rather than a stalled count: the publish signature is built
-        // from status/severity/display, so an unchanged count wouldn't notify.
+        // "paused" rather than a frozen count, which reads as a live measurement.
         display: paused ? "paused" : String(window.active),
         value: window.active,
         unit: "requests",

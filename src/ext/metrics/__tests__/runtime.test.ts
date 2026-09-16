@@ -312,7 +312,7 @@ describe("publication guarantees", () => {
     };
   };
 
-  const assertViewPublication = (field: string, value: unknown, count: 0 | 1) => {
+  const assertViewPublication = (field: string, value: unknown) => {
     const { runtime, changeView } = setup();
     const before = runtime.store.getSnapshot();
     const listener = vi.fn();
@@ -320,34 +320,29 @@ describe("publication guarantees", () => {
     changeView({ [field]: value });
     runtime.flush();
     expect(runtime.store.peek().views.network).toEqual({ ...before.views.network, [field]: value });
-    expect(listener).toHaveBeenCalledTimes(count);
-    expect(runtime.store.getSnapshot()).toBe(count === 0 ? before : runtime.store.peek());
+    expect(listener).toHaveBeenCalledTimes(1);
+    expect(runtime.store.getSnapshot()).toBe(runtime.store.peek());
     runtime.store.destroy();
   };
 
+  // The bar chip paints label, title, severity, hint and display; the panel
+  // section adds unit, status, the Sparkline label and the detail rows.
   it.each([
-    ["status", "pending", 1],
-    ["severity", "warn", 1],
-    ["display", "2 req", 1],
+    ["status", "pending"],
+    ["severity", "warn"],
+    ["display", "2 req"],
+    ["id", "memory"],
+    ["label", "requests"],
+    ["title", "Traffic"],
+    ["unit", "requests"],
+    ["hint", "Requests in the last minute"],
+    ["detail", [["Active", "2"]]],
   ] as const)("view.%s publishes once", assertViewPublication);
-
-  // Pins omissions in signature() (runtime.ts:60): id/label/title/unit/hint/detail.
-  // UI reads them at ui.tsx:64/67/101/149/226/243; built-in identity metadata is fixed.
-  // When covered, change the affected zero count to 1 and getSnapshot() toBe(peek()).
-  it.each([
-    ["id", "memory", 0],
-    ["label", "requests", 0],
-    ["title", "Traffic", 0],
-    ["unit", "requests", 0],
-    ["hint", "Requests in the last minute", 0],
-    ["detail", [["Active", "2"]], 0],
-  ] as const)("BUG: view.%s changes without publishing", assertViewPublication);
 
   const assertRequestPublication = (
     field: keyof NetworkEntryView,
     index: number,
     value: string | number,
-    count: 0 | 1,
   ) => {
     const { runtime, changeRequest } = setup();
     const before = runtime.store.getSnapshot();
@@ -360,33 +355,28 @@ describe("publication guarantees", () => {
         at === index ? { ...request, [field]: value } : request,
       ),
     );
-    expect(listener, `${index}.${field}`).toHaveBeenCalledTimes(count);
-    expect(runtime.store.getSnapshot()).toBe(count === 0 ? before : runtime.store.peek());
+    expect(listener, `${index}.${field}`).toHaveBeenCalledTimes(1);
+    expect(runtime.store.getSnapshot()).toBe(runtime.store.peek());
     runtime.store.destroy();
   };
 
+  // RequestTable renders every retained row, not just the newest.
   it.each([
-    ["id", 0, "replacement", 1],
-    ["state", 0, "failed", 1],
+    ["id", 0, "replacement"],
+    ["state", 0, "failed"],
+    ["method", 0, "POST"],
+    ["status", 0, 201],
+    ["duration", 0, 20],
+    ["bytes", 0, 1024],
+    ["url", 0, "/changed"],
+    ["id", 1, "replacement"],
+    ["state", 1, "failed"],
+    ["method", 1, "POST"],
+    ["status", 1, 201],
+    ["duration", 1, 20],
+    ["bytes", 1, 1024],
+    ["url", 1, "/changed"],
   ] as const)("request.%s at index %i publishes once", assertRequestPublication);
-
-  // Pins omissions in signature() (runtime.ts:60): method/status/duration/bytes/url
-  // at either index, and non-first id/state; ui.tsx:301-306 keeps stale request rows.
-  // When covered, change each affected count to 1 and getSnapshot() toBe(peek()).
-  it.each([
-    ["method", 0, "POST", 0],
-    ["status", 0, 201, 0],
-    ["duration", 0, 20, 0],
-    ["bytes", 0, 1024, 0],
-    ["url", 0, "/changed", 0],
-    ["id", 1, "replacement", 0],
-    ["state", 1, "failed", 0],
-    ["method", 1, "POST", 0],
-    ["status", 1, 201, 0],
-    ["duration", 1, 20, 0],
-    ["bytes", 1, 1024, 0],
-    ["url", 1, "/changed", 0],
-  ] as const)("BUG: request.%s at index %i changes without publishing", assertRequestPublication);
 
   it("publishes request count alone without changing existing rows", () => {
     const { runtime, appendRequest } = setup();
@@ -460,10 +450,9 @@ describe("publication guarantees", () => {
   });
 });
 
-describe("built-in network publication omissions", () => {
-  // Pins missing request.duration in signature() (runtime.ts:60); ui.tsx:304 stays stale.
-  // When covered, invert to toHaveBeenCalledTimes(1) and getSnapshot() toBe(peek()).
-  it("BUG: an active request duration grows without publishing", async () => {
+describe("built-in network publication", () => {
+  // RequestTable paints the duration cell, so a tick that only advances it publishes.
+  it("an active request duration grows and publishes", async () => {
     vi.useFakeTimers();
     let now = 0;
     const clock = vi.spyOn(performance, "now").mockImplementation(() => now);
@@ -484,8 +473,8 @@ describe("built-in network publication omissions", () => {
       expect(runtime.store.peek().requests).toEqual([{ ...before.requests[0], duration: 100 }]);
       expect(runtime.store.peek().views).toEqual(before.views);
       expect(runtime.store.peek().seriesWritten).toBe(before.seriesWritten);
-      expect(listener).not.toHaveBeenCalled();
-      expect(runtime.store.getSnapshot()).toBe(before);
+      expect(listener).toHaveBeenCalledTimes(1);
+      expect(runtime.store.getSnapshot()).toBe(runtime.store.peek());
     } finally {
       harness.controller.abort();
       runtime.store.destroy();
@@ -494,9 +483,8 @@ describe("built-in network publication omissions", () => {
     }
   });
 
-  // Pins missing view.detail in signature() (runtime.ts:60); ui.tsx:243 keeps old window counts.
-  // When covered, invert to toHaveBeenCalledTimes(1) and getSnapshot() toBe(peek()).
-  it("BUG: rolling failure detail changes without a new sample or severity change", async () => {
+  // The panel's detail rows paint the window counts, which roll on their own.
+  it("rolling failure detail publishes without a new sample or severity change", async () => {
     vi.useFakeTimers();
     let now = 0;
     const clock = vi.spyOn(performance, "now").mockImplementation(() => now);
@@ -529,8 +517,8 @@ describe("built-in network publication omissions", () => {
       });
       expect(runtime.store.peek().requests).toEqual(before.requests);
       expect(runtime.store.peek().seriesWritten).toBe(before.seriesWritten);
-      expect(listener).not.toHaveBeenCalled();
-      expect(runtime.store.getSnapshot()).toBe(before);
+      expect(listener).toHaveBeenCalledTimes(1);
+      expect(runtime.store.getSnapshot()).toBe(runtime.store.peek());
     } finally {
       harness.controller.abort();
       runtime.store.destroy();
