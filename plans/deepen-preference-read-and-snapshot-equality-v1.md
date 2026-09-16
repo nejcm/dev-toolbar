@@ -511,15 +511,63 @@ test that pins a runtime-specific decision.
 
 ## Re-measuring
 
-Fill in after B0:
+Measured on 2026-09-16 with Bun 1.4.2 (JavaScriptCore), macOS arm64. Each
+entry is the median of 10 samples of 10,000 comparisons after 10,000 warm-up
+comparisons per comparator and case. Comparator construction and snapshot
+allocation were outside the timed loop; the loop consumed every result. CV is
+the sample standard deviation divided by the mean. The flags `signature()` is
+a faithful copy of the private function at `src/ext/flags/runtime.ts:565-579`;
+`sameSnapshot` is the real exported function. The structural comparator used
+the location-aware exclusions chosen after validation: `revision` and `at`
+only at the snapshot root, and `promotedLabel` and `promotedIcon` only on flag
+views directly under `flags[]` and `promoted[]`.
 
-```sh
-# snapshots: flags(50 views), overlays(200 focus items); 10k iterations each
-# flags    unchanged: signature ___ ms  snapshotEquals ___ ms
-# flags    1 changed: signature ___ ms  snapshotEquals ___ ms
-# overlays unchanged: sameSnapshot ___ ms  snapshotEquals ___ ms   gate: ≤ 2×
-# overlays 1 rect  : sameSnapshot ___ ms  snapshotEquals ___ ms
-```
+| Runtime | Size | Case | Existing comparator, median ns/op (CV; range) | `snapshotEquals`, median ns/op (CV; range) | Ratio |
+| --- | ---: | --- | ---: | ---: | ---: |
+| flags | 50 | unchanged, separately allocated | 18,018.3 (2.1%; 17,525.7-18,701.1) | 32,849.8 (1.3%; 32,009.5-33,295.7) | 1.82× |
+| flags | 50 | unchanged, shared nested references | 19,996.3 (2.5%; 18,926.3-20,260.5) | 236.8 (5.6%; 224.9-265.9) | 0.01× |
+| flags | 50 | label changed, first item | 16,731.0 (2.6%; 16,007.0-17,391.7) | 537.1 (4.9%; 503.8-580.3) | 0.03× |
+| flags | 50 | label changed, last item | 16,783.8 (2.3%; 15,990.1-17,211.1) | 28,778.8 (0.6%; 28,472.6-28,960.9) | 1.71× |
+| flags | 500 | unchanged, separately allocated | 201,392.4 (0.8%; 199,032.9-204,592.2) | 353,424.7 (4.0%; 331,648.7-369,319.7) | 1.75× |
+| flags | 500 | unchanged, shared nested references | 213,171.0 (0.4%; 211,691.4-214,046.5) | 264.1 (7.2%; 237.9-305.1) | <0.01× |
+| flags | 500 | label changed, first item | 191,129.9 (0.6%; 188,777.7-192,863.4) | 603.4 (5.0%; 563.4-658.9) | <0.01× |
+| flags | 500 | label changed, last item | 192,619.2 (0.5%; 190,531.1-193,466.0) | 314,506.4 (1.8%; 308,774.3-323,224.4) | 1.63× |
+| overlays | 200 | unchanged, separately allocated | 1,153.0 (2.5%; 1,132.5-1,235.7) | 103,889.1 (6.1%; 95,436.2-115,012.6) | 90.11× |
+| overlays | 200 | unchanged, shared nested references | 661.6 (2.8%; 646.7-705.3) | 332.1 (3.2%; 314.4-346.1) | 0.50× |
+| overlays | 200 | rect changed, first item | 38.5 (6.2%; 37.3-44.1) | 1,888.8 (1.1%; 1,856.2-1,921.2) | 49.05× |
+| overlays | 200 | rect changed, last item | 1,217.4 (2.0%; 1,165.5-1,244.7) | 110,785.4 (7.4%; 91,854.6-116,797.4) | 91.00× |
+| overlays | 200 | `tabIndex` changed, first item | 1,205.1 (2.7%; 1,174.5-1,269.9) | 2,310.8 (1.5%; 2,277.7-2,403.0) | 1.92× |
+| overlays | 200 | `tabIndex` changed, last item | 1,212.4 (2.0%; 1,162.1-1,256.3) | 111,454.2 (8.9%; 93,871.0-121,849.1) | 91.93× |
+| overlays | 1,000 | unchanged, separately allocated | 6,247.9 (1.3%; 6,124.3-6,358.6) | 558,247.9 (4.0%; 531,832.2-594,140.9) | 89.35× |
+| overlays | 1,000 | rect changed, last item | 6,053.9 (1.0%; 5,936.5-6,155.0) | 591,144.6 (4.0%; 560,350.8-626,580.0) | 97.65× |
+
+For the `tabIndex` cases, `sameSnapshot` returned `true` and
+`snapshotEquals` returned `false`, reproducing the omission that B4 must fix.
+All other changed cases returned `false` from both comparators.
+
+**Overlays gate: FAIL.** The representative unchanged-frame case is 90.11×,
+not within 2×. Its absolute `snapshotEquals` cost is 0.104 ms, 0.62% of a
+16.7 ms frame, so it passes an absolute frame-budget judgment at the default
+200 items. At the configured ceiling of 1,000 items, runtime clamps
+`focusLimit` to 1,000, the cost is 0.558 ms or 3.34% of the frame. The ratio
+gate and absolute judgment disagree. Keep `sameSnapshot` for B4, make it cover
+every `FocusItem` field, and reconsider only after an optimized comparator is
+measured in Chromium. These Bun results establish JavaScriptCore cost and
+short-circuit behavior; they do not establish Chromium cost or frame impact.
+
+The claim that any plausible result is noise for the other four runtimes is
+too broad. At 500 flags, a separately allocated unchanged comparison costs
+0.353 ms versus 0.201 ms for `signature()`, and a last-item change costs
+0.315 ms versus 0.193 ms. Those costs are small relative to a 250 ms timer,
+but flags and theme-editor can flush synchronously, metrics permits a 100 ms
+interval, and flag catalogues and custom collectors are not bounded. This
+measurement supports adoption for a 500-view flags snapshot. It does not by
+itself prove the same conclusion for unbounded inputs or the other three
+runtimes.
+
+The shared-reference rows are diagnostic only. Overlay frames allocate new
+focus items and rects, so the 0.50× shared-reference result is not the gate
+input.
 
 BUG-pinned tests at `431d735`:
 
