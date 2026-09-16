@@ -145,7 +145,11 @@ interface Preference<T> {
   fallback: T;
   isValue: (v: unknown) => v is T;
 }
+type PreferenceRead<T> =
+  | { readonly readable: true; readonly value: T }
+  | { readonly readable: false };
 readPreference<T>(storage, preference: Preference<T>): T;
+readPreferenceIfReadable<T>(storage, preference: Preference<T>): PreferenceRead<T>;
 writePreference<T>(storage, preference: Preference<T>, value: T): void;
 removePreference(storage, preference: { key: string }): void;
 
@@ -159,18 +163,22 @@ readStoredRecord<T>(options, isEntry: (v: unknown, name: string) => v is T): Rec
 resetRequested(param: string | null | undefined): boolean;
 ```
 
-A **preference** is a named, validated, persisted value: three operations and two
+A **preference** is a named, validated, persisted value: four operations and two
 encodings, deliberately nothing more. `readPreference` returns the stored value when
-it passes `isValue`, else `fallback`. `writePreference` stores the value — or removes
-the key when the value equals `fallback`, so storage holds only what differs from the
-fallback. A preference whose default is consumer-configurable — overlay toggles under
-`defaults`, the theme editor's `surfaces[0]` — sets `fallback: null`, so an explicit
-choice persists even when it matches that default. `removePreference` drops the key.
+it passes `isValue`, else `fallback`. `readPreferenceIfReadable` returns a tagged
+`PreferenceRead`: `{ readable: false }` means the adapter threw before answering,
+while `{ readable: true, value: fallback }` means the adapter answered but nothing
+valid was stored. The unreadable result deliberately carries no fallback value.
+`writePreference` stores the value or removes the key when the value equals `fallback`,
+so storage holds only what differs from the fallback. A preference whose default is
+consumer-configurable, such as overlay toggles under `defaults` or the theme editor's
+`surfaces[0]`, sets `fallback: null`, so an explicit choice persists even when it
+matches that default. `removePreference` drops the key.
 `storage` is `api.storage` from `start(api)`, or `null`/`undefined` before `start()`
-has run; every operation tolerates that and a throwing adapter alike — a browser with
-site data blocked, a full quota, a sandboxed iframe — by returning the fallback or
-doing nothing. A storage adapter is consumer code, and a preference must never take
-down a panel or a click handler.
+has run. Every operation tolerates that and a throwing adapter, including a browser
+with site data blocked, a full quota, or a sandboxed iframe. It returns the fallback or
+an unreadable result, or does nothing. A storage adapter is consumer code, and a
+preference must never take down a panel or a click handler.
 
 The two encodings are both first-class. `"string"` stores the value byte-for-byte —
 what a tab id, a snapshot format or an override map the extension serialises itself

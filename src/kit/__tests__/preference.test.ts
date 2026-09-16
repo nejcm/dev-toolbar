@@ -9,12 +9,13 @@ import { STORAGE_PREFIX as CORE_STORAGE_PREFIX, createMemoryStorage } from "@nej
 import {
   extensionStorageKey,
   readPreference,
+  readPreferenceIfReadable,
   readStoredRecord,
   removePreference,
   resetRequested,
   writePreference,
 } from "../index";
-import type { Preference } from "../index";
+import type { Preference, PreferenceRead } from "../index";
 import { STORAGE_PREFIX } from "../preference";
 
 afterEach(() => {
@@ -128,6 +129,74 @@ describe("readPreference", () => {
       },
     };
     expect(readPreference(createMemoryStorage({ k: "x" }), bad)).toBe("safe");
+  });
+});
+
+describe("readPreferenceIfReadable", () => {
+  it("reports an adapter throw as unreadable without a value", () => {
+    const result = readPreferenceIfReadable(throwing, settings);
+    expect(result).toEqual({ readable: false });
+    expect("value" in result).toBe(false);
+  });
+
+  it("reports null and undefined storage as readable fallback", () => {
+    const nullResult = readPreferenceIfReadable(null, settings);
+    expect(nullResult.readable).toBe(true);
+    if (nullResult.readable) expect(nullResult.value).toBe(settings.fallback);
+
+    const undefinedResult = readPreferenceIfReadable(undefined, settings);
+    expect(undefinedResult.readable).toBe(true);
+    if (undefinedResult.readable) expect(undefinedResult.value).toBe(settings.fallback);
+  });
+
+  it("reports an absent key as readable fallback", () => {
+    const result = readPreferenceIfReadable(createMemoryStorage(), settings);
+    expect(result.readable).toBe(true);
+    if (result.readable) expect(result.value).toBe(settings.fallback);
+  });
+
+  it("reports a stored raw string that passes isValue as readable", () => {
+    expect(readPreferenceIfReadable(createMemoryStorage({ tab: "network" }), tab)).toEqual({
+      readable: true,
+      value: "network",
+    });
+  });
+
+  it("reports a decoder throw as readable fallback", () => {
+    const result = readPreferenceIfReadable(createMemoryStorage({ settings: "{nope" }), settings);
+    expect(result.readable).toBe(true);
+    if (result.readable) expect(result.value).toBe(settings.fallback);
+  });
+
+  it("reports an isValue rejection as readable fallback", () => {
+    const result = readPreferenceIfReadable(
+      createMemoryStorage({ settings: '{"enabled":"yes"}' }),
+      settings,
+    );
+    expect(result.readable).toBe(true);
+    if (result.readable) expect(result.value).toBe(settings.fallback);
+  });
+
+  it("reports an isValue throw as readable fallback", () => {
+    const fallback = { safe: true };
+    const preference: Preference<typeof fallback> = {
+      key: "throwing-validator",
+      encoding: "json",
+      fallback,
+      isValue: (_value): _value is typeof fallback => {
+        throw new Error("bad guard");
+      },
+    };
+    const result = readPreferenceIfReadable(
+      createMemoryStorage({ "throwing-validator": '{"safe":false}' }),
+      preference,
+    );
+    expect(result.readable).toBe(true);
+    if (result.readable) expect(result.value).toBe(fallback);
+  });
+
+  it("leaves readPreference unchanged over a throwing adapter", () => {
+    expect(readPreference(throwing, settings)).toBe(settings.fallback);
   });
 });
 
@@ -381,6 +450,9 @@ describe("Preference", () => {
     // @ts-expect-error The value cannot widen the descriptor's object shape.
     writePreference(null, settings, { enabled: "yes" });
     expectTypeOf(readPreference(null, format)).toEqualTypeOf<"markdown" | "json">();
+    expectTypeOf(readPreferenceIfReadable(null, format)).toEqualTypeOf<
+      PreferenceRead<"markdown" | "json">
+    >();
     // @ts-expect-error Reads preserve the descriptor's union.
     const yaml: "yaml" = readPreference(null, format);
     void yaml;
