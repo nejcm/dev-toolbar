@@ -413,66 +413,6 @@ export const serializeFlags = (flags: OverlayFlags): string =>
   JSON.stringify(Object.fromEntries(OVERLAY_IDS.map((id) => [id, flags[id] === true])));
 
 /* -------------------------------------------------------------------------- */
-/* Snapshot comparison                                                         */
-/* -------------------------------------------------------------------------- */
-
-const sameRect = (a: RectLike, b: RectLike): boolean =>
-  a.x === b.x && a.y === b.y && a.width === b.width && a.height === b.height;
-
-const sameEdges = (a: Edges, b: Edges): boolean =>
-  a.top === b.top && a.right === b.right && a.bottom === b.bottom && a.left === b.left;
-
-/**
- * Every field the inspector draws from. Margin/padding must be compared too:
- * under `box-sizing: border-box` a hover state can change padding without
- * moving the border rect, so comparing `rect` alone left stale boxes drawn.
- */
-const sameHover = (a: HoverTarget | null, b: HoverTarget | null): boolean => {
-  if (a === null || b === null) return a === b;
-  return (
-    a.description === b.description &&
-    a.size === b.size &&
-    a.name === b.name &&
-    a.role === b.role &&
-    a.pinned === b.pinned &&
-    sameRect(a.rect, b.rect) &&
-    sameEdges(a.margin, b.margin) &&
-    sameEdges(a.padding, b.padding)
-  );
-};
-
-/**
- * The `equals` the store uses. Load-bearing for cost: without it, every
- * pointer-move frame would re-render the overlay tree even when nothing drawn changed.
- */
-export function sameSnapshot(a: OverlaysSnapshot, b: OverlaysSnapshot): boolean {
-  if (a === b) return true;
-  if (a.ready !== b.ready || a.active !== b.active) return false;
-  if (a.error !== b.error) return false;
-  if (a.activeCount !== b.activeCount) return false;
-  for (const id of OVERLAY_IDS) {
-    if (a.enabled[id] !== b.enabled[id]) return false;
-  }
-  if (!sameHover(a.hover, b.hover)) return false;
-  if (a.focusTruncated !== b.focusTruncated) return false;
-  if (a.unnamedCount !== b.unnamedCount) return false;
-  if (a.focusItems.length !== b.focusItems.length) return false;
-  for (let index = 0; index < a.focusItems.length; index += 1) {
-    const left = a.focusItems[index] as FocusItem;
-    const right = b.focusItems[index] as FocusItem;
-    if (
-      left.key !== right.key ||
-      left.name !== right.name ||
-      left.ariaHidden !== right.ariaHidden
-    ) {
-      return false;
-    }
-    if (!sameRect(left.rect, right.rect)) return false;
-  }
-  return true;
-}
-
-/* -------------------------------------------------------------------------- */
 /* Grid                                                                        */
 /* -------------------------------------------------------------------------- */
 
