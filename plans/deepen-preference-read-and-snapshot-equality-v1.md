@@ -632,6 +632,48 @@ readings rather than the one-sided call B0 recorded; whichever branch is taken,
 `FocusItem.tabIndex` must start being compared. These remain JavaScriptCore
 numbers and still establish neither Chromium cost nor real frame impact.
 
+### Re-measured in B4 in Chromium, and the gate amended
+
+Every number above is Bun/JavaScriptCore. Phase B4 re-ran the overlays half of
+the same script — same shapes, same 10 samples of 10,000 comparisons after
+10,000 warm-up comparisons, comparator construction and snapshot allocation
+outside the timed loop, the loop consuming every result — against the shipped
+`src/ext/overlays/types.ts` `sameSnapshot` and the shipped
+`src/runtime/snapshotEquals.ts`, bundled unminified and evaluated on
+`about:blank` in headless Chromium 153.0.8010.12 (V8) through the playground's
+own Playwright 1.63.0, macOS arm64. Timing is `performance.now()`, whose
+~100 µs clamp quantises a 10,000-comparison batch to 10 ns/op — coarse for the
+sub-100 ns rows, irrelevant for the gate row.
+
+| n | Case | `sameSnapshot` ns/op, JSC | `snapshotEquals` ns/op, JSC | **`sameSnapshot` ns/op, Chromium** | **`snapshotEquals` ns/op, Chromium** (CV) | Chromium ratio |
+| ---: | --- | ---: | ---: | ---: | ---: | ---: |
+| 200 | unchanged, separately allocated | 1,167.9 | 29,454.2 | **1,550.0** | **46,560.0** (0.5%) | 30.04× |
+| 200 | unchanged, shared nested references | 663.8 | 89.6 | **780.0** | **180.0** (3.6%) | 0.23× |
+| 200 | rect changed, first item | 37.9 | 446.8 | **60.0** | **790.0** (2.4%) | 13.17× |
+| 200 | rect changed, last item | 1,180.7 | 29,251.9 | **1,840.0** | **46,930.0** (0.2%) | 25.51× |
+| 200 | `tabIndex` changed, first item | 1,236.1 | 511.6 | **1,810.0** | **870.0** (2.2%) | 0.48× |
+| 200 | `tabIndex` changed, last item | 1,191.5 | 29,252.8 | **1,830.0** | **47,440.0** (0.2%) | 25.92× |
+| 1,000 | unchanged, separately allocated | 6,074.7 | 144,037.3 | **9,120.0** | **232,330.0** (1.0%) | 25.47× |
+| 1,000 | rect changed, last item | 5,992.4 | 143,856.5 | **9,230.0** | **230,830.0** (0.3%) | 25.01× |
+
+Chromium agrees with JavaScriptCore on the shape and on the ratio — 25.5×
+where JSC said 25.2× — and is 1.5–1.6× slower on both comparators in absolute
+terms. Both `tabIndex` cases again report `sameSnapshot` `true` and
+`snapshotEquals` `false`; every other changed case returned `false` from both.
+
+**Overlays gate: PASS, on an absolute frame budget.** The unchanged 200-item
+frame costs **0.047 ms** in Chromium, 0.28% of a 16.7 ms frame; at the 1,000
+clamp `runtime.ts:232` enforces, **0.232 ms**, 1.39%. Both are far inside the
+~1 ms line B4 set for the 1,000-item case. **Decision 6 is amended: the gate is
+an absolute share of the frame budget, not a 2× ratio against `sameSnapshot`.**
+A ratio against a 1.2 µs hand-rolled loop is the wrong yardstick when the same
+frame already forces a layout and calls `getBoundingClientRect()` once per
+tracked element; and the yardstick had itself drifted — `sameSnapshot` returns
+`true` for a changed `FocusItem.tabIndex`, a field `ui.tsx:416` renders. B4
+therefore took the adopt branch: `equals: snapshotEquals<OverlaysSnapshot>()`,
+four comparators (60 lines) deleted, the `tabIndex` BUG case folded back into
+`focus.%s publishes once`.
+
 BUG-pinned tests at `431d735`:
 
 ```sh

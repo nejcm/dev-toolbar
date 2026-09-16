@@ -23,12 +23,10 @@ import {
   isPaintedRect,
   normalizeGrid,
   parseFlags,
-  sameSnapshot,
   serializeFlags,
   tabIndexOf,
   DEFAULT_GRID,
 } from "../types";
-import type { OverlaysSnapshot } from "../types";
 import type { ExtensionRuntimeApi } from "../../../core/contract";
 
 const html = (markup: string): HTMLElement => {
@@ -480,98 +478,6 @@ describe("the runtime on its own", () => {
   });
 });
 
-describe("snapshot equality", () => {
-  const base: OverlaysSnapshot = {
-    enabled: { ...NO_OVERLAYS },
-    activeCount: 0,
-    hover: null,
-    focusItems: [],
-    focusTruncated: false,
-    unnamedCount: 0,
-    ready: true,
-    active: true,
-    error: null,
-  };
-  const hover = {
-    rect: { x: 1, y: 2, width: 3, height: 4 },
-    margin: { top: 0, right: 0, bottom: 0, left: 0 },
-    padding: { top: 0, right: 0, bottom: 0, left: 0 },
-    description: "div",
-    size: "3 × 4",
-    name: null,
-    role: null,
-    pinned: false,
-  };
-
-  it("is what stops a stationary pointer re-rendering the page", () => {
-    // The pointer moves inside one element: same rect, same label, nothing to
-    // repaint. Without this the overlay tree would re-render every frame.
-    expect(sameSnapshot({ ...base, hover }, { ...base, hover: { ...hover } })).toBe(true);
-    expect(
-      sameSnapshot(
-        { ...base, hover },
-        { ...base, hover: { ...hover, rect: { ...hover.rect, x: 2 } } },
-      ),
-    ).toBe(false);
-  });
-
-  it("notices a padding change that does not move the border box", () => {
-    // Under `box-sizing: border-box` — most applications — a hover state or an
-    // inline style can change padding while the border rect stays put. The
-    // inspector draws the padding and margin boxes from these, so comparing
-    // only `rect` left it drawing stale ones until the pointer moved on.
-    const padded = {
-      ...hover,
-      padding: { top: 8, right: 8, bottom: 8, left: 8 },
-    };
-    expect(sameSnapshot({ ...base, hover }, { ...base, hover: padded })).toBe(false);
-    const marginned = {
-      ...hover,
-      margin: { top: 0, right: 0, bottom: 12, left: 0 },
-    };
-    expect(sameSnapshot({ ...base, hover }, { ...base, hover: marginned })).toBe(false);
-    // And the two labels the inspector prints from.
-    expect(sameSnapshot({ ...base, hover }, { ...base, hover: { ...hover, role: "button" } })).toBe(
-      false,
-    );
-    expect(sameSnapshot({ ...base, hover }, { ...base, hover: { ...hover, pinned: true } })).toBe(
-      false,
-    );
-  });
-
-  it("notices every field a surface reads", () => {
-    expect(sameSnapshot(base, { ...base, active: false })).toBe(false);
-    expect(sameSnapshot(base, { ...base, error: "x" })).toBe(false);
-    expect(sameSnapshot(base, { ...base, unnamedCount: 1 })).toBe(false);
-    expect(sameSnapshot(base, { ...base, focusTruncated: true })).toBe(false);
-    expect(
-      sameSnapshot(base, {
-        ...base,
-        enabled: { ...NO_OVERLAYS, grid: true },
-        activeCount: 1,
-      }),
-    ).toBe(false);
-    const item = {
-      key: "1:BUTTON",
-      index: 1,
-      rect: { x: 0, y: 0, width: 10, height: 10 },
-      tag: "button",
-      name: "Save",
-      tabIndex: null,
-      ariaHidden: false,
-    };
-    expect(
-      sameSnapshot({ ...base, focusItems: [item] }, { ...base, focusItems: [{ ...item }] }),
-    ).toBe(true);
-    expect(
-      sameSnapshot(
-        { ...base, focusItems: [item] },
-        { ...base, focusItems: [{ ...item, name: null }] },
-      ),
-    ).toBe(false);
-  });
-});
-
 describe("geometry observation", () => {
   beforeEach(() => {
     vi.stubGlobal("ResizeObserver", GeometryResizeObserver);
@@ -1018,14 +924,13 @@ describe("publication guarantees", () => {
       fireEvent.scroll(window);
       await settle();
       expect(runtime.store.peek().focusItems).toEqual([{ ...before.focusItems[0], ...delta }]);
-      const count = field === "tabIndex" ? 0 : 1;
-      expect(listener).toHaveBeenCalledTimes(count);
-      expect(runtime.store.getSnapshot()).toBe(count ? runtime.store.peek() : before);
+      expect(listener).toHaveBeenCalledTimes(1);
+      expect(runtime.store.getSnapshot()).toBe(runtime.store.peek());
       const stable = runtime.store.getSnapshot();
       fireEvent.scroll(window);
       await settle();
       expect(runtime.store.getSnapshot()).toBe(stable);
-      expect(listener).toHaveBeenCalledTimes(count);
+      expect(listener).toHaveBeenCalledTimes(1);
     } finally {
       stop();
       runtime.store.destroy();
@@ -1033,15 +938,10 @@ describe("publication guarantees", () => {
     }
   };
 
-  it.each(["name", "ariaHidden", "rect.x", "rect.y", "rect.width", "rect.height"])(
+  it.each(["name", "ariaHidden", "tabIndex", "rect.x", "rect.y", "rect.width", "rect.height"])(
     "focus.%s publishes once",
     assertFocusPublication,
   );
-
-  // Pins a bug: sameSnapshot() (types.ts) omits focusItems.tabIndex, so a
-  // tabIndex-only change never publishes and ui.tsx keeps the old badge. Once
-  // fixed, change the expected notification count to 1 here.
-  it("BUG: focus.tabIndex changes without publishing", () => assertFocusPublication("tabIndex"));
 
   it.each(OVERLAY_IDS)("publishes enabled.%s and activeCount synchronously", (id) => {
     const runtime = createOverlaysRuntime();
