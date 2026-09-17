@@ -56,7 +56,8 @@ So it behaves like `/ext/flags`, which changes what your app *does*:
   toggle and surface choice remain session state across a restart.
 - **There is a kill switch.** Any page loaded with `?dtb-theme=reset` drops every edit
   *before* any of them is applied, because the edit that makes the page unreadable is
-  the one you cannot see the panel to remove.
+  the one you cannot see the panel to remove. The saved surface selection and preview
+  toggle are restored on both the reset load and the next ordinary load.
 - **Reset is exact.** The inline value each property held before the extension touched
   it — priority included — is restored, and a `style` attribute the extension created
   is removed rather than left empty. Same on teardown, unconditionally.

@@ -1,5 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { fakeExtensionApi } from "@nejcm/dev-toolbar/testing";
 import { createJankCollector } from "../collectors/jank";
+import { createMetricsRuntime } from "../runtime";
 
 const originalRaf = Object.getOwnPropertyDescriptor(globalThis, "requestAnimationFrame");
 const originalCaf = Object.getOwnPropertyDescriptor(globalThis, "cancelAnimationFrame");
@@ -85,6 +87,32 @@ const context = (controller: AbortController, clock: { t: number }) => ({
 });
 
 describe("jank collector — rAF present", () => {
+  it("reports percentage values in diagnostics while retaining the raw jank ratio", () => {
+    const frames = installFrames();
+    const collector = createJankCollector({ frameMs: 16 });
+    const runtime = createMetricsRuntime({ collectors: [collector] });
+    const harness = fakeExtensionApi();
+    const dispose = runtime.start(harness.api);
+    try {
+      frames.tick(16);
+      for (let index = 0; index < 8; index += 1) {
+        for (const delta of [16, 16, 16, 32]) frames.tick(delta);
+      }
+      runtime.flush();
+      expect(runtime.store.getSnapshot().views.jank).toMatchObject({
+        display: "20.0%",
+        severity: "bad",
+      });
+      expect(runtime.diagnostics()).toMatchObject({
+        metrics: [{ id: "jank", value: 20, unit: "%" }],
+        jank: { ratio: 0.2, dropped: 8, expected: 40 },
+      });
+    } finally {
+      dispose();
+      harness.controller.abort();
+    }
+  });
+
   it("counts dropped frames over the rolling window", () => {
     const frames = installFrames();
     const clock = { t: 0 };

@@ -46,7 +46,7 @@ export interface MetricView {
   severity: Severity;
   /** Formatted for display. `"NA"` when unsupported. */
   display: string;
-  /** The number the sparkline scales against. `NaN` when unknown. */
+  /** Numeric reading in `unit`. `NaN` when unknown. */
   value: number;
   unit: string;
   /** One sentence: what this measures, or why it is unavailable here. */

@@ -36,7 +36,8 @@ back as CSS, a recipe, a design-tokens export or a link.
 - **Kill switch.** Edits persist under
   `dtb:v1:<instanceId>:ext:<id>:overrides` and reapply on the next mount.
   `?dtb-theme=reset` drops them before any are applied, so a broken edit is
-  recoverable even when it makes the panel unreadable.
+  recoverable even when it makes the panel unreadable. The saved surface selection
+  and preview toggle are restored on both the reset load and the next ordinary load.
 - **A throwing consumer adapter does not wipe the session.** Under `persist: true`
   the stored map replaces the live one only when `getItem` actually returned. A
   `stop()`/`start()` with an adapter supplied through the toolbar's `storage` prop
