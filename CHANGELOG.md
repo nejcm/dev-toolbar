@@ -14,6 +14,13 @@
   style break at the boundary is accepted, not an oversight.
 -->
 
+## [0.12.1](https://github.com/nejcm/dev-toolbar/compare/v0.12.0...v0.12.1) (2026-09-17)
+
+
+### Bug Fixes
+
+* **ext:** stop a theme reset load disagreeing with the next one ([#118](https://github.com/nejcm/dev-toolbar/issues/118)) ([8dbe15c](https://github.com/nejcm/dev-toolbar/commit/8dbe15c5c0463676d1535d676aa55881ede5716d))
+
 ## [0.12.0](https://github.com/nejcm/dev-toolbar/compare/v0.11.0...v0.12.0) (2026-09-17)
 
 
