@@ -54,17 +54,63 @@ and `isSensitiveKey()` for reusing the word list, `describeErrorUnmasked()`,
   `destroy({ flush: true })` to publish it first. A throwing listener is
   contained, not propagated into whatever published; pass `onError` to
   replace the default `console.error`, same as `createEventBus`.
-- **`createDerivedStore(build, { signature, intervalMs })`** — builds initially with
-  `build(0)` and returns the full `ThrottledStore` plus `read()` and `rebuild()`.
-  `rebuild()` synchronously advances revision and writes `build(revision)`, even
-  when the signatures match. `peek()` reflects that write immediately; the throttle
-  compares signatures at publication time. A field omitted from `signature` can
-  change without a notification, so cover every field the reader depends on.
+- **`createDerivedStore(build, { intervalMs, ignorePaths })`** — builds initially
+  with `build(0)` and returns the full `ThrottledStore` plus `read()` and
+  `rebuild()`. `rebuild()` synchronously advances revision and writes
+  `build(revision)`, even when the new build compares equal. `peek()` reflects that
+  write immediately; the throttle compares the two *snapshots* at publication time
+  with `snapshotEquals({ ignorePaths })`. So every field of the snapshot reaches the
+  reader by default, and a runtime lists only what must **not** publish.
   `read()` builds at the current revision without advancing it or writing.
   Direct `set()` and `update()` retain their throttled-store behavior and do not
   advance revision. Polling, reconciliation and explicit `flush()` calls belong
-  to the caller. Options accept the throttle's clock, scheduler and error
-  handler; `signature` replaces `equals`.
+  to the caller. Options accept the throttle's clock, scheduler and error handler;
+  the store owns the comparison, so there is no `equals` to pass.
+  - **`ignorePaths` is a list of key *paths* from the snapshot root, never bare
+    names.** `[["revision"], ["at"], ["flags", "promotedLabel"]]` drops the
+    per-build counters at the root and the promotion metadata on every element of
+    `flags` — array indices are not path segments, so an array's elements share its
+    path. "Ignore this name at any depth" would be a smaller thing to write and an
+    unsafe one: flags' `adapterErrors` is keyed by flag name, so a global
+    `revision` entry would silently swallow the adapter error for a flag called
+    `revision` — the panel would keep showing a stale error — and a metric
+    collector id may legally be `revision` or `at`, which would hide a whole
+    custom view.
+  - **A dictionary's *values* are not addressable.** Paths step through keys, and
+    only arrays are transparent, so a snapshot holding `items: Record<id, Item>`
+    cannot say "ignore `items.*.field`"; `["items", "field"]` would ignore a
+    literal `field` key on `items` itself. Every first-party snapshot keeps its
+    lists in arrays, where `["items", "field"]` reads as intended.
+  - **`signature` remains an override and still wins when it is given**, with its
+    old warning: a field omitted from `signature` can change without a
+    notification, so cover every field the reader depends on. It is now optional,
+    as is the options argument itself. Every existing *call* keeps compiling and
+    behaving identically; code that reads `options.signature(snapshot)` off a value
+    typed `CreateDerivedStoreOptions<T>` does not, because the property type is now
+    `((snapshot: T) => string) | undefined`. That is a declaration-level change, not
+    a purely additive one.
+- **`snapshotEquals({ ignorePaths })`** — the structural comparison above, on its
+  own, for a `createThrottledStore` caller that wants it (the throttled store's
+  own default is still `Object.is`). Returns `(a, b) => boolean`. The rules:
+  - `Object.is` first, so a shared unchanged reference costs one comparison, and
+    `NaN` equals itself at every depth.
+  - Arrays: equal length, then elementwise in order.
+  - Plain objects, `Object.prototype` or `null` prototype alike, and equal to each
+    other when their contents match: own enumerable **string** keys, with
+    `undefined`-valued keys treated as absent — symmetrically, at every depth — so
+    an optional field compares the way a reader experiences it. Own-property
+    semantics throughout, so a key named `constructor` or `__proto__` is just data.
+  - Everything else — functions, class instances, `Date` — by identity. Two equal
+    `Date`s are therefore *not* equal here; snapshots hold plain data.
+  - The limits, on purpose: supported input is acyclic plain data that nothing
+    mutates after publication, so a cycle exhausts the stack rather than answering;
+    symbol-keyed, non-enumerable and inherited properties are never compared, nor
+    are extra properties hung on an array; an array hole reads as `undefined`; a
+    getter or proxy trap runs as an ordinary read and its throw propagates to
+    whoever published. `Object.is(0, -0)` is false, so a zero changing sign
+    notifies where a string signature would not.
+  - `ignorePaths` is captured when the comparator is created: mutating the array
+    you passed afterwards cannot silently change what equality means.
 - **`redact(value)` / `redactUrl(url)` / `redactHeaders(headers)`** — masks
   credentials on the way to a screenshot, a clipboard or a bug report. Hygiene,
   **not a security boundary**: it matches names and shapes, so a secret under

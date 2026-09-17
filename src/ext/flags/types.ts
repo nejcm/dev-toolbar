@@ -95,10 +95,11 @@ export interface PromotedFlag {
    * A short glyph rendered before the label. Text, not an asset — deliberately
    * still `string`.
    *
-   * Copied into the snapshot as {@link FlagView.promotedIcon}, and this store
-   * publishes on a string signature: a `ReactNode` can't be signed (omitted it
-   * never publishes; `JSON.stringify`'d it republishes every tick and leaks a
-   * React element into what `diagnostics()` serialises). Rich icons go on
+   * Copied into the snapshot as {@link FlagView.promotedIcon}, and a snapshot
+   * holds plain data: a `ReactNode` is a plain object, so the comparator walks
+   * it — through `_owner` into a cyclic fiber in development, which exhausts the
+   * stack — and it would leak a React element into what `diagnostics()`
+   * serialises. Rich icons go on
    * {@link PromotedFlag.presentation} instead, which stays in the factory
    * closure and never reaches the store
    * (`docs/adr/ADR-004-per-extension-bar-presentation.md`).
@@ -194,8 +195,8 @@ export interface FlagView {
    *
    * Two entries can name the same key with different windows, so "which
    * entry won" isn't answerable from the key alone — this tells the UI which
-   * one to pull {@link PromotedFlag.presentation} from. A number is signable;
-   * the presentation itself never enters a snapshot.
+   * one to pull {@link PromotedFlag.presentation} from. A number is plain
+   * snapshot data; the presentation itself never enters a snapshot.
    */
   promotedIndex?: number;
   promotedLabel?: string;

@@ -106,9 +106,9 @@ Two things are specific to flags:
   *preset* still forces the full word there, which is the library-wide
   overflow guarantee.
 - **`PromotedFlag.icon` stays a `string`** — "text, not an asset". It is copied
-  into every snapshot as `FlagView.promotedIcon`, and this store republishes on
-  a **string signature**: a `ReactNode` cannot be signed (left out it never
-  publishes; `JSON.stringify`'d it republishes every 250 ms tick) and it would
+  into every snapshot as `FlagView.promotedIcon`, and the store compares the
+  whole snapshot structurally: a React element is a plain object the comparator
+  walks into, in development through `_owner` into a cyclic fiber, and it would
   sit inside what `diagnostics()` serialises. Rich icons go on
   `presentation.icon`, which lives in the factory closure and reaches `ui.tsx`
   as a prop, exactly as `label` and `injectStyles` do. The string glyph still

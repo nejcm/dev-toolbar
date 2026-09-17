@@ -301,6 +301,10 @@ used ad hoc (flags, metrics, `agent/report.ts:173`).
 
 ### The deepened module
 
+**Superseded in B2 — the `ignore?: readonly string[]` sketched below never
+shipped.** The interface is `ignorePaths`, a list of key paths from the snapshot
+root; `docs/runtime.md` is the built version, and Decision 4 says why.
+
 One comparator module in `src/runtime/`, used two ways:
 
 ```ts
@@ -368,6 +372,10 @@ adopts `snapshotEquals` only if the unchanged-frame compare is within 2× of
 `sameSnapshot` on the 200-item case. flags/environment/theme-editor/metrics
 adopt regardless — at 250–500 ms any plausible result is noise.
 
+**Superseded — see "Re-measuring".** The ratio gate failed at every
+measurement and an absolute frame-budget reading decided overlays instead; and
+"any plausible result is noise" turned out to be too broad for the other four.
+
 - **Estimate: 1 hour.**
 
 #### Phase B1 — snapshot isolation (theme-editor, flags)
@@ -402,8 +410,11 @@ Own the data before comparing it.
   compares the snapshot; list what to ignore; `signature` remains as an
   override. Add a `snapshotEquals` entry with the five rules.
 - **Estimate: half a day.** Own PR: `feat(runtime): a structural snapshot
-  comparison the derived store uses by default`. Additive on `/runtime`; the
-  PR body says so.
+  comparison the derived store uses by default`. Not purely additive on
+  `/runtime`: every existing *call* keeps compiling, but `signature` becoming
+  optional on the exported `CreateDerivedStoreOptions<T>` breaks code that reads
+  `options.signature(x)` off a value of that type. `docs/runtime.md` says so, and
+  the PR body says so.
 
 #### Phase B3 — adopt in the four throttled-at-250–500 ms runtimes
 
@@ -450,14 +461,25 @@ test that pins a runtime-specific decision.
   frames — and the `verify-dev-toolbar` overlays recipe once by hand.
 - **Estimate: 2 hours.**
 
+**Historical — see "Re-measuring".** The two branches above are written against
+the 2× ratio. B4 amended the gate to an absolute frame budget and took the
+adopt branch; the line references here are the pre-B1 ones.
+
 #### Phase B5 — conventions
 
 - `src/ext/README.md` "Every field of a `*Snapshot` … is required" bullet: add
   the second half of the contract — the store compares the whole snapshot;
-  a runtime lists only what must *not* publish, in `ignore`; snapshots hold no
-  reference a consumer can mutate.
-- Per-extension READMEs and `docs/ext/*.md` that mention `signature`: grep and
-  update (`grep -rn "signature" src/ext/*/README.md docs/`).
+  a runtime lists only what must *not* publish, in `ignorePaths`; snapshots hold
+  no alias to mutable consumer input, and a consumer must treat a published
+  snapshot as immutable. Not "no reference a consumer can mutate": metrics
+  publishes `Collector.read()` output by reference, and that ownership contract
+  is documented on the collector instead.
+- Everything that mentions `signature`: grep `src/`, `docs/`, `README.md` and
+  `examples/`, not just `src/ext/*/README.md docs/` — the prose that survived
+  every earlier sweep was in source comments and test docblocks.
+- `docs/adr/ADR-004` describes the signature mechanism in its justification. Its
+  decision is unchanged and `docs/adr/README.md` forbids editing an ADR to match
+  the code, so it stays as written; the live prose carries the new reason.
 - `knip` will catch a leftover export; `bun run verify` is the gate.
 - **Estimate: 1 hour.** Folds into the last B3/B4 PR.
 
@@ -471,15 +493,26 @@ test that pins a runtime-specific decision.
 3. **`signature` stays as an optional override.** `CreateDerivedStoreOptions`
    is a published type; removing the field is a breaking change for a
    hypothetical third party. Mark it `@deprecated` in the docblock and drop it
-   in the next major.
+   in the next major. **Amended in B5: the tag was deliberately not added, and
+   the field is not scheduled for removal.** An explicit `signature` is a
+   legitimate override for a store that wants one field to decide publication,
+   not a mistake to migrate off — and `derivedStore.test.ts` exercises it on
+   purpose, so the tag would flag our own suite. Its docblock warns instead.
 4. **`ignore` by key name at any depth.** Path syntax is a bigger interface
    for one nested case. If a future snapshot has a colliding name, that
-   runtime gets a path-aware comparator then.
+   runtime gets a path-aware comparator then. **Superseded before B2 shipped:**
+   the colliding names were already there — flags' `adapterErrors` is keyed by
+   flag name, and a metric collector id may legally be `revision` or `at` — so
+   the shipped interface is `ignorePaths`, a list of key paths from the snapshot
+   root, with array indices transparent. `docs/runtime.md` states the rule.
 5. **`recentlyUsed` publishes.** It is state the runtime computes and the panel
    can show; the `BUG:` test says so. If the panel should *not* react, that is
    an `ignore` entry with a comment, not a comparator special case.
 6. **Overlays is gated on measurement, not opinion.** 2× on an unchanged
-   200-item frame is the line.
+   200-item frame is the line. **Amended in B4 — see "Re-measuring":** the line
+   is an absolute share of the frame budget, not a ratio against `sameSnapshot`,
+   which is the wrong yardstick for a frame that already forces a layout.
+   Overlays adopted the comparator on it.
 
 ### Cost, in one table
 
@@ -511,15 +544,176 @@ test that pins a runtime-specific decision.
 
 ## Re-measuring
 
-Fill in after B0:
+Measured on 2026-09-16 with Bun 1.4.2 (JavaScriptCore), macOS arm64. Each
+entry is the median of 10 samples of 10,000 comparisons after 10,000 warm-up
+comparisons per comparator and case. Comparator construction and snapshot
+allocation were outside the timed loop; the loop consumed every result. CV is
+the sample standard deviation divided by the mean. The flags `signature()` is
+a faithful copy of the private function at `src/ext/flags/runtime.ts:565-579`;
+`sameSnapshot` is the real exported function. The structural comparator used
+the location-aware exclusions chosen after validation: `revision` and `at`
+only at the snapshot root, and `promotedLabel` and `promotedIcon` only on flag
+views directly under `flags[]` and `promoted[]`.
 
-```sh
-# snapshots: flags(50 views), overlays(200 focus items); 10k iterations each
-# flags    unchanged: signature ___ ms  snapshotEquals ___ ms
-# flags    1 changed: signature ___ ms  snapshotEquals ___ ms
-# overlays unchanged: sameSnapshot ___ ms  snapshotEquals ___ ms   gate: ≤ 2×
-# overlays 1 rect  : sameSnapshot ___ ms  snapshotEquals ___ ms
-```
+| Runtime | Size | Case | Existing comparator, median ns/op (CV; range) | `snapshotEquals`, median ns/op (CV; range) | Ratio |
+| --- | ---: | --- | ---: | ---: | ---: |
+| flags | 50 | unchanged, separately allocated | 18,018.3 (2.1%; 17,525.7-18,701.1) | 32,849.8 (1.3%; 32,009.5-33,295.7) | 1.82× |
+| flags | 50 | unchanged, shared nested references | 19,996.3 (2.5%; 18,926.3-20,260.5) | 236.8 (5.6%; 224.9-265.9) | 0.01× |
+| flags | 50 | label changed, first item | 16,731.0 (2.6%; 16,007.0-17,391.7) | 537.1 (4.9%; 503.8-580.3) | 0.03× |
+| flags | 50 | label changed, last item | 16,783.8 (2.3%; 15,990.1-17,211.1) | 28,778.8 (0.6%; 28,472.6-28,960.9) | 1.71× |
+| flags | 500 | unchanged, separately allocated | 201,392.4 (0.8%; 199,032.9-204,592.2) | 353,424.7 (4.0%; 331,648.7-369,319.7) | 1.75× |
+| flags | 500 | unchanged, shared nested references | 213,171.0 (0.4%; 211,691.4-214,046.5) | 264.1 (7.2%; 237.9-305.1) | <0.01× |
+| flags | 500 | label changed, first item | 191,129.9 (0.6%; 188,777.7-192,863.4) | 603.4 (5.0%; 563.4-658.9) | <0.01× |
+| flags | 500 | label changed, last item | 192,619.2 (0.5%; 190,531.1-193,466.0) | 314,506.4 (1.8%; 308,774.3-323,224.4) | 1.63× |
+| overlays | 200 | unchanged, separately allocated | 1,153.0 (2.5%; 1,132.5-1,235.7) | 103,889.1 (6.1%; 95,436.2-115,012.6) | 90.11× |
+| overlays | 200 | unchanged, shared nested references | 661.6 (2.8%; 646.7-705.3) | 332.1 (3.2%; 314.4-346.1) | 0.50× |
+| overlays | 200 | rect changed, first item | 38.5 (6.2%; 37.3-44.1) | 1,888.8 (1.1%; 1,856.2-1,921.2) | 49.05× |
+| overlays | 200 | rect changed, last item | 1,217.4 (2.0%; 1,165.5-1,244.7) | 110,785.4 (7.4%; 91,854.6-116,797.4) | 91.00× |
+| overlays | 200 | `tabIndex` changed, first item | 1,205.1 (2.7%; 1,174.5-1,269.9) | 2,310.8 (1.5%; 2,277.7-2,403.0) | 1.92× |
+| overlays | 200 | `tabIndex` changed, last item | 1,212.4 (2.0%; 1,162.1-1,256.3) | 111,454.2 (8.9%; 93,871.0-121,849.1) | 91.93× |
+| overlays | 1,000 | unchanged, separately allocated | 6,247.9 (1.3%; 6,124.3-6,358.6) | 558,247.9 (4.0%; 531,832.2-594,140.9) | 89.35× |
+| overlays | 1,000 | rect changed, last item | 6,053.9 (1.0%; 5,936.5-6,155.0) | 591,144.6 (4.0%; 560,350.8-626,580.0) | 97.65× |
+
+For the `tabIndex` cases, `sameSnapshot` returned `true` and
+`snapshotEquals` returned `false`, reproducing the omission that B4 must fix.
+All other changed cases returned `false` from both comparators.
+
+**Overlays gate: FAIL.** The representative unchanged-frame case is 90.11×,
+not within 2×. Its absolute `snapshotEquals` cost is 0.104 ms, 0.62% of a
+16.7 ms frame, so it passes an absolute frame-budget judgment at the default
+200 items. At the configured ceiling of 1,000 items, runtime clamps
+`focusLimit` to 1,000, the cost is 0.558 ms or 3.34% of the frame. The ratio
+gate and absolute judgment disagree. Keep `sameSnapshot` for B4, make it cover
+every `FocusItem` field, and reconsider only after an optimized comparator is
+measured in Chromium. These Bun results establish JavaScriptCore cost and
+short-circuit behavior; they do not establish Chromium cost or frame impact.
+
+The claim that any plausible result is noise for the other four runtimes is
+too broad. At 500 flags, a separately allocated unchanged comparison costs
+0.353 ms versus 0.201 ms for `signature()`, and a last-item change costs
+0.315 ms versus 0.193 ms. Those costs are small relative to a 250 ms timer,
+but flags and theme-editor can flush synchronously, metrics permits a 100 ms
+interval, and flag catalogues and custom collectors are not bounded. This
+measurement supports adoption for a 500-view flags snapshot. It does not by
+itself prove the same conclusion for unbounded inputs or the other three
+runtimes.
+
+The shared-reference rows are diagnostic only. Overlay frames allocate new
+focus items and rects, so the 0.50× shared-reference result is not the gate
+input.
+
+### Re-measured in B2 against the shipped comparator
+
+The table above was produced in B0 by a **scratch** comparator. Phase B2 re-ran
+the same script — same machine, Bun 1.4.2 (JavaScriptCore), macOS arm64, same
+10 samples of 10,000 comparisons after 10,000 warm-up comparisons, quiet
+foreground, nothing else running — against the real
+`src/runtime/snapshotEquals.ts` as shipped (own-property guard included) with
+the shipped `ignorePaths` (`[["revision"], ["at"], ["flags", "promotedLabel"],
+["flags", "promotedIcon"], ["promoted", "promotedLabel"], ["promoted",
+"promotedIcon"]]`). The real comparator is **1.6–4.2× faster than the scratch
+one** on every walked case, the widest margins on the overlay shapes: it reads
+own enumerable *string* keys only (no `getOwnPropertySymbols` allocation per
+object), tracks exclusions through a trie built once at creation instead of a
+path array and a predicate call per key, and counts keys instead of allocating
+filtered key arrays.
+
+| Runtime | Size | Case | Existing comparator, median ns/op | B0 scratch `snapshotEquals` | **B2 real `snapshotEquals`** (CV) | B2 ratio vs existing |
+| --- | ---: | --- | ---: | ---: | ---: | ---: |
+| flags | 50 | unchanged, separately allocated | 19,056.0 | 32,849.8 | **21,125.3** (0.5%) | 1.11× |
+| flags | 50 | unchanged, shared nested references | 20,768.5 | 236.8 | **174.1** (3.9%) | 0.01× |
+| flags | 50 | label changed, first item | 17,585.7 | 537.1 | **237.4** (3.5%) | 0.01× |
+| flags | 50 | label changed, last item | 17,517.0 | 28,778.8 | **18,773.1** (0.4%) | 1.07× |
+| flags | 500 | unchanged, separately allocated | 211,977.0 | 353,424.7 | **211,452.8** (0.2%) | 1.00× |
+| flags | 500 | unchanged, shared nested references | 219,126.7 | 264.1 | **179.5** (5.7%) | <0.01× |
+| flags | 500 | label changed, first item | 196,318.6 | 603.4 | **235.8** (4.6%) | <0.01× |
+| flags | 500 | label changed, last item | 196,676.0 | 314,506.4 | **185,173.2** (0.5%) | 0.94× |
+| overlays | 200 | unchanged, separately allocated | 1,167.9 | 103,889.1 | **29,454.2** (0.4%) | 25.22× |
+| overlays | 200 | unchanged, shared nested references | 663.8 | 332.1 | **89.6** (7.7%) | 0.14× |
+| overlays | 200 | rect changed, first item | 37.9 | 1,888.8 | **446.8** (2.0%) | 11.79× |
+| overlays | 200 | rect changed, last item | 1,180.7 | 110,785.4 | **29,251.9** (0.3%) | 24.77× |
+| overlays | 200 | `tabIndex` changed, first item | 1,236.1 | 2,310.8 | **511.6** (2.6%) | 0.41× |
+| overlays | 200 | `tabIndex` changed, last item | 1,191.5 | 111,454.2 | **29,252.8** (0.4%) | 24.55× |
+| overlays | 1,000 | unchanged, separately allocated | 6,074.7 | 558,247.9 | **144,037.3** (0.3%) | 23.71× |
+| overlays | 1,000 | rect changed, last item | 5,992.4 | 591,144.6 | **143,856.5** (0.3%) | 24.01× |
+
+Both `tabIndex` cases still report `sameSnapshot` `true` and `snapshotEquals`
+`false`, reproducing the omission B4 must fix. Every other changed case
+returned `false` from both.
+
+The `Object.hasOwn` guard on the right-hand read — without which an own
+`__proto__` key answers `Object.prototype` and two unequal snapshots compare
+equal — costs a consistent **~6%** across shapes, measured against an otherwise
+identical quiet foreground run of the pre-guard build (overlays 200:
+27,821.9 → 29,454.2; overlays 1,000: 135,224.6 → 144,037.3; flags 500
+unchanged: 199,582.4 → 211,452.8). It is not optional and it does not change
+any conclusion below.
+
+**The flags concern in "what would make this not worth doing" is closed.** At
+500 views the structural comparison is on par with `signature()` on the
+unchanged frame (0.211 ms vs 0.212 ms), slightly cheaper on a last-item change
+(0.185 ms vs 0.197 ms), and ~830× cheaper on a first-item change because it
+short-circuits where a string build cannot. At 50 views it is 1.07–1.11×.
+Nothing here says the comparator is wrong.
+
+**Overlays gate: still FAIL on the ratio as written, now a comfortable PASS on
+the absolute budget.** 25.22× is not within 2×. But the unchanged 200-item
+frame costs 0.029 ms — 0.18% of a 16.7 ms frame, down from B0's 0.104 ms and
+0.62% — and at the clamped 1,000-item ceiling 0.144 ms, 0.86% of a frame, down
+from 0.558 ms and 3.34%. The B4 branch is therefore a judgment between the two
+readings rather than the one-sided call B0 recorded; whichever branch is taken,
+`FocusItem.tabIndex` must start being compared. These remain JavaScriptCore
+numbers and still establish neither Chromium cost nor real frame impact.
+
+### Re-measured in B4 in Chromium, and the gate amended
+
+Every number above is Bun/JavaScriptCore. Phase B4 re-ran the overlays half of
+the same script — same shapes, same 10 samples of 10,000 comparisons after
+10,000 warm-up comparisons, comparator construction and snapshot allocation
+outside the timed loop, the loop consuming every result — against the shipped
+`src/ext/overlays/types.ts` `sameSnapshot` and the shipped
+`src/runtime/snapshotEquals.ts`, bundled unminified and evaluated on
+`about:blank` in headless Chromium 153.0.8010.12 (V8) through the playground's
+own Playwright 1.63.0, macOS arm64. Timing is `performance.now()`, whose
+~100 µs clamp quantises a 10,000-comparison batch to 10 ns/op — coarse for the
+sub-100 ns rows, irrelevant for the gate row.
+
+| n | Case | `sameSnapshot` ns/op, JSC | `snapshotEquals` ns/op, JSC | **`sameSnapshot` ns/op, Chromium** | **`snapshotEquals` ns/op, Chromium** (CV) | Chromium ratio |
+| ---: | --- | ---: | ---: | ---: | ---: | ---: |
+| 200 | unchanged, separately allocated | 1,167.9 | 29,454.2 | **1,550.0** | **46,560.0** (0.5%) | 30.04× |
+| 200 | unchanged, shared nested references | 663.8 | 89.6 | **780.0** | **180.0** (3.6%) | 0.23× |
+| 200 | rect changed, first item | 37.9 | 446.8 | **60.0** | **790.0** (2.4%) | 13.17× |
+| 200 | rect changed, last item | 1,180.7 | 29,251.9 | **1,840.0** | **46,930.0** (0.2%) | 25.51× |
+| 200 | `tabIndex` changed, first item | 1,236.1 | 511.6 | **1,810.0** | **870.0** (2.2%) | 0.48× |
+| 200 | `tabIndex` changed, last item | 1,191.5 | 29,252.8 | **1,830.0** | **47,440.0** (0.2%) | 25.92× |
+| 1,000 | unchanged, separately allocated | 6,074.7 | 144,037.3 | **9,120.0** | **232,330.0** (1.0%) | 25.47× |
+| 1,000 | rect changed, last item | 5,992.4 | 143,856.5 | **9,230.0** | **230,830.0** (0.3%) | 25.01× |
+
+Chromium agrees with JavaScriptCore on the shape and on the ratio — 25.5×
+where JSC said 25.2× — and is 1.5–1.6× slower on both comparators in absolute
+terms. Both `tabIndex` cases again report `sameSnapshot` `true` and
+`snapshotEquals` `false`; every other changed case returned `false` from both.
+
+**Overlays gate: PASS, on an absolute frame budget.** The unchanged 200-item
+frame costs **0.047 ms** in Chromium, 0.28% of a 16.7 ms frame; at the 1,000
+clamp `runtime.ts:232` enforces, **0.232 ms**, 1.39%. Both are far inside the
+~1 ms line B4 set for the 1,000-item case — chosen as roughly 6% of a 16.7 ms
+frame, above which this comparison, rather than the layout the same frame
+already forces, becomes the thing worth optimising. Note that the cost scales
+linearly in the item count: 200 → 0.047 ms and 1,000 → 0.232 ms, so the
+`Math.min(1000, …)` at `runtime.ts:232-233` is the only thing holding it there.
+Raise that constant to 5,000 and an unchanged pointer frame costs ~1.2 ms, at
+the line rather than inside it. And the caveat B0 and B2 both carried still
+holds: this is JavaScript cost — here, on `about:blank` — not frame impact.
+**Decision 6 is amended: the gate is an absolute share of the frame budget, not a
+2× ratio against `sameSnapshot`.**
+A ratio against a 1.2 µs hand-rolled loop is the wrong yardstick when the same
+frame already forces a layout and calls `getBoundingClientRect()` once per
+tracked element; and the yardstick had itself drifted — `sameSnapshot` returns
+`true` for a changed `FocusItem.tabIndex`, a field `ui.tsx:416` renders. B4
+therefore took the adopt branch: `equals: snapshotEquals<OverlaysSnapshot>()`,
+four comparators (60 lines) deleted, the `tabIndex` BUG case folded back into
+`focus.%s publishes once`.
 
 BUG-pinned tests at `431d735`:
 

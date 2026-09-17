@@ -733,8 +733,8 @@ describe("publication guarantees", () => {
     runtime.store.destroy();
   });
 
-  // Pins a known gap: signature() misses kind/impersonating/supplied/severity
-  // when fields excludes the proxy rows used by default.
+  // The proxy rows these are usually read through are excluded, so the
+  // top-level field is the only thing that changes.
   it.each([
     ["kind", { environment: "blue" }, { environment: "green" }, { kind: "green" }],
     [
@@ -750,7 +750,7 @@ describe("publication guarantees", () => {
       { environment: "production" },
       { kind: "production", severity: "bad" },
     ],
-  ] as const)("BUG: ignores %s when fields are excluded", (_name, initial, next, delta) => {
+  ] as const)("publishes %s when fields are excluded", (_name, initial, next, delta) => {
     let context: EnvironmentContext = initial;
     const runtime = createEnvironmentRuntime({ detect: false, fields: [], context: () => context });
     const before = runtime.store.getSnapshot();
@@ -765,14 +765,13 @@ describe("publication guarantees", () => {
       revision: before.revision + 1,
       at: expect.any(Number),
     });
-    expect(listener).not.toHaveBeenCalled();
-    expect(runtime.store.getSnapshot()).toBe(before);
+    expect(listener).toHaveBeenCalledTimes(1);
+    expect(runtime.store.getSnapshot()).toBe(runtime.store.peek());
     runtime.store.destroy();
   });
 
-  // Pins a known gap: signature() misses field.masked/maskedCount when a
-  // literal value happens to equal its own mask text.
-  it("BUG: same display text hides field.masked and maskedCount changes", () => {
+  // The literal value here equals its own mask text, so only the flag differs.
+  it("publishes field.masked and maskedCount changes behind the same display text", () => {
     let userId = "Bearer abcdefghijklmnop";
     const runtime = createEnvironmentRuntime({
       detect: false,
@@ -788,8 +787,8 @@ describe("publication guarantees", () => {
     runtime.store.flush();
     expect(runtime.store.peek().fields).toEqual([{ ...before.fields[0], masked: false }]);
     expect(runtime.store.peek().maskedCount).toBe(0);
-    expect(listener).not.toHaveBeenCalled();
-    expect(runtime.store.getSnapshot()).toBe(before);
+    expect(listener).toHaveBeenCalledTimes(1);
+    expect(runtime.store.getSnapshot()).toBe(runtime.store.peek());
     runtime.store.destroy();
   });
 

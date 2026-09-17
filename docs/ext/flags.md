@@ -237,7 +237,8 @@ What is specific to this extension:
   `data-dtb-part="flag-icon"`; a promoted flag's in `flag-promoted-icon`.
 - **`PromotedFlag.icon` stays a `string`** — "a short glyph rendered before the label.
   Text, not an asset." It is copied into every snapshot as `FlagView.promotedIcon`, and
-  this store republishes on a **string signature**: a `ReactNode` cannot be signed, and
+  the store compares the whole snapshot structurally: a React element is a plain object
+  the comparator walks into — in development through `_owner` into a cyclic fiber — and
   it would sit inside what `diagnostics()` serialises. Rich icons go on
   `presentation.icon`, which lives in the factory closure and reaches the DOM as a prop.
   The string glyph still fills the icon slot when no `presentation.icon` is supplied, so

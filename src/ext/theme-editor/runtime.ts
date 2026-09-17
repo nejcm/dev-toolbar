@@ -426,6 +426,12 @@ export function createThemeEditorRuntime(
   const surfaces: readonly ThemeSurface[] =
     surfaceOption && surfaceOption.length > 0 ? surfaceOption : [DEFAULT_SURFACE];
 
+  const copySurface = (candidate: ThemeSurface): ThemeSurface => ({
+    id: candidate.id,
+    ...(candidate.label === undefined ? {} : { label: candidate.label }),
+    selector: candidate.selector,
+  });
+
   const suppliedRedactOptions = readRedactionProperty(options, "redactOptions");
   const redactOptions: RedactOptions = {
     mask: readRedactionProperty(suppliedRedactOptions, "mask") ?? MASK_SENTINEL,
@@ -750,7 +756,11 @@ export function createThemeEditorRuntime(
     return read;
   };
 
-  const buildSnapshot = (revision: number): ThemeSnapshot => {
+  const buildSnapshot = (
+    revision: number,
+    surfaceSnapshot: ThemeSurface,
+    surfaceSnapshots: readonly ThemeSurface[],
+  ): ThemeSnapshot => {
     const definitions = readTokens();
     const views: TokenView[] = [];
     const seen = new Set<string>();
@@ -854,8 +864,8 @@ export function createThemeEditorRuntime(
       refusedCount,
       supplied: definitions.length > 0,
       writable: resolveElement() !== null,
-      surface,
-      surfaces,
+      surface: surfaceSnapshot,
+      surfaces: surfaceSnapshots,
       preview,
       mode: readMode(),
       modeWritable: typeof mode?.set === "function",
@@ -871,8 +881,17 @@ export function createThemeEditorRuntime(
    * render instead of degrading to an error chip.
    */
   const build = (revision: number): ThemeSnapshot => {
+    // A throwing surface getter degrades to the safe root because the catch must not read it again.
+    let surfaceSnapshot: ThemeSurface | null = null;
+    let surfaceSnapshots: readonly ThemeSurface[] | null = null;
     try {
-      return buildSnapshot(revision);
+      surfaceSnapshots = surfaces.map(copySurface);
+      const selectedIndex = surfaces.indexOf(surface);
+      surfaceSnapshot =
+        selectedIndex === -1
+          ? copySurface(surface)
+          : (surfaceSnapshots[selectedIndex] as ThemeSurface);
+      return buildSnapshot(revision, surfaceSnapshot, surfaceSnapshots);
     } catch (error) {
       // eslint-disable-next-line no-console
       console.error(
@@ -880,6 +899,8 @@ export function createThemeEditorRuntime(
           "Showing an empty list; a getter on a token definition is the usual cause.",
         error,
       );
+      const fallbackSurface = surfaceSnapshot ?? copySurface(DEFAULT_SURFACE);
+      const fallbackSurfaces = surfaceSnapshots ?? [fallbackSurface];
       return {
         revision,
         tokens: [],
@@ -889,8 +910,8 @@ export function createThemeEditorRuntime(
         refusedCount: 0,
         supplied: true,
         writable: false,
-        surface,
-        surfaces,
+        surface: fallbackSurface,
+        surfaces: fallbackSurfaces,
         preview,
         mode: null,
         modeWritable: false,
@@ -901,23 +922,10 @@ export function createThemeEditorRuntime(
     }
   };
 
-  const signature = (snapshot: ThemeSnapshot): string =>
-    `${snapshot.readError ?? ""}|${snapshot.notice ?? ""}|${snapshot.preview ? 1 : 0}|` +
-    `${snapshot.surface.id}|${snapshot.mode ?? ""}|${snapshot.writable ? 1 : 0}|` +
-    `${snapshot.maskedCount}|${snapshot.supplied ? 1 : 0}|` +
-    snapshot.tokens
-      .map(
-        (view) =>
-          `${view.name}=${view.label}:${view.description ?? ""}:${view.group}:${view.type}:` +
-          `${view.masked ? 1 : 0}:${view.metadataMasked ? 1 : 0}:` +
-          `${view.effectiveText}:${view.baseText}:${view.defaultText}:` +
-          `${view.overridden ? 1 : 0}:${view.orphaned ? 1 : 0}:${view.refusal ?? ""}:${view.applyError ?? ""}`,
-      )
-      .join("|");
-
   const store = createDerivedStore<ThemeSnapshot>(build, {
     intervalMs: 250,
-    signature,
+    // A per-build counter; nothing renders it.
+    ignorePaths: [["revision"]],
   });
 
   const publish = () => {

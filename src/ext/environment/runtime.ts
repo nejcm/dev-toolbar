@@ -428,12 +428,10 @@ export function createEnvironmentRuntime(
     };
   };
 
-  const signature = (snapshot: EnvironmentSnapshot): string =>
-    snapshot.fields.map((field) => `${field.id}=${field.value}`).join("|");
-
   const store = createDerivedStore<EnvironmentSnapshot>(build, {
     intervalMs: 250,
-    signature,
+    // Per-build counters; nothing renders them.
+    ignorePaths: [["revision"], ["at"]],
   });
 
   const publish = store.rebuild;

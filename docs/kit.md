@@ -1156,8 +1156,9 @@ them by hand.
 `renderCompactParts` stops at the icon and the text. The value span, its
 `data-dtb-severity` and any state child after it stay yours: the kit answers *which
 parts*, the extension paints the DOM. And nothing here may enter a store snapshot — a
-`ReactNode` cannot be signed, so icons and callbacks belong in the factory closure and
-travel as props, exactly as `label` and `injectStyles` do.
+snapshot is plain data that a store compares and `diagnostics()` serialises, and a React
+element is neither, so icons and callbacks belong in the factory closure and travel as
+props, exactly as `label` and `injectStyles` do.
 
 ---
 

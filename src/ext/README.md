@@ -45,8 +45,10 @@ in [`docs/ext/`](../../docs/ext/).
   output a structural property rather than a truth-table coincidence. `/ext/agent`
   and `/ext/command-menu` take a narrowed `Pick<…, "icon" | "name">`: no value and
   no second text means nothing to preset against. **A `ReactNode` never enters a
-  store snapshot** — the stores are signature-based, so icons and callbacks stay in
-  the factory closure and travel as props, exactly as `label` does.
+  store snapshot** — the store compares the whole snapshot, and a React element is
+  a plain object it walks into: in development `_owner` reaches a cyclic fiber, the
+  comparator's stack-exhausting case. Icons and callbacks stay in the factory
+  closure and travel as props, exactly as `label` does.
   [ADR-004](../../docs/adr/ADR-004-per-extension-bar-presentation.md).
 - **Every field of a `*Snapshot` in `types.ts` is required, new ones included.**
   The runtime is the only thing that builds a snapshot; a consumer reads one. So
@@ -54,6 +56,18 @@ in [`docs/ext/`](../../docs/ext/).
   price of every reader having to handle `undefined` — and the type would stop
   saying what the runtime guarantees. Add the field, give the store's initial
   value an explicit one, and let a hand-built fixture fail to compile.
+- **The store compares the whole snapshot, so a runtime lists only what must
+  *not* publish**, in `ignorePaths`. Across the five that adopted it — flags,
+  environment, theme-editor, metrics and overlays — that is the per-build
+  `revision`/`at` counters and, in flags, `promotedLabel`/`promotedIcon`, which
+  are config rather than state — and `promotedLabel`'s fallbacks co-publish
+  through `label` anyway; overlays lists nothing. Adding a field is therefore
+  enough to make it reach the panel, where a hand-written `signature()` had to be
+  edited too. Snapshots hold no alias to mutable consumer input — theme-editor
+  copies the `surfaces` it was handed, flags copies `variants` — and a consumer
+  must treat a published snapshot as immutable. Where consumer output does travel
+  straight through, metrics' `Collector.read()` and `entries()` carry the
+  ownership contract in their own `types.ts`.
 - **Redaction is a per-extension decision**, made on the way *in*, so panel,
   clipboard, exports and `/ext/diagnostics` all read one masked snapshot. There
   is no second, rawer copy anywhere.

@@ -879,8 +879,8 @@ describe("promotion", () => {
   });
 });
 
-describe("the flag list signature", () => {
-  /* Regression: variants alone was omitted from FlagView's signature, hiding list changes while effectiveText stayed put. */
+describe("the flag list comparison", () => {
+  /* Regression: variants alone was omitted from FlagView's old signature, hiding list changes while effectiveText stayed put. */
   it.each([
     { before: ["a", "b"], after: ["a", "c"] },
     { before: ["a,b"], after: ["a", "b"] },
@@ -900,6 +900,20 @@ describe("the flag list signature", () => {
     expect(runtime.store.getSnapshot().flags[0]?.variants).toEqual(after);
     expect(notify).toHaveBeenCalledTimes(1);
     unsubscribe();
+  });
+
+  it("does not expose consumer variants mutations before refresh", () => {
+    const variants: FlagValue[] = ["a", "b"];
+    const runtime = createFlagsRuntime({
+      flags: () => [{ key: "choice", type: "variant", value: "a", variants }],
+    });
+    const before = runtime.store.getSnapshot();
+
+    variants.push("c");
+
+    expect(runtime.store.getSnapshot()).toBe(before);
+    expect(runtime.store.getSnapshot().flags[0]?.variants).toEqual(["a", "b"]);
+    runtime.store.destroy();
   });
 
   /* Regression: fixing the omitted variants field must preserve snapshot identity when effectiveText and variants stay put. */
@@ -1104,7 +1118,6 @@ describe("publication guarantees", () => {
   const assertViewPublication = (
     field: string,
     value: unknown,
-    count: 0 | 1,
     // Fields the view *derives* from the changed one, which the generic
     // `{ ...before, [field]: value }` patch cannot know about.
     derived: Record<string, unknown> = {},
@@ -1120,35 +1133,28 @@ describe("publication guarantees", () => {
     expect(runtime.store.peek().flags).toEqual([
       { ...before.flags[0], [field]: value, ...derived },
     ]);
-    expect(listener).toHaveBeenCalledTimes(count);
-    expect(runtime.store.getSnapshot()).toBe(count ? runtime.store.peek() : before);
+    expect(listener).toHaveBeenCalledTimes(1);
+    expect(runtime.store.getSnapshot()).toBe(runtime.store.peek());
     runtime.store.destroy();
   };
 
   it.each([
-    ["key", "renamed", 1],
-    ["label", "Renamed", 1],
-    ["description", "Changed", 1],
-    ["type", "string", 1],
-    ["variants", ["a", "c"], 1, { variantTexts: ["a", "c"] }],
-    ["source", "cohort", 1],
-    ["projectUrl", "https://example.test/b", 1],
-    ["expiresAt", "2031-01-01T00:00:00.000Z", 1],
+    ["key", "renamed"],
+    ["label", "Renamed"],
+    ["description", "Changed"],
+    ["type", "string"],
+    ["variants", ["a", "c"], { variantTexts: ["a", "c"] }],
+    ["source", "cohort"],
+    ["projectUrl", "https://example.test/b"],
+    ["expiresAt", "2031-01-01T00:00:00.000Z"],
+    ["owner", "Team B"],
+    ["reloadBehavior", "full-reload"],
+    // Snapshot state publishes even when row order is unchanged; a reorder the
+    // panel can see is pinned separately below.
+    ["recentlyUsed", true],
   ] as const)("view.%s publishes once", assertViewPublication);
 
-  // Pins fields missing from signature(): owner/reloadBehavior leave the UI
-  // stale until covered (then flip these to 1 call and toBe(peek())).
-  // recentlyUsed alone is not a UI defect — a visible reorder republishes
-  // through the ordered-keys path, pinned separately below.
-  it.each([
-    ["owner", "Team B", 0],
-    ["reloadBehavior", "full-reload", 0],
-    ["recentlyUsed", true, 0],
-  ] as const)("BUG: view.%s changes without publishing", assertViewPublication);
-
-  // Pins `expired` missing from signature(), which leaves the expiry tag stale;
-  // when covered, invert to toHaveBeenCalledTimes(1) and getSnapshot() toBe(peek()).
-  it("BUG: crossing expiresAt changes only expired, without publishing", () => {
+  it("crossing expiresAt publishes the expiry tag", () => {
     let now = Date.parse("2029-12-31T23:59:59Z");
     const runtime = createFlagsRuntime({ flags: [initial], now: () => now });
     const before = runtime.store.getSnapshot();
@@ -1158,16 +1164,16 @@ describe("publication guarantees", () => {
     runtime.refresh();
     runtime.store.flush();
     expect(runtime.store.peek().flags).toEqual([{ ...before.flags[0], expired: true }]);
-    expect(listener).not.toHaveBeenCalled();
-    expect(runtime.store.getSnapshot()).toBe(before);
+    expect(listener).toHaveBeenCalledTimes(1);
+    expect(runtime.store.getSnapshot()).toBe(runtime.store.peek());
     runtime.store.destroy();
   });
 
-  // Deliberate and permanent: promotedLabel/promotedIcon are left out of
-  // signature(), so mutating `promoted` after flags() ran does not republish.
-  // What the runtime decides (eligibility, promotedIndex) is signed; what the
-  // consumer handed over verbatim (label, icon, and presentation's ReactNode,
-  // which can never be signed) is not. Rebuild the extension instead.
+  // Deliberate and permanent: promotedLabel/promotedIcon are in `ignorePaths`,
+  // so mutating `promoted` after flags() ran does not republish. What the
+  // runtime decides (eligibility, promotedIndex) is compared; what the consumer
+  // handed over verbatim (label, icon, and presentation's ReactNode, which never
+  // enters a snapshot) is not. Rebuild the extension instead.
   it.each(["label", "icon"] as const)(
     "promoted %s alone does not publish — config is not live",
     (field) => {
@@ -1238,10 +1244,8 @@ describe("publication guarantees", () => {
     },
   );
 
-  // Pins boolean `effective` missing from signature(): equal masked text hides
-  // the change, leaving the on/checked state stale. When covered, invert to
-  // toHaveBeenCalledTimes(1) and getSnapshot() toBe(peek()).
-  it("BUG: masked boolean effective state changes without a notification", () => {
+  // The masked text is equal either way, so only the boolean `effective` differs.
+  it("publishes a masked boolean effective state change", () => {
     const runtime = createFlagsRuntime({
       flags: [{ key: "feature", type: "boolean", value: false, sensitive: true }],
       onOverride: () => {},
@@ -1254,8 +1258,8 @@ describe("publication guarantees", () => {
     expect(runtime.store.peek().flags).toEqual([
       { ...before.flags[0], effective: true, override: true },
     ]);
-    expect(listener).not.toHaveBeenCalled();
-    expect(runtime.store.getSnapshot()).toBe(before);
+    expect(listener).toHaveBeenCalledTimes(1);
+    expect(runtime.store.getSnapshot()).toBe(runtime.store.peek());
     runtime.store.destroy();
   });
 
@@ -1582,10 +1586,10 @@ describe("published flag ordering", () => {
     runtime.store.destroy();
   });
 
-  // Was pinned as a bug: promoted order was invisible to signature(). Now
+  // Was pinned as a bug: promoted order was invisible to the old signature. Now
   // promotedIndex — each view's position, added so a control can find its
-  // eligible entry's presentation — moves the signature on reorder. label
-  // and icon still aren't signed; this is a by-product, not a promise.
+  // eligible entry's presentation — differs on reorder. label and icon are still
+  // ignored; this is a by-product, not a promise.
   it("publishes a reordered promotion configuration", () => {
     const promoted = [{ flagKey: "a" }, { flagKey: "b" }];
     const runtime = createFlagsRuntime({
