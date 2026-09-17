@@ -14,6 +14,13 @@
   style break at the boundary is accepted, not an oversight.
 -->
 
+## [0.11.0](https://github.com/nejcm/dev-toolbar/compare/v0.10.3...v0.11.0) (2026-09-17)
+
+
+### Features
+
+* **kit,ext:** tell an unreadable storage adapter from an empty one ([#116](https://github.com/nejcm/dev-toolbar/issues/116)) ([9558471](https://github.com/nejcm/dev-toolbar/commit/9558471f6f4828729f45e372d98e7729c873a1c2))
+
 ## [0.10.3](https://github.com/nejcm/dev-toolbar/compare/v0.10.2...v0.10.3) (2026-09-11)
 
 
