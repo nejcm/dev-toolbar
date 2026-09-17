@@ -14,6 +14,17 @@
   style break at the boundary is accepted, not an oversight.
 -->
 
+## [0.12.0](https://github.com/nejcm/dev-toolbar/compare/v0.11.0...v0.12.0) (2026-09-17)
+
+
+### ⚠ BREAKING CHANGES
+
+* **runtime:** `CreateDerivedStoreOptions.signature` is optional. Reading it off the exported type requires narrowing first; every existing call is unaffected.
+
+### Features
+
+* **runtime:** compare whole snapshots instead of hand-written signatures ([#120](https://github.com/nejcm/dev-toolbar/issues/120)) ([822ce57](https://github.com/nejcm/dev-toolbar/commit/822ce576b928b8dd5cac5026a5e7ce42b2c38c7a))
+
 ## [0.11.0](https://github.com/nejcm/dev-toolbar/compare/v0.10.3...v0.11.0) (2026-09-17)
 
 
