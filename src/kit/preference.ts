@@ -5,9 +5,9 @@
  * key instead of storing the fallback, so storage only holds what differs
  * from default.
  *
- * A storage adapter is consumer code, so every throwing `getItem`/`setItem`/
- * `removeItem` (blocked site data, a full quota, a sandboxed iframe) is
- * swallowed here rather than allowed to take down a panel or click handler.
+ * A throwing `getItem` becomes fallback in `readPreference`/`readJson`, or
+ * unreadable in `readPreferenceIfReadable`.
+ * Write failures are swallowed; no adapter failure escapes into a panel or handler.
  *
  * Encodings: `"string"` stores byte-for-byte so a pre-existing raw value
  * (e.g. a persisted `tab`) still reads back; `"json"` runs it through `JSON`.
@@ -95,6 +95,11 @@ export interface Preference<T> {
   readonly isValue: (value: unknown) => value is T;
 }
 
+/** A preference read that distinguishes an unreadable adapter from a readable fallback. */
+export type PreferenceRead<T> =
+  | { readonly readable: true; readonly value: T }
+  | { readonly readable: false };
+
 type Reader = Pick<ToolbarStorage, "getItem"> | null | undefined;
 type Writer = Pick<ToolbarStorage, "setItem" | "removeItem"> | null | undefined;
 type Remover = Pick<ToolbarStorage, "removeItem"> | null | undefined;
@@ -105,24 +110,32 @@ function readGuarded<T>(
   fallback: T,
   isValue: (value: unknown) => value is T,
   decode: (raw: string) => unknown,
-): T {
-  // Adapter, decoder and guard are all wrapped: a throw from any of them is
-  // "nothing valid stored", never a crash during render.
+): PreferenceRead<T> {
+  let raw: string | null;
   try {
-    const raw = storage?.getItem(key) ?? null;
-    if (raw === null) return fallback;
-    const decoded = decode(raw);
-    return isValue(decoded) ? decoded : fallback;
+    raw = storage?.getItem(key) ?? null;
   } catch {
-    return fallback;
+    return { readable: false };
+  }
+
+  if (raw === null) return { readable: true, value: fallback };
+  // Decoder and validator throws stay readable; only an adapter read failure is unreadable.
+  try {
+    const decoded = decode(raw);
+    return { readable: true, value: isValue(decoded) ? decoded : fallback };
+  } catch {
+    return { readable: true, value: fallback };
   }
 }
 
 const identity = (raw: string): unknown => raw;
 const parseJson = (raw: string): unknown => JSON.parse(raw);
 
-/** The stored value when it passes `isValue`, otherwise `fallback`. Never throws. */
-export function readPreference<T>(storage: Reader, preference: Preference<T>): T {
+/** Like `readPreference`, but reports when the adapter could not answer. Never throws. */
+export function readPreferenceIfReadable<T>(
+  storage: Reader,
+  preference: Preference<T>,
+): PreferenceRead<T> {
   return readGuarded(
     storage,
     preference.key,
@@ -130,6 +143,12 @@ export function readPreference<T>(storage: Reader, preference: Preference<T>): T
     preference.isValue,
     preference.encoding === "string" ? identity : parseJson,
   );
+}
+
+/** The stored value when it passes `isValue`, otherwise `fallback`. Never throws. */
+export function readPreference<T>(storage: Reader, preference: Preference<T>): T {
+  const result = readPreferenceIfReadable(storage, preference);
+  return result.readable ? result.value : preference.fallback;
 }
 
 /**
@@ -187,7 +206,8 @@ export function readJson<T>(
   fallback: T,
   guard: (value: unknown) => value is T,
 ): T {
-  return readGuarded(storage, key, fallback, guard, parseJson);
+  const result = readGuarded(storage, key, fallback, guard, parseJson);
+  return result.readable ? result.value : fallback;
 }
 
 /** Write JSON to storage without letting serialization or adapter failures escape. */

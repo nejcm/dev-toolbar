@@ -734,6 +734,7 @@ if (built || !mustBeBuilt) {
         "readInput",
         "readJson",
         "readPreference",
+        "readPreferenceIfReadable",
         "readStoredRecord",
         "removePreference",
         "renderCompact",

@@ -91,7 +91,7 @@ of the exact kit specifier, not same-name locals:
 
 | Interface | Production imports | Why it stays |
 | --- | --- | --- |
-| Persisted state | `readPreference`: 6; `writePreference`: 6; `removePreference`: 0; `readStoredRecord`: 2; `readJson`: 0; `writeJson`: 0; `parseList`: 1; `parseRecord`: 2 | The preference module is the one owner of the storage guard and failure policy: every first-party extension that persists anything — flags, theme-editor, overlays, command-menu, diagnostics, metrics — reads and writes through it, and no extension touches `api.storage` directly any more. `removePreference` has no first-party caller because writing the fallback already removes the key. `parseList` serves the command menu's persisted recents; `parseRecord` serves the flag and theme-editor override maps. |
+| Persisted state | `readPreferenceIfReadable`: 4; `readPreference`: 3; `writePreference`: 6; `removePreference`: 0; `readStoredRecord`: 2; `readJson`: 0; `writeJson`: 0; `parseList`: 1; `parseRecord`: 2 | The preference module is the one owner of the storage guard and failure policy: every first-party extension that persists anything — flags, theme-editor, overlays, command-menu, diagnostics, metrics — reads and writes through it, and no extension touches `api.storage` directly any more. `readPreferenceIfReadable` has six restoration sites across flags, theme-editor, overlays and command-menu, so its four importing extensions meet the admission bar. `removePreference` has no first-party caller because writing the fallback already removes the key. `parseList` serves the command menu's persisted recents; `parseRecord` serves the flag and theme-editor override maps. |
 | Key/value readout | `Rows`: 2; `Row`: 2 | `Rows` is `Row`'s container half. The `<dl>` grid needs the fragment-shaped `<dt>`/`<dd>` pair to be usable. |
 | Inputs | `SearchField`: 2; `TextInput`: 2; `Select`: 2 | They are the kit's input set. Core's `:where(input, select, textarea)` rule supplies field geometry, while the `field` and `search` kinds give authors a stable pair of hooks covering all three. |
 | Copy actions | `CopyButton`: 2; `useCopyStatus`: 2 | `CopyButton` owns the button/status-region pairing. `useCopyStatus` is the shared status state for panels with several copy buttons. |
@@ -145,7 +145,11 @@ interface Preference<T> {
   fallback: T;
   isValue: (v: unknown) => v is T;
 }
+type PreferenceRead<T> =
+  | { readonly readable: true; readonly value: T }
+  | { readonly readable: false };
 readPreference<T>(storage, preference: Preference<T>): T;
+readPreferenceIfReadable<T>(storage, preference: Preference<T>): PreferenceRead<T>;
 writePreference<T>(storage, preference: Preference<T>, value: T): void;
 removePreference(storage, preference: { key: string }): void;
 
@@ -159,18 +163,25 @@ readStoredRecord<T>(options, isEntry: (v: unknown, name: string) => v is T): Rec
 resetRequested(param: string | null | undefined): boolean;
 ```
 
-A **preference** is a named, validated, persisted value: three operations and two
+A **preference** is a named, validated, persisted value: four operations and two
 encodings, deliberately nothing more. `readPreference` returns the stored value when
-it passes `isValue`, else `fallback`. `writePreference` stores the value — or removes
-the key when the value equals `fallback`, so storage holds only what differs from the
-fallback. A preference whose default is consumer-configurable — overlay toggles under
-`defaults`, the theme editor's `surfaces[0]` — sets `fallback: null`, so an explicit
-choice persists even when it matches that default. `removePreference` drops the key.
+it passes `isValue`, else `fallback`. `readPreferenceIfReadable` returns a tagged
+`PreferenceRead`: `{ readable: false }` means the adapter threw before answering,
+while `{ readable: true, value: fallback }` means the adapter answered but nothing
+valid was stored, or persistence is off. The unreadable result deliberately carries
+no fallback value. Use `readPreferenceIfReadable` only when a runtime holds session
+state that an unreadable adapter must not overwrite on restart; otherwise use
+`readPreference`.
+`writePreference` stores the value or removes the key when the value equals `fallback`,
+so storage holds only what differs from the fallback. A preference whose default is
+consumer-configurable, such as overlay toggles under `defaults` or the theme editor's
+`surfaces[0]`, sets `fallback: null`, so an explicit choice persists even when it
+matches that default. `removePreference` drops the key.
 `storage` is `api.storage` from `start(api)`, or `null`/`undefined` before `start()`
-has run; every operation tolerates that and a throwing adapter alike — a browser with
-site data blocked, a full quota, a sandboxed iframe — by returning the fallback or
-doing nothing. A storage adapter is consumer code, and a preference must never take
-down a panel or a click handler.
+has run. Every operation tolerates that and a throwing adapter, including a browser
+with site data blocked, a full quota, or a sandboxed iframe. It returns the fallback or
+an unreadable result, or does nothing. A storage adapter is consumer code, and a
+preference must never take down a panel or a click handler.
 
 The two encodings are both first-class. `"string"` stores the value byte-for-byte —
 what a tab id, a snapshot format or an override map the extension serialises itself

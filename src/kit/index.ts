@@ -47,13 +47,19 @@ export {
   parseRecord,
   readJson,
   readPreference,
+  readPreferenceIfReadable,
   readStoredRecord,
   removePreference,
   resetRequested,
   writeJson,
   writePreference,
 } from "./preference";
-export type { Preference, PreferenceEncoding, StoredRecordOptions } from "./preference";
+export type {
+  Preference,
+  PreferenceEncoding,
+  PreferenceRead,
+  StoredRecordOptions,
+} from "./preference";
 export { resolveStyleNonce } from "./nonce";
 export {
   renderCompact,

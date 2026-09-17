@@ -8,7 +8,7 @@
  * time it's run.
  */
 import { createThrottledStore, describeError } from "../../runtime";
-import { parseList, readPreference, writePreference } from "@nejcm/dev-toolbar/kit";
+import { parseList, readPreferenceIfReadable, writePreference } from "@nejcm/dev-toolbar/kit";
 import type { Preference } from "@nejcm/dev-toolbar/kit";
 import type { ThrottledStore } from "../../runtime";
 import type { AnyToolbarCommand, ExtensionRuntimeApi } from "../../core/contract";
@@ -408,9 +408,11 @@ export function createCommandMenuRuntime(
 
     start(runtimeApi) {
       api = runtimeApi;
-      const recent = rememberRecent
-        ? readRecent(readPreference(runtimeApi.storage, RECENT_PREFERENCE))
-        : [];
+      let recent = rememberRecent ? store.peek().recent : [];
+      if (rememberRecent) {
+        const stored = readPreferenceIfReadable(runtimeApi.storage, RECENT_PREFERENCE);
+        if (stored.readable) recent = readRecent(stored.value);
+      }
       store.set({ ...store.peek(), ready: true, recent });
 
       const onKeyDown = (event: KeyboardEvent) => {

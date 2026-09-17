@@ -328,6 +328,61 @@ describe("persistence", () => {
     expect(view?.masked).toBe(false);
     expect(({} as Record<string, unknown>)["x"]).toBeUndefined();
   });
+
+  it("keeps session overrides across a restart when every storage call throws", () => {
+    const blocked = () => {
+      throw new Error("blocked");
+    };
+    const storage = { getItem: blocked, setItem: blocked, removeItem: blocked };
+
+    const onOverride = vi.fn();
+    const perKeyRuntime = createFlagsRuntime({ flags: CATALOGUE, onOverride });
+    const stopPerKey = perKeyRuntime.start(fakeApi(storage).api);
+    perKeyRuntime.setOverride("ui-facelift", true);
+    expect(perKeyRuntime.store.getSnapshot().overriddenCount).toBe(1);
+    stopPerKey();
+    onOverride.mockClear();
+
+    const stopPerKeyAgain = perKeyRuntime.start(fakeApi(storage).api);
+    const perKeySnapshot = perKeyRuntime.store.getSnapshot();
+    stopPerKeyAgain();
+
+    const onOverridesChange = vi.fn();
+    const bulkRuntime = createFlagsRuntime({ flags: CATALOGUE, onOverridesChange });
+    const stopBulk = bulkRuntime.start(fakeApi(storage).api);
+    bulkRuntime.setOverride("ui-facelift", true);
+    expect(bulkRuntime.store.getSnapshot().overriddenCount).toBe(1);
+    stopBulk();
+    onOverridesChange.mockClear();
+
+    const stopBulkAgain = bulkRuntime.start(fakeApi(storage).api);
+    const bulkSnapshot = bulkRuntime.store.getSnapshot();
+    stopBulkAgain();
+
+    expect.soft(perKeySnapshot.overriddenCount).toBe(1);
+    expect
+      .soft(perKeySnapshot.flags.find((view) => view.key === "ui-facelift")?.overridden)
+      .toBe(true);
+    expect.soft(onOverride).toHaveBeenCalledWith("ui-facelift", true);
+    expect.soft(bulkSnapshot.overriddenCount).toBe(1);
+    expect
+      .soft(bulkSnapshot.flags.find((view) => view.key === "ui-facelift")?.overridden)
+      .toBe(true);
+    expect.soft(onOverridesChange).toHaveBeenCalledWith({ "ui-facelift": true });
+  });
+
+  it("clears the session map on a restart when readable storage has no overrides", () => {
+    const storage = createMemoryStorage();
+    const runtime = createFlagsRuntime({ flags: CATALOGUE, onOverride: () => {} });
+    const stop = runtime.start(fakeApi(storage).api);
+    runtime.setOverride("ui-facelift", true);
+    stop();
+    storage.removeItem(OVERRIDES_KEY);
+
+    const stopAgain = runtime.start(fakeApi(storage).api);
+    expect(runtime.store.getSnapshot().overriddenCount).toBe(0);
+    stopAgain();
+  });
 });
 
 describe("orphaned overrides", () => {
@@ -454,6 +509,31 @@ describe("the kill switch", () => {
     expect(storage.getItem(OVERRIDES_KEY)).toBeNull();
   });
 
+  it("un-applies the union of stored and session overrides once", () => {
+    const storage = createMemoryStorage();
+    const applied: [string, FlagValue | undefined, Record<string, FlagValue>][] = [];
+    const runtime = createFlagsRuntime({
+      flags: CATALOGUE,
+      onOverride: (key, value) => applied.push([key, value, runtime.overrides()]),
+    });
+    const stop = runtime.start(fakeApi(storage).api);
+    runtime.setOverride("ui-facelift", true);
+    runtime.setOverride("checkout.copy", "new");
+    stop();
+    storage.setItem(OVERRIDES_KEY, JSON.stringify({ "new-header": false, "ui-facelift": false }));
+    applied.length = 0;
+
+    const stopAgain = withResetParam(() => runtime.start(fakeApi(storage).api));
+    stopAgain();
+
+    expect(applied).toEqual([
+      ["new-header", undefined, {}],
+      ["ui-facelift", undefined, {}],
+      ["checkout.copy", undefined, {}],
+    ]);
+    expect(storage.getItem(OVERRIDES_KEY)).toBeNull();
+  });
+
   it("hands a bulk mirror the empty map, after the per-key clears", () => {
     const storage = createMemoryStorage({
       [OVERRIDES_KEY]: JSON.stringify({ "ui-facelift": true }),
@@ -466,6 +546,32 @@ describe("the kill switch", () => {
     });
     withResetParam(() => runtime.start(fakeApi(storage).api));
     expect(events).toEqual(["ui-facelift=undefined", "all:{}"]);
+  });
+
+  it("un-applies session overrides on a reset load even when storage cannot be read", () => {
+    const blocked = () => {
+      throw new Error("blocked");
+    };
+    const storage = { getItem: blocked, setItem: blocked, removeItem: blocked };
+    const mapsAtClear: Record<string, FlagValue>[] = [];
+    const onOverride = vi.fn((_key: string, value: FlagValue | undefined) => {
+      if (value === undefined) mapsAtClear.push(runtime.overrides());
+    });
+    const runtime = createFlagsRuntime({ flags: CATALOGUE, onOverride });
+    const stop = runtime.start(fakeApi(storage).api);
+    runtime.setOverride("ui-facelift", true);
+    stop();
+    onOverride.mockClear();
+
+    const stopAgain = withResetParam(() => runtime.start(fakeApi(storage).api));
+    const resetOverrides = runtime.overrides();
+    const resetSnapshot = runtime.store.getSnapshot();
+    stopAgain();
+
+    expect.soft(onOverride).toHaveBeenCalledWith("ui-facelift", undefined);
+    expect.soft(mapsAtClear).toEqual([{}]);
+    expect.soft(resetOverrides).toEqual({});
+    expect.soft(resetSnapshot.overriddenCount).toBe(0);
   });
 
   it("still clears the store when no adapter was supplied", () => {
