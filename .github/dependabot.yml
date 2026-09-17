@@ -21,6 +21,13 @@ updates:
       minor-and-patch:
         patterns: ["*"]
         update-types: [minor, patch]
+      # The exception to "majors arrive as their own PR": `@vitest/coverage-v8`
+      # peer-depends on the exact `vitest` version, so a major that arrives as
+      # two PRs is two PRs that each fail CI on their own and can only be
+      # validated together. Group the family so the major is one decision.
+      vitest-major:
+        patterns: ["vitest", "@vitest/*"]
+        update-types: [major]
 
   # This entry is what keeps the workflow SHA pins current — remove it and CI
   # re-freezes on whatever SHAs were last written by hand.
