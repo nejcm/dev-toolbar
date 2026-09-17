@@ -1397,6 +1397,16 @@ export function createThemeEditorRuntime(
       storage = api.storage;
       active = true;
 
+      if (persist) {
+        // The null fallback preserves the session surface when storage cannot answer.
+        const storedSurface = readPreference(storage, surfacePreference);
+        const found = surfaces.find((candidate) => candidate.id === storedSurface);
+        if (found) surface = found;
+        const storedPreview = readPreferenceIfReadable(storage, PREVIEW_PREFERENCE);
+        // A failed read must preserve session choices; a missing key restores preview on.
+        if (storedPreview.readable) preview = storedPreview.value !== "0";
+      }
+
       // The kill switch runs before anything is applied, so an edit that made
       // the page unreadable never reaches it on the reset load.
       if (resetRequested(themeParam)) {
@@ -1419,16 +1429,6 @@ export function createThemeEditorRuntime(
               vetted.dropped.length === 1 ? " was" : "s were"
             } dropped as unusable: ${vetted.dropped.join(", ")}.`;
           }
-        }
-
-        if (persist) {
-          // The null fallback preserves the session surface when storage cannot answer.
-          const storedSurface = readPreference(storage, surfacePreference);
-          const found = surfaces.find((candidate) => candidate.id === storedSurface);
-          if (found) surface = found;
-          const storedPreview = readPreferenceIfReadable(storage, PREVIEW_PREFERENCE);
-          // A failed read must preserve session choices; a missing key restores preview on.
-          if (storedPreview.readable) preview = storedPreview.value !== "0";
         }
 
         // Re-apply on every mount: the page reloaded with the application's own

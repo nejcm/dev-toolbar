@@ -805,6 +805,46 @@ describe("the URL", () => {
   const withSearch = (search: string, run: () => void) =>
     withLocation({ search, href: `http://localhost/${search}` }, run);
 
+  it("preserves the stored surface and preview across a reset load and the next ordinary load", () => {
+    const storage = createMemoryStorage();
+    const options = {
+      tokens: TOKENS,
+      surfaces: [
+        { id: "root", selector: ":root" },
+        { id: "demo", selector: "body" },
+      ],
+    };
+    const first = createThemeEditorRuntime(options);
+    const stop = first.start(fakeApi(storage));
+    first.selectSurface("demo");
+    first.setPreview(false);
+    first.setOverride("--brand-500", "#ff0000");
+    stop();
+
+    const loads: unknown[] = [];
+    for (const search of ["?dtb-theme=reset", ""]) {
+      withSearch(search, () => {
+        const runtime = createThemeEditorRuntime(options);
+        const dispose = runtime.start(fakeApi(storage));
+        try {
+          loads.push(runtime.diagnostics());
+          expect(runtime.store.getSnapshot().overriddenCount).toBe(0);
+          expect(storage.getItem(OVERRIDES_KEY)).toBeNull();
+          expect(storage.getItem(SURFACE_KEY)).toBe("demo");
+          expect(storage.getItem(PREVIEW_KEY)).toBe("0");
+          expect(document.body.style.getPropertyValue("--brand-500")).toBe("");
+          expect(root().style.getPropertyValue("--brand-500")).toBe("");
+        } finally {
+          dispose();
+        }
+      });
+    }
+    expect(loads).toMatchObject([
+      { surface: "demo", preview: false },
+      { surface: "demo", preview: false },
+    ]);
+  });
+
   it("clears every stored edit before any of them is applied", () => {
     const storage = createMemoryStorage();
     storage.setItem(OVERRIDES_KEY, JSON.stringify({ "--brand-500": "#ff0000" }));

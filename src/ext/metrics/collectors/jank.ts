@@ -276,7 +276,7 @@ export function createJankCollector(options: JankCollectorOptions = {}): Collect
         status: "ok",
         severity: severityFor(window.ratio, thresholds),
         display: formatPercent(window.ratio),
-        value: window.ratio,
+        value: window.ratio * 100,
         unit: "%",
         hint: `Dropped frames over expected frames, across the last ${formatSeconds(window.effectiveWindowMs)} of active frames. Stalls longer than ${gapText} are counted separately, not in this ratio — and a debugger paused on a breakpoint or a modal dialog counts as one.`,
         detail,
