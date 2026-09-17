@@ -12,13 +12,13 @@ import { DevToolbar } from "../DevToolbar";
 const read = (name: string) => document.documentElement.style.getPropertyValue(name);
 
 const stubHeights = (heights: Record<string, number>) =>
-  vi
-    .spyOn(HTMLElement.prototype, "getBoundingClientRect")
-    .mockImplementation(function (this: HTMLElement): DOMRect {
-      const instance = this.dataset["dtbInstance"];
-      const height = instance === undefined ? 0 : (heights[instance] ?? 0);
-      return { height, width: 0, top: 0, left: 0, right: 0, bottom: height, x: 0, y: 0 } as DOMRect;
-    });
+  vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (
+    this: HTMLElement,
+  ): DOMRect {
+    const instance = this.dataset["dtbInstance"];
+    const height = instance === undefined ? 0 : (heights[instance] ?? 0);
+    return { height, width: 0, top: 0, left: 0, right: 0, bottom: height, x: 0, y: 0 } as DOMRect;
+  });
 
 afterEach(() => {
   vi.resetModules();
