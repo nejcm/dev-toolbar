@@ -12,6 +12,12 @@ on:
   # pushes made with that token — so the release commit never reaches the `push` trigger above and the
   # landing page's version badge would stay one release behind. Both release-please steps run under the
   # PAT, so the release they publish does fire this. Checkout defaults to the release tag, i.e. the bump.
+  #
+  # This runs at the tag ref (`v0.12.1`, not `main`), and the `github-pages` environment below enforces
+  # deployment branch policies. The environment must therefore allow the `v*` *tag* pattern alongside the
+  # `main` branch — with only `main` allowed, every release-triggered run fails at the deploy job with
+  # `Tag "vX.Y.Z" is not allowed to deploy to github-pages due to environment protection rules` (v0.12.1).
+  # That policy lives in repository settings, not here: Settings → Environments → github-pages.
   release:
     types: [published]
 
@@ -52,6 +58,8 @@ jobs:
       contents: read
       pages: write
       id-token: write
+    # Deployment branch policies on this environment allow `main` and the `v*` tag pattern; the `release`
+    # trigger above needs the tag entry. See the note on that trigger before narrowing either one.
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
