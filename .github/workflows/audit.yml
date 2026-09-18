@@ -13,6 +13,13 @@ name: Audit
 # one is not a finding about this package. The lockfile cache key in
 # `setup-job` is about restoring an install, not audit scope.
 #
+# The root `overrides` entry pinning `vite` to `^6.4.3` exists for this
+# workflow: vitepress 1.6.4 — still the latest stable, 2.x is alpha — depends
+# on vite ^5.4.14, and every vite 5 is vulnerable to GHSA-fx2h-pf6j-xcff
+# (high, `server.fs.deny` bypass), which has no 5.x patch. The override also
+# pulls vitest's own vite down from 8 to 6, which its peer range allows. Drop
+# the override once vitepress ships a stable release on a patched vite.
+#
 # GitHub disables scheduled workflows after 60 days of repository inactivity,
 # and nothing announces it — so after a quiet stretch, check the Actions tab
 # before reading silence here as a clean bill of health.

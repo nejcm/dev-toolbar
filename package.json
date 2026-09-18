@@ -237,6 +237,9 @@
     "vitepress": "~1.6.4",
     "vitest": "^5.0.0"
   },
+  "overrides": {
+    "vite": "^6.4.3"
+  },
   "peerDependenciesMeta": {
     "@testing-library/react": {
       "optional": true
