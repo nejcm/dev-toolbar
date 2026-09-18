@@ -14,6 +14,13 @@
   style break at the boundary is accepted, not an oversight.
 -->
 
+## [0.12.2](https://github.com/nejcm/dev-toolbar/compare/v0.12.1...v0.12.2) (2026-09-18)
+
+
+### Bug Fixes
+
+* **deps:** override vite to ^6.4.3 so the audit gate clears ([080a082](https://github.com/nejcm/dev-toolbar/commit/080a08226a9dd657b4e5ff4466beeab9e5877475))
+
 ## [0.12.1](https://github.com/nejcm/dev-toolbar/compare/v0.12.0...v0.12.1) (2026-09-17)
 
 
