@@ -13,6 +13,7 @@ pageClass: dtb-landing-page
     <div class="dtb-actions">
       <a class="dtb-button dtb-button-primary" href="#install">Get started</a>
       <a class="dtb-button dtb-button-secondary" href="#docs">Read the docs</a>
+      <a class="dtb-button dtb-button-secondary" href="https://codesandbox.io/p/sandbox/q6269g" target="_blank" rel="noreferrer">Open the live demo</a>
     </div>
     <div class="dtb-capabilities">
       <span v-for="capability in capabilities" :key="capability.name">
@@ -68,6 +69,7 @@ pageClass: dtb-landing-page
           </div>
         </div>
         <p class="dtb-bar-caption">At real size, with the run of chips clipping into ⋮ exactly as the shell collapses overflow on a narrow viewport. The shell sorts and collapses the items you give it, hosts one panel at a time, remembers preferences and isolates failures. A compact or panel slot that throws becomes a retry chip; an overlay that throws is reported without one.</p>
+        <p class="dtb-bar-caption dtb-bar-demo">That bar is a still. <a href="https://codesandbox.io/p/sandbox/q6269g" target="_blank" rel="noreferrer">Open the playground on CodeSandbox</a> to drive the real one — every chip above has a control on the page that moves it.</p>
       </div>
     </div>
   </section>
@@ -746,6 +748,15 @@ body:has(.dtb-landing-page) {
   font-size: 12px;
   line-height: 1.6;
   text-align: center;
+}
+
+.dtb-bar-demo {
+  margin-top: 10px;
+}
+
+.dtb-bar-demo a {
+  color: var(--page-accent);
+  font-weight: 600;
 }
 
 .dtb-grid {

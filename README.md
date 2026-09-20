@@ -14,7 +14,8 @@ hosts *your* tools.
 </picture>
 
 *The bar in the playground, hosting the first-party extensions and a few of the
-playground's own.*
+playground's own.* **[Drive it on CodeSandbox](https://codesandbox.io/p/sandbox/q6269g)** — the same playground,
+running the published release in your browser, no checkout.
 
 ## What it is
 
@@ -389,6 +390,10 @@ tests cannot make: overflow collapsing live, overlays over a real `100vh` layout
 restyling, Tailwind, and a design-token set the page actually consumes. It rebuilds
 `dist/` on start, so after editing `src/` run `bun run build` (or `bun run dev` in a
 second terminal) and reload.
+
+[The CodeSandbox copy](https://codesandbox.io/p/sandbox/q6269g) is this same app with the `file:../..` link swapped for the
+published package, so it demos a *release*, never your working tree — reach for it to
+show someone the toolbar, not to try a change.
 
 Every chip on the bar has a control on the page that moves it, and the ones only
 real content can move have real content: a sized banner that is the page's `LCP`
