@@ -5,6 +5,7 @@ hosts *your* tools.
 
 [![npm](https://img.shields.io/npm/v/@nejcm/dev-toolbar.svg)](https://www.npmjs.com/package/@nejcm/dev-toolbar)
 [![docs](https://img.shields.io/badge/docs-site-b6f06a.svg)](https://nejcm.github.io/dev-toolbar/)
+[![live demo](https://img.shields.io/badge/demo-CodeSandbox-b6f06a.svg)](https://codesandbox.io/p/sandbox/q6269g)
 [![license](https://img.shields.io/npm/l/@nejcm/dev-toolbar.svg)](./LICENSE)
 ![zero runtime dependencies](https://img.shields.io/badge/runtime%20deps-0-brightgreen)
 
@@ -14,8 +15,12 @@ hosts *your* tools.
 </picture>
 
 *The bar in the playground, hosting the first-party extensions and a few of the
-playground's own.* **[Drive it on CodeSandbox](https://codesandbox.io/p/sandbox/q6269g)** — the same playground,
-running the published release in your browser, no checkout.
+playground's own.*
+
+## ▶ [Try it live on CodeSandbox](https://codesandbox.io/p/sandbox/q6269g)
+
+The playground above, running in your browser — every chip, panel and overlay, no
+install and no checkout.
 
 ## What it is
 
