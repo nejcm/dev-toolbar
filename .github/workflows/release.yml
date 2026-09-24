@@ -134,6 +134,19 @@ jobs:
       # Load-bearing: without it CI checks out the pre-release commit (github.sha) and passes while claiming to have tested the release.
       ref: ${{ needs.release-please.outputs.tag_name }}
 
+  # 2b. Publish the docs site, once per `main` push. Runs after release-please so a push that cuts a release deploys the bump (the landing page shows the package version) instead of deploying twice — see docs.yml. `!cancelled()`, not `success()`: a failed release-please run must not stop docs from shipping, and with no tag the input is '' so docs.yml deploys `github.sha`. Not gated on `gate`/`publish`, matching the old `release: published` trigger, which also fired before npm had the version.
+  docs:
+    name: docs
+    needs: [release-please]
+    if: ${{ !cancelled() }}
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    uses: ./.github/workflows/docs.yml
+    with:
+      ref: ${{ needs.release-please.outputs.tag_name }}
+
   # 3. Publish to npm via trusted publishing (OIDC). No token, anywhere.
   #
   # No GitHub Environment gate: solo-maintainer repo where `prevent_self_review` would lock out the only maintainer, and npmjs.com's trusted publisher already pins repo + filename. Revisit if a second maintainer joins, or via `npm stage publish` (npm >= 11.15.0).
