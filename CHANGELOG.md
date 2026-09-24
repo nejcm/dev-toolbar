@@ -14,6 +14,19 @@
   style break at the boundary is accepted, not an oversight.
 -->
 
+## [1.1.0](https://github.com/nejcm/dev-toolbar/compare/v1.0.0...v1.1.0) (2026-09-24)
+
+
+### Features
+
+* **kit:** add readDiagnosticsRoster and redactForExport ([#139](https://github.com/nejcm/dev-toolbar/issues/139)) ([0341f09](https://github.com/nejcm/dev-toolbar/commit/0341f09e865de5595b2ec070f80da6cc61954f08))
+
+
+### Bug Fixes
+
+* **ext:** mask failed roster entries and survive unserialisable values in the agent ([#138](https://github.com/nejcm/dev-toolbar/issues/138)) ([1c4f159](https://github.com/nejcm/dev-toolbar/commit/1c4f159186d2b1ae916b707f74518848fb6a4426))
+* **testing:** make fakeExtensionApi keep the contract core keeps ([#135](https://github.com/nejcm/dev-toolbar/issues/135)) ([159aab6](https://github.com/nejcm/dev-toolbar/commit/159aab6a0704cc941e22e310c77915d59e5f9cfc))
+
 ## [1.0.0](https://github.com/nejcm/dev-toolbar/compare/v0.14.0...v1.0.0) (2026-09-24)
 
 
