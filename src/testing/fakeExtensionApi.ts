@@ -23,15 +23,15 @@ export interface FakeExtensionApi {
   /** Pass this to `start()`. */
   api: ExtensionRuntimeApi;
   /**
-   * Flips visibility and notifies every subscriber, the way core's own
-   * `subscribeVisibility` does. A no-op once `abort()` has run.
+   * Flips visibility, keeping every invariant core does except timing: delivery is synchronous,
+   * one call per change, and never coalesced. A runtime must not depend on either timing.
    */
   setVisible(visible: boolean): void;
   /**
    * Aborts the internal controller, which is what core does when the extension
    * is unregistered or the toolbar unmounts — the teardown path an extension's
    * cleanup is written against. A test that overrides `signal` keeps its own
-   * signal on `api` and this aborts only the controller behind `setVisible`.
+   * signal on `api`; this aborts only the internal controller the listeners follow.
    */
   abort(): void;
   /** The controller behind `api.signal`, for a test that needs `reason`. */
@@ -49,6 +49,7 @@ export function fakeExtensionApi(options: FakeExtensionApiOptions = {}): FakeExt
     signal: controller.signal,
     isVisible: () => current,
     subscribeVisibility(callback) {
+      if (controller.signal.aborted) return () => {};
       listeners.add(callback);
       return () => {
         listeners.delete(callback);
@@ -69,11 +70,17 @@ export function fakeExtensionApi(options: FakeExtensionApiOptions = {}): FakeExt
   return {
     api,
     setVisible(next) {
-      if (controller.signal.aborted) return;
+      if (next === current) return;
       current = next;
-      // A `Set` tolerates deletion during iteration, so an unsubscribing
-      // listener is safe without copying.
-      for (const listener of listeners) listener(next);
+      // A copy, so a subscriber added during delivery does not hear this one.
+      for (const listener of Array.from(listeners)) {
+        try {
+          listener(next);
+        } catch (error) {
+          // eslint-disable-next-line no-console
+          console.error("[dev-toolbar/testing] a subscribeVisibility() callback threw.", error);
+        }
+      }
     },
     abort() {
       controller.abort();

@@ -76,7 +76,27 @@ describe("fakeExtensionApi", () => {
     // against an extension that never unsubscribed.
     setVisible(false);
     expect(seen).not.toHaveBeenCalled();
-    expect(api.isVisible()).toBe(true);
+    // The toolbar outlives an unregistered extension, so visibility keeps moving.
+    expect(api.isVisible()).toBe(false);
+  });
+
+  it("logs a throwing callback under the testing marker", () => {
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const { api, setVisible } = fakeExtensionApi();
+      const error = new Error("boom");
+      api.subscribeVisibility(() => {
+        throw error;
+      });
+
+      setVisible(false);
+      expect(spy).toHaveBeenCalledWith(
+        "[dev-toolbar/testing] a subscribeVisibility() callback threw.",
+        error,
+      );
+    } finally {
+      spy.mockRestore();
+    }
   });
 
   it("takes an override for every member, `visible` aside", async () => {
