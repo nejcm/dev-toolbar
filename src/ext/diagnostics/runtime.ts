@@ -15,7 +15,6 @@
 import {
   REDACTED,
   formatError,
-  redact,
   redactProse,
   redactUrl,
   writeClipboardText,
@@ -23,13 +22,14 @@ import {
 } from "../../runtime";
 import type { RedactOptions, ThrottledStore } from "../../runtime";
 import { createThrottledStore } from "../../runtime";
-import { readPreference, writePreference } from "@nejcm/dev-toolbar/kit";
+import {
+  readDiagnosticsRoster,
+  readPreference,
+  redactForExport,
+  writePreference,
+} from "@nejcm/dev-toolbar/kit";
 import type { Preference } from "@nejcm/dev-toolbar/kit";
-import type {
-  ExtensionDiagnostics,
-  ExtensionRuntimeApi,
-  ToolbarStorage,
-} from "../../core/contract";
+import type { ExtensionRuntimeApi, ToolbarStorage } from "../../core/contract";
 import { createConsoleTail } from "./console";
 import type { ConsoleTailOptions } from "./console";
 import { createResponsivenessMonitor } from "./responsiveness";
@@ -312,10 +312,7 @@ export function createDiagnosticsRuntime(
   /** A thrown value for the snapshot: `formatError()` masks the halves, then joins. */
   const describeSafely = (error: unknown): string => formatError(error, redactOptions);
 
-  /**
-   * The one place a raw foreign value is touched. Order is load-bearing:
-   * `redact()` walks the object, and only then is the result serialised.
-   */
+  /** The one place a consumer's raw value is touched; `redactForExport` redacts before it serialises. */
   const takeData = (
     entry: { id: string; label: string },
     read: () => unknown,
@@ -331,83 +328,47 @@ export function createDiagnosticsRuntime(
         error: describeSafely(error),
       };
     }
-    return finish(entry, raw);
+    const exported = redactForExport(raw, redactOptions);
+    return exported.status === "ok"
+      ? { id: entry.id, label: entry.label, status: "ok", data: exported.value }
+      : { id: entry.id, label: entry.label, ...exported };
   };
 
-  /** Redact, then prove it serialises — in that order, always. `redact()` tags a throwing getter as `"[getter threw]"` rather than propagating. */
-  const finish = (entry: { id: string; label: string }, raw: unknown): DiagnosticContribution => {
-    const redacted = redact(raw, redactOptions);
-    if (redacted === undefined) {
-      return {
-        id: entry.id,
-        label: entry.label,
-        status: "absent",
-      };
-    }
-    try {
-      // Check only — not the output. A BigInt survives redact() and throws
-      // here; one extension must not cost the reader the whole snapshot.
-      JSON.stringify(redacted);
-    } catch (error) {
-      return {
-        id: entry.id,
-        label: entry.label,
-        status: "unserialisable",
-        error: describeSafely(error),
-      };
-    }
-    return { id: entry.id, label: entry.label, status: "ok", data: redacted };
-  };
-
-  /** Extension contributions, via core's roster. */
+  /** Extension contributions, via core's roster, which the kit reads and masks. */
   const gather = (): {
     contributions: DiagnosticContribution[];
     gathered: boolean;
   } => {
-    const contributions: DiagnosticContribution[] = [];
-    let roster: readonly ExtensionDiagnostics[] | null = null;
-    if (typeof api?.getDiagnostics === "function") {
-      try {
-        roster = api.getDiagnostics();
-      } catch (error) {
-        // Unreachable today (core already contains per-extension throws), but
-        // a reader that lets this escape takes the toolbar down with it (§13.4).
-        contributions.push({
-          id: "*",
-          label: "Extension roster",
-          status: "failed",
-          error: `core's getDiagnostics() threw — ${describeSafely(error)}`,
-        });
-      }
-    }
-    if (roster === null) {
+    const read = readDiagnosticsRoster(api, redactOptions);
+    if (!read.gathered) {
+      // A throw is unreachable today (core already contains per-extension throws), but
+      // a reader that lets this escape takes the toolbar down with it (§13.4).
+      const contributions: DiagnosticContribution[] =
+        read.error === undefined
+          ? []
+          : [
+              {
+                id: "*",
+                label: "Extension roster",
+                status: "failed",
+                error: `core's getDiagnostics() threw — ${read.error}`,
+              },
+            ];
       return { contributions, gathered: false };
     }
-    for (const entry of roster) {
+    const contributions: DiagnosticContribution[] = [];
+    for (const entry of read.entries) {
       // Reader, not a contributor: declaring diagnostics() here would recurse.
       if (entry.id === id) continue;
-      if (entry.status === "absent") {
-        contributions.push({
-          id: entry.id,
-          label: entry.label,
-          status: "absent",
-        });
-        continue;
-      }
       if (entry.status === "failed") {
-        // Core hands message and name over separately so this can mask the
-        // message *before* prefixing it — joining first is the leak.
-        const message = maskProse(entry.error ?? "diagnostics() threw.");
-        const name = entry.errorName === undefined ? undefined : maskProse(entry.errorName);
-        contributions.push({
-          id: entry.id,
-          label: entry.label,
-          status: "failed",
-          error: name === undefined ? message : `${name}: ${message}`,
-        });
+        // The kit masked each half; joining after masking is the order that does not leak.
+        const { errorName, ...rest } = entry;
+        contributions.push(
+          errorName === undefined ? rest : { ...rest, error: `${errorName}: ${entry.error}` },
+        );
         continue;
       }
-      contributions.push(finish(entry, entry.data));
+      contributions.push(entry);
     }
     return { contributions, gathered: true };
   };
@@ -502,7 +463,7 @@ export function createDiagnosticsRuntime(
       page: readPage(redactOptions),
       responsiveness: readResponsiveness(),
       // Already redacted, entry by entry, on the way into the ring — it does
-      // not go through `finish()` for the same reason `responsiveness` does
+      // not go through `redactForExport` for the same reason `responsiveness` does
       // not: this extension built it, so there is no foreign value left in it.
       console: safeTail(),
       app: appContribution?.status === "ok" ? appContribution.data : null,
