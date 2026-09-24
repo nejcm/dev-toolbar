@@ -4,6 +4,7 @@ import {
   Action,
   Banner,
   Chip,
+  CopyButton,
   Field,
   Note,
   SearchField,
@@ -12,6 +13,7 @@ import {
   TextInput,
   renderCompact,
   renderCompactParts,
+  resetUrl,
   resolveAccessibleName,
   resolveCompactControl,
   useCopyStatus,
@@ -429,9 +431,17 @@ export interface PanelProps {
   label: string;
   injectStyles: boolean;
   styleNonce?: string;
+  /** Kill-switch param. `null` hides the reset-link row. */
+  themeParam: string | null;
 }
 
-export function ThemePanel({ runtime, label, injectStyles, styleNonce }: PanelProps): ReactNode {
+export function ThemePanel({
+  runtime,
+  label,
+  injectStyles,
+  styleNonce,
+  themeParam,
+}: PanelProps): ReactNode {
   const snapshot = useExtensionSurface(
     runtime.store,
     injectStyles,
@@ -699,13 +709,47 @@ export function ThemePanel({ runtime, label, injectStyles, styleNonce }: PanelPr
         so an edit cannot restyle this toolbar; restyle the bar from your own stylesheet instead.
       </Note>
 
-      {snapshot.overriddenCount > 0 ? (
-        <Note data-dtb-part="thm-note" data-dtb-role="escape-hatch">
-          Edits persist across reloads in this browser. Reset them above, or load any page with{" "}
-          <code>?dtb-theme=reset</code> if an edit has made the app unreadable enough that you
-          cannot reach this panel.
-        </Note>
-      ) : null}
+      <ResetLink themeParam={themeParam} overridden={snapshot.overriddenCount > 0} />
     </div>
+  );
+}
+
+/** Footer line: the kill-switch URL for this page, omitted when the param is disabled. */
+function ResetLink({
+  themeParam,
+  overridden,
+}: {
+  themeParam: string | null;
+  overridden: boolean;
+}): ReactNode {
+  const href = resetUrl(themeParam);
+  if (!overridden && href === null) return null;
+  return (
+    <Note
+      as="span"
+      data-dtb-part="thm-note"
+      data-dtb-role={href === null ? "escape-hatch" : "reset-link"}
+    >
+      {overridden ? "Edits persist across reloads in this browser. Reset them above." : null}
+      {overridden && href !== null ? " " : null}
+      {href === null ? null : (
+        <>
+          Load <code>{href}</code> to drop every stored edit.{" "}
+          <CopyButton
+            text={href}
+            statusText={{
+              idle: "Copy the reset link.",
+              ok: "Copied.",
+              failed: "Clipboard unavailable.",
+            }}
+            statusProps={{ "data-dtb-part": "thm-note" }}
+            data-dtb-part="thm-action"
+            data-dtb-action="copy-reset-link"
+          >
+            Copy
+          </CopyButton>
+        </>
+      )}
+    </Note>
   );
 }

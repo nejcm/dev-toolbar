@@ -78,6 +78,30 @@ an app that owns its own `100vh` layout keeps it.
 `Cmd+Shift+.` (macOS) or `Ctrl+Shift+.` shows and hides the bar; the binding is
 yours to change with the `shortcut` prop.
 
+### Recommended setup
+
+A fuller starting bar, under the same rule — build the array once, at module scope.
+`readings` and `applyFlag` stand in for your own flag client:
+
+```tsx
+import { commandMenu } from "@nejcm/dev-toolbar/ext/command-menu";
+import { diagnostics } from "@nejcm/dev-toolbar/ext/diagnostics";
+import { environment } from "@nejcm/dev-toolbar/ext/environment";
+import { flags } from "@nejcm/dev-toolbar/ext/flags";
+import { metrics } from "@nejcm/dev-toolbar/ext/metrics";
+
+const extensions = [
+  environment({ context: { environment: "staging" } }),
+  metrics(),
+  flags({
+    flags: () => readings,
+    onOverride: (key, value) => applyFlag(key, value),
+  }),
+  commandMenu(),
+  diagnostics(),
+];
+```
+
 ## What you can put on it
 
 Each extension is a separate opt-in subpath with its own bundle. Import none of

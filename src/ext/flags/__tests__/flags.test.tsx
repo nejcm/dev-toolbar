@@ -9,7 +9,7 @@ import { cleanupToolbar, installClipboard, mountToolbar } from "@nejcm/dev-toolb
 import type { ClipboardStub } from "@nejcm/dev-toolbar/testing";
 import { collectCommands } from "../../../core/commands";
 import { createMemoryStorage } from "../../../core/storage";
-import { withLocation } from "../../../test-utils/location";
+import { withHistoryUrl, withLocation } from "../../../test-utils/location";
 import { flags, readStoredOverrides, vetOverrides } from "../index";
 import { OVERRIDES_KEY, vetOverrides as runtimeVetOverrides } from "../runtime";
 import type { FlagsOptions } from "../index";
@@ -411,6 +411,55 @@ describe("read-only mode", () => {
     );
     // Copying still works: reading is the whole point of a read-only panel.
     expect(panel?.querySelector('[data-dtb-action="copy-recipe"]')).not.toBeNull();
+  });
+});
+
+describe("the reset link", () => {
+  const linkUrl = (panel: HTMLElement | null) =>
+    panel?.querySelector('[data-dtb-role="reset-link"] code')?.textContent ?? "";
+
+  it("shows how many overrides a reset cleared, and the reset URL for this page", () => {
+    const storage = createMemoryStorage({
+      "dtb:v1:test:ext:flags:overrides": JSON.stringify({
+        "ui-facelift": true,
+        "new-header": false,
+      }),
+    });
+    withHistoryUrl("http://localhost:3000/?token=secret&dtb-flags=reset#section", () => {
+      const { toolbar } = mount({ onOverride: record }, storage);
+      act(() => {
+        toolbar.openPanel("flags");
+      });
+      const panel = toolbar.panel("flags");
+      expect(text(panel?.querySelector('[data-dtb-role="reset-notice"]'))).toBe(
+        "2 overrides were cleared by ?dtb-flags=reset.",
+      );
+      const url = new URL(linkUrl(panel));
+      expect(url.searchParams.get("dtb-flags")).toBe("reset");
+      // Only the switch travels: the rest of the query and the hash are dropped.
+      expect(url.searchParams.has("token")).toBe(false);
+      expect(url.hash).toBe("");
+      expect(panel?.querySelector('[data-dtb-action="copy-reset-link"]')).not.toBeNull();
+    });
+  });
+
+  it("uses a renamed param and omits the row when the param is disabled", () => {
+    const named = mount({ onOverride: record, resetParam: "my-flags" });
+    act(() => {
+      named.toolbar.openPanel("flags");
+    });
+    const url = new URL(linkUrl(named.toolbar.panel("flags")));
+    expect(url.searchParams.get("my-flags")).toBe("reset");
+    expect(url.searchParams.has("dtb-flags")).toBe(false);
+    named.unmount();
+
+    const disabled = mount({ onOverride: record, resetParam: null });
+    act(() => {
+      disabled.toolbar.openPanel("flags");
+    });
+    expect(
+      disabled.toolbar.panel("flags")?.querySelector('[data-dtb-role="reset-link"]'),
+    ).toBeNull();
   });
 });
 

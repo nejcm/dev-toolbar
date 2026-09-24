@@ -21,6 +21,7 @@ import {
   readPreference,
   readPreferenceIfReadable,
   readStoredRecord,
+  stripResetParam,
   writePreference,
 } from "@nejcm/dev-toolbar/kit";
 import type { Preference } from "@nejcm/dev-toolbar/kit";
@@ -1409,10 +1410,13 @@ export function createThemeEditorRuntime(
 
       // The kill switch runs before anything is applied, so an edit that made
       // the page unreadable never reaches it on the reset load.
-      if (resetRequested(themeParam)) {
+      // The param is removed once the empty map is stored. A recipe on the same
+      // param is left alone — only the kill-switch value is a reset.
+      if (themeParam !== null && resetRequested(themeParam)) {
         overrides = emptyMap();
         persistOverrides();
-        notice = `Every theme edit was cleared by ?${themeParam ?? ""}=reset.`;
+        notice = `Every theme edit was cleared by ?${themeParam}=reset.`;
+        stripResetParam(themeParam);
       } else {
         const storedOverrides = readPreferenceIfReadable(
           persist ? storage : null,

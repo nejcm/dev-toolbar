@@ -9,6 +9,7 @@ import type { ClipboardStub } from "@nejcm/dev-toolbar/testing";
 import { collectCommands } from "../../../core/commands";
 import { CONTRACT_VERSION } from "../../../core/contract";
 import { createMemoryStorage } from "../../../core/storage";
+import { withHistoryUrl } from "../../../test-utils/location";
 import { themeEditor } from "../index";
 import type { ThemeEditorOptions } from "../index";
 import type { DesignTokenDefinition } from "../types";
@@ -760,6 +761,48 @@ describe("accessibility", () => {
 });
 
 /* -------------------------------------------------------------------------- */
+
+describe("the reset link", () => {
+  const linkUrl = (panel: HTMLElement | null) =>
+    panel?.querySelector('[data-dtb-role="reset-link"] code')?.textContent ?? "";
+
+  it("shows the reset URL for this page and omits it when the param is disabled", () => {
+    withHistoryUrl("http://localhost:3000/edit?token=secret#tokens", () => {
+      const available = mount();
+      act(() => {
+        available.toolbar.openPanel("theme-editor");
+      });
+      const url = new URL(linkUrl(available.toolbar.panel("theme-editor")));
+      expect(url.searchParams.get("dtb-theme")).toBe("reset");
+      // Only the switch travels: the rest of the query and the hash are dropped.
+      expect(url.searchParams.has("token")).toBe(false);
+      expect(url.hash).toBe("");
+      expect(
+        available.toolbar
+          .panel("theme-editor")
+          ?.querySelector('[data-dtb-action="copy-reset-link"]'),
+      ).not.toBeNull();
+      available.unmount();
+
+      const renamed = mount({ themeParam: "my-theme" });
+      act(() => {
+        renamed.toolbar.openPanel("theme-editor");
+      });
+      expect(
+        new URL(linkUrl(renamed.toolbar.panel("theme-editor"))).searchParams.get("my-theme"),
+      ).toBe("reset");
+      renamed.unmount();
+
+      const disabled = mount({ themeParam: null });
+      act(() => {
+        disabled.toolbar.openPanel("theme-editor");
+      });
+      expect(
+        disabled.toolbar.panel("theme-editor")?.querySelector('[data-dtb-role="reset-link"]'),
+      ).toBeNull();
+    });
+  });
+});
 
 describe("a failed adapter's error text reaches the row", () => {
   it("masks a credential-carrying URL before it becomes the title", () => {

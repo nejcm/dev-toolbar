@@ -245,6 +245,11 @@ export function extensionStorageKey(instanceId: string, extensionId: string, key
   return `${STORAGE_PREFIX}:${instanceId}:ext:${extensionId}:${key}`;
 }
 
+/** A kill-switch value. A shared recipe on the same param is anything else. */
+function isResetValue(value: string | null): boolean {
+  return value === "reset" || value === "clear" || value === "off";
+}
+
 /**
  * True when the URL asks for a persisted map to be dropped:
  * `?<param>=reset`, `=clear` or `=off`. `null` disables the switch.
@@ -260,10 +265,49 @@ export function resetRequested(param: string | null | undefined): boolean {
     if (typeof location === "undefined" || typeof location.search !== "string") {
       return false;
     }
-    const value = new URLSearchParams(location.search).get(param);
-    return value === "reset" || value === "clear" || value === "off";
+    return isResetValue(new URLSearchParams(location.search).get(param));
   } catch {
     return false;
+  }
+}
+
+/**
+ * Removes `?<param>=reset` (also `=clear` and `=off`) after the switch has
+ * been honoured, so a later `start()` does not drop overrides set since.
+ * Every other query param, the hash and `history.state` stay. `null` is a
+ * disabled switch. Never throws — a sandboxed iframe's `replaceState` can.
+ */
+export function stripResetParam(param: string | null | undefined): void {
+  if (param === null || param === undefined || param === "") return;
+  try {
+    if (typeof location === "undefined" || typeof location.href !== "string") return;
+    if (typeof history === "undefined" || typeof history.replaceState !== "function") return;
+    const url = new URL(location.href);
+    if (!isResetValue(url.searchParams.get(param))) return;
+    url.searchParams.delete(param);
+    history.replaceState(history.state, "", `${url.pathname}${url.search}${url.hash}`);
+  } catch {
+    // SSR, or a sandboxed iframe whose replaceState throws.
+  }
+}
+
+/**
+ * The current page's origin and path with only `?<param>=reset`, for a panel's
+ * copy row. The rest of the query and the hash are dropped: the switch works on
+ * any page, and a link meant to be pasted must not carry a `?token=` along.
+ * `null` when the switch is disabled or there is no URL to read.
+ */
+export function resetUrl(param: string | null | undefined): string | null {
+  if (param === null || param === undefined || param === "") return null;
+  try {
+    if (typeof location === "undefined" || typeof location.href !== "string") return null;
+    const url = new URL(location.href);
+    url.search = "";
+    url.hash = "";
+    url.searchParams.set(param, "reset");
+    return url.href;
+  } catch {
+    return null;
   }
 }
 

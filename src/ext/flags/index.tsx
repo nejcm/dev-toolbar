@@ -46,7 +46,7 @@
  *   `readStoredOverrides()` before you render if you need them earlier.
  * - **There is a kill switch.** `?dtb-flags=reset` drops every stored override
  *   before it's applied — the override that breaks the app is the one you
- *   can't reach the panel to remove.
+ *   can't reach the panel to remove. The param is then removed from the URL.
  * - **An override is never quiet.** The bar counts them, every overridden row
  *   is marked, and the app's own value stays on screen next to the override.
  *
@@ -153,6 +153,7 @@ export function flags(options: FlagsOptions = {}): DevToolbarExtension {
     injectStyles = true,
     styleNonce: optionNonce,
     presentation: presentationOption,
+    resetParam = DEFAULT_RESET_PARAM,
     ...runtimeOptions
   } = options;
 
@@ -170,7 +171,7 @@ export function flags(options: FlagsOptions = {}): DevToolbarExtension {
 
   // Built here, not in start(api): slot functions run during the toolbar's
   // first render, which is before any effect fires.
-  const runtime = createFlagsRuntime(runtimeOptions);
+  const runtime = createFlagsRuntime({ ...runtimeOptions, resetParam });
 
   // Rebuilt on every aggregation pass so a flag the catalogue grows after
   // mount gets a toggle command immediately; command identity is `id`, so
@@ -274,6 +275,7 @@ export function flags(options: FlagsOptions = {}): DevToolbarExtension {
       <FlagsPanel
         runtime={runtime}
         label={label}
+        resetParam={resetParam}
         injectStyles={injectStyles}
         styleNonce={resolveStyleNonce(optionNonce, styleNonce)}
       />
@@ -346,7 +348,7 @@ export interface ReadStoredOverridesOptions {
  * agrees with the panel.
  *
  * Honours `?dtb-flags=reset`, same as `start()`: while the param is in the URL
- * this returns `{}`.
+ * this returns `{}`. `start()` removes the param after applying the reset.
  */
 export function readStoredOverrides(
   options: ReadStoredOverridesOptions = {},

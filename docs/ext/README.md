@@ -1,7 +1,8 @@
 # Extensions
 
 First-party extensions ship as separate opt-in subpaths. Import only the ones your
-toolbar uses.
+toolbar uses. The [CodeSandbox demo](https://codesandbox.io/p/sandbox/q6269g) runs
+the playground against a published release.
 
 | Extension | What it adds |
 | --- | --- |

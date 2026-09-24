@@ -56,8 +56,14 @@ So it behaves like `/ext/flags`, which changes what your app *does*:
   toggle and surface choice remain session state across a restart.
 - **There is a kill switch.** Any page loaded with `?dtb-theme=reset` drops every edit
   *before* any of them is applied, because the edit that makes the page unreadable is
-  the one you cannot see the panel to remove. The saved surface selection and preview
-  toggle are restored on both the reset load and the next ordinary load.
+  the one you cannot see the panel to remove. `=clear` and `=off` do the same thing.
+  Once the empty map is stored, that param is removed from the URL with
+  `history.replaceState`; other query params, the hash and `history.state` stay. A
+  shared recipe on the same param (`?dtb-theme=<recipe>`) is not removed. A later
+  `start()` does not clear edits set after the reset. The panel footer shows the
+  reset URL for the current page, with a copy button, unless `themeParam` is `null`.
+  The saved surface selection and preview toggle are restored on both the reset load
+  and the next ordinary load.
 - **Reset is exact.** The inline value each property held before the extension touched
   it — priority included — is restored, and a `style` attribute the extension created
   is removed rather than left empty. Same on teardown, unconditionally.

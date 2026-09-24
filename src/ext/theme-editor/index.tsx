@@ -27,7 +27,8 @@
  * - **Kill switch.** Edits persist under
  *   `dtb:v1:<instanceId>:ext:<id>:overrides` and reapply on the next mount.
  *   `?dtb-theme=reset` drops them before any are applied, so a broken edit is
- *   always recoverable even if it makes the panel unreadable.
+ *   always recoverable even if it makes the panel unreadable. The param is
+ *   then removed from the URL; a shared recipe on it is left in place.
  * - **Exact reversal.** Edits are inline custom properties on the surface
  *   element. Prior values are recorded and restored, and an element with no
  *   original `style` attribute ends up with none — `setProperty` then
@@ -43,7 +44,7 @@
  * no palette generation from base/accent/contrast, no OKLCH delta model, no
  * Figma plugin — only the deterministic export half of that pipeline.
  */
-import { createThemeEditorRuntime } from "./runtime";
+import { DEFAULT_THEME_PARAM, createThemeEditorRuntime } from "./runtime";
 import { writeClipboardTextOrThrow } from "../../runtime";
 import { describeValueRefusal } from "./types";
 import { ThemeChip, ThemePanel } from "./ui";
@@ -234,6 +235,7 @@ export function themeEditor(options: ThemeEditorOptions = {}): DevToolbarExtensi
       <ThemePanel
         runtime={runtime}
         label={label}
+        themeParam={options.themeParam === undefined ? DEFAULT_THEME_PARAM : options.themeParam}
         injectStyles={injectStyles}
         styleNonce={resolveStyleNonce(optionNonce, styleNonce)}
       />

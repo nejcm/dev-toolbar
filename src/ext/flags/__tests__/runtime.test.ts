@@ -7,7 +7,7 @@ import { createSource } from "@nejcm/dev-toolbar/kit";
 import { fakeExtensionApi } from "@nejcm/dev-toolbar/testing";
 import type { Mock } from "vitest";
 import { createMemoryStorage } from "../../../core/storage";
-import { withLocation } from "../../../test-utils/location";
+import { withHistoryUrl, withLocation } from "../../../test-utils/location";
 import {
   createFlagsRuntime,
   OVERRIDES_KEY,
@@ -15,6 +15,7 @@ import {
   resetDuplicateCatalogueKeyWarnings,
   vetOverrides,
 } from "../runtime";
+import { readStoredOverrides } from "../index";
 import { parseValue, severityFor } from "../types";
 import type { FlagReading, FlagValue, FlagView, PromotedFlag } from "../types";
 import type { ExtensionRuntimeApi, ToolbarStorage } from "../../../core/contract";
@@ -597,6 +598,106 @@ describe("the kill switch", () => {
       Object.defineProperty(window, "location", { configurable: true, value: original });
     }
     expect(runtime.overrides()).toEqual({ "ui-facelift": true });
+  });
+
+  it("strips the reset param and keeps the rest of the URL", () => {
+    const storage = createMemoryStorage({
+      [OVERRIDES_KEY]: JSON.stringify({ "ui-facelift": true, "new-header": false }),
+      // The pre-mount reader uses the prefixed key, not the runtime's own.
+      "dtb:v1:default:ext:flags:overrides": JSON.stringify({
+        "ui-facelift": true,
+        "new-header": false,
+      }),
+    });
+    const runtime = createFlagsRuntime({ flags: CATALOGUE, onOverride: () => {} });
+    withHistoryUrl("http://localhost/app?keep=1&dtb-flags=reset&x=2#section", (stub) => {
+      expect(readStoredOverrides({ storage })).toEqual({});
+      expect(stub.calls).toEqual([]);
+      runtime.start(fakeApi(storage).api);
+      expect(runtime.store.getSnapshot().notice).toBe(
+        "2 overrides were cleared by ?dtb-flags=reset.",
+      );
+      expect(stub.calls).toEqual([[stub.state, "", "/app?keep=1&x=2#section"]]);
+      expect(stub.location.search).toBe("?keep=1&x=2");
+      expect(stub.location.hash).toBe("#section");
+    });
+  });
+
+  it("strips a renamed param and leaves a disabled one alone", () => {
+    const href = "http://localhost/app?keep=1&my-flags=clear#top";
+    const renamed = createFlagsRuntime({
+      flags: CATALOGUE,
+      onOverride: () => {},
+      resetParam: "my-flags",
+    });
+    withHistoryUrl(href, (stub) => {
+      renamed.start(
+        fakeApi(createMemoryStorage({ [OVERRIDES_KEY]: JSON.stringify({ "ui-facelift": true }) }))
+          .api,
+      );
+      expect(stub.calls[0]?.[2]).toBe("/app?keep=1#top");
+      expect(renamed.store.getSnapshot().notice).toBe("1 override was cleared by ?my-flags=reset.");
+    });
+
+    const storage = createMemoryStorage({
+      [OVERRIDES_KEY]: JSON.stringify({ "ui-facelift": true }),
+    });
+    const disabled = createFlagsRuntime({
+      flags: CATALOGUE,
+      onOverride: () => {},
+      resetParam: null,
+    });
+    withHistoryUrl("http://localhost/app?dtb-flags=reset#top", (stub) => {
+      disabled.start(fakeApi(storage).api);
+      expect(stub.calls).toEqual([]);
+      expect(disabled.overrides()).toEqual({ "ui-facelift": true });
+      expect(disabled.store.getSnapshot().notice).toBeNull();
+    });
+  });
+
+  it("does not clear overrides set after the param was stripped", () => {
+    const storage = createMemoryStorage({
+      [OVERRIDES_KEY]: JSON.stringify({ "ui-facelift": true }),
+    });
+    const runtime = createFlagsRuntime({ flags: CATALOGUE, onOverride: () => {} });
+    withHistoryUrl("http://localhost/app?dtb-flags=off&keep=1#section", () => {
+      const stop = runtime.start(fakeApi(storage).api);
+      expect(runtime.overrides()).toEqual({});
+      runtime.setOverride("checkout.copy", "new");
+      stop();
+      runtime.start(fakeApi(storage).api);
+      expect(runtime.overrides()).toEqual({ "checkout.copy": "new" });
+    });
+  });
+
+  it("swallows a throwing replaceState and a missing history", () => {
+    const stored = () =>
+      createMemoryStorage({ [OVERRIDES_KEY]: JSON.stringify({ "ui-facelift": true }) });
+    const runtime = () => createFlagsRuntime({ flags: CATALOGUE, onOverride: () => {} });
+
+    withHistoryUrl(
+      "http://localhost/app?dtb-flags=reset",
+      () => {
+        const current = runtime();
+        expect(() => current.start(fakeApi(stored()).api)).not.toThrow();
+        expect(current.overrides()).toEqual({});
+      },
+      {
+        replaceState: () => {
+          throw new Error("sandbox");
+        },
+      },
+    );
+
+    withHistoryUrl(
+      "http://localhost/app?dtb-flags=reset",
+      () => {
+        const current = runtime();
+        expect(() => current.start(fakeApi(stored()).api)).not.toThrow();
+        expect(current.overrides()).toEqual({});
+      },
+      { history: null },
+    );
   });
 });
 

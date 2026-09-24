@@ -270,7 +270,8 @@ const FLAGS_EXTENSION_CSS = String.raw`@layer dev-toolbar {
 
   /* The panel's floor: the last thing to read, under a rule that matches the
      one closing the toolbar at the top. */
-  [data-dev-toolbar] [data-dtb-part="flag-note"][data-dtb-role="escape-hatch"] {
+  [data-dev-toolbar] [data-dtb-part="flag-note"][data-dtb-role="escape-hatch"],
+  [data-dev-toolbar] [data-dtb-part="flag-note"][data-dtb-role="reset-link"] {
     flex: 0 0 auto;
     padding-top: var(--dtb-space-3);
     border-top: 1px solid var(--dtb-border);

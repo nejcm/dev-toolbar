@@ -5,7 +5,7 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { fakeExtensionApi } from "@nejcm/dev-toolbar/testing";
-import { withLocation } from "../../../test-utils/location";
+import { withHistoryUrl, withLocation } from "../../../test-utils/location";
 import {
   DEFAULT_THEME_PARAM,
   OVERRIDES_KEY,
@@ -858,6 +858,97 @@ describe("the URL", () => {
       expect(root().style.getPropertyValue("--brand-500")).toBe("");
       expect(storage.getItem(OVERRIDES_KEY)).toBeNull();
     });
+  });
+
+  it("strips only the reset value and keeps every other param and the hash", () => {
+    const storage = createMemoryStorage({
+      [OVERRIDES_KEY]: JSON.stringify({ "--brand-500": "#ff0000" }),
+      "dtb:v1:default:ext:theme-editor:overrides": JSON.stringify({ "--brand-500": "#ff0000" }),
+    });
+    const runtime = createThemeEditorRuntime({ tokens: TOKENS });
+    withHistoryUrl("http://localhost/app?keep=1&dtb-theme=reset&x=2#section", (stub) => {
+      expect(readStoredThemeOverrides({ storage, tokens: TOKENS })).toEqual({});
+      expect(stub.calls).toEqual([]);
+      runtime.start(fakeApi(storage));
+      expect(runtime.store.peek().notice).toBe("Every theme edit was cleared by ?dtb-theme=reset.");
+      expect(stub.calls).toEqual([[stub.state, "", "/app?keep=1&x=2#section"]]);
+      expect(stub.location.hash).toBe("#section");
+    });
+  });
+
+  it("does not strip a shared recipe, a renamed param's other values, or a disabled param", () => {
+    const recipe = encodeURIComponent(
+      JSON.stringify({ schemaVersion: 1, name: "Shared", overrides: { "--brand-500": "#00ff00" } }),
+    );
+    withHistoryUrl(`http://localhost/app?dtb-theme=${recipe}&keep=1#top`, (stub) => {
+      const runtime = createThemeEditorRuntime({ tokens: TOKENS });
+      runtime.start(fakeApi(createMemoryStorage()));
+      expect(runtime.overrides()).toEqual({ "--brand-500": "#00ff00" });
+      expect(stub.calls).toEqual([]);
+    });
+
+    withHistoryUrl("http://localhost/app?keep=1&my-theme=reset#top", (stub) => {
+      const runtime = createThemeEditorRuntime({
+        tokens: TOKENS,
+        themeParam: "my-theme",
+      });
+      runtime.start(
+        fakeApi(
+          createMemoryStorage({ [OVERRIDES_KEY]: JSON.stringify({ "--brand-500": "#ff0000" }) }),
+        ),
+      );
+      expect(runtime.overrides()).toEqual({});
+      expect(stub.calls[0]?.[2]).toBe("/app?keep=1#top");
+    });
+
+    const kept = createMemoryStorage({
+      [OVERRIDES_KEY]: JSON.stringify({ "--brand-500": "#ff0000" }),
+    });
+    withHistoryUrl("http://localhost/app?dtb-theme=reset#top", (stub) => {
+      const runtime = createThemeEditorRuntime({ tokens: TOKENS, themeParam: null });
+      runtime.start(fakeApi(kept));
+      expect(stub.calls).toEqual([]);
+      expect(runtime.overrides()).toEqual({ "--brand-500": "#ff0000" });
+    });
+  });
+
+  it("does not clear edits set after the param was stripped", () => {
+    const storage = createMemoryStorage({
+      [OVERRIDES_KEY]: JSON.stringify({ "--brand-500": "#ff0000" }),
+    });
+    const runtime = createThemeEditorRuntime({ tokens: TOKENS });
+    withHistoryUrl("http://localhost/app?dtb-theme=off&keep=1#section", () => {
+      const stop = runtime.start(fakeApi(storage));
+      expect(runtime.overrides()).toEqual({});
+      runtime.setOverride("--brand-500", "#00ff00");
+      stop();
+      runtime.start(fakeApi(storage));
+      expect(runtime.overrides()).toEqual({ "--brand-500": "#00ff00" });
+    });
+  });
+
+  it("swallows a throwing replaceState", () => {
+    const runtime = createThemeEditorRuntime({ tokens: TOKENS });
+    withHistoryUrl(
+      "http://localhost/app?dtb-theme=reset",
+      () => {
+        expect(() =>
+          runtime.start(
+            fakeApi(
+              createMemoryStorage({
+                [OVERRIDES_KEY]: JSON.stringify({ "--brand-500": "#ff0000" }),
+              }),
+            ),
+          ),
+        ).not.toThrow();
+        expect(runtime.overrides()).toEqual({});
+      },
+      {
+        replaceState: () => {
+          throw new Error("sandbox");
+        },
+      },
+    );
   });
 
   it("adopts a shared recipe through the same sanitiser", () => {

@@ -14,6 +14,7 @@ import {
   renderCompact,
   renderCompactParts,
   resolveAccessibleName,
+  resetUrl,
   resolveCompactControl,
   resolveIcon,
   useExtensionSurface,
@@ -598,9 +599,17 @@ export interface PanelProps {
   label: string;
   injectStyles: boolean;
   styleNonce?: string;
+  /** Kill-switch param. `null` hides the reset-link row. */
+  resetParam: string | null;
 }
 
-export function FlagsPanel({ runtime, label, injectStyles, styleNonce }: PanelProps): ReactNode {
+export function FlagsPanel({
+  runtime,
+  label,
+  injectStyles,
+  styleNonce,
+  resetParam,
+}: PanelProps): ReactNode {
   const snapshot = useExtensionSurface(runtime.store, injectStyles, ensureFlagsStyles, styleNonce);
   const [query, setQuery] = useState("");
 
@@ -675,6 +684,17 @@ export function FlagsPanel({ runtime, label, injectStyles, styleNonce }: PanelPr
         </Banner>
       )}
 
+      {snapshot.notice ? (
+        <Banner
+          data-dtb-part="flag-banner"
+          data-dtb-tone="info"
+          data-dtb-role="reset-notice"
+          role="status"
+        >
+          {snapshot.notice}
+        </Banner>
+      ) : null}
+
       {pending.size > 0 ? (
         <Banner data-dtb-part="flag-banner" data-dtb-tone="warn" severity="warn" role="status">
           {pending.size} override{pending.size === 1 ? " needs" : "s need"} a reload to take effect:{" "}
@@ -725,13 +745,48 @@ export function FlagsPanel({ runtime, label, injectStyles, styleNonce }: PanelPr
         ))}
       </ul>
 
-      {snapshot.writable ? (
-        <Note data-dtb-part="flag-note" data-dtb-role="escape-hatch" data-dtb-bleed="">
-          Overrides persist across reloads in this browser. Clear them all above, or load any page
-          with <code>?dtb-flags=reset</code> if an override has broken the app badly enough that you
-          cannot reach this panel.
-        </Note>
-      ) : null}
+      <ResetLink resetParam={resetParam} writable={snapshot.writable} />
     </div>
+  );
+}
+
+/** Footer line: the kill-switch URL for this page, omitted when the param is disabled. */
+function ResetLink({
+  resetParam,
+  writable,
+}: {
+  resetParam: string | null;
+  writable: boolean;
+}): ReactNode {
+  const href = resetUrl(resetParam);
+  if (!writable && href === null) return null;
+  return (
+    <Note
+      as="span"
+      data-dtb-part="flag-note"
+      data-dtb-role={href === null ? "escape-hatch" : "reset-link"}
+      data-dtb-bleed=""
+    >
+      {writable ? "Overrides persist across reloads in this browser. Clear them all above." : null}
+      {writable && href !== null ? " " : null}
+      {href === null ? null : (
+        <>
+          Load <code>{href}</code> to drop every stored override.{" "}
+          <CopyButton
+            text={href}
+            statusText={{
+              idle: "Copy the reset link.",
+              ok: "Copied.",
+              failed: "Clipboard unavailable.",
+            }}
+            statusProps={{ "data-dtb-part": "flag-note" }}
+            data-dtb-part="flag-action"
+            data-dtb-action="copy-reset-link"
+          >
+            Copy
+          </CopyButton>
+        </>
+      )}
+    </Note>
   );
 }

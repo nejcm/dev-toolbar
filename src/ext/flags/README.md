@@ -47,9 +47,10 @@ observing it, which is why three rules hold:
 - **There is a kill switch.** `?dtb-flags=reset` drops every stored override and every
   session override held by the same runtime before it is applied — the override that
   breaks the app is the one you cannot reach the panel to remove. The adapter hears
-  about every distinct stored or session key. The reset is honoured on every `start()`,
-  so a remount while the param is still in the URL drops the overrides set since the
-  reset — a known limitation; strip the param from the URL after using it.
+  about every distinct stored or session key. Once the empty map is stored, that param
+  is removed from the URL, so a remount does not clear overrides set since the reset.
+  The panel footer shows the reset URL for the current page and how many overrides
+  the reset cleared. `resetParam: null` disables both.
 - **An override is never quiet.** The bar counts them, every overridden row is
   marked, and the app's own value stays on screen next to the override.
 
