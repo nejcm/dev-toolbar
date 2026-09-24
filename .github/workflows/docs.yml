@@ -5,21 +5,25 @@ on:
     paths:
       - "docs/**"
       - ".github/workflows/docs.yml"
-  # The landing page imports package metadata, so every main push can change published output.
-  push:
-    branches: [main]
-  # release.yml merges the version bump with `github.token`, and GitHub suppresses workflow triggers for
-  # pushes made with that token — so the release commit never reaches the `push` trigger above and the
-  # landing page's version badge would stay one release behind. Both release-please steps run under the
-  # PAT, so the release they publish does fire this. Checkout defaults to the release tag, i.e. the bump.
-  #
-  # This runs at the tag ref (`v0.12.1`, not `main`), and the `github-pages` environment below enforces
-  # deployment branch policies. The environment must therefore allow the `v*` *tag* pattern alongside the
-  # `main` branch — with only `main` allowed, every release-triggered run fails at the deploy job with
-  # `Tag "vX.Y.Z" is not allowed to deploy to github-pages due to environment protection rules` (v0.12.1).
-  # That policy lives in repository settings, not here: Settings → Environments → github-pages.
-  release:
-    types: [published]
+  # Deployment is driven by release.yml, which calls this after its release-please job on every `main`
+  # push. The landing page imports package metadata, so a push that cuts a release must publish the
+  # release commit (the version bump), not the push that started the run — and exactly once. Two separate
+  # triggers here (`push` for the merge, `release: published` for the bump) deployed twice per release and
+  # cancelled each other through the `pages` group below; one caller that knows which commit is current
+  # deploys once. It also keeps every deploy on `refs/heads/main`, so the `github-pages` environment's
+  # deployment branch policy no longer needs the `v*` tag entry the old release trigger required.
+  workflow_call:
+    inputs:
+      ref:
+        description: >-
+          Commit-ish to build and deploy. release.yml passes the release tag when it cut one; checkout
+          otherwise defaults to the caller's `github.sha`, one commit behind the bump. Empty deploys the
+          triggering ref.
+        type: string
+        required: false
+        default: ""
+  # Manual redeploy of `main`, e.g. after a Pages outage.
+  workflow_dispatch: {}
 
 permissions:
   contents: read
@@ -58,8 +62,8 @@ jobs:
       contents: read
       pages: write
       id-token: write
-    # Deployment branch policies on this environment allow `main` and the `v*` tag pattern; the `release`
-    # trigger above needs the tag entry. See the note on that trigger before narrowing either one.
+    # Every caller runs on `main` (see the `workflow_call` note above), so the environment's deployment
+    # branch policy only has to allow `main`.
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
@@ -72,6 +76,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: ${{ inputs.ref }}
           persist-credentials: false
 
       - name: Set up job
