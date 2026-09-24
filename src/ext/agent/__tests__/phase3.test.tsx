@@ -4,7 +4,7 @@ import { cleanup } from "@testing-library/react";
 import { renderWithToolbar } from "@nejcm/dev-toolbar/testing";
 import { agentBridge } from "../index";
 import { createAgentReporter, startAgentReporter } from "../report";
-import { AGENT_PROTOCOL_VERSION, DEFAULT_GLOBAL_NAME } from "../types";
+import { AGENT_MARKER, AGENT_PROTOCOL_VERSION, DEFAULT_GLOBAL_NAME } from "../types";
 import type { AgentReportBody, AgentReportResponse } from "../report";
 import type { AgentHandle, AgentRunResult, AgentSnapshot } from "../types";
 
@@ -140,6 +140,40 @@ describe("the check-in", () => {
     expect(net.bodies[0]?.reporterId).not.toBe("");
     expect(net.bodies[0]?.snapshot?.shell.position).toBe("bottom");
     expect(reporter.snapshotPosts).toBe(1);
+  });
+
+  it("masks a failed diagnostics message in the outbound snapshot", async () => {
+    const net = recordingFetch();
+    renderWithToolbar(undefined, {
+      instanceId: "test",
+      extensions: [
+        agentBridge({
+          instanceId: "test",
+          report: {
+            url: "/__dev-toolbar/state",
+            fetch: net.impl,
+            schedule: noSchedule,
+            pollSchedule: () => () => {},
+          },
+        }),
+        {
+          id: "message-leak",
+          label: "message leak",
+          diagnostics: () => {
+            throw new Error("fetch https://api.example.com/v1?token=abc123 failed");
+          },
+        },
+      ],
+    });
+
+    await vi.waitFor(() => {
+      expect(net.bodies).toHaveLength(1);
+    });
+    const entry = net.bodies[0]?.snapshot?.diagnostics.find(
+      (candidate) => candidate.id === "message-leak",
+    );
+    expect(entry?.error).toContain("token=[redacted]");
+    expect(entry?.error).not.toContain("abc123");
   });
 
   it("posts as JSON, which a cross-origin page cannot forge without a preflight", async () => {
@@ -280,6 +314,84 @@ describe("a queued command", () => {
     ]);
   });
 
+  it("delivers an unserialisable command result as threw without re-queuing it", async () => {
+    const fake = fakeHandle({ outcome: { ok: true, result: 1n } });
+    const net = recordingFetch([{ pending: [{ token: "t1", id: "a.b" }] }]);
+    const reporter = createAgentReporter(fake.handle, {
+      url: "/__dev-toolbar/state",
+      fetch: net.impl,
+      now: clock().now,
+      schedule: noSchedule,
+    });
+
+    await reporter.tick();
+    await reporter.tick();
+
+    expect(net.bodies[1]?.results).toEqual([
+      {
+        token: "t1",
+        outcome: {
+          ok: false,
+          reason: "threw",
+          error: expect.stringMatching(/^the result could not be serialised — .*BigInt/i),
+        },
+      },
+    ]);
+    expect(net.bodies[2]?.results).toEqual([]);
+    expect(reporter.posts).toBe(3);
+  });
+
+  it("keeps a queued healthy snapshot when the post-command snapshot is unserialisable", async () => {
+    const time = clock();
+    let state: "initial" | "healthy" | "unserialisable" = "initial";
+    let trailing: (() => void) | null = null;
+    const read = (): AgentSnapshot =>
+      state === "unserialisable"
+        ? {
+            ...snapshotWith(false),
+            diagnostics: [{ id: "bigint", label: "BigInt", status: "ok", data: { value: 1n } }],
+          }
+        : snapshotWith(state === "initial");
+    const handle: AgentHandle = {
+      instanceId: "test",
+      contractVersion: 2,
+      allowRun: true,
+      listCommands: () => snapshotWith(true).commands,
+      read,
+      runCommand: () => {
+        state = "unserialisable";
+        (trailing as unknown as () => void)();
+        return Promise.resolve({ ok: true });
+      },
+    };
+    const net = recordingFetch([{}, { pending: [{ token: "t1", id: "a.b" }] }]);
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const reporter = createAgentReporter(handle, {
+      url: "/__dev-toolbar/state",
+      fetch: net.impl,
+      intervalMs: 1000,
+      now: time.now,
+      schedule: (callback) => {
+        trailing = callback;
+        return () => {
+          trailing = null;
+        };
+      },
+    });
+
+    await reporter.tick();
+    time.advance(100);
+    state = "healthy";
+    await reporter.tick();
+    state = "healthy";
+    time.advance(1000);
+    await reporter.tick();
+
+    expect(net.bodies[2]?.snapshot).toBeUndefined();
+    expect(net.bodies[3]?.snapshot?.visible).toBe(false);
+    expect(warn).toHaveBeenCalledTimes(1);
+  });
+
   it("keeps an outcome that could not be delivered and sends it on the next check-in", async () => {
     const fake = fakeHandle();
     const time = clock();
@@ -334,6 +446,51 @@ describe("the reporter's lifetime", () => {
     await reporter.tick();
 
     expect(reporter.posts).toBe(1);
+  });
+
+  it("keeps checking in past unserialisable roster data and recovers after removal", async () => {
+    const net = recordingFetch();
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    let pump: (() => void) | null = null;
+    const rendered = renderWithToolbar(undefined, {
+      instanceId: "test",
+      extensions: [
+        agentBridge({
+          instanceId: "test",
+          report: {
+            url: "/__dev-toolbar/state",
+            fetch: net.impl,
+            schedule: noSchedule,
+            pollSchedule: (callback) => {
+              pump = callback;
+              return () => {};
+            },
+          },
+        }),
+      ],
+    });
+    const remove = rendered.toolbar.register({
+      id: "bigint",
+      label: "BigInt",
+      diagnostics: () => ({ value: 1n }),
+    });
+
+    await vi.waitFor(() => {
+      expect(net.bodies).toHaveLength(1);
+    });
+    (pump as unknown as () => void)();
+    await settled();
+    expect(net.bodies).toHaveLength(2);
+    expect(net.bodies.every((body) => body.snapshot === undefined)).toBe(true);
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(String(warn.mock.calls[0]?.[0])).toContain(AGENT_MARKER);
+
+    remove();
+    (pump as unknown as () => void)();
+    await settled();
+
+    expect(net.bodies).toHaveLength(3);
+    expect(net.bodies[2]?.snapshot?.diagnostics.map((entry) => entry.id)).toEqual(["agent"]);
   });
 
   it("checks in immediately and then on the poll timer, and stops on teardown", async () => {

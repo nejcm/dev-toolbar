@@ -3,7 +3,7 @@
  * The page polls because the server has no channel back; queued commands run
  * on the next check-in. `allowRun` still gates command execution.
  */
-import { createThrottledStore, describeErrorUnmasked } from "../../runtime";
+import { createThrottledStore, describeError, describeErrorUnmasked } from "../../runtime";
 import { AGENT_MARKER, AGENT_PROTOCOL_VERSION } from "./types";
 import type { AgentHandle, AgentRunResult, AgentSnapshot } from "./types";
 
@@ -157,6 +157,7 @@ export function createAgentReporter(
   let posts = 0;
   let snapshotPosts = 0;
   let failures = 0;
+  let warnedSnapshotSerialisation = false;
   /** When a snapshot last left the page. Bounds how stale a `GET` can be. */
   let sentAt = Number.NEGATIVE_INFINITY;
   /** The coalesced snapshot waiting to be sent, or `null` when nothing changed. */
@@ -176,16 +177,48 @@ export function createAgentReporter(
     unsent = store.getSnapshot()?.snapshot ?? null;
   });
 
+  const sample = (snapshot: AgentSnapshot): Sample | null => {
+    try {
+      return { json: JSON.stringify(snapshot), snapshot };
+    } catch (error) {
+      if (!warnedSnapshotSerialisation) {
+        warnedSnapshotSerialisation = true;
+        warn(
+          `could not serialise a snapshot (${describeError(error).message}). ` +
+            `This snapshot was skipped. Further failures are silent.`,
+        );
+      }
+      return null;
+    }
+  };
+
+  const serialiseOutcome = (result: AgentCommandResult): AgentCommandResult => {
+    try {
+      JSON.stringify(result.outcome);
+      return result;
+    } catch (error) {
+      return {
+        token: result.token,
+        outcome: {
+          ok: false,
+          reason: "threw",
+          error: `the result could not be serialised — ${describeError(error).message}`,
+        },
+      };
+    }
+  };
+
   /** POSTs one body, returning `null` when the server cannot be reached. */
   const send = async (body: AgentReportBody): Promise<AgentReportResponse | null> => {
     if (post === undefined) return null;
+    const json = JSON.stringify(body);
     try {
       const response = await post(url, {
         method: "POST",
         // `application/json` is not CORS-simple, so a cross-origin page cannot
         // forge this check-in without a preflight the receiver does not answer.
         headers: { "content-type": "application/json" },
-        body: JSON.stringify(body),
+        body: json,
         // The check-in carries no credentials and must not be cached.
         credentials: "omit",
         cache: "no-store",
@@ -218,22 +251,30 @@ export function createAgentReporter(
     // refusal honest if it does. No try/catch needed: the handle turns a
     // throwing command into a value.
     if (handle.runCommand === undefined) {
-      return { token: command.token, outcome: { ok: false, reason: "run-not-allowed" } };
+      return serialiseOutcome({
+        token: command.token,
+        outcome: { ok: false, reason: "run-not-allowed" },
+      });
     }
-    return { token: command.token, outcome: await handle.runCommand(command.id, command.input) };
+    return serialiseOutcome({
+      token: command.token,
+      outcome: await handle.runCommand(command.id, command.input),
+    });
   };
 
   const tick = async (): Promise<void> => {
     if (stopped) return;
 
-    // Stop when the toolbar unmounts; its handle no longer has state to report.
+    let current: AgentSnapshot;
     try {
-      const snapshot = handle.read();
-      store.set({ json: JSON.stringify(snapshot), snapshot });
+      current = handle.read();
     } catch {
+      // Stop when the toolbar unmounts; its handle no longer has state to report.
       stop();
       return;
     }
+    const currentSample = sample(current);
+    if (currentSample !== null) store.set(currentSample);
 
     // The store timer and poll can drift. Flush only when no snapshot is queued
     // and the last send is at least one interval old, bounding staleness without
@@ -275,13 +316,19 @@ export function createAgentReporter(
     // `GET /state` after `POST /commands/flags.set` would return pre-command
     // state. Write it to the store too, so the next check-in sees no change.
     let after: AgentSnapshot | undefined;
+    let fresh: AgentSnapshot | undefined;
     try {
-      const fresh = handle.read();
-      store.set({ json: JSON.stringify(fresh), snapshot: fresh });
-      unsent = null;
-      after = fresh;
+      fresh = handle.read();
     } catch {
       // The toolbar unmounted between running and reporting; still return the outcome.
+    }
+    if (fresh !== undefined) {
+      const freshSample = sample(fresh);
+      if (freshSample !== null) {
+        store.set(freshSample);
+        after = fresh;
+        unsent = null;
+      }
     }
 
     // Return outcomes immediately; the HTTP caller is waiting for them.

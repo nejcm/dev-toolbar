@@ -7,7 +7,7 @@
  * client-only `start(api)`, not at module evaluation, so importing this
  * module during SSR is inert.
  */
-import { describeError, redact } from "../../runtime";
+import { describeError, redact, redactProse } from "../../runtime";
 import type { RedactOptions } from "../../runtime";
 import { startAgentReporter } from "./report";
 import type { AgentReportOptions } from "./report";
@@ -242,7 +242,20 @@ export function createAgentHandle(
    * three numbers are pinned by `__tests__/phase2.test.tsx`.
    */
   const readDiagnostics = (): readonly ExtensionDiagnostics[] => {
-    const redacted = redact(api.getDiagnostics(), redactOptions);
+    const entries = api.getDiagnostics().map((entry) =>
+      entry.status === "failed"
+        ? {
+            ...entry,
+            ...(entry.error === undefined
+              ? {}
+              : { error: redactProse(entry.error, redactOptions) }),
+            ...(entry.errorName === undefined
+              ? {}
+              : { errorName: redactProse(entry.errorName, redactOptions) }),
+          }
+        : entry,
+    );
+    const redacted = redact(entries, redactOptions);
     // `redact()` returns a tag string for a cycle or an exhausted budget.
     // Neither can happen for core's own array, but the cast would be a lie.
     return Array.isArray(redacted) ? (redacted as ExtensionDiagnostics[]) : [];
