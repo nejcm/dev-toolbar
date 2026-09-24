@@ -1,7 +1,7 @@
 ---
 description: Two deepening refactors from the 2026-09-24 architecture review, both rated Strong after a gpt-6-astra validation — one kit reader that masks core's diagnostics roster and proves it serialisable (closes a reproduced credential leak on the agent bridge and a reporter that dies or wedges on a BigInt), and one invariant suite that pins both ExtensionRuntimeApi adapters (core's and the published fake) to the contract, fixing the fake's three divergences.
 date: 2026-09-24
-status: proposed
+status: implemented
 ---
 
 # One reader for the diagnostics roster, one suite for the runtime api
@@ -36,6 +36,18 @@ an ADR. Plan A is additive on `/kit` and fixes published behaviour in
 
 **Order.** Plan A's Phase 1 goes first: it is two bug fixes a user can hit today.
 Plan B can run in parallel with all of Plan A, because they share no files.
+
+**Outcome, 2026-09-24.** Plan A shipped as #138–#142, one PR per phase rather than
+the slicing below; Plan B as #134–#136 (B1, B2, B5). B3 needed no change: all 16
+fake-driven suites passed against the fixed fake. B4's gate did not fire — core's
+conformance run is 13 cases, ~60 ms cold then 4–9 ms, and there is still no second
+in-core consumer. Found on the way: a fourth fake divergence (a subscriber added
+during delivery heard that delivery), fixed with the other three; the fake's
+`setVisible` stays live after abort so subscribe-after-abort is observable. Where
+the table in "The deepened module" disagreed with diagnostics' code, the kit
+followed the code: a status core does not emit reads as `"ok"`, and `id`/`label`
+pass through unmasked. The `/kit` export pin in `boundary.test.ts` grew by two
+names. Surface A's depth moved 5 → 7, as decided.
 
 ---
 

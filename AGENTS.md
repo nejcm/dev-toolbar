@@ -160,8 +160,10 @@ dev-only trees that ship nothing.
 - **Changing the extension contract is a published-API change.** Say so in the PR
   description, and read [ADR-003](./docs/adr/ADR-003-contract-version-policy.md) before
   touching `CONTRACT_VERSION`.
-- `plans/` is git-ignored local scratch. Doc comments in `src/` cite it by section as
-  historical provenance; those are markers, not links.
+- `plans/` holds working plans and is tracked (since `431d735`); its frontmatter
+  `status` says where each stands. The plans that `src/` doc comments and `docs/`
+  cite by section (`dev-bar.md`, `ecosystem-extensions.md`, ...) predate that and were
+  local scratch; those citations are historical provenance markers, not links.
 
 ## Further reading
 

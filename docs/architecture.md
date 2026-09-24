@@ -18,8 +18,9 @@ is the *why*, and is the thing to read before changing the contract.
 that file disagree, the file is right and this document is a bug.
 
 > **A note on `plans/`.** The product design (`dev-bar.md`), the accepted delivery
-> plan (`implementation.md`) and the per-phase working notes (`architecture.md`) are
-> local scratch, not tracked in git. Doc comments in `src/` still cite them by section
+> plan (`implementation.md`) and the per-phase working notes (`architecture.md`) were
+> local scratch from before `plans/` was tracked, and are not in git. Doc comments in
+> `src/` still cite them by section
 > — `per plans/dev-bar.md §3D` — as provenance for *why a feature has the shape it
 > has*. Those citations are historical markers, not links; everything that survived as
 > a rule is here, in the README, or in `CONTRIBUTING.md`.

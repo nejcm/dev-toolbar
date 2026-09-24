@@ -109,14 +109,16 @@ of the exact kit specifier, not same-name locals:
 One helper is admitted as an explicit exception to that bar rather than on either half
 of it: `embed()`, below, has **zero** first-party users by construction — it frames
 somebody else's panel, and no first-party extension is somebody else's — and no third
-party asked for it. It was approved through Phase 0C of `plans/ecosystem-extensions.md`,
-which weighed an `/ext/embed` subpath against a helper and chose the helper: the
-containment a subpath would have offered is already core's, and what remained was a
-frame for extension authors, not an extension.
+party asked for it. It was approved through Phase 0C of `plans/ecosystem-extensions.md`
+— a plan from before `plans/` was tracked, so that citation is a provenance marker, not
+a link, and this paragraph is the record — which weighed an `/ext/embed` subpath against
+a helper and chose the helper: the containment a subpath would have offered is already
+core's, and what remained was a frame for extension authors, not an extension.
 
 The [diagnostics readers](#diagnostics-readers) are the second exception. They have two
-first-party users, one short of the bar, and they were approved through
-Plan A of `plans/deepen-roster-reader-and-runtime-api-conformance-v1.md` rather than asked for.
+first-party users, one short of the bar, and they were approved through Plan A of
+`plans/deepen-roster-reader-and-runtime-api-conformance-v1.md` (tracked) rather than
+asked for.
 The case is [architecture.md](./architecture.md#10-known-gaps-in-the-contract) §10's
 own: core hands its roster over unredacted, and *"a second reader that forgot to redact
 would ship raw contributions."* The reader that most needs one masking policy is a
