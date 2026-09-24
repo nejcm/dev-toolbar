@@ -97,7 +97,7 @@ prefix.
 <DevToolbar classNames={{ bar: "my-bar", panel: "my-panel" }} extensions={…} />
 ```
 
-Use `classNames={{ panelClose: "my-close" }}` or
+Use <code v-pre>classNames={{ panelClose: "my-close" }}</code> or
 `[data-dev-toolbar] [data-dtb-part="panel-close"]` to restyle the close button.
 Its position uses `inset-inline-end` and follows RTL direction. To hide it for one
 extension, set that extension's `closeButton: false`; Escape remains available.
