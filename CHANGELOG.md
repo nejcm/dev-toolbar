@@ -14,6 +14,13 @@
   style break at the boundary is accepted, not an oversight.
 -->
 
+## [0.13.0](https://github.com/nejcm/dev-toolbar/compare/v0.12.2...v0.13.0) (2026-09-24)
+
+
+### Features
+
+* **core:** close an open panel from its corner or with Escape ([#128](https://github.com/nejcm/dev-toolbar/issues/128)) ([4e80bf7](https://github.com/nejcm/dev-toolbar/commit/4e80bf713a7ef0b79525d715270367b9e9804fe2))
+
 ## [0.12.2](https://github.com/nejcm/dev-toolbar/compare/v0.12.1...v0.12.2) (2026-09-18)
 
 
