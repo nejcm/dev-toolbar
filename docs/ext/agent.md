@@ -107,12 +107,21 @@ menu — read `input` to know what to pass. The shape of both is in
   other field comes from `api`. It touches no global at module evaluation — importing
   it on a server is inert, and `shell` reports `mounted: false` where there is no
   document.
-- **It redacts on the way out.** `read()` runs `api.getDiagnostics()` through
-  [`redact()`](../runtime.md) (with your `extraKeys`) as defence in depth on top of the
-  contract's requirement that an extension redacts at the source. `runCommand`'s
-  `result` goes through the same pass. That is the reason this is an extension and not
-  a core feature: core may not import `/runtime`, so a bridge in core would publish
-  unredacted output on a global.
+- **It redacts on the way out.** `read()` reads the roster through the kit's
+  [`readDiagnosticsRoster`](../kit.md#diagnostics-readers) (with your `extraKeys`) as
+  defence in depth on top of the contract's requirement that an extension redacts at
+  the source. Each contribution's `data` goes through [`redact()`](../runtime.md) at
+  its own root. A failed entry's `error` and `errorName` each go through
+  `redactProse()`, so a token inside a URL in the message is masked too, and they stay
+  separate fields.
+  Contribution `data` that will not serialise, such as a BigInt, is published as
+  `status: "ok"` with `data: "[unserialisable]"`, the way `redact()` tags a cycle in
+  place. If core's `getDiagnostics()` throws, the roster is empty rather than `read()`
+  throwing. `runCommand`'s `result` goes through the same redact-then-serialise step,
+  and a result that will not serialise comes back as
+  `{ ok: false, reason: "threw", error: "the result could not be serialised — …" }`.
+  That is the reason this is an extension and not a core feature: core may not import
+  `/runtime`, so a bridge in core would publish unredacted output on a global.
 
   **That pass costs depth, and how much depends on which surface you read.**
   `redact()` walks from depth 0 and substitutes `"[truncated]"` for any object at

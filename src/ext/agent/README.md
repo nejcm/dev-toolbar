@@ -49,6 +49,8 @@ ensures **kit's** sheet rather than growing one of its own.
 
 Core's import boundary applies here as everywhere: this extension imports only
 core *types*, and uses `/runtime` for redaction — which core itself may not.
+The roster and command results are masked by the kit's `readDiagnosticsRoster` and
+`redactForExport`, the same reader `/ext/diagnostics` uses.
 
 ## Options that change behaviour
 

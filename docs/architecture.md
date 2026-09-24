@@ -1199,8 +1199,13 @@ is blocking; all were found by building an extension against the contract.
   `/runtime` (§2), so it cannot redact, and the reader does it instead. This is the
   right layering — the alternative inverts the architecture — but it means the
   aggregation itself is not a safe surface: a *second* reader that forgot to redact
-  would ship raw contributions. This is why `/ext/diagnostics` redacts everything again
-  even though the first-party contributors already have.
+  would ship raw contributions. That did happen: `/ext/agent` masked the roster with
+  one anchored `redact()`, and a failed entry's message carried a URL token past it.
+  Both first-party readers now go through
+  [`readDiagnosticsRoster`](./kit.md#diagnostics-readers) on `@nejcm/dev-toolbar/kit`,
+  which masks every entry and proves it serialises, and a custom reader should too.
+  The reader still redacts everything again even though the first-party contributors
+  already have.
 - **There is no invalidation signal for `commands` or `diagnostics`.** Both are pulled,
   never pushed. It costs nothing today because capture is on demand, but a reader that
   wanted to *watch* an aggregation would have to poll.
