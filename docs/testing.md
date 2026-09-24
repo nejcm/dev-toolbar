@@ -114,6 +114,17 @@ resolving `false`, `invokeCommand` resolving `{ ok: false, reason:
 or `subscribeVisibility` opts that half out of `setVisible` — override both or
 neither.
 
+The fake keeps every `subscribeVisibility` invariant core keeps: it notifies only on
+a change, never on subscribe, contains a throwing callback so later ones still run,
+and releases every subscription on `abort()`. The repository's conformance suite,
+`src/test-utils/runtimeApiConformance.ts`, runs the same cases, timing aside, against
+core and the fake. The one thing it does not share is timing: delivery is synchronous, one call
+per change, and never coalesced, where core delivers after commit and coalesces
+flips within a batch. A runtime must not depend on either timing. After `abort()`,
+`setVisible` still drives `isVisible()`, the way the bar keeps moving after an
+extension is unregistered; subscriptions made before the abort are cleared, and one
+made after it is dropped.
+
 Reach for this rather than writing the object out by hand. `ExtensionRuntimeApi`
 is the one half of the contract a consumer *constructs* rather than consumes, so
 every widening of it is a compile error in every suite that fakes one:

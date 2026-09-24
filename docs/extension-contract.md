@@ -107,6 +107,11 @@ the change, not synchronously inside the update that caused it — and not on su
 so read `isVisible()` for the current value. Flips that cancel out inside one batch (a
 hide then a show) are coalesced and deliver nothing.
 
+These rules are executable: the repository's conformance suite
+(`src/test-utils/runtimeApiConformance.ts`) runs each one against core, and all but
+the two timing rules against [`fakeExtensionApi()`](./testing.md), which delivers
+synchronously and never coalesces.
+
 Two lifecycle rules the metrics extension paid for, so you do not have to:
 
 - **`hidden` is not "unpainted", it is "does not exist here".** A hidden extension is
