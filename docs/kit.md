@@ -25,6 +25,9 @@ import {
   type CompactRenderContext,
   type CompactParts,
   type CompactDefaults,
+  type MaskedDiagnostics,
+  type DiagnosticsRosterRead,
+  type ExportedValue,
   // helpers, no React
   parseRecord,
   parseList,
@@ -39,6 +42,8 @@ import {
   ensureKitStyles,
   resolveStyleNonce,
   matchesQuery,
+  readDiagnosticsRoster,
+  redactForExport,
   resolvePresentation,
   resolveCompactControl,
   resolveCompactParts,
@@ -98,6 +103,7 @@ of the exact kit specifier, not same-name locals:
 | Filtering | `matchesQuery`: 2 | It is the string-level predicate shared by the flags and theme-editor view wrappers. |
 | Labelled control | `Field`: 1 | It names the wrapping-label pattern that associates a control without generating or synchronising an `id`. |
 | Bar presentation | `resolvePresentation`: 9; `resolveAccessibleName`: 9; `renderCompactParts`: 8; `resolveCompactControl`: 7; `renderCompact`: 7; `hasPaintableIcon`: 3; `resolveIcon`: 3; `Glyph`: 1; `resolveNameOverride`: 1; `resolveCompactParts`: 0 | Every bar control a consumer can restyle resolves its [`presentation`](#presentation) option through the same helpers, so the two guarantees — an icon-only preset with no icon paints text, and the `⋮` menu always paints full text — hold once rather than nine times. `resolvePresentation` normalises the bare-preset shorthand in the factory and `resolveAccessibleName` guards the name override, which is why those two read **9**: they are the pair every extension needs, the two that take no icon and no preset included. `resolveCompactControl` is the one a value-bearing extension calls: it composes `resolveIcon` and `resolveCompactParts`, owns the per-control `hasPaintableIcon` guard, and takes the extension's own `"default"` parts as an argument, because `"default"` means *whatever this extension renders today* and that differs across the nine. `renderCompact` assembles the `CompactRenderContext` and applies the `undefined` fall-through, which is precisely what seven copies would drift on. Both read **7** rather than 9 because `/ext/agent` and `/ext/command-menu` take [the narrowed two-knob option](#the-narrowed-option-agent-and-command-menu) — no presets to resolve, no callback to invoke. `renderCompactParts` paints the icon and the text — the one function here that renders anything — and it reads **8**: the seven plus agent, which is icon-and-text without being preset-driven. It was promoted only after six extensions had written the same fragment by hand, which is the *three users* bar met twice over rather than a shape predicted for them. `resolveIcon` reads **3** — the three sites that resolve an icon without going through `resolveCompactControl`: command-menu and agent, which have no parts to resolve, and `/ext/flags`, which resolves the rich icon first so it can fall back to the legacy `PromotedFlag.icon` string. `hasPaintableIcon` reads **3** for exactly that reason: those same three then have to answer *is this an icon?* themselves, and the answer has to be the one the resolver uses — `false`, `true`, `null`, `undefined` and `""` are all empty, `0` is not — or a `&&` guard paints an empty glyph on three of the nine and nowhere else. Flags is the case that proves it is one rule rather than a lookalike: the legacy glyph is a `string | undefined` painted on truthiness since that control existed, and over that type the two rules agree byte for byte. `resolveNameOverride` reads **1** and is not expected to rise far: it is `resolveAccessibleName` without the fallback, for a control that has no name of its own and so must write no `aria-label` rather than an empty one — `/ext/metrics`' `⋮` rows, today. It exists so the whitespace rule is defined once; `resolveAccessibleName` is a one-liner over it. `Glyph` reads **1** and did not fall: it read 6 until `renderCompactParts` took the wrapper over, and what is left is `/ext/command-menu`, whose trigger is hand-written and paints an icon beside a hotkey hint that is neither a short nor a full text. It stays exported because it owns the `aria-hidden` default and the direct-child clamp that keeps a 24px `<svg>` from setting the bar's height, and because `Chip`'s icon slot and `renderCompactParts` are both callers inside kit itself — every glyph in the bar is one of its instances whether or not an extension named it. `resolveCompactParts` finished the rollout at **0**, which the row above said was the moment to ask whether it should stay. It stays, and the count is 0 *by construction* rather than for want of adoption: `resolveCompactControl` composes it, so a first-party extension has no reason to call it directly and never will. It is the third-party half of the bar — an author whose control is not icon-plus-text-plus-value needs the truth table itself — and it is the one function carrying both guarantees, so a userland re-derivation is exactly the drift the kit exists to prevent. Removal stays a live option on the same terms `Chip`'s `icon` / `iconProps` are kept under (ADR-004): if no third party asks, it can go. |
+| Diagnostics roster | `readDiagnosticsRoster`: 0; `redactForExport`: 0 | Admitted as an explicit exception, below. `/ext/diagnostics` and `/ext/agent` both read core's roster and mask it two different ways; both are to adopt `readDiagnosticsRoster`, which would make it 2. `redactForExport` gets a third call site on top of those, because diagnostics' consumer `sources` and the agent's command results go through it too. |
 | Live input | `isReadable`: 2; `readInput`: 2; `createSource`: 0; `derive`: 0; `useSource`: 0 | Admitted on the *third party asking* half of the bar: the first real integration hand-rolled a module-scope holder, reader functions and an effect to bridge React-owned state into `environment()` and `flags()`. `isReadable`/`readInput` are what those two runtimes use to accept the result; `createSource`, `derive` and `useSource` are the consumer's end of the same bridge and have no first-party caller by construction — no first-party extension owns app state. |
 
 One helper is admitted as an explicit exception to that bar rather than on either half
@@ -106,7 +112,15 @@ somebody else's panel, and no first-party extension is somebody else's — and n
 party asked for it. It was approved through Phase 0C of `plans/ecosystem-extensions.md`,
 which weighed an `/ext/embed` subpath against a helper and chose the helper: the
 containment a subpath would have offered is already core's, and what remained was a
-frame for extension authors, not an extension. The exception is this one helper; the
+frame for extension authors, not an extension.
+
+The [diagnostics readers](#diagnostics-readers) are the second exception. They have two
+first-party users, one short of the bar, and they were approved through
+Plan A of `plans/deepen-roster-reader-and-runtime-api-conformance-v1.md` rather than asked for.
+The case is [architecture.md](./architecture.md#10-known-gaps-in-the-contract) §10's
+own: core hands its roster over unredacted, and *"a second reader that forgot to redact
+would ship raw contributions."* The reader that most needs one masking policy is a
+third-party one that would otherwise write its own. The exceptions are these two; the
 rule stands for the next candidate.
 
 The current examples of things that do **not** qualify: `switch` (two sites, both
@@ -496,6 +510,51 @@ const queryDevtools = embed({
   ),
 });
 ```
+
+### Diagnostics readers
+
+```ts
+readDiagnosticsRoster(
+  api: Partial<Pick<ExtensionRuntimeApi, "getDiagnostics">> | null | undefined,
+  options?: RedactOptions,
+): DiagnosticsRosterRead;
+redactForExport(value: unknown, options?: RedactOptions): ExportedValue;
+```
+
+The one reader for core's diagnostics roster. It calls `api.getDiagnostics()`, masks
+every entry and proves the result serialises, so a reader cannot forget a step. It never
+throws, and `options` are the [`/runtime`](./runtime.md) `RedactOptions` the reader
+already has, so a custom `mask` or `extraKeys` reaches every entry.
+
+| Core gave | You get |
+| --- | --- |
+| no api, no `getDiagnostics`, or not an array | `{ gathered: false }` |
+| a throw from `getDiagnostics` | `{ gathered: false, error }`, `error` through `formatError()` |
+| `status: "absent"` | the entry, unchanged |
+| `status: "ok"` | `data` through `redactForExport`: `"ok"`, `"absent"` or `"unserialisable"` |
+| `status: "failed"` | `error` and `errorName` each through `redactProse()`, still **unjoined** |
+| any other status | read as `"ok"`: `data` through `redactForExport` |
+
+`id` and `label` pass through. The output is a kit-owned union, not core's
+`ExtensionDiagnostics`, because `"unserialisable"` is not one of core's statuses. Map it
+to your own shape. Three things are deliberately left to you: skipping your own id (a
+reader that declares `diagnostics()` would recurse), joining `name: message`, and what
+to do with an unserialisable entry.
+
+```ts
+const read = readDiagnosticsRoster(api, redactOptions);
+if (!read.gathered) return [];
+return read.entries.filter((entry) => entry.id !== id);
+```
+
+`redactForExport` is the step the roster reader uses for `data`, published for any
+other foreign value on its way out. It runs `redact()` first and only then
+`JSON.stringify`, and that order is the point: `redact()` turns a getter that throws or a
+cycle into a tag, and does not carry a `toJSON` across. So the one thing left to fail
+is a value `redact()` passes through and `JSON` refuses, which today means a BigInt.
+That becomes `{ status: "unserialisable", error }`, and the value is dropped rather
+than shipped.
+`undefined` becomes `{ status: "absent" }`.
 
 ---
 
@@ -1196,12 +1255,14 @@ take the test helpers without the kit.
 
 ## What is deliberately not here
 
-**Nothing that wraps `redact()`.** Redaction is a per-extension decision about that
-extension's own data, and a convenience wrapper here would be read as "the kit handles
-that for you" — which is exactly the belief
+**Nothing that wraps `redact()` for your own data.** Redaction is a per-extension
+decision about that extension's own data, and a convenience wrapper here would be read
+as "the kit handles that for you" — which is exactly the belief
 [architecture.md](./architecture.md) §10 warns against. Call `redact()` from
 [`/runtime`](./runtime.md) yourself, on your own data, where you can see what you are
-masking.
+masking. The [diagnostics readers](#diagnostics-readers) are the exception because
+their data is *other* extensions', read from core's roster, and there the
+risk §10 names is a reader that masks nothing.
 
 **No thresholds, no adapters, no colour model.** The shell ships no opinions about what
 a number means, and the kit inherits that. Tier B is the one place opinion lives, and it
