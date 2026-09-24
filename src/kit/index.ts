@@ -94,3 +94,5 @@ export { createSource, derive, isReadable, readInput } from "./source";
 export type { Input, Readable, ReadableStore, Source } from "./source";
 export { createStyleInjector, ensureKitStyles } from "./styles";
 export type { Severity, SeverityWithOverride } from "./types";
+export { readDiagnosticsRoster, redactForExport } from "./diagnostics";
+export type { DiagnosticsRosterRead, ExportedValue, MaskedDiagnostics } from "./diagnostics";
