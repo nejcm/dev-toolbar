@@ -477,10 +477,14 @@ and name the PR
 which is what every `vX.Y.Z` in this document means. `include-v-in-tag` stays
 `true` and is what supplies the `v` itself; the two are independent.
 
-Versioning is pre-1.0 semantics, set in `release-please-config.json`:
-`bump-minor-pre-major` is on, so a `BREAKING CHANGE:` bumps the minor
-(`0.1.0` -> `0.2.0`) rather than going to `1.0.0`. Turn that off deliberately
-when the API is ready to be called stable. This says nothing about when
+Versioning is plain semver from `1.0.0` on. Until then `bump-minor-pre-major`
+was on in `release-please-config.json`, so a `BREAKING CHANGE:` bumped the minor
+(`0.1.0` -> `0.2.0`); `1.0.0` removed it, together with
+`bump-patch-for-minor-pre-major`, when the API was declared stable, and a
+`BREAKING CHANGE:` now bumps the major. Both keys only affect `0.x` versions, so
+putting them back changes nothing. `1.0.0` itself was forced with a
+`Release-As: 1.0.0` footer in the PR description, since nothing since `0.14.0`
+would have moved the version that far on its own. None of this says when
 `CONTRACT_VERSION` should change — see the section above; that policy is
 genuinely unsettled and belongs in an ADR, not in a release config.
 

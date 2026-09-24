@@ -8,8 +8,6 @@
       "changelog-path": "CHANGELOG.md",
       "pull-request-title-pattern": "chore(release): release${component} ${version}",
       "include-v-in-tag": true,
-      "bump-minor-pre-major": true,
-      "bump-patch-for-minor-pre-major": false,
       "draft": false,
       "prerelease": false
     }
