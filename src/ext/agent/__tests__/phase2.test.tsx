@@ -398,6 +398,42 @@ describe("diagnostics.capture resolves the snapshot it captured", () => {
   });
 });
 
+describe("failed diagnostics", () => {
+  it("masks messages and names before publishing the roster", () => {
+    renderWithToolbar(undefined, {
+      instanceId: "test",
+      extensions: [
+        agentBridge({ instanceId: "test" }),
+        {
+          id: "message-leak",
+          label: "message leak",
+          diagnostics: () => {
+            throw new Error("fetch https://api.example.com/v1?token=abc123 failed");
+          },
+        },
+        {
+          id: "name-leak",
+          label: "name leak",
+          diagnostics: () => {
+            const error = new Error("failed");
+            error.name = "Bearer secret";
+            throw error;
+          },
+        },
+      ],
+    });
+
+    const entries = handle().read().diagnostics;
+    const message = entries.find((entry) => entry.id === "message-leak");
+    const name = entries.find((entry) => entry.id === "name-leak");
+
+    expect.soft(message?.error).toContain("token=[redacted]");
+    expect.soft(message?.error).not.toContain("abc123");
+    expect.soft(name?.errorName).toBe("Bearer [redacted]");
+    expect.soft(name?.errorName).not.toContain("secret");
+  });
+});
+
 /** `n` nested `{ d: … }` objects wrapping a leaf, so depth is countable. */
 const nest = (n: number): unknown => (n === 0 ? { leaf: "SENTINEL" } : { d: nest(n - 1) });
 
