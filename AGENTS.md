@@ -154,6 +154,9 @@ dev-only trees that ship nothing.
   a test; a bug fix needs a test that fails before the fix. `src/testing/` is both the
   published test helper surface and what the internal tests use — if you are writing
   setup boilerplate, check whether it belongs there.
+- **`ExtensionRuntimeApi` has two adapters, core's and `fakeExtensionApi`.** A change
+  to either, or a widening of the interface, runs
+  `src/test-utils/runtimeApiConformance.ts` against both.
 - **Changing the extension contract is a published-API change.** Say so in the PR
   description, and read [ADR-003](./docs/adr/ADR-003-contract-version-policy.md) before
   touching `CONTRACT_VERSION`.
