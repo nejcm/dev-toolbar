@@ -3,9 +3,21 @@
  * The page polls because the server has no channel back; queued commands run
  * on the next check-in. `allowRun` still gates command execution.
  */
-import { createThrottledStore, describeError, describeErrorUnmasked } from "../../runtime";
+import {
+  createThrottledStore,
+  describeError,
+  describeErrorUnmasked,
+  formatError,
+} from "../../runtime";
 import { AGENT_MARKER, AGENT_PROTOCOL_VERSION } from "./types";
 import type { AgentHandle, AgentRunResult, AgentSnapshot } from "./types";
+
+/** A command result that will not serialise, as the published `"threw"` outcome; `detail` must be masked. */
+export const unserialisableResult = (detail: string): AgentRunResult => ({
+  ok: false,
+  reason: "threw",
+  error: `the result could not be serialised — ${detail}`,
+});
 
 /**
  * What the page sends the server on each check-in. `snapshot` is **absent**
@@ -199,11 +211,7 @@ export function createAgentReporter(
     } catch (error) {
       return {
         token: result.token,
-        outcome: {
-          ok: false,
-          reason: "threw",
-          error: `the result could not be serialised — ${describeError(error).message}`,
-        },
+        outcome: unserialisableResult(formatError(error)),
       };
     }
   };

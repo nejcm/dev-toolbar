@@ -2,7 +2,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup } from "@testing-library/react";
 import { createNullStorage, fakeExtensionApi, renderWithToolbar } from "@nejcm/dev-toolbar/testing";
-import { agentBridge } from "../index";
+import { agentBridge, createAgentHandle } from "../index";
 import { DEFAULT_GLOBAL_NAME } from "../types";
 import { commandMenu } from "../../command-menu/index";
 import { createCommandMenuRuntime } from "../../command-menu/runtime";
@@ -434,6 +434,58 @@ describe("failed diagnostics", () => {
   });
 });
 
+describe("a roster or result that cannot be published as is", () => {
+  it("reads an empty roster rather than throwing when core's getDiagnostics throws", () => {
+    const controller = new AbortController();
+    const bridge = createAgentHandle(
+      fakeExtensionApi({
+        signal: controller.signal,
+        storage: createNullStorage(),
+        getDiagnostics: () => {
+          throw new Error("roster gone");
+        },
+      }).api,
+      { instanceId: "test", globalName: DEFAULT_GLOBAL_NAME, allowRun: false, contractVersion: 1 },
+    );
+
+    expect(() => bridge.read()).not.toThrow();
+    expect(bridge.read().diagnostics).toEqual([]);
+    controller.abort();
+  });
+
+  it("tags an unserialisable contribution in place on the global", () => {
+    renderWithToolbar(undefined, {
+      instanceId: "test",
+      extensions: [
+        agentBridge({ instanceId: "test" }),
+        { id: "bigint", label: "BigInt", diagnostics: () => ({ value: 1n }) },
+      ],
+    });
+
+    expect(published("bigint")).toBe("[unserialisable]");
+  });
+
+  it("returns an unserialisable command result as threw", async () => {
+    renderWithToolbar(undefined, {
+      instanceId: "test",
+      extensions: [
+        agentBridge({ instanceId: "test", allowRun: true }),
+        {
+          id: "bigint",
+          label: "BigInt",
+          commands: [{ id: "bigint.read", label: "Read a BigInt", run: () => 1n }],
+        },
+      ],
+    });
+
+    expect(await run("bigint.read")).toEqual({
+      ok: false,
+      reason: "threw",
+      error: expect.stringMatching(/^the result could not be serialised — .*BigInt/i) as string,
+    });
+  });
+});
+
 /** `n` nested `{ d: … }` objects wrapping a leaf, so depth is countable. */
 const nest = (n: number): unknown => (n === 0 ? { leaf: "SENTINEL" } : { d: nest(n - 1) });
 
@@ -444,21 +496,21 @@ const nest = (n: number): unknown => (n === 0 ? { leaf: "SENTINEL" } : { d: nest
  *
  * | Path | `data` sits at | Levels kept below its own root |
  * | --- | --- | --- |
- * | A. bridge `read().diagnostics` — `redact(getDiagnostics())` | depth 2 | 5 |
+ * | A. bridge `read().diagnostics` — `readDiagnosticsRoster()`, per contribution | depth 0 | 7 |
  * | B. bridge `runCommand("diagnostics.capture").result` — `redact(snapshot)` | depth 3 | 4 |
  * | C. bug-report JSON — `renderJson(capture())` | depth 0 | 7 |
  *
- * C is most permissive (each contribution redacted once, at its own root,
- * never re-redacted); B is strictest (a second pass three levels down).
+ * A and C agree (each contribution redacted once, at its own root);
+ * B is strictest (a second pass three levels down).
  * `README.md` and `runtime.ts` quote all three numbers; pinned here too.
  */
 describe("re-redaction truncates deep contributions, at three pinned depths", () => {
-  it("path A — the bridge's roster read keeps five levels and drops the sixth", () => {
+  it("path A — the bridge's roster read keeps seven levels and drops the eighth", () => {
     renderWithToolbar(undefined, {
       instanceId: "test",
       extensions: [
         agentBridge({ instanceId: "test", allowRun: true }),
-        ...[4, 5, 6].map((n) => ({
+        ...[6, 7, 8].map((n) => ({
           id: `deep${n}`,
           label: `deep ${n}`,
           diagnostics: () => nest(n),
@@ -467,13 +519,13 @@ describe("re-redaction truncates deep contributions, at three pinned depths", ()
     });
 
     const kept = (id: string): boolean => JSON.stringify(published(id)).includes("SENTINEL");
-    expect(kept("deep4")).toBe(true);
-    expect(kept("deep5")).toBe(true);
-    expect(kept("deep6")).toBe(false);
-    expect(JSON.stringify(published("deep6"))).toContain("[truncated]");
+    expect(kept("deep6")).toBe(true);
+    expect(kept("deep7")).toBe(true);
+    expect(kept("deep8")).toBe(false);
+    expect(JSON.stringify(published("deep8"))).toContain("[truncated]");
   });
 
-  it("path B — the bridge's capture result keeps four, one fewer than its roster read", () => {
+  it("path B — the bridge's capture result keeps four, three fewer than its roster read", () => {
     renderWithToolbar(undefined, {
       instanceId: "test",
       extensions: [
@@ -501,18 +553,17 @@ describe("re-redaction truncates deep contributions, at three pinned depths", ()
       const data = (id: string): string =>
         JSON.stringify(entries.find((entry) => entry.id === id)?.data ?? null);
       expect(data("deep4")).toContain("SENTINEL");
-      // This surface applies the second pass three levels down, one deeper than
-      // the roster read.
+      // This surface applies the second pass three levels down.
       expect(data("deep5")).not.toContain("SENTINEL");
       expect(data("deep5")).toContain("[truncated]");
     });
   });
 
-  it("path C — the bug-report JSON keeps seven, the most permissive of the three", () => {
+  it("path C — the bug-report JSON keeps seven, the same as the roster read", () => {
     // Built directly rather than through a mounted toolbar because this is the
     // one path the bridge cannot reach: `renderJson(capture())` is what
     // `diagnostics.copyJson` and `diagnostics.download` write, and nothing
-    // redacts the assembled snapshot — `finish()` already redacted each
+    // redacts the assembled snapshot — `redactForExport` already redacted each
     // contribution at its own root (depth 0), which is why seven survive.
     const controller = new AbortController();
     const runtime = createDiagnosticsRuntime({ id: "diagnostics" });
