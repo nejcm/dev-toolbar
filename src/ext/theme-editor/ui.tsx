@@ -591,7 +591,11 @@ export function ThemePanel({
       ) : null}
 
       {snapshot.notice ? (
-        <Banner data-dtb-part="thm-banner" data-dtb-tone="info" role="status">
+        <Banner
+          data-dtb-part="thm-banner"
+          data-dtb-tone={snapshot.noticeError ? "error" : "info"}
+          role={snapshot.noticeError ? "alert" : "status"}
+        >
           {snapshot.notice}
         </Banner>
       ) : null}

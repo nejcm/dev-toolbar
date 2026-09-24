@@ -238,6 +238,8 @@ export interface FlagsSnapshot {
    * `null` until that happens.
    */
   notice: string | null;
+  /** The reset could not be confirmed in storage. */
+  noticeError: boolean;
 }
 
 /* Small pure helpers, shared by the runtime and the UI. */

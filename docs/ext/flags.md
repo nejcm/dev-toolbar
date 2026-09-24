@@ -131,13 +131,22 @@ outlives the tab — so:
   honours it too: while the param is in the URL it returns `{}`. `resetParam: null`
   disables it, `resetParam: "my-flags"` renames it.
 
-  After that reset is stored, the param is removed from the URL with
+  Once storage confirms the empty map, a microtask removes the param with
   `history.replaceState`. Other query params, the hash and `history.state` stay.
-  A later `start()` on the same page — StrictMode, an `enabled` toggle — does not
-  clear overrides set since the reset. `readStoredOverrides()` called before mount,
-  while the param is still in the URL, still returns `{}`. The panel footer shows
-  the reset URL for the current page, with a copy button, unless `resetParam` is
-  `null`. It also says how many overrides that load cleared.
+  Every runtime started in that same synchronous pass honours the reset, including
+  several `flags()` instances in one toolbar or toolbars in one React root. A second
+  `start()` of one runtime in that pass does not clear again. A runtime started later
+  on the same page, in another React root, a lazy route or an HMR update, does not
+  reset because the param is gone; reload with the param to reset it.
+  If the empty map cannot be confirmed in storage, this runtime does not schedule
+  the strip. The panel asks you to reload with the reset param to try again. If
+  one runtime confirms and another fails in the same pass, the confirming runtime
+  still strips it.
+
+  `readStoredOverrides()` called before mount, while the param is still in the URL,
+  still returns `{}`. The panel footer shows the reset URL for the current page,
+  with a copy button, unless `resetParam` is `null`. It also says how many
+  overrides that load cleared.
 
   On another `start()` of the same runtime, session overrides survive when a custom
   storage adapter cannot be read. The default `localStorage` adapter reports a blocked

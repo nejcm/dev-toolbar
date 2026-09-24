@@ -36,9 +36,17 @@ back as CSS, a recipe, a design-tokens export or a link.
 - **Kill switch.** Edits persist under
   `dtb:v1:<instanceId>:ext:<id>:overrides` and reapply on the next mount.
   `?dtb-theme=reset` drops them before any are applied, so a broken edit is
-  recoverable even when it makes the panel unreadable. The param is then removed
-  from the URL; a shared recipe (`?dtb-theme=<recipe>`) is left in place. The panel
-  footer shows the reset URL for the current page unless `themeParam` is `null`.
+  recoverable even when it makes the panel unreadable. Once storage confirms the
+  empty map, a microtask removes the param; `persist: false` has no stored map
+  to confirm. Every runtime started in the same synchronous pass honours it,
+  including toolbars in one React root. A second `start()` of one runtime does
+  not clear again. A runtime started later, in another root, a lazy route or an
+  HMR update, needs a reload with the param to reset. If the empty map cannot
+  be confirmed in storage, this runtime does not schedule the strip, and the
+  panel asks for a reload with the param. If one runtime confirms and another
+  fails in the same pass, the confirming one still strips it. A shared recipe
+  (`?dtb-theme=<recipe>`) stays. The panel footer shows the reset URL for the
+  current page unless `themeParam` is `null`.
   The saved surface selection and preview toggle are restored on both the reset
   load and the next ordinary load.
 - **A throwing consumer adapter does not wipe the session.** Under `persist: true`

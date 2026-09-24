@@ -6,6 +6,7 @@
  */
 import { afterEach, describe, expect, expectTypeOf, it, vi } from "vitest";
 import { STORAGE_PREFIX as CORE_STORAGE_PREFIX, createMemoryStorage } from "@nejcm/dev-toolbar";
+import { withHistoryUrl, withLocation } from "../../test-utils/location";
 import {
   extensionStorageKey,
   readPreference,
@@ -13,6 +14,8 @@ import {
   readStoredRecord,
   removePreference,
   resetRequested,
+  resetUrl,
+  stripResetParam,
   writePreference,
 } from "../index";
 import type { Preference, PreferenceRead } from "../index";
@@ -343,6 +346,86 @@ describe("resetRequested", () => {
       },
     });
     expect(resetRequested("dtb-flags")).toBe(false);
+  });
+});
+
+describe("reset URL helpers", () => {
+  it.each([null, undefined, ""])("disables both helpers for %s", async (param) => {
+    await withHistoryUrl("http://localhost/app?dtb-flags=reset", async (stub) => {
+      stripResetParam(param);
+      expect(resetUrl(param)).toBeNull();
+      await Promise.resolve();
+      expect(stub.calls).toEqual([]);
+    });
+  });
+
+  it("leaves non-reset values alone", async () => {
+    await withHistoryUrl("http://localhost/app?dtb-flags=recipe&keep=1", async (stub) => {
+      stripResetParam("dtb-flags");
+      await Promise.resolve();
+      expect(stub.calls).toEqual([]);
+    });
+  });
+
+  it("leaves history state and unrelated URL parts in place", async () => {
+    await withHistoryUrl("http://localhost/app?keep=1&dtb-flags=clear#part", async (stub) => {
+      stripResetParam("dtb-flags");
+      expect(stub.calls).toEqual([]);
+      await Promise.resolve();
+      expect(stub.calls).toEqual([[stub.state, "", "/app?keep=1#part"]]);
+    });
+  });
+
+  it("survives missing history and a throwing replaceState", async () => {
+    await withHistoryUrl(
+      "http://localhost/app?dtb-flags=reset",
+      async (stub) => {
+        stripResetParam("dtb-flags");
+        await Promise.resolve();
+        expect(stub.calls).toEqual([]);
+      },
+      { history: null },
+    );
+    await withHistoryUrl(
+      "http://localhost/app?dtb-flags=reset",
+      async (stub) => {
+        stripResetParam("dtb-flags");
+        await Promise.resolve();
+        expect(stub.calls).toHaveLength(1);
+      },
+      {
+        replaceState: () => {
+          throw new Error("blocked");
+        },
+      },
+    );
+  });
+
+  it("rechecks the URL before stripping", async () => {
+    await withHistoryUrl("http://localhost/app?dtb-flags=reset", async (stub) => {
+      stripResetParam("dtb-flags");
+      stub.location.href = "http://localhost/app?dtb-flags=recipe";
+      await Promise.resolve();
+      expect(stub.calls).toEqual([]);
+    });
+  });
+
+  it("uses a promise microtask when queueMicrotask is unavailable", async () => {
+    vi.stubGlobal("queueMicrotask", undefined);
+    await withHistoryUrl("http://localhost/app?dtb-flags=off", async (stub) => {
+      stripResetParam("dtb-flags");
+      expect(stub.calls).toEqual([]);
+      await Promise.resolve();
+      expect(stub.calls).toHaveLength(1);
+    });
+  });
+
+  it("builds a reset URL without the current query or hash", () => {
+    withLocation({ href: "https://example.test/app?token=secret#section" }, () => {
+      expect(resetUrl("dtb-flags")).toBe("https://example.test/app?dtb-flags=reset");
+    });
+    vi.stubGlobal("location", undefined);
+    expect(resetUrl("dtb-flags")).toBeNull();
   });
 });
 

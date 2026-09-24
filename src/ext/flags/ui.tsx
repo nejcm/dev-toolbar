@@ -687,9 +687,9 @@ export function FlagsPanel({
       {snapshot.notice ? (
         <Banner
           data-dtb-part="flag-banner"
-          data-dtb-tone="info"
+          data-dtb-tone={snapshot.noticeError ? "error" : "info"}
           data-dtb-role="reset-notice"
-          role="status"
+          role={snapshot.noticeError ? "alert" : "status"}
         >
           {snapshot.notice}
         </Banner>

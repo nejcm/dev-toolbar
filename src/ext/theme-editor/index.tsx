@@ -128,6 +128,7 @@ export function themeEditor(options: ThemeEditorOptions = {}): DevToolbarExtensi
     injectStyles = true,
     styleNonce: optionNonce,
     presentation: presentationOption,
+    themeParam = DEFAULT_THEME_PARAM,
   } = options;
 
   // Resolved once, here, in the factory closure — where the icon and the
@@ -235,7 +236,7 @@ export function themeEditor(options: ThemeEditorOptions = {}): DevToolbarExtensi
       <ThemePanel
         runtime={runtime}
         label={label}
-        themeParam={options.themeParam === undefined ? DEFAULT_THEME_PARAM : options.themeParam}
+        themeParam={themeParam}
         injectStyles={injectStyles}
         styleNonce={resolveStyleNonce(optionNonce, styleNonce)}
       />

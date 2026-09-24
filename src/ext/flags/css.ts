@@ -132,6 +132,10 @@ const FLAGS_EXTENSION_CSS = String.raw`@layer dev-toolbar {
     border-color: var(--dtb-warn);
   }
 
+  [data-dev-toolbar] [data-dtb-part="flag-banner"][data-dtb-tone="info"] {
+    background: var(--dtb-item-active-bg);
+  }
+
   [data-dev-toolbar] [data-dtb-part="flag-list"] {
     flex: 1 1 auto;
     min-height: 0;

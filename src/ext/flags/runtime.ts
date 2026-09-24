@@ -302,8 +302,14 @@ export function createFlagsRuntime(options: FlagsRuntimeOptions = {}): FlagsRunt
   // The whole-map adapter fails or recovers as a whole, so it gets its own slot.
   let bulkError: string | null = null;
   let readError: string | null = null;
-  /** Set when a kill-switch load cleared the map. Stays until this runtime is replaced. */
+  /** Reset result, cleared by the next override change. */
   let notice: string | null = null;
+  let noticeError = false;
+  let resetHonoured = false;
+  const setNotice = (text: string | null, error = false) => {
+    notice = text;
+    noticeError = error;
+  };
 
   /* ------------------------------------------------------------------ */
   /* Reading the consumer's flags. Never throws.                          */
@@ -533,6 +539,7 @@ export function createFlagsRuntime(options: FlagsRuntimeOptions = {}): FlagsRunt
       bulkError,
       readError,
       notice,
+      noticeError,
     };
   };
 
@@ -564,6 +571,7 @@ export function createFlagsRuntime(options: FlagsRuntimeOptions = {}): FlagsRunt
         bulkError,
         readError: "The flag list could not be read — it threw. See the console.",
         notice,
+        noticeError,
       };
     }
   };
@@ -629,6 +637,7 @@ export function createFlagsRuntime(options: FlagsRuntimeOptions = {}): FlagsRunt
 
   const write = (key: string, value: FlagValue): void => {
     if (!writable) return;
+    setNotice(null);
     overrides = cloneOverrides(overrides);
     overrides[key] = value;
     persist();
@@ -642,6 +651,7 @@ export function createFlagsRuntime(options: FlagsRuntimeOptions = {}): FlagsRunt
   const drop = (key: string): void => {
     if (!writable) return;
     if (!Object.prototype.hasOwnProperty.call(overrides, key)) return;
+    setNotice(null);
     const next = cloneOverrides(overrides);
     delete next[key];
     overrides = next;
@@ -665,6 +675,7 @@ export function createFlagsRuntime(options: FlagsRuntimeOptions = {}): FlagsRunt
       if (!writable) return;
       const keys = Object.keys(overrides);
       if (keys.length === 0) return;
+      setNotice(null);
       overrides = emptyOverrides();
       persist();
       for (const key of keys) {
@@ -758,19 +769,30 @@ export function createFlagsRuntime(options: FlagsRuntimeOptions = {}): FlagsRunt
       storage = api.storage;
 
       // Before anything is applied, so a wedging override never reaches the app on the reset load.
-      // The param is removed once the empty map is stored, so a second start (StrictMode,
-      // stop/start) does not clear overrides set after this one.
       if (resetParam !== null && resetRequested(resetParam)) {
-        const stored = readPreferenceIfReadable(storage, OVERRIDES_PREFERENCE);
-        const previous = stored.readable ? parseOverrides(stored.value) : emptyOverrides();
-        const resetKeys = new Set([...Object.keys(previous), ...Object.keys(overrides)]);
-        overrides = emptyOverrides();
-        for (const key of resetKeys) apply(key, undefined);
-        persist();
-        notifyOverrides();
-        const cleared = resetKeys.size;
-        notice = `${cleared} ${cleared === 1 ? "override was" : "overrides were"} cleared by ?${resetParam}=reset.`;
-        stripResetParam(resetParam);
+        if (!resetHonoured) {
+          resetHonoured = true;
+          const stored = readPreferenceIfReadable(storage, OVERRIDES_PREFERENCE);
+          const previous = stored.readable ? parseOverrides(stored.value) : emptyOverrides();
+          const resetKeys = new Set([...Object.keys(previous), ...Object.keys(overrides)]);
+          overrides = emptyOverrides();
+          for (const key of resetKeys) apply(key, undefined);
+          persist();
+          notifyOverrides();
+          const cleared = resetKeys.size;
+          const confirmed = readPreferenceIfReadable(storage, OVERRIDES_PREFERENCE);
+          const resetFailed =
+            !confirmed.readable || Object.keys(parseOverrides(confirmed.value)).length > 0;
+          setNotice(
+            resetFailed
+              ? `Stored overrides could not be confirmed cleared in storage — reload with ?${resetParam}=reset to try again.`
+              : cleared === 0
+                ? `Nothing was stored; ?${resetParam}=reset had no overrides to clear.`
+                : `${cleared} ${cleared === 1 ? "override was" : "overrides were"} cleared by ?${resetParam}=reset.`,
+            resetFailed,
+          );
+          if (!resetFailed) stripResetParam(resetParam);
+        }
       } else if (writable) {
         const stored = readPreferenceIfReadable(storage, OVERRIDES_PREFERENCE);
         // Keep unreadable session entries: they are already applied, and the map is the toolbar's handle for clearing them.

@@ -387,6 +387,8 @@ export interface ThemeSnapshot {
   readError: string | null;
   /** What the last import/link/preset did, for the panel's status line. */
   notice: string | null;
+  /** The reset could not be confirmed in storage. */
+  noticeError: boolean;
 }
 
 /**

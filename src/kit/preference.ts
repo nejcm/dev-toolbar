@@ -272,23 +272,27 @@ export function resetRequested(param: string | null | undefined): boolean {
 }
 
 /**
- * Removes `?<param>=reset` (also `=clear` and `=off`) after the switch has
- * been honoured, so a later `start()` does not drop overrides set since.
+ * Removes `?<param>=reset` (also `=clear` and `=off`) in a microtask after
+ * the switch has been honoured. Rechecks the URL before changing it.
  * Every other query param, the hash and `history.state` stay. `null` is a
  * disabled switch. Never throws — a sandboxed iframe's `replaceState` can.
  */
 export function stripResetParam(param: string | null | undefined): void {
   if (param === null || param === undefined || param === "") return;
-  try {
-    if (typeof location === "undefined" || typeof location.href !== "string") return;
-    if (typeof history === "undefined" || typeof history.replaceState !== "function") return;
-    const url = new URL(location.href);
-    if (!isResetValue(url.searchParams.get(param))) return;
-    url.searchParams.delete(param);
-    history.replaceState(history.state, "", `${url.pathname}${url.search}${url.hash}`);
-  } catch {
-    // SSR, or a sandboxed iframe whose replaceState throws.
-  }
+  const strip = () => {
+    try {
+      if (typeof location === "undefined" || typeof location.href !== "string") return;
+      if (typeof history === "undefined" || typeof history.replaceState !== "function") return;
+      const url = new URL(location.href);
+      if (!isResetValue(url.searchParams.get(param))) return;
+      url.searchParams.delete(param);
+      history.replaceState(history.state, "", `${url.pathname}${url.search}${url.hash}`);
+    } catch {
+      // SSR, or a sandboxed iframe whose replaceState throws.
+    }
+  };
+  if (typeof queueMicrotask === "function") queueMicrotask(strip);
+  else void Promise.resolve().then(strip);
 }
 
 /**

@@ -47,8 +47,15 @@ observing it, which is why three rules hold:
 - **There is a kill switch.** `?dtb-flags=reset` drops every stored override and every
   session override held by the same runtime before it is applied — the override that
   breaks the app is the one you cannot reach the panel to remove. The adapter hears
-  about every distinct stored or session key. Once the empty map is stored, that param
-  is removed from the URL, so a remount does not clear overrides set since the reset.
+  about every distinct stored or session key. Once storage confirms the empty map, a
+  microtask removes the param. Every runtime started in the same synchronous pass
+  honours it, including several `flags()` instances or toolbars in one React root;
+  a second `start()` of the same runtime does not clear again. A runtime started
+  later, in another root, a lazy route or an HMR update, needs a reload with the
+  param to reset. If the empty map cannot be confirmed in storage, this runtime
+  does not schedule the strip, and the panel asks for a reload with the param. If
+  one runtime confirms and another fails in the same pass, the confirming one
+  still strips it.
   The panel footer shows the reset URL for the current page and how many overrides
   the reset cleared. `resetParam: null` disables both.
 - **An override is never quiet.** The bar counts them, every overridden row is

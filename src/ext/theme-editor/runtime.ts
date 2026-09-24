@@ -452,6 +452,12 @@ export function createThemeEditorRuntime(
   let preview = true;
   let hold: SurfaceHold | null = null;
   let notice: string | null = null;
+  let noticeError = false;
+  let resetHonoured = false;
+  const setNotice = (text: string | null, error = false) => {
+    notice = text;
+    noticeError = error;
+  };
   let readError: string | null = null;
   /** Per token, not one slot — one failure must not hide another's. */
   const applyErrors = new Map<string, string>();
@@ -873,6 +879,7 @@ export function createThemeEditorRuntime(
       applyErrors: Object.fromEntries(applyErrors),
       readError,
       notice,
+      noticeError,
     };
   };
 
@@ -919,6 +926,7 @@ export function createThemeEditorRuntime(
         applyErrors: Object.fromEntries(applyErrors),
         readError: "The token list could not be read — it threw. See the console.",
         notice,
+        noticeError,
       };
     }
   };
@@ -1056,15 +1064,17 @@ export function createThemeEditorRuntime(
       notifyConsumer(name, value);
     }
     const applied = Object.keys(accepted).length;
-    notice = `${[
-      `${source}: ${applied} token${applied === 1 ? "" : "s"} applied`,
-      dropped === 0
-        ? null
-        : `${dropped} dropped — this application does not declare them, or the value was refused`,
-      replaced === 0 ? null : `${replaced} earlier edit${replaced === 1 ? "" : "s"} replaced`,
-    ]
-      .filter((clause): clause is string => clause !== null)
-      .join(", ")}.`;
+    setNotice(
+      `${[
+        `${source}: ${applied} token${applied === 1 ? "" : "s"} applied`,
+        dropped === 0
+          ? null
+          : `${dropped} dropped — this application does not declare them, or the value was refused`,
+        replaced === 0 ? null : `${replaced} earlier edit${replaced === 1 ? "" : "s"} replaced`,
+      ]
+        .filter((clause): clause is string => clause !== null)
+        .join(", ")}.`,
+    );
     publish();
     return { applied, dropped };
   };
@@ -1254,9 +1264,11 @@ export function createThemeEditorRuntime(
     persistPreview(on);
     if (on) applyAll();
     else releaseAll();
-    notice = on
-      ? null
-      : "Preview off — your edits are kept but the page is showing the application's own values.";
+    setNotice(
+      on
+        ? null
+        : "Preview off — your edits are kept but the page is showing the application's own values.",
+    );
     publish();
   };
 
@@ -1283,7 +1295,7 @@ export function createThemeEditorRuntime(
       persistOverrides();
       writeOne(name, trimmed);
       notifyConsumer(name, trimmed);
-      notice = null;
+      setNotice(null);
       publish();
       return null;
     },
@@ -1299,7 +1311,7 @@ export function createThemeEditorRuntime(
       // No `applyErrors.delete` here: a *failed* release must keep its error
       // — the page is still rendering a value the panel just stopped claiming.
       notifyConsumer(name, undefined);
-      notice = null;
+      setNotice(null);
       publish();
     },
 
@@ -1313,10 +1325,11 @@ export function createThemeEditorRuntime(
       applyErrors.clear();
       for (const name of names) notifyConsumer(name, undefined);
       capturedBase.clear();
-      notice =
+      setNotice(
         names.length === 0
           ? "Nothing to reset."
-          : `Reset — ${names.length} edit${names.length === 1 ? "" : "s"} removed and the surface restored.`;
+          : `Reset — ${names.length} edit${names.length === 1 ? "" : "s"} removed and the surface restored.`,
+      );
       publish();
     },
 
@@ -1331,7 +1344,7 @@ export function createThemeEditorRuntime(
       capturedBase.clear();
       persistSurface(next.id);
       applyAll();
-      notice = `Surface: ${next.label ?? next.id}.`;
+      setNotice(`Surface: ${next.label ?? next.id}.`);
       publish();
     },
 
@@ -1342,7 +1355,7 @@ export function createThemeEditorRuntime(
       } catch (error) {
         // eslint-disable-next-line no-console
         console.error("[dev-toolbar/ext/theme-editor] the mode adapter's set() threw.", error);
-        notice = "The application's mode adapter refused that change.";
+        setNotice("The application's mode adapter refused that change.");
       }
       publish();
     },
@@ -1350,7 +1363,7 @@ export function createThemeEditorRuntime(
     importRecipe(raw) {
       const { recipe, error } = parseRecipe(raw);
       if (recipe === null) {
-        notice = `Import refused — ${error ?? "unreadable."}`;
+        setNotice(`Import refused — ${error ?? "unreadable."}`);
         publish();
         return { applied: 0, dropped: 0, error };
       }
@@ -1410,13 +1423,25 @@ export function createThemeEditorRuntime(
 
       // The kill switch runs before anything is applied, so an edit that made
       // the page unreadable never reaches it on the reset load.
-      // The param is removed once the empty map is stored. A recipe on the same
-      // param is left alone — only the kill-switch value is a reset.
       if (themeParam !== null && resetRequested(themeParam)) {
-        overrides = emptyMap();
-        persistOverrides();
-        notice = `Every theme edit was cleared by ?${themeParam}=reset.`;
-        stripResetParam(themeParam);
+        if (!resetHonoured) {
+          resetHonoured = true;
+          overrides = emptyMap();
+          persistOverrides();
+          const confirmed = persist
+            ? readPreferenceIfReadable(storage, OVERRIDES_PREFERENCE)
+            : null;
+          const resetFailed =
+            confirmed !== null &&
+            (!confirmed.readable || Object.keys(parseOverrides(confirmed.value)).length > 0);
+          setNotice(
+            resetFailed
+              ? `Stored theme edits could not be confirmed cleared in storage — reload with ?${themeParam}=reset to try again.`
+              : `Every theme edit was cleared by ?${themeParam}=reset.`,
+            resetFailed,
+          );
+          if (!resetFailed) stripResetParam(themeParam);
+        }
       } else {
         const storedOverrides = readPreferenceIfReadable(
           persist ? storage : null,
@@ -1429,9 +1454,11 @@ export function createThemeEditorRuntime(
             // Persist the cleaned map so refused entries aren't re-read and
             // re-refused on every load.
             persistOverrides();
-            notice = `${vetted.dropped.length} stored edit${
-              vetted.dropped.length === 1 ? " was" : "s were"
-            } dropped as unusable: ${vetted.dropped.join(", ")}.`;
+            setNotice(
+              `${vetted.dropped.length} stored edit${
+                vetted.dropped.length === 1 ? " was" : "s were"
+              } dropped as unusable: ${vetted.dropped.join(", ")}.`,
+            );
           }
         }
 
@@ -1449,7 +1476,7 @@ export function createThemeEditorRuntime(
         if (param !== null && param !== "" && !resetRequested(themeParam)) {
           const { recipe, error } = parseRecipe(param);
           if (recipe === null) {
-            notice = `The theme in this URL was refused — ${error ?? "unreadable."}`;
+            setNotice(`The theme in this URL was refused — ${error ?? "unreadable."}`);
           } else {
             adopt(recipe.overrides, `Shared link "${recipe.name}"`);
           }

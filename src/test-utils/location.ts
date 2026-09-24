@@ -33,8 +33,8 @@ export interface HistoryUrlStub {
 /**
  * Stands in `location` and `history` for one call. The default `replaceState`
  * applies the next URL onto the stub, which is what a browser does, so a
- * second `start()` sees the stripped param. Pass `replaceState` to throw or
- * no-op instead. `history: null` installs no history, for the missing-global case.
+ * second `start()` sees the stripped param. Async callbacks keep the stub until
+ * they settle. Pass `replaceState` to throw or no-op instead.
  */
 export function withHistoryUrl<T>(
   href: string,
@@ -75,10 +75,17 @@ export function withHistoryUrl<T>(
   const originalHistory = window.history;
   Object.defineProperty(window, "location", { configurable: true, value: location });
   Object.defineProperty(window, "history", { configurable: true, value: history });
-  try {
-    return fn({ location, state, calls });
-  } finally {
+  const restore = () => {
     Object.defineProperty(window, "location", { configurable: true, value: originalLocation });
     Object.defineProperty(window, "history", { configurable: true, value: originalHistory });
+  };
+  try {
+    const result = fn({ location, state, calls });
+    if (result instanceof Promise) return result.finally(restore) as T;
+    restore();
+    return result;
+  } catch (error) {
+    restore();
+    throw error;
   }
 }

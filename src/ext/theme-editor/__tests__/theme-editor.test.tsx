@@ -766,6 +766,58 @@ describe("the reset link", () => {
   const linkUrl = (panel: HTMLElement | null) =>
     panel?.querySelector('[data-dtb-role="reset-link"] code')?.textContent ?? "";
 
+  it("shows the footer with no edits and a notice after a reset load", async () => {
+    const empty = mount();
+    act(() => empty.toolbar.openPanel("theme-editor"));
+    expect(
+      empty.toolbar.panel("theme-editor")?.querySelector('[data-dtb-role="reset-link"]'),
+    ).not.toBeNull();
+    empty.unmount();
+
+    const storage = createMemoryStorage({
+      "dtb:v1:test:ext:theme-editor:overrides": '{"--brand-500":"#ff0000"}',
+    });
+    await withHistoryUrl("http://localhost/app?keep=1&dtb-theme=reset#section", async (stub) => {
+      const reset = mount({}, storage);
+      act(() => reset.toolbar.openPanel("theme-editor"));
+      expect(
+        text(
+          reset.toolbar
+            .panel("theme-editor")
+            ?.querySelector('[data-dtb-part="thm-banner"][data-dtb-tone="info"]'),
+        ),
+      ).toContain("Every theme edit was cleared");
+      expect(stub.location.search).toContain("dtb-theme=reset");
+      await Promise.resolve();
+      expect(stub.location.search).toBe("?keep=1");
+      expect(stub.location.hash).toBe("#section");
+    });
+  });
+
+  it("shows a storage reset failure with an error tone", () => {
+    const backing = createMemoryStorage({
+      "dtb:v1:test:ext:theme-editor:overrides": '{"--brand-500":"#ff0000"}',
+    });
+    const storage: ToolbarStorage = {
+      getItem: (key) => backing.getItem(key),
+      setItem: () => {
+        throw new Error("blocked");
+      },
+      removeItem: () => {
+        throw new Error("blocked");
+      },
+    };
+    withHistoryUrl("http://localhost/app?dtb-theme=reset", () => {
+      const { toolbar } = mount({}, storage);
+      act(() => toolbar.openPanel("theme-editor"));
+      const notice = toolbar
+        .panel("theme-editor")
+        ?.querySelector('[data-dtb-part="thm-banner"][data-dtb-tone="error"]');
+      expect(text(notice)).toContain("could not be confirmed cleared in storage");
+      expect(notice?.getAttribute("role")).toBe("alert");
+    });
+  });
+
   it("shows the reset URL for this page and omits it when the param is disabled", () => {
     withHistoryUrl("http://localhost:3000/edit?token=secret#tokens", () => {
       const available = mount();
