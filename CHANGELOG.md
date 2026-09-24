@@ -14,6 +14,13 @@
   style break at the boundary is accepted, not an oversight.
 -->
 
+## [0.14.0](https://github.com/nejcm/dev-toolbar/compare/v0.13.0...v0.14.0) (2026-09-24)
+
+
+### Features
+
+* **flags,theme-editor:** drop the reset param once honoured and add a copyable reset link ([#130](https://github.com/nejcm/dev-toolbar/issues/130)) ([0fd7670](https://github.com/nejcm/dev-toolbar/commit/0fd76702f3d28c8cc7a890496fce8edb7e35e740))
+
 ## [0.13.0](https://github.com/nejcm/dev-toolbar/compare/v0.12.2...v0.13.0) (2026-09-24)
 
 
