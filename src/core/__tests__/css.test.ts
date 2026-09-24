@@ -11,6 +11,37 @@ describe("core stylesheet", () => {
     expect(CORE_CSS).toBe(stylesheet);
   });
 
+  it("places the panel close button at the logical inline end", () => {
+    const rule = styleRules(CORE_CSS).find(
+      (entry) => entry.prelude === '[data-dev-toolbar] [data-dtb-part="panel-close"]',
+    );
+    expect(rule?.block).toContain("inset-inline-end: var(--dtb-panel-close-inset)");
+    expect(rule?.block).not.toMatch(/inset-(left|right)|\b(left|right):/);
+  });
+
+  it("reserves room for the close button on the top row only, never inside an embed", () => {
+    const rows = styleRules(CORE_CSS).filter(
+      (entry) =>
+        entry.block.includes("padding-inline-end:") &&
+        entry.block.includes("--dtb-panel-close-reserve"),
+    );
+    expect(rows.map((entry) => entry.prelude)).toEqual([
+      '[data-dev-toolbar] [data-dtb-part="panel"][data-dtb-close="true"] [data-dtb-part="panel-body"] > * > :first-child:where(:not([data-dtb-embed] *))',
+      '[data-dev-toolbar] [data-dtb-part="panel"][data-dtb-close="true"] [data-dtb-part="panel-body"] > * > [data-dtb-bleed]:first-child:where(:not([data-dtb-embed] *))',
+    ]);
+    const bled = styleRules(CORE_CSS).find(
+      (entry) =>
+        entry.prelude ===
+        '[data-dev-toolbar] [data-dtb-part="panel"][data-dtb-close="true"] [data-dtb-part="panel-body"] > * > [data-dtb-bleed]:first-child:where(:not([data-dtb-embed] *))',
+    );
+    expect(bled?.block).toContain("padding-inline-end: var(--dtb-panel-close-reserve)");
+    // The body itself keeps its full width.
+    const body = styleRules(CORE_CSS).find((entry) =>
+      entry.prelude.endsWith('[data-dtb-close="true"] [data-dtb-part="panel-body"]'),
+    );
+    expect(body).toBeUndefined();
+  });
+
   // The structural half of the guard promise: no fixture, reads every selector
   // core ships. `embed.test.tsx` proves the guard works; see docs/embedding.md.
   describe("no element-level descendant default reaches an embedded subtree", () => {

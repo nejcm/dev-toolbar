@@ -23,7 +23,7 @@ function sameClassNames(a: DevToolbarClassNames, b: DevToolbarClassNames): boole
  * to avoid.
  *
  * Chosen over documenting "hoist the object": the inline form is the natural
- * React idiom, a doc note is unenforceable, and eleven optional string fields
+ * React idiom, a doc note is unenforceable, and twelve optional string fields
  * make the comparison exact rather than a heuristic. The ref is written during
  * render, which is safe because the write is idempotent and derived purely
  * from props — a discarded render can only store a value string-equal to the

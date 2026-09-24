@@ -21,7 +21,8 @@ is. Most elements in a panel carry both, and you can target either.
 
 *Parts* are the precise hooks. Core owns the unprefixed names — `root`, `bar`, `region`,
 `item`, `trigger`, `overflow-button`, `overflow-menu`, `overflow-menu-item`, `overlay`,
-`panel`, `panel-resizer`, `panel-body`, `error-chip`, `error-retry`, `inset`. An
+`panel`, `panel-close`, `panel-close-icon`, `panel-resizer`, `panel-body`, `error-chip`,
+`error-retry`, `inset`. An
 extension that ships its own CSS namespaces its parts *by kind of extension* —
 `/ext/metrics` uses `metrics-chip`, `metrics-panel` and so on for every instance,
 whatever `id` you give it, so one rule styles them all. To reach a single instance, use
@@ -95,6 +96,18 @@ prefix.
 ```tsx
 <DevToolbar classNames={{ bar: "my-bar", panel: "my-panel" }} extensions={…} />
 ```
+
+Use <code v-pre>classNames={{ panelClose: "my-close" }}</code> or
+`[data-dev-toolbar] [data-dtb-part="panel-close"]` to restyle the close button.
+Its position uses `inset-inline-end` and follows RTL direction. To hide it for one
+extension, set that extension's `closeButton: false`; Escape remains available.
+The button sits `--dtb-panel-close-inset` (4px) from the panel's top and inline-end
+edges and floats over the panel, so only the top row makes room for it.
+`--dtb-panel-close-reserve` is the distance from the panel's inline-end edge that row
+keeps clear: the first child of the extension's root pads by it, less the panel's own
+padding, and a `data-dtb-bleed` row pads by all of it. An extension whose top row is
+nested deeper can pad that row with the same variable; an embedded tool's subtree is
+never touched.
 
 None of it needs `!important`. Core's and the kit's stylesheets live entirely inside
 `@layer dev-toolbar`, and unlayered author CSS beats any layered rule regardless of

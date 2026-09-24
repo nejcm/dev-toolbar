@@ -12,6 +12,7 @@ interface DevToolbarExtension {
   priority?: number;             // lowest collapses into ⋮ first
   hidden?: boolean;              // you compute this — core has no ctx
   keepMounted?: boolean;         // panel state survives closing
+  closeButton?: boolean;         // default true; hide core's panel close button
   compact?: (props: CompactSlotProps) => React.ReactNode;
   panel?: (props: PanelSlotProps) => React.ReactNode;
   overlay?: (props: OverlaySlotProps) => React.ReactNode;   // modal; never collapsed
@@ -52,6 +53,10 @@ interface OverlaySlotProps {
   styleNonce?: string;
 }
 ```
+
+Core adds a close button to an open panel. Set `closeButton: false` when the panel
+already has one; Escape still closes the panel. This optional field is additive and
+does not change `CONTRACT_VERSION`.
 
 `overlay` is for a surface the bar cannot host — a dialog, a picker, a layer drawn
 over the page. It renders once,

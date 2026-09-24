@@ -324,6 +324,8 @@ export interface DevToolbarExtension {
   hidden?: boolean;
   /** Keep the panel mounted after it closes. */
   keepMounted?: boolean;
+  /** Show core's panel close button. Default `true`; Escape still closes when `false`. */
+  closeButton?: boolean;
   compact?: (props: CompactSlotProps) => ReactNode;
   panel?: (props: PanelSlotProps) => ReactNode;
   /**
@@ -358,6 +360,7 @@ export interface DevToolbarClassNames {
   overflowMenuItem?: string;
   overlay?: string;
   panel?: string;
+  panelClose?: string;
   panelResizer?: string;
   errorChip?: string;
 }

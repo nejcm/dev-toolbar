@@ -570,6 +570,8 @@ added are listed too; this table does not grow when an extension adds one.
 | `overflow-menu-item` | one collapsed item wrapper | `data-dtb-ext-id` |
 | `overlay` | one extension's overlay slot | `data-dtb-ext-id` |
 | `panel` | one panel | `data-dtb-ext-id`, `data-dtb-active`, `hidden` when inactive |
+| `panel-close` | core close button | Omitted when `closeButton: false` |
+| `panel-close-icon` | the button's SVG glyph | `aria-hidden="true"` |
 | `panel-resizer` | drag/keyboard handle | `role="separator"`, arrow keys resize |
 | `panel-body` | scroll container | |
 | `error-chip` | a crashed slot | `data-dtb-ext-id`, `data-dtb-slot="compact" \| "panel"` |

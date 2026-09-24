@@ -371,6 +371,11 @@ const GEOMETRY_ALLOWLIST: readonly string[] = [
   '[data-dev-toolbar] [data-dtb-kind="rows"] dd',
   '[data-dev-toolbar] [data-dtb-kind="rows"] dd > [data-dtb-kind="action"]',
   '[data-dev-toolbar] [data-dtb-kind="toolbar"]:last-child:not(:only-child)',
+
+  // Core's close-button reserve: its subject sits inside `panel-body`, which a
+  // bar trigger never does.
+  '[data-dev-toolbar] [data-dtb-part="panel"][data-dtb-close="true"] [data-dtb-part="panel-body"] > * > :first-child:where(:not([data-dtb-embed] *))',
+  '[data-dev-toolbar] [data-dtb-part="panel"][data-dtb-close="true"] [data-dtb-part="panel-body"] > * > [data-dtb-bleed]:first-child:where(:not([data-dtb-embed] *))',
 ];
 
 describe("the kit action reset and core's bar trigger", () => {

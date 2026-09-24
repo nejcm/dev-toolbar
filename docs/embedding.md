@@ -17,6 +17,7 @@ import { ReactQueryDevtoolsPanel } from "@tanstack/react-query-devtools";
 const queryDevtools: DevToolbarExtension = {
   id: "tanstack-query",
   label: "Query",
+  closeButton: false,
   panel: ({ close }) => (
     <ReactQueryDevtoolsPanel client={queryClient} style={{ height: "100%" }} onClose={close} />
   ),
@@ -25,7 +26,10 @@ const queryDevtools: DevToolbarExtension = {
 
 Put it in the `extensions` array and it works today. (`height: 100%` fills the panel
 body, whose height core owns; a tool that wants a number reads `height` from the same
-props.) Core supplies everything an embedded panel needs:
+props.) TanStack Query already shows a close control through `onClose={close}`, so
+this example sets `closeButton: false` to avoid two close buttons. Leave the default
+for tools without their own close control. Core supplies everything an embedded panel
+needs:
 
 - **A trigger.** With no `compact` slot, core renders a plain labelled button that
   toggles the panel.
@@ -134,6 +138,7 @@ const queryDevtools = embed({
   id: "tanstack-query",
   label: "query",
   keepMounted: true,
+  closeButton: false,
   render: ({ close }) => (
     <ReactQueryDevtoolsPanel client={queryClient} style={{ height: "100%" }} onClose={close} />
   ),
@@ -150,6 +155,7 @@ interface EmbedOptions {
   value?: ReactNode;                              // opts into the kit's chip; shown beside the label
   compact?: (props: CompactSlotProps) => ReactNode;   // replaces the trigger entirely
   keepMounted?: boolean;                          // default false
+  closeButton?: boolean;                          // default true; false for a tool with its own close
   minHeight?: number;                             // the frame's floor, px — default 240
   align?: ToolbarAlign; order?: number; priority?: number; hidden?: boolean;
   injectStyles?: boolean;                         // the kit sheet, for that chip — default true
