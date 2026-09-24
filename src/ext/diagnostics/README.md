@@ -42,7 +42,9 @@ itself only what no other extension owns — page facts and the
   copy and download buttons would produce, before either is pressed.
 - **Redaction happens on the way in, once.** Panel, clipboard, download and
   every command read the same already-redacted object; serialising before
-  redacting would make nested keys invisible to the matcher.
+  redacting would make nested keys invisible to the matcher. The roster and
+  every `source` are masked by the kit's `readDiagnosticsRoster` and
+  `redactForExport`, the same reader `/ext/agent` uses.
 - **Omissions are visible.** A contributing extension that throws or fails to
   serialise gets a status, a line in top-level `omissions`, a panel banner and a
   Markdown heading — never a silent drop.
