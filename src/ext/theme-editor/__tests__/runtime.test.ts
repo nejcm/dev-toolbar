@@ -5,7 +5,7 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { fakeExtensionApi } from "@nejcm/dev-toolbar/testing";
-import { withLocation } from "../../../test-utils/location";
+import { withHistoryUrl, withLocation } from "../../../test-utils/location";
 import {
   DEFAULT_THEME_PARAM,
   OVERRIDES_KEY,
@@ -858,6 +858,192 @@ describe("the URL", () => {
       expect(root().style.getPropertyValue("--brand-500")).toBe("");
       expect(storage.getItem(OVERRIDES_KEY)).toBeNull();
     });
+  });
+
+  it("strips only the reset value and keeps every other param and the hash", async () => {
+    const storage = createMemoryStorage({
+      [OVERRIDES_KEY]: JSON.stringify({ "--brand-500": "#ff0000" }),
+      "dtb:v1:default:ext:theme-editor:overrides": JSON.stringify({ "--brand-500": "#ff0000" }),
+    });
+    const runtime = createThemeEditorRuntime({ tokens: TOKENS });
+    await withHistoryUrl(
+      "http://localhost/app?keep=1&dtb-theme=reset&x=2#section",
+      async (stub) => {
+        expect(readStoredThemeOverrides({ storage, tokens: TOKENS })).toEqual({});
+        expect(stub.calls).toEqual([]);
+        runtime.start(fakeApi(storage));
+        expect(runtime.store.peek().notice).toBe(
+          "Every theme edit was cleared by ?dtb-theme=reset.",
+        );
+        expect(stub.location.search).toContain("dtb-theme=reset");
+        expect(stub.calls).toEqual([]);
+        await Promise.resolve();
+        expect(stub.calls).toEqual([[stub.state, "", "/app?keep=1&x=2#section"]]);
+        expect(stub.location.hash).toBe("#section");
+      },
+    );
+  });
+
+  it("does not strip a shared recipe, a renamed param's other values, or a disabled param", async () => {
+    const recipe = encodeURIComponent(
+      JSON.stringify({ schemaVersion: 1, name: "Shared", overrides: { "--brand-500": "#00ff00" } }),
+    );
+    withHistoryUrl(`http://localhost/app?dtb-theme=${recipe}&keep=1#top`, (stub) => {
+      const runtime = createThemeEditorRuntime({ tokens: TOKENS });
+      runtime.start(fakeApi(createMemoryStorage()));
+      expect(runtime.overrides()).toEqual({ "--brand-500": "#00ff00" });
+      expect(stub.calls).toEqual([]);
+    });
+
+    await withHistoryUrl("http://localhost/app?keep=1&my-theme=reset#top", async (stub) => {
+      const runtime = createThemeEditorRuntime({
+        tokens: TOKENS,
+        themeParam: "my-theme",
+      });
+      runtime.start(
+        fakeApi(
+          createMemoryStorage({ [OVERRIDES_KEY]: JSON.stringify({ "--brand-500": "#ff0000" }) }),
+        ),
+      );
+      expect(runtime.overrides()).toEqual({});
+      await Promise.resolve();
+      expect(stub.calls[0]?.[2]).toBe("/app?keep=1#top");
+    });
+
+    const kept = createMemoryStorage({
+      [OVERRIDES_KEY]: JSON.stringify({ "--brand-500": "#ff0000" }),
+    });
+    withHistoryUrl("http://localhost/app?dtb-theme=reset#top", (stub) => {
+      const runtime = createThemeEditorRuntime({ tokens: TOKENS, themeParam: null });
+      runtime.start(fakeApi(kept));
+      expect(stub.calls).toEqual([]);
+      expect(runtime.overrides()).toEqual({ "--brand-500": "#ff0000" });
+    });
+  });
+
+  it("does not clear edits set after the param was stripped", async () => {
+    const storage = createMemoryStorage({
+      [OVERRIDES_KEY]: JSON.stringify({ "--brand-500": "#ff0000" }),
+    });
+    const runtime = createThemeEditorRuntime({ tokens: TOKENS });
+    await withHistoryUrl("http://localhost/app?dtb-theme=off&keep=1#section", async () => {
+      const stop = runtime.start(fakeApi(storage));
+      expect(runtime.overrides()).toEqual({});
+      await Promise.resolve();
+      runtime.setOverride("--brand-500", "#00ff00");
+      stop();
+      runtime.start(fakeApi(storage));
+      expect(runtime.overrides()).toEqual({ "--brand-500": "#00ff00" });
+    });
+  });
+
+  it("resets separate runtimes in one pass but not a later runtime", async () => {
+    const first = createMemoryStorage({ [OVERRIDES_KEY]: '{"--brand-500":"#ff0000"}' });
+    const second = createMemoryStorage({ [OVERRIDES_KEY]: '{"--brand-500":"#00ff00"}' });
+    const later = createMemoryStorage({ [OVERRIDES_KEY]: '{"--brand-500":"#0000ff"}' });
+    await withHistoryUrl("http://localhost/app?dtb-theme=reset", async (stub) => {
+      createThemeEditorRuntime({ tokens: TOKENS }).start(fakeApi(first));
+      createThemeEditorRuntime({ tokens: TOKENS }).start(fakeApi(second));
+      expect(stub.calls).toEqual([]);
+      expect(first.getItem(OVERRIDES_KEY)).toBeNull();
+      expect(second.getItem(OVERRIDES_KEY)).toBeNull();
+      await Promise.resolve();
+      expect(stub.calls).toHaveLength(1);
+      const lateRuntime = createThemeEditorRuntime({ tokens: TOKENS });
+      lateRuntime.start(fakeApi(later));
+      expect(lateRuntime.overrides()).toEqual({ "--brand-500": "#0000ff" });
+    });
+  });
+
+  it("keeps the reset notice across a synchronous second start", async () => {
+    const storage = createMemoryStorage({ [OVERRIDES_KEY]: '{"--brand-500":"#ff0000"}' });
+    const runtime = createThemeEditorRuntime({ tokens: TOKENS });
+    await withHistoryUrl("http://localhost/app?dtb-theme=reset", async (stub) => {
+      const api = fakeApi(storage);
+      runtime.start(api);
+      runtime.start(api);
+      expect(runtime.store.peek().notice).toBe("Every theme edit was cleared by ?dtb-theme=reset.");
+      await Promise.resolve();
+      expect(stub.calls).toHaveLength(1);
+    });
+  });
+
+  it("reports a failed storage clear and leaves the param", async () => {
+    const backing = createMemoryStorage({ [OVERRIDES_KEY]: '{"--brand-500":"#ff0000"}' });
+    const storage: ToolbarStorage = {
+      getItem: (key) => backing.getItem(key),
+      setItem: () => {
+        throw new Error("blocked");
+      },
+      removeItem: () => {
+        throw new Error("blocked");
+      },
+    };
+    const runtime = createThemeEditorRuntime({ tokens: TOKENS });
+    await withHistoryUrl("http://localhost/app?dtb-theme=reset", async (stub) => {
+      runtime.start(fakeApi(storage));
+      await Promise.resolve();
+      expect(stub.calls).toEqual([]);
+      expect(backing.getItem(OVERRIDES_KEY)).toBe('{"--brand-500":"#ff0000"}');
+      expect(runtime.store.peek().notice).toBe(
+        "Stored theme edits could not be confirmed cleared in storage — reload with ?dtb-theme=reset to try again.",
+      );
+      expect(runtime.store.peek().noticeError).toBe(true);
+    });
+  });
+
+  it("keeps the param when a post-reset read fails", async () => {
+    const backing = createMemoryStorage({ [OVERRIDES_KEY]: '{"--brand-500":"#ff0000"}' });
+    let reads = 0;
+    const storage: ToolbarStorage = {
+      getItem: (key) => {
+        if (key === OVERRIDES_KEY && ++reads >= 1) throw new Error("blocked");
+        return backing.getItem(key);
+      },
+      setItem: (key, value) => backing.setItem(key, value),
+      removeItem: (key) => backing.removeItem(key),
+    };
+    const runtime = createThemeEditorRuntime({ tokens: TOKENS });
+    await withHistoryUrl("http://localhost/app?dtb-theme=reset", async (stub) => {
+      runtime.start(fakeApi(storage));
+      await Promise.resolve();
+      expect(stub.calls).toEqual([]);
+      expect(runtime.store.peek().noticeError).toBe(true);
+    });
+  });
+
+  it("strips a reset with persistence disabled", async () => {
+    const runtime = createThemeEditorRuntime({ tokens: TOKENS, persist: false });
+    await withHistoryUrl("http://localhost/app?dtb-theme=reset", async (stub) => {
+      runtime.start(fakeApi(createMemoryStorage()));
+      await Promise.resolve();
+      expect(stub.calls).toHaveLength(1);
+    });
+  });
+
+  it("swallows a throwing replaceState", async () => {
+    const runtime = createThemeEditorRuntime({ tokens: TOKENS });
+    await withHistoryUrl(
+      "http://localhost/app?dtb-theme=reset",
+      async () => {
+        expect(() =>
+          runtime.start(
+            fakeApi(
+              createMemoryStorage({
+                [OVERRIDES_KEY]: JSON.stringify({ "--brand-500": "#ff0000" }),
+              }),
+            ),
+          ),
+        ).not.toThrow();
+        expect(runtime.overrides()).toEqual({});
+        await Promise.resolve();
+      },
+      {
+        replaceState: () => {
+          throw new Error("sandbox");
+        },
+      },
+    );
   });
 
   it("adopts a shared recipe through the same sanitiser", () => {

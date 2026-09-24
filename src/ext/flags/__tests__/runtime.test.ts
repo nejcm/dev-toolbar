@@ -7,7 +7,7 @@ import { createSource } from "@nejcm/dev-toolbar/kit";
 import { fakeExtensionApi } from "@nejcm/dev-toolbar/testing";
 import type { Mock } from "vitest";
 import { createMemoryStorage } from "../../../core/storage";
-import { withLocation } from "../../../test-utils/location";
+import { withHistoryUrl, withLocation } from "../../../test-utils/location";
 import {
   createFlagsRuntime,
   OVERRIDES_KEY,
@@ -15,6 +15,7 @@ import {
   resetDuplicateCatalogueKeyWarnings,
   vetOverrides,
 } from "../runtime";
+import { readStoredOverrides } from "../index";
 import { parseValue, severityFor } from "../types";
 import type { FlagReading, FlagValue, FlagView, PromotedFlag } from "../types";
 import type { ExtensionRuntimeApi, ToolbarStorage } from "../../../core/contract";
@@ -597,6 +598,213 @@ describe("the kill switch", () => {
       Object.defineProperty(window, "location", { configurable: true, value: original });
     }
     expect(runtime.overrides()).toEqual({ "ui-facelift": true });
+  });
+
+  it("strips the reset param in a microtask and keeps the rest of the URL", async () => {
+    const storage = createMemoryStorage({
+      [OVERRIDES_KEY]: JSON.stringify({ "ui-facelift": true, "new-header": false }),
+      // The pre-mount reader uses the prefixed key, not the runtime's own.
+      "dtb:v1:default:ext:flags:overrides": JSON.stringify({
+        "ui-facelift": true,
+        "new-header": false,
+      }),
+    });
+    const runtime = createFlagsRuntime({ flags: CATALOGUE, onOverride: () => {} });
+    await withHistoryUrl(
+      "http://localhost/app?keep=1&dtb-flags=reset&x=2#section",
+      async (stub) => {
+        expect(readStoredOverrides({ storage })).toEqual({});
+        expect(stub.calls).toEqual([]);
+        runtime.start(fakeApi(storage).api);
+        expect(runtime.store.getSnapshot().notice).toBe(
+          "2 overrides were cleared by ?dtb-flags=reset.",
+        );
+        expect(stub.location.search).toContain("dtb-flags=reset");
+        expect(stub.calls).toEqual([]);
+        await Promise.resolve();
+        expect(stub.calls).toEqual([[stub.state, "", "/app?keep=1&x=2#section"]]);
+        expect(stub.location.search).toBe("?keep=1&x=2");
+        expect(stub.location.hash).toBe("#section");
+      },
+    );
+  });
+
+  it("strips a renamed param and leaves a disabled one alone", async () => {
+    const href = "http://localhost/app?keep=1&my-flags=clear#top";
+    const renamed = createFlagsRuntime({
+      flags: CATALOGUE,
+      onOverride: () => {},
+      resetParam: "my-flags",
+    });
+    await withHistoryUrl(href, async (stub) => {
+      renamed.start(
+        fakeApi(createMemoryStorage({ [OVERRIDES_KEY]: JSON.stringify({ "ui-facelift": true }) }))
+          .api,
+      );
+      await Promise.resolve();
+      expect(stub.calls[0]?.[2]).toBe("/app?keep=1#top");
+      expect(renamed.store.getSnapshot().notice).toBe("1 override was cleared by ?my-flags=reset.");
+    });
+
+    const storage = createMemoryStorage({
+      [OVERRIDES_KEY]: JSON.stringify({ "ui-facelift": true }),
+    });
+    const disabled = createFlagsRuntime({
+      flags: CATALOGUE,
+      onOverride: () => {},
+      resetParam: null,
+    });
+    withHistoryUrl("http://localhost/app?dtb-flags=reset#top", (stub) => {
+      disabled.start(fakeApi(storage).api);
+      expect(stub.calls).toEqual([]);
+      expect(disabled.overrides()).toEqual({ "ui-facelift": true });
+      expect(disabled.store.getSnapshot().notice).toBeNull();
+    });
+  });
+
+  it("does not clear overrides set after the param was stripped", async () => {
+    const storage = createMemoryStorage({
+      [OVERRIDES_KEY]: JSON.stringify({ "ui-facelift": true }),
+    });
+    const runtime = createFlagsRuntime({ flags: CATALOGUE, onOverride: () => {} });
+    await withHistoryUrl("http://localhost/app?dtb-flags=off&keep=1#section", async () => {
+      const stop = runtime.start(fakeApi(storage).api);
+      expect(runtime.overrides()).toEqual({});
+      await Promise.resolve();
+      runtime.setOverride("checkout.copy", "new");
+      stop();
+      runtime.start(fakeApi(storage).api);
+      expect(runtime.overrides()).toEqual({ "checkout.copy": "new" });
+    });
+  });
+
+  it("resets separate runtimes in one pass but not a later runtime", async () => {
+    const firstStorage = createMemoryStorage({ [OVERRIDES_KEY]: '{"ui-facelift":true}' });
+    const secondStorage = createMemoryStorage({ [OVERRIDES_KEY]: '{"new-header":false}' });
+    const laterStorage = createMemoryStorage({ [OVERRIDES_KEY]: '{"checkout.copy":"new"}' });
+    const runtime = () => createFlagsRuntime({ flags: CATALOGUE, onOverride: () => {} });
+    await withHistoryUrl("http://localhost/app?dtb-flags=reset", async (stub) => {
+      runtime().start(fakeApi(firstStorage).api);
+      runtime().start(fakeApi(secondStorage).api);
+      expect(stub.calls).toEqual([]);
+      expect(firstStorage.getItem(OVERRIDES_KEY)).toBeNull();
+      expect(secondStorage.getItem(OVERRIDES_KEY)).toBeNull();
+      await Promise.resolve();
+      expect(stub.calls).toHaveLength(1);
+      const later = runtime();
+      later.start(fakeApi(laterStorage).api);
+      expect(later.overrides()).toEqual({ "checkout.copy": "new" });
+      expect(laterStorage.getItem(OVERRIDES_KEY)).not.toBeNull();
+    });
+  });
+
+  it("keeps the cleared count across a synchronous second start and clears the notice on edits", async () => {
+    const storage = createMemoryStorage({ [OVERRIDES_KEY]: '{"ui-facelift":true}' });
+    const runtime = createFlagsRuntime({ flags: CATALOGUE, onOverride: () => {} });
+    await withHistoryUrl("http://localhost/app?dtb-flags=reset", async (stub) => {
+      const api = fakeApi(storage).api;
+      runtime.start(api);
+      runtime.start(api);
+      expect(runtime.store.peek().notice).toBe("1 override was cleared by ?dtb-flags=reset.");
+      await Promise.resolve();
+      expect(stub.calls).toHaveLength(1);
+      runtime.setOverride("ui-facelift", true);
+      expect(runtime.store.peek().notice).toBeNull();
+      runtime.start(api);
+      expect(runtime.store.peek().notice).toBeNull();
+    });
+    runtime.clearOverride("ui-facelift");
+    expect(runtime.store.peek().notice).toBeNull();
+  });
+
+  it("reports a failed storage clear and leaves the reset param", async () => {
+    const backing = createMemoryStorage({ [OVERRIDES_KEY]: '{"ui-facelift":true}' });
+    const storage: ToolbarStorage = {
+      getItem: (key) => backing.getItem(key),
+      setItem: () => {
+        throw new Error("blocked");
+      },
+      removeItem: () => {
+        throw new Error("blocked");
+      },
+    };
+    const runtime = createFlagsRuntime({ flags: CATALOGUE, onOverride: () => {} });
+    await withHistoryUrl("http://localhost/app?dtb-flags=reset", async (stub) => {
+      runtime.start(fakeApi(storage).api);
+      await Promise.resolve();
+      expect(stub.calls).toEqual([]);
+      expect(backing.getItem(OVERRIDES_KEY)).toBe('{"ui-facelift":true}');
+      expect(runtime.store.peek().notice).toBe(
+        "Stored overrides could not be confirmed cleared in storage — reload with ?dtb-flags=reset to try again.",
+      );
+      expect(runtime.store.peek().noticeError).toBe(true);
+    });
+  });
+
+  it("keeps the param when a post-reset read fails", async () => {
+    const backing = createMemoryStorage({ [OVERRIDES_KEY]: '{"ui-facelift":true}' });
+    let reads = 0;
+    const storage: ToolbarStorage = {
+      getItem: (key) => {
+        if (++reads > 1) throw new Error("blocked");
+        return backing.getItem(key);
+      },
+      setItem: (key, value) => backing.setItem(key, value),
+      removeItem: (key) => backing.removeItem(key),
+    };
+    const runtime = createFlagsRuntime({ flags: CATALOGUE, onOverride: () => {} });
+    await withHistoryUrl("http://localhost/app?dtb-flags=reset", async (stub) => {
+      runtime.start(fakeApi(storage).api);
+      await Promise.resolve();
+      expect(stub.calls).toEqual([]);
+      expect(runtime.store.peek().noticeError).toBe(true);
+    });
+  });
+
+  it("reports an empty reset and clears its notice after a clear-all change", async () => {
+    const runtime = createFlagsRuntime({ flags: CATALOGUE, onOverride: () => {} });
+    await withHistoryUrl("http://localhost/app?dtb-flags=reset", async () => {
+      runtime.start(fakeApi(createMemoryStorage()).api);
+      expect(runtime.store.peek().notice).toBe(
+        "Nothing was stored; ?dtb-flags=reset had no overrides to clear.",
+      );
+      await Promise.resolve();
+      runtime.setOverride("ui-facelift", true);
+      runtime.clearAll();
+      expect(runtime.store.peek().notice).toBeNull();
+    });
+  });
+
+  it("swallows a throwing replaceState and a missing history", async () => {
+    const stored = () =>
+      createMemoryStorage({ [OVERRIDES_KEY]: JSON.stringify({ "ui-facelift": true }) });
+    const runtime = () => createFlagsRuntime({ flags: CATALOGUE, onOverride: () => {} });
+
+    await withHistoryUrl(
+      "http://localhost/app?dtb-flags=reset",
+      async () => {
+        const current = runtime();
+        expect(() => current.start(fakeApi(stored()).api)).not.toThrow();
+        expect(current.overrides()).toEqual({});
+        await Promise.resolve();
+      },
+      {
+        replaceState: () => {
+          throw new Error("sandbox");
+        },
+      },
+    );
+
+    await withHistoryUrl(
+      "http://localhost/app?dtb-flags=reset",
+      async () => {
+        const current = runtime();
+        expect(() => current.start(fakeApi(stored()).api)).not.toThrow();
+        expect(current.overrides()).toEqual({});
+        await Promise.resolve();
+      },
+      { history: null },
+    );
   });
 });
 

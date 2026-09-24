@@ -51,6 +51,8 @@ export {
   readStoredRecord,
   removePreference,
   resetRequested,
+  resetUrl,
+  stripResetParam,
   writeJson,
   writePreference,
 } from "./preference";

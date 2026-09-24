@@ -131,17 +131,27 @@ outlives the tab — so:
   honours it too: while the param is in the URL it returns `{}`. `resetParam: null`
   disables it, `resetParam: "my-flags"` renames it.
 
+  Once storage confirms the empty map, a microtask removes the param with
+  `history.replaceState`. Other query params, the hash and `history.state` stay.
+  Every runtime started in that same synchronous pass honours the reset, including
+  several `flags()` instances in one toolbar or toolbars in one React root. A second
+  `start()` of one runtime in that pass does not clear again. A runtime started later
+  on the same page, in another React root, a lazy route or an HMR update, does not
+  reset because the param is gone; reload with the param to reset it.
+  If the empty map cannot be confirmed in storage, this runtime does not schedule
+  the strip. The panel asks you to reload with the reset param to try again. If
+  one runtime confirms and another fails in the same pass, the confirming runtime
+  still strips it.
+
+  `readStoredOverrides()` called before mount, while the param is still in the URL,
+  still returns `{}`. The panel footer shows the reset URL for the current page,
+  with a copy button, unless `resetParam` is `null`. It also says how many
+  overrides that load cleared.
+
   On another `start()` of the same runtime, session overrides survive when a custom
   storage adapter cannot be read. The default `localStorage` adapter reports a blocked
   store as empty, so only custom adapters that throw on reads get this guarantee. A new
   runtime or page reload cannot recover an override that storage never accepted.
-
-  **Known limitation.** The param is honoured on every `start()`, not once per page
-  load. While it is still in the URL, any remount — StrictMode, an `enabled` toggle, a
-  `hidden` flip, a lazily mounted route building its own `flags()` — drops the
-  overrides you set since the reset, and `readStoredOverrides()` keeps returning `{}`.
-  Strip the param from the URL after using it (`history.replaceState`, or a plain
-  navigation) before setting new overrides.
 - **A renamed flag does not leave a ghost.** An override whose key is no longer in
   your catalogue is still being applied to your app, so it still gets a row — tagged
   *no longer in the catalogue*, counted, and clearable.

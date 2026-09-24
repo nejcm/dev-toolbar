@@ -233,6 +233,13 @@ export interface FlagsSnapshot {
   bulkError: string | null;
   /** Set when the flag list itself could not be read. Distinct from an adapter failure. */
   readError: string | null;
+  /**
+   * Set when a kill-switch load cleared the override map, naming how many.
+   * `null` until that happens.
+   */
+  notice: string | null;
+  /** The reset could not be confirmed in storage. */
+  noticeError: boolean;
 }
 
 /* Small pure helpers, shared by the runtime and the UI. */

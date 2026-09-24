@@ -161,6 +161,8 @@ writeJson(storage, key, value: unknown): void;
 extensionStorageKey(instanceId, extensionId, key): string;
 readStoredRecord<T>(options, isEntry: (v: unknown, name: string) => v is T): Record<string, T>;
 resetRequested(param: string | null | undefined): boolean;
+stripResetParam(param: string | null | undefined): void;
+resetUrl(param: string | null | undefined): string | null;
 ```
 
 A **preference** is a named, validated, persisted value: four operations and two
@@ -232,6 +234,17 @@ The flags and theme-editor pre-mount readers (`readStoredOverrides`,
 `readStoredThemeOverrides`) are built on it: each passes its own `resetParam` default
 and closes its runtime's entry guard over `isEntry`. Pass the mounted runtime's own
 validator and the app seeds itself with exactly the entries the panel will accept.
+`stripResetParam` schedules removal of `?<param>=reset` (also `=clear` and `=off`)
+in a microtask and rechecks the value then. The runtimes call it only after storage
+confirms an empty map. Every runtime started in the same synchronous pass honours
+the reset; one started later on the same page does not, so reload with the param to
+reset it. If one runtime confirms and another fails, the confirming one still strips
+the param. Other query params, the hash and `history.state` stay. It never throws.
+`resetUrl` is the current origin and path with only
+that param, set to `reset` — the rest of the query and the hash are dropped, so a
+pasted link carries no `?token=` — or `null` when the param is disabled or there is no URL — the
+flags and theme-editor footers copy it. A shared theme recipe is not a reset value,
+so `stripResetParam` leaves it.
 Anything a guard cannot express — theme-editor trims accepted values, and its checker
 returns a *reason* rather than a boolean — stays in the caller as a pass over the
 returned map; the reader vets and reads, nothing more.

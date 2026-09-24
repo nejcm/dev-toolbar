@@ -14,38 +14,6 @@ import { TanStackShell, TanStackShellCard } from "./tanstackDemo";
 import { CanvasStage, HeroFigure, MediaGallery, VideoEmbed } from "./mediaDemo";
 import { ArticleDemo } from "./articleDemo";
 
-/** Live readout of the `--dev-toolbar-height` the shell publishes. */
-function HeightReadout() {
-  const [height, setHeight] = useState("(unset)");
-
-  useEffect(() => {
-    const read = () => {
-      const value = getComputedStyle(document.documentElement)
-        .getPropertyValue("--dev-toolbar-height")
-        .trim();
-      setHeight(value === "" ? "(unset)" : value);
-    };
-    read();
-    // The shell writes the variable as an inline style on <html>.
-    const observer = new MutationObserver(read);
-    observer.observe(document.documentElement, {
-      attributes: true,
-      attributeFilter: ["style"],
-    });
-    window.addEventListener("resize", read);
-    return () => {
-      observer.disconnect();
-      window.removeEventListener("resize", read);
-    };
-  }, []);
-
-  return (
-    <output data-testid="height-readout" className="pg-readout">
-      --dev-toolbar-height: <strong>{height}</strong>
-    </output>
-  );
-}
-
 /** Position/visibility are *store* state, not props — moving the bar after mount goes through `useDevToolbar()`. */
 function ShellControls() {
   const toolbar = useDevToolbar();
@@ -804,7 +772,6 @@ export function App() {
       <div className="pg-header-inner">
         <h1>@nejcm/dev-toolbar playground</h1>
         <div className="pg-controls">
-          <HeightReadout />
           <button
             type="button"
             className="pg-button"
