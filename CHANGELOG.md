@@ -14,6 +14,13 @@
   style break at the boundary is accepted, not an oversight.
 -->
 
+## [1.0.0](https://github.com/nejcm/dev-toolbar/compare/v0.14.0...v1.0.0) (2026-09-24)
+
+
+### Miscellaneous Chores
+
+* declare the API stable and release 1.0.0 ([#132](https://github.com/nejcm/dev-toolbar/issues/132)) ([2df0bdf](https://github.com/nejcm/dev-toolbar/commit/2df0bdf979a487fe51f5ef7ba6d0e1fd19538f28))
+
 ## [0.14.0](https://github.com/nejcm/dev-toolbar/compare/v0.13.0...v0.14.0) (2026-09-24)
 
 
