@@ -448,9 +448,46 @@ describe("the reporter's lifetime", () => {
     expect(reporter.posts).toBe(1);
   });
 
-  it("keeps checking in past unserialisable roster data and recovers after removal", async () => {
+  it("keeps checking in past a snapshot it cannot serialise, and sends the next healthy one", async () => {
+    const time = clock();
+    let healthy = false;
+    const handle: AgentHandle = {
+      ...fakeHandle().handle,
+      read: () =>
+        healthy
+          ? snapshotWith(true)
+          : {
+              ...snapshotWith(true),
+              diagnostics: [{ id: "b", label: "B", status: "ok", data: { n: 1n } }],
+            },
+    };
     const net = recordingFetch();
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const reporter = createAgentReporter(handle, {
+      url: "/__dev-toolbar/state",
+      fetch: net.impl,
+      now: time.now,
+      schedule: noSchedule,
+    });
+
+    await reporter.tick();
+    time.advance(1000);
+    await reporter.tick();
+    expect(reporter.posts).toBe(2);
+    expect(reporter.snapshotPosts).toBe(0);
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(String(warn.mock.calls[0]?.[0])).toContain(AGENT_MARKER);
+
+    healthy = true;
+    time.advance(1000);
+    await reporter.tick();
+    expect(net.bodies[2]?.snapshot?.diagnostics).toEqual([]);
+  });
+
+  it("tags unserialisable roster data in place, keeps checking in, and recovers after removal", async () => {
+    const net = recordingFetch();
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const time = clock();
     let pump: (() => void) | null = null;
     const rendered = renderWithToolbar(undefined, {
       instanceId: "test",
@@ -460,6 +497,7 @@ describe("the reporter's lifetime", () => {
           report: {
             url: "/__dev-toolbar/state",
             fetch: net.impl,
+            now: time.now,
             schedule: noSchedule,
             pollSchedule: (callback) => {
               pump = callback;
@@ -478,14 +516,19 @@ describe("the reporter's lifetime", () => {
     await vi.waitFor(() => {
       expect(net.bodies).toHaveLength(1);
     });
+    expect(net.bodies[0]?.snapshot?.diagnostics).toContainEqual({
+      id: "bigint",
+      label: "BigInt",
+      status: "ok",
+      data: "[unserialisable]",
+    });
     (pump as unknown as () => void)();
     await settled();
     expect(net.bodies).toHaveLength(2);
-    expect(net.bodies.every((body) => body.snapshot === undefined)).toBe(true);
-    expect(warn).toHaveBeenCalledTimes(1);
-    expect(String(warn.mock.calls[0]?.[0])).toContain(AGENT_MARKER);
+    expect(warn).not.toHaveBeenCalled();
 
     remove();
+    time.advance(2000);
     (pump as unknown as () => void)();
     await settled();
 

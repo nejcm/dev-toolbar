@@ -122,17 +122,14 @@ menu — read `input` to know what to pass. The shape of both is in
 
   | Surface | What redacts it | Levels kept |
   | --- | --- | --- |
-  | `read().diagnostics[n].data` | the bridge, over the whole roster — `data` is 2 deep | **5** |
+  | `read().diagnostics[n].data` and the bug-report JSON (`diagnostics.copyJson` / `.download`) | the kit's [`readDiagnosticsRoster`](../kit.md#diagnostics-readers), per contribution at its own root | **7** |
   | `runCommand("diagnostics.capture").result` | the bridge, over the whole snapshot — `data` is 3 deep | **4** |
-  | The bug-report JSON (`diagnostics.copyJson` / `.download`) | [`/ext/diagnostics`](./diagnostics.md), per contribution at its own root | **7** |
 
-  The bug report is the **most** permissive of the three, not the least:
-  `/ext/diagnostics` redacts each contribution at depth 0 as it collects it and never
-  re-redacts the assembled snapshot, and `renderJson` is a plain `JSON.stringify`.
-  The bridge's capture result is the strictest, because it is that
-  already-redacted snapshot put through a *second* pass three levels down. So a
-  deeply nested `sources` entry can arrive intact in a bug report and truncated
-  through the bridge. If your data nests that far, flatten it, or raise `maxDepth`
+  The bridge's roster read and the bug report agree, because both redact each
+  contribution once, at depth 0, through the same reader. The bridge's capture result
+  is the strictest, because it is that already-redacted snapshot put through a
+  *second* pass three levels down. So a deeply nested `sources` entry can arrive
+  intact in a bug report and truncated through the bridge. If your data nests that far, flatten it, or raise `maxDepth`
   through `redactOptions` at the source. Everything the first-party extensions
   publish is well inside every one of these limits.
 - **It renders almost nothing.** No panel and no stylesheet; the `compact` slot is one

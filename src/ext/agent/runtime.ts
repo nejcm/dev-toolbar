@@ -7,9 +7,10 @@
  * client-only `start(api)`, not at module evaluation, so importing this
  * module during SSR is inert.
  */
-import { describeError, redact, redactProse } from "../../runtime";
+import { describeError } from "../../runtime";
 import type { RedactOptions } from "../../runtime";
-import { startAgentReporter } from "./report";
+import { readDiagnosticsRoster, redactForExport } from "@nejcm/dev-toolbar/kit";
+import { startAgentReporter, unserialisableResult } from "./report";
 import type { AgentReportOptions } from "./report";
 import { AGENT_MARKER, AGENT_PROTOCOL_VERSION } from "./types";
 import type {
@@ -233,32 +234,20 @@ export function createAgentHandle(
   /**
    * Redact again on the way out; extensions must also redact at the source,
    * this is defense in depth (belongs here since core may not import
-   * `/runtime`). `redact()` truncates at `maxDepth` 8 from depth 0, so
-   * surviving levels vary by surface: **5** here (`data` at depth 2), **4**
-   * in `runCommand("diagnostics.capture").result` (a second pass three
-   * levels down), **7** in bug-report JSON (each contribution redacted once,
-   * at its own root). A deeply nested value can be intact in a ticket but
-   * truncated here — fix at the source: flatten it, or raise `maxDepth`. All
-   * three numbers are pinned by `__tests__/phase2.test.tsx`.
+   * `/runtime`). The kit redacts each contribution at its own root, so **7**
+   * levels survive here, as in the bug-report JSON, and **4** in
+   * `runCommand("diagnostics.capture").result` (a second pass three levels
+   * down). All three numbers are pinned by `__tests__/phase2.test.tsx`.
    */
   const readDiagnostics = (): readonly ExtensionDiagnostics[] => {
-    const entries = api.getDiagnostics().map((entry) =>
-      entry.status === "failed"
-        ? {
-            ...entry,
-            ...(entry.error === undefined
-              ? {}
-              : { error: redactProse(entry.error, redactOptions) }),
-            ...(entry.errorName === undefined
-              ? {}
-              : { errorName: redactProse(entry.errorName, redactOptions) }),
-          }
+    const roster = readDiagnosticsRoster(api, redactOptions);
+    if (!roster.gathered) return [];
+    // The published status has no "unserialisable", so the value is tagged in place, as redact() tags.
+    return roster.entries.map((entry) =>
+      entry.status === "unserialisable"
+        ? { id: entry.id, label: entry.label, status: "ok", data: "[unserialisable]" }
         : entry,
     );
-    const redacted = redact(entries, redactOptions);
-    // `redact()` returns a tag string for a cycle or an exhausted budget.
-    // Neither can happen for core's own array, but the cast would be a lie.
-    return Array.isArray(redacted) ? (redacted as ExtensionDiagnostics[]) : [];
   };
 
   const handle: AgentHandle = {
@@ -288,9 +277,11 @@ export function createAgentHandle(
       try {
         const outcome = await api.invokeCommand(id, input);
         if (!outcome.ok) return { ok: false, reason: "unknown-command" };
-        // Same boundary as diagnostics: redact, and omit an `undefined` result.
-        const result = redact(outcome.result, redactOptions);
-        return result === undefined ? { ok: true } : { ok: true, result };
+        // Same boundary as diagnostics: redact, prove it serialises, omit an `undefined` result.
+        const exported = redactForExport(outcome.result, redactOptions);
+        if (exported.status === "ok") return { ok: true, result: exported.value };
+        if (exported.status === "absent") return { ok: true };
+        return unserialisableResult(exported.error);
       } catch (error) {
         return threw(error, redactOptions);
       }
