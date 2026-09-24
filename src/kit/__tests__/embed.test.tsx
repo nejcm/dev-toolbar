@@ -122,6 +122,7 @@ describe("embed()", () => {
       priority: 3,
       hidden: false,
       keepMounted: true,
+      closeButton: false,
     });
     // Against the constant, not a literal: the kit cannot value-import core, so
     // this equality is what fails when core bumps and the helper does not.
@@ -134,6 +135,7 @@ describe("embed()", () => {
       priority: 3,
       hidden: false,
       keepMounted: true,
+      closeButton: false,
     });
     expect(typeof extension.panel).toBe("function");
     // No `value`, no `compact` option: no compact slot — absent, not `undefined`.
@@ -142,7 +144,16 @@ describe("embed()", () => {
     const bare = embed({ id: "bare", label: "Bare", render: () => null });
     expect("hidden" in bare).toBe(false);
     expect(bare.keepMounted).toBe(false);
+    expect(bare.closeButton).toBe(true);
     expect(bare.align).toBe("start");
+  });
+
+  it("passes its close button opt-out to the shell", () => {
+    const { toolbar } = mount(
+      embed({ id: "vendor", label: "Vendor", closeButton: false, render: () => null }),
+    );
+    toolbar.openPanel("vendor");
+    expect(document.querySelector('[data-dtb-part="panel-close"]')).toBeNull();
   });
 
   it("without a value it has no compact slot: core's trigger, no kit chip, no kit sheet", () => {

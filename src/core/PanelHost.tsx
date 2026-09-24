@@ -1,5 +1,6 @@
 // oxlint-disable react/refs -- `openedRef` is render-time bookkeeping, read and
 // updated during render on purpose; see `opened` below.
+// oxlint-disable jsx-a11y/no-noninteractive-element-interactions -- Panel Escape runs after extension controls handle the key.
 import { useEffect, useRef, useState } from "react";
 import type {
   CSSProperties,
@@ -17,6 +18,7 @@ import type {
 import { cx } from "./context";
 import { ExtensionBoundary } from "./ExtensionBoundary";
 import { Slot } from "./Bar";
+import { ITEM_SELECTOR } from "./measurer";
 import { MAX_PANEL_HEIGHT, MIN_PANEL_HEIGHT, clampPanelHeight } from "./store";
 
 export interface PanelHostProps {
@@ -145,6 +147,22 @@ export function PanelHost({
     }
   };
 
+  const closeAndFocus = (panel: HTMLElement, id: string) => {
+    const root = panel.closest<HTMLElement>("[data-dev-toolbar]");
+    const item = [...(root?.querySelectorAll<HTMLElement>(ITEM_SELECTOR) ?? [])].find(
+      (node) => node.dataset["dtbExtId"] === id,
+    );
+    const trigger = item?.querySelector<HTMLElement>('[data-dtb-part="trigger"]');
+    const target =
+      (trigger?.tabIndex !== undefined && trigger.tabIndex >= 0 && !trigger.matches(":disabled")
+        ? trigger
+        : item?.querySelector<HTMLElement>(
+            'button:not([disabled]), [href], [tabindex]:not([tabindex="-1"])',
+          )) ?? root?.querySelector<HTMLElement>('[data-dtb-part="overflow-button"]');
+    closePanel(id);
+    target?.focus();
+  };
+
   return (
     <>
       {mounted.map((extension) => {
@@ -162,11 +180,24 @@ export function PanelHost({
             data-dtb-part="panel"
             data-dtb-ext-id={extension.id}
             data-dtb-active={isActive ? "true" : undefined}
+            data-dtb-close={extension.closeButton === false ? undefined : "true"}
             className={cx(classNames?.panel)}
             style={style}
             hidden={!isActive}
             role="region"
             aria-label={extension.label}
+            onKeyDown={(event) => {
+              if (
+                !isActive ||
+                event.key !== "Escape" ||
+                event.defaultPrevented ||
+                event.nativeEvent.isComposing
+              )
+                return;
+              event.preventDefault();
+              event.stopPropagation();
+              closeAndFocus(event.currentTarget, extension.id);
+            }}
           >
             <div
               data-dtb-part="panel-resizer"
@@ -181,6 +212,24 @@ export function PanelHost({
               onPointerDown={startResize}
               onKeyDown={onResizerKeyDown}
             />
+            {extension.closeButton === false ? null : (
+              <button
+                type="button"
+                data-dtb-part="panel-close"
+                className={cx(classNames?.panelClose)}
+                aria-label={`Close ${extension.label} panel`}
+                onClick={(event) => closeAndFocus(event.currentTarget.parentElement!, extension.id)}
+              >
+                <svg
+                  data-dtb-part="panel-close-icon"
+                  aria-hidden="true"
+                  viewBox="0 0 16 16"
+                  fill="none"
+                >
+                  <path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" strokeWidth="1.5" />
+                </svg>
+              </button>
+            )}
             <div data-dtb-part="panel-body">
               <ExtensionBoundary
                 extensionId={extension.id}

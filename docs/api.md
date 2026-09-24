@@ -34,6 +34,16 @@ prop later is ignored; remount the toolbar (`key={instanceId}`) to move it.
 inline (<code v-pre>classNames={{ bar: "my-bar" }}</code>) is fine — it does not defeat the
 memoisation of the context value or of the overlay host.
 
+The map accepts `root`, `bar`, `region`, `item`, `overflowButton`, `overflowMenu`,
+`overflowMenuItem`, `overlay`, `panel`, `panelClose`, `panelResizer`, and `errorChip`.
+`panelClose` styles the core-owned button in the open panel.
+
+The panel close button and Escape inside the active panel close it and return focus to
+that extension's bar trigger, or to the `⋮` button if its item has collapsed. Escape
+outside the panel does nothing. A panel child can call `preventDefault()` on Escape to
+keep the panel open; IME composition also leaves it open. Clicking the bar chip still
+toggles it as before.
+
 `visible` and `position` are controlled values. Their matching callbacks receive
 requests from the toggle shortcut or context setters; those setters do not update
 the store or persistence while the field is controlled. Removing either prop returns

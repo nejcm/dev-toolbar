@@ -505,6 +505,7 @@ export const CORE_CSS = String.raw`/**
   }
 
   [data-dev-toolbar] [data-dtb-part="panel"] {
+    position: relative;
     display: flex;
     flex-direction: column;
     flex: 0 0 auto;
@@ -535,6 +536,65 @@ export const CORE_CSS = String.raw`/**
        cancels the inline padding on itself. */
     padding: var(--dtb-panel-padding-y) var(--dtb-panel-padding-x);
     overflow: auto;
+  }
+
+  /* The close button sits in the panel's top inline-end corner, just clear of
+     the resizer strip, and floats over the panel, so only the top row makes
+     room for it: the first child of the extension's root, usually its toolbar.
+     --dtb-panel-close-reserve is the distance from the panel's inline-end edge
+     that row keeps clear. An extension whose top row sits deeper pads it with
+     the variable itself. An embedded tool's subtree is never reached into. */
+  [data-dev-toolbar] [data-dtb-part="panel"][data-dtb-close="true"] {
+    --dtb-panel-close-inset: var(--dtb-space-1);
+    --dtb-panel-close-reserve: calc(
+      var(--dtb-panel-close-inset) + var(--dtb-control-height) + var(--dtb-space-2)
+    );
+  }
+
+  [data-dev-toolbar] [data-dtb-part="panel"][data-dtb-close="true"] [data-dtb-part="panel-body"] > * > :first-child:where(:not([data-dtb-embed] *)) {
+    padding-inline-end: max(0px, calc(var(--dtb-panel-close-reserve) - var(--dtb-panel-padding-x)));
+  }
+
+  /* A bled row reaches the panel edge, so it pads by the whole reserve. */
+  [data-dev-toolbar] [data-dtb-part="panel"][data-dtb-close="true"] [data-dtb-part="panel-body"] > * > [data-dtb-bleed]:first-child:where(:not([data-dtb-embed] *)) {
+    padding-inline-end: var(--dtb-panel-close-reserve);
+  }
+
+  [data-dev-toolbar] [data-dtb-part="panel-close"] {
+    position: absolute;
+    z-index: 1;
+    inset-block-start: calc(5px + var(--dtb-panel-close-inset));
+    inset-inline-end: var(--dtb-panel-close-inset);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    inline-size: var(--dtb-control-height);
+    block-size: var(--dtb-control-height);
+    border: 0;
+    border-radius: var(--dtb-radius);
+    background: var(--dtb-panel-bg);
+    color: var(--dtb-muted);
+    cursor: pointer;
+  }
+
+  /* At the top the resizer strip is at the panel's bottom edge instead. */
+  [data-dev-toolbar][data-dtb-position="top"] [data-dtb-part="panel-close"] {
+    inset-block-start: var(--dtb-panel-close-inset);
+  }
+
+  [data-dev-toolbar] [data-dtb-part="panel-close-icon"] {
+    inline-size: calc(var(--dtb-control-height) - var(--dtb-space-2));
+    block-size: calc(var(--dtb-control-height) - var(--dtb-space-2));
+  }
+
+  [data-dev-toolbar] [data-dtb-part="panel-close"]:hover {
+    background: var(--dtb-item-hover-bg);
+    color: var(--dtb-fg);
+  }
+
+  [data-dev-toolbar] [data-dtb-part="panel-close"]:focus-visible {
+    outline: 2px solid var(--dtb-accent);
+    outline-offset: -1px;
   }
 
   [data-dev-toolbar] [data-dtb-part="panel-resizer"] {

@@ -37,6 +37,7 @@ export const tanstackQuery = embed({
   order: 45,
   priority: 65,
   keepMounted: true,
+  closeButton: false,
   render: ({ close }) => (
     <ReactQueryDevtoolsPanel
       client={queryClient}

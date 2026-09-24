@@ -32,6 +32,20 @@ test("opens one panel at a time and persists the active one", async ({ toolbar, 
   expect(s.shell.bar.filter((b) => b.panelOpen).map((b) => b.id)).toEqual(["environment"]);
 });
 
+test("closes a panel with its button and with Escape", async ({ toolbar, page }) => {
+  await page.getByRole("button", { name: "Flags" }).click();
+  await expect.poll(() => toolbar.read().then((s) => s.shell.activePanel)).toBe("flags");
+
+  await page.getByRole("button", { name: "Close Flags panel" }).click();
+  await expect.poll(() => toolbar.read().then((s) => s.shell.activePanel)).toBeNull();
+
+  await page.getByRole("button", { name: "Flags" }).click();
+  await expect.poll(() => toolbar.read().then((s) => s.shell.activePanel)).toBe("flags");
+  await page.getByRole("button", { name: "Close Flags panel" }).focus();
+  await page.keyboard.press("Escape");
+  await expect.poll(() => toolbar.read().then((s) => s.shell.activePanel)).toBeNull();
+});
+
 test("the height variable and the inset follow the panel", async ({ toolbar, page }) => {
   const before = await toolbar.read();
   expect(before.shell.heightVariable.name).toBe("--dev-toolbar-height-playground");

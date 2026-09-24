@@ -52,6 +52,8 @@ export interface EmbedOptions {
    * tool that loses state or re-fetches on every mount. Default `false`.
    */
   keepMounted?: boolean;
+  /** Show core's close button. Default `true`; set `false` if the tool has its own. */
+  closeButton?: boolean;
   /**
    * The frame's `min-height` in pixels. Default `240`. Without it, a tool that
    * sizes itself from an auto-height container collapses to nothing.
@@ -148,6 +150,7 @@ export function embed(options: EmbedOptions): DevToolbarExtension {
     value,
     compact,
     keepMounted = false,
+    closeButton = true,
     minHeight = DEFAULT_MIN_HEIGHT,
     align = "start",
     order = 0,
@@ -169,6 +172,7 @@ export function embed(options: EmbedOptions): DevToolbarExtension {
     order,
     priority,
     keepMounted,
+    closeButton,
     ...(hidden === undefined ? {} : { hidden }),
 
     // Absent, not `undefined`: core renders its own trigger for an extension

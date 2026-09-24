@@ -18,6 +18,7 @@ import { runCommand } from "../commands";
 import { isApplePlatform } from "../shortcut";
 import { createMemoryStorage, STORAGE_PREFIX } from "../storage";
 import { resetMountedInstances } from "../useHeightVariables";
+import { renderWithToolbar } from "@nejcm/dev-toolbar/testing";
 
 const panelExtension = (
   id: string,
@@ -144,6 +145,134 @@ describe("DevToolbar rendering", () => {
 });
 
 describe("panels", () => {
+  it("renders a named close button, closes the panel, and returns focus to its bar trigger", () => {
+    render(
+      <DevToolbar
+        instanceId="close"
+        extensions={[panelExtension("a", { compact: undefined })]}
+        classNames={{ panelClose: "custom-close" }}
+      >
+        <div />
+      </DevToolbar>,
+    );
+    const trigger = screen.getByRole("button", { name: "a" });
+    fireEvent.click(trigger);
+
+    const close = screen.getByRole("button", { name: "Close a panel" });
+    expect(close.getAttribute("data-dtb-part")).toBe("panel-close");
+    expect(close.classList.contains("custom-close")).toBe(true);
+    expect(close.querySelector("svg")?.getAttribute("aria-hidden")).toBe("true");
+    fireEvent.click(close);
+
+    expect(activePanelIds()).toEqual([]);
+    expect(document.activeElement).toBe(trigger);
+  });
+
+  it("omits an opted-out button but still closes on Escape inside the panel", () => {
+    render(
+      <DevToolbar
+        instanceId="close"
+        extensions={[panelExtension("a", { closeButton: false, compact: undefined })]}
+      >
+        <div />
+      </DevToolbar>,
+    );
+    const trigger = screen.getByRole("button", { name: "a" });
+    fireEvent.click(trigger);
+    expect(document.querySelector('[data-dtb-part="panel-close"]')).toBeNull();
+
+    fireEvent.keyDown(screen.getByTestId("panel-a"), { key: "Escape" });
+    expect(activePanelIds()).toEqual([]);
+    expect(document.activeElement).toBe(trigger);
+  });
+
+  it("honors a panel child's prevented Escape and ignores IME and outside Escape", () => {
+    render(
+      <DevToolbar
+        instanceId="close"
+        extensions={[
+          panelExtension("a", {
+            panel: () => (
+              <input aria-label="Search" onKeyDown={(event) => event.preventDefault()} />
+            ),
+          }),
+        ]}
+      >
+        <div />
+      </DevToolbar>,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "a" }));
+
+    fireEvent.keyDown(screen.getByRole("textbox", { name: "Search" }), { key: "Escape" });
+    expect(activePanelIds()).toEqual(["a"]);
+    fireEvent.keyDown(document.querySelector('[data-dtb-part="panel"]')!, {
+      key: "Escape",
+      isComposing: true,
+    });
+    expect(activePanelIds()).toEqual(["a"]);
+    fireEvent.keyDown(document.body, { key: "Escape" });
+    expect(activePanelIds()).toEqual(["a"]);
+  });
+
+  it("returns focus to overflow when the panel's chip is collapsed", () => {
+    const { toolbar } = renderWithToolbar(null, {
+      instanceId: "close-overflow",
+      extensions: [
+        panelExtension("a", { compact: undefined }),
+        panelExtension("b", { compact: undefined }),
+      ],
+      layout: { barWidth: 100, itemWidth: 80 },
+    });
+    toolbar.openPanel("a");
+    expect(toolbar.isOverflowed("a")).toBe(true);
+
+    fireEvent.click(screen.getByRole("button", { name: "Close a panel" }));
+    expect(toolbar.activePanelId()).toBeNull();
+    expect(document.activeElement).toBe(toolbar.overflowButton());
+  });
+
+  it("returns focus to a custom compact button without a trigger marker", () => {
+    render(
+      <DevToolbar instanceId="custom-close" extensions={[panelExtension("a")]}>
+        <div />
+      </DevToolbar>,
+    );
+    const trigger = screen.getByRole("button", { name: "a" });
+    fireEvent.click(trigger);
+    fireEvent.click(screen.getByRole("button", { name: "Close a panel" }));
+    expect(document.activeElement).toBe(trigger);
+  });
+
+  it("closes without a focus target when the extension renders no bar control", () => {
+    const { toolbar } = renderWithToolbar(null, {
+      instanceId: "no-trigger",
+      extensions: [panelExtension("a", { compact: () => <span>static</span> })],
+    });
+    toolbar.openPanel("a");
+    fireEvent.click(screen.getByRole("button", { name: "Close a panel" }));
+    expect(toolbar.activePanelId()).toBeNull();
+  });
+
+  it("keeps an opted-in mounted panel hidden after either close action", () => {
+    render(
+      <DevToolbar
+        instanceId="sticky-close"
+        extensions={[panelExtension("a", { keepMounted: true, compact: undefined })]}
+      >
+        <div />
+      </DevToolbar>,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "a" }));
+    fireEvent.click(screen.getByRole("button", { name: "Close a panel" }));
+    expect(mountedPanelIds()).toEqual(["a"]);
+    expect(activePanelIds()).toEqual([]);
+
+    fireEvent.click(screen.getByRole("button", { name: "a" }));
+    fireEvent.keyDown(screen.getByTestId("panel-a"), { key: "Escape" });
+    expect(mountedPanelIds()).toEqual(["a"]);
+    expect(activePanelIds()).toEqual([]);
+  });
+
   it("keeps a single panel open at a time", () => {
     render(
       <DevToolbar instanceId="t" extensions={[panelExtension("a"), panelExtension("b")]}>
