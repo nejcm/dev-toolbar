@@ -13,6 +13,7 @@ export interface Measurer {
   barWidth(bar: HTMLElement): number;
   itemWidth(host: HTMLElement): number;
   buttonWidth(button: HTMLElement | null): number;
+  chromeWidth(button: HTMLElement | null, gap: number): number;
   regionGap(bar: HTMLElement): number | undefined;
   padding(bar: HTMLElement): number | undefined;
   height(root: HTMLElement): number;
@@ -28,6 +29,7 @@ export const domMeasurer: Measurer = {
   barWidth: (bar) => bar.clientWidth,
   itemWidth: (host) => host.offsetWidth,
   buttonWidth: (button) => button?.offsetWidth ?? 0,
+  chromeWidth: (button, gap) => (button ? button.offsetWidth + gap : 0),
   regionGap(bar) {
     if (typeof getComputedStyle !== "function") return undefined;
     const region = bar.querySelector<HTMLElement>(REGION_SELECTOR);

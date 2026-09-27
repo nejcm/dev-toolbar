@@ -119,6 +119,8 @@ if (!built && mustBeBuilt) {
       }
       const types = readFileSync(`${root}dist/testing.d.ts`, "utf8");
       expect(types).toContain("renderWithToolbar");
+      expect(types).toContain("settingsButton(): HTMLButtonElement | null");
+      expect(types).toContain("openSettings(): void");
       expect(types).toContain("MockClock");
     });
 

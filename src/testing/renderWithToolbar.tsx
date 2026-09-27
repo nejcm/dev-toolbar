@@ -85,6 +85,7 @@ export interface ToolbarHandle {
   errorChip(extensionId?: string): HTMLElement | null;
   overflowButton(): HTMLButtonElement | null;
   overflowMenu(): HTMLElement | null;
+  settingsButton(): HTMLButtonElement | null;
   /**
    * Ids currently collapsed into the `⋮` menu.
    *
@@ -98,6 +99,8 @@ export interface ToolbarHandle {
   barIds(): string[];
   /** Clicks the `⋮` button. Throws when there is nothing collapsed. */
   openOverflow(): void;
+  /** Opens the settings menu. Throws when viewer settings are disabled. */
+  openSettings(): void;
   /**
    * The height this instance publishes, e.g. `"30px"` — read from
    * `--dev-toolbar-height-<instanceId>`, falling back to the unsuffixed
@@ -200,6 +203,9 @@ export function renderWithToolbar(
     ...toolbarProps,
     storage: "storage" in toolbarProps ? toolbarProps.storage : createMemoryStorage(),
   };
+  const extensionSettingsEnabled =
+    props.settings === undefined ||
+    (props.settings !== false && props.settings.extensions === true);
 
   let latest: DevToolbarContextValue | null = null;
   const captured = (value: DevToolbarContextValue) => {
@@ -285,13 +291,19 @@ export function renderWithToolbar(
       ),
     overflowButton: () => query<HTMLButtonElement>('[data-dtb-part="overflow-button"]'),
     overflowMenu: () => part("overflow-menu"),
+    settingsButton: () => query<HTMLButtonElement>('[data-dtb-part="settings-button"]'),
     overflowedIds() {
       // Not read from the menu: its items only exist while open. Everything
       // visible that isn't in the bar has collapsed.
       if (!root()) return [];
       const inBar = new Set(toolbar.barIds());
       return context()
-        .extensions.filter((extension) => extension.hidden !== true)
+        .extensions.filter(
+          (extension) =>
+            extension.hidden !== true &&
+            (!extensionSettingsEnabled ||
+              context().store.getSnapshot().extensionSettings[extension.id]?.shown !== false),
+        )
         .map((extension) => extension.id)
         .filter((id) => !inBar.has(id));
     },
@@ -302,6 +314,15 @@ export function renderWithToolbar(
       if (!button) {
         throw new Error(
           "[dev-toolbar/testing] nothing has collapsed — there is no ⋮ button to open.",
+        );
+      }
+      run(() => button.click());
+    },
+    openSettings() {
+      const button = toolbar.settingsButton();
+      if (!button) {
+        throw new Error(
+          "[dev-toolbar/testing] viewer settings are disabled; there is no settings button to open.",
         );
       }
       run(() => button.click());

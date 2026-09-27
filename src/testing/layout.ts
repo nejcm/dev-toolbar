@@ -23,6 +23,8 @@ export interface InstallToolbarLayoutOptions {
   itemWidths?: Record<string, number>;
   /** Width reported for the `⋮` button. Default `28`. */
   overflowButtonWidth?: number;
+  /** Width reported for the settings cog. Default `28`. */
+  settingsButtonWidth?: number;
   /** Padding on each horizontal side of toolbar parts. Omitted leaves computed styles unchanged. */
   paddingX?: number;
   /** Gap between toolbar items and regions. Omitted leaves computed styles unchanged. */
@@ -74,6 +76,7 @@ interface Install {
   rootHeight: number;
   defaultItemWidth: number;
   overflowButtonWidth: number;
+  settingsButtonWidth: number;
   itemWidths: Map<string, number>;
   observers: Set<Observer>;
   observerHandles: ToolbarLayoutObserver[];
@@ -177,6 +180,7 @@ const measurer: Measurer = {
     return configuredItemWidth(host);
   },
   buttonWidth: (button) => (button ? (current()?.overflowButtonWidth ?? 0) : 0),
+  chromeWidth: (button, gap) => (button ? (current()?.settingsButtonWidth ?? 0) + gap : 0),
   regionGap(bar) {
     const region = bar.querySelector<HTMLElement>('[data-dtb-part="region"]');
     if (!region) return undefined;
@@ -246,6 +250,9 @@ const rectOf = (target: Element): DOMRectReadOnly => {
   }
   if (part === "bar") return new DOMRectReadOnly(0, 0, measurer.barWidth(host), 0);
   if (part === "overflow-button") return new DOMRectReadOnly(0, 0, measurer.buttonWidth(host), 0);
+  if (part === "settings-button") {
+    return new DOMRectReadOnly(0, 0, measurer.chromeWidth(host, 0), 0);
+  }
   if (part === "item") return new DOMRectReadOnly(0, 0, configuredItemWidth(host), 0);
   return new DOMRectReadOnly(0, 0, 0, 0);
 };
@@ -344,6 +351,7 @@ export function installToolbarLayout(
     rootHeight: options.rootHeight ?? 30,
     defaultItemWidth: options.itemWidth ?? 80,
     overflowButtonWidth: options.overflowButtonWidth ?? 28,
+    settingsButtonWidth: options.settingsButtonWidth ?? 28,
     itemWidths: new Map(Object.entries(options.itemWidths ?? {})),
     observers: new Set<Observer>(),
     observerHandles: [],

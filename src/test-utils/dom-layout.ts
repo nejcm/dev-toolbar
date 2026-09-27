@@ -21,6 +21,8 @@ export interface DomLayoutOptions {
   itemWidths?: Record<string, number>;
   /** Width reported for `[data-dtb-part="overflow-button"]`. Default `28`. */
   overflowButtonWidth?: number;
+  /** Width reported for `[data-dtb-part="settings-button"]`. Default `28`. */
+  settingsButtonWidth?: number;
   /** Padding reported on each horizontal side. Omitted leaves computed styles alone. */
   paddingX?: number;
   /** Gap reported between items. Omitted leaves computed styles alone. */
@@ -43,6 +45,7 @@ interface State {
   rootHeight: number;
   defaultItemWidth: number;
   overflowButtonWidth: number;
+  settingsButtonWidth: number;
   itemWidths: Map<string, number>;
   paddingX: number | undefined;
   gap: number | undefined;
@@ -55,6 +58,7 @@ const widthOf = (element: Element): number => {
   const part = element.getAttribute("data-dtb-part");
   if (part === "bar" || part === "root") return live.barWidth;
   if (part === "overflow-button") return live.overflowButtonWidth;
+  if (part === "settings-button") return live.settingsButtonWidth;
   const id = element.getAttribute("data-dtb-ext-id");
   if (part === "item" && id) return live.itemWidths.get(id) ?? live.defaultItemWidth;
   return 0;
@@ -72,6 +76,7 @@ export function patchDomLayout(options: DomLayoutOptions = {}): DomLayoutHandle 
     rootHeight: options.rootHeight ?? 30,
     defaultItemWidth: options.itemWidth ?? 80,
     overflowButtonWidth: options.overflowButtonWidth ?? 28,
+    settingsButtonWidth: options.settingsButtonWidth ?? 28,
     itemWidths: new Map(Object.entries(options.itemWidths ?? {})),
     paddingX: options.paddingX,
     gap: options.gap,

@@ -158,7 +158,9 @@ export function PanelHost({
         ? trigger
         : item?.querySelector<HTMLElement>(
             'button:not([disabled]), [href], [tabindex]:not([tabindex="-1"])',
-          )) ?? root?.querySelector<HTMLElement>('[data-dtb-part="overflow-button"]');
+          )) ??
+      root?.querySelector<HTMLElement>('[data-dtb-part="overflow-button"]') ??
+      root?.querySelector<HTMLElement>('[data-dtb-part="settings-button"]');
     closePanel(id);
     target?.focus();
   };

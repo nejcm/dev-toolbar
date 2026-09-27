@@ -59,6 +59,7 @@ describe("the published layout fake's measurer", () => {
       itemWidth: 60,
       itemWidths: { a: 90 },
       overflowButtonWidth: 32,
+      settingsButtonWidth: 34,
       paddingX: 8,
       gap: 4,
       rootHeight: 42,
@@ -71,6 +72,7 @@ describe("the published layout fake's measurer", () => {
     const a = part("item", "a");
     const b = part("item", "b");
     const button = part("overflow-button");
+    const settingsButton = part("settings-button");
     const root = part("root");
     // The install doesn't patch DOM reads, so the DOM stays at jsdom's zeros
     // while the measurer reports the configured options.
@@ -87,6 +89,7 @@ describe("the published layout fake's measurer", () => {
     };
     const check = () => {
       expect(measurer.buttonWidth(null)).toBe(0);
+      expect(measurer.chromeWidth(null, 4)).toBe(0);
       untouched();
     };
     check();
@@ -94,6 +97,7 @@ describe("the published layout fake's measurer", () => {
     expect(measurer.itemWidth(a)).toBe(90);
     expect(measurer.itemWidth(b)).toBe(60);
     expect(measurer.buttonWidth(button)).toBe(32);
+    expect(measurer.chromeWidth(settingsButton, 4)).toBe(38);
     expect(measurer.padding(bar)).toBe(16);
     expect(measurer.regionGap(bar)).toBe(4);
     expect(measurer.height(root)).toBe(42);
@@ -291,7 +295,7 @@ describe("the published layout fake's measurer", () => {
     ).toEqual([["bar"], ["item", "item", "item", "region", "region"], ["root"]]);
     const [bar, items, height] = observers;
     expect(visibleIds()).toEqual(["a", "b", "c"]);
-    layout.resize(100, false);
+    layout.resize(120, false);
     // Isolated: feeds `--dev-toolbar-height` and nothing the collapse machine reads.
     act(() => height!.flush());
     expect(visibleIds()).toEqual(["a", "b", "c"]);

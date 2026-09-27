@@ -87,7 +87,8 @@ export interface PublicToolbarStore {
   register(extension: DevToolbarExtension): () => void;
 }
 
-export interface ToolbarStore extends PublicToolbarStore {
+export interface ToolbarStore extends Omit<PublicToolbarStore, "setPosition"> {
+  setPosition(position: ToolbarPosition | undefined): void;
   setDensity(density: ToolbarDensity | undefined): void;
   setColorScheme(colorScheme: ToolbarColorScheme | undefined): void;
   setExtensionSetting(id: string, patch: ExtensionSettingPatch): void;
@@ -218,10 +219,12 @@ export function createToolbarStore(options: ToolbarStoreOptions): ToolbarStore {
 
   const toggleVisible = () => setVisible(!state.visible);
 
-  const setPosition = (position: ToolbarPosition) => {
-    if (position === state.position) return;
-    writeJson(storage, STORAGE_KEYS.position, position);
-    set({ position });
+  const setPosition = (position: ToolbarPosition | undefined) => {
+    if (position === undefined) removeItem(storage, STORAGE_KEYS.position);
+    const next = position ?? defaults.position;
+    if (next === state.position) return;
+    if (position !== undefined) writeJson(storage, STORAGE_KEYS.position, position);
+    set({ position: next });
   };
 
   const setDensity = (density: ToolbarDensity | undefined) => {

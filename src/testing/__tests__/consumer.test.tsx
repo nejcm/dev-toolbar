@@ -134,7 +134,7 @@ describe("@nejcm/dev-toolbar/testing", () => {
     expect(toolbar.barIds()).toEqual(["high", "mid", "low"]);
     expect(toolbar.overflowButton()).toBeNull();
 
-    toolbar.resize(150);
+    toolbar.resize(192);
     expect(toolbar.barIds()).toEqual(["high"]);
 
     expect(toolbar.overflowedIds().sort()).toEqual(["low", "mid"]);
@@ -153,12 +153,12 @@ describe("@nejcm/dev-toolbar/testing", () => {
         makeExtension({ id: "mid", label: "mid", priority: 50 }),
         makeExtension({ id: "low", label: "low", priority: 1 }),
       ],
-      layout: { barWidth: 220, itemWidth: 60, paddingX: 12, gap: 8 },
+      layout: { barWidth: 224, itemWidth: 60, paddingX: 12, gap: 8 },
     });
 
     expect(toolbar.barIds()).toEqual(["high", "mid"]);
     expect(toolbar.overflowedIds()).toEqual(["low"]);
-    toolbar.resize(228);
+    toolbar.resize(256);
     expect(toolbar.barIds()).toEqual(["high", "mid", "low"]);
     expect(toolbar.overflowButton()).toBeNull();
   });
@@ -167,7 +167,7 @@ describe("@nejcm/dev-toolbar/testing", () => {
     { gap: undefined, collapsed: ["low"] },
     { gap: 0, collapsed: [] },
   ])("preserves the default collapse threshold with gap=$gap", ({ gap, collapsed }) => {
-    const geometry = { barWidth: 160, itemWidth: 80 };
+    const geometry = { barWidth: 188, itemWidth: 80 };
     const { toolbar } = mountToolbar(null, {
       extensions: [
         makeExtension({ id: "high", priority: 100 }),
@@ -179,7 +179,7 @@ describe("@nejcm/dev-toolbar/testing", () => {
   });
 
   it("drives item-only growth through cycle detection and reopens it with a bar resize", () => {
-    const layout = installToolbarLayout({ barWidth: 1000, itemWidth: 60, paddingX: 0, gap: 2 });
+    const layout = installToolbarLayout({ barWidth: 1052, itemWidth: 60, paddingX: 0, gap: 2 });
     const { toolbar } = mountToolbar(null, {
       extensions: [
         makeExtension({ id: "a", priority: 3 }),
@@ -208,7 +208,7 @@ describe("@nejcm/dev-toolbar/testing", () => {
     expect(flip(950)).toEqual(["a"]);
 
     layout.setItemWidth("a", 900, false);
-    layout.resize(999, false);
+    layout.resize(1051, false);
     act(() => bar.flush());
     expect(toolbar.barIds()).toEqual(["a", "c"]);
   });
@@ -238,7 +238,7 @@ describe("@nejcm/dev-toolbar/testing", () => {
     expect(items.getTargets()).toHaveLength(5);
     expect(bar.getTargets()).toEqual([toolbar.bar()]);
 
-    layout.resize(100, false);
+    layout.resize(120, false);
     act(() => bar.flush());
     expect(observed()).toEqual(new Set(hosts()));
     expect(items.getTargets()).toHaveLength(3);

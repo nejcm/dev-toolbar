@@ -29,6 +29,7 @@ import { DEFAULT_INSTANCE_ID, useHeightVariables } from "./useHeightVariables";
 import { useToolbarShortcuts } from "./useToolbarShortcuts";
 import { ViewerSettingsContext } from "./viewerSettingsContext";
 import type { ViewerSettingsContextValue } from "./viewerSettingsContext";
+import { SettingsMenu } from "./SettingsMenu";
 export { DEFAULT_INSTANCE_ID, HEIGHT_VARIABLE, instanceHeightVariable } from "./useHeightVariables";
 
 interface DevToolbarSettings {
@@ -235,8 +236,19 @@ function DevToolbarRoot({
   const extensionSettings = settings.extensions
     ? state.extensionSettings
     : EMPTY_EXTENSION_SETTINGS;
+  const settingsPosition = settings.position;
+  const settingsDensity = settings.density;
+  const settingsColorScheme = settings.colorScheme;
+  const settingsExtensions = settings.extensions;
   const settingsEnabled =
-    settings.position || settings.density || settings.colorScheme || settings.extensions;
+    settingsPosition || settingsDensity || settingsColorScheme || settingsExtensions;
+  const setViewerPosition = useCallback(
+    (position: ToolbarPosition | undefined) => {
+      if (position === undefined) store.setPosition(undefined);
+      else setPosition(position);
+    },
+    [setPosition, store],
+  );
 
   // Client-only mount: the bar is never part of server HTML, so nothing to
   // hydrate or mismatch. Whether we've mounted can't be derived during
@@ -349,15 +361,44 @@ function DevToolbarRoot({
   const viewerSettingsValue = useMemo<ViewerSettingsContextValue>(
     () => ({
       enabled: settingsEnabled,
-      sections: settings,
+      sections: {
+        position: settingsPosition,
+        density: settingsDensity,
+        colorScheme: settingsColorScheme,
+        extensions: settingsExtensions,
+      },
       extensionSettings,
+      position: effectivePosition,
+      density: effectiveDensity,
       colorScheme: effectiveColorScheme,
+      positionControlled: positionProp !== undefined,
+      options: {
+        position: positionProp ?? store.getServerSnapshot().position,
+        density,
+        colorScheme,
+      },
+      setPosition: setViewerPosition,
       setDensity: store.setDensity,
       setColorScheme: store.setColorScheme,
       setExtensionSetting: store.setExtensionSetting,
       resetSettings: store.resetSettings,
     }),
-    [settingsEnabled, settings, extensionSettings, effectiveColorScheme, store],
+    [
+      settingsEnabled,
+      settingsPosition,
+      settingsDensity,
+      settingsColorScheme,
+      settingsExtensions,
+      extensionSettings,
+      effectivePosition,
+      effectiveDensity,
+      effectiveColorScheme,
+      positionProp,
+      density,
+      colorScheme,
+      setViewerPosition,
+      store,
+    ],
   );
 
   const target = container ?? (typeof document === "undefined" ? null : document.body);
@@ -381,6 +422,7 @@ function DevToolbarRoot({
               >
                 <Bar
                   extensions={extensions}
+                  extensionSettings={extensionSettings}
                   density={effectiveDensity}
                   activePanelId={state.activePanelId}
                   openPanel={store.openPanel}
@@ -388,6 +430,7 @@ function DevToolbarRoot({
                   togglePanel={store.togglePanel}
                   classNames={classNames}
                   styleNonce={styleNonce}
+                  settingsMenu={settingsEnabled ? <SettingsMenu /> : null}
                 />
                 <OverlayHost
                   extensions={extensions}

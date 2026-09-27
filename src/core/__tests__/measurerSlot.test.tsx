@@ -41,6 +41,7 @@ function fakeMeasurer(overrides: Partial<Measurer> = {}): Measurer {
     barWidth: () => 100,
     itemWidth: () => 60,
     buttonWidth: () => 0,
+    chromeWidth: () => 0,
     regionGap: () => 2,
     padding: () => 0,
     height: () => 42,
