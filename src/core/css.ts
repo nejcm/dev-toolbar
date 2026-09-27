@@ -406,6 +406,11 @@ export const CORE_CSS = String.raw`/**
     flex: 0 0 auto;
   }
 
+  [data-dev-toolbar] [data-dtb-part="overflow-button"],
+  [data-dev-toolbar] [data-dtb-part="settings-button"] {
+    font-size: calc(1em + 3px);
+  }
+
   [data-dev-toolbar] [data-dtb-part="trigger"]:hover,
   [data-dev-toolbar] [data-dtb-part="overflow-button"]:hover,
   [data-dev-toolbar] [data-dtb-part="settings-button"]:hover {
