@@ -97,6 +97,7 @@ export default defineConfig({
             link: "/adr/ADR-004-per-extension-bar-presentation",
           },
           { text: "ADR-005: Docs site", link: "/adr/ADR-005-docs-site-over-the-docs-tree" },
+          { text: "ADR-006: Viewer settings", link: "/adr/ADR-006-viewer-settings" },
         ],
       },
       {

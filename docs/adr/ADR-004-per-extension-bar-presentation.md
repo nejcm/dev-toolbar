@@ -1,7 +1,10 @@
 # ADR-004 — Per-extension bar presentation
 
 **Status:** Accepted. All nine extension factories ship the `presentation` option, the
-kit holds the vocabulary, and the playground proves it in a browser.
+kit holds the vocabulary, and the playground proves it in a browser. Superseded in part
+by [ADR-006](./ADR-006-viewer-settings.md): the Viewer's preset now travels through
+core as `CompactSlotProps.preset`, which lifts the "`src/core/` is not touched"
+constraint and the rejected "global `presentation` default" row for that one knob.
 
 ## Context
 

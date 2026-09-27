@@ -34,9 +34,16 @@ palette is open and what is typed in it; the theme tokens that have been edited;
 applied" without opening a panel or parsing a chip.
 
 `shell` is the chrome — `mounted`, `position`, `density`, `colorScheme`,
-`heightVariable`, `bar`, `overflow`, `activePanel`. It is the one thing the bridge
-reads off the DOM, because the shell is core's and core has no extension to publish it
-through `diagnostics()`.
+`heightVariable`, `bar`, `overflow`, `settings`, `activePanel`. It is the one thing the
+bridge reads off the DOM, because the shell is core's and core has no extension to
+publish it through `diagnostics()`.
+
+`settings` is an `AgentSettingsView`, `{ present, open }`: whether the viewer's `⚙`
+Settings button is rendered (`false` under `settings={false}`) and whether its menu is
+open. The values the menu changes are already elsewhere in `shell` — `position`,
+`density`, `colorScheme`, and `bar` / `overflow` for an item that is no longer shown in
+the bar. Which preset a control paints is not published. See
+[Viewer settings](../api.md#viewer-settings).
 
 ## It is a registry, not a singleton
 

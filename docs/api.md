@@ -13,6 +13,7 @@ type it publishes. Start at the [README](https://github.com/nejcm/dev-toolbar/bl
 | `storage` | `localStorage` | Adapter, or `null` to disable. **Mount-time only** |
 | `density` | `"compact"` | `"compact" \| "comfortable"` |
 | `colorScheme` | `"system"` | `"light" \| "dark" \| "system"` |
+| `settings` | every section on | `false` removes the viewer's Settings menu; an object allowlists sections. See [Viewer settings](#viewer-settings) |
 | `defaultVisible` / `defaultPosition` / `defaultPanelHeight` | — | Used only when nothing is persisted yet |
 | `visible` / `position` | — | Controlled values; provide `onVisibleChange` / `onPositionChange` for internal controls |
 | `onVisibleChange` / `onPositionChange` / `onPanelChange` | — | Called for uncontrolled changes and controlled internal setter requests |
@@ -35,7 +36,8 @@ inline (<code v-pre>classNames={{ bar: "my-bar" }}</code>) is fine — it does n
 memoisation of the context value or of the overlay host.
 
 The map accepts `root`, `bar`, `region`, `item`, `overflowButton`, `overflowMenu`,
-`overflowMenuItem`, `overlay`, `panel`, `panelClose`, `panelResizer`, and `errorChip`.
+`overflowMenuItem`, `settingsButton`, `settingsMenu`, `overlay`, `panel`, `panelClose`,
+`panelResizer`, and `errorChip`.
 `panelClose` styles the core-owned button in the open panel.
 
 The panel close button and Escape inside the active panel close it and return focus to
@@ -159,6 +161,57 @@ popup itself if there is none — and `Tab` walks the rest; `Escape` closes it a
 focus back to the button; a click outside closes it and leaves focus where the click
 put it.
 
+## Viewer settings
+
+A `⚙` button after the `⋮` opens the **Settings menu**, where the person looking at the
+bar changes it for their own browser: position, density and colour scheme, then per
+extension whether it is shown in the bar and, for an extension that declares
+`presets`, its presentation preset. Values persist through `storage` under the keys in
+[architecture.md](./architecture.md#3-state-storage-and-lifecycle); with
+`storage={null}` they last for the session. The decision record is
+[ADR-006](./adr/ADR-006-viewer-settings.md).
+
+```tsx
+<DevToolbar settings={false} />                                  // no menu, stored Settings ignored
+<DevToolbar settings={{ density: true, colorScheme: true }} />   // only those sections
+```
+
+`settings` takes `{ position?, density?, colorScheme?, extensions? }`, each a boolean.
+Omitted, every section is on. An object turns on only the sections set to `true`, so
+`settings={{}}` — or every section `false` — is the same as `settings={false}`. A
+section that is off shows no controls and ignores what is stored for it; with
+`position` off, an uncontrolled `setPosition()` is a no-op too, because the position is
+then the Consumer's.
+
+Precedence:
+
+- `density`, `colorScheme` and `defaultPosition` are **defaults**. A stored Setting
+  wins over them.
+- A controlled `position` always wins. The menu's position row calls
+  `onPositionChange`, as `setPosition` does, and writes nothing.
+- Choosing the prop's own value clears the stored Setting instead of storing a copy;
+  for a preset, **Extension default** is that choice. The menu cannot tell which preset
+  the factory set, so choosing that same preset stores it; only **Extension default**
+  clears.
+- **Reset toolbar settings** removes `position`, `density`, `colorScheme` and
+  `extensionSettings`. It leaves `visible`, the open panel, the panel height and every
+  extension's own storage alone. It is sticky at the bottom of the menu, so it stays in
+  view however long the extension list is.
+
+**Shown in bar** takes the item out of the bar and the `⋮` and nothing else: the
+extension keeps running, its commands stay available and it stays in the diagnostics
+roster. That is what separates it from `hidden`, which stops the extension. A row is
+named by the extension's `label`, with its `id` added — `Commands (cmds) shown in bar` —
+only when two present extensions share a label.
+
+An extension opts into the preset row with `presets`, and receives the choice as
+`CompactSlotProps.preset` — only when the stored value is in its list. The opt-in is
+two kit exports; the worked example is in [kit.md](./kit.md#viewer-presets).
+
+The Setting replaces the factory `preset` only; a consumer `render` callback still runs
+and receives the new `ctx.fallback`. The seven first-party extensions with presets
+declare all six; `/ext/agent` and `/ext/command-menu` declare none.
+
 ## Other exports
 
 `DevToolbar`, `DevToolbarInset`, `useDevToolbar` and `useToolbarCommands` are the
@@ -228,14 +281,14 @@ Every type the root entry exports. The slot props, `DevToolbarExtension`,
 | `CommandInvocation` / `InvokeCommandOptions` | What `invokeCommand` resolves, and what it takes. |
 | `ExtensionRuntimeApi` | What `start(api)` receives. |
 | `CompactSlotProps` / `PanelSlotProps` / `OverlaySlotProps` | What each slot renders with. |
-| `CompactPreset` | The compact-control presentation preset names. |
+| `CompactPreset` | The compact-control presentation preset names. The type of `DevToolbarExtension.presets` and `CompactSlotProps.preset`; kit re-exports it. |
 | `ExtensionDiagnostics` / `DiagnosticStatus` | One entry in the diagnostics roster, and its `"ok" \| "absent" \| "failed"` status. |
 | `ExtensionErrorInfo` | Metadata passed to `onExtensionError` for a failed slot. |
 | `ToolbarStorage` | The three-method storage adapter. |
 | `ToolbarAlign` / `ToolbarPosition` / `ToolbarDensity` / `ToolbarColorScheme` | `"start" \| "end"`, `"bottom" \| "top"`, `"compact" \| "comfortable"`, `"light" \| "dark" \| "system"`. |
 | `DevToolbarClassNames` | The per-part class map the `classNames` prop takes. |
 | `DevToolbarContextValue` | What `useDevToolbar()` returns. |
-| `ToolbarState` | The store snapshot: `visible`, `position`, `activePanelId`, `panelHeight`. Its `registered` field is marked `@internal` — it holds only the dynamic registrations, so it is not the extension list; use `useDevToolbar().extensions` for that. |
+| `ToolbarState` | The store snapshot: `visible`, `position`, `density`, `colorScheme`, `extensionSettings`, `activePanelId`, `panelHeight`. `density` and `colorScheme` are the stored Settings, `undefined` when none is stored — not the effective value; `extensionSettings` holds only non-defaults. Its `registered` field is marked `@internal` — it holds only the dynamic registrations, so it is not the extension list; use `useDevToolbar().extensions` for that. |
 
 
 ---

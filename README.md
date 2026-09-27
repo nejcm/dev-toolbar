@@ -204,11 +204,23 @@ The props most applications touch:
 | `shortcut` | `"Mod+Shift+."` | `null` disables it |
 | `density` | `"compact"` | `"compact" \| "comfortable"` |
 | `colorScheme` | `"system"` | `"light" \| "dark" \| "system"` |
+| `settings` | every section on | `false` removes the viewer's Settings menu; an object allowlists sections |
 | `instanceId` | `"default"` | Namespaces persisted preferences. Mount-time only |
 | `storage` | `localStorage` | Adapter, or `null` to persist nothing. Mount-time only |
 
 Every prop, the `⋮` overflow behaviour, the escape-hatch exports and every
 published type are in [docs/api.md](./docs/api.md).
+
+### Viewer settings
+
+The `⚙` at the end of the bar lets whoever is looking at it change it for their own
+browser, without a code change: position, density and colour scheme, whether each
+extension is shown in the bar, and each first-party chip's presentation preset. The
+choices persist per browser through `storage` (only for the session with
+`storage={null}`), a controlled `position` still wins, and **Reset toolbar settings**
+puts everything back to your props. Restrict it with
+`settings={{ density: true, colorScheme: true }}`, or turn it off with
+`settings={false}`. Details in [docs/api.md](./docs/api.md#viewer-settings).
 
 ## Styling
 

@@ -172,6 +172,8 @@ dev-only trees that ship nothing.
 - [src/ext/README.md](./src/ext/README.md) — the first-party extensions from the
   inside: what each owns, its files, and the conventions all nine share
 - [README.md](./README.md) — the consumer-facing user guide
+- [CONTEXT.md](./CONTEXT.md) — the glossary: Consumer, Viewer, Option, Setting and the
+  other terms the code and docs use with one meaning
 - [CONTRIBUTING.md](./CONTRIBUTING.md) — setup, the commit convention, the contract as
   it matters when changing the library
 - [docs/architecture.md](./docs/architecture.md) — what the shell guarantees, why the

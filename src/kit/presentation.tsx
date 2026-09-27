@@ -170,7 +170,7 @@ export function resolvePresentation<TView>(
   return { ...input, preset: input.preset ?? "default" };
 }
 
-/** Replaces the factory preset with a slot preset, preserving identity when none is set. */
+/** Replaces the factory preset with a slot preset; same object when unset or it matches. */
 export function withSlotPreset<TView>(
   presentation: ResolvedCompactPresentation<TView>,
   slotPreset: CompactPreset | undefined,

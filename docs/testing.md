@@ -39,6 +39,11 @@ mounting more than one in a test.
 with the `⋮` menu closed. A collapsed item is not rendered at all until the menu
 opens, so `item(id)` returns `null` for one until you call `toolbar.openOverflow()`.
 
+`settingsButton()` returns the viewer's `⚙` Settings button, or `null` under
+`settings={false}`; `openSettings()` clicks it and throws when there is none. The fake
+layout reports the button at `settingsButtonWidth` (default `28`) plus one `gap`, and
+charges that width before seating items, as the real measurer does.
+
 `panel(id)` answers presence in the DOM, which is not the same question as *open*: a
 `keepMounted` panel stays mounted, rendered `hidden`, after `closePanel()`, so
 `expect(toolbar.panel(id)).not.toBeNull()` keeps passing for one even while it is
