@@ -14,30 +14,11 @@
  * `docs/adr/ADR-004-per-extension-bar-presentation.md` for rejected alternatives.
  */
 import type { ReactNode } from "react";
+import type { CompactPreset } from "../core/contract";
 import { Glyph, hasPaintableIcon } from "./controls";
 import type { SpanProps } from "./controls";
 
-/**
- * How a bar control presents itself.
- *
- * `"default"` is a member, not an absence, because "default" isn't one shape
- * across the nine (short-word-plus-value, label-only, glyph-plus-hint). It's
- * also the option's default, so `resolveCompactParts` returning `null` for it
- * is what makes byte-identical default output structural rather than assumed.
- */
-export type CompactPreset =
-  /** Whatever this extension renders today. Extension-defined; resolves to `null`. */
-  | "default"
-  /** The icon alone. Falls back to text when no icon is supplied. */
-  | "icon"
-  /** The icon and the extension's value. */
-  | "icon-value"
-  /** The icon and the extension's text. */
-  | "icon-label"
-  /** The extension's text alone. */
-  | "label"
-  /** The extension's value alone. */
-  | "value";
+export type { CompactPreset } from "../core/contract";
 
 /**
  * Which text a control paints.

@@ -1,5 +1,12 @@
-import type { DevToolbarExtension, ToolbarPosition, ToolbarStorage } from "./contract";
-import { readJson, writeJson } from "./storage";
+import type {
+  CompactPreset,
+  DevToolbarExtension,
+  ToolbarColorScheme,
+  ToolbarDensity,
+  ToolbarPosition,
+  ToolbarStorage,
+} from "./contract";
+import { readJson, removeItem, writeJson } from "./storage";
 
 export const MIN_PANEL_HEIGHT = 160;
 export const MAX_PANEL_HEIGHT = 800;
@@ -8,13 +15,31 @@ export const DEFAULT_PANEL_HEIGHT = 320;
 const STORAGE_KEYS = {
   visible: "visible",
   position: "position",
+  density: "density",
+  colorScheme: "colorScheme",
+  extensionSettings: "extensionSettings",
   activePanel: "activePanel",
   panelHeight: "panelHeight",
 } as const;
 
+interface ExtensionSetting {
+  shown?: false;
+  preset?: CompactPreset;
+}
+
+export type ExtensionSettings = Readonly<Record<string, Readonly<ExtensionSetting>>>;
+
+export interface ExtensionSettingPatch {
+  shown?: false | undefined;
+  preset?: CompactPreset | undefined;
+}
+
 export interface ToolbarState {
   visible: boolean;
   position: ToolbarPosition;
+  density: ToolbarDensity | undefined;
+  colorScheme: ToolbarColorScheme | undefined;
+  extensionSettings: ExtensionSettings;
   activePanelId: string | null;
   panelHeight: number;
   /**
@@ -36,7 +61,7 @@ export interface ToolbarStoreOptions {
   defaultPanelHeight?: number;
 }
 
-export interface ToolbarStore {
+export interface PublicToolbarStore {
   subscribe(listener: () => void): () => void;
   getSnapshot(): ToolbarState;
   /**
@@ -62,13 +87,54 @@ export interface ToolbarStore {
   register(extension: DevToolbarExtension): () => void;
 }
 
+export interface ToolbarStore extends PublicToolbarStore {
+  setDensity(density: ToolbarDensity | undefined): void;
+  setColorScheme(colorScheme: ToolbarColorScheme | undefined): void;
+  setExtensionSetting(id: string, patch: ExtensionSettingPatch): void;
+  resetSettings(): void;
+}
+
 const isBoolean = (value: unknown): value is boolean => typeof value === "boolean";
 const isPosition = (value: unknown): value is ToolbarPosition =>
   value === "bottom" || value === "top";
+const isDensity = (value: unknown): value is ToolbarDensity =>
+  value === "compact" || value === "comfortable";
+const isColorScheme = (value: unknown): value is ToolbarColorScheme =>
+  value === "light" || value === "dark" || value === "system";
+const isCompactPreset = (value: unknown): value is CompactPreset =>
+  value === "default" ||
+  value === "icon" ||
+  value === "icon-value" ||
+  value === "icon-label" ||
+  value === "label" ||
+  value === "value";
 const isNumber = (value: unknown): value is number =>
   typeof value === "number" && Number.isFinite(value);
 const isStringOrNull = (value: unknown): value is string | null =>
   value === null || typeof value === "string";
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" && value !== null && !Array.isArray(value);
+
+function readExtensionSettings(
+  storage: ToolbarStorage,
+  fallback: ExtensionSettings,
+): ExtensionSettings {
+  const stored = readJson(storage, STORAGE_KEYS.extensionSettings, {}, isRecord);
+  const entries: [string, ExtensionSetting][] = [];
+
+  for (const [id, value] of Object.entries(stored)) {
+    if (!isRecord(value)) continue;
+    if (Object.hasOwn(value, "shown") && value["shown"] !== false) continue;
+    if (Object.hasOwn(value, "preset") && !isCompactPreset(value["preset"])) continue;
+
+    const setting: ExtensionSetting = {};
+    if (value["shown"] === false) setting.shown = false;
+    if (isCompactPreset(value["preset"])) setting.preset = value["preset"];
+    if (setting.shown !== undefined || setting.preset !== undefined) entries.push([id, setting]);
+  }
+
+  return entries.length === 0 ? fallback : Object.fromEntries(entries);
+}
 
 export function clampPanelHeight(height: number): number {
   if (!Number.isFinite(height)) return DEFAULT_PANEL_HEIGHT;
@@ -88,6 +154,9 @@ export function createToolbarStore(options: ToolbarStoreOptions): ToolbarStore {
   const defaults: ToolbarState = Object.freeze({
     visible: options.defaultVisible ?? true,
     position: options.defaultPosition ?? "bottom",
+    density: undefined,
+    colorScheme: undefined,
+    extensionSettings: Object.freeze({}) as ExtensionSettings,
     activePanelId: null as string | null,
     panelHeight: clampPanelHeight(options.defaultPanelHeight ?? DEFAULT_PANEL_HEIGHT),
     registered: Object.freeze([]) as readonly DevToolbarExtension[],
@@ -96,6 +165,9 @@ export function createToolbarStore(options: ToolbarStoreOptions): ToolbarStore {
   let state: ToolbarState = {
     visible: readJson(storage, STORAGE_KEYS.visible, defaults.visible, isBoolean),
     position: readJson(storage, STORAGE_KEYS.position, defaults.position, isPosition),
+    density: readJson(storage, STORAGE_KEYS.density, defaults.density, isDensity),
+    colorScheme: readJson(storage, STORAGE_KEYS.colorScheme, defaults.colorScheme, isColorScheme),
+    extensionSettings: readExtensionSettings(storage, defaults.extensionSettings),
     activePanelId: readJson(
       storage,
       STORAGE_KEYS.activePanel,
@@ -152,6 +224,53 @@ export function createToolbarStore(options: ToolbarStoreOptions): ToolbarStore {
     set({ position });
   };
 
+  const setDensity = (density: ToolbarDensity | undefined) => {
+    if (density === undefined) removeItem(storage, STORAGE_KEYS.density);
+    if (density === state.density) return;
+    if (density !== undefined) writeJson(storage, STORAGE_KEYS.density, density);
+    set({ density });
+  };
+
+  const setColorScheme = (colorScheme: ToolbarColorScheme | undefined) => {
+    if (colorScheme === undefined) removeItem(storage, STORAGE_KEYS.colorScheme);
+    if (colorScheme === state.colorScheme) return;
+    if (colorScheme !== undefined) writeJson(storage, STORAGE_KEYS.colorScheme, colorScheme);
+    set({ colorScheme });
+  };
+
+  const setExtensionSetting = (id: string, patch: ExtensionSettingPatch) => {
+    const current = state.extensionSettings[id];
+    const shown = Object.hasOwn(patch, "shown") ? patch.shown : current?.shown;
+    const preset = Object.hasOwn(patch, "preset") ? patch.preset : current?.preset;
+    if (shown === current?.shown && preset === current?.preset) return;
+
+    const setting: ExtensionSetting = {};
+    if (shown === false) setting.shown = false;
+    if (preset !== undefined) setting.preset = preset;
+
+    const entries = Object.entries(state.extensionSettings).filter(([key]) => key !== id);
+    if (setting.shown !== undefined || setting.preset !== undefined) entries.push([id, setting]);
+    const extensionSettings =
+      entries.length === 0 ? defaults.extensionSettings : Object.fromEntries(entries);
+
+    if (entries.length === 0) removeItem(storage, STORAGE_KEYS.extensionSettings);
+    else writeJson(storage, STORAGE_KEYS.extensionSettings, extensionSettings);
+    set({ extensionSettings });
+  };
+
+  const resetSettings = () => {
+    removeItem(storage, STORAGE_KEYS.position);
+    removeItem(storage, STORAGE_KEYS.density);
+    removeItem(storage, STORAGE_KEYS.colorScheme);
+    removeItem(storage, STORAGE_KEYS.extensionSettings);
+    set({
+      position: defaults.position,
+      density: defaults.density,
+      colorScheme: defaults.colorScheme,
+      extensionSettings: defaults.extensionSettings,
+    });
+  };
+
   const openPanel = (id: string) => {
     if (state.activePanelId === id) return;
     writeJson(storage, STORAGE_KEYS.activePanel, id);
@@ -200,6 +319,10 @@ export function createToolbarStore(options: ToolbarStoreOptions): ToolbarStore {
     setVisible,
     toggleVisible,
     setPosition,
+    setDensity,
+    setColorScheme,
+    setExtensionSetting,
+    resetSettings,
     openPanel,
     closePanel,
     togglePanel,

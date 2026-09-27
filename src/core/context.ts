@@ -9,7 +9,7 @@ import type {
   ToolbarPosition,
   ToolbarStorage,
 } from "./contract";
-import type { ToolbarStore } from "./store";
+import type { PublicToolbarStore } from "./store";
 
 export interface DevToolbarContextValue {
   instanceId: string;
@@ -20,7 +20,7 @@ export interface DevToolbarContextValue {
    * hydration-safe.
    */
   mounted: boolean;
-  store: ToolbarStore;
+  store: PublicToolbarStore;
   /** Props + dynamically registered, de-duplicated by id. Includes hidden ones. */
   extensions: readonly DevToolbarExtension[];
   /**

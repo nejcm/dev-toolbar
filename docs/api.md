@@ -228,6 +228,7 @@ Every type the root entry exports. The slot props, `DevToolbarExtension`,
 | `CommandInvocation` / `InvokeCommandOptions` | What `invokeCommand` resolves, and what it takes. |
 | `ExtensionRuntimeApi` | What `start(api)` receives. |
 | `CompactSlotProps` / `PanelSlotProps` / `OverlaySlotProps` | What each slot renders with. |
+| `CompactPreset` | The compact-control presentation preset names. |
 | `ExtensionDiagnostics` / `DiagnosticStatus` | One entry in the diagnostics roster, and its `"ok" \| "absent" \| "failed"` status. |
 | `ExtensionErrorInfo` | Metadata passed to `onExtensionError` for a failed slot. |
 | `ToolbarStorage` | The three-method storage adapter. |

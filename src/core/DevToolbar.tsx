@@ -17,6 +17,7 @@ import { DevToolbarContext, cx } from "./context";
 import type { DevToolbarContextValue } from "./context";
 import { createInstanceStorage, resolveStorage } from "./storage";
 import { createToolbarStore } from "./store";
+import type { ExtensionSettings } from "./store";
 import { DEFAULT_SHORTCUT } from "./shortcut";
 import { ensureStyles } from "./styles";
 import { useStableClassNames } from "./classNames";
@@ -26,7 +27,16 @@ import { useCommandHost } from "./useCommandHost";
 import { useExtensionLifecycle } from "./useExtensionLifecycle";
 import { DEFAULT_INSTANCE_ID, useHeightVariables } from "./useHeightVariables";
 import { useToolbarShortcuts } from "./useToolbarShortcuts";
+import { ViewerSettingsContext } from "./viewerSettingsContext";
+import type { ViewerSettingsContextValue } from "./viewerSettingsContext";
 export { DEFAULT_INSTANCE_ID, HEIGHT_VARIABLE, instanceHeightVariable } from "./useHeightVariables";
+
+interface DevToolbarSettings {
+  position?: boolean;
+  density?: boolean;
+  colorScheme?: boolean;
+  extensions?: boolean;
+}
 
 export interface DevToolbarProps {
   /** Rendered untouched, in a fragment. The bar itself portals to the body. */
@@ -46,6 +56,8 @@ export interface DevToolbarProps {
   instanceId?: string;
   density?: ToolbarDensity;
   colorScheme?: ToolbarColorScheme;
+  /** Viewer settings sections. `false` disables settings; an object allowlists sections. */
+  settings?: false | DevToolbarSettings;
   /** Initial values, used only when nothing is persisted yet. */
   defaultVisible?: boolean;
   defaultPosition?: ToolbarPosition;
@@ -115,6 +127,7 @@ export interface DevToolbarProps {
 }
 
 const EMPTY_EXTENSIONS: readonly DevToolbarExtension[] = [];
+const EMPTY_EXTENSION_SETTINGS: ExtensionSettings = Object.freeze({});
 
 export function DevToolbar(props: DevToolbarProps): ReactNode {
   const { children, ...rest } = props;
@@ -132,6 +145,7 @@ function DevToolbarRoot({
   instanceId: instanceIdProp = DEFAULT_INSTANCE_ID,
   density = "compact",
   colorScheme = "system",
+  settings: settingsProp,
   defaultVisible = true,
   defaultPosition = "bottom",
   defaultPanelHeight,
@@ -200,6 +214,9 @@ function DevToolbarRoot({
   const {
     visible: effectiveVisible,
     position: effectivePosition,
+    density: effectiveDensity,
+    colorScheme: effectiveColorScheme,
+    settings,
     setVisible,
     toggleVisible,
     setPosition,
@@ -208,10 +225,18 @@ function DevToolbarRoot({
   } = useControlledToolbarState(store, state, {
     visible: visibleProp,
     position: positionProp,
+    density,
+    colorScheme,
+    settings: settingsProp,
     onVisibleChange,
     onPositionChange,
     onPanelChange,
   });
+  const extensionSettings = settings.extensions
+    ? state.extensionSettings
+    : EMPTY_EXTENSION_SETTINGS;
+  const settingsEnabled =
+    settings.position || settings.density || settings.colorScheme || settings.extensions;
 
   // Client-only mount: the bar is never part of server HTML, so nothing to
   // hydrate or mismatch. Whether we've mounted can't be derived during
@@ -280,7 +305,7 @@ function DevToolbarRoot({
       getCommands,
       runCommand: scopedRunCommand,
       invokeCommand: scopedInvokeCommand,
-      density,
+      density: effectiveDensity,
       classNames,
       onExtensionError: onExtensionError ? reportExtensionError : undefined,
       storage: baseStorage,
@@ -307,7 +332,7 @@ function DevToolbarRoot({
       getCommands,
       scopedRunCommand,
       scopedInvokeCommand,
-      density,
+      effectiveDensity,
       classNames,
       onExtensionError !== undefined,
       baseStorage,
@@ -321,56 +346,72 @@ function DevToolbarRoot({
   );
   /* oxlint-enable react/use-memo, react-hooks/exhaustive-deps */
 
+  const viewerSettingsValue = useMemo<ViewerSettingsContextValue>(
+    () => ({
+      enabled: settingsEnabled,
+      sections: settings,
+      extensionSettings,
+      colorScheme: effectiveColorScheme,
+      setDensity: store.setDensity,
+      setColorScheme: store.setColorScheme,
+      setExtensionSetting: store.setExtensionSetting,
+      resetSettings: store.resetSettings,
+    }),
+    [settingsEnabled, settings, extensionSettings, effectiveColorScheme, store],
+  );
+
   const target = container ?? (typeof document === "undefined" ? null : document.body);
 
   return (
     <DevToolbarContext.Provider value={contextValue}>
-      {children}
-      {shouldRender && target
-        ? createPortal(
-            <div
-              ref={rootRef}
-              data-dev-toolbar=""
-              data-dtb-part="root"
-              data-dtb-instance={instanceId}
-              data-dtb-position={effectivePosition}
-              data-dtb-density={density}
-              data-dtb-color-scheme={colorScheme}
-              className={cx(classNames?.root, className)}
-              {...(style ? { style } : {})}
-            >
-              <Bar
-                extensions={extensions}
-                density={density}
-                activePanelId={state.activePanelId}
-                openPanel={store.openPanel}
-                closePanel={store.closePanel}
-                togglePanel={store.togglePanel}
-                classNames={classNames}
-                styleNonce={styleNonce}
-              />
-              <OverlayHost
-                extensions={extensions}
-                density={density}
-                position={effectivePosition}
-                classNames={classNames}
-                styleNonce={styleNonce}
-              />
-              <PanelHost
-                extensions={extensions}
-                activePanelId={state.activePanelId}
-                position={effectivePosition}
-                density={density}
-                panelHeight={state.panelHeight}
-                setPanelHeight={store.setPanelHeight}
-                closePanel={store.closePanel}
-                classNames={classNames}
-                styleNonce={styleNonce}
-              />
-            </div>,
-            target,
-          )
-        : null}
+      <ViewerSettingsContext.Provider value={viewerSettingsValue}>
+        {children}
+        {shouldRender && target
+          ? createPortal(
+              <div
+                ref={rootRef}
+                data-dev-toolbar=""
+                data-dtb-part="root"
+                data-dtb-instance={instanceId}
+                data-dtb-position={effectivePosition}
+                data-dtb-density={effectiveDensity}
+                data-dtb-color-scheme={effectiveColorScheme}
+                className={cx(classNames?.root, className)}
+                {...(style ? { style } : {})}
+              >
+                <Bar
+                  extensions={extensions}
+                  density={effectiveDensity}
+                  activePanelId={state.activePanelId}
+                  openPanel={store.openPanel}
+                  closePanel={store.closePanel}
+                  togglePanel={store.togglePanel}
+                  classNames={classNames}
+                  styleNonce={styleNonce}
+                />
+                <OverlayHost
+                  extensions={extensions}
+                  density={effectiveDensity}
+                  position={effectivePosition}
+                  classNames={classNames}
+                  styleNonce={styleNonce}
+                />
+                <PanelHost
+                  extensions={extensions}
+                  activePanelId={state.activePanelId}
+                  position={effectivePosition}
+                  density={effectiveDensity}
+                  panelHeight={state.panelHeight}
+                  setPanelHeight={store.setPanelHeight}
+                  closePanel={store.closePanel}
+                  classNames={classNames}
+                  styleNonce={styleNonce}
+                />
+              </div>,
+              target,
+            )
+          : null}
+      </ViewerSettingsContext.Provider>
     </DevToolbarContext.Provider>
   );
 }
