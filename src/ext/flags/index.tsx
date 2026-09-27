@@ -65,10 +65,12 @@ import {
 import { writeClipboardTextOrThrow } from "../../runtime";
 import { FlagsChip, FlagsPanel } from "./ui";
 import {
+  ALL_PRESETS,
   readInput,
   readStoredRecord,
   resolvePresentation,
   resolveStyleNonce,
+  withSlotPreset,
 } from "@nejcm/dev-toolbar/kit";
 import type { CompactPresentationInput, ResolvedCompactPresentation } from "@nejcm/dev-toolbar/kit";
 import type { FlagsRuntimeOptions } from "./runtime";
@@ -247,18 +249,28 @@ export function flags(options: FlagsOptions = {}): DevToolbarExtension {
     order,
     priority,
     keepMounted,
+    presets: ALL_PRESETS,
     ...(hidden === undefined ? {} : { hidden }),
 
     start(api: ExtensionRuntimeApi) {
       return runtime.start(api);
     },
 
-    compact: ({ isOverflowed, isPanelOpen, togglePanel, openPanel, styleNonce }) => (
+    compact: ({ isOverflowed, isPanelOpen, preset, togglePanel, openPanel, styleNonce }) => (
       <FlagsChip
         runtime={runtime}
         label={label}
-        presentation={presentation}
-        promotedPresentations={promotedPresentations}
+        presentation={withSlotPreset(presentation, preset)}
+        promotedPresentations={
+          preset === undefined
+            ? promotedPresentations
+            : new Map(
+                [...promotedPresentations].map(([index, promotedPresentation]) => [
+                  index,
+                  withSlotPreset(promotedPresentation, preset),
+                ]),
+              )
+        }
         isOverflowed={isOverflowed}
         isPanelOpen={isPanelOpen}
         injectStyles={injectStyles}

@@ -484,7 +484,7 @@ describe("the chip", () => {
 
     expect(toolbar.overflowedIds()).toEqual([]);
 
-    toolbar.resize(200);
+    toolbar.resize(242);
     expect(toolbar.overflowedIds()).toEqual(["agent"]);
     expect(toolbar.isOverflowed("ordinary")).toBe(false);
   });

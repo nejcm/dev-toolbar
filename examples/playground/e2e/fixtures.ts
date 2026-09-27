@@ -21,9 +21,11 @@ export interface Snapshot {
     mounted: boolean;
     position: string | null;
     density: string | null;
+    colorScheme: string | null;
     heightVariable: { name: string; value: string | null };
     bar: BarItem[];
     overflow: { present: boolean; open: boolean; items: string[] };
+    settings: { present: boolean; open: boolean };
     activePanel: string | null;
   };
   diagnostics: { id: string; label: string; status: string; data: unknown }[];
@@ -110,6 +112,11 @@ export class Toolbar {
   /** An extension's chip trigger, wherever it currently lives (bar or overflow menu). */
   trigger(extId: string) {
     return this.page.locator(`[data-dtb-ext-id="${extId}"] [data-dtb-part="trigger"]`);
+  }
+
+  /** The viewer Settings button; present unless `settings={false}`. */
+  get settingsButton() {
+    return this.page.getByRole("button", { name: "Toolbar settings" });
   }
 
   /** The `⋮` button. Only in the document once something has collapsed. */

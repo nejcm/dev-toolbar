@@ -315,6 +315,7 @@ export type {
   AgentOverflowView,
   AgentRegistry,
   AgentRunResult,
+  AgentSettingsView,
   AgentShellView,
   AgentSnapshot,
 } from "./types";

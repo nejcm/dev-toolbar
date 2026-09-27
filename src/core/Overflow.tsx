@@ -6,6 +6,7 @@ import type { DevToolbarClassNames, DevToolbarExtension } from "./contract";
 import { cx } from "./context";
 import { ITEM_SELECTOR, REGION_SELECTOR, resolveMeasurer } from "./measurer";
 import type { MeasurementObserver } from "./measurer";
+import { useDisclosure } from "./useDisclosure";
 
 export interface OverflowBarProps {
   startItems: readonly DevToolbarExtension[];
@@ -14,19 +15,12 @@ export interface OverflowBarProps {
   classNames?: DevToolbarClassNames | undefined;
   gap?: number;
   overflowLabel?: string;
+  settingsMenu?: ReactNode;
 }
 
 /** Fallbacks used only until the DOM has been measured. */
 const DEFAULT_GAP = 10;
 const DEFAULT_OVERFLOW_BUTTON_WIDTH = 28;
-
-/**
- * What can take focus inside the `⋮` popup. Deliberately shallow: the popup
- * holds extensions' compact slots, and the first thing in the first of them is
- * where a keyboard user expects to land.
- */
-const FOCUSABLE =
-  'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), summary, [contenteditable]:not([contenteditable="false"]), [tabindex]:not([tabindex="-1"])';
 
 /**
  * The bar row itself. Measures rendered items with a `ResizeObserver` and
@@ -39,11 +33,13 @@ export function OverflowBar({
   classNames,
   gap = DEFAULT_GAP,
   overflowLabel = "More developer toolbar items",
+  settingsMenu,
 }: OverflowBarProps): ReactNode {
   const barRef = useRef<HTMLDivElement | null>(null);
   const menuRef = useRef<HTMLDivElement | null>(null);
   const buttonRef = useRef<HTMLButtonElement | null>(null);
   const itemObserverRef = useRef<MeasurementObserver | null>(null);
+  const { open: menuOpen, setOpen: setMenuOpen } = useDisclosure(buttonRef, menuRef);
   // The decision and everything it depends on live in the machine, which is
   // only ever fed from committed contexts — effects and observer callbacks,
   // never render — so what it holds is the committed decision and React state
@@ -56,7 +52,6 @@ export function OverflowBar({
   // discarded cannot leave the two disagreeing, because the next commit's
   // layout effect syncs again. Same instance means React has nothing to do.
   const sync = useCallback(() => setCollapsed(machine.collapsed), [machine]);
-  const [menuOpen, setMenuOpen] = useState(false);
   const menuId = `dtb-overflow-menu-${useId()}`;
 
   const roster: CollapseItem[] = [
@@ -87,15 +82,18 @@ export function OverflowBar({
   const readBar = useCallback(
     (bar: HTMLElement): CollapseReading => {
       const measurer = resolveMeasurer();
+      const measuredGap = measurer.regionGap(bar) ?? gap;
+      const settingsButton = bar.querySelector<HTMLElement>('[data-dtb-part="settings-button"]');
       return {
         barWidth: measurer.barWidth(bar),
-        gap: measurer.regionGap(bar),
+        gap: measuredGap,
         padding: measurer.padding(bar),
         buttonWidth: measurer.buttonWidth(buttonRef.current),
+        chromeWidth: measurer.chromeWidth(settingsButton, measuredGap),
         widths: measureWidths(bar),
       };
     },
-    [measureWidths],
+    [gap, measureWidths],
   );
 
   // Every commit is a chance to measure what it rendered — a returning item,
@@ -176,46 +174,7 @@ export function OverflowBar({
   useEffect(() => {
     // oxlint-disable-next-line react/set-state-in-effect
     if (collapsed.size === 0) setMenuOpen(false);
-  }, [collapsed]);
-
-  // Move focus into the ⋮ popup when it opens, so a keyboard user reaches
-  // the collapsed items. Falls back to the popup itself if nothing inside
-  // can take focus.
-  useEffect(() => {
-    if (!menuOpen) return;
-    const menu = menuRef.current;
-    if (!menu) return;
-    (menu.querySelector<HTMLElement>(FOCUSABLE) ?? menu).focus();
-  }, [menuOpen]);
-
-  // Dismiss on Escape or an outside click. Escape returns focus to the
-  // button; an outside click leaves focus wherever the click put it.
-  useEffect(() => {
-    if (!menuOpen || typeof document === "undefined") return;
-
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== "Escape") return;
-      event.stopPropagation();
-      setMenuOpen(false);
-      buttonRef.current?.focus();
-    };
-    const onPointerDown = (event: Event) => {
-      const target = event.target as Node | null;
-      if (!target) return;
-      if (menuRef.current?.contains(target)) return;
-      if (buttonRef.current?.contains(target)) return;
-      setMenuOpen(false);
-    };
-
-    document.addEventListener("keydown", onKeyDown);
-    document.addEventListener("pointerdown", onPointerDown, true);
-    document.addEventListener("mousedown", onPointerDown, true);
-    return () => {
-      document.removeEventListener("keydown", onKeyDown);
-      document.removeEventListener("pointerdown", onPointerDown, true);
-      document.removeEventListener("mousedown", onPointerDown, true);
-    };
-  }, [menuOpen]);
+  }, [collapsed, setMenuOpen]);
 
   const isOverflowed = (extension: DevToolbarExtension) => collapsed.has(extension.id);
   const overflowed = [...startItems, ...endItems].filter(isOverflowed);
@@ -249,6 +208,7 @@ export function OverflowBar({
             {"⋮"}
           </button>
         ) : null}
+        {settingsMenu}
       </div>
       {/* A disclosure, not an ARIA menu: entries render their own interactive
           content, which a `menuitem` may not contain. Instead: `aria-expanded`/

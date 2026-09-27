@@ -34,7 +34,13 @@ const roster = (allStart: boolean): DevToolbarExtension[] => [
 export function GeometryDemo() {
   const allStart = new URLSearchParams(location.search).get("roster") === "all-start";
   return (
-    <DevToolbar instanceId="playground" extensions={roster(allStart)} storage={null}>
+    // No Settings button: the thresholds below are exact item and gap sums.
+    <DevToolbar
+      instanceId="playground"
+      extensions={roster(allStart)}
+      storage={null}
+      settings={false}
+    >
       <style>{'[data-dtb-part="root"] { --dtb-item-gap: 10px; --dtb-padding-x: 10px; }'}</style>
       <main style={{ padding: 24 }}>
         <h1>Toolbar geometry</h1>

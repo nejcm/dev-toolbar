@@ -138,6 +138,24 @@ describe("CollapseMachine sticky widths", () => {
  * gap between them. Neither is free space, so neither may be filled with items.
  */
 describe("CollapseMachine reserved width", () => {
+  it("always charges settings chrome before deciding whether items fit", () => {
+    const m = machine();
+    m.measure({ items, barWidth: 213, widths: sixty, chromeWidth: 30 });
+    expect(ids(m)).toEqual(["b"]);
+
+    m.measure({ barWidth: 214 });
+    expect(ids(m)).toEqual([]);
+  });
+
+  it("charges settings chrome alongside the overflow button after collapsing", () => {
+    const m = machine();
+    m.measure({ items, barWidth: 181, widths: sixty, chromeWidth: 30 });
+    expect(ids(m)).toEqual(["b", "c"]);
+
+    m.measure({ barWidth: 182 });
+    expect(ids(m)).toEqual(["b"]);
+  });
+
   it("keeps the bar's own horizontal padding out of the math", () => {
     // 3×60 + 2×2 = 184 fits a 190 padding box but not the 176 it leaves:
     //   190 − 12 (padding) − 2 (the empty end region's gap) = 176 < 184

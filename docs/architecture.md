@@ -294,14 +294,24 @@ prop value for rendering while `store.getSnapshot()` continues to hold the persi
 or uncontrolled value, so those two values can differ. The matching context setters
 call their change callbacks and do not write the store while controlled.
 
-Four keys persist when their state is changed through the store:
+Seven keys persist when their state is changed through the store:
 
 | Key | Value |
 | --- | --- |
 | `dtb:v1:<instanceId>:visible` | `boolean` |
 | `dtb:v1:<instanceId>:position` | `"bottom" \| "top"` |
+| `dtb:v1:<instanceId>:density` | `"compact" \| "comfortable"` — a Viewer Setting |
+| `dtb:v1:<instanceId>:colorScheme` | `"light" \| "dark" \| "system"` — a Viewer Setting |
+| `dtb:v1:<instanceId>:extensionSettings` | `{ [id]: { shown?: false; preset?: CompactPreset } }`, non-defaults only |
 | `dtb:v1:<instanceId>:activePanel` | `string \| null` |
 | `dtb:v1:<instanceId>:panelHeight` | `number`, clamped to 160–800 |
+
+`position`, `density`, `colorScheme` and `extensionSettings` are what the Settings menu
+writes. Each is validated on read, so a malformed value reads as "nothing stored"; a
+toolbar-wide Setting equal to the Consumer's Option is removed rather than stored, and
+Reset removes all four. Precedence against props is in
+[api.md](./api.md#viewer-settings) and the reasoning in
+[ADR-006](./adr/ADR-006-viewer-settings.md).
 
 Each extension's `start(api)` gets `api.storage`, scoped to
 `dtb:v1:<instanceId>:ext:<extensionId>:`.
@@ -569,6 +579,13 @@ added are listed too; this table does not grow when an extension adds one.
 | `overflow-button` | the `⋮` button | `aria-expanded`, `aria-controls` while open |
 | `overflow-menu` | the `⋮` popover | `role="group"`, labelled, `tabindex="-1"` |
 | `overflow-menu-item` | one collapsed item wrapper | `data-dtb-ext-id` |
+| `settings-button` | the `⚙` Settings button | `aria-expanded`, `aria-controls`; after `⋮`, never collapses. Absent with `settings={false}` |
+| `settings-menu` | the Settings popover | `role="group"`, labelled, `tabindex="-1"` |
+| `settings-section` | one `<fieldset>` in the menu | Position, Density, Colour scheme, Extensions |
+| `settings-options` | a section's radio group | |
+| `settings-extensions` | the Extensions section's row list | |
+| `settings-extension` | one extension's row | "shown in bar" checkbox, and a preset `<select>` when it declares `presets` |
+| `settings-reset` | the Reset button | Sticky at the bottom of the scrolling menu |
 | `overlay` | one extension's overlay slot | `data-dtb-ext-id` |
 | `panel` | one panel | `data-dtb-ext-id`, `data-dtb-active`, `hidden` when inactive |
 | `panel-close` | core close button | Omitted when `closeButton: false` |
@@ -642,8 +659,9 @@ stylesheet string into an extension's bundle — and extensions already import
 ### 4.3 `classNames`
 
 A narrow map, for when you want your own class on a part: `root`, `bar`, `region`,
-`item`, `overflowButton`, `overflowMenu`, `overflowMenuItem`, `overlay`, `panel`,
-`panelResizer`, `errorChip`.
+`item`, `overflowButton`, `overflowMenu`, `overflowMenuItem`, `settingsButton`,
+`settingsMenu`, `overlay`, `panel`, `panelResizer`, `errorChip`. The Settings menu's
+inner parts have no key; select them by `data-dtb-part`.
 
 It is deliberately not open-ended — adding a slot is a contract change, which is the
 point.

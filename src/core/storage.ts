@@ -125,3 +125,11 @@ export function writeJson(storage: ToolbarStorage, key: string, value: unknown):
     /* ignore */
   }
 }
+
+export function removeItem(storage: ToolbarStorage, key: string): void {
+  try {
+    storage.removeItem(key);
+  } catch {
+    /* ignore */
+  }
+}

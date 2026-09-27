@@ -35,6 +35,11 @@ describe("sortExtensions", () => {
     const { start } = sortExtensions([ext("a"), ext("b", { hidden: true })]);
     expect(ids(start)).toEqual(["a"]);
   });
+
+  it("drops extensions whose viewer setting hides them from the bar", () => {
+    const { start } = sortExtensions([ext("a"), ext("b")], { b: { shown: false } });
+    expect(ids(start)).toEqual(["a"]);
+  });
 });
 
 describe("Bar", () => {

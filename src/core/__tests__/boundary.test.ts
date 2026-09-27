@@ -706,6 +706,7 @@ if (built || !mustBeBuilt) {
         ]),
       );
       expect(parsed.kit).toEqual([
+        "ALL_PRESETS",
         "Action",
         "Banner",
         "Chip",
@@ -756,6 +757,7 @@ if (built || !mustBeBuilt) {
         "useCopyStatus",
         "useExtensionSurface",
         "useSource",
+        "withSlotPreset",
         "writeJson",
         "writePreference",
       ]);

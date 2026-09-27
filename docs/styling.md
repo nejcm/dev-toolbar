@@ -20,9 +20,10 @@ is. Most elements in a panel carry both, and you can target either.
 ```
 
 *Parts* are the precise hooks. Core owns the unprefixed names — `root`, `bar`, `region`,
-`item`, `trigger`, `overflow-button`, `overflow-menu`, `overflow-menu-item`, `overlay`,
-`panel`, `panel-close`, `panel-close-icon`, `panel-resizer`, `panel-body`, `error-chip`,
-`error-retry`, `inset`. An
+`item`, `trigger`, `overflow-button`, `overflow-menu`, `overflow-menu-item`,
+`settings-button`, `settings-menu` and its inner `settings-*` parts, `overlay`, `panel`,
+`panel-close`, `panel-close-icon`, `panel-resizer`, `panel-body`, `error-chip`,
+`error-retry`, `inset` ([the full table](./architecture.md#42-data-dtb-part)). An
 extension that ships its own CSS namespaces its parts *by kind of extension* —
 `/ext/metrics` uses `metrics-chip`, `metrics-panel` and so on for every instance,
 whatever `id` you give it, so one rule styles them all. To reach a single instance, use

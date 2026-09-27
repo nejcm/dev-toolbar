@@ -29,7 +29,12 @@
  * the app under test.
  */
 import { writeClipboardTextOrThrow } from "@nejcm/dev-toolbar/runtime";
-import { resolvePresentation, resolveStyleNonce } from "@nejcm/dev-toolbar/kit";
+import {
+  ALL_PRESETS,
+  resolvePresentation,
+  resolveStyleNonce,
+  withSlotPreset,
+} from "@nejcm/dev-toolbar/kit";
 import { DEFAULT_LOAD_ON, createA11yRuntime } from "./runtime";
 import { A11yChip, A11yPanel, A11ySurface } from "./ui";
 import type { CompactPresentationInput } from "@nejcm/dev-toolbar/kit";
@@ -240,6 +245,7 @@ export function a11y(options: A11yOptions = {}): DevToolbarExtension {
     order,
     priority,
     keepMounted,
+    presets: ALL_PRESETS,
     ...(hidden === undefined ? {} : { hidden }),
 
     start(api: ExtensionRuntimeApi) {
@@ -249,11 +255,11 @@ export function a11y(options: A11yOptions = {}): DevToolbarExtension {
     /** The report — the same object the panel renders. */
     diagnostics: () => runtime.diagnostics(),
 
-    compact: ({ isOverflowed, isPanelOpen, togglePanel, styleNonce }) => (
+    compact: ({ isOverflowed, isPanelOpen, preset, togglePanel, styleNonce }) => (
       <A11yChip
         runtime={runtime}
         label={label}
-        presentation={presentation}
+        presentation={withSlotPreset(presentation, preset)}
         isOverflowed={isOverflowed}
         isPanelOpen={isPanelOpen}
         injectStyles={injectStyles}

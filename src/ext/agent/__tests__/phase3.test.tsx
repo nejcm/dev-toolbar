@@ -30,6 +30,7 @@ const snapshotWith = (visible: boolean): AgentSnapshot => ({
     heightVariable: { name: "--dev-toolbar-height-test", value: "36px" },
     bar: [],
     overflow: { present: false, open: false, items: [] },
+    settings: { present: true, open: false },
     activePanel: null,
   },
   diagnostics: [],

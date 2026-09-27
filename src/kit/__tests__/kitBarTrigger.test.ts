@@ -362,7 +362,11 @@ const GEOMETRY_ALLOWLIST: readonly string[] = [
   // legend rule sizes its own pseudo-element and cannot move the chip's box.
   '[data-dev-toolbar] [data-dtb-part="region"] > [data-dtb-part="item"]:not(:first-child)::before',
   '[data-dev-toolbar] [data-dtb-part="region"] > [data-dtb-part="overflow-button"]:not(:first-child)::before',
+  '[data-dev-toolbar] [data-dtb-part="region"] > [data-dtb-part="settings-button"]:not(:first-child)::before',
   "[data-dev-toolbar] [data-dtb-legend]::after",
+
+  // Settings controls live in core's popup and cannot be a kit bar trigger.
+  '[data-dev-toolbar] [data-dtb-part="settings-section"] > legend:where(:not([data-dtb-embed] *))',
 
   // Kit rules whose subject cannot be a bar trigger: the child of a glyph, a
   // `<dd>` inside a `rows` grid, and a panel `toolbar` in last position. A

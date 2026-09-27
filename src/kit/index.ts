@@ -64,6 +64,7 @@ export type {
 } from "./preference";
 export { resolveStyleNonce } from "./nonce";
 export {
+  ALL_PRESETS,
   renderCompact,
   renderCompactParts,
   resolveAccessibleName,
@@ -72,6 +73,7 @@ export {
   resolveIcon,
   resolveNameOverride,
   resolvePresentation,
+  withSlotPreset,
 } from "./presentation";
 export type {
   CompactControl,

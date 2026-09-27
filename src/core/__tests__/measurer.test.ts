@@ -42,6 +42,7 @@ describe("domMeasurer", () => {
       barWidth: 320,
       itemWidths: { a: 101 },
       overflowButtonWidth: 29,
+      settingsButtonWidth: 31,
       paddingX: 6.5,
       gap: 12.5,
       rootHeight: 40.5,
@@ -50,10 +51,12 @@ describe("domMeasurer", () => {
     bar.append(element("region"));
     const item = element("item", "a");
     const button = element("overflow-button");
+    const settingsButton = element("settings-button");
     const root = element("root");
     expect(domMeasurer.barWidth(bar)).toBe(320);
     expect(domMeasurer.itemWidth(item)).toBe(101);
     expect(domMeasurer.buttonWidth(button)).toBe(29);
+    expect(domMeasurer.chromeWidth(settingsButton, 12.5)).toBe(43.5);
     expect(domMeasurer.regionGap(bar)).toBe(12.5);
     expect(domMeasurer.padding(bar)).toBe(13);
     expect(domMeasurer.height(root)).toBe(40.5);
@@ -62,6 +65,7 @@ describe("domMeasurer", () => {
     expect(domMeasurer.barWidth(bar)).toBe(400);
     expect(domMeasurer.itemWidth(item)).toBe(0);
     expect(domMeasurer.buttonWidth(null)).toBe(0);
+    expect(domMeasurer.chromeWidth(null, 12.5)).toBe(0);
   });
 
   it("keeps padding-box and natural widths independent of transformed rectangles", () => {

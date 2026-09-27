@@ -40,7 +40,12 @@
 import { writeClipboardTextOrThrow } from "../../runtime";
 import { createEnvironmentRuntime } from "./runtime";
 import { EnvironmentChip, EnvironmentPanel } from "./ui";
-import { resolvePresentation, resolveStyleNonce } from "@nejcm/dev-toolbar/kit";
+import {
+  ALL_PRESETS,
+  resolvePresentation,
+  resolveStyleNonce,
+  withSlotPreset,
+} from "@nejcm/dev-toolbar/kit";
 import type { CompactPresentationInput } from "@nejcm/dev-toolbar/kit";
 import type { EnvironmentContextInput, EnvironmentRuntimeOptions } from "./runtime";
 import type { EnvironmentSnapshot } from "./types";
@@ -141,17 +146,18 @@ export function environment(options: EnvironmentOptions = {}): DevToolbarExtensi
     align,
     order,
     priority,
+    presets: ALL_PRESETS,
     ...(hidden === undefined ? {} : { hidden }),
 
     start(api: ExtensionRuntimeApi) {
       return runtime.start(api);
     },
 
-    compact: ({ isOverflowed, isPanelOpen, togglePanel, styleNonce }) => (
+    compact: ({ isOverflowed, isPanelOpen, preset, togglePanel, styleNonce }) => (
       <EnvironmentChip
         runtime={runtime}
         label={label}
-        presentation={presentation}
+        presentation={withSlotPreset(presentation, preset)}
         isOverflowed={isOverflowed}
         isPanelOpen={isPanelOpen}
         injectStyles={injectStyles}

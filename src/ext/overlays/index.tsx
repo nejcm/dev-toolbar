@@ -34,7 +34,12 @@
 import { createOverlaysRuntime } from "./runtime";
 import { OverlaysChip, OverlaysPanel, OverlaysSurface } from "./ui";
 import { OVERLAY_IDS, OVERLAY_META } from "./types";
-import { resolvePresentation, resolveStyleNonce } from "@nejcm/dev-toolbar/kit";
+import {
+  ALL_PRESETS,
+  resolvePresentation,
+  resolveStyleNonce,
+  withSlotPreset,
+} from "@nejcm/dev-toolbar/kit";
 import type { CompactPresentationInput } from "@nejcm/dev-toolbar/kit";
 import type { OverlaysRuntimeOptions } from "./runtime";
 import type { OverlaysSnapshot } from "./types";
@@ -164,6 +169,7 @@ export function overlays(options: OverlaysOptions = {}): DevToolbarExtension {
     order,
     priority,
     keepMounted,
+    presets: ALL_PRESETS,
     ...(hidden === undefined ? {} : { hidden }),
 
     start(api: ExtensionRuntimeApi) {
@@ -173,11 +179,11 @@ export function overlays(options: OverlaysOptions = {}): DevToolbarExtension {
     /** Which layers are on. `plans/agent-readable-toolbar.md` § Phase 1. */
     diagnostics: () => runtime.diagnostics(),
 
-    compact: ({ isOverflowed, isPanelOpen, togglePanel, styleNonce }) => (
+    compact: ({ isOverflowed, isPanelOpen, preset, togglePanel, styleNonce }) => (
       <OverlaysChip
         runtime={runtime}
         label={label}
-        presentation={presentation}
+        presentation={withSlotPreset(presentation, preset)}
         isOverflowed={isOverflowed}
         isPanelOpen={isPanelOpen}
         injectStyles={injectStyles}

@@ -44,5 +44,6 @@ Rules that matter more than the format:
 | [001](./ADR-001-extensions-are-plain-objects.md) | Extensions are plain objects passed in as a prop | Accepted |
 | [002](./ADR-002-light-dom.md) | The shell renders in the light DOM | Accepted |
 | [003](./ADR-003-contract-version-policy.md) | `CONTRACT_VERSION` compatibility policy | Proposed |
-| [004](./ADR-004-per-extension-bar-presentation.md) | Per-extension bar presentation | Accepted |
+| [004](./ADR-004-per-extension-bar-presentation.md) | Per-extension bar presentation | Accepted; superseded in part by ADR-006 |
 | [005](./ADR-005-docs-site-over-the-docs-tree.md) | Build the documentation site over the docs tree | Accepted |
+| [006](./ADR-006-viewer-settings.md) | Viewer settings | Accepted |

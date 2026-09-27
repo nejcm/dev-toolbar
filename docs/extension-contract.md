@@ -13,6 +13,7 @@ interface DevToolbarExtension {
   hidden?: boolean;              // you compute this — core has no ctx
   keepMounted?: boolean;         // panel state survives closing
   closeButton?: boolean;         // default true; hide core's panel close button
+  presets?: readonly CompactPreset[]; // presets the viewer may pick in the Settings menu
   compact?: (props: CompactSlotProps) => React.ReactNode;
   panel?: (props: PanelSlotProps) => React.ReactNode;
   overlay?: (props: OverlaySlotProps) => React.ReactNode;   // modal; never collapsed
@@ -36,6 +37,7 @@ interface CompactSlotProps {
   openPanel(): void;
   closePanel(): void;
   togglePanel(): void;           // the one every trigger actually wants
+  preset?: CompactPreset;        // the viewer's preset, only when listed in `presets`
   styleNonce?: string;           // CSP nonce for a stylesheet this slot injects
 }
 
@@ -53,6 +55,10 @@ interface OverlaySlotProps {
   styleNonce?: string;
 }
 ```
+
+`presets` and `preset` are the opt-in to the viewer's Settings menu: declare the presets
+your control can paint and apply the one you receive with kit's `withSlotPreset`
+([viewer presets](./kit.md#viewer-presets)). Both are optional and additive.
 
 Core adds a close button to an open panel. Set `closeButton: false` when the panel
 already has one; Escape still closes the panel. This optional field is additive and

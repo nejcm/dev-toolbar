@@ -394,6 +394,28 @@ describe("shell facts, which no extension owns", () => {
     for (const id of overflow.items) expect(barIds).not.toContain(id);
   });
 
+  it("reports the Settings button and whether its menu is open", () => {
+    const { toolbar } = renderWithToolbar(undefined, {
+      instanceId: "test",
+      extensions: [agentBridge({ instanceId: "test" }), flags({ flags: CATALOGUE })],
+    });
+    expect(handle().read().shell.settings).toEqual({ present: true, open: false });
+
+    toolbar.openSettings();
+
+    expect(handle().read().shell.settings).toEqual({ present: true, open: true });
+  });
+
+  it("reports no Settings button when settings are disabled", () => {
+    renderWithToolbar(undefined, {
+      instanceId: "test",
+      settings: false,
+      extensions: [agentBridge({ instanceId: "test" })],
+    });
+
+    expect(handle().read().shell.settings).toEqual({ present: false, open: false });
+  });
+
   it("folds an instance id that is not a CSS identifier, the way core does", () => {
     expect(readShell("my instance").heightVariable.name).toBe("--dev-toolbar-height-my_instance");
   });
@@ -402,6 +424,7 @@ describe("shell facts, which no extension owns", () => {
     expect(readShell("nobody")).toMatchObject({
       mounted: false,
       position: null,
+      settings: { present: false, open: false },
       bar: [],
       activePanel: null,
     });

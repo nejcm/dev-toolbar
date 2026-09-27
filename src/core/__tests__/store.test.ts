@@ -38,6 +38,9 @@ describe("toolbar store", () => {
     const first = createToolbarStore({ storage });
     first.setVisible(false);
     first.setPosition("top");
+    first.setDensity("comfortable");
+    first.setColorScheme("dark");
+    first.setExtensionSetting("metrics", { shown: false, preset: "icon-value" });
     first.openPanel("metrics");
     first.setPanelHeight(420);
 
@@ -45,6 +48,11 @@ describe("toolbar store", () => {
     expect(second.getSnapshot()).toMatchObject({
       visible: false,
       position: "top",
+      density: "comfortable",
+      colorScheme: "dark",
+      extensionSettings: {
+        metrics: { shown: false, preset: "icon-value" },
+      },
       activePanelId: "metrics",
       panelHeight: 420,
     });
@@ -114,11 +122,109 @@ describe("toolbar store", () => {
   it("ignores corrupt persisted values", () => {
     const storage = createMemoryStorage({
       position: '"sideways"',
+      density: '"spacious"',
+      colorScheme: '"sepia"',
+      extensionSettings: "not json",
       panelHeight: "not json",
     });
     const store = createToolbarStore({ storage });
     expect(store.getSnapshot().position).toBe("bottom");
+    expect(store.getSnapshot().density).toBeUndefined();
+    expect(store.getSnapshot().colorScheme).toBeUndefined();
+    expect(store.getSnapshot().extensionSettings).toEqual({});
     expect(store.getSnapshot().panelHeight).toBe(DEFAULT_PANEL_HEIGHT);
+  });
+
+  it("drops invalid extension setting entries and keeps valid siblings", () => {
+    const storage = createMemoryStorage({
+      extensionSettings: JSON.stringify({
+        valid: { shown: false, preset: "icon" },
+        shownDefault: { shown: true },
+        badPreset: { preset: "wide" },
+        extra: { shown: false, order: 1 },
+        empty: {},
+        scalar: false,
+      }),
+    });
+
+    expect(createToolbarStore({ storage }).getSnapshot().extensionSettings).toEqual({
+      valid: { shown: false, preset: "icon" },
+      extra: { shown: false },
+    });
+  });
+
+  it("stores only non-default extension settings", () => {
+    const { storage, store } = makeStore();
+    store.setExtensionSetting("metrics", { shown: false, preset: "icon" });
+    store.setExtensionSetting("metrics", { shown: undefined });
+
+    expect(storage.getItem("extensionSettings")).toBe(
+      JSON.stringify({ metrics: { preset: "icon" } }),
+    );
+
+    store.setExtensionSetting("metrics", { preset: undefined });
+    expect(store.getSnapshot().extensionSettings).toEqual({});
+    expect(store.getSnapshot().extensionSettings).toBe(store.getServerSnapshot().extensionSettings);
+    expect(storage.getItem("extensionSettings")).toBeNull();
+  });
+
+  it("clears density and color scheme overrides", () => {
+    const { storage, store } = makeStore();
+    store.setDensity("comfortable");
+    store.setColorScheme("dark");
+
+    store.setDensity(undefined);
+    store.setColorScheme(undefined);
+
+    expect(store.getSnapshot().density).toBeUndefined();
+    expect(store.getSnapshot().colorScheme).toBeUndefined();
+    expect(storage.getItem("density")).toBeNull();
+    expect(storage.getItem("colorScheme")).toBeNull();
+  });
+
+  it("keeps empty extension settings stable across unrelated updates and clean resets", () => {
+    const { store } = makeStore();
+    const initial = store.getSnapshot();
+    const extensionSettings = initial.extensionSettings;
+
+    store.setVisible(false);
+    expect(store.getSnapshot().extensionSettings).toBe(extensionSettings);
+
+    const beforeReset = store.getSnapshot();
+    store.resetSettings();
+    expect(store.getSnapshot()).toBe(beforeReset);
+  });
+
+  it("resets viewer settings without clearing visibility, panel state or extension data", () => {
+    const { storage, store } = makeStore();
+    storage.setItem("ext:metrics:threshold", "12");
+    store.setVisible(false);
+    store.setPosition("top");
+    store.setDensity("comfortable");
+    store.setColorScheme("dark");
+    store.setExtensionSetting("metrics", { shown: false, preset: "value" });
+    store.openPanel("metrics");
+    store.setPanelHeight(460);
+
+    store.resetSettings();
+
+    expect(store.getSnapshot()).toMatchObject({
+      visible: false,
+      position: "bottom",
+      density: undefined,
+      colorScheme: undefined,
+      extensionSettings: {},
+      activePanelId: "metrics",
+      panelHeight: 460,
+    });
+    expect(storage.getItem("visible")).toBe("false");
+    expect(storage.getItem("activePanel")).toBe('"metrics"');
+    expect(storage.getItem("panelHeight")).toBe("460");
+    expect(storage.getItem("ext:metrics:threshold")).toBe("12");
+    expect(storage.getItem("position")).toBeNull();
+    expect(storage.getItem("density")).toBeNull();
+    expect(storage.getItem("colorScheme")).toBeNull();
+    expect(storage.getItem("extensionSettings")).toBeNull();
   });
 });
 
@@ -133,6 +239,9 @@ describe("createToolbarStore server snapshot", () => {
     const storage = createMemoryStorage({
       visible: "false",
       position: '"top"',
+      density: '"comfortable"',
+      colorScheme: '"dark"',
+      extensionSettings: JSON.stringify({ metrics: { shown: false, preset: "icon" } }),
       activePanel: '"metrics"',
       panelHeight: "500",
     });
@@ -141,12 +250,18 @@ describe("createToolbarStore server snapshot", () => {
     expect(store.getSnapshot()).toMatchObject({
       visible: false,
       position: "top",
+      density: "comfortable",
+      colorScheme: "dark",
+      extensionSettings: { metrics: { shown: false, preset: "icon" } },
       activePanelId: "metrics",
       panelHeight: 500,
     });
     expect(store.getServerSnapshot()).toMatchObject({
       visible: true,
       position: "bottom",
+      density: undefined,
+      colorScheme: undefined,
+      extensionSettings: {},
       activePanelId: null,
       panelHeight: DEFAULT_PANEL_HEIGHT,
     });

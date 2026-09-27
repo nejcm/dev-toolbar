@@ -18,6 +18,7 @@ import { runCommand } from "../commands";
 import { isApplePlatform } from "../shortcut";
 import { createMemoryStorage, STORAGE_PREFIX } from "../storage";
 import { resetMountedInstances } from "../useHeightVariables";
+import { useViewerSettings } from "../viewerSettingsContext";
 import { renderWithToolbar } from "@nejcm/dev-toolbar/testing";
 
 const panelExtension = (
@@ -823,6 +824,258 @@ describe("persistence", () => {
 
     expect(screen.getByTestId("state").textContent).toBe("false/top");
     expect(document.querySelector("[data-dev-toolbar]")).toBeNull();
+  });
+
+  it("ignores stored viewer settings when settings are disabled", () => {
+    const storage = createMemoryStorage({
+      "dtb:v1:settings-off:position": '"top"',
+      "dtb:v1:settings-off:density": '"comfortable"',
+      "dtb:v1:settings-off:colorScheme": '"dark"',
+      "dtb:v1:settings-off:extensionSettings": JSON.stringify({
+        metrics: { shown: false, preset: "icon" },
+      }),
+    });
+    const State = () => {
+      const settings = useViewerSettings();
+      return (
+        <span data-testid="settings-state">
+          {JSON.stringify({
+            enabled: settings.enabled,
+            sections: settings.sections,
+            extensionSettings: settings.extensionSettings,
+          })}
+        </span>
+      );
+    };
+
+    render(
+      <DevToolbar
+        instanceId="settings-off"
+        storage={storage}
+        settings={false}
+        density="compact"
+        colorScheme="system"
+        extensions={[]}
+      >
+        <State />
+      </DevToolbar>,
+    );
+
+    const root = document.querySelector("[data-dev-toolbar]");
+    expect(root?.getAttribute("data-dtb-position")).toBe("bottom");
+    expect(root?.getAttribute("data-dtb-density")).toBe("compact");
+    expect(root?.getAttribute("data-dtb-color-scheme")).toBe("system");
+    expect(JSON.parse(screen.getByTestId("settings-state").textContent ?? "")).toEqual({
+      enabled: false,
+      sections: {
+        position: false,
+        density: false,
+        colorScheme: false,
+        extensions: false,
+      },
+      extensionSettings: {},
+    });
+  });
+
+  it("applies only the viewer setting sections in the allowlist", () => {
+    const storage = createMemoryStorage({
+      "dtb:v1:settings-allowlist:position": '"top"',
+      "dtb:v1:settings-allowlist:density": '"comfortable"',
+      "dtb:v1:settings-allowlist:colorScheme": '"dark"',
+      "dtb:v1:settings-allowlist:extensionSettings": JSON.stringify({
+        metrics: { shown: false, preset: "icon" },
+      }),
+    });
+    const State = () => {
+      const settings = useViewerSettings();
+      return (
+        <span data-testid="extension-settings">
+          {JSON.stringify({
+            enabled: settings.enabled,
+            extensionSettings: settings.extensionSettings,
+          })}
+        </span>
+      );
+    };
+    const view = render(
+      <DevToolbar
+        instanceId="settings-allowlist"
+        storage={storage}
+        settings={{ density: true }}
+        density="compact"
+        colorScheme="system"
+        extensions={[]}
+      >
+        <State />
+      </DevToolbar>,
+    );
+
+    let root = document.querySelector("[data-dev-toolbar]");
+    expect(root?.getAttribute("data-dtb-position")).toBe("bottom");
+    expect(root?.getAttribute("data-dtb-density")).toBe("comfortable");
+    expect(root?.getAttribute("data-dtb-color-scheme")).toBe("system");
+    expect(JSON.parse(screen.getByTestId("extension-settings").textContent ?? "")).toEqual({
+      enabled: true,
+      extensionSettings: {},
+    });
+
+    view.rerender(
+      <DevToolbar
+        instanceId="settings-allowlist"
+        storage={storage}
+        settings={{ position: true, colorScheme: true, extensions: true }}
+        density="compact"
+        colorScheme="system"
+        extensions={[]}
+      >
+        <State />
+      </DevToolbar>,
+    );
+
+    root = document.querySelector("[data-dev-toolbar]");
+    expect(root?.getAttribute("data-dtb-position")).toBe("top");
+    expect(root?.getAttribute("data-dtb-density")).toBe("compact");
+    expect(root?.getAttribute("data-dtb-color-scheme")).toBe("dark");
+    expect(JSON.parse(screen.getByTestId("extension-settings").textContent ?? "")).toEqual({
+      enabled: true,
+      extensionSettings: { metrics: { shown: false, preset: "icon" } },
+    });
+
+    view.rerender(
+      <DevToolbar instanceId="settings-allowlist" storage={storage} settings={{}} extensions={[]}>
+        <State />
+      </DevToolbar>,
+    );
+    expect(JSON.parse(screen.getByTestId("extension-settings").textContent ?? "")).toEqual({
+      enabled: false,
+      extensionSettings: {},
+    });
+  });
+
+  it("routes controlled position changes through onPositionChange even when settings are off", () => {
+    const storage = createMemoryStorage({
+      "dtb:v1:controlled-settings:position": '"top"',
+    });
+    const onPositionChange = vi.fn();
+    const Controls = () => {
+      const { setPosition } = useDevToolbar();
+      return (
+        <button type="button" onClick={() => setPosition("top")}>
+          move controlled
+        </button>
+      );
+    };
+
+    render(
+      <DevToolbar
+        instanceId="controlled-settings"
+        storage={storage}
+        settings={false}
+        position="bottom"
+        onPositionChange={onPositionChange}
+        extensions={[]}
+      >
+        <Controls />
+      </DevToolbar>,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "move controlled" }));
+    expect(onPositionChange).toHaveBeenCalledOnce();
+    expect(onPositionChange).toHaveBeenCalledWith("top");
+    expect(document.querySelector("[data-dev-toolbar]")?.getAttribute("data-dtb-position")).toBe(
+      "bottom",
+    );
+    expect(storage.getItem("dtb:v1:controlled-settings:position")).toBe('"top"');
+  });
+
+  it("ignores uncontrolled position changes when the position setting is off", () => {
+    const storage = createMemoryStorage();
+    const onPositionChange = vi.fn();
+    const Controls = () => {
+      const { setPosition } = useDevToolbar();
+      return (
+        <button type="button" onClick={() => setPosition("top")}>
+          move disabled
+        </button>
+      );
+    };
+
+    render(
+      <DevToolbar
+        instanceId="disabled-position"
+        storage={storage}
+        settings={{ density: true }}
+        onPositionChange={onPositionChange}
+        extensions={[]}
+      >
+        <Controls />
+      </DevToolbar>,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "move disabled" }));
+    expect(onPositionChange).not.toHaveBeenCalled();
+    expect(storage.getItem("dtb:v1:disabled-position:position")).toBeNull();
+    expect(document.querySelector("[data-dev-toolbar]")?.getAttribute("data-dtb-position")).toBe(
+      "bottom",
+    );
+  });
+
+  it("keeps settings in memory for the mounted session when storage is null", () => {
+    const Controls = () => {
+      const toolbar = useDevToolbar();
+      const settings = useViewerSettings();
+      return (
+        <>
+          <button type="button" onClick={() => toolbar.setPosition("top")}>
+            move session
+          </button>
+          <button type="button" onClick={() => settings.setDensity("comfortable")}>
+            resize session
+          </button>
+          <button type="button" onClick={() => settings.setColorScheme("dark")}>
+            recolor session
+          </button>
+          <button
+            type="button"
+            onClick={() => settings.setExtensionSetting("metrics", { shown: false })}
+          >
+            hide session item
+          </button>
+          <span data-testid="session-settings">{JSON.stringify(settings.extensionSettings)}</span>
+        </>
+      );
+    };
+    const renderSession = () =>
+      render(
+        <DevToolbar instanceId="session-settings" storage={null} extensions={[]}>
+          <Controls />
+        </DevToolbar>,
+      );
+    const view = renderSession();
+
+    fireEvent.click(screen.getByRole("button", { name: "move session" }));
+    fireEvent.click(screen.getByRole("button", { name: "resize session" }));
+    fireEvent.click(screen.getByRole("button", { name: "recolor session" }));
+    fireEvent.click(screen.getByRole("button", { name: "hide session item" }));
+
+    let root = document.querySelector("[data-dev-toolbar]");
+    expect(root?.getAttribute("data-dtb-position")).toBe("top");
+    expect(root?.getAttribute("data-dtb-density")).toBe("comfortable");
+    expect(root?.getAttribute("data-dtb-color-scheme")).toBe("dark");
+    expect(screen.getByTestId("session-settings").textContent).toBe(
+      JSON.stringify({ metrics: { shown: false } }),
+    );
+    expect(
+      Object.keys(window.localStorage).filter((key) => key.startsWith(STORAGE_PREFIX)),
+    ).toEqual([]);
+
+    view.unmount();
+    renderSession();
+    root = document.querySelector("[data-dev-toolbar]");
+    expect(root?.getAttribute("data-dtb-position")).toBe("bottom");
+    expect(root?.getAttribute("data-dtb-density")).toBe("compact");
+    expect(root?.getAttribute("data-dtb-color-scheme")).toBe("system");
+    expect(screen.getByTestId("session-settings").textContent).toBe("{}");
   });
 });
 

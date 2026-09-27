@@ -14,30 +14,23 @@
  * `docs/adr/ADR-004-per-extension-bar-presentation.md` for rejected alternatives.
  */
 import type { ReactNode } from "react";
+import type { CompactPreset } from "../core/contract";
 import { Glyph, hasPaintableIcon } from "./controls";
 import type { SpanProps } from "./controls";
 
-/**
- * How a bar control presents itself.
- *
- * `"default"` is a member, not an absence, because "default" isn't one shape
- * across the nine (short-word-plus-value, label-only, glyph-plus-hint). It's
- * also the option's default, so `resolveCompactParts` returning `null` for it
- * is what makes byte-identical default output structural rather than assumed.
- */
-export type CompactPreset =
-  /** Whatever this extension renders today. Extension-defined; resolves to `null`. */
-  | "default"
-  /** The icon alone. Falls back to text when no icon is supplied. */
-  | "icon"
-  /** The icon and the extension's value. */
-  | "icon-value"
-  /** The icon and the extension's text. */
-  | "icon-label"
-  /** The extension's text alone. */
-  | "label"
-  /** The extension's value alone. */
-  | "value";
+export type { CompactPreset } from "../core/contract";
+
+const PRESET_SET = {
+  default: true,
+  icon: true,
+  "icon-value": true,
+  "icon-label": true,
+  label: true,
+  value: true,
+} satisfies Record<CompactPreset, true>;
+
+/** Every compact presentation preset, in Settings menu order. */
+export const ALL_PRESETS: readonly CompactPreset[] = Object.keys(PRESET_SET) as CompactPreset[];
 
 /**
  * Which text a control paints.
@@ -175,6 +168,16 @@ export function resolvePresentation<TView>(
     return { preset: input };
   }
   return { ...input, preset: input.preset ?? "default" };
+}
+
+/** Replaces the factory preset with a slot preset; same object when unset or it matches. */
+export function withSlotPreset<TView>(
+  presentation: ResolvedCompactPresentation<TView>,
+  slotPreset: CompactPreset | undefined,
+): ResolvedCompactPresentation<TView> {
+  return slotPreset === undefined || slotPreset === presentation.preset
+    ? presentation
+    : { ...presentation, preset: slotPreset };
 }
 
 /**

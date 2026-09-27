@@ -8,6 +8,7 @@ import type {
 import { cx } from "./context";
 import { ExtensionBoundary } from "./ExtensionBoundary";
 import { OverflowBar } from "./Overflow";
+import type { ExtensionSettings } from "./store";
 
 /**
  * Renders a slot function inside a child component so that a throw lands in
@@ -24,11 +25,16 @@ export function Slot<T>({
 }
 
 /** Visible extensions, split by region and sorted by `order` (stable on ties). */
-export function sortExtensions(extensions: readonly DevToolbarExtension[]): {
+export function sortExtensions(
+  extensions: readonly DevToolbarExtension[],
+  extensionSettings: ExtensionSettings = {},
+): {
   start: DevToolbarExtension[];
   end: DevToolbarExtension[];
 } {
-  const visible = extensions.filter((extension) => extension.hidden !== true);
+  const visible = extensions.filter(
+    (extension) => extension.hidden !== true && extensionSettings[extension.id]?.shown !== false,
+  );
   const byOrder = (a: DevToolbarExtension, b: DevToolbarExtension) =>
     (a.order ?? 0) - (b.order ?? 0);
   return {
@@ -39,6 +45,7 @@ export function sortExtensions(extensions: readonly DevToolbarExtension[]): {
 
 export interface BarProps {
   extensions: readonly DevToolbarExtension[];
+  extensionSettings?: ExtensionSettings | undefined;
   density: ToolbarDensity;
   activePanelId: string | null;
   openPanel: (id: string) => void;
@@ -46,10 +53,12 @@ export interface BarProps {
   togglePanel: (id: string) => void;
   classNames?: DevToolbarClassNames | undefined;
   styleNonce?: string | undefined;
+  settingsMenu?: ReactNode;
 }
 
 export function Bar({
   extensions,
+  extensionSettings = {},
   density,
   activePanelId,
   openPanel,
@@ -57,8 +66,9 @@ export function Bar({
   togglePanel,
   classNames,
   styleNonce,
+  settingsMenu,
 }: BarProps): ReactNode {
-  const { start, end } = sortExtensions(extensions);
+  const { start, end } = sortExtensions(extensions, extensionSettings);
 
   const renderItem = (
     extension: DevToolbarExtension,
@@ -66,6 +76,7 @@ export function Bar({
   ): ReactNode => {
     const isPanelOpen = activePanelId === extension.id;
     const hasPanel = typeof extension.panel === "function";
+    const preset = extensionSettings[extension.id]?.preset;
     const slotProps: CompactSlotProps = {
       isOverflowed,
       isPanelOpen,
@@ -73,6 +84,7 @@ export function Bar({
       openPanel: () => openPanel(extension.id),
       closePanel: () => closePanel(extension.id),
       togglePanel: () => togglePanel(extension.id),
+      ...(preset && extension.presets?.includes(preset) ? { preset } : {}),
       ...(styleNonce ? { styleNonce } : {}),
     };
 
@@ -117,6 +129,7 @@ export function Bar({
       endItems={end}
       renderItem={renderItem}
       classNames={classNames}
+      settingsMenu={settingsMenu}
     />
   );
 }

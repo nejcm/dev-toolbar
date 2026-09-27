@@ -342,7 +342,8 @@ export const CORE_CSS = String.raw`/**
      :not(:first-child) is per region — so neither the bar's leading edge nor
      the start of the end region opens with a stray rule. */
   [data-dev-toolbar] [data-dtb-part="region"] > [data-dtb-part="item"],
-  [data-dev-toolbar] [data-dtb-part="region"] > [data-dtb-part="overflow-button"] {
+  [data-dev-toolbar] [data-dtb-part="region"] > [data-dtb-part="overflow-button"],
+  [data-dev-toolbar] [data-dtb-part="region"] > [data-dtb-part="settings-button"] {
     position: relative;
   }
 
@@ -351,7 +352,10 @@ export const CORE_CSS = String.raw`/**
     > [data-dtb-part="item"]:not(:first-child)::before,
   [data-dev-toolbar]
     [data-dtb-part="region"]
-    > [data-dtb-part="overflow-button"]:not(:first-child)::before {
+    > [data-dtb-part="overflow-button"]:not(:first-child)::before,
+  [data-dev-toolbar]
+    [data-dtb-part="region"]
+    > [data-dtb-part="settings-button"]:not(:first-child)::before {
     content: "";
     position: absolute;
     inset-inline-start: calc(-0.5 * var(--dtb-item-gap));
@@ -362,7 +366,8 @@ export const CORE_CSS = String.raw`/**
   }
 
   [data-dev-toolbar] [data-dtb-part="trigger"],
-  [data-dev-toolbar] [data-dtb-part="overflow-button"] {
+  [data-dev-toolbar] [data-dtb-part="overflow-button"],
+  [data-dev-toolbar] [data-dtb-part="settings-button"] {
     display: inline-flex;
     align-items: center;
     gap: var(--dtb-chip-gap);
@@ -385,7 +390,8 @@ export const CORE_CSS = String.raw`/**
 
   @media (prefers-reduced-motion: reduce) {
     [data-dev-toolbar] [data-dtb-part="trigger"],
-    [data-dev-toolbar] [data-dtb-part="overflow-button"] {
+    [data-dev-toolbar] [data-dtb-part="overflow-button"],
+    [data-dev-toolbar] [data-dtb-part="settings-button"] {
       transition: none;
     }
   }
@@ -395,12 +401,19 @@ export const CORE_CSS = String.raw`/**
      math reserves the width it *measures*, so a squeezed button reserves less,
      which stops the collapse that would have unsqueezed it — the bar settles
      with an unreadable, clipped button instead. */
-  [data-dev-toolbar] [data-dtb-part="overflow-button"] {
+  [data-dev-toolbar] [data-dtb-part="overflow-button"],
+  [data-dev-toolbar] [data-dtb-part="settings-button"] {
     flex: 0 0 auto;
   }
 
+  [data-dev-toolbar] [data-dtb-part="overflow-button"],
+  [data-dev-toolbar] [data-dtb-part="settings-button"] {
+    font-size: calc(1em + 3px);
+  }
+
   [data-dev-toolbar] [data-dtb-part="trigger"]:hover,
-  [data-dev-toolbar] [data-dtb-part="overflow-button"]:hover {
+  [data-dev-toolbar] [data-dtb-part="overflow-button"]:hover,
+  [data-dev-toolbar] [data-dtb-part="settings-button"]:hover {
     background: var(--dtb-item-hover-bg);
   }
 
@@ -416,17 +429,20 @@ export const CORE_CSS = String.raw`/**
   }
 
   [data-dev-toolbar] [data-dtb-part="trigger"][aria-expanded="true"],
-  [data-dev-toolbar] [data-dtb-part="overflow-button"][aria-expanded="true"] {
+  [data-dev-toolbar] [data-dtb-part="overflow-button"][aria-expanded="true"],
+  [data-dev-toolbar] [data-dtb-part="settings-button"][aria-expanded="true"] {
     background: var(--dtb-item-active-bg);
   }
 
   [data-dev-toolbar] [data-dtb-part="trigger"]:active,
-  [data-dev-toolbar] [data-dtb-part="overflow-button"]:active {
+  [data-dev-toolbar] [data-dtb-part="overflow-button"]:active,
+  [data-dev-toolbar] [data-dtb-part="settings-button"]:active {
     background: var(--dtb-item-pressed-bg);
   }
 
   [data-dev-toolbar] [data-dtb-part="trigger"]:focus-visible,
-  [data-dev-toolbar] [data-dtb-part="overflow-button"]:focus-visible {
+  [data-dev-toolbar] [data-dtb-part="overflow-button"]:focus-visible,
+  [data-dev-toolbar] [data-dtb-part="settings-button"]:focus-visible {
     outline: 2px solid var(--dtb-accent);
     outline-offset: -1px;
   }
@@ -441,7 +457,8 @@ export const CORE_CSS = String.raw`/**
      Positioned against the toolbar root, which is the nearest positioned
      ancestor: the bar in between is overflow hidden but does not clip this,
      because it is not the containing block. */
-  [data-dev-toolbar] [data-dtb-part="overflow-menu"] {
+  [data-dev-toolbar] [data-dtb-part="overflow-menu"],
+  [data-dev-toolbar] [data-dtb-part="settings-menu"] {
     position: absolute;
     /* Stated rather than left to auto: the popup is a positioned descendant of
        the bar, and the panel is a later sibling of the bar, so paint order
@@ -467,21 +484,27 @@ export const CORE_CSS = String.raw`/**
   /* Only the corner that touches neither the bar nor the viewport is rounded;
      the other three stay square so the popup reads as part of the bar. */
   [data-dev-toolbar][data-dtb-position="bottom"]
-    [data-dtb-part="overflow-menu"] {
+    [data-dtb-part="overflow-menu"],
+  [data-dev-toolbar][data-dtb-position="bottom"]
+    [data-dtb-part="settings-menu"] {
     border-start-start-radius: var(--dtb-radius);
   }
 
-  [data-dev-toolbar][data-dtb-position="top"] [data-dtb-part="overflow-menu"] {
+  [data-dev-toolbar][data-dtb-position="top"] [data-dtb-part="overflow-menu"],
+  [data-dev-toolbar][data-dtb-position="top"] [data-dtb-part="settings-menu"] {
     border-end-start-radius: var(--dtb-radius);
   }
 
   [data-dev-toolbar][data-dtb-position="bottom"]
-    [data-dtb-part="overflow-menu"] {
+    [data-dtb-part="overflow-menu"],
+  [data-dev-toolbar][data-dtb-position="bottom"]
+    [data-dtb-part="settings-menu"] {
     bottom: var(--dtb-bar-height);
     border-bottom: 0;
   }
 
-  [data-dev-toolbar][data-dtb-position="top"] [data-dtb-part="overflow-menu"] {
+  [data-dev-toolbar][data-dtb-position="top"] [data-dtb-part="overflow-menu"],
+  [data-dev-toolbar][data-dtb-position="top"] [data-dtb-part="settings-menu"] {
     top: var(--dtb-bar-height);
     border-top: 0;
   }
@@ -502,6 +525,73 @@ export const CORE_CSS = String.raw`/**
     min-height: calc(var(--dtb-bar-height) - 8px);
     padding: 0 var(--dtb-control-padding-x);
     border-radius: var(--dtb-radius);
+  }
+
+  [data-dev-toolbar] [data-dtb-part="settings-menu"] {
+    width: min(340px, 100vw);
+    max-height: min(70vh, 560px);
+    font-family: var(--dtb-font-family);
+  }
+
+  [data-dev-toolbar] [data-dtb-part="settings-section"] {
+    display: flex;
+    flex-direction: column;
+    gap: var(--dtb-space-1);
+    min-width: 0;
+    margin: 0;
+    padding: var(--dtb-space-2);
+    border: 0;
+    border-bottom: 1px solid var(--dtb-border);
+  }
+
+  [data-dev-toolbar] [data-dtb-part="settings-section"] > legend:where(:not([data-dtb-embed] *)) {
+    padding: 0;
+    color: var(--dtb-muted);
+    font-weight: 600;
+  }
+
+  [data-dev-toolbar] [data-dtb-part="settings-options"] {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--dtb-space-2);
+  }
+
+  [data-dev-toolbar] [data-dtb-part="settings-options"] > label:where(:not([data-dtb-embed] *)),
+  [data-dev-toolbar] [data-dtb-part="settings-extension"] > label:where(:not([data-dtb-embed] *)) {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--dtb-space-1);
+  }
+
+  [data-dev-toolbar] [data-dtb-part="settings-extensions"] {
+    display: flex;
+    flex-direction: column;
+    gap: var(--dtb-space-2);
+  }
+
+  [data-dev-toolbar] [data-dtb-part="settings-extension"] {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: var(--dtb-space-2);
+  }
+
+  /* Sticky so Reset stays in view however long the extension list grows. */
+  [data-dev-toolbar] [data-dtb-part="settings-reset"] {
+    position: sticky;
+    bottom: 0;
+    flex: 0 0 auto;
+    min-height: var(--dtb-control-height);
+    margin: var(--dtb-space-1);
+    padding: 0 var(--dtb-control-padding-x);
+    border: 1px solid var(--dtb-border);
+    border-radius: var(--dtb-radius);
+    background: var(--dtb-menu-bg);
+    box-shadow: 0 0 0 var(--dtb-menu-padding) var(--dtb-menu-bg);
+  }
+
+  [data-dev-toolbar] [data-dtb-part="settings-reset"]:hover {
+    background: var(--dtb-item-hover-bg);
   }
 
   [data-dev-toolbar] [data-dtb-part="panel"] {

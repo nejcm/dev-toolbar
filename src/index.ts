@@ -8,6 +8,7 @@ export type {
   CommandInputType,
   CommandInputValue,
   CommandInvocation,
+  CompactPreset,
   CompactSlotProps,
   DevToolbarClassNames,
   DevToolbarExtension,

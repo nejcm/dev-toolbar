@@ -13,6 +13,21 @@ export type ToolbarPosition = "bottom" | "top";
 export type ToolbarDensity = "compact" | "comfortable";
 export type ToolbarColorScheme = "light" | "dark" | "system";
 
+/** How an extension's compact control presents itself in the bar. */
+export type CompactPreset =
+  /** Whatever this extension renders today. */
+  | "default"
+  /** The icon alone. Falls back to text when no icon is supplied. */
+  | "icon"
+  /** The icon and the extension's value. */
+  | "icon-value"
+  /** The icon and the extension's text. */
+  | "icon-label"
+  /** The extension's text alone. */
+  | "label"
+  /** The extension's value alone. */
+  | "value";
+
 /** Minimal synchronous key/value store; `localStorage` satisfies this shape and is the default. */
 export interface ToolbarStorage {
   getItem(key: string): string | null;
@@ -210,6 +225,8 @@ export interface CompactSlotProps {
   isOverflowed: boolean;
   isPanelOpen: boolean;
   density: ToolbarDensity;
+  /** Viewer-selected presentation override. */
+  preset?: CompactPreset;
   openPanel(): void;
   closePanel(): void;
   /** Open this extension's panel when closed, close it when open. */
@@ -326,6 +343,8 @@ export interface DevToolbarExtension {
   keepMounted?: boolean;
   /** Show core's panel close button. Default `true`; Escape still closes when `false`. */
   closeButton?: boolean;
+  /** Presentation presets the viewer may choose for this extension. */
+  presets?: readonly CompactPreset[];
   compact?: (props: CompactSlotProps) => ReactNode;
   panel?: (props: PanelSlotProps) => ReactNode;
   /**
@@ -358,6 +377,8 @@ export interface DevToolbarClassNames {
   overflowButton?: string;
   overflowMenu?: string;
   overflowMenuItem?: string;
+  settingsButton?: string;
+  settingsMenu?: string;
   overlay?: string;
   panel?: string;
   panelClose?: string;

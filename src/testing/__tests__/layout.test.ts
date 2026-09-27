@@ -57,6 +57,12 @@ const overflowButton = () => {
   return element;
 };
 
+const settingsButton = () => {
+  const element = document.createElement("button");
+  element.dataset["dtbPart"] = "settings-button";
+  return element;
+};
+
 /** A bar with a region inside it, which is what `regionGap()` looks for. */
 const barWithRegion = () => {
   const element = bar();
@@ -263,9 +269,17 @@ describe("installToolbarLayout", () => {
       barWidth: 500,
       itemWidths: { a: 123 },
       overflowButtonWidth: 29,
+      settingsButtonWidth: 31,
       rootHeight: 42,
     });
-    const targets = [bar(), item("a"), root(), overflowButton(), document.createElement("div")];
+    const targets = [
+      bar(),
+      item("a"),
+      root(),
+      overflowButton(),
+      settingsButton(),
+      document.createElement("div"),
+    ];
     const callback = vi.fn<ResizeObserverCallback>();
     const observer = new ResizeObserver(callback);
     for (const target of targets) observer.observe(target);
@@ -279,9 +293,10 @@ describe("installToolbarLayout", () => {
       [123, 0],
       [500, 42],
       [29, 0],
+      [31, 0],
       [0, 0],
     ]);
-    expect(entries.map((entry) => entry.borderBoxSize)).toEqual([[], [], [], [], []]);
+    expect(entries.map((entry) => entry.borderBoxSize)).toEqual([[], [], [], [], [], []]);
 
     // Matches a real entry's shape: `DOMRectReadOnly`, not `DOMRect` — derived
     // edges show up in `toJSON()`, but own keys and a spread stay empty.
@@ -296,6 +311,7 @@ describe("installToolbarLayout", () => {
     expect(measurer().barWidth(barTarget!)).toBe(500);
     expect(measurer().itemWidth(itemTarget!)).toBe(123);
     expect(measurer().height(rootTarget!)).toBe(42);
+    expect(measurer().chromeWidth(targets[4] as HTMLElement, 7)).toBe(38);
 
     handle.setItemWidth("a", 150);
     expect(callback.mock.lastCall?.[0][1]?.contentRect.width).toBe(150);

@@ -54,6 +54,8 @@ export interface CollapseReading {
   readonly gap?: number;
   /** The `⋮` button's width. Ignored unless positive: the button is only rendered once something has collapsed. */
   readonly buttonWidth?: number;
+  /** Always-reserved toolbar chrome width, including its preceding gap. */
+  readonly chromeWidth?: number;
   /** Measured item-host widths, subject to CSS caps such as max-width. Ignored unless positive. */
   readonly widths?: Iterable<readonly [id: string, width: number]>;
 }
@@ -94,6 +96,7 @@ export class CollapseMachine {
   #padding = 0;
   #gap: number;
   #buttonWidth: number;
+  #chromeWidth = 0;
   #collapsed: ReadonlySet<string> = EMPTY;
   /** Signatures of every decision held since the last honest reading. */
   readonly #seen = new Set<string>();
@@ -146,6 +149,10 @@ export class CollapseMachine {
     if (reading.buttonWidth !== undefined && reading.buttonWidth > 0) {
       this.#buttonWidth = reading.buttonWidth;
     }
+    if (reading.chromeWidth !== undefined && reading.chromeWidth >= 0) {
+      if (reading.chromeWidth !== this.#chromeWidth) honest = true;
+      this.#chromeWidth = reading.chromeWidth;
+    }
     if (reading.widths) {
       for (const [id, width] of reading.widths) {
         if (width > 0) this.#widths.set(id, width);
@@ -176,6 +183,7 @@ export class CollapseMachine {
       this.#available(),
       this.#buttonWidth,
       this.#gap,
+      this.#chromeWidth,
     );
     if (sameSet(this.#collapsed, next)) {
       if (honest) this.#seen.add(this.#signature(next));
@@ -218,7 +226,7 @@ export class CollapseMachine {
     const startEmpty = !this.#items.some(
       (item) => item.region === "start" && !this.#collapsed.has(item.id),
     );
-    const endEmpty = !this.#items.some((item) => item.region === "end");
+    const endEmpty = this.#chromeWidth === 0 && !this.#items.some((item) => item.region === "end");
     const reserved = this.#padding + (startEmpty ? this.#gap : 0) + (endEmpty ? this.#gap : 0);
     return Math.max(0, this.#barWidth - reserved);
   }
@@ -242,6 +250,7 @@ function computeOverflow(
   available: number,
   overflowButtonWidth: number,
   gap: number,
+  chromeWidth: number,
 ): Set<string> {
   const overflow = new Set<string>();
   if (!(available > 0) || items.length === 0) return overflow;
@@ -249,7 +258,7 @@ function computeOverflow(
   const widthOf = (list: readonly MeasuredItem[]) =>
     list.reduce((sum, item) => sum + item.width, 0) + Math.max(0, list.length - 1) * gap;
 
-  if (widthOf(items) <= available) return overflow;
+  if (widthOf(items) + chromeWidth <= available) return overflow;
 
   const candidates = items
     .map((item, index) => ({ item, index }))
@@ -258,7 +267,8 @@ function computeOverflow(
   for (const candidate of candidates) {
     overflow.add(candidate.item.id);
     const remaining = items.filter((item) => !overflow.has(item.id));
-    const needed = widthOf(remaining) + (remaining.length > 0 ? gap : 0) + overflowButtonWidth;
+    const needed =
+      widthOf(remaining) + (remaining.length > 0 ? gap : 0) + overflowButtonWidth + chromeWidth;
     if (needed <= available) break;
   }
 
