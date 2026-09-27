@@ -20,6 +20,18 @@ import type { SpanProps } from "./controls";
 
 export type { CompactPreset } from "../core/contract";
 
+const PRESET_SET = {
+  default: true,
+  icon: true,
+  "icon-value": true,
+  "icon-label": true,
+  label: true,
+  value: true,
+} satisfies Record<CompactPreset, true>;
+
+/** Every compact presentation preset, in Settings menu order. */
+export const ALL_PRESETS: readonly CompactPreset[] = Object.keys(PRESET_SET) as CompactPreset[];
+
 /**
  * Which text a control paints.
  *
@@ -156,6 +168,16 @@ export function resolvePresentation<TView>(
     return { preset: input };
   }
   return { ...input, preset: input.preset ?? "default" };
+}
+
+/** Replaces the factory preset with a slot preset, preserving identity when none is set. */
+export function withSlotPreset<TView>(
+  presentation: ResolvedCompactPresentation<TView>,
+  slotPreset: CompactPreset | undefined,
+): ResolvedCompactPresentation<TView> {
+  return slotPreset === undefined || slotPreset === presentation.preset
+    ? presentation
+    : { ...presentation, preset: slotPreset };
 }
 
 /**

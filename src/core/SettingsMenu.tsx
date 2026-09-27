@@ -68,8 +68,6 @@ export function SettingsMenu(): ReactNode {
   const id = useId();
   const menuId = `dtb-settings-menu-${id}`;
 
-  if (!settings.enabled) return null;
-
   const extensions = presentExtensions(toolbar.extensions);
   const setPosition = (next: ToolbarPosition) =>
     settings.setPosition(

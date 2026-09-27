@@ -40,7 +40,12 @@
  */
 import { createDiagnosticsRuntime } from "./runtime";
 import { DiagnosticsChip, DiagnosticsPanel } from "./ui";
-import { resolvePresentation, resolveStyleNonce } from "@nejcm/dev-toolbar/kit";
+import {
+  ALL_PRESETS,
+  resolvePresentation,
+  resolveStyleNonce,
+  withSlotPreset,
+} from "@nejcm/dev-toolbar/kit";
 import type { CompactPresentationInput } from "@nejcm/dev-toolbar/kit";
 import type { DiagnosticsRuntimeOptions } from "./runtime";
 import type {
@@ -192,17 +197,18 @@ export function diagnostics(options: DiagnosticsOptions = {}): DevToolbarExtensi
     order,
     priority,
     keepMounted,
+    presets: ALL_PRESETS,
     ...(hidden === undefined ? {} : { hidden }),
 
     start(api: ExtensionRuntimeApi) {
       return runtime.start(api);
     },
 
-    compact: ({ isOverflowed, isPanelOpen, togglePanel, styleNonce }) => (
+    compact: ({ isOverflowed, isPanelOpen, preset, togglePanel, styleNonce }) => (
       <DiagnosticsChip
         runtime={runtime}
         label={label}
-        presentation={presentation}
+        presentation={withSlotPreset(presentation, preset)}
         isOverflowed={isOverflowed}
         isPanelOpen={isPanelOpen}
         injectStyles={injectStyles}

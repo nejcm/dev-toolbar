@@ -134,6 +134,17 @@ describe("SettingsMenu disclosure", () => {
     expect(menu()).toBeNull();
     expect(toolbar.overflowMenu()).not.toBeNull();
   });
+
+  it("keeps disclosure coordination off document", () => {
+    const onOpen = vi.fn();
+    document.addEventListener("dtb:disclosure-open", onOpen);
+    const { toolbar } = renderWithToolbar();
+
+    toolbar.openSettings();
+
+    expect(onOpen).not.toHaveBeenCalled();
+    document.removeEventListener("dtb:disclosure-open", onOpen);
+  });
 });
 
 describe("SettingsMenu values", () => {

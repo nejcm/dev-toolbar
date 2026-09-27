@@ -29,9 +29,14 @@ export function useDisclosure(
     if (!open || typeof document === "undefined") return;
 
     const trigger = triggerRef.current;
-    if (trigger) {
-      document.dispatchEvent(new CustomEvent<HTMLElement>(OPEN_EVENT, { detail: trigger }));
+    const group = trigger?.closest<HTMLElement>(GROUP_SELECTOR);
+    if (trigger && group) {
+      group.dispatchEvent(new CustomEvent<HTMLElement>(OPEN_EVENT, { detail: trigger }));
     }
+    const onOpen = (event: Event) => {
+      if ((event as CustomEvent<HTMLElement>).detail === triggerRef.current) return;
+      setOpen(false);
+    };
 
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key !== "Escape") return;
@@ -50,28 +55,14 @@ export function useDisclosure(
     document.addEventListener("keydown", onKeyDown);
     document.addEventListener("pointerdown", onPointerDown, true);
     document.addEventListener("mousedown", onPointerDown, true);
+    group?.addEventListener(OPEN_EVENT, onOpen);
     return () => {
+      group?.removeEventListener(OPEN_EVENT, onOpen);
       document.removeEventListener("keydown", onKeyDown);
       document.removeEventListener("pointerdown", onPointerDown, true);
       document.removeEventListener("mousedown", onPointerDown, true);
     };
   }, [open]);
-
-  useEffect(() => {
-    if (typeof document === "undefined") return;
-
-    const onOpen = (event: Event) => {
-      const openedTrigger = (event as CustomEvent<HTMLElement>).detail;
-      const ownTrigger = triggerRef.current;
-      if (!ownTrigger || openedTrigger === ownTrigger) return;
-      const group = ownTrigger.closest(GROUP_SELECTOR);
-      if (!group || openedTrigger.closest(GROUP_SELECTOR) !== group) return;
-      setOpen(false);
-    };
-
-    document.addEventListener(OPEN_EVENT, onOpen);
-    return () => document.removeEventListener(OPEN_EVENT, onOpen);
-  }, []);
   /* oxlint-enable react-hooks/exhaustive-deps */
 
   return { open, setOpen };

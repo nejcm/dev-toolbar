@@ -24,7 +24,12 @@ import { writeClipboardTextOrThrow } from "../../runtime";
 import { createMetricsRuntime } from "./runtime";
 import { MetricsChips, MetricsPanel } from "./ui";
 import { METRIC_IDS, isMetricId } from "./types";
-import { resolvePresentation, resolveStyleNonce } from "@nejcm/dev-toolbar/kit";
+import {
+  ALL_PRESETS,
+  resolvePresentation,
+  resolveStyleNonce,
+  withSlotPreset,
+} from "@nejcm/dev-toolbar/kit";
 import type { CompactPresentationInput } from "@nejcm/dev-toolbar/kit";
 import type { Collector, CollectorId, MetricId, MetricView } from "./types";
 import type { MemoryCollectorOptions } from "./collectors/memory";
@@ -344,17 +349,18 @@ export function metrics(options: MetricsOptions = {}): DevToolbarExtension {
     align,
     order,
     priority,
+    presets: ALL_PRESETS,
     ...(hidden === undefined ? {} : { hidden }),
 
     start(api: ExtensionRuntimeApi) {
       return runtime.start(api);
     },
 
-    compact: ({ isOverflowed, isPanelOpen, togglePanel, styleNonce }) => (
+    compact: ({ isOverflowed, isPanelOpen, preset, togglePanel, styleNonce }) => (
       <MetricsChips
         runtime={runtime}
         label={label}
-        presentation={presentation}
+        presentation={withSlotPreset(presentation, preset)}
         isOverflowed={isOverflowed}
         isPanelOpen={isPanelOpen}
         injectStyles={injectStyles}

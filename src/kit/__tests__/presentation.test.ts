@@ -15,6 +15,7 @@ import {
   resolveIcon,
   resolveNameOverride,
   resolvePresentation,
+  withSlotPreset,
 } from "../presentation";
 
 // Every member of the union, listed as a Record so adding a preset without
@@ -139,6 +140,26 @@ describe("resolvePresentation", () => {
 
   it("keeps an explicit preset on the full shape", () => {
     expect(resolvePresentation<number>({ preset: "value" }).preset).toBe("value");
+  });
+});
+
+describe("withSlotPreset", () => {
+  it("replaces the resolved factory preset", () => {
+    const presentation = resolvePresentation<number>({ preset: "icon-value", icon: "*" });
+
+    expect(withSlotPreset(presentation, "label")).toEqual({ preset: "label", icon: "*" });
+  });
+
+  it("returns the same presentation when no slot preset is set", () => {
+    const presentation = resolvePresentation<number>({ preset: "icon-value", icon: "*" });
+
+    expect(withSlotPreset(presentation, undefined)).toBe(presentation);
+  });
+
+  it("returns the same presentation when the slot preset matches", () => {
+    const presentation = resolvePresentation<number>({ preset: "icon-value", icon: "*" });
+
+    expect(withSlotPreset(presentation, "icon-value")).toBe(presentation);
   });
 });
 
