@@ -14,6 +14,13 @@
   style break at the boundary is accepted, not an oversight.
 -->
 
+## [1.2.0](https://github.com/nejcm/dev-toolbar/compare/v1.1.0...v1.2.0) (2026-09-27)
+
+
+### Features
+
+* add a viewer Settings menu to the bar ([#148](https://github.com/nejcm/dev-toolbar/issues/148)) ([e2ef3f8](https://github.com/nejcm/dev-toolbar/commit/e2ef3f85286029070d2d33cda1a093802e1be2fa))
+
 ## [1.1.0](https://github.com/nejcm/dev-toolbar/compare/v1.0.0...v1.1.0) (2026-09-24)
 
 
