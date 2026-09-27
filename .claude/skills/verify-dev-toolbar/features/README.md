@@ -208,6 +208,8 @@ handles, required state, calls and observable proof.
 - [Bar presentation](./presentation.md) — the `presentation` option: consumer
   icons in the bar, the glyph clamp, an icon-only control's name, and the
   collapse decision settling after a preset flip.
+- [Viewer settings](./settings.md) — the cog menu: density, colour scheme,
+  "shown in bar" and presets, persistence across a reload, and Reset.
 - [The console error tail](./diagnostics.md) — the four watched sources,
   grouping, `console.log` staying unpatched, redaction on the way in, the two
   console commands, and the chip badge (which needs the `⋮` menu open at

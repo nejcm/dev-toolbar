@@ -68,6 +68,31 @@ describe("SettingsMenu disclosure", () => {
     expect(document.activeElement).not.toBe(button);
   });
 
+  it("names rows by id only when two present extensions share a label", () => {
+    const { toolbar } = renderWithToolbar(null, {
+      extensions: [
+        makeExtension({ id: "cmds", label: "Commands", presets: ["default", "icon"] }),
+        makeExtension({ id: "command-menu", label: "Commands", presets: ["default", "icon"] }),
+        makeExtension({ id: "metrics", label: "Metrics", presets: ["default", "icon"] }),
+      ],
+    });
+
+    toolbar.openSettings();
+
+    const popup = menu()!;
+    const names = [...popup.querySelectorAll<HTMLInputElement | HTMLSelectElement>("input,select")]
+      .map(accessibleName)
+      .filter((name) => /shown in bar|presentation preset/.test(name));
+    expect(names).toEqual([
+      "Commands (cmds) shown in bar",
+      "Commands (cmds) presentation preset",
+      "Commands (command-menu) shown in bar",
+      "Commands (command-menu) presentation preset",
+      "Metrics shown in bar",
+      "Metrics presentation preset",
+    ]);
+  });
+
   it("does not render a cog when settings are disabled", () => {
     const { toolbar } = renderWithToolbar(null, { settings: false });
     expect(toolbar.settingsButton()).toBeNull();

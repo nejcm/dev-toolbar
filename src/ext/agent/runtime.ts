@@ -107,6 +107,7 @@ export function readShell(instanceId: string): AgentShellView {
     heightVariable: { name, value: null },
     bar: [],
     overflow: { present: false, open: false, items: [] },
+    settings: { present: false, open: false },
     activePanel: null,
   };
   if (typeof document === "undefined" || document.documentElement === null) return empty;
@@ -139,6 +140,10 @@ export function readShell(instanceId: string): AgentShellView {
       items: [...root.querySelectorAll(`${PART("overflow-menu-item")}[data-dtb-ext-id]`)]
         .map(extIdOf)
         .filter((id): id is string => id !== null),
+    },
+    settings: {
+      present: root.querySelector(PART("settings-button")) !== null,
+      open: root.querySelector(PART("settings-menu")) !== null,
     },
     activePanel:
       root

@@ -69,6 +69,14 @@ export function SettingsMenu(): ReactNode {
   const menuId = `dtb-settings-menu-${id}`;
 
   const extensions = presentExtensions(toolbar.extensions);
+  const labelCounts = new Map<string, number>();
+  for (const extension of extensions) {
+    labelCounts.set(extension.label, (labelCounts.get(extension.label) ?? 0) + 1);
+  }
+  const rowName = (extension: DevToolbarExtension) =>
+    (labelCounts.get(extension.label) ?? 0) > 1
+      ? `${extension.label} (${extension.id})`
+      : extension.label;
   const setPosition = (next: ToolbarPosition) =>
     settings.setPosition(
       !settings.positionControlled && next === settings.options.position ? undefined : next,
@@ -159,11 +167,11 @@ export function SettingsMenu(): ReactNode {
                             })
                           }
                         />
-                        <span>{`${extension.label} shown in bar`}</span>
+                        <span>{`${rowName(extension)} shown in bar`}</span>
                       </label>
                       {extension.presets && extension.presets.length > 0 ? (
                         <select
-                          aria-label={`${extension.label} presentation preset`}
+                          aria-label={`${rowName(extension)} presentation preset`}
                           value={preset}
                           onChange={(event: ChangeEvent<HTMLSelectElement>) =>
                             settings.setExtensionSetting(extension.id, {

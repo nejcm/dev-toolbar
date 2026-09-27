@@ -566,13 +566,18 @@
     gap: var(--dtb-space-2);
   }
 
+  /* Sticky so Reset stays in view however long the extension list grows. */
   [data-dev-toolbar] [data-dtb-part="settings-reset"] {
-    align-self: flex-end;
+    position: sticky;
+    bottom: 0;
+    flex: 0 0 auto;
     min-height: var(--dtb-control-height);
     margin: var(--dtb-space-1);
     padding: 0 var(--dtb-control-padding-x);
     border: 1px solid var(--dtb-border);
     border-radius: var(--dtb-radius);
+    background: var(--dtb-menu-bg);
+    box-shadow: 0 0 0 var(--dtb-menu-padding) var(--dtb-menu-bg);
   }
 
   [data-dev-toolbar] [data-dtb-part="settings-reset"]:hover {

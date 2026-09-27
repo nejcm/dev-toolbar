@@ -57,6 +57,7 @@ export interface AgentShellView {
    */
   bar: readonly AgentBarItemView[];
   overflow: AgentOverflowView;
+  settings: AgentSettingsView;
   /** `data-dtb-ext-id` of the open panel, or `null`. */
   activePanel: string | null;
 }
@@ -68,6 +69,13 @@ export interface AgentOverflowView {
   open: boolean;
   /** Collapsed extensions, **only while the menu is open** — closed is `[]`, not "nothing collapsed"; read `present` for that. */
   items: readonly string[];
+}
+
+export interface AgentSettingsView {
+  /** True when the viewer Settings button is rendered; `settings={false}` removes it. */
+  present: boolean;
+  /** True while the Settings menu is open. */
+  open: boolean;
 }
 
 /** The whole agent-visible state of one mounted toolbar. */

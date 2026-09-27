@@ -108,7 +108,8 @@ Everything here is `read().shell` — `bar` (what is still in the regions) and
 ## Isolated geometry proof
 
 `/?geometry` mounts three fixed-width hosts and the real agent bridge, without live
-metrics that could trigger unrelated reads. `e2e/overflow.spec.ts` proves:
+metrics that could trigger unrelated reads. It passes `settings={false}`, so no cog
+is charged against these sums. `e2e/overflow.spec.ts` proves:
 
 - Viewport 320 → 299 → 320 px collapses `low` and restores it.
 - At 500 px, clicking `Grow chip` changes only the chip's own React state and width,
