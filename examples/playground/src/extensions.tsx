@@ -18,10 +18,13 @@ import { createWebVitalsCollector } from "./collectors/webVitals";
 import {
   A11Y_ICON,
   AGENT_ICON,
+  DIAGNOSTICS_ICON,
+  ENVIRONMENT_ICON,
   FLAGS_ICON,
   METRIC_ICONS,
   OVERLAYS_ICON,
   PROMOTED_FLAG_ICON,
+  THEME_ICON,
 } from "./barIcons";
 import { kitDemo } from "./kitDemo";
 import { tanstackQuery } from "./embedDemo";
@@ -35,18 +38,19 @@ import { tanstackDevtools } from "./tanstackDemo";
 const runtimeKitDemo = kitDemo({ order: 40, priority: 60, pollMs: 1000 });
 
 /**
- * How the bar presents the five extensions this app supplies icons for.
- * [playground]
+ * The factory `preset` the header toggle builds the icon-bearing extensions
+ * with. [playground]
  *
- * `"default"` passes no `presentation`, so `metrics`, `flags`, `a11y` and
- * `agent` paint what they always have — `overlays` is the exception and keeps
- * its icon in every mode, so the feature is visible without hunting for this
- * toggle. `"icon-value"` swaps the short bar word
- * for an icon and keeps the number; `"icon"` drops the number too. `agent`
- * takes the narrowed two-knob option — no preset — so it reads both non-default
- * modes as an icon instead of the word; it is the only control whose *role*
- * depends on the option (`role="img"` with an icon, a role-less `<span>`
- * without).
+ * Every extension that declares `presets` gets its icon in every mode, so the
+ * viewer's Settings menu can switch any of them to an icon preset. The icon
+ * alone changes nothing: with no preset the factory resolves to `"default"`,
+ * and each extension paints what it always has. `overlays` is the exception
+ * and carries `"icon-value"` at rest, so the feature is visible without
+ * hunting for this toggle. `"icon-value"` swaps the short bar word for an
+ * icon and keeps the number; `"icon"` drops the number too. `agent` takes the
+ * narrowed two-knob option — no preset — so it only gets its icon in the two
+ * non-default modes; it is the only control whose *role* depends on the
+ * option (`role="img"` with an icon, a role-less `<span>` without).
  */
 export type BarPresentationMode = "default" | "icon-value" | "icon";
 
@@ -56,6 +60,9 @@ export const BAR_PRESENTATION_MODES: readonly BarPresentationMode[] = [
   "icon-value",
   "icon",
 ];
+
+/** `{}` for `"default"`, so the factory preset falls through to `"default"`. */
+const presetFor = (mode: BarPresentationMode) => (mode === "default" ? {} : { preset: mode });
 
 /**
  * Deliberately varied `priority` so narrowing the window collapses extensions into `⋮` in order:
@@ -116,6 +123,7 @@ export const playgroundContext = {
 const runtimeEnvironment = environment({
   order: 0,
   priority: 90,
+  presentation: { icon: ENVIRONMENT_ICON },
   pollMs: 500,
   context: () =>
     playgroundContext.supply
@@ -371,9 +379,9 @@ const buildFlags = (mode: BarPresentationMode) =>
     icon: "\u25c8",
     // The text glyph, kept beside the SVG one on the chip next to it — see
     // PROMOTED_FLAG_ICON.
-    ...(mode === "default" ? {} : { presentation: { preset: mode, icon: PROMOTED_FLAG_ICON } }),
+    presentation: { ...presetFor(mode), icon: PROMOTED_FLAG_ICON },
   },
-  ...(mode === "default" ? {} : { presentation: { preset: mode, icon: FLAGS_ICON } }),
+  presentation: { ...presetFor(mode), icon: FLAGS_ICON },
 });
 
 const hydration: DevToolbarExtension = {
@@ -492,6 +500,7 @@ const buildOverlays = (mode: BarPresentationMode) =>
 const runtimeDiagnostics = diagnostics({
   order: 5,
   priority: 10,
+  presentation: { icon: DIAGNOSTICS_ICON },
   app: () => ({
     release: "web-2026.08.28.4",
     commit: "a84c7e1",
@@ -611,6 +620,7 @@ const PLAYGROUND_TOKENS: DesignTokenDefinition[] = [
 const runtimeThemeEditor = themeEditor({
   order: 15,
   priority: 45,
+  presentation: { icon: THEME_ICON },
   tokens: PLAYGROUND_TOKENS,
   createdBy: "playground",
   // Subtree selection: the whole app, or just the demo card.
@@ -678,7 +688,7 @@ const buildA11y = (mode: BarPresentationMode) =>
     ...(new URLSearchParams(location.search).get("a11y-load-on") === "scan"
       ? { loadOn: "scan" as const }
       : {}),
-    ...(mode === "default" ? {} : { presentation: { preset: mode, icon: A11Y_ICON } }),
+    presentation: { ...presetFor(mode), icon: A11Y_ICON },
   });
 
 /** Built once at module scope — calling `metrics()` inside a component would hand the bar a new object every render while collectors stayed with the first one; core warns about this. */
@@ -701,9 +711,7 @@ const buildMetrics = (mode: BarPresentationMode) =>
     jank: { windowMs: 5000 },
     // One control per metric, so the icon is a function of the view; a
     // metric with no entry falls back to its own short label.
-    ...(mode === "default"
-      ? {}
-      : { presentation: { preset: mode, icon: (metric) => METRIC_ICONS[metric.id] } }),
+    presentation: { ...presetFor(mode), icon: (metric) => METRIC_ICONS[metric.id] },
   });
 
 /**
