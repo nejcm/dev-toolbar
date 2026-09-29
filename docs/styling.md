@@ -177,7 +177,7 @@ painted:
 - **The accessible name contains the short bar word.** WCAG 2.5.3 Label in Name wants
   the word you can see inside the name a speech-input user can say, so `env` sits inside
   `Environment, staging`, and `/ext/a11y` and `/ext/metrics` name themselves
-  `Accessibility (a11y), pending` and `Metrics: mem, delay, jank, net` for exactly that
+  `Accessibility (a11y), pending` and `Metrics: mem, fps, delay, jank, net` for exactly that
   reason.
 - **The readout is announced by `title`, not by a second attribute.** An `aria-label`
   *replaces* an element's content, so a chip named `Flags` would leave its visible `6`
@@ -196,8 +196,8 @@ painted:
 - **One chip overrides it: `/ext/metrics`.** Its title is `Runtime performance — click
   for details` and states no readout at all, so the numbers really would go unheard.
   That chip puts an `id` on each painted **label span and value span** and lists them
-  **in pairs** in its `aria-describedby`, so the readout is announced as *"mem 22 MB
-  delay — jank — net 0"* rather than as a run of numbers to be matched against the name
+  **in pairs** in its `aria-describedby`, so the readout is announced as *"mem 44 MB
+  fps 60 fps delay — jank 0.0% net 0"* rather than as a run of numbers to be matched against the name
   positionally. The ids come from React's `useId()`, so **do not write a selector against
   them**; select on `data-dtb-part` as always. The attribute is absent when there is no
   value span to point at, which includes every preset that paints none and any `render`

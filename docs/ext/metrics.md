@@ -59,6 +59,12 @@ are torn down. Its options live on `frames`:
 | `idleGapMs` | `1000` | A visible gap longer than this is a *stall*: counted, and kept out of both FPS and jank. A gap spanning a tab switch is discarded instead. |
 | `stallCeilingMs` | `30_000` | A visible gap longer than this is treated as absent, not as a stall. |
 
+The loop keeps running through hidden tabs, sleep and throttling, because core reports
+visibility but never pauses an extension, so the source discards those deltas itself.
+A debugger pause, a modal dialog or a sync XHR fires no `visibilitychange`, which is why
+a visible gap is a stall up to the ceiling and absent past it. A display that sleeps while
+frontmost can still read as a stall, which is safer than silently dropping it.
+
 `jank.frameMs`, `jank.idleGapMs` and `jank.stallCeilingMs` still work, as deprecated
 aliases of these three, and win when both are set. Because the source is shared, they
 now configure `fps` too. `metrics.reset` resets the shared source, so it resets both.

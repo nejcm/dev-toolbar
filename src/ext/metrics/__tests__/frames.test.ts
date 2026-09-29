@@ -3,7 +3,7 @@ import { installAnimationFrames } from "../../../test-utils/animation-frames";
 import type { FakeFrames } from "../../../test-utils/animation-frames";
 import { createFpsReader } from "../collectors/fps";
 import { createFrameSource } from "../collectors/frames";
-import { createJankReader } from "../collectors/jank";
+import { createJankCollector, createJankReader } from "../collectors/jank";
 import { metrics } from "../index";
 import type { Collector } from "../types";
 
@@ -58,6 +58,70 @@ describe("frame source", () => {
     createJankReader(source, { windowMs: 1000 });
     createFpsReader(source, { windowMs: 10_000 });
     expect(source.frames.capacity).toBe(1250);
+  });
+
+  // Same ticks, fresh fake clock each run: a shared reader must read what a standalone one would.
+  const drive = (build: () => Collector[], deltas: readonly number[]) => {
+    frames?.restore();
+    frames = installAnimationFrames();
+    const collectors = build();
+    const controllers = collectors.map(started);
+    for (const delta of deltas) frames.tick(delta);
+    const out = collectors.map((collector) =>
+      JSON.stringify([collector.read(now()), collector.diagnostics(now())]),
+    );
+    for (const controller of controllers) controller.abort();
+    return out;
+  };
+
+  it.each([
+    ["fps first", true],
+    ["jank first", false],
+  ])("keeps each reader to its own explicit historySize (%s)", (_, fpsFirst) => {
+    const deltas = Array.from({ length: 12 }, () => 16);
+    const shared = () => {
+      const source = createFrameSource({ frameMs: 16 });
+      const build = [
+        () => createFpsReader(source, { historySize: 100 }),
+        () => createJankReader(source, { historySize: 2 }),
+      ];
+      const [fps, jank] = fpsFirst
+        ? build.map((make) => make())
+        : build
+            .reverse()
+            .map((make) => make())
+            .reverse();
+      return [fps!, jank!];
+    };
+    const [fps, jank] = drive(shared, deltas);
+    const [alone] = drive(() => [createJankCollector({ frameMs: 16, historySize: 2 })], deltas);
+    expect(jank).toBe(alone);
+    expect(JSON.parse(jank!)[1]).toMatchObject({ count: 2, historySize: 2 });
+    expect(JSON.parse(fps!)[1]).toMatchObject({ count: 11, historySize: 100 });
+
+    const [small] = drive(() => {
+      const source = createFrameSource({ frameMs: 16 });
+      createJankReader(source, { historySize: 100 });
+      return [createFpsReader(source, { historySize: 2 })];
+    }, deltas);
+    expect(JSON.parse(small!)[1]).toMatchObject({ count: 2, historySize: 2 });
+  });
+
+  it("leaves default-capacity jank byte-identical beside a wider fps window", () => {
+    const deltas = [
+      ...Array.from({ length: 200 }, (_, index) => (index % 7 === 0 ? 40 : 16.67)),
+      1500,
+      ...Array.from({ length: 400 }, (_, index) => (index % 5 === 0 ? 33.4 : 16.67)),
+    ];
+    const [, shared] = drive(() => {
+      const source = createFrameSource();
+      return [
+        createFpsReader(source, { windowMs: 20_000 }),
+        createJankReader(source, { windowMs: 1000 }),
+      ];
+    }, deltas);
+    const [alone] = drive(() => [createJankCollector({ windowMs: 1000 })], deltas);
+    expect(shared).toBe(alone);
   });
 
   it("resolves the deprecated jank.* aliases over frames", () => {

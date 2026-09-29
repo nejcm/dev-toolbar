@@ -15,9 +15,9 @@ defined here.
   ([ADR-004](./docs/adr/ADR-004-per-extension-bar-presentation.md)), now settable by the
   Viewer ([ADR-006](./docs/adr/ADR-006-viewer-settings.md)).
 - **Active time**: frame time that counts toward a rolling frame window. Hidden-tab
-  intervals and Stalls are left out.
-- **Stall**: a visible gap between frames longer than the idle gap. It is counted, and
-  kept out of both FPS and Jank.
+  intervals, Stalls and visible gaps past the stall ceiling are left out.
+- **Stall**: a visible gap between frames longer than the idle gap and no longer than the
+  stall ceiling. It is counted, and kept out of both FPS and Jank.
 - **FPS**: frames delivered per second of Active time.
 - **Jank**: dropped frames over expected frames in Active time. It is not the inverse of
   FPS.

@@ -1,13 +1,6 @@
-/**
- * Frame rate. [dev-toolbar/ext/metrics]
- *
- * Delivered animation frames per second of active time, read from the shared
- * frame source in `frames.ts`: hidden-tab gaps and stalls are not active time,
- * so an idle, healthy page reads about its refresh rate. Severity is the
- * shortfall against that refresh rate, not the raw number, so 60 fps on a
- * 120 Hz display is not "ok".
- */
+/** Frames per second of active time, graded by shortfall. [dev-toolbar/ext/metrics] */
 import { createTimeSeries } from "../../../runtime";
+import { clampCapacity } from "../../../runtime/ringBuffer";
 import { NOT_AVAILABLE } from "../format";
 import type { Collector, CollectorContext, MetricView, Thresholds } from "../types";
 import { severityFor } from "../types";
@@ -37,6 +30,7 @@ export function createFpsCollector(options: FpsCollectorOptions = {}): Collector
 export function createFpsReader(source: FrameSource, options: FpsCollectorOptions = {}): Collector {
   const { windowMs = 5000, thresholds = { warn: 0.1, bad: 0.25 } } = options;
   const historySize = source.retain(windowMs, options.historySize);
+  const slots = clampCapacity(historySize);
   const series = createTimeSeries(120);
   const { supported } = source;
   const gapText = formatGap(source.idleGapMs);
@@ -49,7 +43,8 @@ export function createFpsReader(source: FrameSource, options: FpsCollectorOption
     let count = 0;
     let activeMs = 0;
     const { frames } = source;
-    for (let index = 0; index < frames.size; index += 1) {
+    // The shared ring may hold more than this reader's own history; scan only that.
+    for (let index = Math.max(0, frames.size - slots); index < frames.size; index += 1) {
       const frame = frames.at(index);
       if (frame === undefined || frame.at < since) continue;
       count += 1;

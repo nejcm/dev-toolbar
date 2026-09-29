@@ -241,10 +241,10 @@ export function MetricsChips({
   });
 
   // Pairs each chip's label id with its value id rather than pointing at
-  // values alone: a bare "22 MB — — 0" asks the listener to match numbers
+  // values alone: a bare "44 MB 60 fps — 0.0% 0" asks the listener to match numbers
   // positionally against the name, and a collector this browser can't
   // support has no number to place at all. Measured against the real bar in
-  // Chromium: pairing reads as "mem 22 MB fps 60 fps delay — jank — net 0",
+  // Chromium: pairing reads as "mem 44 MB fps 60 fps delay — jank 0.0% net 0",
   // the same utterance as pointing at the chips themselves, but gated by the
   // value span rather than by whatever a `render` callback painted.
   const describedBy = chips

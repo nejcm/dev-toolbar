@@ -1,20 +1,6 @@
-/**
- * The shared frame source behind `fps` and `jank`. [dev-toolbar/ext/metrics]
- *
- * Core reports visibility but never pauses extensions, so this loop keeps
- * running through hidden tabs, minimised windows, sleep/wake and throttling,
- * and discards the deltas those produce itself to keep the rolling window valid.
- *
- * Deltas over `idleGapMs` with no spanning visibility change are main-thread
- * stalls. They stay out of every reader's window, so a 3 s debugger pause
- * cannot add ~180 expected frames and mask later jank.
- * Visible gaps over `stallCeilingMs` are treated as absent. A frontmost display
- * sleep can still look like a stall, which is safer than silently dropping it.
- *
- * One rAF loop runs while any reader is started; it stops once every reader's
- * signal has aborted.
- */
+/** The rAF loop `fps` and `jank` share; see docs/ext/metrics.md. [dev-toolbar/ext/metrics] */
 import { createRingBuffer } from "../../../runtime";
+import { clampCapacity } from "../../../runtime/ringBuffer";
 import type { RingBuffer } from "../../../runtime";
 import type { CollectorContext } from "../types";
 
@@ -27,23 +13,11 @@ export interface Frame {
 }
 
 export interface FrameOptions {
-  /**
-   * Target frame budget override. Without one, calibration uses the first 120
-   * active intervals; only `reset()` recalibrates. Set it when the refresh
-   * rate can switch.
-   */
+  /** Frame budget override; calibrated from the first 120 active intervals when unset. */
   frameMs?: number;
-  /**
-   * Deltas over this threshold are not frame pacing: discarded if a
-   * visibility change spans the gap, else recorded as a stall outside every
-   * frame window. Default `1000` ms.
-   */
+  /** A longer visible gap is a stall, kept out of every frame window. Default `1000` ms. */
   idleGapMs?: number;
-  /**
-   * Visible gaps over this threshold are treated as absent — a debugger
-   * pause, modal dialog, or sync XHR emits no `visibilitychange`, but a
-   * longer gap is unlikely page work. Default `30_000` ms.
-   */
+  /** A longer visible gap is treated as absent, not as a stall. Default `30_000` ms. */
   stallCeilingMs?: number;
 }
 
@@ -202,8 +176,8 @@ export function createFrameSource(options: FrameOptions = {}): FrameSource {
       // Covers the requested window plus one second of slack.
       const size =
         historySize ?? Math.ceil(windowMs / (frameMsOverride ?? 4)) + Math.ceil(1000 / 4);
-      if (size > capacity) {
-        capacity = size;
+      if (clampCapacity(size) > capacity) {
+        capacity = clampCapacity(size);
         if (ring !== null) {
           const grown = createRingBuffer<Frame>(capacity);
           ring.forEach((frame) => grown.push(frame));

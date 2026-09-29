@@ -33,14 +33,14 @@ function setVisibility(state: DocumentVisibilityState) {
 
 describe("fps collector", () => {
   it.each([
-    [60, 55, "ok"],
+    [60, 54, "ok"],
     [60, 53, "warn"],
-    [60, 46, "warn"],
+    [60, 45, "warn"],
     [60, 44, "bad"],
-    [120, 110, "ok"],
-    [120, 106, "warn"],
-    [120, 92, "warn"],
-    [120, 88, "bad"],
+    [120, 108, "ok"],
+    [120, 107, "warn"],
+    [120, 90, "warn"],
+    [120, 89, "bad"],
   ])("grades %d Hz at %d fps as %s by shortfall", (hz, fps, severity) => {
     frames = installAnimationFrames();
     const collector = createFpsReader(createFrameSource({ frameMs: 1000 / hz }));

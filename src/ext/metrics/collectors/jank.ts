@@ -5,6 +5,7 @@
  * visibility and stall classification and the frame-budget calibration.
  */
 import { createTimeSeries } from "../../../runtime";
+import { clampCapacity } from "../../../runtime/ringBuffer";
 import { formatMs, formatPercent, NOT_AVAILABLE } from "../format";
 import type { Collector, CollectorContext, MetricView, Thresholds } from "../types";
 import { severityFor } from "../types";
@@ -37,6 +38,7 @@ export function createJankReader(
 ): Collector {
   const { windowMs = 5000, thresholds = { warn: 0.02, bad: 0.05 } } = options;
   const historySize = source.retain(windowMs, options.historySize);
+  const slots = clampCapacity(historySize);
   const series = createTimeSeries(120);
   const { supported } = source;
   let worstFrame = 0;
@@ -53,7 +55,8 @@ export function createJankReader(
     // Use the interval start: N 16 ms frames span N intervals; `now - oldest.at` loses one.
     let earliestStart = Number.POSITIVE_INFINITY;
     const { frames } = source;
-    for (let index = 0; index < frames.size; index += 1) {
+    // The shared ring may hold more than this reader's own history; scan only that.
+    for (let index = Math.max(0, frames.size - slots); index < frames.size; index += 1) {
       const frame = frames.at(index);
       // Calibration frames have no budget to be dropped against.
       if (frame === undefined || frame.at < since || frame.expected === 0) continue;
