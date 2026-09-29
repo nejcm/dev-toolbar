@@ -166,3 +166,30 @@ export const OVERLAYS_ICON: ReactNode = (
     <path d="M1.5 11 8 14.5 14.5 11" />
   </svg>
 );
+
+/** Environment: a server stack, for where this build is deployed. */
+export const ENVIRONMENT_ICON: ReactNode = (
+  <svg {...stroke}>
+    <rect x="2" y="2.5" width="12" height="4.5" rx="1" />
+    <rect x="2" y="9" width="12" height="4.5" rx="1" />
+    <path d="M4.5 4.75h.01M4.5 11.25h.01" />
+  </svg>
+);
+
+/** Diagnostics: a magnifier over the captured snapshot. */
+export const DIAGNOSTICS_ICON: ReactNode = (
+  <svg {...stroke}>
+    <circle cx="7" cy="7" r="4.5" />
+    <path d="m10.5 10.5 4 4" />
+  </svg>
+);
+
+/** Theme editor: a palette with three wells. */
+export const THEME_ICON: ReactNode = (
+  <svg {...stroke}>
+    <path d="M8 1.5a6.5 6.5 0 1 0 0 13c1 0 1.5-.75 1.5-1.5 0-1.25-1-1.5-1-2.5S9.25 9 10.5 9H12a2.5 2.5 0 0 0 2.5-2.5C14.5 3.75 11.6 1.5 8 1.5z" />
+    <circle cx="5" cy="7" r="0.9" fill="currentColor" stroke="none" />
+    <circle cx="8" cy="4.5" r="0.9" fill="currentColor" stroke="none" />
+    <circle cx="11" cy="6" r="0.9" fill="currentColor" stroke="none" />
+  </svg>
+);
