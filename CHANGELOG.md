@@ -14,6 +14,13 @@
   style break at the boundary is accepted, not an oversight.
 -->
 
+## [1.3.0](https://github.com/nejcm/dev-toolbar/compare/v1.2.0...v1.3.0) (2026-09-29)
+
+
+### Features
+
+* **metrics:** add an fps built-in backed by a shared frame source ([#152](https://github.com/nejcm/dev-toolbar/issues/152)) ([ab6e6f5](https://github.com/nejcm/dev-toolbar/commit/ab6e6f52a15f200c71bfb1a78e117e85067745ea))
+
 ## [1.2.0](https://github.com/nejcm/dev-toolbar/compare/v1.1.0...v1.2.0) (2026-09-27)
 
 
