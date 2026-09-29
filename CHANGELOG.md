@@ -14,6 +14,13 @@
   style break at the boundary is accepted, not an oversight.
 -->
 
+## [1.3.1](https://github.com/nejcm/dev-toolbar/compare/v1.3.0...v1.3.1) (2026-09-29)
+
+
+### Bug Fixes
+
+* **playground:** give every preset-capable extension an icon ([#154](https://github.com/nejcm/dev-toolbar/issues/154)) ([e9162ac](https://github.com/nejcm/dev-toolbar/commit/e9162ac13642e0933b05af51e87abb782ad890c5))
+
 ## [1.3.0](https://github.com/nejcm/dev-toolbar/compare/v1.2.0...v1.3.0) (2026-09-29)
 
 
