@@ -1,6 +1,6 @@
 # `@nejcm/dev-toolbar/ext/metrics`
 
-Memory, delay, jank, network and consumer-supplied collectors in one extension.
+Memory, frame rate, delay, jank, network and consumer-supplied collectors in one extension.
 
 ```tsx
 import { DevToolbar } from "@nejcm/dev-toolbar";
@@ -18,6 +18,7 @@ export function Root({ children }) {
 | --- | --- | --- |
 | `mem` | Used JS heap, and whether its *floor* rose across the last minute by a material amount — a leak is a sawtooth with a rising floor, not a monotonic climb | 50% / 75% of the heap limit |
 | `delay` | The *worst* interaction in a rolling 30 s window, not the latest. Event Timing entries are grouped by `interactionId` the way INP does, so one tap is one interaction; hover and other non-interaction entries are skipped unless `includeNonInteractions` is set | 200 ms / 500 ms, per INP guidance |
+| `fps` | Animation frames delivered per second of *active* time, across 5 s. Active time leaves out hidden-tab gaps and stalls, the same frames `jank` leaves out, so an idle, healthy page reads about its refresh rate. Severity is the *shortfall* `1 − fps / refresh rate`, so 60 fps on a 120 Hz display is not ok. While the refresh rate is still calibrating the number shows, with severity unknown. The panel adds the slowest 1 s bucket as "Min FPS in window" | 10% / 25% short of the refresh rate |
 | `jank` | Dropped frames over expected frames, across 5 s of *active* frames. The frame spanning a tab switch is discarded. A visible gap between 1 s and 30 s is a *stall*: counted and shown as "Longest stall", kept out of the ratio and out of "Worst frame", and a debugger pause or modal dialog counts as one. Gaps over 30 s (`stallCeilingMs`) are treated as absent | 2% / 5% |
 | `net` | Requests in flight, or `paused` when recording is off; the panel lists recent ones | any slow → warn, any failed → bad |
 
@@ -39,15 +40,43 @@ metrics({
   updateHz: 2,                       // aggregation rate; compact chips cap at 4 Hz
   memory: { thresholds: { warn: 0.4, bad: 0.7 } },
   jank: false,                       // switch one off entirely
+  frames: { frameMs: 1000 / 120 },   // the frame classifier fps and jank share
   network: { slowMs: 400, filter: ({ url }) => !url.startsWith("/telemetry") },
   presentation: "icon-value",        // see Bar presentation, below
 });
 ```
 
+## Frames: `fps` and `jank`
+
+`fps` and `jank` are two readers of one frame source: one `requestAnimationFrame`
+loop, one visibility and stall classifier and one refresh-rate calibration per
+`metrics()` call. The loop runs while either collector is started and stops once both
+are torn down. Its options live on `frames`:
+
+| `frames` option | Default | What it does |
+| --- | --- | --- |
+| `frameMs` | calibrated | The frame budget. Without it, the p20 of the first 120 active intervals is used until `metrics.reset`; set it when the refresh rate can switch. |
+| `idleGapMs` | `1000` | A visible gap longer than this is a *stall*: counted, and kept out of both FPS and jank. A gap spanning a tab switch is discarded instead. |
+| `stallCeilingMs` | `30_000` | A visible gap longer than this is treated as absent, not as a stall. |
+
+The loop keeps running through hidden tabs, sleep and throttling, because core reports
+visibility but never pauses an extension, so the source discards those deltas itself.
+A debugger pause, a modal dialog or a sync XHR fires no `visibilitychange`, which is why
+a visible gap is a stall up to the ceiling and absent past it. A display that sleeps while
+frontmost can still read as a stall, which is safer than silently dropping it.
+
+`jank.frameMs`, `jank.idleGapMs` and `jank.stallCeilingMs` still work, as deprecated
+aliases of these three, and win when both are set. Because the source is shared, they
+now configure `fps` too. `metrics.reset` resets the shared source, so it resets both.
+
+Frame rate is not the inverse of jank. FPS counts delivered frames per active second;
+jank counts frames the display expected and did not get. A page that renders only on
+demand can read a low FPS with no jank at all.
+
 ## Custom collectors
 
 Pass `collectors?: readonly Collector[]` to append consumer-owned metrics after the
-four built-ins, in registration order. `only?: readonly CollectorId[]` selects and
+five built-ins, in registration order. `only?: readonly CollectorId[]` selects and
 orders either kind. An explicit `only` excludes every unlisted collector; duplicate
 IDs in `only` run once. Built-in `false` options still take precedence over `only`.
 
@@ -112,9 +141,11 @@ Construct collectors and the extension once, outside render. Use a separate coll
 instance for each metrics extension. `read`, `reset` and `diagnostics` must not throw;
 `start` errors are logged per collector so the others can start.
 
-`MetricId` remains exactly `"memory" | "delay" | "jank" | "network"`.
+`MetricId` is exactly `"memory" | "fps" | "delay" | "jank" | "network"`. `"fps"` is
+the newest built-in, so a custom collector that was already called `"fps"` now throws
+as a shadowed built-in; rename it.
 The new `CollectorId = MetricId | (string & {})` admits consumer IDs without
-opening the built-in record. `MetricsSnapshot.views` still requires all four
+opening the built-in record. `MetricsSnapshot.views` still requires all five
 built-in keys, including switched-off placeholders. Custom views live in
 `MetricsSnapshot.custom: Readonly<Record<string, MetricView>>`; snapshot and runtime
 `order` are `readonly CollectorId[]`. `MetricView.id` and `Collector.id` also use
@@ -133,7 +164,7 @@ Both examples live **outside the published package**, in
 They add no factory exports or dependencies to `/ext/metrics`.
 
 - [`reactProfiler.ts`](https://github.com/nejcm/dev-toolbar/blob/main/examples/playground/src/collectors/reactProfiler.ts)
-  returns `{ collector, onRender }`. The playground registers the collector fifth
+  returns `{ collector, onRender }`. The playground registers the collector sixth
   and wraps its app content in `<Profiler onRender={reactProfiler.onRender}>`.
   Each commit writes `actualDuration` and `baseDuration` into paired, bounded
   `TimeSeries` histories; the chip and sparkline use actual duration. The toolbar
@@ -141,7 +172,7 @@ They add no factory exports or dependencies to `/ext/metrics`.
   production build disables profiling; use a profiling build to collect there.
   [React Profiler reference](https://react.dev/reference/react/Profiler).
 - [`webVitals.ts`](https://github.com/nejcm/dev-toolbar/blob/main/examples/playground/src/collectors/webVitals.ts) registers
-  sixth. Three buffered `PerformanceObserver` calls observe LCP, layout shifts
+  seventh. Three buffered `PerformanceObserver` calls observe LCP, layout shifts
   and events. TTFB comes from Navigation Timing. The chip shows LCP; the panel and
   diagnostics also report CLS session maxima and an INP estimate grouped by
   interaction ID. It retains ten slow interactions and uses `interactionCount`
@@ -325,18 +356,18 @@ What is specific to this extension:
 ## The bar button's accessible name, and where the numbers go
 
 The bar trigger is named after the extension **plus the short words it paints**, built
-from each switched-on collector's `view.label` in bar order. `metrics()` runs all four
+from each switched-on collector's `view.label` in bar order. `metrics()` runs all five
 built-in collectors unless you narrow `only`, so the name you get by default is
-`Metrics: mem, delay, jank, net`. With `only: ["memory"]` it is `Metrics: mem`, and with
+`Metrics: mem, fps, delay, jank, net`. With `only: ["memory"]` it is `Metrics: mem`, and with
 no metrics at all (`only: []`) it is the `label` alone.
 
 Two reasons for that exact shape:
 
 - **WCAG 2.5.3 Label in Name.** The chip paints `mem`; a speech-input user says "mem".
   A name of `Metrics` contained no such word, so nothing matched. It was
-  `Metrics` before; it is `Metrics: mem, delay, jank, net` now.
-- **It does not churn.** Every collector hardcodes its `label` — `mem`, `delay`, `jank`,
-  `net`, and a custom collector falls back to its own id (`react-profiler` names itself
+  `Metrics` before; it is `Metrics: mem, fps, delay, jank, net` now.
+- **It does not churn.** Every collector hardcodes its `label` — `mem`, `fps`, `delay`,
+  `jank`, `net`, and a custom collector falls back to its own id (`react-profiler` names itself
   `react-profiler`) — so the name is a function of your configuration, never of the
   readout. A name built from `view.display` would re-speak on every focus.
 
@@ -352,6 +383,11 @@ and `LCP`:
 
 > *"Metrics: mem, delay, jank, net, react, LCP, button"* — *"mem 22 MB delay — jank — net
 > 0 react 1 ms LCP 348 ms"*
+
+That run predates `fps`. The same measurement in headless Chromium once `fps` joined,
+seven collectors, gave the name *"Metrics: mem, fps, delay, jank, net, react, LCP"*
+and the description *"mem 44 MB fps 60 fps delay — jank 0.0% net 0 react 0 ms LCP
+772 ms"*.
 
 Every figure there belongs to that run in that browser: a heap reading and a timing
 reading are both environment-specific, and so are the two markers, which are **not**

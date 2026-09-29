@@ -1,49 +1,26 @@
 /**
  * Dropped frames. [dev-toolbar/ext/metrics]
  *
- * Core reports visibility but never pauses extensions, so this loop keeps
- * running through hidden tabs, minimised windows, sleep/wake and throttling,
- * and discards the deltas those produce itself to keep the rolling window valid.
- *
- * Deltas over `idleGapMs` with no spanning visibility change are main-thread
- * stalls. They stay out of the dropped/expected ratio and `worstFrame`, so a
- * 3 s debugger pause cannot add ~180 expected frames and mask later jank.
- * Visible gaps over `stallCeilingMs` are treated as absent. A frontmost display
- * sleep can still look like a stall, which is safer than silently dropping it.
+ * Reads the shared frame source in `frames.ts`, which owns the loop, the
+ * visibility and stall classification and the frame-budget calibration.
  */
-import { createRingBuffer, createTimeSeries } from "../../../runtime";
+import { createTimeSeries } from "../../../runtime";
+import { clampCapacity } from "../../../runtime/ringBuffer";
 import { formatMs, formatPercent, NOT_AVAILABLE } from "../format";
 import type { Collector, CollectorContext, MetricView, Thresholds } from "../types";
 import { severityFor } from "../types";
+import {
+  CALIBRATION_FRAMES,
+  createFrameSource,
+  formatGap,
+  formatSeconds,
+  UNSUPPORTED_REASON,
+} from "./frames";
+import type { Frame, FrameOptions, FrameSource } from "./frames";
 
-interface Frame {
-  at: number;
-  delta: number;
-  expected: number;
-  dropped: number;
-}
-
-export interface JankCollectorOptions {
+export interface JankCollectorOptions extends FrameOptions {
   /** Rolling active window. Default `5000` ms, per §3D. */
   windowMs?: number;
-  /**
-   * Target frame budget override. Without one, calibration uses the first 120
-   * active intervals; only `reset()` recalibrates. Set it when the refresh
-   * rate can switch.
-   */
-  frameMs?: number;
-  /**
-   * Deltas over this threshold are not frame pacing: discarded if a
-   * visibility change spans the gap, else recorded as a stall outside the
-   * dropped-frame ratio. Default `1000` ms.
-   */
-  idleGapMs?: number;
-  /**
-   * Visible gaps over this threshold are treated as absent — a debugger
-   * pause, modal dialog, or sync XHR emits no `visibilitychange`, but a
-   * longer gap is unlikely page work. Default `30_000` ms.
-   */
-  stallCeilingMs?: number;
   /** Frames retained. Defaults to cover `windowMs` at `frameMs` (or 4 ms) plus slack. */
   historySize?: number;
   /** Fractions, not percentages. Default `{ warn: 0.02, bad: 0.05 }`. */
@@ -51,41 +28,23 @@ export interface JankCollectorOptions {
 }
 
 export function createJankCollector(options: JankCollectorOptions = {}): Collector {
-  const {
-    windowMs = 5000,
-    idleGapMs = 1000,
-    stallCeilingMs = 30_000,
-    thresholds = { warn: 0.02, bad: 0.05 },
-  } = options;
-  const frameMsOverride = options.frameMs;
-  // Covers the requested window plus one second of slack.
-  const historySize =
-    options.historySize ?? Math.ceil(windowMs / (frameMsOverride ?? 4)) + Math.ceil(1000 / 4);
+  return createJankReader(createFrameSource(options), options);
+}
 
-  const frames = createRingBuffer<Frame>(historySize);
+/** Jank over a frame source another reader may share; its classifier options are the source's. */
+export function createJankReader(
+  source: FrameSource,
+  options: JankCollectorOptions = {},
+): Collector {
+  const { windowMs = 5000, thresholds = { warn: 0.02, bad: 0.05 } } = options;
+  const historySize = source.retain(windowMs, options.historySize);
+  const slots = clampCapacity(historySize);
   const series = createTimeSeries(120);
-  const calibrationSamples: number[] = [];
-  const supported =
-    typeof requestAnimationFrame === "function" && typeof cancelAnimationFrame === "function";
+  const { supported } = source;
   let worstFrame = 0;
-  let longestStall = 0;
-  let discarded = 0;
-  let stalls = 0;
-  let calibratedFrameMs = frameMsOverride ?? null;
 
-  const formatSeconds = (ms: number): string => `${Number((ms / 1000).toFixed(1))} s`;
-  const gapText = idleGapMs >= 1000 ? formatSeconds(idleGapMs) : `${Math.round(idleGapMs)} ms`;
+  const gapText = formatGap(source.idleGapMs);
   const stallLabel = `Stalls >${gapText} (session)`;
-
-  const percentile = (sorted: readonly number[], fraction: number): number =>
-    sorted[Math.floor((sorted.length - 1) * fraction)] as number;
-
-  const calibrate = (): number => {
-    const sorted = [...calibrationSamples].sort((left, right) => left - right);
-    // p20 ignores startup stalls; mixed refresh-rate clusters need explicit `frameMs` until a
-    // mode-based estimator can distinguish them.
-    return percentile(sorted, 0.2);
-  };
 
   const summarise = (now: number) => {
     const since = now - windowMs;
@@ -95,9 +54,12 @@ export function createJankCollector(options: JankCollectorOptions = {}): Collect
     let slowest = 0;
     // Use the interval start: N 16 ms frames span N intervals; `now - oldest.at` loses one.
     let earliestStart = Number.POSITIVE_INFINITY;
-    for (let index = 0; index < frames.size; index += 1) {
+    const { frames } = source;
+    // The shared ring may hold more than this reader's own history; scan only that.
+    for (let index = Math.max(0, frames.size - slots); index < frames.size; index += 1) {
       const frame = frames.at(index);
-      if (frame === undefined || frame.at < since) continue;
+      // Calibration frames have no budget to be dropped against.
+      if (frame === undefined || frame.at < since || frame.expected === 0) continue;
       expected += frame.expected;
       dropped += frame.dropped;
       count += 1;
@@ -123,86 +85,22 @@ export function createJankCollector(options: JankCollectorOptions = {}): Collect
     ...(supported
       ? {}
       : {
-          unsupportedReason: "requestAnimationFrame is unavailable, so frames cannot be timed.",
+          unsupportedReason: UNSUPPORTED_REASON,
         }),
     series,
     start(context: CollectorContext) {
-      let previous = 0;
-      let handle = 0;
-      let stopped = false;
       let sinceSample = 0;
-      // Record visibility-change times because rAF stops while hidden and its callback runs after
-      // return. rAF timestamps and `performance.now()` share an origin.
-      const changedAt: number[] = [];
-      const doc = typeof document === "undefined" ? null : document;
-      const onVisibilityChange = () => {
-        changedAt.push(
-          typeof performance !== "undefined" && typeof performance.now === "function"
-            ? performance.now()
-            : context.now(),
-        );
-      };
-      doc?.addEventListener("visibilitychange", onVisibilityChange);
-
-      const loop = (timestamp: number) => {
-        if (stopped) return;
-        handle = requestAnimationFrame(loop);
-        if (previous !== 0) {
-          const delta = timestamp - previous;
-          // Drain all markers delivered before this callback. rAF timestamps are stamped before
-          // the callback, so a `timestamp` bound can miss a visibility IPC handled after that
-          // stamp. Only markers after `previous` belong to this delta.
-          let wentAway = false;
-          while (changedAt.length > 0) {
-            if ((changedAt.shift() as number) > previous) wentAway = true;
-          }
-          // `hidden` confirms an ongoing background interval; `visible` cannot rule out a completed
-          // one because the callback runs after return.
-          if (wentAway || doc?.visibilityState === "hidden" || delta > stallCeilingMs) {
-            // Hidden gaps and visible gaps past the ceiling are absent, not dropped frames.
-            discarded += 1;
-          } else if (delta > idleGapMs) {
-            // Visible gaps over `idleGapMs` are stalls, kept out of the ratio and `worstFrame`.
-            stalls += 1;
-            if (delta > longestStall) longestStall = delta;
-            context.invalidate();
-          } else if (calibratedFrameMs === null) {
-            if (Number.isFinite(delta) && delta > 0) calibrationSamples.push(delta);
-            if (calibrationSamples.length >= 120) {
-              calibratedFrameMs = calibrate();
-              context.invalidate();
-            }
-          } else {
-            const expected = Math.max(1, Math.round(delta / calibratedFrameMs));
-            frames.push({
-              at: context.now(),
-              delta,
-              expected,
-              dropped: Math.max(0, expected - 1),
-            });
-            if (delta > worstFrame) worstFrame = delta;
-            sinceSample += 1;
-            // One sparkline point per ~500 ms of frames, not one per frame.
-            if (sinceSample >= 30) {
-              sinceSample = 0;
-              series.push(context.now(), summarise(context.now()).ratio);
-              context.invalidate();
-            }
-          }
+      source.start(context, (frame: Frame) => {
+        if (frame.expected === 0) return;
+        if (frame.delta > worstFrame) worstFrame = frame.delta;
+        sinceSample += 1;
+        // One sparkline point per ~500 ms of frames, not one per frame.
+        if (sinceSample >= 30) {
+          sinceSample = 0;
+          series.push(context.now(), summarise(context.now()).ratio);
+          context.invalidate();
         }
-        previous = timestamp;
-      };
-
-      handle = requestAnimationFrame(loop);
-      context.signal.addEventListener(
-        "abort",
-        () => {
-          stopped = true;
-          cancelAnimationFrame(handle);
-          doc?.removeEventListener("visibilitychange", onVisibilityChange);
-        },
-        { once: true },
-      );
+      });
     },
     read(now: number): MetricView {
       const detail: [string, string][] = [];
@@ -216,14 +114,14 @@ export function createJankCollector(options: JankCollectorOptions = {}): Collect
           display: NOT_AVAILABLE,
           value: Number.NaN,
           unit: "%",
-          hint: "requestAnimationFrame is unavailable, so frames cannot be timed.",
+          hint: UNSUPPORTED_REASON,
           detail,
         };
       }
 
       const window = summarise(now);
       if (window.count === 0) {
-        const calibrating = calibratedFrameMs === null && calibrationSamples.length > 0;
+        const calibrating = source.frameMs === null && source.calibrationSamples > 0;
         return {
           id: "jank",
           label: "jank",
@@ -234,20 +132,19 @@ export function createJankCollector(options: JankCollectorOptions = {}): Collect
           value: Number.NaN,
           unit: "%",
           hint: calibrating
-            ? `Calibrating the display cadence: ${calibrationSamples.length} of 120 active frame intervals measured.`
+            ? `Calibrating the display cadence: ${source.calibrationSamples} of ${CALIBRATION_FRAMES} active frame intervals measured.`
             : "Idle: no frames were produced in the rolling window, which is not the same as no jank.",
           detail: [
             ...(calibrating
-              ? ([["Calibration intervals", `${calibrationSamples.length} / 120`]] as [
-                  string,
-                  string,
-                ][])
-              : []),
-            ["Frames discarded as idle", String(discarded)],
-            ...(stalls > 0
               ? ([
-                  [stallLabel, String(stalls)],
-                  ["Longest stall (session)", formatMs(longestStall, 1)],
+                  ["Calibration intervals", `${source.calibrationSamples} / ${CALIBRATION_FRAMES}`],
+                ] as [string, string][])
+              : []),
+            ["Frames discarded as idle", String(source.discarded)],
+            ...(source.stalls > 0
+              ? ([
+                  [stallLabel, String(source.stalls)],
+                  ["Longest stall (session)", formatMs(source.longestStall, 1)],
                 ] as [string, string][])
               : []),
           ],
@@ -260,12 +157,13 @@ export function createJankCollector(options: JankCollectorOptions = {}): Collect
         ["Dropped frames", String(window.dropped)],
         ["Slowest frame", formatMs(window.slowest, 1)],
         ["Worst frame (session)", formatMs(worstFrame, 1)],
-        ["Frames discarded as idle", String(discarded)],
-        [stallLabel, String(stalls)],
+        ["Frames discarded as idle", String(source.discarded)],
+        [stallLabel, String(source.stalls)],
       );
-      if (stalls > 0) detail.push(["Longest stall (session)", formatMs(longestStall, 1)]);
+      if (source.stalls > 0)
+        detail.push(["Longest stall (session)", formatMs(source.longestStall, 1)]);
       detail.push(
-        ["Frame budget", formatMs(calibratedFrameMs ?? Number.NaN, 2)],
+        ["Frame budget", formatMs(source.frameMs ?? Number.NaN, 2)],
         ["Window", formatSeconds(window.effectiveWindowMs)],
       );
 
@@ -283,26 +181,21 @@ export function createJankCollector(options: JankCollectorOptions = {}): Collect
       };
     },
     reset() {
-      frames.clear();
+      source.reset();
       series.clear();
       worstFrame = 0;
-      longestStall = 0;
-      discarded = 0;
-      stalls = 0;
-      calibrationSamples.length = 0;
-      calibratedFrameMs = frameMsOverride ?? null;
     },
     diagnostics(now: number) {
       return {
         supported,
         ...summarise(now),
         worstFrame,
-        longestStall,
-        discarded,
-        stalls,
-        frameMs: calibratedFrameMs,
+        longestStall: source.longestStall,
+        discarded: source.discarded,
+        stalls: source.stalls,
+        frameMs: source.frameMs,
         historySize,
-        calibrationSamples: calibrationSamples.length,
+        calibrationSamples: source.calibrationSamples,
       };
     },
   };

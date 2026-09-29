@@ -96,6 +96,7 @@ export function createMetricsRuntime(options: MetricsRuntimeOptions): MetricsRun
     const at = now();
     const views: Record<keyof MetricsSnapshot["views"], MetricView> = {
       memory: emptyView("memory"),
+      fps: emptyView("fps"),
       delay: emptyView("delay"),
       jank: emptyView("jank"),
       network: emptyView("network"),

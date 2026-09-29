@@ -7,11 +7,11 @@
 import type { Severity as KitSeverity } from "@nejcm/dev-toolbar/kit";
 import type { TimeSeries } from "../../runtime";
 
-export type MetricId = "memory" | "delay" | "jank" | "network";
+export type MetricId = "memory" | "fps" | "delay" | "jank" | "network";
 
 export type CollectorId = MetricId | (string & {});
 
-export const METRIC_IDS: readonly MetricId[] = ["memory", "delay", "jank", "network"];
+export const METRIC_IDS: readonly MetricId[] = ["memory", "fps", "delay", "jank", "network"];
 
 /** `"unknown"` is a real state: it is what an unsupported platform API looks like. */
 export type Severity = KitSeverity;

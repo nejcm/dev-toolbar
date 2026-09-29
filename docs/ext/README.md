@@ -6,7 +6,7 @@ the playground against a published release.
 
 | Extension | What it adds |
 | --- | --- |
-| [`ext/metrics`](./metrics.md) | Memory, interaction delay, jank, in-flight network requests and consumer-supplied collectors |
+| [`ext/metrics`](./metrics.md) | Memory, frame rate, interaction delay, jank, in-flight network requests and consumer-supplied collectors |
 | [`ext/environment`](./environment.md) | Consumer-supplied environment, release, commit and actor context, with redaction |
 | [`ext/flags`](./flags.md) | Feature flags with persisted local overrides and a `?dtb-flags=reset` kill switch |
 | [`ext/command-menu`](./command-menu.md) | A `Mod+K` palette over every command the toolbar aggregates |

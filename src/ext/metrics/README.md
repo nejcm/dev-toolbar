@@ -1,6 +1,6 @@
 # `ext/metrics`
 
-Memory, interaction delay, jank and in-flight network on the bar, plus whatever
+Memory, frame rate, interaction delay, jank and in-flight network on the bar, plus whatever
 you collect yourself. Every built-in degrades on its own where a browser API is
 missing — a chip that cannot be measured says `unsupported` rather than showing
 a zero.
@@ -22,7 +22,9 @@ const extensions = [metrics({ only: ["memory", "network"] })];
 | `runtime.ts` | Collector scheduling over `/runtime`'s throttled store |
 | `collectors/memory.ts` | `performance.memory`, Chromium-only |
 | `collectors/delay.ts` | Interaction delay, from `event-timing` entries |
-| `collectors/jank.ts` | Long-task frames |
+| `collectors/frames.ts` | The shared rAF loop, stall classifier and refresh-rate calibration |
+| `collectors/fps.ts` | Frames per active second, graded by shortfall against the refresh rate |
+| `collectors/jank.ts` | Dropped frames over expected frames |
 | `collectors/network.ts` | `fetch`/`XHR` patching, in-flight count and the request ring |
 | `curl.ts` | One recorded request as a `curl` line |
 | `format.ts` | Number and unit formatting shared by chip and panel |
@@ -33,7 +35,7 @@ const extensions = [metrics({ only: ["memory", "network"] })];
 
 It owns the sampling loop and the ring buffers. It owns no opinion about what a
 number means — no thresholds you did not set, no "good/bad" colouring invented
-here. A consumer-supplied collector is a first-class citizen alongside the four
+here. A consumer-supplied collector is a first-class citizen alongside the five
 built-ins; `only` selects which built-ins run at all.
 
 Network recording patches `fetch` and `XMLHttpRequest`, calls through, and
@@ -47,8 +49,10 @@ so the panel, the cURL export and `/ext/diagnostics` all read one masked copy.
 
 ## Options that change behaviour
 
-`only`, `collectors`, `updateHz`, and the per-collector `memory` / `delay` /
-`jank` / `network` option bags. The rest (`id`, `label`, `align`, `order`,
+`only`, `collectors`, `updateHz`, the per-collector `memory` / `fps` / `delay` /
+`jank` / `network` option bags, and `frames`, the classifier `fps` and `jank`
+share (`jank.frameMs`, `jank.idleGapMs` and `jank.stallCeilingMs` are its deprecated
+aliases, and win when set). The rest (`id`, `label`, `align`, `order`,
 `priority`, `hidden`, `injectStyles`, `styleNonce`) are the shell's usual
 placement and styling controls.
 

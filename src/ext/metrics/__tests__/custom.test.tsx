@@ -58,7 +58,7 @@ it("rejects duplicate registrations and unknown only IDs at factory time", () =>
   );
   expect(() => metrics({ only: ["missing"] })).toThrow('Unknown collector "missing"');
 });
-it("appends custom collectors and retains all four built-in views", () => {
+it("appends custom collectors and retains all five built-in views", () => {
   const collector = custom();
   const extension = metrics({ collectors: [collector] });
   expect(extension.diagnostics?.()).toMatchObject({
@@ -139,7 +139,7 @@ it("round-trips a custom panel tab through storage and overflow", () => {
     second.toolbar.item("metrics")!.querySelector('[data-dtb-metric="constructor"]'),
   ).not.toBeNull();
 });
-it("routes the playground's fifth metric through bar, panel, only, agent and diagnostics", async () => {
+it("routes the playground's sixth metric through bar, panel, only, agent and diagnostics", async () => {
   const profiler = createReactProfilerCollector();
   profiler.onRender("app", "mount", 12, 20, 0, 1);
   const instanceId = "custom-proof";
@@ -155,7 +155,7 @@ it("routes the playground's fifth metric through bar, panel, only, agent and dia
   expect(
     toolbar.item("metrics")!.querySelector('[data-dtb-metric="react-profiler"]')!.textContent,
   ).toContain("12");
-  expect(toolbar.item("metrics")!.querySelectorAll("[data-dtb-metric]")).toHaveLength(5);
+  expect(toolbar.item("metrics")!.querySelectorAll("[data-dtb-metric]")).toHaveLength(6);
   toolbar.openPanel("metrics");
   fireEvent.click(toolbar.panel("metrics")!.querySelector('[data-dtb-metric="react-profiler"]')!);
   expect(toolbar.panel("metrics")!.querySelector('[role="tabpanel"]')!.textContent).toContain(

@@ -109,7 +109,7 @@ them and you have a bar that hosts only your own tools.
 
 | Extension | What it gives you | Source |
 | --- | --- | --- |
-| [`ext/metrics`](./docs/ext/metrics.md) | Memory, interaction delay, jank and in-flight network, plus consumer-supplied collectors; each built-in degrades on its own where a browser API is missing | [`src/ext/metrics`](./src/ext/metrics/README.md) |
+| [`ext/metrics`](./docs/ext/metrics.md) | Memory, frame rate, interaction delay, jank and in-flight network, plus consumer-supplied collectors; each built-in degrades on its own where a browser API is missing | [`src/ext/metrics`](./src/ext/metrics/README.md) |
 | [`ext/environment`](./docs/ext/environment.md) | Environment, release, commit and actor context — all supplied by you, all redacted, with production coloured like production | [`src/ext/environment`](./src/ext/environment/README.md) |
 | [`ext/flags`](./docs/ext/flags.md) | Your feature flags, with local overrides that survive a reload and a `?dtb-flags=reset` kill switch | [`src/ext/flags`](./src/ext/flags/README.md) |
 | [`ext/command-menu`](./docs/ext/command-menu.md) | A `⌘K` palette over every command the toolbar has aggregated. Leave it out and write your own over `useToolbarCommands()` | [`src/ext/command-menu`](./src/ext/command-menu/README.md) |
@@ -442,7 +442,8 @@ element, a gallery that fetches its manifest and can render the images with or
 without a reserved box — the difference between `CLS` at `0.000` and `CLS` past
 `0.1` — a cross-origin YouTube `<iframe>` loaded on request, for the bar to keep
 drawing over and lose its keyboard shortcuts inside, and an animation loop whose
-*heavy* mode is the only thing in the app that makes `jank` go red and stay red.
+*heavy* mode is the only thing in the app that makes `fps` and `jank` go red and
+stay red.
 The article at the bottom is what each chip means.
 
 ```bash

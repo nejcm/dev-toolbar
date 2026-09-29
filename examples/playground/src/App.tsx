@@ -705,9 +705,10 @@ export function App() {
           </li>
           <li>
             <em>Animate something</em> on <em>heavy</em> is the only thing here
-            that makes <code>jank</code> go red and <em>stay</em> red. The
-            page's own frame counter sits next to the canvas — it and the chip
-            are measuring the same frames from opposite sides.
+            that makes <code>fps</code> and <code>jank</code> go red and{" "}
+            <em>stay</em> red. The page's own frame counter sits next to the
+            canvas — it and the <code>fps</code> chip are measuring the same
+            frames from opposite sides.
           </li>
           <li>
             The article at the bottom is real typography on an 8px rhythm, so{" "}
