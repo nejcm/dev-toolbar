@@ -442,7 +442,8 @@ element, a gallery that fetches its manifest and can render the images with or
 without a reserved box — the difference between `CLS` at `0.000` and `CLS` past
 `0.1` — a cross-origin YouTube `<iframe>` loaded on request, for the bar to keep
 drawing over and lose its keyboard shortcuts inside, and an animation loop whose
-*heavy* mode is the only thing in the app that makes `jank` go red and stay red.
+*heavy* mode is the only thing in the app that makes `fps` and `jank` go red and
+stay red.
 The article at the bottom is what each chip means.
 
 ```bash

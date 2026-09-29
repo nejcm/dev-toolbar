@@ -324,14 +324,14 @@ export function VideoEmbed() {
   );
 }
 
-/** Modes the stage can run in. `heavy` is the one the `jank` chip is for. */
+/** Modes the stage can run in. `heavy` is the one the `fps` and `jank` chips are for. */
 type StageMode = "off" | "smooth" | "heavy";
 
 /** Per-frame synchronous work in `heavy` mode — over one 60 Hz frame budget, on purpose. */
 const HEAVY_FRAME_MS = 24;
 
 /**
- * An animation loop, which is the only honest way to make the `jank` chip move.
+ * An animation loop, which is the only honest way to make the `fps` and `jank` chips move.
  *
  * *Block 300 ms* in "Drive the metrics" is one long task: the chip spikes once
  * and recovers. This is the other failure, and the more common one — a loop that
@@ -339,9 +339,9 @@ const HEAVY_FRAME_MS = 24;
  * page is simply never smooth. The two look completely different in the panel,
  * and only one of them is what users complain about.
  *
- * The readout is the page counting its own frames. It and the chip are measuring
- * the same `requestAnimationFrame` callbacks from opposite sides; if they
- * disagree by more than rounding, one of them is wrong.
+ * The readout is the page counting its own frames. It and the `fps` chip are measuring
+ * the same `requestAnimationFrame` callbacks from opposite sides; after five
+ * seconds in one mode, a gap wider than rounding means one of them is wrong.
  */
 export function CanvasStage() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -422,16 +422,18 @@ export function CanvasStage() {
     <section className="pg-card pg-canvas-demo">
       <h2>Animate something</h2>
       <p>
-        The <code>jank</code> chip counts dropped frames over a rolling five
-        seconds. <em>Smooth</em> should cost it nothing. <em>Heavy</em> spends{" "}
+        The <code>fps</code> chip counts delivered frames and the{" "}
+        <code>jank</code> chip dropped ones, both over a rolling five seconds.{" "}
+        <em>Smooth</em> should cost them nothing. <em>Heavy</em> spends{" "}
         {HEAVY_FRAME_MS} ms of real arithmetic inside every frame — more than a
-        60 Hz budget — so the chip goes red and stays there, which is a different
+        60 Hz budget — so both chips go red and stay there, which is a different
         failure from the one-off spike <em>Block 300 ms</em> produces.
       </p>
       <p>
-        Both numbers read <code>0</code> in a background tab, and correctly:{" "}
-        <code>requestAnimationFrame</code> stops there, and the <code>jank</code>{" "}
-        collector discards the gap instead of billing you ten seconds of dropped
+        In a background tab <code>requestAnimationFrame</code> stops: the readout
+        freezes at its last value, and once their five-second windows empty the{" "}
+        <code>fps</code> and <code>jank</code> chips read <code>—</code>. Both
+        collectors discard the gap instead of billing you ten seconds of dropped
         frames for a window you were not looking at.
       </p>
       <div className="pg-controls">

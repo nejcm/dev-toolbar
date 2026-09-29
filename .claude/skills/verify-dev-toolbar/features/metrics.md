@@ -18,7 +18,12 @@ are app-owned examples, imported from `examples/playground/src/collectors`.
    panel rows. Unsupported APIs report NA. INP remains pending until interaction.
 5. Invoke `diagnostics.capture` through the agent handle. The returned snapshot's
    metrics contribution contains both custom summaries and their detail dumps.
-6. Run `metrics.reset`. Profiler history clears, then resumes on the next app
+6. Open *Animate something* and pick *smooth*, then *heavy*, waiting at least 6 s
+   after each: the collector's window is a rolling 5 s and the readout batches
+   every 500 ms. Once settled, `data.fps.fps` tracks the card's `anim-fps` readout
+   within rounding; *heavy* turns the `fps` metric's
+   severity `bad`, and `data.fps.refreshHz` stays the display's rate throughout.
+7. Run `metrics.reset`. Profiler history clears, then resumes on the next app
    commit. Custom collectors remain registered.
 
 `src/ext/metrics/__tests__/custom.test.tsx` separately exercises `only` selecting

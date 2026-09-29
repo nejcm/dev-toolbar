@@ -153,6 +153,10 @@ actually returns as a finding about the recipe, and fix it here.
   animation card's `anim-fps` readout was driven the same way: `60 fps` in
   *smooth* against `jank.ratio` 0.007, `42 fps` in *heavy* against
   `jank.dropped` 65 of 299 (`severity: "bad"`), `—` when off.
+- **Driven 2026-09-29, after `fps` became a built-in:** the same card in headless
+  Chromium through `playwright-cli`. *Smooth* read the `fps` chip at 60.0 (`ok`)
+  beside `page-measured: 60 fps`; *heavy* read 41.3 (`bad`) beside `42 fps`, with
+  `jank` at 31.1% (`bad`).
 - **Not driven — verify before reporting:** the rest of
   [a11y.md](./a11y.md) (written against the source and its unit tests, which do
   run the real `axe-core` against a jsdom document — the highlight box, its
@@ -217,20 +221,19 @@ handles, required state, calls and observable proof.
 
 Not yet mapped, and therefore not yet verified: `theme-editor` (token editing,
 reserved `--dtb-*` names refused, `?dtb-theme=reset`, the four export formats),
-`metrics` (the `LoadControls` buttons drive it), `diagnostics`' **snapshot**
+`diagnostics`' **snapshot**
 half (capture, the format buttons, copy and download — its console tail is
 mapped in [diagnostics.md](./diagnostics.md)), and the error-isolation chip the
-`boom` extension raises. Add them here before claiming them. All three extensions now publish
+`boom` extension raises. Add them here before claiming them. Both extensions now publish
 state through the bridge — `ext("theme-editor").overrides` (edited tokens and
-their values), `ext("metrics").metrics` (per metric: numeric `value`, `unit`,
-`severity`, `status`), `ext("diagnostics")` (`captured`, `revision`,
+their values), `ext("diagnostics")` (`captured`, `revision`,
 `capturedAt`, `generatedAt`, `gathered`, `contributionCount`, `omissionCount`,
 `omissions`, `format`, and `console` — `{status, errors, warnings, dropped,
 watching}` for the §1B console tail) — so a map for
 them is now mostly writing down assertions, not building a way to read them.
 `/ext/diagnostics` publishes a **summary**, never the snapshot: the snapshot is
 built from the roster, so embedding it would put one snapshot inside the next.
-Reach the full object through `diagnostics.copyJson` / `diagnostics.download`. Three of those surfaces move with
+Reach the full object through `diagnostics.copyJson` / `diagnostics.download`. Three surfaces — metrics, theme-editor and diagnostics — move with
 the pending PR stack #21–#28, source-confirmed there and not driven — the
 metrics tabs gain `id`, `aria-controls`, a roving `tabindex` and
 Arrow/Home/End keys, with the `tabpanel` `aria-labelledby` the active tab;

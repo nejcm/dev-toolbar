@@ -43,6 +43,11 @@ const SIGNALS: SignalRow[] = [
     moves: "The manifest fetch, and the 200/404 buttons in Drive the metrics.",
   },
   {
+    signal: "frame rate",
+    where: "metrics · fps",
+    moves: "Animate something, on heavy.",
+  },
+  {
     signal: "dropped frames",
     where: "metrics · jank",
     moves: "Animate something, on heavy.",
