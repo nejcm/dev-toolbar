@@ -160,7 +160,7 @@ curl -s -X POST localhost:5273/__dev-toolbar/commands/flags.set \
 `.extensions.<id>` is each extension's own `diagnostics()` output — `flags`
 publishes `flags`, `overriddenCount`, `maskedCount`, `writable`, `reloadPending`;
 `environment` publishes `fields`, `maskedCount`, `severity`, `impersonating`;
-`metrics` publishes `metrics`, `jank`, `network`, `memory`, `delay`; `overlays` publishes
+`metrics` publishes `metrics`, `memory`, `fps`, `delay`, `jank`, `network`; `overlays` publishes
 `on`, `active`, `activeCount`; `command-menu` publishes `open`, `query`,
 `resultCount`, `commandCount`; `theme-editor` publishes `overrides`, `mode`,
 `surface`, `refusedCount`; `diagnostics` publishes its capture *summary*. `null`

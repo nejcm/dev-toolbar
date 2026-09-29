@@ -209,7 +209,7 @@ const features = [
   { title: "ssr-safe", body: "Children server-render untouched; the bar is client-only, so nothing can mismatch." },
 ];
 const extensions = [
-  { id: "metrics", href: withBase("/ext/metrics.html"), body: "Memory, interaction delay, jank and in-flight network, plus your own collectors. Each built-in degrades on its own where a browser API is missing." },
+  { id: "metrics", href: withBase("/ext/metrics.html"), body: "Memory, frame rate, interaction delay, jank and in-flight network, plus your own collectors. Each built-in degrades on its own where a browser API is missing." },
   { id: "environment", href: withBase("/ext/environment.html"), body: "Environment, release, commit and actor context — all supplied by you, all redacted, with production coloured like production." },
   { id: "flags", href: withBase("/ext/flags.html"), body: "Your feature flags, with local overrides that survive a reload and a ?dtb-flags=reset kill switch." },
   { id: "command-menu", href: withBase("/ext/command-menu.html"), body: "A ⌘K palette over every command the toolbar has aggregated. Leave it out and build your own with useDevToolbar().getCommands()." },

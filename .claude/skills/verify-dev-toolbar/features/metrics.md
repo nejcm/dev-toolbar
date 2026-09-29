@@ -1,11 +1,11 @@
 # Metrics collectors
 
-Use the existing playground session. The metrics extension registers six collectors:
-`memory`, `delay`, `jank`, `network`, `react-profiler`, `web-vitals`. The last two
+Use the existing playground session. The metrics extension registers seven collectors:
+`memory`, `fps`, `delay`, `jank`, `network`, `react-profiler`, `web-vitals`. The last two
 are app-owned examples, imported from `examples/playground/src/collectors`.
 
 1. Read `window.__DEV_TOOLBAR__.instances.playground.read()`. Its `metrics`
-   diagnostics entry must be `ok`; `data.metrics` lists all six IDs. If metrics
+   diagnostics entry must be `ok`; `data.metrics` lists all seven IDs. If metrics
    has collapsed, open `⋮`; otherwise inspect its bar chips.
 2. Click a metric to open the panel. Select the React Profiler tab. Interact
    with the app's Allocate/Release buttons. Actual duration, base duration and

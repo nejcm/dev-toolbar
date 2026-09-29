@@ -50,6 +50,19 @@ describe("metrics extension in the bar", () => {
     ).toBe("ok");
   });
 
+  it("names the default roster in bar order, fps before jank", () => {
+    const { toolbar } = mount({ only: undefined });
+    const item = toolbar.item("metrics");
+    expect(item?.querySelector('[data-dtb-part="trigger"]')?.getAttribute("aria-label")).toBe(
+      "Metrics: mem, fps, delay, jank, net",
+    );
+    expect(
+      [...(item?.querySelectorAll("[data-dtb-metric]") ?? [])].map((chip) =>
+        chip.getAttribute("data-dtb-metric"),
+      ),
+    ).toEqual(["memory", "fps", "delay", "jank", "network"]);
+  });
+
   it("injects its stylesheet once, keyed on the DOM", () => {
     mount();
     mount({ id: "metrics-2" });

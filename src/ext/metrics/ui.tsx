@@ -244,9 +244,9 @@ export function MetricsChips({
   // values alone: a bare "22 MB — — 0" asks the listener to match numbers
   // positionally against the name, and a collector this browser can't
   // support has no number to place at all. Measured against the real bar in
-  // Chromium: pairing reads as "mem 22 MB delay — jank — net 0", the same
-  // utterance as pointing at the chips themselves, but gated by the value
-  // span rather than by whatever a `render` callback painted.
+  // Chromium: pairing reads as "mem 22 MB fps 60 fps delay — jank — net 0",
+  // the same utterance as pointing at the chips themselves, but gated by the
+  // value span rather than by whatever a `render` callback painted.
   const describedBy = chips
     .flatMap((chip) => {
       if (chip.rendered !== chip.fallback || !chip.control.parts.value) return [];

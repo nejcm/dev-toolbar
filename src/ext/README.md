@@ -8,7 +8,7 @@ hosts only your own tools.
 
 | Directory | Subpath | What it gives you |
 | --- | --- | --- |
-| [`metrics/`](./metrics/README.md) | `ext/metrics` | Memory, interaction delay, jank and in-flight network, plus your own collectors |
+| [`metrics/`](./metrics/README.md) | `ext/metrics` | Memory, frame rate, interaction delay, jank and in-flight network, plus your own collectors |
 | [`environment/`](./environment/README.md) | `ext/environment` | Environment, release, commit and actor context — all supplied by you, all redacted |
 | [`flags/`](./flags/README.md) | `ext/flags` | Feature flags, with local overrides that survive a reload and a kill switch |
 | [`command-menu/`](./command-menu/README.md) | `ext/command-menu` | A `⌘K` palette over every command the toolbar has aggregated |

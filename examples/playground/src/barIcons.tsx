@@ -42,6 +42,14 @@ const jankIcon: ReactNode = (
   </svg>
 );
 
+/** Frame rate: a speedometer. */
+const fpsIcon: ReactNode = (
+  <svg {...stroke}>
+    <path d="M2 12a6 6 0 1 1 12 0" />
+    <path d="M8 12l3-4" />
+  </svg>
+);
+
 /** Heap usage: a memory chip with pins. */
 const memoryIcon: ReactNode = (
   <svg {...stroke}>
@@ -81,6 +89,7 @@ const vitalsIcon: ReactNode = (
  */
 export const METRIC_ICONS: Record<string, ReactNode> = {
   delay: delayIcon,
+  fps: fpsIcon,
   jank: jankIcon,
   memory: memoryIcon,
   network: networkIcon,

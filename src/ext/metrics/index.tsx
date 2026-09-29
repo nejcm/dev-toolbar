@@ -1,7 +1,7 @@
 /**
  * `@nejcm/dev-toolbar/ext/metrics`
  *
- * Memory, delay, jank and network, per `plans/dev-bar.md` §3D. Imports only
+ * Memory, fps, delay, jank and network, per `plans/dev-bar.md` §3D. Imports only
  * types from `src/core/*` (no runtime values), keeping this a genuinely
  * external consumer of the public extension contract.
  *
@@ -17,7 +17,9 @@
  */
 import { createMemoryCollector } from "./collectors/memory";
 import { createDelayCollector } from "./collectors/delay";
-import { createJankCollector } from "./collectors/jank";
+import { createFpsReader } from "./collectors/fps";
+import { createFrameSource } from "./collectors/frames";
+import { createJankReader } from "./collectors/jank";
 import { createNetworkCollector } from "./collectors/network";
 import { formatCurl } from "./curl";
 import { writeClipboardTextOrThrow } from "../../runtime";
@@ -34,6 +36,8 @@ import type { CompactPresentationInput } from "@nejcm/dev-toolbar/kit";
 import type { Collector, CollectorId, MetricId, MetricView } from "./types";
 import type { MemoryCollectorOptions } from "./collectors/memory";
 import type { DelayCollectorOptions } from "./collectors/delay";
+import type { FpsCollectorOptions } from "./collectors/fps";
+import type { FrameOptions } from "./collectors/frames";
 import type { JankCollectorOptions } from "./collectors/jank";
 import type { NetworkCollector, NetworkCollectorOptions } from "./collectors/network";
 import type {
@@ -57,7 +61,7 @@ export interface MetricsOptions {
   order?: number;
   priority?: number;
   hidden?: boolean;
-  /** Which metrics to run, in bar order. Default: all four, then custom collectors. */
+  /** Which metrics to run, in bar order. Default: all five, then custom collectors. */
   only?: readonly CollectorId[];
   /** Consumer-owned collectors, appended in registration order unless `only` is set. */
   collectors?: readonly Collector[];
@@ -93,10 +97,24 @@ export interface MetricsOptions {
   presentation?: CompactPresentationInput<MetricView>;
   /** `false` switches a metric off entirely; an object configures it. */
   memory?: boolean | MemoryCollectorOptions;
+  fps?: boolean | FpsCollectorOptions;
   delay?: boolean | DelayCollectorOptions;
-  jank?: boolean | JankCollectorOptions;
+  jank?: boolean | JankMetricOptions;
   network?: boolean | NetworkCollectorOptions;
+  /** The frame classifier `fps` and `jank` share: one rAF loop, one calibration. */
+  frames?: FrameOptions;
 }
+
+interface JankMetricOptions extends Omit<JankCollectorOptions, keyof FrameOptions> {
+  /** @deprecated Use `frames.frameMs`; this still wins when both are set. */
+  frameMs?: number;
+  /** @deprecated Use `frames.idleGapMs`; this still wins when both are set. */
+  idleGapMs?: number;
+  /** @deprecated Use `frames.stallCeilingMs`; this still wins when both are set. */
+  stallCeilingMs?: number;
+}
+
+const FRAME_OPTION_KEYS = ["frameMs", "idleGapMs", "stallCeilingMs"] as const;
 
 // Matches `redact()`'s own array cutoff (docs/ext/metrics.md), so an unbounded
 // export doesn't reach an agent truncated with a `count` that disagrees with it.
@@ -143,19 +161,28 @@ export function metrics(options: MetricsOptions = {}): DevToolbarExtension {
 
   let networkCollector: NetworkCollector | null = null;
 
+  const jankConfig = optionsFor(options.jank);
+  const frameOptions: FrameOptions = { ...options.frames };
+  for (const key of FRAME_OPTION_KEYS) {
+    const alias = jankConfig?.[key];
+    if (alias !== undefined) frameOptions[key] = alias;
+  }
+  const frameSource = createFrameSource(frameOptions);
+
   const build: Record<MetricId, () => Collector | null> = {
     memory: () => {
       const config = optionsFor(options.memory);
       return config === null ? null : createMemoryCollector(config);
     },
+    fps: () => {
+      const config = optionsFor(options.fps);
+      return config === null ? null : createFpsReader(frameSource, config);
+    },
     delay: () => {
       const config = optionsFor(options.delay);
       return config === null ? null : createDelayCollector(config);
     },
-    jank: () => {
-      const config = optionsFor(options.jank);
-      return config === null ? null : createJankCollector(config);
-    },
+    jank: () => (jankConfig === null ? null : createJankReader(frameSource, jankConfig)),
     network: () => {
       const config = optionsFor(options.network);
       if (config === null) return null;
@@ -385,7 +412,7 @@ export function metrics(options: MetricsOptions = {}): DevToolbarExtension {
         id: `${id}.reset`,
         label: "Reset performance metrics",
         group: "Metrics",
-        keywords: ["clear", "performance", "memory", "jank"],
+        keywords: ["clear", "performance", "memory", "fps", "jank"],
         run: () => runtime.reset(),
       },
       {
@@ -407,10 +434,13 @@ export { METRICS_CSS, ensureMetricsStyles } from "./css";
 export { createMetricsRuntime } from "./runtime";
 export type { MetricsRuntime, MetricsRuntimeOptions } from "./runtime";
 export { createDelayCollector, supportsEventTiming } from "./collectors/delay";
+export { createFpsCollector } from "./collectors/fps";
 export { createJankCollector } from "./collectors/jank";
 export { createMemoryCollector, readPerformanceMemory } from "./collectors/memory";
 export { createNetworkCollector, instrumentFetch, instrumentXhr } from "./collectors/network";
 export type { DelayCollectorOptions, InteractionRecord } from "./collectors/delay";
+export type { FpsCollectorOptions } from "./collectors/fps";
+export type { FrameOptions } from "./collectors/frames";
 export type { JankCollectorOptions } from "./collectors/jank";
 export type { MemoryCollectorOptions } from "./collectors/memory";
 export type {

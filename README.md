@@ -109,7 +109,7 @@ them and you have a bar that hosts only your own tools.
 
 | Extension | What it gives you | Source |
 | --- | --- | --- |
-| [`ext/metrics`](./docs/ext/metrics.md) | Memory, interaction delay, jank and in-flight network, plus consumer-supplied collectors; each built-in degrades on its own where a browser API is missing | [`src/ext/metrics`](./src/ext/metrics/README.md) |
+| [`ext/metrics`](./docs/ext/metrics.md) | Memory, frame rate, interaction delay, jank and in-flight network, plus consumer-supplied collectors; each built-in degrades on its own where a browser API is missing | [`src/ext/metrics`](./src/ext/metrics/README.md) |
 | [`ext/environment`](./docs/ext/environment.md) | Environment, release, commit and actor context — all supplied by you, all redacted, with production coloured like production | [`src/ext/environment`](./src/ext/environment/README.md) |
 | [`ext/flags`](./docs/ext/flags.md) | Your feature flags, with local overrides that survive a reload and a `?dtb-flags=reset` kill switch | [`src/ext/flags`](./src/ext/flags/README.md) |
 | [`ext/command-menu`](./docs/ext/command-menu.md) | A `⌘K` palette over every command the toolbar has aggregated. Leave it out and write your own over `useToolbarCommands()` | [`src/ext/command-menu`](./src/ext/command-menu/README.md) |
