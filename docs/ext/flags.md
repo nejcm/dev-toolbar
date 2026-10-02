@@ -152,9 +152,17 @@ outlives the tab — so:
   storage adapter cannot be read. The default `localStorage` adapter reports a blocked
   store as empty, so only custom adapters that throw on reads get this guarantee. A new
   runtime or page reload cannot recover an override that storage never accepted.
+
+  Each change writes the whole map, so two tabs editing overrides at once are
+  last-write-wins: the tab that wrote last decides what the next reload applies.
 - **A renamed flag does not leave a ghost.** An override whose key is no longer in
   your catalogue is still being applied to your app, so it still gets a row — tagged
   *no longer in the catalogue*, counted, and clearable.
+- **A retyped flag is called out, not cleared.** When a catalogue that arrives after
+  mount types a flag differently from its active override, the row is tagged
+  *not a boolean* (or whichever type the flag now has) until you clear it or set a
+  new value. The override stays applied
+  and stored.
 - **Reload behaviour is per flag.** `reloadBehavior: "full-reload"` on a definition
   means an override on it is labelled *reload required*, with a reload button.
 - **A throwing adapter is shown, not swallowed, per flag.** The failing row is

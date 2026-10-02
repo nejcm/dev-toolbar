@@ -202,7 +202,7 @@ function valueMatchesFlagType(
   variants: readonly FlagValue[] | undefined,
 ): boolean {
   if (type === "boolean") return typeof value === "boolean";
-  if (type === "number") return typeof value === "number";
+  if (type === "number") return typeof value === "number" && Number.isFinite(value);
   if (type === "string") return typeof value === "string";
   if (type === "variant") {
     if (variants === undefined || variants.length === 0) return false;
@@ -269,6 +269,7 @@ function tagsFor(view: FlagView, reloadPending: ReadonlySet<string>): string[] {
   const tags: string[] = [];
   if (view.overridden) tags.push("override");
   if (view.applyError !== undefined) tags.push("not-applied");
+  if (view.typeMismatch !== undefined) tags.push("type-mismatch");
   if (view.orphaned) tags.push("orphaned");
   if (view.promoted) tags.push("promoted");
   if (view.masked) tags.push("masked");
@@ -302,6 +303,15 @@ export function createFlagsRuntime(options: FlagsRuntimeOptions = {}): FlagsRunt
   // The whole-map adapter fails or recovers as a whole, so it gets its own slot.
   let bulkError: string | null = null;
   let readError: string | null = null;
+  // Kept across a throwing read so `sensitive` and types still apply to active overrides.
+  let lastReadings: readonly FlagReading[] = [];
+  let boundaryTimer: ReturnType<typeof setTimeout> | undefined;
+  let boundaryAt: number | null = null;
+  // Only a publish's own build captures, so export reads, even in its notify, never move the timer.
+  let capturing = false;
+  let builtBoundary = Number.POSITIVE_INFINITY;
+  let builtAt = 0;
+  let running = false;
   /** Reset result, cleared by the next override change. */
   let notice: string | null = null;
   let noticeError = false;
@@ -318,18 +328,20 @@ export function createFlagsRuntime(options: FlagsRuntimeOptions = {}): FlagsRunt
   const readFlags = (): readonly FlagReading[] => {
     try {
       const value = readInput(flags);
-      if (value === undefined || value === null) return [];
-      if (!Array.isArray(value)) return [];
-      return value as readonly FlagReading[];
+      readError = null;
+      lastReadings = Array.isArray(value) ? (value as readonly FlagReading[]) : [];
+      return lastReadings;
     } catch (error) {
       // A consumer's getter throwing must not take down the bar: the slot is
       // inside an error boundary, but the factory and start()'s interval are not.
       // eslint-disable-next-line no-console
       console.error(
-        "[dev-toolbar/ext/flags] the supplied flags getter threw. " + "Showing an empty list.",
+        "[dev-toolbar/ext/flags] the supplied flags getter threw. " +
+          "Showing the last list that could be read.",
         error,
       );
-      return [];
+      readError = "The flag list could not be read — the getter threw. See the console.";
+      return lastReadings;
     }
   };
 
@@ -389,6 +401,26 @@ export function createFlagsRuntime(options: FlagsRuntimeOptions = {}): FlagsRunt
     return null;
   };
 
+  // One timeout to the next promotion/expiry boundary, so a quiet catalogue still re-renders.
+  const armBoundary = (): void => {
+    const boundary = builtBoundary;
+    if (!running || boundary === boundaryAt) return;
+    clearTimeout(boundaryTimer);
+    boundaryTimer = undefined;
+    boundaryAt = null;
+    if (!Number.isFinite(boundary)) return;
+    boundaryAt = boundary;
+    // setTimeout overflows past 2^31-1 ms; the rebuild it triggers re-arms.
+    boundaryTimer = setTimeout(
+      () => {
+        boundaryTimer = undefined;
+        boundaryAt = null;
+        publish();
+      },
+      Math.min(boundary - builtAt, 2_147_483_647),
+    );
+  };
+
   /* Snapshot */
 
   const buildSnapshot = (revision: number): FlagsSnapshot => {
@@ -397,6 +429,16 @@ export function createFlagsRuntime(options: FlagsRuntimeOptions = {}): FlagsRunt
     const views: FlagView[] = [];
     const seen = new Set<string>();
     let maskedCount = 0;
+    let nextBoundary = Number.POSITIVE_INFINITY;
+    const noteBoundary = (boundary: number | null) => {
+      if (boundary !== null && boundary > at && boundary < nextBoundary) nextBoundary = boundary;
+    };
+    for (const entry of promotions) {
+      noteBoundary(parseDate(entry.startAt));
+      const expiresAt = parseDate(entry.expiresAt);
+      // Expiry checks are strict (`at > expiresAt`), so the change lands 1 ms later.
+      noteBoundary(expiresAt === null ? null : expiresAt + 1);
+    }
 
     for (const reading of readings) {
       if (typeof reading?.key !== "string" || reading.key === "") continue;
@@ -420,7 +462,12 @@ export function createFlagsRuntime(options: FlagsRuntimeOptions = {}): FlagsRunt
       if (masked) maskedCount += 1;
 
       const expiresAtMs = parseDate(reading.expiresAt);
+      noteBoundary(expiresAtMs === null ? null : expiresAtMs + 1);
       const promotion = promotionFor(key);
+      const typeMismatch =
+        hasOverride && !valueMatchesFlagType(override as FlagValue, type, reading.variants)
+          ? `The override ${effectiveRender.text} is not a valid ${type} value, and your application still has it — clear it or set a new one.`
+          : undefined;
 
       views.push({
         key,
@@ -462,6 +509,7 @@ export function createFlagsRuntime(options: FlagsRuntimeOptions = {}): FlagsRunt
         masked,
         orphaned: false,
         ...(adapterErrors.has(key) ? { applyError: adapterErrors.get(key) as string } : {}),
+        ...(typeMismatch === undefined ? {} : { typeMismatch }),
         promoted: promotion !== null,
         ...(promotion === null
           ? {}
@@ -523,6 +571,11 @@ export function createFlagsRuntime(options: FlagsRuntimeOptions = {}): FlagsRunt
     for (let index = 0; index < promotions.length; index += 1) {
       const view = sorted.find((candidate) => candidate.promotedIndex === index);
       if (view) promotedViews.push(view);
+    }
+    if (capturing) {
+      capturing = false;
+      builtBoundary = nextBoundary;
+      builtAt = at;
     }
 
     return {
@@ -590,7 +643,15 @@ export function createFlagsRuntime(options: FlagsRuntimeOptions = {}): FlagsRunt
     ],
   });
 
-  const publish = store.rebuild;
+  const publish = (): void => {
+    capturing = true;
+    try {
+      store.rebuild();
+    } finally {
+      capturing = false;
+    }
+    armBoundary();
+  };
 
   /* Mutation */
 
@@ -650,11 +711,16 @@ export function createFlagsRuntime(options: FlagsRuntimeOptions = {}): FlagsRunt
 
   const drop = (key: string): void => {
     if (!writable) return;
-    if (!Object.prototype.hasOwnProperty.call(overrides, key)) return;
+    const present = Object.prototype.hasOwnProperty.call(overrides, key);
+    // A failed clear leaves the key out of the map but its error in place; that is the retry.
+    if (!present && !adapterErrors.has(key)) return;
     setNotice(null);
-    const next = cloneOverrides(overrides);
-    delete next[key];
-    overrides = next;
+    if (present) {
+      const next = cloneOverrides(overrides);
+      delete next[key];
+      overrides = next;
+    }
+    // Also on a retry: the first clear's storage write may have failed too.
     persist();
     apply(key, undefined);
     notifyOverrides();
@@ -673,8 +739,8 @@ export function createFlagsRuntime(options: FlagsRuntimeOptions = {}): FlagsRunt
 
     clearAll() {
       if (!writable) return;
-      const keys = Object.keys(overrides);
-      if (keys.length === 0) return;
+      const keys = [...new Set([...Object.keys(overrides), ...adapterErrors.keys()])];
+      if (keys.length === 0 && bulkError === null) return;
       setNotice(null);
       overrides = emptyOverrides();
       persist();
@@ -701,7 +767,6 @@ export function createFlagsRuntime(options: FlagsRuntimeOptions = {}): FlagsRunt
         );
       }
       if (value === undefined) {
-        if (!Object.prototype.hasOwnProperty.call(overrides, key)) return;
         drop(key);
         return;
       }
@@ -797,7 +862,14 @@ export function createFlagsRuntime(options: FlagsRuntimeOptions = {}): FlagsRunt
         const stored = readPreferenceIfReadable(storage, OVERRIDES_PREFERENCE);
         // Keep unreadable session entries: they are already applied, and the map is the toolbar's handle for clearing them.
         if (stored.readable) {
+          const previous = overrides;
           overrides = vetOverrides(parseOverrides(stored.value), readFlags());
+          // Dropped from storage since the last start (another tab, devtools): the app still holds it.
+          for (const key of Object.keys(previous)) {
+            if (Object.prototype.hasOwnProperty.call(overrides, key)) continue;
+            apply(key, undefined);
+            markReload(key);
+          }
         }
         // Re-apply on every mount — this is what makes an override outlive
         // the tab. Applying the same value twice is fine; setting a flag is
@@ -820,6 +892,7 @@ export function createFlagsRuntime(options: FlagsRuntimeOptions = {}): FlagsRunt
             })
           : () => {};
       const stopWatching = api.subscribeVisibility(() => publish());
+      running = true;
       publish();
       store.flush();
 
@@ -832,6 +905,10 @@ export function createFlagsRuntime(options: FlagsRuntimeOptions = {}): FlagsRunt
         // and a consumer's unsubscribe need not tolerate a second call.
         if (disposed) return;
         disposed = true;
+        running = false;
+        clearTimeout(boundaryTimer);
+        boundaryTimer = undefined;
+        boundaryAt = null;
         stopPolling();
         stopWatching();
         try {

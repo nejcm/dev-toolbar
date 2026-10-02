@@ -187,6 +187,8 @@ export interface FlagView {
   orphaned: boolean;
   /** Set when this key's own `onOverride` call threw. Cleared by its own success. */
   applyError?: string;
+  /** Set when the active override no longer matches the catalogue's type for this flag. Still applied. */
+  typeMismatch?: string;
   /** True when the flag is promoted into the bar right now. */
   promoted: boolean;
   /**
@@ -281,7 +283,7 @@ export function parseValue(type: FlagType, raw: string): FlagValue | undefined {
     const parsed = Number(trimmed);
     return Number.isFinite(parsed) ? parsed : undefined;
   }
-  if (trimmed === "null") return null;
+  // Literal, `"null"` included: a `null` string override would be dropped on reload.
   return raw;
 }
 
@@ -292,8 +294,8 @@ export function matchesQuery(view: FlagView, query: string): boolean {
 
 /** Severity for a row: an active override outranks everything else. */
 export function severityFor(view: FlagView): FlagSeverity {
-  // An override the app never received is loudest: row says "overridden", app disagrees.
-  if (view.applyError !== undefined) return "bad";
+  // An override the app never received, or one of the wrong type, is loudest.
+  if (view.applyError !== undefined || view.typeMismatch !== undefined) return "bad";
   // Checked before `overridden` (which orphans always are too): a stale
   // override with no matching flag is cleanup, not a deliberate override, and
   // grading it the same accent as a live one would hide that difference.
