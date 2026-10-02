@@ -14,6 +14,13 @@
   style break at the boundary is accepted, not an oversight.
 -->
 
+## [1.4.1](https://github.com/nejcm/dev-toolbar/compare/v1.4.0...v1.4.1) (2026-10-02)
+
+
+### Bug Fixes
+
+* **deps:** clear the fast-uri audit advisories failing the daily Audit run ([#160](https://github.com/nejcm/dev-toolbar/issues/160)) ([4b3d091](https://github.com/nejcm/dev-toolbar/commit/4b3d0911df63f8f9e0463c62102ee0e2425e2cf7))
+
 ## [1.4.0](https://github.com/nejcm/dev-toolbar/compare/v1.3.1...v1.4.0) (2026-10-02)
 
 
