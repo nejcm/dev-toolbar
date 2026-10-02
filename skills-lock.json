@@ -6,6 +6,12 @@
       "sourceType": "github",
       "skillPath": "skills/frontend-design/SKILL.md",
       "computedHash": "89496d5dd00f4810205f351759594fc2742bf8eea85a2f2b2d1de59f4bd91576"
+    },
+    "maintain-verification-skill": {
+      "source": "cursor/plugins",
+      "sourceType": "github",
+      "skillPath": "pstack/skills/maintain-verification-skill/SKILL.md",
+      "computedHash": "283083c9547641392a58c38edeb147e75aa99912e7fba55edaa7b1a02021ffec"
     }
   }
 }
