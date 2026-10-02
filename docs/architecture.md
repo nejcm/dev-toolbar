@@ -388,40 +388,29 @@ The warning says so, and says to reload the page.
 
 ### Render-phase ref writes
 
-Three sites write to a ref during render instead of in an effect, each carrying an
-`oxlint-disable` (or `-next-line`) comment for `react/refs`. An effect always runs a
-render behind the render that scheduled it; each of these three needs the value
-current in the same commit that reads it, so an effect would be one render late. Two
-of the three are pinned under `<StrictMode>` in `src/core/__tests__/strict-mode.test.tsx`,
-which double-invokes render (not commit) and is exactly the thing that would expose a
-stale or duplicated write.
+One site writes to a ref during render instead of in an effect, carrying an
+`oxlint-disable` comment for `react/refs`: `classNames.ts`'s `useStableClassNames`,
+which holds one `classNames` identity for as long as its strings are unchanged.
 
 The general hazard a render-phase write invites: React may render without
-committing (a discarded speculative render, or `<StrictMode>`'s double-invoke in
+committing (a transition that suspends, or `<StrictMode>`'s double-invoke in
 development), so a write that only makes sense for a committed render can record
-state for a render that never happened. Each site below is safe for a different
-reason, stated as the invariant that has to keep holding for it to stay safe.
+state for a render that never happened. `useStableClassNames` is safe because the
+write is idempotent and derived purely from props: a discarded render can only store
+a value string-equal to the one the retried render would produce.
 
-| Site | Records | Invariant that makes it safe |
+Two sites look like render-time bookkeeping but write at commit, because something
+reads them between an abandoned render and the next commit:
+
+| Site | Records | Why at commit |
 | --- | --- | --- |
-| `useCommandHost.ts`, `extensionsRef` (`extensionsRef.current = extensions`) | The merged extension list, for `getCommands()`/`getDiagnostics()` to re-enumerate imperatively. | The write is a pure, unconditional overwrite of the previous value with a value derived only from this render's props/state. A discarded render's write is simply replaced by the next render's write before anything imperative reads the ref — nothing observes the intermediate value. |
-| `Overflow.tsx`, `listRef` (`listRef.current = all`) | The current `[...startItems, ...endItems]`, so `recompute` (called from a `ResizeObserver` effect) reads the live list without depending on it and re-subscribing every render. | Same shape as `extensionsRef`: an unconditional overwrite of a value that is a pure function of this render's props. `recompute` only runs from the `ResizeObserver` callback and the layout effect below it, both of which fire after commit, so they only ever see the value from a render that committed. |
-| `PanelHost.tsx`, `openedRef` (`opened.add(id)` / `opened.delete(id)`) | Which panel ids have ever been opened, so a closed `keepMounted` panel stays mounted. | Different shape from the other two: this mutates a persistent `Set` in place rather than overwriting the ref, so a discarded render's mutation is not automatically superseded by the next render the way a plain overwrite is. What keeps it safe is that `activePanelId` reaches this component only through `useSyncExternalStore` (read in `DevToolbarRoot`, passed to `PanelHost`), which opts store-derived props out of concurrent/deferred rendering, and core uses neither `startTransition` nor `useDeferredValue` — see below for what a hypothetical abandoned render would cost anyway. |
+| `useCommandHost.ts`, `extensionsRef` (written in `useInsertionEffect`) | The merged extension list, for `getCommands()`/`getDiagnostics()`/`runCommand()` to re-enumerate imperatively. | A consumer's `startTransition` that changes `extensions` and suspends would otherwise let an extension enumerate, or run, a command from a roster that never committed. An insertion effect rather than a layout effect, because a descendant's layout effect runs before `DevToolbar`'s own and may call `getCommands()`; insertion effects all run before any layout effect. |
+| `PanelHost.tsx`, `openedRef` (`opened.add(id)` / `opened.delete(id)`) | Which panel ids have ever been opened, so a closed `keepMounted` panel stays mounted. | It mutates a persistent `Set` in place, so an abandoned render's mutation is not superseded by the next render. Render reads it and treats the active id as opened; a layout effect records the active id and forgets hidden extensions, so an abandoned hide cannot unmount a committed panel. |
 
-Pinning tests: `"keeps getCommands() current despite the doubled render-time ref
-write"` (`extensionsRef`), `"keeps the render-time openedRef bookkeeping in
-PanelHost correct"` (`openedRef`), both in `strict-mode.test.tsx`. `Overflow.tsx`'s
-`listRef` has no dedicated StrictMode test; the overflow suite
-(`src/core/__tests__/overflow.test.tsx`) exercises `recompute` reading through it but
-not under `<StrictMode>`.
-
-No render path in this codebase can actually produce an `openedRef` mutation ahead of
-the committed render: `useSyncExternalStore` forces `activePanelId` to stay
-synchronous with the store, and nothing under `src/core` calls `startTransition` or
-`useDeferredValue` to defer it. Even in the hypothetical where a consumer's own
-concurrent-mode usage produced an abandoned render anyway, the blast radius is small —
-one `keepMounted` panel mounting a render early with `hidden={!isActive}`, which
-self-corrects the next time that panel closes.
+Pinning tests: `"keeps getCommands() current across a doubled render"`, `"keeps the
+openedRef bookkeeping in PanelHost correct"` and the two abandoned-transition cases
+after them, all in `strict-mode.test.tsx`; `"gives a descendant layout effect the
+committed roster from getCommands()"` in `DevToolbar.test.tsx`.
 
 ## 4. Style API
 
@@ -791,7 +780,8 @@ slots the chip's text is a retry button (`data-dtb-part="error-retry"`, accessib
 slot that threw on transient state would stay a chip for the toolbar's lifetime, since
 a panel only recovers by unmounting on close. The `overlay` chip has no retry: an
 overlay has no dependable visible surface to click. A throw from `start()` or from
-its cleanup is caught and logged, and does not take the toolbar down. A throw from
+its cleanup is caught and logged, and does not take the toolbar down; a throwing
+`start()` also has its signal aborted and is not retried while it stays present. A throw from
 `commands()` or `diagnostics()` is contained the same way: core logs once and treats
 that extension as contributing nothing to that aggregation.
 

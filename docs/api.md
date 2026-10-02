@@ -146,9 +146,11 @@ When on:
 prop does not double-bind the palette — that extension contributes no commands. But
 the two listeners are not independent: whichever went up first wins the chord, and
 its `preventDefault()` stops the other. Extension `start()` runs in an earlier effect
-than this listener, so a command bound to the palette's chord loses to the palette
-while the bar is visible and wins while it is hidden (the palette ignores the chord
-then). Do not bind a command to a chord an extension already owns.
+than this listener, and core re-adds its listener whenever the extension list changes,
+so this holds for an extension registered after mount too. A command bound to the
+palette's chord loses to the palette while the bar is visible and wins while it is
+hidden (the palette ignores the chord then). Do not bind a command to a chord an
+extension already owns.
 
 ## The `⋮` menu
 

@@ -74,6 +74,35 @@ describe("subscribeVisibility is released when api.signal aborts", () => {
   });
 });
 
+describe("a start() that throws", () => {
+  it("aborts its signal, releasing what it acquired before throwing", () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    const seen: boolean[] = [];
+    let signal: AbortSignal | null = null;
+    const { toolbar, unmount } = renderWithToolbar(null, {
+      extensions: [
+        {
+          id: "partial",
+          label: "Partial",
+          start: (api) => {
+            signal = api.signal;
+            api.subscribeVisibility((visible) => seen.push(visible));
+            throw new Error("start boom");
+          },
+        },
+      ],
+    });
+
+    toolbar.setVisible(false);
+
+    expect(signal!.aborted).toBe(true);
+    expect(seen).toEqual([]);
+    expect(error).toHaveBeenCalledTimes(1);
+    unmount();
+    error.mockRestore();
+  });
+});
+
 describe("hidden means absent everywhere, not just in the bar", () => {
   const panelExt = (hidden: boolean): DevToolbarExtension => ({
     id: "restricted",

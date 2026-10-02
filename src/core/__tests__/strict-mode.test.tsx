@@ -5,16 +5,18 @@
  *
  * Two bug shapes are in scope: a leaking lifecycle (`start()` runs twice under
  * the double-invoked effect and must be balanced by exactly one teardown), and
- * render-time bookkeeping (`openedRef` in `PanelHost.tsx`, `extensionsRef` in
- * `DevToolbar.tsx`) that a doubled render is precisely built to expose.
+ * bookkeeping (`openedRef` in `PanelHost.tsx`, `extensionsRef` in
+ * `useCommandHost.ts`) that a doubled or abandoned render is built to expose.
  */
-import { StrictMode } from "react";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { StrictMode, Suspense, startTransition, use, useEffect, useState } from "react";
+import { act, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Mock } from "vitest";
 import { CONTRACT_VERSION } from "../contract";
 import type { DevToolbarExtension, ExtensionRuntimeApi } from "../contract";
 import { DevToolbar } from "../DevToolbar";
+import { useDevToolbar } from "../context";
+import type { DevToolbarContextValue } from "../context";
 import { isApplePlatform } from "../shortcut";
 import { createMemoryStorage } from "../storage";
 
@@ -125,10 +127,9 @@ describe("DevToolbar under StrictMode", () => {
     expect(messages.filter((message) => message.includes('"old"')).length).toBe(1);
   });
 
-  it("keeps the render-time openedRef bookkeeping in PanelHost correct", () => {
-    // `opened` is mutated during render, doubled under StrictMode; the
-    // `keepMounted` decision it feeds must still mount once and stay mounted
-    // once after closing.
+  it("keeps the openedRef bookkeeping in PanelHost correct", () => {
+    // The `keepMounted` decision `opened` feeds must still mount once and stay
+    // mounted once after closing.
     const extensions: DevToolbarExtension[] = [
       {
         id: "sticky",
@@ -156,9 +157,9 @@ describe("DevToolbar under StrictMode", () => {
     expect(panelIds('[data-dtb-part="panel"]:not([hidden])')).toEqual([]);
   });
 
-  it("keeps getCommands() current despite the doubled render-time ref write", () => {
-    // `extensionsRef.current` is written in render. A doubled render must not
-    // leave the imperative aggregation reading a stale list.
+  it("keeps getCommands() current across a doubled render", () => {
+    // A doubled render must not leave the imperative aggregation reading a
+    // stale list.
     let api: ExtensionRuntimeApi | null = null;
     const base: DevToolbarExtension = {
       id: "a",
@@ -193,5 +194,90 @@ describe("DevToolbar under StrictMode", () => {
 
     expect(api!.getCommands().map((command) => command.id)).toEqual(["a.run", "b.run"]);
     expect(error).not.toHaveBeenCalled();
+  });
+});
+
+describe("DevToolbar across a transition that suspends", () => {
+  const pending = new Promise<never>(() => {});
+  const Suspend = ({ when }: { when: boolean }) => {
+    if (when) use(pending);
+    return null;
+  };
+
+  // `extensions` swaps to `next` inside a transition that never commits.
+  const renderAbandonable = (
+    current: readonly DevToolbarExtension[],
+    next: readonly DevToolbarExtension[],
+  ) => {
+    let context!: DevToolbarContextValue;
+    let advance!: () => void;
+    const Capture = () => {
+      const value = useDevToolbar();
+      useEffect(() => {
+        context = value;
+      });
+      return null;
+    };
+    const App = () => {
+      const [advanced, setAdvanced] = useState(false);
+      useEffect(() => {
+        advance = () => startTransition(() => setAdvanced(true));
+      }, []);
+      const extensions = advanced ? next : current;
+      return (
+        <Suspense fallback={null}>
+          <DevToolbar
+            instanceId="abandoned"
+            storage={createMemoryStorage()}
+            extensions={extensions}
+          >
+            <Capture />
+          </DevToolbar>
+          <Suspend when={advanced} />
+        </Suspense>
+      );
+    };
+    render(<App />);
+    return { context: () => context, abandon: () => act(async () => advance()) };
+  };
+
+  it("never exposes an uncommitted roster to getCommands()", async () => {
+    let api: ExtensionRuntimeApi | null = null;
+    const a: DevToolbarExtension = {
+      id: "a",
+      label: "A",
+      start: (received) => void (api = received),
+    };
+    const b: DevToolbarExtension = {
+      id: "b",
+      label: "B",
+      commands: [{ id: "b.run", label: "Run", run: () => {} }],
+    };
+    const view = renderAbandonable([a], [a, b]);
+
+    await view.abandon();
+
+    expect(api!.getCommands()).toEqual([]);
+    await expect(view.context().invokeCommand("b.run")).resolves.toEqual({
+      ok: false,
+      reason: "unknown-command",
+    });
+  });
+
+  it("keeps a closed keepMounted panel mounted after an abandoned hide", async () => {
+    const sticky: DevToolbarExtension = {
+      id: "sticky",
+      label: "Sticky",
+      keepMounted: true,
+      panel: () => <div>panel</div>,
+    };
+    const view = renderAbandonable([sticky], [{ ...sticky, hidden: true }]);
+    act(() => view.context().openPanel("sticky"));
+    act(() => view.context().closePanel("sticky"));
+
+    await view.abandon();
+    act(() => view.context().setPanelHeight(300));
+
+    expect(panelIds()).toEqual(["sticky"]);
   });
 });

@@ -221,8 +221,8 @@ export async function invokeCommand<Out = unknown>(
   }
   // The roster erases each command's `In`/`Out`; restore the selected command's
   // call signature once. `Out` is unchecked by construction.
-  const run = command.run as (input: unknown) => Out | Promise<Out>;
-  return { ok: true, result: await run(options.input) };
+  const run = command.run as (this: AnyToolbarCommand, input: unknown) => Out | Promise<Out>;
+  return { ok: true, result: await run.call(command, options.input) };
 }
 
 /**

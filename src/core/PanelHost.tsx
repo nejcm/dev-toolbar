@@ -1,7 +1,6 @@
-// oxlint-disable react/refs -- `openedRef` is render-time bookkeeping, read and
-// updated during render on purpose; see `opened` below.
+// oxlint-disable react/refs -- `openedRef` is read during render on purpose; it is written only at commit.
 // oxlint-disable jsx-a11y/no-noninteractive-element-interactions -- Panel Escape runs after extension controls handle the key.
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type {
   CSSProperties,
   KeyboardEvent as ReactKeyboardEvent,
@@ -69,20 +68,19 @@ export function PanelHost({
     };
   }, []);
 
-  // Bookkeeping, not rendered state — must be current in *this* commit since
-  // `keepMounted` is decided below and an effect would decide it a frame late.
+  // Recorded at commit only, so an abandoned render cannot forget or invent a
+  // `keepMounted` panel; render treats the active id as opened meanwhile.
   const opened = openedRef.current;
 
-  if (activePanelId && !opened.has(activePanelId)) {
-    opened.add(activePanelId);
-  }
-
-  // A hidden extension has been torn down, so its `keepMounted` panel must
-  // not come back holding pre-teardown state when un-hidden. Forget it was
-  // ever opened.
-  for (const extension of extensions) {
-    if (extension.hidden === true) opened.delete(extension.id);
-  }
+  useLayoutEffect(() => {
+    if (activePanelId) opened.add(activePanelId);
+    // A hidden extension has been torn down, so its `keepMounted` panel must
+    // not come back holding pre-teardown state when un-hidden. Forget it was
+    // ever opened.
+    for (const extension of extensions) {
+      if (extension.hidden === true) opened.delete(extension.id);
+    }
+  });
 
   const mounted = extensions.filter((extension) => {
     if (typeof extension.panel !== "function") return false;
@@ -104,6 +102,8 @@ export function PanelHost({
 
   const startResize = (event: ReactPointerEvent<HTMLDivElement>) => {
     event.preventDefault();
+    if (endDragRef.current) return;
+    const { pointerId } = event;
     const startY = event.clientY;
     const startHeight = height;
     const target = event.currentTarget;
@@ -111,6 +111,7 @@ export function PanelHost({
 
     let latest = startHeight;
     const onMove = (moveEvent: PointerEvent) => {
+      if (moveEvent.pointerId !== pointerId) return;
       const delta = moveEvent.clientY - startY;
       latest = clampPanelHeight(position === "bottom" ? startHeight - delta : startHeight + delta);
       setDragHeight(latest);
@@ -123,7 +124,8 @@ export function PanelHost({
       window.removeEventListener("pointercancel", onUp);
       if (endDragRef.current === removeDragListeners) endDragRef.current = null;
     };
-    const onUp = () => {
+    const onUp = (upEvent: PointerEvent) => {
+      if (upEvent.pointerId !== pointerId) return;
       removeDragListeners();
       setPanelHeight(latest);
       setDragHeight(null);

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef } from "react";
+import { useCallback, useEffect, useInsertionEffect, useMemo, useRef } from "react";
 import {
   CONTRACT_VERSION,
   type AnyToolbarCommand,
@@ -36,11 +36,11 @@ export function useCommandHost(
   // Keeps the extension list, not the aggregated commands, in a ref: every
   // imperative path re-enumerates via `getCommands` below instead of reading
   // a stale aggregation.
+  // Insertion effect: commit-only, and ahead of every descendant's layout effect.
   const extensionsRef = useRef(extensions);
-  // Written in render, not an effect: an effect would leave `getCommands()`
-  // a render behind the list it exists to enumerate.
-  // oxlint-disable-next-line react/refs
-  extensionsRef.current = extensions;
+  useInsertionEffect(() => {
+    extensionsRef.current = extensions;
+  });
 
   const getCommands = useCallback(() => collectCommands(extensionsRef.current), []);
 

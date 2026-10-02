@@ -97,8 +97,11 @@ export function useHeightVariables(options: {
   position: ToolbarPosition;
   panelHeight: number;
   activePanelId: string | null;
+  // Not read: a new portal target replaces the root node, which must be re-observed.
+  container: HTMLElement | null;
 }): RefObject<HTMLDivElement | null> {
-  const { enabled, shouldRender, instanceId, position, panelHeight, activePanelId } = options;
+  const { enabled, shouldRender, instanceId, position, panelHeight, activePanelId, container } =
+    options;
   const rootRef = useRef<HTMLDivElement | null>(null);
   // What this instance owns, and therefore all it ever removes itself.
   const instanceVariable = useMemo(() => instanceHeightVariable(instanceId), [instanceId]);
@@ -148,7 +151,7 @@ export function useHeightVariables(options: {
       observer.disconnect();
       clear();
     };
-  }, [enabled, shouldRender, instanceVariable, position, panelHeight, activePanelId]);
+  }, [enabled, shouldRender, instanceVariable, position, panelHeight, activePanelId, container]);
 
   return rootRef;
 }

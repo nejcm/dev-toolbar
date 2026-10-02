@@ -1,5 +1,5 @@
 import { act, fireEvent, render, screen } from "@testing-library/react";
-import { StrictMode, Suspense, startTransition, useEffect, useState } from "react";
+import { StrictMode, Suspense, startTransition, useEffect, useLayoutEffect, useState } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ReactNode } from "react";
 import type { Mock } from "vitest";
@@ -386,6 +386,37 @@ describe("panel resize", () => {
       fireEvent(window, pointer("pointerup", 400));
     }).not.toThrow();
 
+    addSpy.mockRestore();
+    removeSpy.mockRestore();
+  });
+
+  it("ignores a second pointer while a drag is in flight", () => {
+    const addSpy = vi.spyOn(window, "addEventListener");
+    const removeSpy = vi.spyOn(window, "removeEventListener");
+    const view = render(
+      <DevToolbar instanceId="resize-multi" extensions={[panelExtension("a")]}>
+        <div />
+      </DevToolbar>,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "a" }));
+
+    const resizer = document.querySelector('[data-dtb-part="panel-resizer"]')!;
+    const panel = document.querySelector('[data-dtb-part="panel"]') as HTMLElement;
+    const pointer = (type: string, clientY: number, pointerId: number) =>
+      Object.assign(new MouseEvent(type, { clientY, bubbles: true }), { pointerId });
+
+    fireEvent(resizer, pointer("pointerdown", 500, 1));
+    fireEvent(resizer, pointer("pointerdown", 500, 2));
+    fireEvent(window, pointer("pointermove", 400, 2));
+    fireEvent(window, pointer("pointerup", 400, 2));
+    fireEvent(window, pointer("pointermove", 460, 1));
+    expect(panel.style.getPropertyValue("--dtb-panel-height")).toBe("360px");
+
+    view.unmount();
+    const moves = (spy: typeof addSpy) =>
+      spy.mock.calls.filter((call) => call[0] === "pointermove").length;
+    expect(moves(addSpy)).toBe(1);
+    expect(moves(removeSpy)).toBe(1);
     addSpy.mockRestore();
     removeSpy.mockRestore();
   });
@@ -1267,6 +1298,53 @@ describe("controlled props and change callbacks", () => {
 });
 
 describe("toggle shortcut", () => {
+  it("yields the chord to an extension registered after mount", () => {
+    const claim: DevToolbarExtension = {
+      id: "claim",
+      label: "Claim",
+      start: ({ signal }) => {
+        window.addEventListener("keydown", (event) => event.preventDefault(), { signal });
+      },
+    };
+    const view = render(
+      <DevToolbar instanceId="t" extensions={[]}>
+        <div />
+      </DevToolbar>,
+    );
+    view.rerender(
+      <DevToolbar instanceId="t" extensions={[claim]}>
+        <div />
+      </DevToolbar>,
+    );
+
+    fireToggleShortcut();
+
+    expect(document.querySelector("[data-dev-toolbar]")).not.toBeNull();
+  });
+
+  it("cancels out two toggles in one batch", () => {
+    let toggle!: () => void;
+    const Capture = () => {
+      const { toggleVisible } = useDevToolbar();
+      useEffect(() => {
+        toggle = toggleVisible;
+      });
+      return null;
+    };
+    render(
+      <DevToolbar instanceId="t" extensions={[]}>
+        <Capture />
+      </DevToolbar>,
+    );
+
+    act(() => {
+      toggle();
+      toggle();
+    });
+
+    expect(document.querySelector("[data-dev-toolbar]")).not.toBeNull();
+  });
+
   it("toggles visibility on Ctrl/Cmd+Shift+.", () => {
     render(
       <DevToolbar instanceId="t" extensions={[panelExtension("a")]}>
@@ -1529,6 +1607,33 @@ describe("lifecycle", () => {
 });
 
 describe("commands and dynamic registration", () => {
+  it("gives a descendant layout effect the committed roster from getCommands()", () => {
+    const seen: string[][] = [];
+    const Reader = () => {
+      const { getCommands } = useDevToolbar();
+      useLayoutEffect(() => {
+        seen.push(getCommands().map((command) => command.id));
+      });
+      return null;
+    };
+    const build = (hidden: boolean): DevToolbarExtension[] => [
+      { id: "a", label: "a", hidden, commands: [{ id: "a.run", label: "Run", run: () => {} }] },
+    ];
+    const view = render(
+      <DevToolbar instanceId="t" extensions={build(false)}>
+        <Reader />
+      </DevToolbar>,
+    );
+
+    view.rerender(
+      <DevToolbar instanceId="t" extensions={build(true)}>
+        <Reader />
+      </DevToolbar>,
+    );
+
+    expect(seen.at(-1)).toEqual([]);
+  });
+
   it("aggregates commands and runs them by id without rendering a palette", async () => {
     const run = vi.fn();
     const Commands = () => {
@@ -2036,6 +2141,43 @@ describe("the container prop", () => {
     const roots = document.querySelectorAll("[data-dev-toolbar]");
     expect(roots.length).toBe(1);
     expect(roots[0]!.parentElement).toBe(target);
+  });
+
+  it("re-measures the height variable when the container changes", () => {
+    const target = makeHost();
+    const rect = vi
+      .spyOn(HTMLElement.prototype, "getBoundingClientRect")
+      .mockImplementation(function (this: HTMLElement): DOMRect {
+        const height =
+          this.dataset["dtbInstance"] === undefined ? 0 : this.parentElement === target ? 80 : 40;
+        return {
+          height,
+          width: 0,
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: height,
+          x: 0,
+          y: 0,
+          toJSON: () => ({}),
+        };
+      });
+    const read = () => document.documentElement.style.getPropertyValue("--dev-toolbar-height-t");
+    const view = render(
+      <DevToolbar instanceId="t" extensions={[]}>
+        <div />
+      </DevToolbar>,
+    );
+    expect(read()).toBe("40px");
+
+    view.rerender(
+      <DevToolbar instanceId="t" container={target} extensions={[]}>
+        <div />
+      </DevToolbar>,
+    );
+
+    expect(read()).toBe("80px");
+    rect.mockRestore();
   });
 });
 

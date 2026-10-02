@@ -325,3 +325,20 @@ describe("runCommand rejection", () => {
     await expect(toolbar.runCommand("a.rejects")).rejects.toThrow("run boom");
   });
 });
+
+describe("runCommand receiver", () => {
+  it("calls run() as a method of its command", async () => {
+    const receivers: unknown[] = [];
+    const self: ToolbarCommand = {
+      id: "a.self",
+      label: "a.self",
+      run() {
+        receivers.push(this);
+      },
+    };
+    const { toolbar } = mount([makeExtension({ id: "a", commands: [self] })]);
+
+    await expect(toolbar.runCommand("a.self")).resolves.toBe(true);
+    expect(receivers).toEqual([self]);
+  });
+});

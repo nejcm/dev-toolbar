@@ -46,11 +46,11 @@ Six things worth knowing:
   `defaultPrevented`, so the one registered first wins and its
   `preventDefault()` suppresses the other. This extension's listener goes up in
   `start()`, which core runs in an effect *before* the effect that installs its
-  own shortcut listener — so the palette takes the chord and the command core
-  bound never runs. The one exception is the case the palette declines: while
-  the bar is hidden it ignores the chord entirely, and core's binding runs the
-  command instead. Do not bind a command to a chord the palette owns; give one
-  of them a different chord.
+  own shortcut listener, re-added whenever the extension list changes — so the
+  palette takes the chord and the command core bound never runs. The one
+  exception is the case the palette declines: while the bar is hidden it ignores
+  the chord entirely, and core's binding runs the command instead. Do not bind a
+  command to a chord the palette owns; give one of them a different chord.
 
 Replacing it with your team's own `cmdk` is one line: leave it out and write your own
 over `useToolbarCommands()` (stable snapshot) or `useDevToolbar().getCommands()`
