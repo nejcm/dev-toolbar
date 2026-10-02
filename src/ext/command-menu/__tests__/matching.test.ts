@@ -54,6 +54,10 @@ describe("scoreCommand", () => {
     expect(scoreCommand(make("a", "Copy flag overrides"), "cfo")).toBeGreaterThan(0);
     expect(scoreCommand(make("a", "Copy flag overrides"), "cfz")).toBe(0);
   });
+
+  it("matches a subsequence that starts with an emoji", () => {
+    expect(scoreCommand(make("a", "🧹 Clear overrides"), "🧹o")).toBeGreaterThan(0);
+  });
 });
 
 describe("filterCommands", () => {

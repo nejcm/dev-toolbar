@@ -1,5 +1,5 @@
 import { useEffect, useMemo } from "react";
-import type { AnyToolbarCommand } from "./contract";
+import type { AnyToolbarCommand, DevToolbarExtension } from "./contract";
 import { findShortcutCommand, warnShortcutYieldsToToggle } from "./commands";
 import { matchesShortcut, parseShortcut } from "./shortcut";
 
@@ -9,8 +9,11 @@ export function useToolbarShortcuts(options: {
   bindCommandShortcuts: boolean;
   toggleVisible(): void;
   getCommands(): readonly AnyToolbarCommand[];
+  // Not read: a changed roster re-adds the listener after any new `start()` listener.
+  extensions: readonly DevToolbarExtension[];
 }): void {
-  const { enabled, shortcut, bindCommandShortcuts, toggleVisible, getCommands } = options;
+  const { enabled, shortcut, bindCommandShortcuts, toggleVisible, getCommands, extensions } =
+    options;
 
   // Toggle shortcut.
   const parsedShortcut = useMemo(
@@ -71,7 +74,7 @@ export function useToolbarShortcuts(options: {
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [bindCommandShortcuts, enabled, getCommands, parsedShortcut, toggleVisible]);
+  }, [bindCommandShortcuts, enabled, extensions, getCommands, parsedShortcut, toggleVisible]);
 }
 
 /**

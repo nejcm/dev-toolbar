@@ -88,6 +88,8 @@ export interface AgentReportOptions {
    * an idle check-in carries no snapshot.
    */
   pollMs?: number;
+  /** Abandons a check-in the server has not answered after this many milliseconds. Default `5000`. */
+  timeoutMs?: number;
   /** Injectable for tests and for a host that would rather not use `globalThis.fetch`. */
   fetch?: typeof globalThis.fetch;
   /**
@@ -147,6 +149,15 @@ function newReporterId(): string {
   return `r-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
 }
 
+const isPendingCommand = (value: unknown): value is AgentPendingCommand =>
+  value !== null &&
+  typeof value === "object" &&
+  typeof (value as { token?: unknown }).token === "string" &&
+  typeof (value as { id?: unknown }).id === "string";
+
+const pendingOf = (response: AgentReportResponse): readonly AgentPendingCommand[] =>
+  Array.isArray(response.pending) ? response.pending.filter(isPendingCommand) : [];
+
 /** The snapshot and its serialisation, used to detect changes. */
 interface Sample {
   json: string;
@@ -161,7 +172,7 @@ export function createAgentReporter(
   handle: AgentHandle,
   options: AgentReportOptions,
 ): AgentReporter {
-  const { url, intervalMs = 1000, now } = options;
+  const { url, intervalMs = 1000, timeoutMs = 5000, now } = options;
   const reporterId = options.reporterId ?? newReporterId();
   const post = options.fetch ?? (typeof fetch === "function" ? fetch : undefined);
 
@@ -230,6 +241,8 @@ export function createAgentReporter(
         // The check-in carries no credentials and must not be cached.
         credentials: "omit",
         cache: "no-store",
+        // A hung request would otherwise hold the poll's in-flight slot forever.
+        signal: AbortSignal.timeout(timeoutMs),
       });
       failures = 0;
       posts += 1;
@@ -312,44 +325,51 @@ export function createAgentReporter(
       outbox = [...results, ...outbox];
       return;
     }
-    if (stopped) return;
+    // The server hands out commands on every response, the follow-ups included.
+    const queue = [...pendingOf(response)];
+    while (!stopped && queue.length > 0) {
+      // In order, one at a time, so a slower earlier write cannot overtake a later one.
+      const command = queue.shift() as AgentPendingCommand;
+      const outcomes = [...outbox, await run(command)];
+      outbox = [];
 
-    const pending = response.pending ?? [];
-    if (pending.length === 0) return;
-
-    const outcomes = await Promise.all(pending.map(run));
-    if (stopped) return;
-
-    // Send a fresh snapshot with the outcome. Otherwise an immediate
-    // `GET /state` after `POST /commands/flags.set` would return pre-command
-    // state. Write it to the store too, so the next check-in sees no change.
-    let after: AgentSnapshot | undefined;
-    let fresh: AgentSnapshot | undefined;
-    try {
-      fresh = handle.read();
-    } catch {
-      // The toolbar unmounted between running and reporting; still return the outcome.
-    }
-    if (fresh !== undefined) {
-      const freshSample = sample(fresh);
-      if (freshSample !== null) {
-        store.set(freshSample);
-        after = fresh;
-        unsent = null;
+      // Send a fresh snapshot with the outcome. Otherwise an immediate
+      // `GET /state` after `POST /commands/flags.set` would return pre-command
+      // state. Write it to the store too, so the next check-in sees no change.
+      let after: AgentSnapshot | undefined;
+      let fresh: AgentSnapshot | undefined;
+      try {
+        fresh = handle.read();
+      } catch {
+        // The toolbar unmounted between running and reporting; still return the outcome.
       }
-    }
+      if (fresh !== undefined) {
+        const freshSample = sample(fresh);
+        if (freshSample !== null) {
+          store.set(freshSample);
+          after = fresh;
+          unsent = null;
+        }
+      }
 
-    // Return outcomes immediately; the HTTP caller is waiting for them.
-    const followUp = await send({
-      protocolVersion: AGENT_PROTOCOL_VERSION,
-      instanceId: handle.instanceId,
-      reporterId,
-      allowRun: handle.allowRun,
-      ...(after === undefined ? {} : { snapshot: after }),
-      results: outcomes,
-    });
-    if (after !== undefined && followUp !== null) sentAt = clock();
-    if (followUp === null) outbox = [...outcomes, ...outbox];
+      // Return each outcome as soon as it exists; its HTTP caller is waiting on a deadline.
+      const followUp = await send({
+        protocolVersion: AGENT_PROTOCOL_VERSION,
+        instanceId: handle.instanceId,
+        reporterId,
+        allowRun: handle.allowRun,
+        ...(after === undefined ? {} : { snapshot: after }),
+        results: outcomes,
+      });
+      if (followUp === null) {
+        // The store already holds `after`, so only `unsent` can still deliver it.
+        if (unsent === null && after !== undefined) unsent = after;
+        outbox = [...outcomes, ...outbox];
+        continue;
+      }
+      if (after !== undefined) sentAt = clock();
+      queue.push(...pendingOf(followUp));
+    }
   };
 
   function stop(): void {
@@ -384,9 +404,12 @@ export function startAgentReporter(handle: AgentHandle, options: AgentReportOpti
   const pump = (): void => {
     if (inFlight) return;
     inFlight = true;
-    void reporter.tick().finally(() => {
-      inFlight = false;
-    });
+    void reporter
+      .tick()
+      .catch((error: unknown) => warn(`a check-in failed (${describeError(error).message}).`))
+      .finally(() => {
+        inFlight = false;
+      });
   };
 
   // Deferred by a macrotask, not run inline: `start(api)` runs while core is

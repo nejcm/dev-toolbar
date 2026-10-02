@@ -681,6 +681,18 @@ describe("app context and sources", () => {
     stop();
   });
 
+  it("masks a credential-shaped Error name held in the app context, in both formats", () => {
+    const lastError = Object.assign(new Error("ordinary"), { name: "Bearer abcdefghijklmnop" });
+    const { runtime, stop } = started({ app: { lastError } });
+    const snapshot = runtime.capture();
+    expect(snapshot.app).toEqual({
+      lastError: { name: `Bearer ${REDACTED}`, message: "ordinary" },
+    });
+    expect(renderJson(snapshot)).not.toContain("abcdefghijklmnop");
+    expect(renderMarkdown(snapshot)).not.toContain("abcdefghijklmnop");
+    stop();
+  });
+
   it("degrades to a visible omission when the app getter throws", () => {
     const { runtime, stop } = started(
       {

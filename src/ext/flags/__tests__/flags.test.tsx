@@ -246,6 +246,26 @@ describe("the panel", () => {
     expect(applied).toEqual([]);
   });
 
+  it("selects variants by typed value, not by display text", () => {
+    const { toolbar } = mount({
+      onOverride: record,
+      flags: [{ key: "tier", type: "variant", variants: [1, "1"], value: "1" }],
+    });
+    act(() => {
+      toolbar.openPanel("flags");
+    });
+    const select = () =>
+      row(toolbar.panel("flags"), "tier")?.querySelector<HTMLSelectElement>(
+        '[data-dtb-part="flag-input"]',
+      );
+    expect(select()?.value).toBe("1");
+    act(() => {
+      fireEvent.change(select() as HTMLSelectElement, { target: { value: "0" } });
+    });
+    expect(applied).toEqual([["tier", 1]]);
+    expect(select()?.value).toBe("0");
+  });
+
   it("shows the effective value, the app's own value and the default", () => {
     const { toolbar } = mount({ onOverride: record });
     act(() => {
@@ -791,6 +811,23 @@ describe("the editor refuses what it cannot parse", () => {
   });
 });
 
+describe("the string editor", () => {
+  it('commits a typed "null" as the string, not as null', () => {
+    const { toolbar } = mount({ onOverride: record });
+    act(() => {
+      toolbar.openPanel("flags");
+    });
+    const input = row(toolbar.panel("flags"), "checkout.copy")?.querySelector<HTMLInputElement>(
+      '[data-dtb-part="flag-input"]',
+    );
+    act(() => {
+      fireEvent.change(input as HTMLInputElement, { target: { value: "null" } });
+      fireEvent.keyDown(input as HTMLInputElement, { key: "Enter" });
+    });
+    expect(applied).toEqual([["checkout.copy", "null"]]);
+  });
+});
+
 describe("a failing clear", () => {
   it("says the clear did not apply, not that an override did not", () => {
     const spy = vi.spyOn(console, "error").mockImplementation(() => {});
@@ -820,6 +857,15 @@ describe("a failing clear", () => {
       expect(text(target)).toContain("clear not applied");
       expect(text(target)).not.toContain("override not applied");
       expect(target?.getAttribute("data-dtb-severity")).toBe("bad");
+      broken = false;
+      applied = [];
+      act(() => {
+        row(toolbar.panel("flags"), "ui-facelift")
+          ?.querySelector<HTMLButtonElement>('[data-dtb-action="clear"]')
+          ?.click();
+      });
+      expect(applied).toEqual([["ui-facelift", undefined]]);
+      expect(text(row(toolbar.panel("flags"), "ui-facelift"))).not.toContain("clear not applied");
     } finally {
       spy.mockRestore();
     }

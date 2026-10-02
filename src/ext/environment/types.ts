@@ -102,7 +102,7 @@ export interface EnvironmentSnapshot {
   kind: EnvironmentKind | (string & {});
   severity: EnvironmentSeverity;
   impersonating: boolean;
-  /** False when the consumer supplied no context at all. */
+  /** False when no field the `fields` allowlist keeps was supplied. */
   supplied: boolean;
   /** How many field values this extension changed on the way to the screen. */
   maskedCount: number;

@@ -14,7 +14,7 @@
  * Unlike `/ext/overlays`, hiding the bar does not revert the edits — an
  * override is a state the developer chose, not a drawing tied to visibility.
  */
-import { createDerivedStore, describeError, redact } from "../../runtime";
+import { createDerivedStore, describeError, redact, redactUrl } from "../../runtime";
 import {
   createPoller,
   parseRecord,
@@ -466,7 +466,7 @@ export function createThemeEditorRuntime(
    * *not* overridden. Once the override is on the element the computed value is
    * the override, and re-reading would make every row claim the app agreed.
    */
-  const capturedBase = new Map<string, string>();
+  const capturedBase = new Map<string, string | null>();
 
   const doc = (): Document | null =>
     injectedDocument ?? (typeof document === "undefined" ? null : document);
@@ -583,6 +583,9 @@ export function createThemeEditorRuntime(
     // No per-token applyError here: a transient null between renders would
     // otherwise spam every row, and `writable: false` already reports it.
     if (element === null || !preview) return;
+    capturedBase.clear();
+    // All before any write: one written edit can change another token's computed value.
+    for (const name of Object.keys(overrides)) capturedBase.set(name, computedBase(name));
     migrating = true;
     try {
       hold = new SurfaceHold(element);
@@ -620,6 +623,7 @@ export function createThemeEditorRuntime(
   const normalise = (text: string): string => text.trim().replace(/\s+/g, " ");
 
   const writeOne = (name: string, value: string): void => {
+    if (!active) return;
     reconcileSurface();
     // Unreachable today — every door into `overrides` already stops a
     // reserved name earlier — but kept as the invariant at the boundary that
@@ -630,10 +634,7 @@ export function createThemeEditorRuntime(
         // Capture what the app resolves *before* the write lands: once the
         // custom property is on the element, re-reading would falsely show
         // "app" and "now" agreeing.
-        if (!capturedBase.has(name)) {
-          const before = computedBase(name);
-          if (before !== null) capturedBase.set(name, before);
-        }
+        if (!capturedBase.has(name)) capturedBase.set(name, computedBase(name));
         const target = currentHold();
         if (target === null) {
           applyErrors.set(
@@ -756,10 +757,10 @@ export function createThemeEditorRuntime(
 
   const baseFor = (definition: DesignTokenDefinition, overridden: boolean): string | null => {
     if (typeof definition.value === "string") return definition.value;
-    if (overridden) return capturedBase.get(definition.name) ?? null;
+    // Without a hold nothing of ours is on the page, so the live read is the application's own.
+    if (overridden && hold !== null) return capturedBase.get(definition.name) ?? null;
     const read = computedBase(definition.name);
-    if (read === null) capturedBase.delete(definition.name);
-    else capturedBase.set(definition.name, read);
+    capturedBase.set(definition.name, read);
     return read;
   };
 
@@ -832,7 +833,8 @@ export function createThemeEditorRuntime(
       if (seen.has(name)) continue;
       const value = overrides[name] as string;
       const refusal = checkTokenName(name);
-      const rendered = render(name, "string", value, undefined);
+      // Nothing declares it any more, so nothing vouches that it was not `sensitive`.
+      const rendered = render(name, "string", value, true);
       if (rendered.masked) maskedCount += 1;
       views.push({
         name,
@@ -1210,15 +1212,19 @@ export function createThemeEditorRuntime(
   const figmaText = (): string => {
     const snapshot = store.read();
     const rows = exportable(snapshot);
-    const out: Record<string, Record<string, unknown>> = {};
+    const out = Object.create(null) as Record<string, Record<string, unknown>>;
     for (const view of rows) {
-      const group = (out[view.group] ??= {});
-      group[view.name.replace(/^--/, "")] = {
+      let group = out[view.group];
+      if (group === undefined) {
+        group = Object.create(null) as Record<string, unknown>;
+        defineAny(out, view.group, group);
+      }
+      defineAny(group, view.name.replace(/^--/, ""), {
         $type: FIGMA_TYPE[view.type],
         // The redacted display string, never the raw value.
         $value: view.effectiveText,
         ...(view.description === undefined ? {} : { $description: view.description }),
-      };
+      });
     }
     // Descriptions are exported here and nowhere else, so this count includes them.
     const masked = rows.filter((view) => view.masked || view.metadataMasked).length;
@@ -1244,7 +1250,7 @@ export function createThemeEditorRuntime(
       if (typeof location === "undefined" || typeof location.href !== "string") {
         return null;
       }
-      const url = new URL(location.href);
+      const url = new URL(redactUrl(location.href, redactOptions));
       url.searchParams.set(themeParam, JSON.stringify(executablePayload()));
       return url.toString();
     } catch {
@@ -1308,8 +1314,7 @@ export function createThemeEditorRuntime(
       persistOverrides();
       releaseOne(name);
       capturedBase.delete(name);
-      // No `applyErrors.delete` here: a *failed* release must keep its error
-      // — the page is still rendering a value the panel just stopped claiming.
+      applyErrors.delete(name);
       notifyConsumer(name, undefined);
       setNotice(null);
       publish();

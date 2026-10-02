@@ -446,6 +446,29 @@ describe("before and after", () => {
     expect(view?.overridden).toBe(true);
   });
 
+  it("captures every stored edit's base before writing any of them", () => {
+    const style = document.createElement("style");
+    style.textContent = ":root { --first: blue; --second: blue } :root[style] { --second: green }";
+    document.head.appendChild(style);
+    try {
+      const storage = createMemoryStorage();
+      storage.setItem(
+        OVERRIDES_KEY,
+        JSON.stringify({ "--first": "#ff0000", "--second": "#00ff00" }),
+      );
+      const runtime = createThemeEditorRuntime({
+        tokens: [
+          { name: "--first", type: "color" },
+          { name: "--second", type: "color" },
+        ],
+      });
+      runtime.start(fakeApi(storage));
+      expect(runtime.store.peek().tokens.map((token) => token.base)).toEqual(["blue", "blue"]);
+    } finally {
+      style.remove();
+    }
+  });
+
   it("captures the computed value before the write when no `value` was supplied", () => {
     // Once the property is on the element, the computed value *is* the edit,
     // so re-reading it would falsely claim the application already agreed.
@@ -502,6 +525,23 @@ describe("redaction", () => {
     const view = runtime.store.peek().tokens[0];
     expect(view?.effectiveText).not.toContain("super-secret");
     expect(view?.masked).toBe(true);
+  });
+
+  it("masks an edit whose token is no longer declared, since nothing says it was not sensitive", () => {
+    let definitions: DesignTokenDefinition[] = [
+      { name: "--private-label", type: "string", value: "x", sensitive: true },
+    ];
+    const runtime = createThemeEditorRuntime({ tokens: () => definitions });
+    runtime.start(fakeApi(createMemoryStorage()));
+    runtime.setOverride("--private-label", "private-data");
+    definitions = [];
+    runtime.refresh();
+    const view = runtime.store.peek().tokens.find((token) => token.name === "--private-label");
+    expect(view?.orphaned).toBe(true);
+    expect(view?.effectiveText).toBe(MASK_SENTINEL);
+    expect(runtime.recipeText()).not.toContain("private-data");
+    expect(runtime.cssText()).not.toContain("private-data");
+    expect(JSON.stringify(runtime.diagnostics())).not.toContain("private-data");
   });
 
   it("honours `sensitive` unconditionally", () => {
@@ -688,6 +728,28 @@ describe("exports", () => {
     );
   });
 
+  it("exports a `__proto__` group and token as data, without touching Object.prototype", () => {
+    const runtime = createThemeEditorRuntime({
+      tokens: [
+        { name: "--brand", type: "color", value: "#000000", group: "__proto__" },
+        { name: "--__proto__", type: "color", value: "#000000", group: "Colour" },
+      ],
+    });
+    runtime.start(fakeApi(createMemoryStorage()));
+    runtime.setOverride("--brand", "#111111");
+    runtime.setOverride("--__proto__", "#222222");
+    const figma = JSON.parse(runtime.figmaText()) as Record<string, Record<string, unknown>>;
+    expect(Object.prototype.hasOwnProperty.call({}, "brand")).toBe(false);
+    expect(({} as Record<string, unknown>)["brand"]).toBeUndefined();
+    expect(Object.getOwnPropertyDescriptor(figma, "__proto__")?.value).toEqual({
+      brand: { $type: "color", $value: "#111111" },
+    });
+    expect(Object.getOwnPropertyDescriptor(figma["Colour"], "__proto__")?.value).toEqual({
+      $type: "color",
+      $value: "#222222",
+    });
+  });
+
   it("says nothing is active rather than exporting an empty rule", () => {
     const runtime = createThemeEditorRuntime({ tokens: TOKENS });
     expect(runtime.cssText()).toContain("No theme overrides are active");
@@ -804,6 +866,23 @@ describe("foreign recipes", () => {
 describe("the URL", () => {
   const withSearch = (search: string, run: () => void) =>
     withLocation({ search, href: `http://localhost/${search}` }, run);
+
+  it("masks credentials in the page URL the share link is built on", () => {
+    const runtime = createThemeEditorRuntime({ tokens: TOKENS });
+    runtime.start(fakeApi(createMemoryStorage()));
+    runtime.setOverride("--brand-500", "#ff0000");
+    const link = withLocation(
+      { href: "http://localhost/p?access_token=secret1&page=2#access_token=secret2" },
+      () => runtime.shareLink(),
+    );
+    expect(link).not.toContain("secret1");
+    expect(link).not.toContain("secret2");
+    const url = new URL(link as string);
+    expect(url.searchParams.get("page")).toBe("2");
+    expect(parseRecipe(url.searchParams.get("dtb-theme") as string).recipe?.overrides).toEqual({
+      "--brand-500": "#ff0000",
+    });
+  });
 
   it("preserves the stored surface and preview across a reset load and the next ordinary load", () => {
     const storage = createMemoryStorage();
@@ -1188,6 +1267,28 @@ describe("failing closed", () => {
     runtime.setOverride("--brand-500", "#00ff00");
     expect(runtime.store.peek().applyErrors["--brand-500"]).toBeUndefined();
     expect(spy).toHaveBeenCalled();
+  });
+
+  it("drops a token's onApply failure once the edit is cleared", () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    let broken = true;
+    const runtime = createThemeEditorRuntime({
+      tokens: TOKENS,
+      onApply: () => {
+        if (broken) throw new Error("provider offline");
+      },
+    });
+    runtime.start(fakeApi(createMemoryStorage()));
+    runtime.setOverride("--brand-500", "#ff0000");
+    expect(runtime.store.peek().applyErrors["--brand-500"]).toBeDefined();
+
+    broken = false;
+    runtime.clearOverride("--brand-500");
+    const snapshot = runtime.store.peek();
+    expect(snapshot.applyErrors["--brand-500"]).toBeUndefined();
+    expect(
+      snapshot.tokens.find((token) => token.name === "--brand-500")?.applyError,
+    ).toBeUndefined();
   });
 
   it("survives a mode adapter that throws in either direction", () => {
@@ -1737,6 +1838,34 @@ describe("surface migration — one reconciler, one owner", () => {
     expect(runtime.store.peek().writable).toBe(true);
   });
 
+  it("re-reads the application's own value from a replacement surface element", () => {
+    const first = makeApp();
+    first.style.setProperty("--computed-only", "blue");
+    const runtime = started({ tokens: [{ name: "--computed-only", type: "color" }] });
+    runtime.setOverride("--computed-only", "#ff0000");
+    expect(runtime.store.peek().tokens[0]?.base).toBe("blue");
+
+    first.remove();
+    makeApp().style.setProperty("--computed-only", "green");
+    runtime.refresh();
+
+    expect(runtime.store.peek().tokens[0]?.base).toBe("green");
+  });
+
+  it("re-reads the application's own value from a replacement element while preview is off", () => {
+    const first = makeApp();
+    first.style.setProperty("--computed-only", "blue");
+    const runtime = started({ tokens: [{ name: "--computed-only", type: "color" }] });
+    runtime.setOverride("--computed-only", "#ff0000");
+    runtime.setPreview(false);
+
+    first.remove();
+    makeApp().style.setProperty("--computed-only", "green");
+    runtime.refresh();
+
+    expect(runtime.store.peek().tokens[0]?.base).toBe("green");
+  });
+
   it("releases a surface that was retargeted while still on the page — identity, not connectedness", () => {
     // The case an `isConnected` test cannot see: both elements are live, and
     // the old one is still wearing our inline values.
@@ -1896,6 +2025,20 @@ describe("surface migration — the guards on the reconciler itself", () => {
     } finally {
       element.remove();
     }
+  });
+
+  it("keeps a direct write after disposal off the page, and applies it on the next start", () => {
+    const storage = createMemoryStorage();
+    const runtime = createThemeEditorRuntime({ tokens: TOKENS });
+    const dispose = runtime.start(fakeApi(storage));
+    dispose();
+
+    expect(runtime.setOverride("--brand-500", "#abcdef")).toBeNull();
+    expect(root().style.getPropertyValue("--brand-500")).toBe("");
+    expect(runtime.overrides()).toEqual({ "--brand-500": "#abcdef" });
+
+    runtime.start(fakeApi(storage));
+    expect(root().style.getPropertyValue("--brand-500")).toBe("#abcdef");
   });
 
   it("refuses a newline inside a quoted value — a browser reads it as a bad-string", () => {
@@ -2360,7 +2503,7 @@ describe("isolated theme publication fields", () => {
     runtime.store.destroy();
   });
 
-  it("publishes orphaned alone with the rest of the catalogue and row unchanged", () => {
+  it("publishes orphaned, masked, with the rest of the catalogue and row unchanged", () => {
     const anchor: DesignTokenDefinition = { name: "--anchor", value: "a" };
     let definitions: DesignTokenDefinition[] = [
       anchor,
@@ -2374,11 +2517,14 @@ describe("isolated theme publication fields", () => {
     definitions = [anchor];
     runtime.refresh();
     const tokens = before.tokens.map((token) =>
-      token.name === "--publication" ? { ...token, orphaned: true } : token,
+      token.name === "--publication"
+        ? { ...token, orphaned: true, masked: true, effectiveText: MASK_SENTINEL }
+        : token,
     );
     expect(runtime.store.getSnapshot()).toEqual({
       ...before,
       tokens,
+      maskedCount: before.maskedCount + 1,
       groups: before.groups.map((group) => ({
         ...group,
         tokens: tokens.filter((token) => token.group === group.name),

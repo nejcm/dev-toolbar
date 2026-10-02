@@ -586,7 +586,10 @@ function walk(
         message = "[getter threw]";
       }
       const output = {
-        name: typeof name === "string" ? name : walk(name, resolved, depth + 1, seen, budget),
+        name:
+          typeof name === "string"
+            ? redactString(name, resolved)
+            : walk(name, resolved, depth + 1, seen, budget),
         message:
           typeof message === "string"
             ? redactString(message, resolved)

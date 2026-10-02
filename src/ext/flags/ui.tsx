@@ -25,7 +25,7 @@ import type {
   ResolvedCompactPresentation,
 } from "@nejcm/dev-toolbar/kit";
 import { ensureFlagsStyles } from "./css";
-import { formatValue, matchesQuery, parseValue, severityFor } from "./types";
+import { matchesQuery, parseValue, severityFor } from "./types";
 import type { FlagValue, FlagView, FlagsSnapshot } from "./types";
 import type { FlagsRuntime } from "./runtime";
 
@@ -373,8 +373,7 @@ function Editor({
     // comes from the redacted `variantTexts`; the raw value resolves on commit.
     const variants = view.variants;
     const texts = view.variantTexts;
-    const effectiveText = formatValue(view.effective);
-    const selected = variants.findIndex((variant) => formatValue(variant) === effectiveText);
+    const selected = variants.findIndex((variant) => Object.is(variant, view.effective));
     return (
       <>
         <Select
@@ -460,7 +459,7 @@ function ClearButton({ view, runtime }: { view: FlagView; runtime: FlagsRuntime 
       data-dtb-part="flag-action"
       data-dtb-action="clear"
       data-dtb-flag={view.key}
-      disabled={!view.overridden}
+      disabled={!view.overridden && view.applyError === undefined}
       title={`Drop the local override on ${view.key} and go back to the application's own value`}
       onClick={() => runtime.clearOverride(view.key)}
     >
@@ -503,6 +502,11 @@ function Row({
           <Tag data-dtb-part="flag-tag" data-dtb-tag="not-applied" title={view.applyError}>
             {/* Same slot also records a failed clear, where "override not applied" would read backwards. */}
             {view.overridden ? "override not applied" : "clear not applied"}
+          </Tag>
+        ) : null}
+        {view.typeMismatch ? (
+          <Tag data-dtb-part="flag-tag" data-dtb-tag="type-mismatch" title={view.typeMismatch}>
+            not a {view.type}
           </Tag>
         ) : null}
         {view.orphaned ? (
@@ -637,7 +641,10 @@ export function FlagsPanel({
         <Action
           data-dtb-part="flag-action"
           data-dtb-action="clear-all"
-          disabled={!snapshot.writable || snapshot.overriddenCount === 0}
+          disabled={
+            !snapshot.writable ||
+            (snapshot.overriddenCount === 0 && failed.length === 0 && snapshot.bulkError === null)
+          }
           onClick={() => runtime.clearAll()}
           title="Drop every local override and go back to what the application resolves on its own"
         >

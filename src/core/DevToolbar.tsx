@@ -281,17 +281,15 @@ function DevToolbarRoot({
     ensureStyles(undefined, undefined, undefined, styleNonce);
   }, [enabled, injectStyles, styleNonce]);
 
-  // Declaration order matters: this effect runs *after* the `start(api)`
-  // effect, so a listener an extension registers in `start()` wins a shared
-  // chord via `preventDefault()` — this one bails on `defaultPrevented`.
-  // That's why `/ext/command-menu`'s `Mod+K` beats a command bound to the
-  // same chord. Core can't warn about the collision; it may not import `ext/`.
+  // Declared after the `start(api)` effect and keyed on `extensions`, so a
+  // listener from `start()` wins a shared chord, even after mount (docs/api.md).
   useToolbarShortcuts({
     enabled,
     shortcut,
     bindCommandShortcuts,
     toggleVisible,
     getCommands,
+    extensions,
   });
 
   // Publish the height variables on the document element.
@@ -303,6 +301,7 @@ function DevToolbarRoot({
     position: effectivePosition,
     panelHeight: state.panelHeight,
     activePanelId: state.activePanelId,
+    container: container ?? null,
   });
 
   /* oxlint-disable react/use-memo, react-hooks/exhaustive-deps -- reporter is stable; handler presence is the only context dependency. */

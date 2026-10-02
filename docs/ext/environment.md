@@ -97,7 +97,10 @@ Session context is the most sensitive thing a toolbar puts on a screen, so:
   that was never supplied;
 - `fields: ["environment", "release"]` is an allowlist for a restricted view —
   everything else is *dropped*, not hidden, and that includes `extra` entries, which
-  are named `extra:<key>`. For an actor who should not see the extension at all,
+  are named `extra:<key>`. The bar follows the same list: leave out `environment` and
+  the chip reads `unknown` with no production colour; leave out `impersonation` and
+  the impersonation marker, banner and danger colour go. Keep whichever the bar
+  should still warn about. For an actor who should not see the extension at all,
   leave it out of the `extensions` array — that is your decision to make, not
   something core enforces;
 - structured `extra` values are redacted **as objects** and serialised afterwards, so

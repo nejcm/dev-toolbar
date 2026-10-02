@@ -49,6 +49,7 @@ afterEach(() => {
   console.log = REAL.log;
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
+  vi.useRealTimers();
 });
 
 /* -------------------------------------------------------------------------- */
@@ -1769,6 +1770,75 @@ describe("publishing the chip's counts", () => {
 
     expect(notifications).toBe(0);
     expect(runtime.store.peek().errors).toBe(0);
+  });
+
+  it("does not let two runtimes feed each other's subscriber errors back", async () => {
+    console.error = () => {};
+    const first = started();
+    const second = started();
+    const notifications = [0, 0];
+    for (const [index, { runtime }] of [first, second].entries()) {
+      runtime.store.subscribe(() => {
+        notifications[index] = (notifications[index] ?? 0) + 1;
+        throw new Error("listener boom");
+      });
+    }
+
+    console.error("one real failure");
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 450));
+    });
+    const captured = [first.runtime.tail().errors, second.runtime.tail().errors];
+    first.stop();
+    second.stop();
+
+    // Measured before the guard was shared: 11 notifications and 23 errors each per second, unbounded.
+    expect(Math.max(...notifications)).toBeLessThanOrEqual(1);
+    expect(Math.max(...captured.map(Number))).toBeLessThanOrEqual(3);
+  });
+
+  it("does not deliver a trailing publish booked before disposal", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "performance"] });
+    console.error = () => {};
+    const { runtime, stop } = started();
+    let notifications = 0;
+    runtime.store.subscribe(() => void (notifications += 1));
+
+    console.error("one");
+    await Promise.resolve();
+    console.error("two");
+    await Promise.resolve();
+    // The second count is booked on the throttle's trailing edge, not yet published.
+    expect(runtime.store.peek().errors).toBe(2);
+    expect(runtime.store.getSnapshot().errors).toBe(1);
+    stop();
+    const atStop = notifications;
+    vi.advanceTimersByTime(200);
+
+    expect(notifications).toBe(atStop);
+    expect(runtime.store.getSnapshot().errors).toBe(2);
+  });
+
+  it("tears down even when a pending publish meets a throwing subscriber and a throwing console", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "performance"] });
+    const throwing = () => {
+      throw new Error("host console boom");
+    };
+    console.error = throwing;
+    const { runtime, stop } = started();
+    runtime.store.subscribe(() => {
+      throw new Error("listener boom");
+    });
+
+    window.dispatchEvent(new ErrorEvent("error", { message: "first" }));
+    await Promise.resolve();
+    window.dispatchEvent(new ErrorEvent("error", { message: "second" }));
+    await Promise.resolve();
+    expect(runtime.store.getSnapshot()).not.toBe(runtime.store.peek());
+
+    expect(() => stop()).not.toThrow();
+    expect(console.error).toBe(throwing);
+    expect(runtime.tail(0).status).toBe("stopped");
   });
 });
 

@@ -672,6 +672,28 @@ describe("the panel, after the surface moves", () => {
     expect(app().style.getPropertyValue("--brand-500")).toBe("#00ff00");
   });
 
+  it("keeps a colour's alpha when the picker changes its RGB", () => {
+    const { toolbar } = mount({
+      tokens: [{ name: "--brand-500", type: "color", value: "#3355ff80" }],
+    });
+    act(() => {
+      toolbar.openPanel("theme-editor");
+    });
+    const picker = row(
+      toolbar.panel("theme-editor"),
+      "--brand-500",
+    )?.querySelector<HTMLInputElement>('input[data-dtb-part="thm-color"]') as HTMLInputElement;
+    expect(picker.value).toBe("#3355ff");
+
+    act(() => {
+      fireEvent.change(picker, { target: { value: "#00ff00" } });
+    });
+    act(() => {
+      fireEvent.focusOut(picker);
+    });
+    expect(app().style.getPropertyValue("--brand-500")).toBe("#00ff0080");
+  });
+
   it("drops a held colour draft when the surface vanishes — a disabling input fires no blur", async () => {
     // Chrome does not fire `blur` on a focused element that becomes disabled.
     const { toolbar } = mount();

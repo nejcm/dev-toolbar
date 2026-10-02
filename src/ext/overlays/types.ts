@@ -69,7 +69,7 @@ export const OVERLAY_META: Record<OverlayId, OverlayMeta> = {
     label: "Focus order",
     summary:
       "Numbers every tabbable element in tab order and flags the ones with no accessible name.",
-    cost: "One narrow querySelectorAll per application DOM-mutation burst (debounced), which is also where accessible names are resolved. A scroll, resize or geometry-mutation frame then costs one getBoundingClientRect per retained element and nothing else. Up to focusLimit ResizeObserver targets (200 by default), or one more than that when the inspector is on too, diffed so elements are not re-observed every frame. Not covered: a sibling growing above a badge when that sibling is not tabbable; <details> opening; font-swap reflow. Capped at 200.",
+    cost: "One narrow querySelectorAll per application DOM-mutation burst (debounced), or when a tabbable the scan dropped for having no box gains one, which is also where accessible names are resolved and unrendered elements are dropped. A scroll, resize or geometry-mutation frame then costs one getBoundingClientRect per retained element and nothing else. Up to focusLimit ResizeObserver targets (200 by default), plus up to focusLimit dropped ones and the inspector's one, diffed so elements are not re-observed every frame. Not covered: a sibling growing above a badge when that sibling is not tabbable; <details> opening; font-swap reflow. Capped at 200.",
   },
 };
 
@@ -111,6 +111,8 @@ const ZERO_EDGES: Edges = { top: 0, right: 0, bottom: 0, left: 0 };
 export interface HoverTarget {
   rect: RectLike;
   margin: Edges;
+  /** Absent means zero; optional so hover objects built before it existed still type-check. */
+  border?: Edges;
   padding: Edges;
   /** `div#main.card.card--wide` */
   description: string;
@@ -355,16 +357,32 @@ const px = (value: string | undefined): number => {
   return Number.isFinite(parsed) ? parsed : 0;
 };
 
-/** `margin` / `padding` edges out of one computed style. Never throws. */
-export function edgesOf(style: CSSStyleDeclaration | null, which: "margin" | "padding"): Edges {
+/** `margin` / `border` / `padding` edges out of one computed style. Never throws. */
+export function edgesOf(
+  style: CSSStyleDeclaration | null,
+  which: "margin" | "border" | "padding",
+): Edges {
   if (style === null) return ZERO_EDGES;
+  const suffix = which === "border" ? "-width" : "";
   return {
-    top: px(style.getPropertyValue(`${which}-top`)),
-    right: px(style.getPropertyValue(`${which}-right`)),
-    bottom: px(style.getPropertyValue(`${which}-bottom`)),
-    left: px(style.getPropertyValue(`${which}-left`)),
+    top: px(style.getPropertyValue(`${which}-top${suffix}`)),
+    right: px(style.getPropertyValue(`${which}-right${suffix}`)),
+    bottom: px(style.getPropertyValue(`${which}-bottom${suffix}`)),
+    left: px(style.getPropertyValue(`${which}-left${suffix}`)),
   };
 }
+
+/** The content box inside a border-box `rect`. */
+export const contentBoxOf = (
+  rect: RectLike,
+  padding: Edges,
+  border: Edges = ZERO_EDGES,
+): RectLike => ({
+  x: rect.x + border.left + padding.left,
+  y: rect.y + border.top + padding.top,
+  width: rect.width - border.left - border.right - padding.left - padding.right,
+  height: rect.height - border.top - border.bottom - padding.top - padding.bottom,
+});
 
 /**
  * True when this element is worth a badge: it has a box and is at least

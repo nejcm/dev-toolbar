@@ -17,7 +17,7 @@ import type {
   ResolvedCompactPresentation,
 } from "@nejcm/dev-toolbar/kit";
 import { ensureOverlaysStyles } from "./css";
-import { OVERLAY_IDS, OVERLAY_META } from "./types";
+import { OVERLAY_IDS, OVERLAY_META, contentBoxOf } from "./types";
 import type { FocusItem, GridSettings, HoverTarget, OverlaysSnapshot, RectLike } from "./types";
 import type { OverlaysRuntime } from "./runtime";
 
@@ -339,7 +339,7 @@ function Grid({ grid }: { grid: GridSettings }): ReactNode {
 const LABEL_HEIGHT = 18;
 
 function Inspector({ hover }: { hover: HoverTarget }): ReactNode {
-  const { rect, margin, padding } = hover;
+  const { rect, margin, border, padding } = hover;
 
   const marginBox: RectLike = {
     x: rect.x - margin.left,
@@ -347,12 +347,7 @@ function Inspector({ hover }: { hover: HoverTarget }): ReactNode {
     width: rect.width + margin.left + margin.right,
     height: rect.height + margin.top + margin.bottom,
   };
-  const contentBox: RectLike = {
-    x: rect.x + padding.left,
-    y: rect.y + padding.top,
-    width: rect.width - padding.left - padding.right,
-    height: rect.height - padding.top - padding.bottom,
-  };
+  const contentBox = contentBoxOf(rect, padding, border);
 
   // Above the box when there's room, below it otherwise, never off the left
   // edge. `>=` on a rounded rect avoids jitter across the boundary.

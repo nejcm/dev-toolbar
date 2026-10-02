@@ -473,6 +473,36 @@ describe("OverflowBar ⋮ popup", () => {
     expect(document.activeElement).toBe(trigger());
   });
 
+  it("leaves the popup open for an Escape a control inside it handled", () => {
+    setUp();
+    renderCompact((id) => (
+      <input
+        aria-label={`edit ${id}`}
+        onKeyDown={(event) => {
+          if (event.key === "Escape") event.preventDefault();
+        }}
+      />
+    ));
+
+    fireEvent.click(trigger());
+    fireEvent.keyDown(screen.getByRole("textbox", { name: "edit b" }), { key: "Escape" });
+
+    expect(popup()).not.toBeNull();
+  });
+
+  it("leaves the popup open for an Escape that ends IME composition", () => {
+    setUp();
+    renderCompact((id) => <input aria-label={`edit ${id}`} />);
+
+    fireEvent.click(trigger());
+    fireEvent.keyDown(screen.getByRole("textbox", { name: "edit b" }), {
+      key: "Escape",
+      isComposing: true,
+    });
+
+    expect(popup()).not.toBeNull();
+  });
+
   it("closes on an outside click without pulling focus back", () => {
     setUp();
     renderCompact((id) => (

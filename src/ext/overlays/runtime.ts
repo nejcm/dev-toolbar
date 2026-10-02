@@ -167,32 +167,11 @@ export function setHostOutlines(on: boolean, doc?: Document, nonce?: string): vo
   }
 }
 
-/** Elements for which the `disabled` *attribute* actually removes tabbability. */
-const DISABLEABLE = new Set([
-  "BUTTON",
-  "INPUT",
-  "SELECT",
-  "TEXTAREA",
-  "FIELDSET",
-  "OPTGROUP",
-  "OPTION",
-]);
-
-/**
- * True when the browser will skip this element in the tab sequence.
- *
- * `aria-disabled` is deliberately not here — it's a promise to assistive tech,
- * not a change to focus behaviour. A disabled `fieldset` disables its
- * contained controls except those inside its first `<legend>`.
- */
-const isDisabled = (element: Element): boolean => {
-  if (DISABLEABLE.has(element.tagName) && element.hasAttribute("disabled")) {
-    return true;
-  }
-  const fieldset = element.closest("fieldset[disabled]");
-  if (fieldset === null) return false;
-  const legend = fieldset.querySelector(":scope > legend");
-  return legend === null || !legend.contains(element);
+/** No box to badge — `display: none` here or on an ancestor. */
+const isUnrendered = (element: Element): boolean => {
+  if (typeof element.checkVisibility === "function") return !element.checkVisibility();
+  const rect = element.getBoundingClientRect();
+  return rect.width <= 0 && rect.height <= 0;
 };
 
 /** One tabbable element, with everything about it that a frame must not re-derive. */
@@ -272,6 +251,8 @@ export function createOverlaysRuntime(options: OverlaysRuntimeOptions = {}): Ove
   let hoverNameStale = true;
   let focusItems: readonly FocusItem[] = [];
   let focusTruncated = false;
+  /** Candidates the last scan dropped for having no box, observed so a CSS-only reveal still rescans. */
+  let droppedElements = new Set<Element>();
   let unnamedCount = 0;
 
   /**
@@ -391,6 +372,7 @@ export function createOverlaysRuntime(options: OverlaysRuntimeOptions = {}): Ove
     return {
       rect,
       margin: edgesOf(style, "margin"),
+      border: edgesOf(style, "border"),
       padding: edgesOf(style, "padding"),
       description: describeElement(element),
       size: `${Math.round(rect.width)} × ${Math.round(rect.height)}`,
@@ -435,19 +417,18 @@ export function createOverlaysRuntime(options: OverlaysRuntimeOptions = {}): Ove
     }
     const found: Element[] = [];
     focusTruncated = false;
+    droppedElements = new Set();
     for (const element of document.querySelectorAll(TABBABLE_SELECTOR)) {
       if (isInToolbar(element)) continue;
       const tabIndex = tabIndexOf(element);
       if (tabIndex !== null && tabIndex < 0) continue;
-      if (isDisabled(element)) continue;
+      // `:disabled` already exempts a disabled fieldset's first legend and its non-control descendants.
+      if (element.matches(":disabled")) continue;
       if (element.closest("[inert]") !== null) continue;
       if (element.getAttribute("contenteditable") === "false") continue;
-      // type="hidden" passes every selector above but has no box; without this
-      // it consumed a badge-limit slot only to be dropped at measure time.
-      if (
-        element.tagName === "INPUT" &&
-        (element.getAttribute("type") ?? "").toLowerCase() === "hidden"
-      ) {
+      // Not retained, so it cannot hold a badge-limit slot; observed below so a reveal rescans.
+      if (isUnrendered(element)) {
+        if (droppedElements.size < limit) droppedElements.add(element);
         continue;
       }
       found.push(element);
@@ -597,10 +578,13 @@ export function createOverlaysRuntime(options: OverlaysRuntimeOptions = {}): Ove
       }
     }
     if (scheduleGeometry) schedule();
-    if (!needsRescan) return;
-    // Debounced, not per-record: a React commit is a burst of records, and
-    // re-querying on each one would make this overlay the perf problem it was
-    // installed to find.
+    if (needsRescan) queueRescan();
+  };
+
+  // Debounced, not per-record: a React commit is a burst of records, and
+  // re-querying on each one would make this overlay the perf problem it was
+  // installed to find.
+  const queueRescan = () => {
     if (mutationTimer !== null) return;
     mutationTimer = setTimeout(() => {
       mutationTimer = null;
@@ -620,6 +604,11 @@ export function createOverlaysRuntime(options: OverlaysRuntimeOptions = {}): Ove
     if (flags.inspect && hoverElement?.isConnected) {
       wanted.add(hoverElement);
     }
+    if (flags.focus) {
+      for (const element of droppedElements) {
+        if (element.isConnected) wanted.add(element);
+      }
+    }
     for (const element of observedTargets) {
       if (!wanted.has(element)) {
         resizeObserver.unobserve(element);
@@ -634,8 +623,10 @@ export function createOverlaysRuntime(options: OverlaysRuntimeOptions = {}): Ove
     }
   };
 
-  const onObservedResize = () => {
+  const onObservedResize = (entries: ResizeObserverEntry[]) => {
     schedule();
+    // A dropped candidate gaining a box (`:hover`, a media query, a class) needs a rescan to join the order.
+    if (entries.some((entry) => droppedElements.has(entry.target))) queueRescan();
   };
 
   let pointerAttached = false;
@@ -665,6 +656,8 @@ export function createOverlaysRuntime(options: OverlaysRuntimeOptions = {}): Ove
       pointerSeen = false;
       hover = null;
       hoverElement = null;
+      hoverNameElement = null;
+      hoverNameStale = true;
     }
   };
 
@@ -709,6 +702,7 @@ export function createOverlaysRuntime(options: OverlaysRuntimeOptions = {}): Ove
           "contenteditable",
           "type",
           "href",
+          "controls",
           // the name
           "aria-label",
           "aria-labelledby",
@@ -717,6 +711,7 @@ export function createOverlaysRuntime(options: OverlaysRuntimeOptions = {}): Ove
           "role",
           "value",
           "for",
+          "id",
         ],
       });
       hoverNameStale = true;
@@ -788,6 +783,7 @@ export function createOverlaysRuntime(options: OverlaysRuntimeOptions = {}): Ove
       focusElements = [];
       focusItems = [];
       focusTruncated = false;
+      droppedElements = new Set();
       unnamedCount = 0;
     }
     // Retained sets just changed shape; without this the ResizeObserver keeps stale targets.
@@ -907,6 +903,7 @@ export function createOverlaysRuntime(options: OverlaysRuntimeOptions = {}): Ove
         focusElements = [];
         focusItems = [];
         focusTruncated = false;
+        droppedElements = new Set();
         unnamedCount = 0;
         // So a StrictMode remount sees the enable edge again and rescans.
         focusDrawing = false;

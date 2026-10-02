@@ -30,12 +30,14 @@ const FIELD_WEIGHTS: readonly [keyof AnyToolbarCommand | "keyword", number][] = 
 
 /** Does `haystack` contain the letters of `needle` in order? The loosest match. */
 function subsequence(haystack: string, needle: string): boolean {
+  // By code point on both sides, or an emoji's surrogate pair never matches.
+  const wanted = [...needle];
   let index = 0;
   for (const character of haystack) {
-    if (character === needle[index]) index += 1;
-    if (index === needle.length) return true;
+    if (character === wanted[index]) index += 1;
+    if (index === wanted.length) return true;
   }
-  return needle.length === 0;
+  return wanted.length === 0;
 }
 
 /** 0 when the term does not appear at all. Prefix beats word-start beats infix. */

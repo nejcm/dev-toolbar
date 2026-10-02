@@ -198,6 +198,7 @@ const FLAGS_EXTENSION_CSS = String.raw`@layer dev-toolbar {
   }
 
   [data-dev-toolbar] [data-dtb-part="flag-tag"][data-dtb-tag="not-applied"],
+  [data-dev-toolbar] [data-dtb-part="flag-tag"][data-dtb-tag="type-mismatch"],
   [data-dev-toolbar] [data-dtb-part="flag-tag"][data-dtb-tag="rejected"] {
     color: var(--dtb-danger);
     background: var(--dtb-danger-bg);

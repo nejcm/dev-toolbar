@@ -179,10 +179,14 @@ function Dialog({
   useEffect(() => {
     const previous =
       typeof document === "undefined" ? null : (document.activeElement as HTMLElement | null);
-    inputRef.current?.focus();
+    const field = inputRef.current;
+    field?.focus();
     return () => {
       // Restore only if still in the document — a command may have unmounted whatever was focused.
-      if (previous && previous.isConnected && typeof previous.focus === "function") {
+      // And only if focus is still ours (StrictMode's replay leaves it in the field), not a command's.
+      const current = document.activeElement;
+      const unclaimed = current === null || current === document.body || current === field;
+      if (unclaimed && previous && previous.isConnected && typeof previous.focus === "function") {
         previous.focus();
       }
     };
@@ -199,6 +203,8 @@ function Dialog({
   }, [snapshot.activeIndex, snapshot.results]);
 
   const onKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
+    // A modified Enter/arrow/Home/End may be the configured shortcut; leave it for the window listener.
+    const chord = event.ctrlKey || event.metaKey || event.altKey || event.shiftKey;
     switch (event.key) {
       case "Escape":
         // An IME uses Escape to cancel a composition; don't discard the query over an abandoned candidate.
@@ -209,28 +215,28 @@ function Dialog({
         runtime.close();
         return;
       case "ArrowDown":
-        if (event.nativeEvent.isComposing) return;
+        if (event.nativeEvent.isComposing || chord) return;
         event.preventDefault();
         runtime.move(1);
         return;
       case "ArrowUp":
-        if (event.nativeEvent.isComposing) return;
+        if (event.nativeEvent.isComposing || chord) return;
         event.preventDefault();
         runtime.move(-1);
         return;
       case "Home":
-        if (event.nativeEvent.isComposing) return;
+        if (event.nativeEvent.isComposing || chord) return;
         event.preventDefault();
         runtime.setActiveIndex(0);
         return;
       case "End":
-        if (event.nativeEvent.isComposing) return;
+        if (event.nativeEvent.isComposing || chord) return;
         event.preventDefault();
         runtime.setActiveIndex(snapshot.results.length - 1);
         return;
       case "Enter":
         // An IME composing a candidate uses Enter to commit it.
-        if (event.nativeEvent.isComposing) return;
+        if (event.nativeEvent.isComposing || chord) return;
         event.preventDefault();
         void runtime.run();
         return;
@@ -316,7 +322,7 @@ function Dialog({
                       data-dtb-command-id={match.command.id}
                       role="option"
                       aria-selected={selected}
-                      aria-busy={snapshot.running === match.command.id ? true : undefined}
+                      aria-busy={snapshot.pending.includes(match.command.id) ? true : undefined}
                       // pointerdown, not click: mousedown would otherwise blur the input first.
                       onPointerDown={(event) => {
                         event.preventDefault();

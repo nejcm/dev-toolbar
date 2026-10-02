@@ -3,10 +3,12 @@
  * surface a stranger writing an extension would use.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { act, fireEvent } from "@testing-library/react";
+import { StrictMode } from "react";
+import { act, fireEvent, render } from "@testing-library/react";
 import { cleanupToolbar, makeExtension, mountToolbar } from "@nejcm/dev-toolbar/testing";
+import { DevToolbar } from "../../../core/DevToolbar";
 import { createMemoryStorage } from "../../../core/storage";
-import { commandMenu } from "../index";
+import { COMMAND_MENU_CSS, commandMenu } from "../index";
 import { RECENT_KEY } from "../runtime";
 import type { CommandMenuOptions } from "../index";
 import type { DevToolbarExtension, ToolbarCommand, ToolbarStorage } from "../../../core/contract";
@@ -117,6 +119,30 @@ describe("opening and dismissing", () => {
     });
     expect(dialog()).toBeNull();
     expect(document.activeElement).toBe(appButton);
+  });
+
+  it("restores focus under StrictMode's replayed mount effect", () => {
+    const { unmount, getByTestId } = render(
+      <StrictMode>
+        <DevToolbar
+          instanceId="strict"
+          storage={createMemoryStorage()}
+          extensions={[commandMenu({ apple: false }), ...producers()]}
+        >
+          <button data-testid="strict-button" type="button">
+            app
+          </button>
+        </DevToolbar>
+      </StrictMode>,
+    );
+    const appButton = getByTestId("strict-button") as HTMLButtonElement;
+    act(() => appButton.focus());
+    hotkey();
+    expect(document.activeElement).toBe(input());
+    press("Escape");
+    expect(dialog()).toBeNull();
+    expect(document.activeElement).toBe(appButton);
+    unmount();
   });
 
   it("toggles closed on the same shortcut, and closes on the scrim", () => {
@@ -232,6 +258,23 @@ describe("searching and keyboard navigation", () => {
     press("End");
     expect(idOf()).toBe("metrics.reset");
   });
+
+  it.each([
+    ["Mod+Enter", { key: "Enter", ctrlKey: true }],
+    ["Shift+Enter", { key: "Enter", shiftKey: true }],
+    ["Shift+ArrowDown", { key: "ArrowDown", shiftKey: true }],
+    ["Alt+End", { key: "End", altKey: true }],
+  ])(
+    "lets %s through to close the palette when it is the palette's own shortcut",
+    (shortcut, chord) => {
+      mount({ shortcut });
+      fireEvent.keyDown(window, chord);
+      expect(dialog()).not.toBeNull();
+      fireEvent.keyDown(input() as HTMLInputElement, chord);
+      expect(dialog()).toBeNull();
+      expect(ran).toEqual([]);
+    },
+  );
 
   it("keeps focus in the field on Tab, as aria-modal promises", () => {
     mount();
@@ -402,6 +445,180 @@ describe("running", () => {
     expect(calls).toBe(1);
     expect(dialog()).toBeNull();
   });
+
+  it("keeps one run at a time across a reopen, and a stale run leaves the new palette alone", async () => {
+    let calls = 0;
+    let release: (() => void) | undefined;
+    mount({}, [
+      makeExtension({
+        id: "slow",
+        commands: [
+          command("slow.one", "Takes a while", "Slow", () => {
+            calls += 1;
+            return new Promise<void>((resolve) => {
+              release = resolve;
+            });
+          }),
+        ],
+      }),
+    ]);
+    hotkey();
+    press("Enter");
+    press("Escape");
+    hotkey();
+    press("Enter");
+    expect(calls).toBe(1);
+
+    await act(async () => {
+      release?.();
+    });
+    expect(dialog()).not.toBeNull();
+    expect(options()[0]?.getAttribute("aria-busy")).toBeNull();
+  });
+
+  it("lets a hung command block only itself, and marks it busy", async () => {
+    let hung = 0;
+    mount({}, [
+      makeExtension({
+        id: "mixed",
+        commands: [
+          command("mixed.hang", "Never settles", "Mixed", () => {
+            hung += 1;
+            return new Promise<void>(() => {});
+          }),
+          command("mixed.quick", "Quick", "Mixed"),
+        ],
+      }),
+    ]);
+    const row = (id: string) =>
+      document.querySelector<HTMLElement>(`[role="option"][data-dtb-command-id="${id}"]`);
+    hotkey();
+    press("Enter");
+    press("ArrowDown");
+    await act(async () => {
+      press("Enter");
+    });
+    expect(ran).toEqual(["mixed.quick"]);
+    expect(dialog()).toBeNull();
+
+    hotkey();
+    fireEvent.click(row("mixed.hang") as HTMLElement);
+    expect(hung).toBe(1);
+    expect(row("mixed.hang")?.getAttribute("aria-busy")).toBe("true");
+    expect(COMMAND_MENU_CSS).toContain('[data-dtb-part="cmd-option"][aria-busy="true"]');
+  });
+
+  it("never lets a stale result clear a newer run's busy state", async () => {
+    const release: Record<string, () => void> = {};
+    const slow = (id: string) =>
+      command(
+        id,
+        id,
+        "Slow",
+        () =>
+          new Promise<void>((resolve) => {
+            release[id] = resolve;
+          }),
+      );
+    mount({}, [makeExtension({ id: "slow", commands: [slow("slow.a"), slow("slow.b")] })]);
+    hotkey();
+    press("Enter");
+    press("Escape");
+    hotkey();
+    press("ArrowDown");
+    press("Enter");
+
+    await act(async () => {
+      release["slow.a"]?.();
+    });
+    expect(dialog()).not.toBeNull();
+    expect(activeOption()?.getAttribute("aria-busy")).toBe("true");
+
+    await act(async () => {
+      release["slow.b"]?.();
+    });
+    expect(dialog()).toBeNull();
+  });
+
+  it("lets only the latest run in one opening dismiss the palette or clear its error", async () => {
+    let releaseA: (() => void) | undefined;
+    let rejectB: ((error: Error) => void) | undefined;
+    mount({}, [
+      makeExtension({
+        id: "pair",
+        commands: [
+          command(
+            "pair.a",
+            "A",
+            "Pair",
+            () =>
+              new Promise<void>((resolve) => {
+                releaseA = resolve;
+              }),
+          ),
+          command(
+            "pair.b",
+            "B",
+            "Pair",
+            () =>
+              new Promise<void>((_, reject) => {
+                rejectB = reject;
+              }),
+          ),
+        ],
+      }),
+    ]);
+    hotkey();
+    press("Enter");
+    press("ArrowDown");
+    press("Enter");
+    await act(async () => {
+      rejectB?.(new Error("B broke"));
+    });
+    expect(document.querySelector('[role="alert"]')?.textContent).toContain("B broke");
+
+    await act(async () => {
+      releaseA?.();
+    });
+    expect(dialog()).not.toBeNull();
+    expect(document.querySelector('[role="alert"]')?.textContent).toContain("B broke");
+  });
+
+  it("marks every unsettled row busy, not just the latest", () => {
+    mount({}, [
+      makeExtension({
+        id: "hangs",
+        commands: [
+          command("hangs.a", "A", "Hangs", () => new Promise<void>(() => {})),
+          command("hangs.b", "B", "Hangs", () => new Promise<void>(() => {})),
+        ],
+      }),
+    ]);
+    hotkey();
+    press("Enter");
+    press("ArrowDown");
+    press("Enter");
+    expect(options().map((option) => option.getAttribute("aria-busy"))).toEqual(["true", "true"]);
+  });
+
+  it("leaves focus where a command put it", async () => {
+    const field = document.createElement("input");
+    document.body.append(field);
+    const { getByTestId } = mount({}, [
+      makeExtension({
+        id: "focuser",
+        commands: [command("focuser.go", "Focus the field", "Focus", () => field.focus())],
+      }),
+    ]);
+    act(() => (getByTestId("app-button") as HTMLButtonElement).focus());
+    hotkey();
+    await act(async () => {
+      press("Enter");
+    });
+    expect(dialog()).toBeNull();
+    expect(document.activeElement).toBe(field);
+    field.remove();
+  });
 });
 
 describe("the aggregation it reads", () => {
@@ -522,6 +739,8 @@ describe("recents", () => {
       press("Enter");
     });
     expect(storage.getItem(`dtb:v1:test:ext:command-menu:${RECENT_KEY}`)).toBeNull();
+    hotkey();
+    expect(document.querySelector('[data-dtb-part="cmd-section"]')?.textContent).not.toBe("Recent");
   });
 });
 

@@ -15,7 +15,7 @@ const extensions = [overlays({ grid: { columns: 12, gutter: 24, maxWidth: 1100 }
 | **Layout boxes** | where the boxes actually are, and which wrapper is adding the gap | one stylesheet; a repaint on toggle, and the only overlay whose cost grows with the document |
 | **Column grid** | does this line up with the design's grid | free — one gradient-painted element |
 | **Element inspector** | what is under the pointer, how big, what it is called | one rect and one `getComputedStyle` on **one element**, never the document, per frame in which the pointer moved, the page scrolled or the window resized |
-| **Focus order** | what order `Tab` visits things in, and which have no accessible name | one narrow `querySelectorAll` per debounced *app* mutation burst, where names resolve too; then one rect per element per scroll frame; capped at 200 |
+| **Focus order** | what order `Tab` visits things in, and which have no accessible name | one narrow `querySelectorAll` per debounced *app* mutation burst or hidden tabbable gaining a box, where names resolve too; then one rect per element per scroll frame; capped at 200 rendered elements |
 
 The cost column is also rendered in the panel, next to each switch — an overlay you
 leave on while profiling should tell you what it is charging you.

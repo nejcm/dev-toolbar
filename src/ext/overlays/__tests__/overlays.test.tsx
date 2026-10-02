@@ -698,6 +698,30 @@ describe("the focus scan describes the real tab sequence", () => {
     form.remove();
   });
 
+  it("keeps links inside a disabled fieldset, which it does not disable", async () => {
+    const form = document.createElement("div");
+    form.innerHTML = `<fieldset disabled><a data-testid="link" href="#">Help</a></fieldset>`;
+    document.body.prepend(form);
+
+    mount({ defaults: { focus: true } });
+    withRect(form.querySelector('[data-testid="link"]') as Element, {
+      x: 0,
+      y: 10,
+      width: 40,
+      height: 20,
+    });
+    withRect(document.querySelector('[data-testid="named"]') as Element, {
+      x: 10,
+      y: 40,
+      width: 80,
+      height: 24,
+    });
+    await frame();
+
+    expect(badges().map((badge) => badge.textContent)).toEqual(["1Help", "2Save the document"]);
+    form.remove();
+  });
+
   it("skips a focusable inside an inert ancestor", async () => {
     const wrapper = document.createElement("div");
     wrapper.setAttribute("inert", "");
@@ -742,6 +766,23 @@ describe("the focus scan describes the real tab sequence", () => {
     await frame();
 
     // Both hidden inputs used to fill the limit and then be dropped at measure time.
+    expect(badges()).toHaveLength(2);
+    hidden.remove();
+  });
+
+  it("does not let unrendered controls consume the badge limit", async () => {
+    const hidden = document.createElement("div");
+    hidden.hidden = true;
+    hidden.innerHTML = `<button aria-label="a"></button><button aria-label="b"></button>`;
+    document.body.prepend(hidden);
+
+    mount({ defaults: { focus: true }, focusLimit: 2 });
+    const named = document.querySelector('[data-testid="named"]') as Element;
+    const unnamed = document.querySelector('[data-testid="unnamed"]') as Element;
+    withRect(named, { x: 10, y: 40, width: 80, height: 24 });
+    withRect(unnamed, { x: 100, y: 40, width: 24, height: 24 });
+    await frame();
+
     expect(badges()).toHaveLength(2);
     hidden.remove();
   });

@@ -918,7 +918,28 @@ describe("failing closed", () => {
     runtime.start(fakeApi(createMemoryStorage()).api);
     healthy = false;
     expect(() => runtime.refresh()).not.toThrow();
-    expect(runtime.store.peek().flags).toEqual([]);
+    expect(runtime.store.peek().flags).toHaveLength(CATALOGUE.length);
+    expect(runtime.store.peek().readError).toContain("getter threw");
+  });
+
+  it("keeps a sensitive override masked while the getter throws", () => {
+    let healthy = true;
+    const runtime = createFlagsRuntime({
+      flags: () => {
+        if (!healthy) throw new Error("later failure");
+        return [{ key: "billing.mode", type: "string", value: "a", sensitive: true }];
+      },
+      onOverride: () => {},
+    });
+    runtime.start(fakeApi(createMemoryStorage()).api);
+    runtime.setOverride("billing.mode", "private-mode");
+    healthy = false;
+    runtime.refresh();
+    expect(runtime.store.peek().flags[0]?.effectiveText).toBe("[redacted]");
+    expect(runtime.recipeText()).not.toContain("private-mode");
+    healthy = true;
+    runtime.refresh();
+    expect(runtime.store.peek().readError).toBeNull();
   });
 
   it("uses the flags default when pollMs is non-finite", () => {
@@ -1264,6 +1285,218 @@ describe("revision", () => {
   });
 });
 
+describe("review regressions", () => {
+  it("tells the per-key adapter about an override dropped from storage between starts", () => {
+    const storage = createMemoryStorage();
+    const applied: [string, FlagValue | undefined][] = [];
+    const runtime = createFlagsRuntime({
+      flags: CATALOGUE,
+      onOverride: (key, value) => applied.push([key, value]),
+    });
+    const stop = runtime.start(fakeApi(storage).api);
+    runtime.setOverride("ui-facelift", true);
+    stop();
+    const other = createFlagsRuntime({ flags: CATALOGUE, onOverride: () => {} });
+    other.start(fakeApi(storage).api);
+    other.clearOverride("ui-facelift");
+    applied.length = 0;
+    runtime.start(fakeApi(storage).api);
+    expect(applied).toEqual([["ui-facelift", undefined]]);
+  });
+
+  it("retries a failed clear through clearOverride, applyOverride and clearAll", () => {
+    let broken = false;
+    const applied: [string, FlagValue | undefined][] = [];
+    const runtime = createFlagsRuntime({
+      flags: CATALOGUE,
+      onOverride: (key, value) => {
+        if (broken) throw new Error("offline");
+        applied.push([key, value]);
+      },
+    });
+    for (const retry of [
+      () => runtime.clearOverride("ui-facelift"),
+      () => runtime.applyOverride("ui-facelift"),
+      () => runtime.clearAll(),
+    ]) {
+      broken = false;
+      runtime.setOverride("ui-facelift", true);
+      broken = true;
+      runtime.clearOverride("ui-facelift");
+      broken = false;
+      applied.length = 0;
+      retry();
+      expect(applied).toEqual([["ui-facelift", undefined]]);
+      expect(runtime.store.peek().adapterErrors).toEqual({});
+    }
+  });
+
+  it("retries a failed onOverridesChange from clearAll with an empty map", () => {
+    let broken = true;
+    const maps: Record<string, FlagValue>[] = [];
+    const runtime = createFlagsRuntime({
+      flags: CATALOGUE,
+      onOverridesChange: (map) => {
+        if (broken) throw new Error("offline");
+        maps.push({ ...map });
+      },
+    });
+    runtime.clearOverride("ui-facelift");
+    runtime.setOverride("ui-facelift", true);
+    runtime.clearOverride("ui-facelift");
+    expect(runtime.store.peek().bulkError).not.toBeNull();
+    broken = false;
+    runtime.clearAll();
+    expect(maps).toEqual([{}]);
+    expect(runtime.store.peek().bulkError).toBeNull();
+  });
+
+  it("marks an override the catalogue later types differently as not applied, without clearing it", () => {
+    const storage = createMemoryStorage();
+    const seed = createFlagsRuntime({ flags: [], onOverride: () => {} });
+    seed.start(fakeApi(storage).api);
+    seed.setOverride("x", "wrong");
+    const source = createSource<readonly FlagReading[]>([]);
+    const runtime = createFlagsRuntime({ flags: source, onOverride: () => {} });
+    runtime.start(fakeApi(storage).api);
+    source.set([{ key: "x", type: "boolean", value: false }]);
+    runtime.refresh();
+    const view = runtime.store.peek().flags.find((candidate) => candidate.key === "x");
+    expect(view?.typeMismatch).toContain("not a valid boolean");
+    expect(view?.applyError).toBeUndefined();
+    expect(
+      (runtime.diagnostics() as { flags: { key: string; tags: string[] }[] }).flags.find(
+        (candidate) => candidate.key === "x",
+      )?.tags,
+    ).toContain("type-mismatch");
+    expect(severityFor(view as FlagView)).toBe("bad");
+    expect(runtime.overrides()).toEqual({ x: "wrong" });
+  });
+
+  it("marks reload for an override restart reconciliation clears", () => {
+    const storage = createMemoryStorage();
+    const runtime = createFlagsRuntime({ flags: CATALOGUE, onOverride: () => {} });
+    const stop = runtime.start(fakeApi(storage).api);
+    runtime.setOverride("search.rank", 5);
+    runtime.acknowledgeReload();
+    stop();
+    const other = createFlagsRuntime({ flags: CATALOGUE, onOverride: () => {} });
+    other.start(fakeApi(storage).api);
+    other.clearOverride("search.rank");
+    runtime.start(fakeApi(storage).api);
+    expect(runtime.store.getSnapshot().reloadPending).toEqual(["search.rank"]);
+  });
+
+  it("persists the empty map when a failed clear is retried", () => {
+    const map = new Map<string, string>();
+    let broken = false;
+    const storage: ToolbarStorage = {
+      getItem: (key) => map.get(key) ?? null,
+      setItem: (key, value) => void map.set(key, value),
+      removeItem: (key) => {
+        if (broken) throw new Error("quota");
+        map.delete(key);
+      },
+    };
+    const runtime = createFlagsRuntime({
+      flags: CATALOGUE,
+      onOverride: (_key, value) => {
+        if (broken && value === undefined) throw new Error("offline");
+      },
+    });
+    runtime.start(fakeApi(storage).api);
+    runtime.setOverride("ui-facelift", true);
+    broken = true;
+    runtime.clearOverride("ui-facelift");
+    expect(map.size).toBe(1);
+    broken = false;
+    runtime.clearOverride("ui-facelift");
+    expect(map.size).toBe(0);
+  });
+
+  it("refuses a non-finite number from the command path", () => {
+    const runtime = createFlagsRuntime({ flags: CATALOGUE, onOverride: () => {} });
+    expect(() => runtime.applyOverride("search.rank", Number.NaN)).toThrow(/number flag/);
+    expect(() => runtime.applyOverride("search.rank", Number.POSITIVE_INFINITY)).toThrow();
+    expect(vetOverrides({ "search.rank": Number.NaN }, CATALOGUE)).toEqual({});
+  });
+
+  it("republishes at a promotion boundary with one timeout and no poll", () => {
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(0);
+      const runtime = createFlagsRuntime({
+        flags: CATALOGUE,
+        promoted: [
+          { flagKey: "ui-facelift", expiresAt: new Date(5000).toISOString() },
+          { flagKey: "new-header", startAt: new Date(8000).toISOString() },
+        ],
+      });
+      const stop = runtime.start(fakeApi(createMemoryStorage()).api);
+      const keys = () => runtime.store.getSnapshot().promoted.map((view) => view.key);
+      expect(keys()).toEqual(["ui-facelift"]);
+      expect(vi.getTimerCount()).toBe(1);
+      vi.advanceTimersByTime(5001);
+      runtime.store.flush();
+      expect(keys()).toEqual([]);
+      vi.advanceTimersByTime(3000);
+      runtime.store.flush();
+      expect(keys()).toEqual(["new-header"]);
+      stop();
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("keeps the boundary timer when a subscriber export-reads past the boundary", () => {
+    vi.useFakeTimers();
+    try {
+      let at = 0;
+      const runtime = createFlagsRuntime({
+        flags: CATALOGUE,
+        onOverride: () => {},
+        promoted: { flagKey: "ui-facelift", expiresAt: new Date(5000).toISOString() },
+        now: () => at,
+      });
+      runtime.start(fakeApi(createMemoryStorage()).api);
+      // Past the publish throttle, so the next change notifies inside rebuild().
+      vi.advanceTimersByTime(1000);
+      const unsubscribe = runtime.store.subscribe(() => {
+        unsubscribe();
+        at = 6000;
+        runtime.diagnostics();
+      });
+      runtime.setOverride("new-header", true);
+      vi.advanceTimersByTime(10_000);
+      runtime.store.flush();
+      expect(runtime.store.getSnapshot().promoted).toEqual([]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("keeps the boundary timer when an export read builds past the boundary", () => {
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(0);
+      const runtime = createFlagsRuntime({
+        flags: CATALOGUE,
+        promoted: { flagKey: "ui-facelift", expiresAt: new Date(5000).toISOString() },
+      });
+      runtime.start(fakeApi(createMemoryStorage()).api);
+      vi.setSystemTime(6000);
+      runtime.diagnostics();
+      runtime.recipeText();
+      vi.runOnlyPendingTimers();
+      runtime.store.flush();
+      expect(runtime.store.getSnapshot().promoted).toEqual([]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
 describe("parseValue", () => {
   it("refuses what it cannot parse rather than coercing it", () => {
     expect(parseValue("number", "abc")).toBeUndefined();
@@ -1272,7 +1505,7 @@ describe("parseValue", () => {
     expect(parseValue("number", " 12 ")).toBe(12);
     expect(parseValue("boolean", "yes")).toBeUndefined();
     expect(parseValue("boolean", "true")).toBe(true);
-    expect(parseValue("string", "null")).toBeNull();
+    expect(parseValue("string", "null")).toBe("null");
     expect(parseValue("string", "anything")).toBe("anything");
   });
 });

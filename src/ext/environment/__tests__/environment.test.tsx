@@ -226,6 +226,24 @@ describe("the panel", () => {
     expect(panel?.innerHTML).not.toContain("enterprise");
   });
 
+  it("goes neutral, not alarmed or empty, when environment and impersonation are excluded", () => {
+    const { toolbar } = mount({
+      detect: false,
+      fields: ["release"],
+      context: { environment: "private-preview", impersonating: true, release: "r1" },
+    });
+    const chip = toolbar.item("environment")?.querySelector('[data-dtb-part="env-chip"]');
+    expect(text(chip?.querySelector('[data-dtb-part="env-value"]'))).toBe("unknown");
+    expect(chip?.getAttribute("data-dtb-severity")).toBe("unknown");
+    expect(chip?.querySelector('[data-dtb-part="env-alert"]')).toBeNull();
+    toolbar.openPanel("environment");
+    const panel = toolbar.panel("environment");
+    expect(panel?.querySelector('[data-dtb-part="env-banner"]')).toBeNull();
+    expect(panel?.querySelector('[data-dtb-part="env-empty"]')).toBeNull();
+    expect(text(row(panel, "release"))).toContain("r1");
+    expect(document.body.innerHTML).not.toContain("private-preview");
+  });
+
   it("injects its stylesheet once, keyed on the DOM, and honours injectStyles: false", () => {
     mount();
     mount({ id: "environment-2" });

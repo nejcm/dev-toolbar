@@ -280,6 +280,23 @@ function readPage(options: RedactOptions | undefined): PageReport {
 /* Runtime                                                                     */
 /* -------------------------------------------------------------------------- */
 
+/**
+ * True while any runtime's publish — or its store's report of a failed publish
+ * — is running. Module-level so two runtimes cannot feed each other's logs back.
+ */
+let publishing = false;
+
+/** Raises the guard for one call, and puts it back where it was. */
+const whilePublishing = (body: () => void): void => {
+  const outer = publishing;
+  publishing = true;
+  try {
+    body();
+  } finally {
+    publishing = outer;
+  }
+};
+
 export function createDiagnosticsRuntime(
   options: DiagnosticsRuntimeOptions = {},
 ): DiagnosticsRuntime {
@@ -580,23 +597,6 @@ export function createDiagnosticsRuntime(
     ],
   });
 
-  /**
-   * True while a publish — or the store's own report of a failed publish — is
-   * running. See `publishCounts`.
-   */
-  let publishing = false;
-
-  /** Raises the guard for one call, and puts it back where it was. */
-  const whilePublishing = (body: () => void): void => {
-    const outer = publishing;
-    publishing = true;
-    try {
-      body();
-    } finally {
-      publishing = outer;
-    }
-  };
-
   const store = createThrottledStore<DiagnosticsSnapshotState>(NO_SNAPSHOT, {
     intervalMs: 100,
     // The store's default clock is unguarded performance.now(); handing it
@@ -607,8 +607,13 @@ export function createDiagnosticsRuntime(
     // at five notifications and seven captured errors from two logs.
     onError: (error) => {
       whilePublishing(() => {
-        // eslint-disable-next-line no-console
-        console.error("[dev-toolbar/diagnostics] a store listener threw.", error);
+        // A throwing host console must not escape `flush()`, which `capture()` and `dispose` call.
+        try {
+          // eslint-disable-next-line no-console
+          console.error("[dev-toolbar/diagnostics] a store listener threw.", error);
+        } catch {
+          /* nothing left to report it to */
+        }
       });
     },
   });
@@ -788,6 +793,8 @@ export function createDiagnosticsRuntime(
       live = true;
 
       const dispose = () => {
+        // The store cannot cancel a booked trailing publish short of `destroy()`, which would forbid a restart.
+        whilePublishing(() => store.flush());
         live = false;
         // A queued counter write is now void: it would notify subscribers of
         // an extension that is gone.

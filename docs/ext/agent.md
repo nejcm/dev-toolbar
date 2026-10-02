@@ -194,7 +194,13 @@ nothing. `pollMs` (default `500`) is how often the page checks in at all, and th
 the pickup latency for a queued command. Measured on the playground, where live metrics
 keep the snapshot changing: a check-in every 500 ms, and 9 distinct snapshots in 12 s,
 the gaps alternating 1.0 s and 2.0 s. A command's result always travels with a fresh
-snapshot, so a read straight after a write is never behind.
+snapshot, so a read straight after a write is never behind. Commands handed out together
+run one at a time, in the order the server queued them; each result is sent as soon as
+its command finishes, and any command handed out with a result runs before the next
+check-in. The playground receiver's deadline restarts when a command is handed out and
+whenever the page that took it delivers a result, so a command queued behind a slow one is
+not timed out while it waits its turn. `timeoutMs` (default `5000`) abandons a check-in
+the server never answers, so one hung request cannot stall every poll after it.
 
 With `allowRun: false` the handle carries no `runCommand`, so a queued command comes
 back `{ ok: false, reason: "run-not-allowed" }`: a consumer who wanted reads gets a
@@ -251,6 +257,7 @@ a body, never a wait:
 | No command declares that id | `404` | `unknown-command` |
 | The command ran and threw (e.g. refused its input) | `422` | `threw`, with `error` |
 | Queued, nobody picked it up within `timeoutMs` (10 s) | `504` | `timeout`, with `pickedUp: false` |
+| Picked up, then no result from the page for `timeoutMs` | `504` | `timeout`, with `pickedUp: true` |
 | Cross-origin `Origin` header | `403` | `cross-origin` |
 
 The `GET` routes answer `200` with a stale snapshot and `connection.stale: true` rather

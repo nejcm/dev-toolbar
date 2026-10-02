@@ -39,7 +39,7 @@ export function useDisclosure(
     };
 
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== "Escape") return;
+      if (event.key !== "Escape" || event.defaultPrevented || event.isComposing) return;
       event.stopPropagation();
       setOpen(false);
       triggerRef.current?.focus();

@@ -28,11 +28,14 @@ const extensions = [
 palette. `value` is optional: leave it out and the application's own value is read off
 the surface with `getComputedStyle`, captured *before* the edit lands so the panel can
 keep showing it. Supply `onApply` if you also want the edit mirrored into your own
-theme provider; the live preview happens either way.
+theme provider; the live preview happens either way. `onApply(name, undefined)` means
+the edit is gone, so turning preview off or unmounting the toolbar does not call it: a
+mirror you keep still shows the edit while preview is off.
 
 Types are `color`, `length`, `number` and `string`. A `number` or `length` that does not
 parse is **refused with the draft kept**, never coerced — the `/ext/flags` rule. A
-`color` gets a swatch, and a native picker when the current value is hex.
+`color` gets a swatch, and a native picker when the current value is hex. The picker
+has no alpha channel, so a 4- or 8-digit hex keeps its alpha when you pick a new colour.
 
 ## It changes what your app looks like
 
@@ -79,7 +82,8 @@ So it behaves like `/ext/flags`, which changes what your app *does*:
 - **Preview: off** holds every edit back without discarding it, which is the
   before/after comparison. Turning it back on re-applies through the same path.
 - **An edit the catalogue no longer declares still gets a row.** It is still being
-  written to your page, so it is shown, tagged and clearable.
+  written to your page, so it is shown, tagged and clearable. Its value is masked, and
+  omitted from the recipe and share link: no declaration says it was not `sensitive`.
 - **Hiding the bar does not revert anything.** Deliberately unlike `/ext/overlays`: an
   edit is a state you chose, not a drawing.
 
@@ -108,7 +112,9 @@ Four outputs, all built from one already-redacted snapshot:
 A pasted recipe, a `preset` you supply, and a link all go through the **same** filter:
 only token names your current catalogue declares, and only values the editor itself
 would accept — which is what keeps `url(...)` in somebody's link from making your page
-fetch from their host. Anything dropped is counted and named.
+fetch from their host. Anything dropped is counted and named. A recipe's `surface`
+and `mode` are recorded but not applied: its edits land on the surface selected in the
+panel, and the colour mode is left alone.
 
 Presets are `ThemeRecipe`s **you** compute, which is where a palette generator belongs:
 
@@ -146,7 +152,8 @@ matches value *shapes* anchored to the whole string, so a credential buried
 mid-sentence in your own prose survives.
 
 The recipe JSON and the share link are built by one function and carry the **raw**
-values, masked ones omitted with a count. They deliberately get no second
+values, masked ones omitted with a count. The share link starts from the current URL
+with its credential-shaped query and fragment parameters masked by `redactUrl()`. They deliberately get no second
 key-matching pass, for the reason above: masking `--session-panel-bg` in a document
 something is about to apply is how a theme stops round-tripping.
 

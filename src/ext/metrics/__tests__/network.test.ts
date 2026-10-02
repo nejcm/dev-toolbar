@@ -482,6 +482,90 @@ describe("network collector — fetch present", () => {
     controller.abort();
   });
 
+  it("ignores a patched request that completes after reset", async () => {
+    let settle: (value: Response) => void = () => {};
+    globalThis.fetch = vi.fn(
+      () => new Promise<Response>((resolve) => (settle = resolve)),
+    ) as unknown as typeof fetch;
+    const collector = createNetworkCollector({ patchXhr: false });
+    const controller = new AbortController();
+    collector.start(context(controller, { t: 0 }));
+    const pending = globalThis.fetch("/api/slow");
+
+    collector.reset();
+    settle(response(500));
+    await pending;
+
+    const diagnostics = collector.diagnostics(0) as {
+      totals: { completed: number; failed: number };
+    };
+    expect(diagnostics.totals).toMatchObject({ completed: 0, failed: 0 });
+    expect(collector.series?.size).toBe(0);
+    controller.abort();
+  });
+
+  it("keeps a windowed failure after the ring evicts it", async () => {
+    const statuses = [500, 200];
+    globalThis.fetch = vi.fn(async () =>
+      response(statuses.shift() ?? 200),
+    ) as unknown as typeof fetch;
+    const collector = createNetworkCollector({ patchXhr: false, historySize: 1 });
+    const controller = new AbortController();
+    collector.start(context(controller, { t: 0 }));
+    await globalThis.fetch("/api/failing");
+    await globalThis.fetch("/api/ok");
+    expect(collector.read(0).severity).toBe("bad");
+    controller.abort();
+  });
+
+  it("ages a hung request off the chip once it is unlisted, yet still records its end", async () => {
+    const settles: ((value: Response) => void)[] = [];
+    globalThis.fetch = vi.fn(
+      () => new Promise<Response>((resolve) => settles.push(resolve)),
+    ) as unknown as typeof fetch;
+    const clock = { t: 0 };
+    const collector = createNetworkCollector({ patchXhr: false, historySize: 1 });
+    const controller = new AbortController();
+    collector.start(context(controller, clock));
+    const hung = globalThis.fetch("/api/hung");
+    void globalThis.fetch("/api/listed");
+
+    clock.t = 59_999;
+    expect(collector.read(clock.t).value).toBe(2);
+    clock.t = 60_001;
+    expect(collector.read(clock.t).value).toBe(1);
+
+    settles[0]?.(response(200));
+    await hung;
+    expect(collector.read(clock.t).value).toBe(1);
+    expect(detailOf(collector.read(clock.t))["Completed (session)"]).toBe("1");
+    controller.abort();
+  });
+
+  it("stops tracking hung patched requests once they are neither listed nor recent", () => {
+    globalThis.fetch = vi.fn(() => new Promise<Response>(() => {})) as unknown as typeof fetch;
+    const clock = { t: 0 };
+    const collector = createNetworkCollector({ patchXhr: false, historySize: 1 });
+    const controller = new AbortController();
+    collector.start(context(controller, clock));
+    for (let index = 0; index < 3; index += 1) void globalThis.fetch(`/api/hung-${index}`);
+
+    clock.t = 60_001;
+    expect(collector.diagnostics(clock.t)).toMatchObject({ active: 1, tracked: 1 });
+    controller.abort();
+  });
+
+  it("counts in-flight requests beyond the retained history", () => {
+    globalThis.fetch = vi.fn(() => new Promise<Response>(() => {})) as unknown as typeof fetch;
+    const collector = createNetworkCollector({ patchXhr: false, historySize: 1 });
+    const controller = new AbortController();
+    collector.start(context(controller, { t: 0 }));
+    void globalThis.fetch("/api/a");
+    void globalThis.fetch("/api/b");
+    expect(collector.read(0).display).toBe("2");
+    controller.abort();
+  });
+
   it("clears everything on reset", async () => {
     globalThis.fetch = vi.fn(async () => response(200)) as unknown as typeof fetch;
     const collector = createNetworkCollector({ patchXhr: false });
@@ -587,6 +671,19 @@ describe("network collector — instrumented client instead of a patch", () => {
     // The signal unsubscribes both handlers.
     controller.abort();
     expect(bus.listenerCount()).toBe(0);
+  });
+
+  it("marks a bus request failed on ok: false without a status or error", () => {
+    const bus = createEventBus<ToolbarEventMap>();
+    const collector = createNetworkCollector({ bus });
+    const controller = new AbortController();
+    collector.start(context(controller, { t: 0 }));
+    bus.emit("network-start", { requestId: "x", method: "GET", url: "/api/x" });
+    bus.emit("network-end", { requestId: "x", ok: false, duration: 0 });
+
+    expect(collector.entries(0)[0]?.state).toBe("failed");
+    expect(collector.read(0).severity).toBe("bad");
+    controller.abort();
   });
 
   it("keeps an evicted request pending until its matching end arrives", () => {
@@ -737,6 +834,35 @@ describe("network collector — instrumented client instead of a patch", () => {
     expect(diagnostics.pendingDropped).toBe(2);
     expect(diagnostics.totals.completed).toBe(1);
     expect(collector.entries?.(clock.t)[0]).toMatchObject({ id: "request-65", state: "ok" });
+    controller.abort();
+  });
+
+  it("stops counting bus starts as soon as their end can no longer be matched", () => {
+    const bus = createEventBus<ToolbarEventMap>();
+    const collector = createNetworkCollector({ bus, historySize: 1 });
+    const first = new AbortController();
+    collector.start(context(first, { t: 0 }));
+    for (let index = 0; index < 66; index += 1) {
+      bus.emit("network-start", { requestId: `request-${index}`, method: "GET", url: "/wait" });
+    }
+    expect(collector.read(0).value).toBe(64);
+
+    first.abort();
+    // Only the retained start can still be finished through the index after a restart.
+    expect(collector.read(0).value).toBe(1);
+  });
+
+  it("ages an unlisted bus start off the chip without waiting for another bus event", () => {
+    const bus = createEventBus<ToolbarEventMap>();
+    const clock = { t: 0 };
+    const collector = createNetworkCollector({ bus, historySize: 1 });
+    const controller = new AbortController();
+    collector.start(context(controller, clock));
+    bus.emit("network-start", { requestId: "old", method: "GET", url: "/old" });
+    bus.emit("network-start", { requestId: "listed", method: "GET", url: "/listed" });
+
+    clock.t = 60_001;
+    expect(collector.read(clock.t).value).toBe(1);
     controller.abort();
   });
 

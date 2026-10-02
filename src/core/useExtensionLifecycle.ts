@@ -161,6 +161,8 @@ export function useExtensionLifecycle(options: {
       } catch (error) {
         // eslint-disable-next-line no-console
         console.error(`[dev-toolbar] extension "${extension.id}" threw from start().`, error);
+        // Stays in `running` so it is not restarted, but releases what it acquired.
+        stopExtension(extension.id, entry);
       }
     }
   }, [
