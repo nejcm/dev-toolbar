@@ -25,7 +25,8 @@ throws is caught and shown in the palette rather than reaching the app.
 ## How to get to it (user POV)
 
 - Click the `⌘K` chip at the end of the bar.
-- Press `Cmd+K` (macOS) or `Ctrl+K` elsewhere, with focus outside a text field.
+- Press `Cmd+K` (macOS) or `Ctrl+K` elsewhere — `menu.shortcut` names the one
+  this platform uses (`Ctrl+K` on Linux).
 - Both still work when the chip has collapsed into `⋮`.
 - The playground's `cmds` panel lists the same commands as plain buttons — the
   declarative snapshot core exposes, plus a `Re-enumerate` button.
@@ -42,7 +43,9 @@ Throughout, `menu` is `read().diagnostics.find(d => d.id === "command-menu").dat
 running, error, recent, shortcut}`.
 
 - **Open with the keyboard.** Click the page body, then `computer`
-  `{"action":"key","text":"cmd+k"}`. Read: `menu.open` is `true`, `menu.query`
+  `{"action":"key","text":"cmd+k"}` on macOS, `ctrl+k` elsewhere (match
+  `menu.shortcut`). Clicking the chip (`find` role `button` name
+  `Commands (Ctrl+K)`) opens it too. Read: `menu.open` is `true`, `menu.query`
   is `""`, `menu.resultCount` equals `menu.commandCount` at baseline (an empty query filters nothing), `menu.activeIndex` is `0` and
   `menu.activeId` names the first command.
 - **Enumeration.** While the palette is open, `menu.commandCount` equals
@@ -57,8 +60,10 @@ running, error, recent, shortcut}`.
   menu.commandCount === s.commands.length - withInput.length   // must hold
   ```
 
-  `withInput` is `flags.set` and `theme-editor.setToken` in the playground
-  today — derive it, never hard-code the two. That identity failing *while
+  `withInput` was eight ids on 2026-10-02 — `flags.set`,
+  `theme-editor.setToken`, `a11y.export`, `a11y.highlight`,
+  `diagnostics.console.export` and `metrics.network.{export,copyAsCurl,pause}`
+  (42 commands, 34 in the palette) — derive it, never hard-code the list. That identity failing *while
   open* is the finding. Assert it **while open**: `close()` resets `query`,
   `results`, `activeIndex` and `error` but deliberately leaves `commands`
   alone, so a closed palette still reports the last enumeration
@@ -87,11 +92,14 @@ running, error, recent, shortcut}`.
   scraping option labels. The **grouping** is a rendering, not state: with an
   empty query the palette browses and puts the group in section headings
   (`[data-dtb-part="cmd-section"]`: `Diagnostics`, `Environment`, `Flags`,
-  `Overlays`, `Theme`, `Metrics`), and once you type it drops the headings and
+  `Overlays`, `Theme`, `Metrics`, `Accessibility` — plus `Recent` first once
+  anything has run, so the next open's `activeId` is the most recent
+  command), and once you type it drops the headings and
   puts the group on each option instead. Assert that half with a screenshot,
   or with a DOM read that says out loud it is checking markup.
 - **Filter.** `computer` `{"action":"type","text":"grid"}`. Read: `menu.query`
-  is `"grid"`, `menu.resultCount` is `4`, and `menu.activeId` is
+  is `"grid"`, `menu.resultCount` is `4` (unverified since the a11y and
+  metrics commands joined — re-derive), and `menu.activeId` is
   `overlays.toggle.grid` — the leader, selected. Type `zzzz` instead and
   `menu.resultCount` is `0` (the empty message is the rendering of that).
 - **Run.** With `overlays.toggle.grid` active, send
@@ -110,7 +118,10 @@ running, error, recent, shortcut}`.
   `menu.resultCount` is non-zero — proof the palette re-enumerates rather than
   rendering a captured list.
 - **A failing command.** Run one that throws and read `menu.error`: the
-  palette stays `open: true` and carries the message. Through the bridge the
+  palette stays `open: true` and carries the message. No input-less playground
+  command is built to throw, so this step has no ready-made target; a command
+  that vanished between open and run shows `That command is no longer
+  available.` instead. Through the bridge the
   same throw comes back as a value —
   `{ok: false, reason: "threw", error: "…"}` — which is the same failure seen
   from the other side, not a substitute for it.
@@ -127,7 +138,7 @@ running, error, recent, shortcut}`.
   label.** The query is split on whitespace and a command survives only if
   *every* term matches something (label, group, keywords), each term scored by
   prefix / word-start / infix / subsequence. So typing more only ever narrows:
-  `grid` leaves four options, `Column grid` narrows to exactly
+  `grid` leaves several options, `Column grid` narrows to exactly
   `Show overlay: Column grid`. A term that matches nothing empties the list,
   however good the other terms are — `grid zzzz` is empty, not "grid".
 - `Tab` is swallowed on purpose — the input is the only focusable thing inside
@@ -143,7 +154,10 @@ running, error, recent, shortcut}`.
   That is deliberate: the roster is already in `read().commands`, and
   repeating it inside a diagnostics contribution would put the biggest thing
   in a bug-report snapshot inside one of its own sections.
-- With focus inside a text field, `Cmd+K` may be consumed by the field.
+- The `Mod+K` listener is on `window` with no text-field check: only a handler
+  that calls `preventDefault` (or the toolbar being hidden) stops it.
+- `Enter`, arrows, `Home` and `End` held with `Ctrl`, `Meta`, `Alt` or `Shift`
+  do nothing inside the dialog — send them bare.
 - Any absolute count in this file is a checksum for one playground extension
   set at one moment, not a constant. It moved when contract v2 added
   `flags.set` and `theme-editor.setToken`, and it moves again the moment an

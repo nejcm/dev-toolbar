@@ -110,15 +110,16 @@ curl -s localhost:5273/__dev-toolbar/state \
 ```
 
 A healthy instance is `connection.connected: true`, `shell.mounted: true`,
-`instanceId: "playground"`, and a `diagnostics` roster of **13** — every
+`instanceId: "playground"`, and a `diagnostics` roster of **17** — every
 extension the playground mounts, including the bridge's own `agent`, whatever
-the bar looks like (7 `ok` and 6 `absent` in the baseline run).
+the bar looks like (9 `ok` and 8 `absent` on 2026-10-02).
 
 `shell.bar` is **not** the roster and is not a fixed number: it is only what is
 still *in* the bar at the current width. Measured at a `resize_window` of
-1280×800 with the pane hidden: 8 items — `environment`, `cmds`, `flags`,
-`theme-editor`, `overlays`, `tw`, `command-menu`, `user` — with
-`shell.overflow.present: true` and the other five collapsed into `···`. Assert
+1280×800 with the pane hidden (screenshot-flushed, 2026-10-02): 9 items —
+`environment`, `cmds`, `flags`, `kit-demo`, `tanstack-query`, `tanstack`,
+`tw`, `command-menu`, `user` — with `shell.overflow.present: true` and the
+other eight collapsed into `⋮`. Assert
 on the roster, or on a specific id, never on a bar count you did not just
 measure at a viewport you pinned.
 
@@ -146,7 +147,7 @@ curl -s localhost:5273/__dev-toolbar/state | jq '.extensions.flags.flags[] | sel
 
 # The whole roster of what each extension publishes
 curl -s localhost:5273/__dev-toolbar/state | jq '.extensions | keys'
-# ["agent","boom","cmds","command-menu","diagnostics","environment","flags","hydr","metrics","overlays","theme-editor","tw","user"]
+# ["a11y","agent","boom","cmds","command-menu","diagnostics","environment","flags","hydr","kit-demo","metrics","overlays","tanstack","tanstack-query","theme-editor","tw","user"]
 
 # The command registry, as ids
 curl -s localhost:5273/__dev-toolbar/commands | jq -r '.commands[] | "\(.id)  —  \(.label)"'
@@ -160,7 +161,8 @@ curl -s -X POST localhost:5273/__dev-toolbar/commands/flags.set \
 `.extensions.<id>` is each extension's own `diagnostics()` output — `flags`
 publishes `flags`, `overriddenCount`, `maskedCount`, `writable`, `reloadPending`;
 `environment` publishes `fields`, `maskedCount`, `severity`, `impersonating`;
-`metrics` publishes `metrics`, `memory`, `fps`, `delay`, `jank`, `network`; `overlays` publishes
+`metrics` publishes `metrics`, `memory`, `fps`, `delay`, `jank`, `network`,
+`custom`, `generatedAt`, `userAgent`, `url`; `overlays` publishes
 `on`, `active`, `activeCount`; `command-menu` publishes `open`, `query`,
 `resultCount`, `commandCount`; `theme-editor` publishes `overrides`, `mode`,
 `surface`, `refusedCount`; `diagnostics` publishes its capture *summary*. `null`
@@ -218,8 +220,8 @@ window.__DEV_TOOLBAR__.instances["playground"].read()
 
 It returns `{ instanceId, contractVersion, visible, allowRun, commands, shell,
 diagnostics }`, already redacted. `shell` is the chrome — `mounted`,
-`position`, `density`, `colorScheme`, `heightVariable`, `bar`, `overflow`,
-`activePanel`. `diagnostics` is one entry per present, non-hidden extension,
+`position`, `density`, `colorScheme`, `heightVariable`, `settings`
+(`{present, open}` for the cog menu), `bar`, `overflow`, `activePanel`. `diagnostics` is one entry per present, non-hidden extension,
 each `{ id, label, status, data }`; `status: "absent"` means *had nothing to
 say*, `"failed"` means *blew up*, and the difference matters — a roster you
 only half read looks like a clean run.
@@ -334,10 +336,11 @@ preference:
 Use `mcp__Claude_Browser__find` to turn a role and name into a `ref_N`, then
 click the ref. Never click a coordinate you have not just screenshotted.
 
-**Input delivery is not guaranteed.** While the Browser pane is hidden,
-`computer {"action":"key"}` reaches the page not at all — not even a plain
-letter raises a `keydown` — and a `left_click` is occasionally dropped too;
-`type` and state reads keep working. So: pin a viewport with `resize_window`
+**Input delivery is not guaranteed.** While the Browser pane is hidden, one
+run saw `computer {"action":"key"}` reach the page not at all — not even a
+plain letter raised a `keydown` — and a `left_click` occasionally dropped;
+the 2026-10-02 run, also hidden, had every key land. Treat delivery as
+unknown either way. So: pin a viewport with `resize_window`
 (`{"width": 1280, "height": 800}`) before measuring anything, check
 `mcp__Claude_Browser__tabs_context` (it reports whether the pane is displayed)
 before a keyboard step, and after every input **assert the effect landed**
@@ -364,8 +367,11 @@ a weaker test of anything that guards against oscillation.
 
 **Keys.** Send `Enter`, not `Return` — `Return` reaches the page as a key the
 palette's `switch (event.key)` does not match, so it silently does nothing.
-`cmd+k` opens the palette on this platform (`Mod` is exclusive: on macOS
-`ctrl+shift+.` does not toggle the bar, `cmd+shift+.` does).
+`Mod` is `cmd` on macOS and `ctrl` elsewhere, and exclusive: on macOS
+`ctrl+shift+.` does not toggle the bar, `cmd+shift+.` does. The palette's
+`ext("command-menu").shortcut` names this platform's binding (`Ctrl+K` on
+Linux). Key text is literal — `ctrl+shift+.`; `ctrl+shift+period` reaches the
+page as some other key and silently toggles nothing.
 
 **Waiting.** The bar's overflow runs off a `ResizeObserver` and the environment
 extension polls every 500 ms, so a read immediately after a resize or a

@@ -41,25 +41,26 @@ Everything here is `read().shell` — `bar` (what is still in the regions) and
 `overflow` (`{present, open, items}`).
 
 - **Nothing collapsed at full width.** Read. `shell.overflow.present` is
-  `false` and `shell.bar` lists all sixteen roster ids. **1280×800 is not
-  wide enough for this** — measured there, `overflow.present` is already `true`
-  with 8 items in the bar. Widen until `present` flips to `false` and say in
+  `false` and `shell.bar` lists all seventeen roster ids. **1280×800 is not
+  wide enough for this** — measured there on 2026-10-02, `overflow.present` is
+  already `true` with 9 items in the bar. Widen until `present` flips to `false` and say in
   the report what width that took, or treat this step as unrun.
 - **Narrow the window.** `resize_window` with `{"width": 520, "height": 800}`,
   then re-read until it settles. Read: `shell.overflow.present` is `true` and
-  `shell.bar` is down to the highest-priority chips — `environment`, `cmds`,
-  `command-menu`, `user` (measured 2026-09-08; `flags` collapsed too once the
-  playground grew its TanStack chips, so assert on containment and order,
-  never on this exact list). The `⋮` button's accessible name is not published state — `find`
+  `shell.bar` is down to the highest-priority chips — `environment`,
+  `command-menu`, `user` (measured 2026-10-02, screenshot-flushed; `cmds` and
+  `flags` have collapsed too as the playground grew chips, so assert on
+  containment and order, never on this exact list). The `⋮` button's accessible name is not published state — `find`
   role `button` name `More developer toolbar items` if you want to assert it.
-- **Collapse order.** The ids missing from `bar` are `agent`, `theme-editor`,
-  `overlays`, `metrics`, `hydr`, `tw`, `boom`, `diagnostics` — everything below
-  `flags`' priority of 80. Lowest priority goes first, so the order they leave
-  the bar in as it narrows is `agent` (-1), `boom` (5), `diagnostics` (10),
-  `hydr` (20), `metrics` (35), `theme-editor` (45), `overlays` (55), `tw` (70):
-  `tw` is the last of them to collapse, not `theme-editor`. The
-  priorities are in `examples/playground/src/extensions.tsx`; re-derive them
-  there rather than trusting this list.
+- **Collapse order.** Lowest priority goes first; on a tie the later item
+  goes first. The order they leave the bar in as it narrows is `agent` (-1),
+  `boom` (5), `diagnostics` (10), `hydr` (20), `a11y` (25), `metrics` (35),
+  `theme-editor` (45), `overlays` (55), `kit-demo` (60), `tanstack-query`
+  (65), `tanstack` (66), `tw` (70), `flags` (80), `cmds` (85), then
+  `command-menu` and `environment` (both 90). The priorities are in
+  `examples/playground/src/extensions.tsx` (plus `kitDemo`, `embedDemo.tsx`,
+  `tanstackDemo.tsx`, and command-menu's default of 90); re-derive them there
+  rather than trusting this list.
 - **Open the menu.** Click `[data-dtb-part="overflow-button"]`. Read:
   `shell.overflow.open` is `true` and `shell.overflow.items` lists those same
   ids in bar order — ascending `order`, **not** priority (`metrics`, order 30,
@@ -68,7 +69,7 @@ Everything here is `read().shell` — `bar` (what is still in the regions) and
   is closed; read it only after opening. The rows are
   `flex-shrink: 0`, so a menu taller than its 50vh cap scrolls rather than
   letting a tall row (the metrics list) paint over its neighbours —
-  `e2e/overflow.spec.ts` guards this.
+  `examples/playground/e2e/overflow.spec.ts` guards this.
 - **A collapsed extension still works.** Click the `overlays` entry inside the
   menu (`[data-dtb-part="overflow-menu-item"][data-dtb-ext-id="overlays"] [data-dtb-part="trigger"]`)
   and drive it per [overlays.md](./overlays.md). The overlay turns on from
@@ -79,7 +80,7 @@ Everything here is `read().shell` — `bar` (what is still in the regions) and
   click put it.
 - **Restore.** `resize_window` with `{"preset": "desktop"}`, then re-read.
   Read: `shell.bar` is back to whatever the un-emulated pane fits — which is
-  `overflow.present: false` and sixteen ids only if the pane is wide enough,
+  `overflow.present: false` and seventeen ids only if the pane is wide enough,
   the same caveat as the first step.
 - **The collapse never loops.** *(Listener mechanics confirmed live; the
   stepping sequence itself not yet driven end to end.)* This is a claim about
@@ -190,17 +191,13 @@ in the window, not that none ever can.
   between them when the pane is hidden. Without one no frame is ever
   delivered, the two reads agree trivially, and the "settled" layout is the
   old one: the false negative this feature is most exposed to.
-- Item widths are cached per extension. On `main` as this was written they
-  are measured once, so a chip that grows after mount (metrics as numbers
-  arrive) keeps its mount-time width until the next resize. The pending PR
-  stack #21–#28 (`fix(core): survive hydration, self-resizing chips …`) puts
-  a `ResizeObserver` on every item host, so such a chip re-measures itself and
-  can flip the collapsed set on its own — at most **four** item-driven flips,
-  after which item resizes are ignored until the bar's own width changes
-  (`MAX_ITEM_DRIVEN_FLIPS` in `src/core/Overflow.tsx`). Source-confirmed,
-  not driven: that latch is the oscillation guard the loop check above
-  stresses, and the count is a checksum to re-derive from the source, not a
-  constant.
+- Every item host and both regions sit under a `ResizeObserver`, so a chip
+  that grows after mount (metrics as numbers arrive) re-measures itself and
+  can flip the collapsed set on its own. The oscillation guard is cycle
+  detection in `src/core/collapse.ts`, not a flip count: it remembers the
+  decisions held since the last "honest" reading (bar width, padding, gap,
+  chrome or roster change) and refuses only a *return* to a smaller decision
+  already held. Source-confirmed; the loop check above is what stresses it.
 - `command-menu` collapses like anything else, and `⌘K` keeps working when it
   does — it lives in the overlay slot. Do not treat a missing `⌘K` chip as a
   broken palette.

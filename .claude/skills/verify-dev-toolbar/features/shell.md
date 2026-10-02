@@ -37,8 +37,10 @@ Preconditions:
 - A viewport is pinned: `resize_window` with `{"width": 1280, "height": 800}`.
   Without it, a hidden Browser pane reports a zero-sized viewport (see
   Gotchas).
-- The Browser pane is **displayed** for the keyboard steps. `computer`
-  `{"action":"key"}` delivers nothing at all while it is hidden.
+- Every keyboard step asserts its effect. Key delivery to a hidden pane has
+  been measured both ways (none at all in an earlier run; every key landed on
+  2026-10-02 with `tabs_context` reporting the pane hidden), so a key that
+  changed nothing is a dropped event until a retry says otherwise.
 - If it is hidden anyway, every frame-driven step below — the height variable
   and inset after a panel opens, anything the bar re-lays out — is *act →
   `computer {"action":"screenshot"}` → read*, and the report says so (see
@@ -46,8 +48,8 @@ Preconditions:
 
 - **Mount.** State read (`curl … /state`, or the bridge in-page). `instanceId`
   is `"playground"`, `shell.mounted` is `true`, and `diagnostics` carries the
-  sixteen-extension roster. `shell.bar` is the *width-dependent* subset — 8
-  ids at the mandated 1280×800, see the README — so assert on the ids you care
+  seventeen-entry roster. `shell.bar` is the *width-dependent* subset — 9
+  ids at the mandated 1280×800 on 2026-10-02, see the README — so assert on the ids you care
   about, not on a count.
   The bar's accessible name is not published state — check it with `find` for
   role `toolbar` name `Developer toolbar`.
@@ -56,26 +58,30 @@ Preconditions:
   the matching `shell.bar` entry has `panelOpen: true`, and (page read)
   `storage["dtb:v1:playground:activePanel"]` is `"\"flags\""`.
 - **One panel at a time.** Click the environment chip, by CSS selector:
-  `[data-dtb-part="item"][data-dtb-ext-id="environment"] [data-dtb-part="trigger"]`. It has no
-  `aria-label`, so `find` by role `button` name `Environment` matches nothing —
-  its accessible name is its text content, `envstaging`. Bridge read:
+  `find` role `button` name `Environment, staging` (its `aria-label`; it
+  gains `, impersonating` while impersonation is on), or
+  `[data-dtb-part="item"][data-dtb-ext-id="environment"] [data-dtb-part="trigger"]`. Bridge read:
   `shell.activePanel` is `"environment"` and no other `shell.bar` entry reports
   `panelOpen`.
 - **Height and inset follow the panel.** Read before and after opening a panel.
   `shell.heightVariable` is
-  `{name: "--dev-toolbar-height-playground", value: "30px"}` at rest and grows
-  to the bar-plus-panel height (`350px` at the default panel height); the page
-  read's `inset.bottom` equals it exactly. The bridge reports only the
-  instance-scoped name; the unsuffixed `--dev-toolbar-height` is published as
-  well because this is the page's only toolbar, and the header's
-  `height-readout` shows it — it should read the same value as the bridge.
-  `toggle-enabled` off sets the readout to `(unset)`; on again brings it back.
+  `{name: "--dev-toolbar-height-playground", value: "32px"}` at rest (compact
+  density) and grows to the bar-plus-panel height (`352px` at the default
+  panel height, measured 2026-10-02); the page read's `inset.bottom` equals it
+  exactly. The bridge reports only the instance-scoped name; the unsuffixed
+  `--dev-toolbar-height` is published as well because this is the page's only
+  toolbar — read it with
+  `getComputedStyle(document.documentElement).getPropertyValue("--dev-toolbar-height")`,
+  which should equal the bridge value. The playground has no on-page readout
+  of either.
 - **Move the bar.** Click `[data-testid="toggle-position"]`. Bridge read:
   `shell.position` is `"top"`. Page read: `inset.position` is `"top"`,
   `inset.top` carries the height, `inset.bottom` is `0px`, and
   `storage["dtb:v1:playground:position"]` is `"\"top\""`.
 - **Keyboard toggle.** Click the page body once so the document has focus, then
-  `computer {"action":"key","text":"cmd+shift+."}`. Bridge read: `visible` is
+  `computer {"action":"key","text":"cmd+shift+."}` on macOS, `ctrl+shift+.`
+  elsewhere — the literal `.`; `ctrl+shift+period` reaches the page as some
+  other key and toggles nothing. Bridge read: `visible` is
   `false` and `shell.mounted` is `false` — a hidden bar is removed from the
   DOM, not just visually hidden. The handle keeps answering throughout: core
   reports visibility and never pauses an extension on its behalf, so nothing
@@ -89,8 +95,9 @@ Preconditions:
   (`position: top`, `visible: false`), and re-showing the bar reopens the
   stored panel (`shell.activePanel`).
 - **Error isolation.** Page read at baseline. `errorChips` contains exactly
-  `{extension: "boom", slot: "compact"}`, while `diagnostics` still carries all
-  sixteen roster entries and every other extension is still reachable in
+  `{extension: "boom", slot: "compact"}` (with `role="status"`) — but only
+  while `boom` is rendered: at 1280×800 it is collapsed, so open the `⋮` menu
+  first. `diagnostics` still carries all seventeen roster entries and every other extension is still reachable in
   `shell.bar` or `shell.overflow` — one extension throwing from both slots
   costs one chip and nothing else. This is the one extension fact still read from markup, and
   deliberately: a slot that threw rendered nothing and has no state to
@@ -107,11 +114,11 @@ Preconditions:
   read `0`, so every measurement here silently "fails" — fix it by pinning a
   viewport with `resize_window` (`{"width": 1280, "height": 800}`), which works
   whether or not the pane is on screen, and reset it in cleanup. Keyboard:
-  `computer {"action":"key"}` reaches the page not at all — not even a plain
-  letter raises a `keydown` — while `left_click` and `type` keep working. There
-  is no workaround for that one; `tabs_context` reports whether the pane is
-  displayed, so check it and ask the user to show the pane before the keyboard
-  steps rather than reporting a shortcut as broken. Frames: while the pane is
+  one run saw `computer {"action":"key"}` reach the page not at all while
+  hidden; the 2026-10-02 run saw `ctrl+k`, `Enter`, `Escape` and
+  `ctrl+shift+.` all land with `tabs_context` reporting the pane hidden. Assert
+  every key's effect, retry once, and only then ask the user to show the pane
+  rather than reporting a shortcut as broken. Frames: while the pane is
   hidden the document is `visibilityState: "hidden"` and the browser suspends
   the rendering pipeline outright — `requestAnimationFrame` never ticks and
   `ResizeObserver` callbacks are never delivered, not even the initial
@@ -128,9 +135,9 @@ Preconditions:
   change instead of the stream a visible resize produces, so it is a weaker
   test of anything that guards against oscillation.
 - `shell.heightVariable.name` reports the instance-scoped
-  `--dev-toolbar-height-playground`. The playground's `height-readout` reads the
-  *unsuffixed* name, which a lone instance also publishes; it shows `(unset)`
-  only while the toolbar is disabled or a second instance is mounted.
+  `--dev-toolbar-height-playground`. The *unsuffixed* name is also published
+  while this is the only instance, and is absent while the toolbar is disabled
+  or a second instance is mounted.
 - Position, visibility and the active panel are store state, not props.
   Re-rendering `<DevToolbar>` with a different `defaultPosition` will not move
   a bar that already has a stored position.

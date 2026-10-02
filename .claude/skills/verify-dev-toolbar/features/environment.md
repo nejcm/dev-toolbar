@@ -45,10 +45,10 @@ run-together problem and no marker to strip out of the text.
 - **Read it with the panel shut.** `env.environment` is `"staging"`,
   `env.severity` is `"warn"`, `env.supplied` is `true`, and `env.fields` has 20
   entries across groups `build`, `session` and `client`. Then click
-  `[data-dtb-part="item"][data-dtb-ext-id="environment"] [data-dtb-part="trigger"]` to prove the
-  panel opens — that CSS selector, because the chip carries no `aria-label` and
-  a `find` for role `button` name `Environment` matches nothing; its accessible
-  name is its own text, `envstaging`. `shell.activePanel` becomes
+  the chip to prove the panel opens — `find` role `button` name
+  `Environment, staging` (its `aria-label`, which gains `, impersonating`
+  while impersonation is on), or
+  `[data-dtb-part="item"][data-dtb-ext-id="environment"] [data-dtb-part="trigger"]`. `shell.activePanel` becomes
   `"environment"`.
 - **The four secrets are masked.** These are equality assertions on
   `env.fields`, not substring games:
@@ -79,13 +79,15 @@ run-together problem and no marker to strip out of the text.
   Then read the clipboard with `navigator.clipboard.readText()`. The four
   secrets are absent and the panel's footer states the masked count (`4 here`
   at baseline).
-- **Impersonation.** Click `[data-testid="env-impersonate"]` and wait one poll
-  (500 ms). Read: `env.impersonating` is `true`, `env.severity` is `"bad"`
+- **Impersonation.** Click `[data-testid="env-impersonate"]` and wait about
+  1 s (a 500 ms poll plus the store's 250 ms throttle). Read: `env.impersonating` is `true`, `env.severity` is `"bad"`
   (impersonation outranks the environment), and the `impersonation` field
-  reads the actor and subject with `alarming` among its `markers`. The banner
+  reads `ACTIVE — staff_1 → usr_123` with `alarming` among its `markers`; the
+  chip's `aria-label` is `Environment, staging, impersonating` (driven
+  2026-10-02). The banner
   itself is a rendering — screenshot it, or `find` role `alert`. Click again to
   restore.
-- **Empty context.** Click `[data-testid="env-supply"]` and wait one poll.
+- **Empty context.** Click `[data-testid="env-supply"]` and wait about 1 s.
   Read: `env.supplied` is `false` and `env.environment` is `"unknown"` — never
   inferred from the hostname. The panel replaces the groups with an `env-empty`
   note rather than going blank; that half is a rendering. Click again to
@@ -98,8 +100,9 @@ run-together problem and no marker to strip out of the text.
 - The chip is `warn` severity at baseline because the environment is `staging`.
   That is the resting state, not a finding.
 - The extension polls every 500 ms, so a read fired immediately after an
-  `env-*` fixture click still shows the previous value. Wait a poll, or
-  re-read until it settles.
+  `env-*` fixture click still shows the previous value, and the store
+  throttles publishes to 250 ms on top. Wait about 1 s, or re-read until it
+  settles.
 - Reading the clipboard needs the pane focused and may prompt for permission.
   When it is unavailable, say the copy path was not verified — do not infer it
   from the panel, which is a different render.
@@ -112,13 +115,11 @@ run-together problem and no marker to strip out of the text.
   `title` or a `data-` attribute to compare against. Nothing in the DOM proves
   the redactor saw the secret — the fixture in `extensions.tsx` is the record
   of what was fed in, so cite it alongside the artifact.
-- The panel root `[data-dtb-part="env-panel"]` carries no `aria-label` once
-  the pending PR stack #21–#28 lands (a role-less `div` with a label is an
-  ARIA violation, so it was removed). The panel's accessible name is core's:
-  the `[data-dtb-part="panel"]` host is a `region` named `Environment`
-  (`src/core/PanelHost.tsx`), so `find` by role `region` still resolves; the
-  chip is the one with no name of its own (`envstaging`). Source-confirmed,
-  not driven.
+- The panel root `[data-dtb-part="env-panel"]` carries no `aria-label` (a
+  role-less `div` with a label is an ARIA violation). The panel's accessible
+  name is core's: the `[data-dtb-part="panel"]` host is a `region` named
+  `Environment` (`src/core/PanelHost.tsx`), so `find` by role `region`
+  resolves. Source-confirmed, not driven.
 - `route`, `viewport` and `connection` in the `client` group are detected by
   the extension, not supplied by the app — `source: "detected"` and `markers`
   containing `detected` say so. They change with the viewport you pinned.

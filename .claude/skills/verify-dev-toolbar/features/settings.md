@@ -1,10 +1,11 @@
 # Viewer settings
 
-A cog at the end of the bar opens the viewer's own Settings menu: density,
-colour scheme and position for the whole bar, then one row per present
+A cog at the end of the bar opens the viewer's own Settings menu: position,
+density and colour scheme (in that order) for the whole bar, then one row per present
 extension with a "shown in bar" checkbox and, for the seven extensions that
 declare `presets`, a presentation preset. Every change is written to the
-toolbar's storage, so it survives a reload, and **Reset toolbar settings**
+toolbar's storage — except picking the consumer's own default, which removes
+the key instead — so it survives a reload, and **Reset toolbar settings**
 returns all of it to the consumer's defaults without touching the open panel,
 the panel height or any extension's own data.
 
@@ -80,7 +81,7 @@ Everything here is `read().shell` plus `storage()`: `settings`
 - **Proof.** The before/after bridge reads with `storage()`, and a screenshot
   of the open menu at 1280 px and at 375 px.
 
-`e2e/settings.spec.ts` runs every step above.
+`examples/playground/e2e/settings.spec.ts` runs every step above.
 
 ## Gotchas
 

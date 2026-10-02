@@ -2,8 +2,12 @@
 
 Each extension factory takes one `presentation` option — a preset, an icon the
 *consumer* supplies as a `ReactNode`, a render callback and an accessible-name
-override. The playground exercises it on `metrics`, `flags`, `overlays` and `a11y` with
-inline `<svg>`s it owns itself (`examples/playground/src/barIcons.tsx`), which
+override. The playground passes an icon to all seven preset-capable
+extensions (`metrics`, `flags`, `overlays`, `a11y`, `environment`,
+`diagnostics`, `theme-editor`) in every mode — with no preset they still
+resolve to `default` and paint what they always did — but the header toggle
+only changes the preset of `metrics`, `flags`, `overlays` and `a11y`. The icons
+are inline `<svg>`s it owns itself (`examples/playground/src/barIcons.tsx`), which
 is the proof no icon library is bundled, vendored or peer-depended, and on
 `agent` with the icon half of the narrowed two-knob option — no preset, because
 that chip has no value and no short word of its own (ADR-004, "Group C").
@@ -57,13 +61,17 @@ Preconditions:
 
 - Baseline per [README](./README.md), viewport pinned to 1280×800.
 - **The resting playground is `default`**, deliberately — with one exception:
-  it passes no `presentation` at all except on `overlays`, which is built
+  no extension carries a preset except `overlays`, which is built
   `{ preset: "icon-value", icon: OVERLAYS_ICON }` at rest and reads `▤ off` /
   `▤ 2 on` rather than `overlays off`. Every width the rest of this map
   measured still holds for the other chips; the `overlays` chip is narrower
   than the pre-#103 measurements, so re-measure before quoting a bar count that
   depends on it. Anything measured after a click on **Bar icons** is a different bar,
   and a report that quotes a chip list must say which mode it was in.
+- **Clear Settings first.** A preset the viewer chose in the Settings menu
+  ([settings.md](./settings.md)) overrides the factory preset and breaks
+  every per-mode expectation here; `localStorage.clear()` plus a reload, or
+  **Reset toolbar settings**, before and after.
 - The pane must be **displayed** for the flip: the collapse runs off a
   `ResizeObserver`, and a hidden pane delivers no frames (see
   [shell.md](./shell.md)). Hidden, follow every click with

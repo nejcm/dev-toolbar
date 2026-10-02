@@ -54,8 +54,9 @@ page read.
   from the page read's own `barRect`. The result is inside the bar — at
   baseline, the environment chip's `env-label` — never the overlay. Assert the
   stacking, not the geometry: the layer's rect *does* extend across the bar's
-  coordinates, and it is `pointer-events: none` plus the root's
-  `z-index: 2147483000` that keep the bar on top. Close the palette first: its
+  coordinates, and it is the surface's `z-index: -1` inside the root (whose
+  own `z-index: 2147483000` lifts the whole toolbar above the app) that keeps
+  the bar on top; `pointer-events: none` is what lets clicks through. Close the palette first: its
   own `cmd-scrim` is over the bar while it is open, and `elementFromPoint`
   will say so.
 - **Clicks pass through.** `computer` `scroll_to` then `left_click` the
@@ -67,9 +68,11 @@ page read.
   from the child rather than the host.
 - **Focus order flags the bad controls.** Turn on `Show overlay: Focus order`
   (`runCommand("overlays.toggle.focus")`, or the palette). Read:
-  `ext("overlays").on` contains `focus`, `focusCount` is the number of tab
-  stops the scan found, `focusTruncated` is `false` (nothing hit the 200-item
-  cap) and `unnamedCount` is non-zero — the playground deliberately ships
+  `ext("overlays").on` contains `focus`, `focusCount` is the number of badges
+  *painted in the viewport* (scroll-dependent), `focusTruncated` is `false`
+  (nothing hit the 200-item cap, which counts only rendered tab stops) and
+  `unnamedCount` — counted over every rendered tab stop, on screen or not, so
+  it can exceed `focusCount` (19 vs 34 on 2026-10-02) — is non-zero — the playground deliberately ships
   `[data-testid="overlay-unnamed"]` (an icon-only button with `aria-hidden`
   content) and `[data-testid="overlay-unnamed-input"]`. `unnamedCount` is the
   state assertion; *where the badges land* is the screenshot.
@@ -96,8 +99,10 @@ page read.
   `z-index` are always `auto` no matter what the extension does — reading them
   proves nothing, which is why the page read takes the child's instead. The
   layer inside is the `pointer-events: none` one (`childPointerEvents`), and
-  the stacking comes from the toolbar root's own `z-index`, so use
-  `elementFromPoint` for that rather than any `z-index` comparison.
+  the stacking comes from the surface's own `z-index: -1`
+  (`[data-dtb-part="ovl-surface"]`) inside the toolbar root's stacking
+  context, which sits above the app — so use `elementFromPoint` for that
+  rather than comparing `z-index` values across contexts.
 - The four overlays are independent. `activeCount: 1` after two toggle
   commands means one of them did not take, and `on` names which did.
 - A measurement that throws switches **everything** off and sets
@@ -110,9 +115,8 @@ page read.
   hand-waved. A screenshot alone is not proof of click-through — pair it with
   the counter. Equally, `on: ["grid"]` proves the extension believes the
   overlay is on; only the page read proves a layer was drawn.
-- The focus-order scan changes with the pending PR stack #21–#28
-  (`fix(ext/overlays): keep geometry current …`): an `aria-hidden="true"`
-  element that is still a Tab stop is no longer skipped but badged, with a
+- In the focus-order scan an `aria-hidden="true"` element that is still a Tab
+  stop is not skipped but badged, with a
   `[data-dtb-part="ovl-tag"]` inside its badge reading `aria-hidden` (a
   screen reader cannot see it, a keyboard user still lands on it), and
   anything inside an `inert` ancestor is skipped via `closest("[inert]")`
