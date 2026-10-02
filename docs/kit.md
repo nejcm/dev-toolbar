@@ -325,7 +325,9 @@ end for state that lives in React (below). `set()` is
 free when the value is unchanged by `Object.is`, so assigning from every render is
 fine. `derive` fans one subscription out over several inputs; `compute` reads them
 itself and runs on every `read()` — the runtime redacts and diffs the result, so
-nothing is memoised here.
+nothing is memoised here. If one input's `subscribe` throws, the inputs already
+subscribed are unsubscribed before the error propagates; the returned teardown stops
+every input, then rethrows the first teardown error.
 
 A store that notifies on every dispatch costs one rebuild per notification. That is
 the honest rate for "publish when the app changes"; a store noisier than the panel
@@ -347,6 +349,8 @@ option value can turn a dev tool into a busy loop; a non-finite `intervalMs` fal
 back to `fallbackMs` and then to 1000 ms, rather than to the floor — `pollMs: NaN`
 used to mean a different thing in different extensions; and teardown, wiring the
 `AbortSignal` `start(api)` already gave you so a stop is one listener, removed on stop.
+The interval is also capped at 2³¹−1 ms, the platform timer limit, above which an
+interval would fire every millisecond.
 An already-aborted signal, or a non-function `fn`, yields a no-op.
 
 ```ts
@@ -439,6 +443,11 @@ The extension author's hook. It subscribes a component to a
 `inject` is true, ensures the stylesheet from an effect. `getSnapshot` is passed as the
 server snapshot too, because extension stores are created eagerly from the same inputs —
 another shape, or a throw, would break SSR.
+
+The injected sheet is first-writer-wins, so `nonce` must be known on the first render
+where `inject` is true: a nonce that arrives later never reaches an existing sheet, and
+under `style-src 'nonce-…'` that sheet stays blocked. A host that resolves its nonce
+asynchronously keeps `inject` false until it has one.
 
 It is what makes a slot function cheap: the slot returns a component, and the component
 subscribes.
@@ -726,7 +735,9 @@ const { status, copy } = useCopyStatus();
 ```
 
 `copy(null)` reports `failed` without touching the clipboard, for the "there was
-nothing to copy" branch.
+nothing to copy" branch. Each write resets the status to `idle` until it settles, so a
+repeated identical outcome still changes the live region, and only the latest copy's
+outcome is reported — an earlier write settling late is ignored.
 
 ### `Chip`
 

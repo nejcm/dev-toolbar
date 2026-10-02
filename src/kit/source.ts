@@ -84,7 +84,8 @@ export function createSource<T>(initial: T): Source<T> {
 /**
  * One `Readable` over several. `compute` reads the inputs itself and runs on
  * every `read()` — the runtimes redact and diff what it returns, so it is not
- * memoised here; a change to any input notifies.
+ * memoised here; a change to any input notifies. A throwing `subscribe` unwinds the
+ * inputs already subscribed; teardown stops every input, then rethrows the first error.
  */
 export function derive<T>(
   inputs: readonly (Readable<unknown> | ReadableStore<unknown>)[],
@@ -93,9 +94,27 @@ export function derive<T>(
   return {
     read: compute,
     subscribe(listener) {
-      const stops = inputs.map((input) => input.subscribe(listener));
+      const stops: (() => void)[] = [];
+      const stopEach = (): unknown[] => {
+        const errors: unknown[] = [];
+        for (const stop of stops.splice(0)) {
+          try {
+            stop();
+          } catch (error) {
+            errors.push(error);
+          }
+        }
+        return errors;
+      };
+      try {
+        for (const input of inputs) stops.push(input.subscribe(listener));
+      } catch (error) {
+        stopEach();
+        throw error;
+      }
       return () => {
-        for (const stop of stops) stop();
+        const errors = stopEach();
+        if (errors.length > 0) throw errors[0];
       };
     },
   };

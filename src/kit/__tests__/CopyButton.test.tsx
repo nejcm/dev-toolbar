@@ -157,4 +157,43 @@ describe("useCopyStatus", () => {
     expect(installed.writes).toEqual(["summary", "json"]);
     expect(getByRole("status").textContent).toBe(statusText.failed);
   });
+  it("ignores a stale write that settles after a newer one", async () => {
+    const pending: (() => void)[] = [];
+    const failures: ((error: Error) => void)[] = [];
+    stubClipboard(
+      () =>
+        new Promise<void>((resolve, reject) => {
+          pending.push(resolve);
+          failures.push(reject);
+        }),
+    );
+    const { getByRole } = render(<MultipleCopyButtons />);
+
+    fireEvent.click(getByRole("button", { name: "Copy summary" }));
+    fireEvent.click(getByRole("button", { name: "Copy JSON" }));
+    await act(async () => failures[1]?.(new Error("denied")));
+    await act(async () => pending[0]?.());
+    expect(getByRole("status").textContent).toBe(statusText.failed);
+
+    fireEvent.click(getByRole("button", { name: "Copy summary" }));
+    fireEvent.click(getByRole("button", { name: "Copy missing link" }));
+    await act(async () => pending[2]?.());
+    expect(getByRole("status").textContent).toBe(statusText.failed);
+  });
+
+  it("changes the live region again when a repeated write has the same outcome", async () => {
+    stubClipboard();
+    const { getByRole } = render(<MultipleCopyButtons />);
+    const status = getByRole("status");
+    await act(async () => fireEvent.click(getByRole("button", { name: "Copy summary" })));
+
+    const seen: (string | null)[] = [];
+    const observer = new MutationObserver(() => seen.push(status.textContent));
+    observer.observe(status, { childList: true, characterData: true, subtree: true });
+    await act(async () => fireEvent.click(getByRole("button", { name: "Copy summary" })));
+    await act(async () => {});
+    observer.disconnect();
+
+    expect(seen).toEqual([statusText.idle, statusText.ok]);
+  });
 });

@@ -1,7 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, renderHook } from "@testing-library/react";
 import { StrictMode, useEffect, useLayoutEffect } from "react";
-import { createThrottledStore } from "../../runtime";
+import { STYLE_ATTRIBUTE, createThrottledStore } from "../../runtime";
+import { createStyleInjector } from "../styles";
 import { useExtensionSurface, useSource } from "../hooks";
 import { createSource } from "../source";
 
@@ -97,6 +98,39 @@ describe("useExtensionSurface", () => {
     rerender({ nonce: "b" });
     expect(ensureStyles).toHaveBeenCalledTimes(2);
     expect(ensureStyles).toHaveBeenLastCalledWith(undefined, "b");
+  });
+});
+
+describe("useExtensionSurface with a real injector", () => {
+  const entry = "kit-hooks-nonce-test";
+  const ensureStyles = createStyleInjector(entry, ".x{}");
+  const sheet = () =>
+    document.head.querySelector<HTMLStyleElement>(`style[${STYLE_ATTRIBUTE}="${entry}"]`);
+
+  afterEach(() => sheet()?.remove());
+
+  it("stamps a nonce resolved later when injection waits for it", () => {
+    const throttled = store("first");
+    const { rerender } = renderHook(
+      ({ nonce }: { nonce?: string }) =>
+        useExtensionSurface(throttled, nonce !== undefined, ensureStyles, nonce),
+      { initialProps: {} as { nonce?: string } },
+    );
+    expect(sheet()).toBeNull();
+
+    rerender({ nonce: "late" });
+    expect(sheet()?.nonce).toBe("late");
+  });
+
+  it("does not restamp a sheet first injected without a nonce", () => {
+    const throttled = store("first");
+    const { rerender } = renderHook(
+      ({ nonce }: { nonce?: string }) => useExtensionSurface(throttled, true, ensureStyles, nonce),
+      { initialProps: {} as { nonce?: string } },
+    );
+
+    rerender({ nonce: "late" });
+    expect(sheet()?.nonce).toBe("");
   });
 });
 

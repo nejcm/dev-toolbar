@@ -1,4 +1,4 @@
-import { forwardRef, useCallback, useState } from "react";
+import { forwardRef, useCallback, useRef, useState } from "react";
 import type { ButtonHTMLAttributes, HTMLAttributes } from "react";
 import { writeClipboardText } from "../runtime";
 
@@ -22,12 +22,18 @@ export interface UseCopyStatusResult {
 /** Own clipboard outcome state without owning any DOM. */
 export function useCopyStatus(): UseCopyStatusResult {
   const [status, setStatus] = useState<CopyStatus>("idle");
+  const latest = useRef(0);
   const copy = useCallback((text: string | null) => {
+    const attempt = ++latest.current;
     if (text === null) {
       setStatus("failed");
       return;
     }
-    void writeClipboardText(text).then((ok) => setStatus(ok ? "ok" : "failed"));
+    // Leave the last outcome so an identical one still changes the live region.
+    setStatus("idle");
+    void writeClipboardText(text).then((ok) => {
+      if (attempt === latest.current) setStatus(ok ? "ok" : "failed");
+    });
   }, []);
   return { status, copy };
 }

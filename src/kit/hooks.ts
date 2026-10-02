@@ -24,7 +24,7 @@ export function useExtensionSurface<T>(
 ): T {
   useEffect(() => {
     if (inject) ensureStyles(undefined, nonce);
-    // Keep `nonce` here so an asynchronously resolved value can reach the sheet's first insert.
+    // The sheet is first-writer-wins: a nonce arriving after injection never reaches it.
     // Injectors deduplicate in the document, so a new function identity is harmless.
   }, [inject, ensureStyles, nonce]);
 
