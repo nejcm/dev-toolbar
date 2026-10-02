@@ -37,7 +37,8 @@ next to the copy buttons, because unseen redaction looks exactly like "never
 supplied".
 
 For a restricted view, pass `fields` — an allowlist, where everything else is
-*dropped* rather than hidden, `extra:<key>` entries included.
+*dropped* rather than hidden, `extra:<key>` entries included. The chip follows
+it too: without `environment` and `impersonation` it reads `unknown`, uncoloured.
 
 ## Commands
 

@@ -34,8 +34,9 @@
  *   to the copy buttons — since unseen redaction looks identical to "never supplied".
  *
  * For a restricted view, pass `fields` (an allowlist — everything else is
- * dropped, not hidden, `extra:<key>` entries included), or compute `hidden`
- * yourself and leave the extension out of the array entirely.
+ * dropped, not hidden, `extra:<key>` entries included, and the chip's kind and
+ * impersonation marker with them), or compute `hidden` yourself and leave the
+ * extension out of the array entirely.
  */
 import { writeClipboardTextOrThrow } from "../../runtime";
 import { createEnvironmentRuntime } from "./runtime";

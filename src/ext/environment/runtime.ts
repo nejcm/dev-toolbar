@@ -40,7 +40,10 @@ export interface EnvironmentRuntimeOptions {
   /**
    * Restrict the panel to these fields (allowlist) — everything else is
    * dropped outright, never rendered or copied. `extra` entries are named
-   * `extra:<key>` and follow the same allowlist.
+   * `extra:<key>` and follow the same allowlist. `kind`, `severity` and
+   * `impersonating` derive only from kept fields: drop `environment` and the
+   * chip reads `unknown` with no production colour; drop `impersonation` and
+   * the impersonation marker, banner and its danger colour go.
    */
   fields?: readonly (EnvironmentFieldId | `extra:${string}`)[];
   /** Read route/viewport/connection from the browser. Default `true`. */
@@ -112,7 +115,7 @@ function detectViewport(): string | undefined {
 }
 
 function detectConnection(): string | undefined {
-  if (typeof navigator === "undefined") return undefined;
+  if (typeof navigator === "undefined" || typeof navigator.onLine !== "boolean") return undefined;
   const online = navigator.onLine === false ? "offline" : "online";
   const connection = (navigator as unknown as { connection?: ConnectionLike }).connection;
   if (!connection?.effectiveType) return online;
@@ -180,6 +183,16 @@ const URL_FIELDS: ReadonlySet<string> = new Set(
   FIELD_SPECS.filter((spec) => spec.url).map((spec) => spec.id),
 );
 
+/** Fields held structured in `raw` so `redact()` sees each part before it is joined for display. */
+const DISPLAY: Readonly<Record<string, (value: unknown) => string | undefined>> = {
+  // A string here is `redact()`'s replacement for the whole value, not a status to format.
+  impersonation: (value) =>
+    typeof value === "string"
+      ? value
+      : formatImpersonation(value as boolean | ImpersonationContext | undefined).display,
+  roles: (value) => (Array.isArray(value) ? value.join(", ") : stringify(value)),
+};
+
 /**
  * One pass over the whole bag: `redact()` does key/value matching, an explicit
  * `redactUrl()` pass then covers URL *references* `redact()`'s value pass
@@ -223,8 +236,9 @@ function redactValues(
   for (const [key, original] of Object.entries(raw)) {
     if (original === undefined || original === null) continue;
     // `before` stays raw on purpose — see (3) above.
-    const before = stringify(original);
-    let after = stringify(redacted[key]);
+    const display = (scope === "fields" ? DISPLAY[key] : undefined) ?? stringify;
+    const before = display(original) ?? "";
+    let after = display(redacted[key]) ?? "";
     const urlShaped = scope === "extras" ? typeof original === "string" : URL_FIELDS.has(key);
     if (urlShaped) after = redactUrl(after, options.redactOptions);
     if (options.maskPii !== false) after = maskEmails(after);
@@ -257,15 +271,6 @@ function formatImpersonation(value: boolean | ImpersonationContext | undefined):
   return { display: who === "" ? "ACTIVE" : `ACTIVE — ${who}`, active: true };
 }
 
-function hasAnything(context: EnvironmentContext): boolean {
-  for (const [key, value] of Object.entries(context)) {
-    if (value === undefined) continue;
-    if (key === "extra" && Object.keys(value as object).length === 0) continue;
-    return true;
-  }
-  return false;
-}
-
 const DEFAULT_POLL_MS = 4000;
 
 export function createEnvironmentRuntime(
@@ -291,7 +296,6 @@ export function createEnvironmentRuntime(
 
   const buildSnapshot = (revision: number): EnvironmentSnapshot => {
     const ctx = readContext();
-    const impersonation = formatImpersonation(ctx.impersonating);
 
     const raw: Record<string, unknown> = {
       environment: ctx.environment,
@@ -305,8 +309,8 @@ export function createEnvironmentRuntime(
       userId: ctx.userId,
       workspaceId: ctx.workspaceId,
       internal: ctx.internal === undefined ? undefined : ctx.internal ? "yes" : "no",
-      impersonation: impersonation.display,
-      roles: ctx.roles === undefined ? undefined : ctx.roles.join(", "),
+      impersonation: ctx.impersonating,
+      roles: ctx.roles,
       sync: ctx.syncStatus,
       // Checked here, not only when the row is built, so an excluded route is
       // never collected at all (a shared link controls this value).
@@ -314,12 +318,22 @@ export function createEnvironmentRuntime(
       viewport: detect ? detectViewport() : undefined,
       connection: detect ? detectConnection() : undefined,
     };
+    // Before anything derives from `raw`, so the snapshot metadata honours the allowlist too.
+    if (allowed) {
+      for (const id of Object.keys(raw)) if (!allowed.has(id)) delete raw[id];
+    }
+    const impersonating = formatImpersonation(
+      raw["impersonation"] as boolean | ImpersonationContext | undefined,
+    ).active;
 
     // Kept out of `raw` so an extra called `region` can't shadow the real field.
     const rawExtra: Record<string, unknown> = {};
-    for (const [key, value] of Object.entries(ctx.extra ?? {})) {
-      if (value === undefined) continue;
+    const suppliedExtra = ctx.extra ?? {};
+    // `Object.keys`, not `entries`: a getter on a dropped key must never run.
+    for (const key of Object.keys(suppliedExtra)) {
       if (allowed && !allowed.has(`extra:${key}`)) continue;
+      const value = suppliedExtra[key];
+      if (value === undefined) continue;
       rawExtra[key] = value;
     }
 
@@ -345,19 +359,32 @@ export function createEnvironmentRuntime(
         source: present ? (detected.has(spec.id) ? "detected" : "supplied") : "missing",
         masked: masked.has(spec.id),
         alarming:
-          (spec.id === "impersonation" && impersonation.active) ||
+          (spec.id === "impersonation" && impersonating) ||
           (spec.id === "environment" && isProduction),
       });
     }
 
+    const extraIds = new Set<string>();
+    const nextSuffix = new Map<string, number>();
     for (const key of Object.keys(rawExtra)) {
+      const label = options.maskPii === false ? key : maskEmails(key);
+      // Masking can map two keys to one label; suffix only on collision so ids stay stable otherwise.
+      const base = `extra:${label}`;
+      let id = base;
+      if (extraIds.has(id)) {
+        let n = nextSuffix.get(base) ?? 2;
+        while (extraIds.has(`${base}#${n}`)) n++;
+        id = `${base}#${n}`;
+        nextSuffix.set(base, n + 1);
+      }
+      extraIds.add(id);
       fieldViews.push({
-        id: `extra:${key}`,
-        label: key,
+        id,
+        label,
         group: "session",
         value: extra.values[key] ?? "",
         source: "supplied",
-        masked: extra.masked.has(key),
+        masked: extra.masked.has(key) || label !== key,
       });
     }
 
@@ -365,9 +392,9 @@ export function createEnvironmentRuntime(
       revision,
       at: now(),
       kind,
-      severity: severityForKind(String(kind), impersonation.active),
-      impersonating: impersonation.active,
-      supplied: hasAnything(ctx),
+      severity: severityForKind(String(kind), impersonating),
+      impersonating,
+      supplied: fieldViews.some((field) => field.source === "supplied"),
       maskedCount: fieldViews.filter((field) => field.masked).length,
       fields: fieldViews,
     };

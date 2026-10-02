@@ -167,6 +167,91 @@ describe("the snapshot", () => {
       runtime.store.getSnapshot().fields.filter((field) => field.source === "detected"),
     ).toEqual([]);
   });
+  it("redacts impersonation and role parts before joining them for display", () => {
+    const runtime = createEnvironmentRuntime({
+      detect: false,
+      context: {
+        impersonating: { actor: "Bearer supersecret123", subject: "nejc@example.com" },
+        roles: ["Bearer supersecret123", "admin"],
+      },
+    });
+    const fields = runtime.store.getSnapshot().fields;
+    const impersonation = fields.find((field) => field.id === "impersonation");
+    const roles = fields.find((field) => field.id === "roles");
+    expect(impersonation?.value).not.toContain("supersecret123");
+    expect(impersonation?.value).toContain("n***@example.com");
+    expect(impersonation?.masked).toBe(true);
+    expect(roles?.value).not.toContain("supersecret123");
+    expect(roles?.value).toContain(", admin");
+    expect(roles?.masked).toBe(true);
+    expect(runtime.snapshotText()).not.toContain("supersecret123");
+  });
+
+  it("masks an email-shaped extra key in the label and the id", () => {
+    const runtime = createEnvironmentRuntime({
+      detect: false,
+      context: { extra: { "nejc@example.com": "enabled" } },
+    });
+    const field = runtime.store.getSnapshot().fields.find((entry) => entry.value === "enabled");
+    expect(field).toMatchObject({
+      id: "extra:n***@example.com",
+      label: "n***@example.com",
+      masked: true,
+    });
+    expect(runtime.snapshotText()).not.toContain("nejc@example.com");
+    expect(JSON.stringify(runtime.diagnostics())).not.toContain("nejc@example.com");
+  });
+
+  it("keeps row ids unique when two extra keys mask to the same label", () => {
+    const runtime = createEnvironmentRuntime({
+      detect: false,
+      context: { extra: { "alice@example.com": "a", "anna@example.com": "b", plain: "c" } },
+    });
+    const extras = runtime.store.getSnapshot().fields.filter((f) => f.id.startsWith("extra:"));
+    expect(extras.map((f) => [f.id, f.label])).toEqual([
+      ["extra:a***@example.com", "a***@example.com"],
+      ["extra:a***@example.com#2", "a***@example.com"],
+      ["extra:plain", "plain"],
+    ]);
+  });
+
+  it("allocates collision suffixes in linear time", () => {
+    const extra = Object.fromEntries(
+      Array.from({ length: 2000 }, (_, index) => [`u${index}@example.com`, "x"]),
+    );
+    const has = vi.spyOn(Set.prototype, "has");
+    try {
+      createEnvironmentRuntime({ detect: false, context: { extra } });
+      expect(has.mock.calls.length).toBeLessThan(200_000);
+    } finally {
+      has.mockRestore();
+    }
+  });
+
+  it.each([true, false])(
+    "shows a key-redacted impersonation (%s) as redacted, not as a status",
+    (impersonating) => {
+      const runtime = createEnvironmentRuntime({
+        detect: false,
+        redactOptions: { extraKeys: ["impersonation"] },
+        context: { impersonating },
+      });
+      const field = runtime.store.getSnapshot().fields.find((f) => f.id === "impersonation");
+      expect(field?.value).toBe("[redacted]");
+      expect(field?.masked).toBe(true);
+    },
+  );
+
+  it("reports no connection where `navigator` has no boolean `onLine`, as on a server", () => {
+    vi.stubGlobal("navigator", {});
+    try {
+      const runtime = createEnvironmentRuntime({ context: {} });
+      const field = runtime.store.getSnapshot().fields.find((entry) => entry.id === "connection");
+      expect(field?.source).toBe("missing");
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
 });
 
 describe("diagnostics", () => {
@@ -505,6 +590,28 @@ describe("a context that throws while being read", () => {
     }
   });
 
+  it("never runs a getter defined directly on a dropped extra key", () => {
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const runtime = createEnvironmentRuntime({
+        detect: false,
+        fields: ["environment"],
+        context: {
+          environment: "staging",
+          extra: {
+            get blocked(): string {
+              throw new Error("getter blew up");
+            },
+          },
+        },
+      });
+      expect(runtime.store.getSnapshot().kind).toBe("staging");
+      expect(spy).not.toHaveBeenCalled();
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
   it("still honours the `fields` allowlist while degraded", () => {
     const spy = vi.spyOn(console, "error").mockImplementation(() => {});
     try {
@@ -733,41 +840,65 @@ describe("publication guarantees", () => {
     runtime.store.destroy();
   });
 
-  // The proxy rows these are usually read through are excluded, so the
-  // top-level field is the only thing that changes.
+  // Excluded fields feed nothing: not the rows, and not `kind`, `severity`, `impersonating` or `supplied`.
   it.each([
-    ["kind", { environment: "blue" }, { environment: "green" }, { kind: "green" }],
+    ["environment", { environment: "blue" }, { environment: "production" }],
     [
       "impersonating",
       { environment: "production", impersonating: false },
       { environment: "production", impersonating: true },
-      { impersonating: true },
     ],
-    ["supplied", {}, { region: "eu" }, { supplied: true }],
-    [
-      "kind and dependent severity",
-      { environment: "local" },
-      { environment: "production" },
-      { kind: "production", severity: "bad" },
-    ],
-  ] as const)("publishes %s when fields are excluded", (_name, initial, next, delta) => {
+    ["region", {}, { region: "eu" }],
+  ] as const)("publishes nothing when only excluded %s changes", (_name, initial, next) => {
     let context: EnvironmentContext = initial;
     const runtime = createEnvironmentRuntime({ detect: false, fields: [], context: () => context });
     const before = runtime.store.getSnapshot();
+    expect(before).toMatchObject({
+      kind: "unknown",
+      severity: "unknown",
+      impersonating: false,
+      supplied: false,
+    });
     const listener = vi.fn();
     runtime.store.subscribe(listener);
     context = next;
     runtime.refresh();
     runtime.store.flush();
-    expect(runtime.store.peek()).toEqual({
-      ...before,
-      ...delta,
-      revision: before.revision + 1,
-      at: expect.any(Number),
-    });
-    expect(listener).toHaveBeenCalledTimes(1);
-    expect(runtime.store.getSnapshot()).toBe(runtime.store.peek());
+    expect(listener).not.toHaveBeenCalled();
+    expect(runtime.store.getSnapshot()).toBe(before);
     runtime.store.destroy();
+  });
+
+  it("reads an impersonation getter once, so the row and the flag agree", () => {
+    let reads = 0;
+    const runtime = createEnvironmentRuntime({
+      detect: false,
+      context: {
+        get impersonating(): boolean {
+          reads += 1;
+          return reads === 1;
+        },
+      },
+    });
+    const snapshot = runtime.store.getSnapshot();
+    expect(snapshot.fields.find((field) => field.id === "impersonation")?.value).toBe("ACTIVE");
+    expect(snapshot.impersonating).toBe(true);
+  });
+
+  it("keeps an excluded environment and impersonation out of the snapshot and the exports", () => {
+    const runtime = createEnvironmentRuntime({
+      detect: false,
+      fields: ["release"],
+      context: { environment: "private-preview", impersonating: true, release: "r1" },
+    });
+    expect(runtime.store.getSnapshot()).toMatchObject({
+      kind: "unknown",
+      severity: "unknown",
+      impersonating: false,
+      supplied: true,
+    });
+    expect(runtime.snapshotText()).toBe("Release: r1");
+    expect(JSON.stringify(runtime.diagnostics())).not.toContain("private-preview");
   });
 
   // The literal value here equals its own mask text, so only the flag differs.
