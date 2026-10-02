@@ -34,7 +34,7 @@ export interface FakeExtensionApi {
    * signal on `api`; this aborts only the internal controller the listeners follow.
    */
   abort(): void;
-  /** The controller behind `api.signal`, for a test that needs `reason`. */
+  /** The controller behind `api.signal`, for a test that needs `reason`. Aborting it is `abort()`. */
   controller: AbortController;
 }
 
@@ -50,10 +50,15 @@ export function fakeExtensionApi(options: FakeExtensionApiOptions = {}): FakeExt
     isVisible: () => current,
     subscribeVisibility(callback) {
       if (controller.signal.aborted) return () => {};
-      listeners.add(callback);
-      return () => {
-        listeners.delete(callback);
+      // A wrapper per call, so a callback subscribed twice is two subscriptions, as in core.
+      const listener = (next: boolean) => callback(next);
+      const unsubscribe = () => {
+        listeners.delete(listener);
+        controller.signal.removeEventListener("abort", unsubscribe);
       };
+      listeners.add(listener);
+      controller.signal.addEventListener("abort", unsubscribe, { once: true });
+      return unsubscribe;
     },
     storage: createMemoryStorage(),
     getCommands: () => [],
@@ -84,7 +89,6 @@ export function fakeExtensionApi(options: FakeExtensionApiOptions = {}): FakeExt
     },
     abort() {
       controller.abort();
-      listeners.clear();
     },
     controller,
   };

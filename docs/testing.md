@@ -84,7 +84,9 @@ in-memory adapter, so tests never leak preferences into each other.
 **`makeCommand(options?)`.** The same idea as `makeExtension()`, but for a single
 `ToolbarCommand`: an id (auto-generated as `fake-command-N` if you don't pass one), a
 `label` that defaults to the id, and a `run` that defaults to a no-op you can
-overwrite with your own spy.
+overwrite with your own spy. A typed `run` types the command:
+`makeCommand({ run: (input: { n: number }) => input.n })` is a
+`ToolbarCommand<{ n: number }, number>`.
 
 ```ts
 import { makeCommand } from "@nejcm/dev-toolbar/testing";
@@ -121,7 +123,8 @@ neither.
 
 The fake keeps every `subscribeVisibility` invariant core keeps: it notifies only on
 a change, never on subscribe, contains a throwing callback so later ones still run,
-and releases every subscription on `abort()`. The repository's conformance suite,
+and releases every subscription on `abort()` or `controller.abort()`. A callback
+subscribed twice is two subscriptions. The repository's conformance suite,
 `src/test-utils/runtimeApiConformance.ts`, runs the same cases, timing aside, against
 core and the fake. The one thing it does not share is timing: delivery is synchronous, one call
 per change, and never coalesced, where core delivers after commit and coalesces

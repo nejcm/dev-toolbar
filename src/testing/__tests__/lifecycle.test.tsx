@@ -9,15 +9,17 @@
  * tree it rendered. So the teardown is registered where `cleanup()` will find
  * it: an effect cleanup inside that tree.
  */
-import { useEffect } from "react";
-import { cleanup } from "@testing-library/react";
-import { StrictMode } from "react";
-import { describe, expect, it } from "vitest";
+import { useEffect, useLayoutEffect } from "react";
+import { act, cleanup } from "@testing-library/react";
+import { StrictMode, Suspense } from "react";
+import type { ReactNode } from "react";
+import { describe, expect, it, vi } from "vitest";
 import {
   cleanupToolbar,
   installToolbarLayout,
   makeExtension,
   mountToolbar,
+  renderWithToolbar,
 } from "@nejcm/dev-toolbar/testing";
 
 const MEASURER_SLOT = Symbol.for("@nejcm/dev-toolbar.measurer");
@@ -51,6 +53,28 @@ function Measurer({ into }: { into: string[] }): null {
     return () => observer.disconnect();
   }, [into]);
   return null;
+}
+
+function LayoutMeasurer({ into }: { into: string[] }): null {
+  useLayoutEffect(() => {
+    into.push(typeof ResizeObserver);
+    const observer = new ResizeObserver(() => {});
+    return () => observer.disconnect();
+  }, [into]);
+  return null;
+}
+
+function Gate({ pending }: { pending: Promise<void> | null }): null {
+  if (pending) throw pending;
+  return null;
+}
+
+function SuspenseWrapper({ children }: { children: ReactNode }) {
+  return <Suspense fallback={null}>{children}</Suspense>;
+}
+
+function Throws(): null {
+  throw new Error("render blew up");
 }
 
 /** Pushes its id when React unmounts it, so teardown order is observable. */
@@ -115,6 +139,52 @@ describe("Testing Library cleanup()", () => {
 
     cleanup();
     expect(isPristine()).toBe(true);
+  });
+
+  it("keeps the fake installed for a consumer layout effect on StrictMode's second pass", () => {
+    const seen: string[] = [];
+    mountToolbar(<LayoutMeasurer into={seen} />, {
+      layout: true,
+      renderOptions: { wrapper: StrictMode },
+    });
+
+    expect(seen).toEqual(["function", "function"]);
+
+    cleanup();
+    expect(isPristine()).toBe(true);
+  });
+
+  it("keeps the collapse resizable after a Suspense boundary hides and reveals the toolbar", async () => {
+    const mounted = mountToolbar(<Gate pending={null} />, {
+      extensions: [makeExtension({ id: "a" }), makeExtension({ id: "b" })],
+      layout: { barWidth: 640, itemWidth: 200 },
+      renderOptions: { wrapper: SuspenseWrapper },
+    });
+    let resolve = () => {};
+    const pending = new Promise<void>((done) => {
+      resolve = done;
+    });
+
+    mounted.rerender(<Gate pending={pending} />);
+    await act(async () => {
+      mounted.rerender(<Gate pending={null} />);
+      resolve();
+      await pending;
+    });
+
+    mounted.toolbar.resize(300);
+    expect(mounted.toolbar.overflowedIds()).toContain("b");
+  });
+
+  it("restores the fake layout when the first render throws", () => {
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      expect(() => renderWithToolbar(<Throws />, { layout: true })).toThrow("render blew up");
+      expect(isPristine()).toBe(true);
+    } finally {
+      cleanup();
+      spy.mockRestore();
+    }
   });
 });
 

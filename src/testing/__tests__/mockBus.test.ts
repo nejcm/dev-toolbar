@@ -534,6 +534,22 @@ describe("createMockBus — reset()", () => {
     bus.emit("navigation", { route: "/b" });
     expect(handler).toHaveBeenCalledTimes(1); // still just the pre-reset call
   });
+
+  it("detaches pre-reset subscriptions, so neither their signal nor their unsubscribe touches a later one", () => {
+    const bus = createMockBus();
+    const controller = new AbortController();
+    const handler = vi.fn();
+    const off = bus.onAny(handler, { signal: controller.signal });
+
+    bus.reset();
+    bus.onAny(handler);
+    controller.abort();
+    off();
+
+    expect(bus.listenerCount()).toBe(1);
+    bus.emit("navigation", { route: "/a" });
+    expect(handler).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe("createMockBus — clearEvents()", () => {

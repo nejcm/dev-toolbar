@@ -7,7 +7,7 @@
 import { useEffect, useState } from "react";
 import { describe, expect, it, vi } from "vitest";
 import { mountToolbar } from "../lifecycle";
-import { makeExtension } from "../makeExtension";
+import { makeCommand, makeExtension } from "../makeExtension";
 import { renderWithToolbar } from "../renderWithToolbar";
 import type { DevToolbarExtension } from "../../core/contract";
 
@@ -57,6 +57,37 @@ describe("renderWithToolbar handle", () => {
     const warnings = error.mock.calls.filter((call) => String(call[0]).includes("not wrapped in"));
     expect(warnings).toEqual([]);
     error.mockRestore();
+  });
+
+  it("forwards input to invokeCommand and runCommand, and rejects with what run() threw", async () => {
+    const boom = new Error("boom");
+    const { toolbar } = mount(null, {
+      extensions: [
+        makeExtension({
+          id: "calc",
+          commands: [
+            makeCommand({ id: "calc.double", run: (input: { n: number }) => input.n * 2 }),
+            makeCommand({
+              id: "calc.fail",
+              run: () => {
+                throw boom;
+              },
+            }),
+          ],
+        }),
+      ],
+    });
+
+    await expect(toolbar.invokeCommand<number>("calc.double", { n: 21 })).resolves.toEqual({
+      ok: true,
+      result: 42,
+    });
+    await expect(toolbar.invokeCommand("calc.missing")).resolves.toEqual({
+      ok: false,
+      reason: "unknown-command",
+    });
+    await expect(toolbar.runCommand("calc.fail")).rejects.toBe(boom);
+    await expect(toolbar.invokeCommand("calc.fail")).rejects.toBe(boom);
   });
 
   it("rerenders the consumer UI inside the same toolbar", () => {

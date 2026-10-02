@@ -80,6 +80,31 @@ describe("fakeExtensionApi", () => {
     expect(api.isVisible()).toBe(false);
   });
 
+  it("releases subscriptions when the exposed controller aborts directly", () => {
+    const { api, setVisible, controller } = fakeExtensionApi();
+    const seen = vi.fn();
+    api.subscribeVisibility(seen);
+
+    controller.abort("reason");
+    setVisible(false);
+
+    expect(seen).not.toHaveBeenCalled();
+  });
+
+  it("keeps a callback subscribed twice as two subscriptions, as core does", () => {
+    const { api, setVisible } = fakeExtensionApi();
+    const seen = vi.fn();
+    const first = api.subscribeVisibility(seen);
+    api.subscribeVisibility(seen);
+
+    setVisible(false);
+    expect(seen).toHaveBeenCalledTimes(2);
+
+    first();
+    setVisible(true);
+    expect(seen).toHaveBeenCalledTimes(3);
+  });
+
   it("logs a throwing callback under the testing marker", () => {
     const spy = vi.spyOn(console, "error").mockImplementation(() => {});
     try {
