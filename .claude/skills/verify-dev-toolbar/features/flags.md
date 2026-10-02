@@ -23,7 +23,13 @@ broken the app badly enough that the panel is out of reach.
 - `flags-reset` drops every override from a URL, without the panel.
 - `flags-bulk-error` publishes one `bulkError` — one `alert` banner in the
   panel — and marks no row, when the whole-map `onOverridesChange` adapter
-  throws; it clears again when the adapter recovers.
+  throws (fixture: `[data-testid="flag-break-mirror"]`); it clears again when
+  the adapter recovers.
+- `flags-retry-clear` keeps a clear that the app's `onOverride` adapter threw
+  on retryable: the row reads `not-applied` (panel tag text `clear not
+  applied`), its Clear button and Clear-all stay enabled even at
+  `overriddenCount` 0, and clearing again once the adapter recovers drops the
+  tag. Driven 2026-10-02 with `flag-break-adapter`.
 
 ## How to get to it (user POV)
 
@@ -118,8 +124,9 @@ masked row, which publishes the same redacted string the panel shows.
   the masked count (`1 here`).
 - **Promoted flag.** `flag("ui-facelift").tags` contains `promoted`. The bar
   control itself is a rendering: screenshot it, or `find` role `switch` name
-  `Toggle ui-facelift`. Click it and confirm the page read's `appFlags[0]`
-  flips.
+  `UI Facelift 2026` — the bar switch is named by the flag's label;
+  `Toggle ui-facelift` is the *panel row's* switch. Click it and confirm the
+  page read's `appFlags[0]` flips.
 - **Reject a bad value.** *(Recipe not yet proven — see Gotchas.)* `find` role
   `textbox` name `Override search.rank`, type `abc`, then commit with `Enter`
   or by clicking away — the editor only commits on Enter or blur, never
@@ -129,6 +136,12 @@ masked row, which publishes the same redacted string the panel shows.
   still the app's own number — the page read's `appFlags` entry for
   `search.rank` is unchanged, and nothing is written to storage. A refused
   edit keeps the draft rather than coercing `"abc"` to `0`.
+- **Retry a failed clear.** With an override applied, click
+  `[data-testid="flag-break-adapter"]` (`adapter throws: true`), then
+  `POST /commands/flags.set` with `{"key":"new-header"}` (no `value` clears).
+  Read: the row is `overridden: false` with `tags` containing `not-applied`,
+  and `appFlags` still shows the override. Click the fixture again, re-run the
+  same clear: `not-applied` is gone and `appFlags` shows the app's own value.
 - **Clear from the panel.** Click the `Clear all overrides (n)` button
   (`[data-dtb-part="flag-action"]`). Read: no row's `tags` contains
   `override`, `overriddenCount` is `0`, and the overrides key is gone from
@@ -156,8 +169,14 @@ masked row, which publishes the same redacted string the panel shows.
 - The `new-header` row also carries an `expired` tag at baseline. Assert
   `tags` *contains* `override`, never that it equals `["override"]`. The
   vocabulary is `override`, `not-applied`, `orphaned`, `promoted`, `masked`,
-  `expired`, `reload` — the same strings the panel's `data-dtb-tag`
-  attributes carry.
+  `expired`, `reload`, `type-mismatch` (a stored override whose type no longer
+  matches the flag; panel text `not a <type>`). The panel's `data-dtb-tag`
+  attributes use the same strings plus two that `tags` never carries,
+  `rejected` and `reload-behavior`.
+- `diagnostics()` also publishes `readError`: when the app's flag getter
+  throws, the extension keeps the last catalogue and sets it (an `alert`
+  banner in the panel). The playground has no fixture that throws from the
+  getter, so this is source-confirmed only (`src/ext/flags/runtime.ts`).
 - Two fixtures leave state behind that a `?dtb-flags=reset` does *not* undo:
   `flag-flip-base` changes the app's own base value, and `flag-orphan` writes
   a renamed-flag override straight into storage and reloads. Prefer
@@ -181,8 +200,7 @@ masked row, which publishes the same redacted string the panel shows.
   "either `onOverride` or `onOverridesChange` is a function" in
   `src/ext/flags/runtime.ts` — it is published, so `ext("flags").writable`
   answers it directly — and the playground passes both, so every step above is the writable
-  path and the `switch` named `Toggle new-header` stays. Without it (pending
-  PR stack #21–#28, `fix(ext): stop trusting unvetted overrides …`) a
+  path and the `switch` named `Toggle new-header` stays. Without it a
   promoted boolean drops `role="switch"` and `aria-checked` entirely, its
   click opens the panel instead of toggling, and the chip `title` ends in
   `read-only`. Source-confirmed, not driven; there is no fixture for it, and

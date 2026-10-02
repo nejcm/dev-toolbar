@@ -26,22 +26,17 @@ driving the app, then use the matching feature file as the recipe.
   a whole object — or re-clear and reload first.
 - Require the **roster of seventeen** — sixteen extensions plus the bridge's own
   `agent` — as `diagnostics` (`curl -s localhost:5273/__dev-toolbar/state | jq
-  '.diagnostics|length'` → `17`; 8 `ok` and 6 `absent` were the fourteen-roster baseline, before `kit-demo`, `tanstack-query` and `tanstack` joined; `a11y` is
-  the eighth `ok`, publishing `status: "pending"` before anything is scanned). The roster
-  is the fixed number; `shell.bar` is **not**. `shell.bar` is only what still
-  fits, so it depends on the viewport: measured at the mandated 1280×800 it was
-  **8** — `environment`, `cmds`, `flags`, `theme-editor`, `overlays`, `tw`,
-  `command-menu`, `user` — with `shell.overflow.present: true` and `agent`,
-  `metrics`, `diagnostics`, `hydr`, `boom` collapsed. **`a11y` (priority 25)
-  joined the playground after that measurement**, so re-measure before quoting
-  a bar count: one more item at the same viewport moves the collapse line, and
-  `a11y` sits between `hydr` (20) and `metrics` (35) in collapse order. The
-  `overlays` chip has also **narrowed** since that measurement — it now paints
-  an icon plus its state (`▤ off`) instead of `overlays off`, see
-  [presentation.md](./presentation.md) — which moves the line the other way. (Cross-checked the same
-  moment against the DOM: `[data-dtb-part="region"] > [data-dtb-part="item"]`
-  lists those same eight at `innerWidth: 1280`.) `agent` has the lowest
-  `priority` (`-1`), so it is the first to leave the bar as the window narrows.
+  '.diagnostics|length'` → `17`). Measured 2026-10-02: 9 `ok` (`command-menu`,
+  `diagnostics`, `environment`, `flags`, `overlays`, `a11y`, `theme-editor`,
+  `metrics`, `kit-demo`) and 8 `absent`; `a11y` publishes `status: "pending"`
+  before anything is scanned. The roster is the fixed number; `shell.bar` is
+  **not**. `shell.bar` is only what still fits, so it depends on the viewport:
+  measured at the mandated 1280×800 on 2026-10-02 (screenshot-flushed, compact
+  density, default presentation) it was **9** — `environment`, `cmds`,
+  `flags`, `kit-demo`, `tanstack-query`, `tanstack`, `tw`, `command-menu`,
+  `user` — with `shell.overflow.present: true` and the other eight collapsed.
+  `agent` has the lowest `priority` (`-1`), so it is the first to leave the
+  bar as the window narrows; [overflow.md](./overflow.md) has the full order.
   Never assert a bar count you did not measure at a viewport you pinned.
 - Require the bridge itself: `window.__DEV_TOOLBAR__.instances["playground"]`
   exists, `read().allowRun` is `true` (the playground opts in), and
@@ -54,9 +49,12 @@ driving the app, then use the matching feature file as the recipe.
   This is not optional — a hidden Browser pane otherwise reports a zero-sized
   viewport and every measurement reads `0`. Reset it with `{"preset":
   "desktop"}` in cleanup.
-- For any keyboard step, the Browser pane must be **displayed**: `computer`
-  `{"action":"key"}` delivers nothing to the page while it is hidden, silently.
-  `left_click` and `type` are unaffected. `tabs_context` reports which it is.
+- For any keyboard step, assert the effect. Key delivery to a hidden pane has
+  been measured both ways — nothing at all in one run, every key on
+  2026-10-02 with `tabs_context` reporting the pane hidden — so retry a key
+  that changed nothing once, then ask the user to show the pane. Key text is
+  literal: `ctrl+shift+.`, not `ctrl+shift+period` (which lands as a
+  different key and toggles nothing).
 - A hidden pane also delivers **no frames**: `requestAnimationFrame` never
   ticks and `ResizeObserver` callbacks are never delivered until something
   forces a compositor frame, and only `computer {"action":"screenshot"}`
@@ -99,9 +97,8 @@ driving the app, then use the matching feature file as the recipe.
 - Capture the user action and the resulting state, not only the final screen.
 - Every mutation proof includes its side effect: the `dtb:v1:playground:*`
   key, `shell.heightVariable`, or the app's own readout (`flag-readout`,
-  `theme-swatches`). Not `height-readout` — it reads the *unsuffixed*
-  variable and so always shows `(unset)` for this instance (see
-  [shell.md](./shell.md)); citing it proves nothing.
+  `theme-swatches`). The playground has no height readout; read the
+  variables from `<html>`'s computed style (see [shell.md](./shell.md)).
 - Prove persistence by reloading, never by reading back the store you wrote.
 - Pair a screenshot with a bridge read asserting the same fact in text;
   screenshots do not survive the run.
@@ -157,6 +154,24 @@ actually returns as a finding about the recipe, and fix it here.
   Chromium through `playwright-cli`. *Smooth* read the `fps` chip at 60.0 (`ok`)
   beside `page-measured: 60 fps`; *heavy* read 41.3 (`bad`) beside `42 fps`, with
   `jank` at 31.1% (`bad`).
+- **Driven 2026-10-02, against `dist/` built 2026-10-02T04:59Z** (maintenance
+  pass, run `20261002-125738`, Browser pane reported hidden, every
+  frame-driven read screenshot-flushed; `bun run test:e2e` 52/52 green the same
+  run): shell (mount, panel open at `352px`, position to top, reload
+  persistence, `ctrl+shift+.` toggle), overflow at 520 px (menu, a collapsed
+  `flags` panel, `Escape` focus return, no `error` events), flags (`flags.set`
+  incl. both refusals as `422`, toggle, storage, `flag-readout`, reload, the
+  retryable clear through `flag-break-adapter`, masking), `⌘K` (chip click,
+  `ctrl+k`, typed filter, `Enter`, `Escape`, `commandCount` 34 of 42),
+  environment (four masks, zero secret hits in the whole snapshot,
+  impersonation and the chip's `aria-label`), overlays (grid + focus,
+  click-through counter, `elementFromPoint`, surface `pointer-events`/`z-index`,
+  `disableAll`), a11y (`pending` → scan `total: 4`/`nodeTotal: 5` →
+  `highlight` `label#0` with a `pointer-events: none` layer → `clear`),
+  presentation (all three modes, 12.64 px glyphs, no unnamed trigger),
+  settings (density, colour scheme, "shown in bar", reload, Reset), the
+  console tail (export, redaction, `limit` refusal, kept stack header, the
+  badge in `⋮`) and metrics (roster, tabs, tab persistence, reset).
 - **Not driven — verify before reporting:** the rest of
   [a11y.md](./a11y.md) (written against the source and its unit tests, which do
   run the real `axe-core` against a jsdom document — the highlight box, its
@@ -175,9 +190,8 @@ actually returns as a finding about the recipe, and fix it here.
   and the axe scan of an icon-only bar are written from the source and not
   hand-driven.
 - **Not verifiable from the playground as it stands:** core's `styleNonce`
-  prop (arriving with the pending PR stack #21–#28 — it sets the `nonce`
-  *property* on core's injected `<style>` so a `style-src 'nonce-…'` policy
-  keeps the sheet). `App.tsx` never passes it and has no `?dtb-nonce=` hatch
+  prop (it sets the `nonce` *property* on core's injected `<style>` so a
+  `style-src 'nonce-…'` policy keeps the sheet). `App.tsx` never passes it and has no `?dtb-nonce=` hatch
   the way it has `?dtb-flags=reset`, and this skill forbids editing the app
   to verify; report it as not driven until the playground grows one. Likewise
   the flags read-only branch ([flags.md](./flags.md)) and the focus-order
@@ -233,13 +247,10 @@ watching}` for the §1B console tail) — so a map for
 them is now mostly writing down assertions, not building a way to read them.
 `/ext/diagnostics` publishes a **summary**, never the snapshot: the snapshot is
 built from the roster, so embedding it would put one snapshot inside the next.
-Reach the full object through `diagnostics.copyJson` / `diagnostics.download`. Three surfaces — metrics, theme-editor and diagnostics — move with
-the pending PR stack #21–#28, source-confirmed there and not driven — the
-metrics tabs gain `id`, `aria-controls`, a roving `tabindex` and
-Arrow/Home/End keys, with the `tabpanel` `aria-labelledby` the active tab;
-the theme-editor chip's `aria-label` becomes `Theme, 1 edited` once a token
-is edited; the diagnostics chip's becomes `Diagnostics, 1 missing` once a
-snapshot has omissions — so a `find` by role `button` and the bare label
+Reach the full object through `diagnostics.copyJson` / `diagnostics.download`. Two chips change their accessible name with
+state (source-confirmed, not driven): the theme-editor chip's `aria-label`
+becomes `Theme, 1 edited` once a token is edited, and the diagnostics chip's
+becomes `Diagnostics, 1 missing` once a snapshot has omissions — so a `find` by role `button` and the bare label
 stops matching in exactly the states worth verifying. Map them with those
 names, not the resting ones.
 

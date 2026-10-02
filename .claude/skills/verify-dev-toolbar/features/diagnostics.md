@@ -55,9 +55,10 @@ Preconditions:
 Throughout, the counts are
 `read().diagnostics.find(d => d.id === "diagnostics").data.console` —
 `{status, errors, warnings, dropped, watching}`. **There is no top-level
-`errors` on that `data`, and no `extensions` map anywhere in the read**;
-reading `data.errors` (or `read().extensions.diagnostics.errors`) yields
-`undefined` and invites the conclusion that the badge is broken. The messages
+`errors` on that `data`, and no `extensions` map in the in-page `read()`**
+(the HTTP route adds one: `curl … /state | jq .extensions.diagnostics.console`
+is the same object); reading `data.errors` (or
+`read().extensions.diagnostics.errors`) yields `undefined` and invites the conclusion that the badge is broken. The messages
 themselves are deliberately *not* published here — a roster read is not the
 place for redacted foreign text — so they come from
 `runCommand("diagnostics.console.export")`.
@@ -71,8 +72,8 @@ place for redacted foreign text — so they come from
   `<Slot>` component"* log. Both are captured, as two grouped entries with
   `count: 1`. That is the resting state, not a finding.
 - **The badge, and the trap.** At 1280×800 `diagnostics` is **collapsed**
-  (measured: `shell.overflow.present: true`, `shell.overflow.items`
-  `["metrics", "hydr", "boom", "diagnostics", "agent"]`), and a collapsed
+  (`shell.overflow.present: true`; which ids sit in `shell.overflow.items`
+  depends on the width and the roster, so re-read it), and a collapsed
   extension is removed from the bar and re-rendered inside the menu — so its
   chip is not in the document at all and
   `document.querySelector('[data-dtb-part="diag-errors"]')` returns `null`.
@@ -151,7 +152,8 @@ place for redacted foreign text — so they come from
   report that says "the badge is broken" without an `shell.overflow.open:
   true` read in the same call has not tested the badge.
 - **Do not read `data.errors` or `read().extensions`.** The counts are nested
-  under `data.console`. Both wrong paths return `undefined`, which reads like
+  under `data.console` (over HTTP, `.extensions.diagnostics.console`). Both
+  wrong paths return `undefined`, which reads like
   a zero and is not one.
 - The counters are published **off the current task** (a microtask, then a
   100 ms throttle in the store), because React reports its dev warnings
@@ -174,10 +176,10 @@ place for redacted foreign text — so they come from
   claimed otherwise) — do not report the missing brace as corruption.
 - A credential written into **prose** — `failed: token Bearer …` — is a
   documented limit and survives in `entries[].message`; `redact()` judges
-  whole values and nothing here judges parts of one. It no longer appears a
-  second time in `entries[].stack`: the stack's header line is deleted, so
-  every `stack` in the export starts at a frame. A missing `Error: …` line at
-  the top of a stack is the design, not truncation. The panel shows the text
+  whole values and nothing here judges parts of one. The stack's `Error: …`
+  header is **kept** and only masked (driven 2026-10-02: a `window.error`
+  entry's `stack` starts `Error: playground: uncaught from a timer`); the
+  whole stack goes through `redactText` (`src/ext/diagnostics/console.ts`). The panel shows the text
   before you copy it.
 - `status` and `watching` are re-derived on **every** read, so they are
   present-tense. If a driving step replaces `console.error` or reassigns
