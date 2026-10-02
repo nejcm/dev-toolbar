@@ -94,8 +94,11 @@
  *   with `ageMs`, on the `POST` route. The `GET` routes still answer with the
  *   stale snapshot and `connection.stale: true` — the latest snapshot is still
  *   the latest snapshot, and saying how old it is beats refusing to say.
- * - Queued but never answered within `timeoutMs`: `504 timeout`, saying whether
- *   the page ever picked the command up.
+ * - No progress within `timeoutMs`: `504 timeout`, saying whether the page ever
+ *   picked the command up. The deadline restarts when the command is handed
+ *   out and whenever the page that took it delivers a result, because a page
+ *   runs a batch in order and a command queued behind a slow one is waiting,
+ *   not lost.
  * - The dev server shuts down with a caller still waiting: `503
  *   server-closing`. Nothing is dropped on the floor.
  * - A page reporting a protocol version this file does not speak: `400
@@ -107,8 +110,10 @@ export interface DevToolbarAgentOptions {
   /** Route prefix. Default `"/__dev-toolbar"`. */
   base?: string;
   /**
-   * How long `POST /commands/:id` waits for the page before answering `504`.
-   * Default `10000`. A request always gets a timeout response.
+   * How long `POST /commands/:id` waits without progress before answering
+   * `504`: for pickup, then for a result, restarted by each result the page
+   * that took it delivers. Default `10000`. A request always gets a timeout
+   * response.
    */
   timeoutMs?: number;
   /**
@@ -147,8 +152,10 @@ interface Waiting {
   token: string;
   id: string;
   input: unknown;
-  pickedUp: boolean;
-  timer: ReturnType<typeof setTimeout>;
+  /** The `reporterId` that was handed this command, or `null` while it is still queued. */
+  pickedBy: string | null;
+  timer: ReturnType<typeof setTimeout> | undefined;
+  expire(): void;
   settle(status: number, body: Record<string, unknown>): void;
 }
 
@@ -245,6 +252,11 @@ export function devToolbarAgent(options: DevToolbarAgentOptions = {}): Plugin {
 
   const ageMs = (at: number): number | null => (at === 0 ? null : Date.now() - at);
   const connected = (): boolean => checkInAt !== 0 && Date.now() - checkInAt <= staleMs;
+  /** (Re)starts an entry's deadline: `timeoutMs` without progress, not since queueing. */
+  const arm = (entry: Waiting): void => {
+    clearTimeout(entry.timer);
+    entry.timer = setTimeout(entry.expire, timeoutMs);
+  };
 
   /** Counts distinct reporters within `staleMs`, pruning old entries. */
   function liveReporters(): number {
@@ -532,6 +544,7 @@ export function devToolbarAgent(options: DevToolbarAgentOptions = {}): Plugin {
       reporterId = typeof body.reporterId === "string" ? body.reporterId : null;
     }
 
+    let settled = false;
     for (const result of (body.results ?? []) as readonly CheckInResult[]) {
       if (!isPlainObject(result)) continue;
       const token = result.token;
@@ -544,14 +557,18 @@ export function devToolbarAgent(options: DevToolbarAgentOptions = {}): Plugin {
         command: entry.id,
         ranIn: from,
       });
+      settled = true;
     }
+    // A page runs its batch in order, so its result is progress for its commands queued behind it.
+    if (settled) for (const entry of waiting.values()) if (entry.pickedBy === from) arm(entry);
 
-    // Hand out everything queued. A command handed out and never answered
-    // still has its timeout running, so it cannot wait forever either.
+    // Hand out everything queued. A handed-out command's deadline restarts at
+    // pickup, so a long wait in the queue does not eat its running time.
     const pending: { token: string; id: string; input?: unknown }[] = [];
     for (const entry of waiting.values()) {
-      if (entry.pickedUp) continue;
-      entry.pickedUp = true;
+      if (entry.pickedBy !== null) continue;
+      entry.pickedBy = from;
+      arm(entry);
       pending.push(
         entry.input === undefined
           ? { token: entry.token, id: entry.id }
@@ -632,24 +649,26 @@ export function devToolbarAgent(options: DevToolbarAgentOptions = {}): Plugin {
       token,
       id,
       input,
-      pickedUp: false,
-      timer: setTimeout(() => {
+      pickedBy: null,
+      timer: undefined,
+      expire: () => {
         waiting.delete(token);
         send(504, {
           ok: false,
           reason: "timeout",
-          message: entry.pickedUp
+          message: entry.pickedBy !== null
             ? `The page picked up "${id}" but did not report a result within ${timeoutMs} ms.`
             : `No page picked up "${id}" within ${timeoutMs} ms. The bridge polls this route; ` +
               `is the tab open and the reporter running?`,
-          pickedUp: entry.pickedUp,
+          pickedUp: entry.pickedBy !== null,
           waitedMs: Date.now() - startedAt,
           command: id,
           connection: connection(),
         });
-      }, timeoutMs),
+      },
       settle: (status, body) => send(status, { ...body, waitedMs: Date.now() - startedAt }),
     };
+    arm(entry);
     waiting.set(token, entry);
   }
 

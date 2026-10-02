@@ -6,6 +6,7 @@
 import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
 import { test } from "node:test";
+import type { TestContext } from "node:test";
 import { devToolbarAgent } from "../devToolbarAgent.ts";
 
 type Handler = (req: unknown, res: unknown, next: () => void) => void;
@@ -338,6 +339,91 @@ test("the timeout body says when the page did pick the command up", async () => 
   assert.equal(answer.status, 504);
   assert.equal(answer.body["pickedUp"], true);
   assert.match(String(answer.body["message"]), /did not report a result/);
+});
+
+/** Queues `ids` with no page check-in between, and hands them to `reporterId` in one batch. */
+async function queueAndPickUp(
+  handler: Handler,
+  ids: string[],
+  reporterId = "tab-a",
+): Promise<{ answers: Promise<Answer>[]; tokens: string[] }> {
+  const answers = ids.map((id) =>
+    request(handler, { method: "POST", url: `/__dev-toolbar/commands/${id}`, body: "" }),
+  );
+  await new Promise((resolve) => setImmediate(resolve));
+  await new Promise((resolve) => setImmediate(resolve));
+  const polled = await request(handler, {
+    method: "POST",
+    url: "/__dev-toolbar/state",
+    body: page({ reporterId }),
+  });
+  const tokens = (polled.body["pending"] as { token: string }[]).map((entry) => entry.token);
+  return { answers, tokens };
+}
+
+const deliver = (handler: Handler, token: string, reporterId = "tab-a") =>
+  request(handler, {
+    method: "POST",
+    url: "/__dev-toolbar/state",
+    body: page({ reporterId, results: [{ token, outcome: { ok: true } }] }),
+  });
+
+/** Only `setTimeout` is mocked: the request helper's `setImmediate` must keep running. */
+const deadlineTest = (name: string, body: (t: TestContext) => Promise<void>) =>
+  test(name, async (t) => {
+    t.mock.timers.enable({ apis: ["setTimeout"] });
+    await body(t);
+  });
+
+deadlineTest("a batch run in order answers its second command, its deadline renewed by the first result", async (t) => {
+  const handler = middleware({ timeoutMs: 100 });
+  await request(handler, { method: "POST", url: "/__dev-toolbar/state", body: page() });
+  const { answers, tokens } = await queueAndPickUp(handler, ["a.slow", "b.slow"]);
+
+  // Each command takes 60 of a 100 ms deadline; run in order, the second ends at 120.
+  t.mock.timers.tick(60);
+  await deliver(handler, tokens[0] as string);
+  t.mock.timers.tick(60);
+  await deliver(handler, tokens[1] as string);
+
+  assert.equal((await answers[0])?.status, 200);
+  assert.equal((await answers[1])?.status, 200);
+});
+
+deadlineTest("a command's deadline restarts when the page picks it up", async (t) => {
+  const handler = middleware({ timeoutMs: 100 });
+  await request(handler, { method: "POST", url: "/__dev-toolbar/state", body: page() });
+  const posted = request(handler, { method: "POST", url: "/__dev-toolbar/commands/a.slow", body: "" });
+  await new Promise((resolve) => setImmediate(resolve));
+  await new Promise((resolve) => setImmediate(resolve));
+
+  // 60 ms in the queue, then 60 ms running: 120 since queueing, 60 since pickup.
+  t.mock.timers.tick(60);
+  const polled = await request(handler, { method: "POST", url: "/__dev-toolbar/state", body: page() });
+  const [entry] = polled.body["pending"] as { token: string }[];
+  t.mock.timers.tick(60);
+  await deliver(handler, entry?.token as string);
+
+  assert.equal((await posted).status, 200);
+});
+
+deadlineTest("another page's results do not renew a command a reloaded page abandoned", async (t) => {
+  const handler = middleware({ timeoutMs: 100 });
+  await request(handler, { method: "POST", url: "/__dev-toolbar/state", body: page() });
+  const abandoned = await queueAndPickUp(handler, ["a.lost"], "tab-old");
+  let answer: Answer | undefined;
+  void abandoned.answers[0]?.then((value) => {
+    answer = value;
+  });
+  const fresh = await queueAndPickUp(handler, ["b.ok"], "tab-new");
+
+  t.mock.timers.tick(60);
+  await deliver(handler, fresh.tokens[0] as string, "tab-new");
+  t.mock.timers.tick(60);
+  await new Promise((resolve) => setImmediate(resolve));
+
+  assert.equal(answer?.status, 504, "the abandoned command is still waiting");
+  assert.equal(answer?.body["pickedUp"], true);
 });
 
 test("a dev server shutting down answers every waiting caller, not none", async () => {

@@ -428,6 +428,215 @@ describe("a queued command", () => {
     expect(warn).toHaveBeenCalledTimes(1);
     expect(String(warn.mock.calls[0]?.[0])).toContain("could not reach the reporter endpoint");
   });
+
+  it("re-sends the post-command snapshot when the follow-up carrying it fails", async () => {
+    const fake = fakeHandle();
+    const time = clock();
+    let call = 0;
+    const bodies: AgentReportBody[] = [];
+    const impl = (async (_url: string, init?: RequestInit) => {
+      call += 1;
+      bodies.push(JSON.parse(String(init?.body)) as AgentReportBody);
+      if (call === 2) throw new Error("connection refused");
+      return {
+        ok: true,
+        json: () => Promise.resolve(call === 1 ? { pending: [{ token: "t1", id: "a.b" }] } : {}),
+      } as unknown as Response;
+    }) as unknown as typeof globalThis.fetch;
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    const reporter = createAgentReporter(
+      {
+        ...fake.handle,
+        runCommand: (id: string, input?: unknown) => {
+          // Slower than `intervalMs`, so the store publishes the new state at once.
+          time.advance(2000);
+          fake.setVisible(false);
+          return (fake.handle.runCommand as NonNullable<AgentHandle["runCommand"]>)(id, input);
+        },
+      },
+      {
+        url: "/__dev-toolbar/state",
+        fetch: impl,
+        intervalMs: 1000,
+        now: time.now,
+        schedule: noSchedule,
+      },
+    );
+
+    await reporter.tick();
+    time.advance(2000);
+    await reporter.tick();
+
+    expect(bodies[1]?.snapshot?.visible).toBe(false);
+    expect(bodies[2]?.snapshot?.visible).toBe(false);
+    expect(bodies[2]?.results).toEqual(bodies[1]?.results);
+  });
+
+  it("runs a command handed out with the previous command's outcome", async () => {
+    const fake = fakeHandle();
+    const net = recordingFetch([
+      { pending: [{ token: "t1", id: "a.first" }] },
+      { pending: [{ token: "t2", id: "a.second" }] },
+    ]);
+    const reporter = createAgentReporter(fake.handle, {
+      url: "/__dev-toolbar/state",
+      fetch: net.impl,
+      now: clock().now,
+      schedule: noSchedule,
+    });
+
+    await reporter.tick();
+
+    expect(fake.ran.map((command) => command.id)).toEqual(["a.first", "a.second"]);
+    expect(net.bodies[2]?.results).toEqual([{ token: "t2", outcome: { ok: true } }]);
+  });
+
+  it("runs a batch in order, so a slow earlier write cannot overwrite a later one", async () => {
+    let value = "";
+    const handle: AgentHandle = {
+      ...fakeHandle().handle,
+      runCommand: async (_id: string, input?: unknown) => {
+        const next = String(input);
+        await new Promise((resolve) => setTimeout(resolve, next === "first" ? 20 : 1));
+        value = next;
+        return { ok: true };
+      },
+    };
+    const net = recordingFetch([
+      {
+        pending: [
+          { token: "t1", id: "a.set", input: "first" },
+          { token: "t2", id: "a.set", input: "second" },
+        ],
+      },
+    ]);
+    const reporter = createAgentReporter(handle, {
+      url: "/__dev-toolbar/state",
+      fetch: net.impl,
+      now: clock().now,
+      schedule: noSchedule,
+    });
+
+    await reporter.tick();
+
+    expect(value).toBe("second");
+  });
+
+  it("reports each outcome of a batch before running the next command", async () => {
+    const fake = fakeHandle();
+    const sentBeforeSecond: unknown[] = [];
+    const net = recordingFetch([
+      {
+        pending: [
+          { token: "t1", id: "a.first" },
+          { token: "t2", id: "a.second" },
+        ],
+      },
+    ]);
+    const reporter = createAgentReporter(
+      {
+        ...fake.handle,
+        runCommand: (id: string, input?: unknown) => {
+          if (id === "a.second")
+            sentBeforeSecond.push(...net.bodies.flatMap((body) => body.results));
+          return (fake.handle.runCommand as NonNullable<AgentHandle["runCommand"]>)(id, input);
+        },
+      },
+      { url: "/__dev-toolbar/state", fetch: net.impl, now: clock().now, schedule: noSchedule },
+    );
+
+    await reporter.tick();
+
+    expect(sentBeforeSecond).toEqual([{ token: "t1", outcome: { ok: true } }]);
+    expect(net.bodies[2]?.results).toEqual([{ token: "t2", outcome: { ok: true } }]);
+  });
+
+  it("keeps running a batch when one outcome cannot be delivered, and sends it with the next", async () => {
+    const fake = fakeHandle();
+    let call = 0;
+    const bodies: AgentReportBody[] = [];
+    const impl = (async (_url: string, init?: RequestInit) => {
+      call += 1;
+      bodies.push(JSON.parse(String(init?.body)) as AgentReportBody);
+      if (call === 2) throw new Error("connection refused");
+      const reply =
+        call === 1
+          ? {
+              pending: [
+                { token: "t1", id: "a.first" },
+                { token: "t2", id: "a.second" },
+              ],
+            }
+          : {};
+      return { ok: true, json: () => Promise.resolve(reply) } as unknown as Response;
+    }) as unknown as typeof globalThis.fetch;
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    const reporter = createAgentReporter(fake.handle, {
+      url: "/__dev-toolbar/state",
+      fetch: impl,
+      now: clock().now,
+      schedule: noSchedule,
+    });
+
+    await reporter.tick();
+
+    expect(fake.ran.map((command) => command.id)).toEqual(["a.first", "a.second"]);
+    expect(bodies[2]?.results.map((result) => result.token)).toEqual(["t1", "t2"]);
+  });
+
+  it("ignores a malformed pending list rather than rejecting", async () => {
+    const fake = fakeHandle();
+    const net = recordingFetch([
+      { pending: "invalid" } as unknown as AgentReportResponse,
+      {
+        pending: [null, { token: 1, id: "a.b" }, { token: "t1" }],
+      } as unknown as AgentReportResponse,
+    ]);
+    const reporter = createAgentReporter(fake.handle, {
+      url: "/__dev-toolbar/state",
+      fetch: net.impl,
+      now: clock().now,
+      schedule: noSchedule,
+    });
+
+    await expect(reporter.tick()).resolves.toBeUndefined();
+    await expect(reporter.tick()).resolves.toBeUndefined();
+    expect(fake.ran).toEqual([]);
+    expect(net.bodies).toHaveLength(2);
+  });
+
+  it("abandons a check-in the server never answers, freeing the next poll", async () => {
+    const fake = fakeHandle();
+    let calls = 0;
+    const impl = ((_url: string, init?: RequestInit) => {
+      calls += 1;
+      return new Promise((_resolve, reject) => {
+        init?.signal?.addEventListener("abort", () => reject(init.signal?.reason));
+      });
+    }) as unknown as typeof globalThis.fetch;
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    let pump: () => void = () => {};
+    const stop = startAgentReporter(fake.handle, {
+      url: "/__dev-toolbar/state",
+      fetch: impl,
+      timeoutMs: 5,
+      now: clock().now,
+      schedule: noSchedule,
+      pollSchedule: (callback) => {
+        pump = callback;
+        return () => {};
+      },
+    });
+
+    await vi.waitFor(() => {
+      expect(calls).toBe(1);
+    });
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    pump();
+
+    expect(calls).toBe(2);
+    stop();
+  });
 });
 
 describe("the reporter's lifetime", () => {
@@ -573,11 +782,13 @@ describe("the reporter's lifetime", () => {
   it("still reports the outcome when the toolbar unmounts between running and reporting", async () => {
     const fake = fakeHandle();
     const net = recordingFetch([{ pending: [{ token: "t1", id: "a.b" }] }]);
-    const reporter = createAgentReporter(
+    // Installation teardown stops the reporter on the same abort that kills the handle.
+    const reporter: ReturnType<typeof createAgentReporter> = createAgentReporter(
       {
         ...fake.handle,
         runCommand: (id: string, input?: unknown) => {
           fake.tearDown();
+          reporter.stop();
           return (fake.handle.runCommand as NonNullable<AgentHandle["runCommand"]>)(id, input);
         },
       },
