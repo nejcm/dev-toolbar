@@ -17,6 +17,7 @@ import {
   OVERLAY_IDS,
   OVERLAY_META,
   accessibleName,
+  contentBoxOf,
   countEnabled,
   describeElement,
   isInToolbar,
@@ -28,6 +29,7 @@ import {
   DEFAULT_GRID,
 } from "../types";
 import type { ExtensionRuntimeApi } from "../../../core/contract";
+import type { HoverTarget } from "../types";
 
 const html = (markup: string): HTMLElement => {
   const host = document.createElement("div");
@@ -108,7 +110,7 @@ class GeometryResizeObserver implements ResizeObserver {
   trigger(target: Element): void {
     if (!this.targets.has(target)) return;
     this.callbackCount += 1;
-    this.callback([], this);
+    this.callback([{ target } as ResizeObserverEntry], this);
   }
 }
 
@@ -537,7 +539,7 @@ describe("geometry observation", () => {
     stop();
   });
 
-  it("schedules on class changes without queueing a focus rescan", async () => {
+  it("re-measures on class changes without a rescan", async () => {
     const runtime = createOverlaysRuntime({
       defaults: { focus: true },
       mutationDebounceMs: 400,
@@ -551,16 +553,18 @@ describe("geometry observation", () => {
     await new Promise((resolve) => setTimeout(resolve, 450));
 
     const scans = vi.spyOn(document, "querySelectorAll");
+    const tabbableScans = () =>
+      scans.mock.calls.filter(
+        ([selector]) => typeof selector === "string" && selector.includes("audio[controls]"),
+      ).length;
     button.className = "shifted";
     withRect(button, { x: 50, y: 10, width: 80, height: 24 });
     await frame();
-    await new Promise((resolve) => setTimeout(resolve, 450));
-
-    const tabbableScans = scans.mock.calls.filter(
-      ([selector]) => typeof selector === "string" && selector.includes("audio[controls]"),
-    ).length;
-    expect(tabbableScans).toBe(0);
+    expect(tabbableScans()).toBe(0);
     expect(runtime.store.peek().focusItems[0]?.rect.x).toBe(50);
+
+    await new Promise((resolve) => setTimeout(resolve, 450));
+    expect(tabbableScans()).toBe(0);
 
     stop();
   });
@@ -615,6 +619,30 @@ describe("geometry observation", () => {
 });
 
 describe("hover name caching", () => {
+  it("drops the cached hover element when inspect goes off under focus", async () => {
+    const runtime = createOverlaysRuntime({ defaults: { inspect: true, focus: true } });
+    const stop = runtime.start(fakeApi());
+    const host = html(`<span id="lbl">Save</span><div id="hov" aria-labelledby="lbl"></div>`);
+    const hovered = host.querySelector("#hov") as Element;
+    withRect(hovered, { x: 0, y: 0, width: 100, height: 40 });
+    (document as Document & { elementFromPoint: () => Element | null }).elementFromPoint = () =>
+      hovered;
+    await settleMutations();
+    fireEvent.pointerMove(window, { clientX: 10, clientY: 10 });
+    await frame();
+    expect(runtime.store.peek().hover?.name).toBe("Save");
+
+    runtime.set("inspect", false);
+    runtime.set("inspect", true);
+    const lookups = vi.spyOn(document, "getElementById");
+    fireEvent.pointerMove(window, { clientX: 10, clientY: 10 });
+    await frame();
+    // A lookup means the cache let go of the element while inspect was off.
+    expect(lookups).toHaveBeenCalled();
+
+    stop();
+  });
+
   it("resolves the accessible name once per hover until a non-geometry mutation", async () => {
     const runtime = createOverlaysRuntime({ defaults: { inspect: true } });
     const stop = runtime.start(fakeApi());
@@ -769,6 +797,145 @@ describe("toggling focus while the shared DOM observer already exists", () => {
   });
 });
 
+describe("observed attributes outside the name and geometry sets", () => {
+  it("rescans when an audio element gains controls", async () => {
+    const host = html(`<audio aria-label="Track"></audio>`);
+    const audio = host.querySelector("audio") as Element;
+    withRect(audio, { x: 0, y: 0, width: 100, height: 40 });
+    const runtime = createOverlaysRuntime({ defaults: { focus: true } });
+    const stop = runtime.start(fakeApi());
+    await settleMutations();
+    expect(runtime.store.peek().focusItems).toHaveLength(0);
+
+    audio.setAttribute("controls", "");
+    await settleMutations();
+    expect(runtime.store.peek().focusItems.map((item) => item.name)).toEqual(["Track"]);
+
+    stop();
+  });
+
+  it("re-resolves a name when its aria-labelledby target id moves", async () => {
+    const host = html(
+      `<span id="lbl">Old</span><span id="next">New</span><button aria-labelledby="lbl"></button>`,
+    );
+    withRect(host.querySelector("button") as Element, { x: 0, y: 0, width: 100, height: 40 });
+    const runtime = createOverlaysRuntime({ defaults: { focus: true } });
+    const stop = runtime.start(fakeApi());
+    await settleMutations();
+    expect(runtime.store.peek().focusItems[0]?.name).toBe("Old");
+
+    host.querySelector("#lbl")!.removeAttribute("id");
+    host.querySelector("#next")!.id = "lbl";
+    await settleMutations();
+    expect(runtime.store.peek().focusItems[0]?.name).toBe("New");
+
+    stop();
+  });
+});
+
+describe("unrendered tabbables", () => {
+  const hiddenThenVisible = (hidden: number) => {
+    const host = html(
+      `<div class="menu">${'<button aria-label="item"></button>'.repeat(hidden)}</div>` +
+        `<button aria-label="One"></button><button aria-label="Two"></button>`,
+    );
+    const [menu] = host.children;
+    const visible = [...host.querySelectorAll(":scope > button")];
+    visible.forEach((button, index) =>
+      withRect(button, { x: index * 100, y: 0, width: 80, height: 24 }),
+    );
+    // A CSS-only reveal (`:hover`, a media query): boxes appear, no DOM mutation does.
+    const reveal = () => {
+      for (const button of menu!.querySelectorAll("button")) {
+        withRect(button, { x: 0, y: 40, width: 80, height: 24 });
+        GeometryResizeObserver.instances[0]!.trigger(button);
+      }
+    };
+    return reveal;
+  };
+
+  it("retains none and observes at most focusLimit of them", async () => {
+    vi.stubGlobal("ResizeObserver", GeometryResizeObserver);
+    hiddenThenVisible(50);
+    const runtime = createOverlaysRuntime({ defaults: { focus: true }, focusLimit: 3 });
+    const stop = runtime.start(fakeApi());
+    await settleMutations();
+
+    expect(runtime.store.peek().focusItems.map((item) => item.name)).toEqual(["One", "Two"]);
+    expect(GeometryResizeObserver.instances[0]!.targets.size).toBe(5);
+
+    stop();
+  });
+
+  it("rescans when one gains a box with no DOM mutation", async () => {
+    vi.stubGlobal("ResizeObserver", GeometryResizeObserver);
+    const reveal = hiddenThenVisible(1);
+    const runtime = createOverlaysRuntime({ defaults: { focus: true } });
+    const stop = runtime.start(fakeApi());
+    await settleMutations();
+    expect(runtime.store.peek().focusItems.map((item) => item.name)).toEqual(["One", "Two"]);
+
+    reveal();
+    await settleMutations();
+    expect(runtime.store.peek().focusItems.map((item) => item.name)).toEqual([
+      "item",
+      "One",
+      "Two",
+    ]);
+
+    stop();
+  });
+
+  it("holds focusLimit when they are revealed", async () => {
+    vi.stubGlobal("ResizeObserver", GeometryResizeObserver);
+    const reveal = hiddenThenVisible(3);
+    const runtime = createOverlaysRuntime({ defaults: { focus: true }, focusLimit: 2 });
+    const stop = runtime.start(fakeApi());
+    await settleMutations();
+    expect(runtime.store.peek().focusItems.map((item) => item.name)).toEqual(["One", "Two"]);
+
+    reveal();
+    await settleMutations();
+    expect(runtime.store.peek().focusItems.map((item) => item.name)).toEqual(["item", "item"]);
+    expect(runtime.store.peek().focusTruncated).toBe(true);
+
+    stop();
+  });
+});
+
+describe("the inspector's content box", () => {
+  const edges = (n: number) => ({ top: n, right: n, bottom: n, left: n });
+  const rect = { x: 0, y: 0, width: 100, height: 60 };
+
+  it("sits inside both border and padding", () => {
+    expect(contentBoxOf(rect, edges(5), edges(10))).toEqual({
+      x: 15,
+      y: 15,
+      width: 70,
+      height: 30,
+    });
+  });
+
+  it("treats a missing border as zero, so pre-border hover objects still work", () => {
+    const legacy: HoverTarget = {
+      rect,
+      margin: edges(0),
+      padding: edges(5),
+      description: "div",
+      size: "100 × 60",
+      name: null,
+      role: null,
+      pinned: false,
+    };
+    expect(contentBoxOf(legacy.rect, legacy.padding, legacy.border)).toEqual({
+      x: 5,
+      y: 5,
+      width: 90,
+      height: 50,
+    });
+  });
+});
+
 describe("hover names without a MutationObserver", () => {
   it("re-resolves every frame, because the cache has no invalidator", async () => {
     vi.stubGlobal("MutationObserver", undefined);
@@ -816,6 +983,10 @@ describe("publication guarantees", () => {
     "padding.right",
     "padding.bottom",
     "padding.left",
+    "border.top",
+    "border.right",
+    "border.bottom",
+    "border.left",
   ])("publishes hover.%s exactly once after a measurement frame", async (field) => {
     vi.useFakeTimers();
     const button = document.createElement("button");
@@ -851,6 +1022,9 @@ describe("publication guarantees", () => {
       } else if (part === "margin" || part === "padding") {
         button.style.setProperty(`${part}-${component}`, "10px");
         delta = { [part]: { ...before.hover![part], [component!]: 10 } };
+      } else if (part === "border") {
+        button.style.setProperty(`border-${component}`, "10px solid");
+        delta = { border: { ...before.hover!.border, [component!]: 10 } };
       } else if (part === "description") {
         button.id = "changed";
         delta = { description: "button#changed" };
