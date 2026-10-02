@@ -15,6 +15,7 @@
  * others.
  */
 import { createRingBuffer, describeError, redact, redactUrl } from "../../runtime";
+import type { RedactOptions, RingBuffer } from "../../runtime";
 import { describeSupport } from "./types";
 import type {
   InteractionReport,
@@ -43,6 +44,8 @@ export interface ResponsivenessOptions {
    * reader's failure guard around `report()` is an actually-tested path.
    */
   now?: () => number;
+  /** Applied to every foreign string the monitor keeps: attribution and observer failures. */
+  redactOptions?: RedactOptions;
 }
 
 export interface ResponsivenessMonitor {
@@ -111,9 +114,9 @@ const numberOr = (value: unknown, fallback: number): number =>
   typeof value === "number" && Number.isFinite(value) ? value : fallback;
 
 /** Masks one foreign field before it is joined to anything else (see `describeAttribution`). */
-const part = (value: string): string => {
+const part = (value: string, options: RedactOptions | undefined): string => {
   try {
-    return redact(value);
+    return redact(value, options);
   } catch {
     return "[unreadable]";
   }
@@ -126,7 +129,7 @@ const part = (value: string): string => {
  * join (§11.3) — `redact()`'s anchored matching would find nothing in the
  * assembled sentence.
  */
-function describeAttribution(raw: unknown): string | null {
+function describeAttribution(raw: unknown, options: RedactOptions | undefined): string | null {
   if (!Array.isArray(raw) || raw.length === 0) return null;
   const first = raw[0] as {
     name?: unknown;
@@ -138,18 +141,18 @@ function describeAttribution(raw: unknown): string | null {
   if (first === null || typeof first !== "object") return null;
   const parts: string[] = [];
   if (typeof first.containerType === "string" && first.containerType !== "") {
-    parts.push(part(first.containerType));
+    parts.push(part(first.containerType, options));
   } else if (typeof first.name === "string" && first.name !== "") {
-    parts.push(part(first.name));
+    parts.push(part(first.name, options));
   }
   if (typeof first.containerId === "string" && first.containerId !== "") {
-    parts.push(`#${part(first.containerId)}`);
+    parts.push(`#${part(first.containerId, options)}`);
   }
   if (typeof first.containerName === "string" && first.containerName !== "") {
-    parts.push(`[name=${part(first.containerName)}]`);
+    parts.push(`[name=${part(first.containerName, options)}]`);
   }
   if (typeof first.containerSrc === "string" && first.containerSrc !== "") {
-    parts.push(redactUrl(first.containerSrc));
+    parts.push(redactUrl(first.containerSrc, options));
   }
   return parts.length === 0 ? null : parts.join(" ");
 }
@@ -163,6 +166,7 @@ export function createResponsivenessMonitor(
     recentSize = 5,
     slowInteractionMs = 200,
     now = defaultNow,
+    redactOptions,
   } = options;
 
   const longTasks = createRingBuffer<TimedSample>(historySize);
@@ -170,6 +174,21 @@ export function createResponsivenessMonitor(
   const shifts = createRingBuffer<TimedSample>(historySize);
   /** Maps non-zero ids to live samples so later entries fold into one slot. Removed on eviction. */
   const byInteractionId = new Map<number, TimedSample>();
+  /** Latest `at` each ring has evicted: inside the window, that ring's figures are partial. */
+  const evictedAt = new Map<RingBuffer<TimedSample>, number>();
+  const keep = (ring: RingBuffer<TimedSample>, sample: TimedSample): TimedSample | undefined => {
+    const evicted = ring.size === ring.capacity ? ring.at(0) : undefined;
+    if (evicted !== undefined) {
+      evictedAt.set(ring, Math.max(evictedAt.get(ring) ?? Number.NEGATIVE_INFINITY, evicted.at));
+    }
+    ring.push(sample);
+    return evicted;
+  };
+  const partial = (ring: RingBuffer<TimedSample>, since: number): string =>
+    (evictedAt.get(ring) ?? Number.NEGATIVE_INFINITY) >= since
+      ? ` Only the newest ${ring.capacity} samples are counted: older ones inside this window ` +
+        "were dropped once the history filled (historySize)."
+      : "";
   /**
    * Sticky false once an entry lacks a usable `interactionId`; an empty window cannot establish
    * that the engine lacks the field. `reset()` preserves it because page capability does not
@@ -190,10 +209,10 @@ export function createResponsivenessMonitor(
   const record = (entryType: string, entry: EntryLike): void => {
     const at = numberOr(entry.startTime, now());
     if (entryType === LONG_TASK) {
-      longTasks.push({
+      keep(longTasks, {
         at,
         value: numberOr(entry.duration, 0),
-        attribution: describeAttribution(entry.attribution),
+        attribution: describeAttribution(entry.attribution, redactOptions),
       });
       return;
     }
@@ -226,17 +245,14 @@ export function createResponsivenessMonitor(
         entries: 1,
         ...(id === undefined ? {} : { interactionId: id }),
       };
+      const evicted = keep(interactions, sample);
       // Remove an evicted id from the live map.
-      if (interactions.size === interactions.capacity) {
-        const evicted = interactions.at(0);
-        if (
-          evicted?.interactionId !== undefined &&
-          byInteractionId.get(evicted.interactionId) === evicted
-        ) {
-          byInteractionId.delete(evicted.interactionId);
-        }
+      if (
+        evicted?.interactionId !== undefined &&
+        byInteractionId.get(evicted.interactionId) === evicted
+      ) {
+        byInteractionId.delete(evicted.interactionId);
       }
-      interactions.push(sample);
       if (id !== undefined && id !== 0) byInteractionId.set(id, sample);
       return;
     }
@@ -244,7 +260,7 @@ export function createResponsivenessMonitor(
       // Per spec, a shift within 500ms of input is "expected" — counting it
       // would make every dialog open look like a layout bug.
       if (entry.hadRecentInput === true) return;
-      shifts.push({ at, value: numberOr(entry.value, 0) });
+      keep(shifts, { at, value: numberOr(entry.value, 0) });
     }
   };
 
@@ -289,7 +305,7 @@ export function createResponsivenessMonitor(
       support[entryType] = "failed";
       // The message reaches a `note`/ticket, so it is masked: `/runtime`'s
       // describer reads it once, guarded, and masks it as prose.
-      detail[entryType] = describeError(error).message;
+      detail[entryType] = describeError(error, redactOptions).message;
     }
   };
 
@@ -344,7 +360,8 @@ export function createResponsivenessMonitor(
       note:
         `${note} A long task is one over ${LONG_TASK_THRESHOLD_MS} ms; blocking time is the excess ` +
         "above that threshold. Entries buffered by the browser from before the " +
-        "toolbar started are included where it retained them.",
+        "toolbar started are included where it retained them." +
+        partial(longTasks, since),
     };
   };
 
@@ -393,7 +410,8 @@ export function createResponsivenessMonitor(
       worstType: worst?.label ?? null,
       note:
         `${note} ${grouping} Only events the browser considered worth reporting appear here — ` +
-        `by default that is everything over 104 ms. "Slow" is ${slowInteractionMs} ms or more.`,
+        `by default that is everything over 104 ms. "Slow" is ${slowInteractionMs} ms or more.` +
+        partial(interactions, since),
     };
   };
 
@@ -416,7 +434,9 @@ export function createResponsivenessMonitor(
       count: samples.length,
       total: round(total),
       worst: samples.length === 0 ? null : round(worst),
-      note: `${note} Shifts within 500 ms of user input are excluded, per the specification.`,
+      note:
+        `${note} Shifts within 500 ms of user input are excluded, per the specification.` +
+        partial(shifts, since),
     };
   };
 
@@ -451,6 +471,7 @@ export function createResponsivenessMonitor(
       interactions.clear();
       byInteractionId.clear();
       shifts.clear();
+      evictedAt.clear();
       // Restarting re-observes capability; `reset()` preserves it because one page's
       // `interactionId` support does not change between windows.
       groupingAvailable = true;
@@ -466,6 +487,7 @@ export function createResponsivenessMonitor(
       interactions.clear();
       byInteractionId.clear();
       shifts.clear();
+      evictedAt.clear();
     },
 
     ingest,

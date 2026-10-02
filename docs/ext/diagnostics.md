@@ -53,6 +53,9 @@ which leaves `pointerdown` at 0. Entries with id 0 stay in the raw total but are
 Engines
 without `interactionId` count one entry as one interaction and say so in the note. The
 layout-shift `total` is a plain sum of shift scores in the window, not Cumulative Layout Shift.
+Each entry type keeps the newest `historySize` samples (default 120); when an older one
+still inside the window has been dropped to make room, that section's note says the figures
+cover only the newest samples.
 
 **Redaction happens on the way in.** The consumer's `app` context, every `source`,
 every extension contribution, the page URL, a long task's container attribution and

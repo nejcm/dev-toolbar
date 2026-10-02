@@ -364,6 +364,22 @@ describe("createResponsivenessMonitor — measurement", () => {
     expect(events.worstType).toBe("click");
   });
 
+  it("says the figures are partial when the ring evicted a sample still inside the window", () => {
+    const control = installObserver(["longtask"]);
+    const monitor = createResponsivenessMonitor({ windowMs: 1_000_000, historySize: 2 });
+    monitor.start();
+    control.emit("longtask", [longTask(1, 60), longTask(2, 60)]);
+    expect(monitor.report().longTasks.note).not.toContain("Only the newest");
+
+    control.emit("longtask", [longTask(3, 900)]);
+    const tasks = monitor.report().longTasks;
+    expect(tasks.count).toBe(2);
+    expect(tasks.note).toContain("Only the newest 2 samples are counted");
+
+    monitor.reset();
+    expect(monitor.report().longTasks.note).not.toContain("Only the newest");
+  });
+
   it("still says unknown, never zero, when event timing cannot be observed", () => {
     installObserver(["longtask"]);
     const monitor = createResponsivenessMonitor();
@@ -412,6 +428,45 @@ describe("createResponsivenessMonitor — measurement", () => {
     expect(report.longTasks.support).toBe("failed");
     expect(report.longTasks.note).not.toContain("OBSERVE-LEAK");
     expect(report.longTasks.note).toContain("api_key=[redacted]");
+  });
+
+  it("applies redactOptions to an observe() failure's reason", () => {
+    class Hostile {
+      observe(): never {
+        throw new Error("https://app.test/?tenant=OBSERVE-LEAK");
+      }
+      disconnect() {}
+    }
+    vi.stubGlobal("PerformanceObserver", Hostile);
+
+    const monitor = createResponsivenessMonitor({
+      redactOptions: { extraKeys: ["tenant"], mask: "***" },
+    });
+    monitor.start();
+    const note = monitor.report().longTasks.note;
+
+    expect(note).not.toContain("OBSERVE-LEAK");
+    expect(note).toContain("tenant=***");
+  });
+
+  it("applies redactOptions to long-task attribution", () => {
+    installObserver(["longtask"]);
+    const monitor = createResponsivenessMonitor({
+      windowMs: 1_000_000,
+      redactOptions: { extraKeys: ["tenant"], mask: "***" },
+    });
+    monitor.start();
+    monitor.ingest("longtask", [
+      {
+        startTime: 1,
+        duration: 90,
+        attribution: [{ containerType: "iframe", containerSrc: "https://cdn.test/?tenant=LEAK" }],
+      },
+    ]);
+
+    expect(monitor.report().longTasks.worst?.attribution).toBe(
+      "iframe https://cdn.test/?tenant=***",
+    );
   });
 
   it("survives an entry list that throws when it is read", () => {

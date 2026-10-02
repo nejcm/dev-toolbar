@@ -404,9 +404,9 @@ export function createConsoleTail(
     }
   };
 
-  // `redact()` only matches a value-shaped whole leaf and keeps `Error.name`
-  // verbatim, so the leaves of an already-redacted copy are re-masked here
-  // before they are joined into the JSON line this module builds.
+  // `redact()` only matches a value-shaped whole leaf, so the leaves of an
+  // already-redacted copy get the prose pass here before they are joined into
+  // the JSON line this module builds.
   const maskLeaves = (value: unknown, depth = 0): unknown => {
     if (typeof value === "string") return maskString(value);
     if (typeof value !== "object" || value === null) return value;
