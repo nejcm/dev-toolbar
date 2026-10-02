@@ -112,6 +112,12 @@ describe("redact", () => {
     });
   });
 
+  it("masks a credential-shaped string Error.name as a whole value", () => {
+    const named = Object.assign(new Error("fine"), { name: "Bearer abc" });
+    expect(redact({ named })).toEqual({ named: { name: `Bearer ${REDACTED}`, message: "fine" } });
+    expect(redact(new TypeError("fine"))).toEqual({ name: "TypeError", message: "fine" });
+  });
+
   it("honours extraKeys, allowKeys and a custom mask", () => {
     expect(
       redact({ tenant: "acme", session: "s1" }, { extraKeys: ["tenant"], mask: "***" }),
