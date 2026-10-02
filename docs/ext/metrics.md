@@ -298,6 +298,16 @@ bus.emit("network-start", { requestId, method, url });
 bus.emit("network-end", { requestId, ok, status, duration, bytes });
 ```
 
+A request is failed when `ok` is `false`, `error` is set, or `status` is 400 or above,
+so `ok: false` alone is enough for a client that has no status to report.
+
+A request counts as in flight while the panel still lists it or it started within
+`max(windowMs, 60 s)`; a bus start also stops once the pending-start cap drops it. A
+hung request therefore stays on the chip until it has both left the history and aged
+past that bound. A patched request that settles later is still recorded; a bus end is
+only matched while its start is listed or still pending, so a late one is dropped. Patched `fetch` finishes at response headers, so a streamed
+response counts only until they arrive; `EventSource` and WebSocket are not observed.
+
 In a test, hand it `createMockBus()` from `@nejcm/dev-toolbar/testing` instead and
 drive the two events by hand — no `fetch` to stub, and a clock you control.
 

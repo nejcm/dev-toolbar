@@ -345,6 +345,10 @@ describe("jank collector — rAF present", () => {
     // Its own row: a stall is not a frame, and a debugger pause landing here
     // must not become the session's worst frame for the rest of the session.
     expect(detail["Worst frame (session)"]).toBe("16.0 ms");
+    // One 16 ms interval of active time, not the 1.2 s stall that followed it.
+    expect(
+      (collector.diagnostics(clock.t) as { effectiveWindowMs: number }).effectiveWindowMs,
+    ).toBe(16);
     // Deliberately outside the ratio: one stall would otherwise peg it.
     expect(detail["Dropped frames"]).toBe("0");
     expect(view.display).toBe("0.0%");

@@ -451,6 +451,34 @@ describe("delay collector — grouping by interactionId", () => {
     controller.abort();
   });
 
+  it("keeps a still-valid runner-up after the worst ages out and the ring evicted it", () => {
+    const observer = install({});
+    const collector = createDelayCollector({ historySize: 1, windowMs: 1000 });
+    const controller = new AbortController();
+    collector.start(context(controller, { t: 0 }));
+
+    observer.emit([entry({ interactionId: 1, duration: 900, startTime: 0 })]);
+    observer.emit([entry({ interactionId: 2, duration: 400, startTime: 100 })]);
+    observer.emit([entry({ interactionId: 3, duration: 24, startTime: 200 })]);
+
+    expect(collector.read(1050).value).toBe(400);
+    controller.abort();
+  });
+
+  it("keeps a runner-up outranked only by an interaction whose start can still move back", () => {
+    const observer = install({});
+    const collector = createDelayCollector({ windowMs: 1000 });
+    const controller = new AbortController();
+    collector.start(context(controller, { t: 0 }));
+
+    observer.emit([entry({ interactionId: 1, duration: 400, startTime: 100 })]);
+    observer.emit([entry({ interactionId: 2, duration: 504, startTime: 200 })]);
+    observer.emit([entry({ interactionId: 2, duration: 24, startTime: 0 })]);
+
+    expect(collector.read(1050).value).toBe(400);
+    controller.abort();
+  });
+
   it("does not let a late, stale entry displace the held worst", () => {
     /**
      * A buffered or straddling callback can deliver a long entry whose

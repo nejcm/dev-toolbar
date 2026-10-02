@@ -52,8 +52,8 @@ export function createJankReader(
     let dropped = 0;
     let count = 0;
     let slowest = 0;
-    // Use the interval start: N 16 ms frames span N intervals; `now - oldest.at` loses one.
-    let earliestStart = Number.POSITIVE_INFINITY;
+    // Summed intervals, not wall-clock span: stalls and time since the last frame are not active.
+    let activeMs = 0;
     const { frames } = source;
     // The shared ring may hold more than this reader's own history; scan only that.
     for (let index = Math.max(0, frames.size - slots); index < frames.size; index += 1) {
@@ -64,10 +64,10 @@ export function createJankReader(
       dropped += frame.dropped;
       count += 1;
       if (frame.delta > slowest) slowest = frame.delta;
-      if (frame.at - frame.delta < earliestStart) earliestStart = frame.at - frame.delta;
+      activeMs += frame.delta;
     }
     // A young or undersized ring can cover less than `windowMs`; report the retained span.
-    const retainedMs = count > 0 ? now - earliestStart : windowMs;
+    const retainedMs = count > 0 ? activeMs : windowMs;
     return {
       count,
       expected,

@@ -40,9 +40,9 @@ export interface DelayCollectorOptions {
   /** Entries shorter than this are not reported. Default `16` ms. */
   durationThreshold?: number;
   /**
-   * Interactions retained for the panel. Default `50`. Grouped entries share one slot; the held
-   * worst interaction stays outside the ring until it ages out, so this affects panel history and
-   * sparkline coverage, not chip accuracy. Each slot retains an object and sample arrays.
+   * Interactions retained for the panel. Default `50`. Grouped entries share one slot; candidates
+   * for the window's worst are held outside the ring until they age out, so this affects panel
+   * history and sparkline coverage, not chip accuracy. Each slot retains an object and sample arrays.
    */
   historySize?: number;
   /**
@@ -161,45 +161,48 @@ export function createDelayCollector(options: DelayCollectorOptions = {}): Colle
    * record exists, and that record re-derives it.
    */
   let groupingAvailable = true;
-  /** Holds the window's worst interaction outside the ring until it ages out. */
-  let worstHeld: InteractionRecord | null = null;
+  /** Records no later settled record matches or beats in duration: the window maximum after any expiry. */
+  let candidates: InteractionRecord[] = [];
+  let latestAt = Number.NEGATIVE_INFINITY;
 
   const forget = () => {
     series.clear();
     interactions.clear();
     byId.clear();
-    worstHeld = null;
+    candidates = [];
+    latestAt = Number.NEGATIVE_INFINITY;
     interactionsSeen = 0;
     entriesSeen = 0;
     nonInteractionEntries = 0;
     groupingAvailable = true;
   };
 
-  /** Promotes `record` when it beats the held worst or that record has aged out. */
+  /** A record still in `byId` can fold an earlier entry, so its `at` may move back past others. */
+  const settled = (record: InteractionRecord): boolean =>
+    !record.interactionId || byId.get(record.interactionId) !== record;
+
+  /** Adds `record`, or re-ranks it after a correction, then drops expired and outranked candidates. */
   const hold = (record: InteractionRecord): void => {
-    if (worstHeld === null) {
-      worstHeld = record;
-      return;
-    }
-    // A newer start time establishes the aging boundary for the held record.
-    if (worstHeld.at < record.at - windowMs) {
-      worstHeld = record;
-      return;
-    }
-    // Do not promote a late record already older than the held record's window; the next read would
-    // filter the newly held record out as expired.
-    if (record.at < worstHeld.at - windowMs) return;
-    if (record.duration > worstHeld.duration) worstHeld = record;
+    if (record.at > latestAt) latestAt = record.at;
+    const oldest = latestAt - windowMs;
+    if (record.at < oldest) return;
+    if (!candidates.includes(record)) candidates.push(record);
+    candidates.sort((a, b) => b.at - a.at || b.duration - a.duration);
+    let longestLater = Number.NEGATIVE_INFINITY;
+    candidates = candidates.filter((candidate) => {
+      if (candidate.at < oldest || candidate.duration <= longestLater) return false;
+      if (settled(candidate)) longestLater = candidate.duration;
+      return true;
+    });
   };
 
   const worstIn = (now: number): InteractionRecord | null => {
-    let worst: InteractionRecord | null = null;
     const since = now - windowMs;
-    if (worstHeld !== null && worstHeld.at >= since) worst = worstHeld;
-    for (let index = 0; index < interactions.size; index += 1) {
-      const record = interactions.at(index);
-      if (record === undefined || record.at < since) continue;
-      if (worst === null || record.duration > worst.duration) worst = record;
+    let worst: InteractionRecord | null = null;
+    for (const candidate of candidates) {
+      if (candidate.at >= since && (worst === null || candidate.duration > worst.duration)) {
+        worst = candidate;
+      }
     }
     return worst;
   };

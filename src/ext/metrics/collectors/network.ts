@@ -115,10 +115,18 @@ export function createNetworkCollector(options: NetworkCollectorOptions = {}): N
   const entries = createRingBuffer<NetworkEntry>(historySize);
   const byId = new Map<string, NetworkEntry>();
   const pending = new Map<string, { entry: NetworkEntry | null; startedAt: number }>();
+  const patchedInFlight = new Set<NetworkEntry>();
+  const busInFlight = new Set<NetworkEntry>();
+  const failedEntries = new WeakSet<NetworkEntry>();
+  // Completion times inside `windowMs`, kept apart from the ring so eviction can't hide them.
+  const recentFailures: number[] = [];
+  const recentSlow: number[] = [];
   const series = createTimeSeries(120);
   const pendingMaxAge = Math.max(windowMs, 60_000);
   const pendingLimit = Math.max(64, entries.capacity);
   let sequence = 0;
+  // Bumped by reset, so a patched request that ends after it is no longer this session's.
+  let session = 0;
   let totals = { started: 0, completed: 0, failed: 0, aborted: 0, slow: 0 };
   let pendingDropped = 0;
   let duplicateStarts = 0;
@@ -130,6 +138,13 @@ export function createNetworkCollector(options: NetworkCollectorOptions = {}): N
     bus !== undefined;
 
   const clean = (url: string) => redactUrl(url, options.redact);
+
+  /** A bus start whose end can no longer be matched is not in flight any more. */
+  const release = (entry: NetworkEntry | null | undefined): void => {
+    if (!entry) return;
+    if (pending.get(entry.id)?.entry === entry || byId.get(entry.id) === entry) return;
+    busInFlight.delete(entry);
+  };
 
   // Error text is foreign (a rejection routinely names the failed request's
   // URL), so only URL-shaped substrings are rewritten — `redactUrl()` on the
@@ -180,7 +195,10 @@ export function createNetworkCollector(options: NetworkCollectorOptions = {}): N
     // Ring may evict an old entry; drop its index entry too so the map can't outgrow the ring.
     if (entries.size === entries.capacity) {
       const evicted = entries.at(0);
-      if (evicted && byId.get(evicted.id) === evicted) byId.delete(evicted.id);
+      if (evicted && byId.get(evicted.id) === evicted) {
+        byId.delete(evicted.id);
+        release(evicted);
+      }
     }
     entries.push(entry);
     byId.set(entry.id, entry);
@@ -193,23 +211,34 @@ export function createNetworkCollector(options: NetworkCollectorOptions = {}): N
     for (const [requestId, record] of pending) {
       if (record.startedAt >= oldestAllowed) break;
       pending.delete(requestId);
+      release(record.entry);
       pendingDropped += 1;
     }
   };
 
   const rememberPending = (requestId: string, entry: NetworkEntry | null, now: number): void => {
     sweepPending(now);
-    if (pending.has(requestId)) {
+    const duplicate = pending.get(requestId);
+    if (duplicate) {
       duplicateStarts += 1;
       pending.delete(requestId);
     }
     pending.set(requestId, { entry, startedAt: now });
+    release(duplicate?.entry);
     while (pending.size > pendingLimit) {
-      const oldest = pending.keys().next().value as string | undefined;
+      const [oldest, record] = pending.entries().next().value ?? [];
       if (oldest === undefined) break;
       pending.delete(oldest);
+      release(record?.entry);
       pendingDropped += 1;
     }
+  };
+
+  const dropBefore = (times: number[], since: number): number => {
+    let expired = 0;
+    while (expired < times.length && (times[expired] as number) < since) expired += 1;
+    times.splice(0, expired);
+    return times.length;
   };
 
   const finish = (
@@ -220,9 +249,11 @@ export function createNetworkCollector(options: NetworkCollectorOptions = {}): N
       bytes?: number | undefined;
       error?: string | undefined;
       aborted?: boolean;
+      ok?: boolean;
     },
   ) => {
     if (!entry || entry.completedAt !== undefined) return;
+    busInFlight.delete(entry);
     entry.completedAt = now;
     entry.status = result.status;
     entry.bytes = result.bytes;
@@ -230,13 +261,24 @@ export function createNetworkCollector(options: NetworkCollectorOptions = {}): N
     entry.aborted = result.aborted ?? false;
     const duration = now - entry.startedAt;
     const failed =
-      result.error !== undefined || (result.status !== undefined && result.status >= 400);
+      !entry.aborted &&
+      (result.ok === false ||
+        result.error !== undefined ||
+        (result.status !== undefined && result.status >= 400));
+    const slow = duration > slowMs;
+    if (failed) {
+      failedEntries.add(entry);
+      recentFailures.push(now);
+    }
+    if (slow) recentSlow.push(now);
+    dropBefore(recentFailures, now - windowMs);
+    dropBefore(recentSlow, now - windowMs);
     totals = {
       started: totals.started,
       completed: totals.completed + 1,
-      failed: totals.failed + (failed && !entry.aborted ? 1 : 0),
+      failed: totals.failed + (failed ? 1 : 0),
       aborted: totals.aborted + (entry.aborted ? 1 : 0),
-      slow: totals.slow + (duration > slowMs ? 1 : 0),
+      slow: totals.slow + (slow ? 1 : 0),
     };
     series.push(now, duration);
   };
@@ -244,9 +286,7 @@ export function createNetworkCollector(options: NetworkCollectorOptions = {}): N
   const stateOf = (entry: NetworkEntry): NetworkEntryView["state"] => {
     if (entry.completedAt === undefined) return "active";
     if (entry.aborted) return "aborted";
-    if (entry.error !== undefined) return "failed";
-    if (entry.status !== undefined && entry.status >= 400) return "failed";
-    return "ok";
+    return failedEntries.has(entry) ? "failed" : "ok";
   };
 
   /** Newest first, for the panel table. */
@@ -270,23 +310,31 @@ export function createNetworkCollector(options: NetworkCollectorOptions = {}): N
     return output;
   };
 
+  /** Untracks hung requests neither listed nor recent, as the bus sweep does; a late end still lands. */
+  const prunePatched = (now: number): void => {
+    const oldestCounted = now - pendingMaxAge;
+    for (const entry of patchedInFlight) {
+      if (byId.get(entry.id) !== entry && entry.startedAt < oldestCounted) {
+        patchedInFlight.delete(entry);
+      }
+    }
+  };
+
   const summarise = (now: number) => {
     const since = now - windowMs;
-    let active = 0;
-    let failed = 0;
-    let slow = 0;
+    sweepPending(now);
+    prunePatched(now);
     let inWindow = 0;
     for (let index = 0; index < entries.size; index += 1) {
-      const entry = entries.at(index);
-      if (entry === undefined) continue;
-      const state = stateOf(entry);
-      if (state === "active") active += 1;
-      if (entry.completedAt === undefined || entry.completedAt < since) continue;
-      inWindow += 1;
-      if (state === "failed") failed += 1;
-      if (entry.completedAt - entry.startedAt > slowMs) slow += 1;
+      const completedAt = entries.at(index)?.completedAt;
+      if (completedAt !== undefined && completedAt >= since) inWindow += 1;
     }
-    return { active, failed, slow, inWindow };
+    return {
+      active: patchedInFlight.size + busInFlight.size,
+      failed: dropBefore(recentFailures, since),
+      slow: dropBefore(recentSlow, since),
+      inWindow,
+    };
   };
 
   return {
@@ -313,11 +361,9 @@ export function createNetworkCollector(options: NetworkCollectorOptions = {}): N
           "network-start",
           (payload) => {
             const now = context.now();
-            rememberPending(
-              payload.requestId,
-              begin(now, payload.method, payload.url, payload.requestId),
-              now,
-            );
+            const entry = begin(now, payload.method, payload.url, payload.requestId);
+            if (entry) busInFlight.add(entry);
+            rememberPending(payload.requestId, entry, now);
             context.invalidate();
           },
           { signal: context.signal },
@@ -336,23 +382,38 @@ export function createNetworkCollector(options: NetworkCollectorOptions = {}): N
               bytes: payload.bytes,
               error: payload.error,
               aborted: payload.aborted ?? false,
+              ok: payload.ok,
             });
             context.invalidate();
           },
           { signal: context.signal },
         );
-        context.signal.addEventListener("abort", () => pending.clear(), { once: true });
+        context.signal.addEventListener(
+          "abort",
+          () => {
+            const dropped = [...pending.values()];
+            pending.clear();
+            for (const record of dropped) release(record.entry);
+          },
+          { once: true },
+        );
       }
 
       // One sink, both transports.
       const sink: NetworkSink = {
         begin: (method, url) => {
-          const entry = begin(context.now(), method, url);
+          const now = context.now();
+          const entry = begin(now, method, url);
+          prunePatched(now);
+          if (entry) patchedInFlight.add(entry);
           context.invalidate();
-          return entry;
+          return entry ? { entry, session } : null;
         },
         end: (token, result) => {
-          finish(token as NetworkEntry | null, context.now(), result);
+          const ticket = token as { entry: NetworkEntry; session: number } | null;
+          if (ticket === null || ticket.session !== session) return;
+          patchedInFlight.delete(ticket.entry);
+          finish(ticket.entry, context.now(), result);
           context.invalidate();
         },
       };
@@ -420,6 +481,11 @@ export function createNetworkCollector(options: NetworkCollectorOptions = {}): N
       entries.clear();
       byId.clear();
       pending.clear();
+      session += 1;
+      patchedInFlight.clear();
+      busInFlight.clear();
+      recentFailures.length = 0;
+      recentSlow.length = 0;
       series.clear();
       totals = { started: 0, completed: 0, failed: 0, aborted: 0, slow: 0 };
       pendingDropped = 0;
@@ -438,6 +504,7 @@ export function createNetworkCollector(options: NetworkCollectorOptions = {}): N
         pendingDropped,
         duplicateStarts,
         ...summarise(now),
+        tracked: patchedInFlight.size + busInFlight.size,
         recent: list(now).slice(0, 20),
       };
     },
