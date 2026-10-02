@@ -14,6 +14,27 @@
   style break at the boundary is accepted, not an oversight.
 -->
 
+## [1.4.0](https://github.com/nejcm/dev-toolbar/compare/v1.3.1...v1.4.0) (2026-10-02)
+
+
+### Features
+
+* **agent:** report each outcome promptly and bound check-ins with timeoutMs ([0e54ef5](https://github.com/nejcm/dev-toolbar/commit/0e54ef5cfb5f36bf46b3cb562ad5222123293afb))
+* **flags:** flag retyped overrides via FlagView.typeMismatch and make clears retryable ([0e54ef5](https://github.com/nejcm/dev-toolbar/commit/0e54ef5cfb5f36bf46b3cb562ad5222123293afb))
+
+
+### Bug Fixes
+
+* **a11y:** keep scans queued correctly and the highlight honest ([0e54ef5](https://github.com/nejcm/dev-toolbar/commit/0e54ef5cfb5f36bf46b3cb562ad5222123293afb))
+* **command-menu:** guard runs per command and keep focus and keys intact ([0e54ef5](https://github.com/nejcm/dev-toolbar/commit/0e54ef5cfb5f36bf46b3cb562ad5222123293afb))
+* **core:** close render-phase and listener-lifecycle gaps ([0e54ef5](https://github.com/nejcm/dev-toolbar/commit/0e54ef5cfb5f36bf46b3cb562ad5222123293afb))
+* **diagnostics:** redact observer notes and contain publish feedback ([0e54ef5](https://github.com/nejcm/dev-toolbar/commit/0e54ef5cfb5f36bf46b3cb562ad5222123293afb))
+* **environment:** honour the fields allowlist and redact composed values ([0e54ef5](https://github.com/nejcm/dev-toolbar/commit/0e54ef5cfb5f36bf46b3cb562ad5222123293afb))
+* **metrics:** keep in-flight and window maxima accurate past the history ring ([0e54ef5](https://github.com/nejcm/dev-toolbar/commit/0e54ef5cfb5f36bf46b3cb562ad5222123293afb))
+* **overlays:** fix disabled-fieldset links, content box and focus limits ([0e54ef5](https://github.com/nejcm/dev-toolbar/commit/0e54ef5cfb5f36bf46b3cb562ad5222123293afb))
+* **runtime:** mask credentials in an Error's name ([0e54ef5](https://github.com/nejcm/dev-toolbar/commit/0e54ef5cfb5f36bf46b3cb562ad5222123293afb))
+* **theme-editor:** redact share links and mask orphaned edits ([0e54ef5](https://github.com/nejcm/dev-toolbar/commit/0e54ef5cfb5f36bf46b3cb562ad5222123293afb))
+
 ## [1.3.1](https://github.com/nejcm/dev-toolbar/compare/v1.3.0...v1.3.1) (2026-09-29)
 
 
