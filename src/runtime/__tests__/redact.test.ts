@@ -118,6 +118,23 @@ describe("redact", () => {
     expect(redact(new TypeError("fine"))).toEqual({ name: "TypeError", message: "fine" });
   });
 
+  it("matches an Error's name and message against the key list before reading them", () => {
+    expect(redact(new Error("SECRET"), { extraKeys: ["message"] })).toEqual({
+      name: "Error",
+      message: REDACTED,
+    });
+    const hostile = new Error("fine");
+    Object.defineProperty(hostile, "message", {
+      get() {
+        throw new Error("read a sensitive getter");
+      },
+    });
+    expect(redact(hostile, { extraKeys: ["message", "name"] })).toEqual({
+      name: REDACTED,
+      message: REDACTED,
+    });
+  });
+
   it("honours extraKeys, allowKeys and a custom mask", () => {
     expect(
       redact({ tenant: "acme", session: "s1" }, { extraKeys: ["tenant"], mask: "***" }),
@@ -646,6 +663,15 @@ describe("redactUrl", () => {
     expect(() => redactUrl("::::?%e0%a4%a=1")).not.toThrow();
   });
 
+  it("masks fragment parameters in an unparseable URL too", () => {
+    expect(redactUrl("http://[/#token=SECRET")).toBe(`http://[/#token=${REDACTED}`);
+    expect(redactUrl("http://[/?ok=1#/cb?token=SECRET&tab=a")).toBe(
+      `http://[/?ok=1#/cb?token=${REDACTED}&tab=a`,
+    );
+    expect(redactUrl("http://[/?token=SECRET#top")).toBe(`http://[/?token=${REDACTED}#top`);
+    expect(redactUrl("http://[/?ok=1#top")).toBe("http://[/?ok=1#top");
+  });
+
   it("leaves a URL with nothing sensitive untouched", () => {
     expect(redactUrl("/api/orders")).toBe("/api/orders");
   });
@@ -864,6 +890,24 @@ describe("redactHeaders", () => {
       }),
     ).toEqual({ ...expected, "set-cookie": REDACTED });
   });
+
+  it("masks a credential-shaped value before joining it with a repeat of its header", () => {
+    const expected = { "x-info": `Bearer ${REDACTED}, ok` };
+    expect(
+      redactHeaders([
+        ["x-info", "Bearer SECRET"],
+        ["x-info", "ok"],
+      ]),
+    ).toEqual(expected);
+    expect(redactHeaders({ "x-info": ["Bearer SECRET", "ok"] })).toEqual(expected);
+    const headers = new Headers();
+    headers.append("x-info", "Bearer SECRET");
+    headers.append("x-info", "ok");
+    expect(redactHeaders(headers)).toEqual(expected);
+    expect(redactHeaders({ "x-info": 'Digest realm="a", nonce="SECRET"' })).toEqual({
+      "x-info": `Digest ${REDACTED}`,
+    });
+  });
 });
 
 describe("a Headers or URL instance nested inside a plain object", () => {
@@ -934,6 +978,18 @@ describe("hostile inputs walk() has not yet been asked to survive in this file",
     });
     expect(redact(hostile)).toBe("[unwalkable]");
   });
+
+  it.each([1.5, -1, Number.NaN, Number.POSITIVE_INFINITY, Symbol("length"), "2"])(
+    "tags a Proxy array whose length is %s instead of throwing",
+    (length) => {
+      const hostile = new Proxy([], {
+        get(target, prop, receiver) {
+          return prop === "length" ? length : Reflect.get(target, prop, receiver);
+        },
+      });
+      expect(redact({ hostile })).toEqual({ hostile: "[unwalkable]" });
+    },
+  );
 
   it("tags an object whose own getPrototypeOf call throws, distinct from the instanceof cascade", () => {
     // `instanceof` invokes the same `getPrototypeOf` trap as the explicit
@@ -1109,6 +1165,33 @@ describe("redactText", () => {
     const wrapped = redactText("(https://api.test/v1?ids[]=1&access_token=abc)");
     expect(wrapped).not.toContain("abc");
     expect(wrapped).toBe(`(https://api.test/v1?ids%5B%5D=1&access_token=${REDACTED})`);
+  });
+
+  it.each([
+    ['https://x/?token="SECRET"', `https://x/?token=${REDACTED}`],
+    ["see https://x/?token='SECRET' then", `see https://x/?token=${REDACTED} then`],
+    ["https://x/?a=1&token=`SECRET", `https://x/?a=1&token=${REDACTED}`],
+    ['https://x/?q="kept"', 'https://x/?q="kept"'],
+    [
+      '"https://x/?ok=1","https://y/?token=SECRET"',
+      `"https://x/?ok=1","https://y/?token=${REDACTED}"`,
+    ],
+    [
+      '{"url":"https://x/?token=","status":"ok"}',
+      `{"url":"https://x/?token=${REDACTED}","status":"ok"}`,
+    ],
+    ['<a href="https://x/?token=">', `<a href="https://x/?token=${REDACTED}">`],
+    ['https://x/?token="ONE"&password=TWO', `https://x/?token=${REDACTED}&password=${REDACTED}`],
+    [
+      "https://x/?token='ONE'&q=1&password='TWO' after",
+      `https://x/?token=${REDACTED}&q=1&password=${REDACTED} after`,
+    ],
+  ])("masks a quoted sensitive URL parameter value in %j", (input, expected) => {
+    expect(redactText(input)).toBe(expected);
+  });
+
+  it("masks a quoted value under a percent-encoded sensitive key", () => {
+    expect(redactText('https://x/?%74oken="SECRET"')).not.toContain("SECRET");
   });
 });
 

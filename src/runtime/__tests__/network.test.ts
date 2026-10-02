@@ -4,6 +4,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { instrumentFetch, instrumentXhr } from "../network";
 import type { NetworkSink, NetworkSinkResult } from "../network";
+import { UNREADABLE } from "../redact";
 
 const originalFetch = globalThis.fetch;
 
@@ -88,6 +89,21 @@ describe("instrumentFetch", () => {
     expect(globalThis.fetch).toBe(base);
   });
 
+  it("ignores a repeated detach, so it cannot remove the same sink's later attachment", async () => {
+    globalThis.fetch = vi.fn(async () => response(200)) as unknown as typeof fetch;
+    const first = recorder("a");
+    const detachOther = instrumentFetch(recorder("b").sink);
+    const detachStale = instrumentFetch(first.sink);
+    detachStale();
+    const detachLive = instrumentFetch(first.sink);
+    detachStale();
+
+    await globalThis.fetch("/api/still-recorded");
+    expect(first.calls).toHaveLength(2);
+    detachLive();
+    detachOther();
+  });
+
   it("never unpatches over a stranger's later wrapper", () => {
     const base = vi.fn(async () => response(200)) as unknown as typeof fetch;
     globalThis.fetch = base;
@@ -148,6 +164,48 @@ describe("instrumentFetch", () => {
     detach();
   });
 
+  it("rethrows the original failure when reading it for the sink throws", async () => {
+    const { sink, calls } = recorder();
+    const unreadable = {
+      get message(): string {
+        throw new Error("getter");
+      },
+      toString(): string {
+        throw new Error("toString");
+      },
+    };
+
+    globalThis.fetch = vi.fn(async () => {
+      throw unreadable;
+    }) as unknown as typeof fetch;
+    let detach = instrumentFetch(sink);
+    await expect(globalThis.fetch("/rejects")).rejects.toBe(unreadable);
+    expect(calls.at(-1)).toEqual({
+      method: "end",
+      url: "sink:1",
+      result: { error: UNREADABLE },
+    });
+    detach();
+
+    globalThis.fetch = (() => {
+      throw unreadable;
+    }) as unknown as typeof fetch;
+    detach = instrumentFetch(sink);
+    let thrown: unknown;
+    try {
+      void globalThis.fetch("/throws");
+    } catch (error) {
+      thrown = error;
+    }
+    expect(thrown).toBe(unreadable);
+    expect(calls.at(-1)).toEqual({
+      method: "end",
+      url: "sink:2",
+      result: { error: UNREADABLE },
+    });
+    detach();
+  });
+
   it("never lets a throwing sink break the host app's request", async () => {
     const error = vi.spyOn(console, "error").mockImplementation(() => {});
     globalThis.fetch = vi.fn(async () => response(200)) as unknown as typeof fetch;
@@ -202,8 +260,11 @@ describe("instrumentFetch", () => {
 describe("instrumentXhr", () => {
   class FakeXhr extends EventTarget {
     status = 0;
+    sendError: unknown = undefined;
     open(_method: string, _url: string | URL): void {}
-    send(_body?: unknown): void {}
+    send(_body?: unknown): void {
+      if (this.sendError !== undefined) throw this.sendError;
+    }
     getResponseHeader(_name: string): string | null {
       return null;
     }
@@ -269,6 +330,45 @@ describe("instrumentXhr", () => {
         { error: "network error", bytes: undefined },
         { error: "timeout", bytes: undefined },
         { error: "aborted", aborted: true, bytes: undefined },
+      ]);
+      detach();
+    });
+  });
+
+  it("removes its listeners once a request settles, so a reused XHR holds none", () => {
+    withFakeXhr(() => {
+      const { sink, calls } = recorder();
+      const detach = instrumentXhr(sink);
+      const request = new FakeXhr();
+      const add = vi.spyOn(request, "addEventListener");
+      const remove = vi.spyOn(request, "removeEventListener");
+      for (let round = 0; round < 3; round += 1) {
+        request.open("get", "/api/reused");
+        request.send();
+        request.emit("load");
+      }
+      expect(calls.filter((call) => call.method === "end")).toHaveLength(3);
+      expect(remove.mock.calls).toEqual(add.mock.calls);
+      detach();
+    });
+  });
+
+  it("settles a send() that throws synchronously, and rethrows the original error", () => {
+    withFakeXhr(() => {
+      const { sink, calls } = recorder();
+      const detach = instrumentXhr(sink);
+      const failure = new Error("InvalidStateError");
+      const request = new FakeXhr();
+      request.open("get", "/api/in-flight");
+      request.send();
+      request.sendError = failure;
+      expect(() => request.send()).toThrow(failure);
+      request.status = 200;
+      request.emit("load");
+
+      expect(calls.filter((call) => call.method === "end")).toEqual([
+        { method: "end", url: "sink:2", result: { error: "Error: InvalidStateError" } },
+        { method: "end", url: "sink:1", result: { status: 200, bytes: undefined } },
       ]);
       detach();
     });

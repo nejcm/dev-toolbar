@@ -44,6 +44,27 @@ describe("writeClipboardText", () => {
     await expect(writeClipboardText("x")).resolves.toBe(false);
   });
 
+  it("resolves false when reading writeText itself throws, and calls it on the clipboard", async () => {
+    vi.stubGlobal("navigator", {
+      clipboard: {
+        get writeText(): never {
+          throw new Error("shimmed");
+        },
+      },
+    });
+    await expect(writeClipboardText("x")).resolves.toBe(false);
+
+    const clipboard = {
+      writes: [] as string[],
+      async writeText(this: { writes: string[] }, text: string) {
+        this.writes.push(text);
+      },
+    };
+    vi.stubGlobal("navigator", { clipboard });
+    await expect(writeClipboardText("y")).resolves.toBe(true);
+    expect(clipboard.writes).toEqual(["y"]);
+  });
+
   it("resolves false when reading navigator.clipboard itself throws", async () => {
     // A sandboxed frame can make the property access itself throw.
     vi.stubGlobal("navigator", {

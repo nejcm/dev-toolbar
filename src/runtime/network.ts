@@ -7,6 +7,8 @@
  * relatively, is in docs/runtime.md.
  */
 
+import { UNREADABLE } from "./redact";
+
 /** How a completed request is reported back to a sink. */
 export interface NetworkSinkResult {
   status?: number | undefined;
@@ -61,7 +63,11 @@ function attach(
   }
   const installed = current;
   installed.sinks.add(sink);
+  let live = true;
   return () => {
+    // A repeated detach must not remove the same sink's later attachment.
+    if (!live) return;
+    live = false;
     installed.sinks.delete(sink);
     if (installed.sinks.size > 0) return;
     installed.uninstall();
@@ -104,6 +110,15 @@ function reportSinkError(error: unknown): void {
   );
 }
 
+// A failure whose `message` or `toString` throws must still reach the app unchanged.
+function failure(read: () => NetworkSinkResult): NetworkSinkResult {
+  try {
+    return read();
+  } catch {
+    return { error: UNREADABLE };
+  }
+}
+
 const parseBytes = (raw: string | null | undefined): number | undefined => {
   if (raw === null || raw === undefined) return undefined;
   const value = Number.parseInt(raw, 10);
@@ -135,7 +150,10 @@ export function instrumentFetch(sink: NetworkSink): () => void {
         try {
           promise = original.call(globalThis, input, init);
         } catch (error) {
-          fanOut(tokens, { error: String(error) });
+          fanOut(
+            tokens,
+            failure(() => ({ error: String(error) })),
+          );
           throw error;
         }
         return promise.then(
@@ -147,10 +165,13 @@ export function instrumentFetch(sink: NetworkSink): () => void {
             return response;
           },
           (error: unknown) => {
-            fanOut(tokens, {
-              error: String((error as { message?: string } | undefined)?.message ?? error),
-              aborted: (error as { name?: string } | undefined)?.name === "AbortError",
-            });
+            fanOut(
+              tokens,
+              failure(() => ({
+                error: String((error as { message?: string } | undefined)?.message ?? error),
+                aborted: (error as { name?: string } | undefined)?.name === "AbortError",
+              })),
+            );
             throw error;
           },
         );
@@ -203,23 +224,31 @@ export function instrumentXhr(sink: NetworkSink): () => void {
         body?: Document | XMLHttpRequestBodyInit | null,
       ) {
         const state = meta.get(this);
-        if (state) {
-          const tokens = fanIn(sinks, state.method, state.url);
-          let done = false;
-          const settle = (result: NetworkSinkResult) => {
-            if (done) return;
-            done = true;
-            fanOut(tokens, {
-              ...result,
-              bytes: parseBytes(this.getResponseHeader?.("content-length")),
-            });
-          };
-          this.addEventListener("load", () => settle({ status: this.status }));
-          this.addEventListener("error", () => settle({ error: "network error" }));
-          this.addEventListener("timeout", () => settle({ error: "timeout" }));
-          this.addEventListener("abort", () => settle({ error: "aborted", aborted: true }));
+        if (!state) return originalSend.call(this, body ?? null);
+        const tokens = fanIn(sinks, state.method, state.url);
+        const listeners: [string, () => void][] = [
+          ["load", () => settle({ status: this.status })],
+          ["error", () => settle({ error: "network error" })],
+          ["timeout", () => settle({ error: "timeout" })],
+          ["abort", () => settle({ error: "aborted", aborted: true })],
+        ];
+        let done = false;
+        const settle = (result: NetworkSinkResult) => {
+          if (done) return;
+          done = true;
+          for (const [type, listener] of listeners) this.removeEventListener(type, listener);
+          fanOut(tokens, {
+            ...result,
+            bytes: parseBytes(this.getResponseHeader?.("content-length")),
+          });
+        };
+        for (const [type, listener] of listeners) this.addEventListener(type, listener);
+        try {
+          return originalSend.call(this, body ?? null);
+        } catch (error) {
+          settle(failure(() => ({ error: String(error) })));
+          throw error;
         }
-        return originalSend.call(this, body ?? null);
       } as typeof proto.send;
 
       proto.open = open;

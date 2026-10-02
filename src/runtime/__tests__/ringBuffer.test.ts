@@ -103,6 +103,16 @@ describe("createRingBuffer", () => {
 });
 
 describe("createNumericRing", () => {
+  it.each([Number.NaN, 0.5, Number.POSITIVE_INFINITY])(
+    "reads NaN, never undefined, at %s",
+    (index) => {
+      const ring = createNumericRing(4);
+      ring.push(1);
+      ring.push(2);
+      expect(ring.at(index)).toBeNaN();
+    },
+  );
+
   it("allocates one Float64Array and never another", () => {
     const Float64 = globalThis.Float64Array;
     const spy = vi.spyOn(globalThis, "Float64Array").mockImplementation(function (

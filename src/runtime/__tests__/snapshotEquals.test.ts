@@ -88,6 +88,12 @@ describe("snapshotEquals", () => {
     expect(equals(left, Object.fromEntries([["__proto__", {}]]))).toBe(true);
   });
 
+  it("never matches a key against a non-enumerable property, in either order", () => {
+    const right = Object.defineProperty({ y: 2 }, "x", { value: 1, enumerable: false });
+    expect(equals({ x: 1 }, right)).toBe(false);
+    expect(equals(right, { x: 1 })).toBe(false);
+  });
+
   it.each([
     ["a class instance", () => new (class Point {})()],
     ["a function", () => () => "x"],

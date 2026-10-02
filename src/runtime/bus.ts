@@ -169,10 +169,6 @@ export function createEventBus<Events extends Record<string, unknown> = Record<s
   const teardowns = new Set<() => void>();
 
   const bind = (unsubscribe: () => void, signal?: AbortSignal) => {
-    if (signal?.aborted) {
-      unsubscribe();
-      return () => {};
-    }
     // One wrapper for all three exits — manual unsubscribe, abort, `clear()` —
     // so each removes the other two's hold. Idempotent.
     const off = () => {
@@ -190,6 +186,8 @@ export function createEventBus<Events extends Record<string, unknown> = Record<s
     handler: BusHandler<Events[K]>,
     subscribeOptions?: BusSubscribeOptions,
   ) => {
+    // Before the insert: a handler already subscribed without this signal must survive.
+    if (subscribeOptions?.signal?.aborted) return () => {};
     const set = handlers.get(type) ?? new Set<BusHandler<never>>();
     handlers.set(type, set);
     set.add(handler as unknown as BusHandler<never>);
@@ -214,9 +212,14 @@ export function createEventBus<Events extends Record<string, unknown> = Record<s
     },
     on,
     once(type, handler, subscribeOptions) {
+      // Latched apart from `off`: a nested emit can reach this wrapper again
+      // through the outer dispatch's copy of the set.
+      let fired = false;
       const off = on(
         type,
         (payload, event) => {
+          if (fired) return;
+          fired = true;
           off();
           handler(payload, event);
         },
@@ -225,6 +228,7 @@ export function createEventBus<Events extends Record<string, unknown> = Record<s
       return off;
     },
     onAny(handler, subscribeOptions) {
+      if (subscribeOptions?.signal?.aborted) return () => {};
       anyHandlers.add(handler as unknown as BusHandler<never>);
       // Latched for the same reason as `on`.
       let live = true;

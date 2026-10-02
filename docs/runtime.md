@@ -38,14 +38,18 @@ and `isSensitiveKey()` for reusing the word list, `describeErrorUnmasked()`,
   library asks *you* for a bus — `metrics`' `network.bus` — the option is typed
   `BusLike<ToolbarEventMap>`: emit and subscribe, nothing else. So a hand-rolled
   adapter over your own emitter, or `createMockBus()` from `/testing`, goes wherever a
-  bus is wanted; you do not have to hold a whole `EventBus`.
+  bus is wanted; you do not have to hold a whole `EventBus`. As with
+  `addEventListener`, one handler subscribed twice to the same type is one
+  subscription, so either unsubscribe removes it; a signal that has already
+  aborted subscribes nothing and leaves an existing subscription alone.
 - **`createRingBuffer<T>(n)` / `createNumericRing(n)` / `createTimeSeries(n)`** —
   bounded and *allocation-stable*: storage is allocated once, `push` writes into a
   slot that already exists, and every read that could allocate takes a caller-owned
   destination. `createNumericRing` is a `Float64Array` underneath; that is what the
   sparklines read. `n` is clamped to 1…16,777,216 slots, so a zero, negative,
   fractional, or non-finite capacity never throws and never silently swallows
-  every sample.
+  every sample. `createTimeSeries` expects timestamps pushed in non-decreasing
+  order: `valueAt()` and `countSince()` scan on that assumption.
 - **`createThrottledStore(initial, { intervalMs })`** — accepts every write,
   publishes at most once per interval, leading edge first and trailing edge after.
   `getSnapshot` stays stable between notifications, which is what
@@ -121,7 +125,8 @@ and `isSensitiveKey()` for reusing the word list, `describeErrorUnmasked()`,
     `auth` does not cover `author`.
   - **By value shape**: `Bearer …`, bare JWTs, and URLs carrying a sensitive
     parameter (the OAuth-callback shape, where the secret is in the value and no
-    key matching would find it).
+    key matching would find it). A repeated header's values are matched one by
+    one, so `Bearer …, ok` still masks its `Bearer` member.
   - **`allowKeys` is not the mirror of the word list.** An allow entry is matched
     against the key's *entire* canonicalised form, so `["sessionName"]` exempts
     `session-name` and `SESSION_NAME` but not `sessionNameV2`, and `["session"]`
@@ -138,6 +143,11 @@ and `isSensitiveKey()` for reusing the word list, `describeErrorUnmasked()`,
     suffix, including later lines. These conservative rules retain masking of
     multiline credentials but can remove stack frames or place a mask on an
     innocent word after a newline.
+    A quote right after a URL parameter's `=` opens its value (`?token="…"`),
+    and the scan continues past the closing quote — or to the end of the text
+    when it never closes — unless the same quote also precedes the URL, as in
+    `"url":"https://x/?token="` or `href="…?token="`, where it closes the
+    surrounding string.
     Pass `url: true` when the whole input is known to be a URL, including a
     relative one; embedded `scheme://…` runs are scanned either way. `redact()`
     keeps its anchored semantics — reach for `redactText()` deliberately.
@@ -234,6 +244,8 @@ and `isSensitiveKey()` for reusing the word list, `describeErrorUnmasked()`,
   first sink installs it, every later one joins the same wrapper, and the last one
   to leave restores `globalThis.fetch` — *by identity*, and never over somebody
   else's later patch, so a page that patched `fetch` after you keeps its own. A sink
+  attached twice is held once, as with `addEventListener`, and each unsubscribe
+  takes effect only the first time it is called. A sink
   that throws is contained and logged; the host app's request is never affected by a
   recorder's bug. `method` and `url` arrive **raw** — redaction is the sink's job,
   because a sink filtering on the real URL cannot do it against a masked one. No

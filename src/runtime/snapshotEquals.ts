@@ -66,6 +66,8 @@ function isPlainObject(value: object): boolean {
   return prototype === Object.prototype || prototype === null;
 }
 
+const { propertyIsEnumerable } = Object.prototype;
+
 function equal(a: unknown, b: unknown, ignore: IgnoreNode | null): boolean {
   if (Object.is(a, b)) return true;
   if (a === null || b === null || typeof a !== "object" || typeof b !== "object") return false;
@@ -88,8 +90,8 @@ function equal(a: unknown, b: unknown, ignore: IgnoreNode | null): boolean {
   for (const key of Object.keys(left)) {
     const value = left[key];
     if (value === undefined || ignore?.keys.has(key) === true) continue;
-    // Not `right[key]`: an own `__proto__` key on the left would read the right's prototype.
-    const other = Object.hasOwn(right, key) ? right[key] : undefined;
+    // Own and enumerable, as counted above: bare `right[key]` could read a prototype or a hidden property.
+    const other = propertyIsEnumerable.call(right, key) ? right[key] : undefined;
     if (other === undefined) return false;
     if (!equal(value, other, ignore?.children.get(key) ?? null)) return false;
     unmatched -= 1;
