@@ -185,6 +185,14 @@ export function ThemeChip({
 /* Panel                                                                       */
 /* -------------------------------------------------------------------------- */
 
+// `<input type="color">` has no alpha channel, so a picked colour keeps the old one's.
+function alphaOf(value: string | null): string {
+  const hex = value?.trim() ?? "";
+  if (hex.length === 5) return (hex[4] as string).repeat(2);
+  if (hex.length === 9) return hex.slice(7);
+  return "";
+}
+
 /**
  * The native colour input, holding its own draft. A colour input fires
  * `change` on every step of a drag, so committing each one would write and
@@ -212,7 +220,7 @@ function ColourPicker({
       onChange={(event) => setDraft(event.target.value)}
       onBlur={() => {
         if (draft === null) return;
-        commit(draft);
+        commit(draft + alphaOf(view.effective));
         setDraft(null);
       }}
     />
