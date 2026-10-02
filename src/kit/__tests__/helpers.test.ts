@@ -182,6 +182,18 @@ describe("createPoller", () => {
     stop();
   });
 
+  it.each([{ intervalMs: 2 ** 31 }, { intervalMs: Number.NaN, fallbackMs: 2 ** 31 }])(
+    "caps intervals at the platform timer limit (%o)",
+    (options) => {
+      vi.useFakeTimers();
+      const interval = vi.spyOn(globalThis, "setInterval");
+
+      const stop = createPoller(vi.fn(), options);
+      expect(interval).toHaveBeenCalledWith(expect.any(Function), 2 ** 31 - 1);
+      stop();
+    },
+  );
+
   it("stops on abort and through the returned teardown", () => {
     vi.useFakeTimers();
     const controller = new AbortController();

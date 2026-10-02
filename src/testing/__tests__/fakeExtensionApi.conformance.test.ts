@@ -11,7 +11,8 @@ function makeFakeHarness(): RuntimeApiHarness {
   return {
     api: fake.api,
     setVisible: fake.setVisible,
-    abort: fake.abort,
+    // The raw controller, not `fake.abort()`: release must follow the signal itself.
+    abort: () => fake.controller.abort(),
     dispose() {},
     delivery: "synchronous",
   };

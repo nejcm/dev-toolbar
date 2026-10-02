@@ -161,6 +161,37 @@ describe("derive", () => {
     expect(listener).toHaveBeenCalledTimes(2);
   });
 
+  it("rolls back earlier subscriptions when a later input's subscribe throws", () => {
+    const user = createSource(1);
+    const failing: Readable<number> = {
+      read: () => 2,
+      subscribe: () => {
+        throw new Error("subscribe failed");
+      },
+    };
+    const listener = vi.fn();
+
+    expect(() => derive([user, failing], () => 0).subscribe(listener)).toThrow("subscribe failed");
+    user.set(2);
+    expect(listener).not.toHaveBeenCalled();
+  });
+
+  it("runs every teardown before rethrowing the first teardown error", () => {
+    const user = createSource(1);
+    const failing: Readable<number> = {
+      read: () => 2,
+      subscribe: () => () => {
+        throw new Error("unsubscribe failed");
+      },
+    };
+    const listener = vi.fn();
+    const stop = derive([failing, user], () => 0).subscribe(listener);
+
+    expect(stop).toThrow("unsubscribe failed");
+    user.set(2);
+    expect(listener).not.toHaveBeenCalled();
+  });
+
   it("is itself readable, so a derived value can feed an extension", () => {
     expect(isReadable(derive([createSource(1)], () => 1))).toBe(true);
   });

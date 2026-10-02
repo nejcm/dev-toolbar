@@ -345,6 +345,29 @@ const TEXT_JWT =
 // `ext/metrics/collectors/network.ts` — keep the two in step.
 const TEXT_URL = /(?<![A-Za-z0-9+.-])[A-Za-z][A-Za-z0-9+.-]*:\/\/[^\s"'`<>]*[^\s"'`<>)\].,;:!?]/g;
 
+// `TEXT_URL`'s body, resumed after a quoted parameter value.
+const TEXT_URL_TAIL = /[^\s"'`<>]*[^\s"'`<>)\].,;:!?]/y;
+
+// A quote right after `=` opens a value (`?token="…"&next=…`), unless it also
+// precedes the URL, i.e. delimits a surrounding string or attribute.
+function urlEnd(text: string, start: number, end: number): number {
+  const surrounding = text[start - 1];
+  let quote = text[end];
+  while (
+    text[end - 1] === "=" &&
+    (quote === '"' || quote === "'" || quote === "`") &&
+    quote !== surrounding
+  ) {
+    const close = text.indexOf(quote, end + 1);
+    if (close === -1) return text.length;
+    end = close + 1;
+    TEXT_URL_TAIL.lastIndex = end;
+    if (TEXT_URL_TAIL.test(text)) end = TEXT_URL_TAIL.lastIndex;
+    quote = text[end];
+  }
+  return end;
+}
+
 export interface RedactTextOptions extends RedactOptions {
   /** Also treat the entire input as a URL, including relative references. */
   url?: boolean;
@@ -398,9 +421,9 @@ export function redactText(text: string, options?: RedactTextOptions): string {
   }
   for (const url of text.matchAll(TEXT_URL)) {
     const start = url.index;
-    const end = start + url[0].length;
+    const end = urlEnd(text, start, start + url[0].length);
     if (whole && start === 0 && end === text.length) continue;
-    const pass = maskUrl(url[0], resolved);
+    const pass = maskUrl(text.slice(start, end), resolved);
     if (pass.masked) spans.push({ start, end, replacement: pass.output });
   }
   if (spans.length === 0) return text;
@@ -529,11 +552,14 @@ function walk(
     // Local boolean doesn't narrow `value`'s type, so recover it with a cast.
     const array = value as unknown[];
     seen.add(object);
-    // `array` can be a Proxy with a throwing `get` trap on "length".
-    let length: number;
+    // `array` can be a Proxy whose "length" trap throws, or returns what `new Array` rejects.
+    let length: unknown;
     try {
       length = array.length;
     } catch {
+      length = undefined;
+    }
+    if (typeof length !== "number" || !Number.isSafeInteger(length) || length < 0) {
       seen.delete(object);
       return "[unwalkable]";
     }
@@ -573,27 +599,9 @@ function walk(
       // properties are read and walked so `error.message = error` becomes
       // `[circular]`, not a depth blow-up.
       seen.add(object);
-      let name: unknown;
-      try {
-        name = value.name;
-      } catch {
-        name = "[getter threw]";
-      }
-      let message: unknown;
-      try {
-        message = value.message;
-      } catch {
-        message = "[getter threw]";
-      }
       const output = {
-        name:
-          typeof name === "string"
-            ? redactString(name, resolved)
-            : walk(name, resolved, depth + 1, seen, budget),
-        message:
-          typeof message === "string"
-            ? redactString(message, resolved)
-            : walk(message, resolved, depth + 1, seen, budget),
+        name: errorField(value, "name", resolved, depth, seen, budget),
+        message: errorField(value, "message", resolved, depth, seen, budget),
       };
       seen.delete(object);
       return output;
@@ -655,6 +663,27 @@ function walk(
   }
   seen.delete(object);
   return output;
+}
+
+// Matched against the key list before the read, like any key, so a sensitive getter never runs.
+function errorField(
+  error: Error,
+  key: "name" | "message",
+  resolved: ResolvedOptions,
+  depth: number,
+  seen: WeakSet<object>,
+  budget: Budget,
+): unknown {
+  if (matches(key, resolved)) return resolved.mask;
+  let field: unknown;
+  try {
+    field = error[key];
+  } catch {
+    return "[getter threw]";
+  }
+  return typeof field === "string"
+    ? redactString(field, resolved)
+    : walk(field, resolved, depth + 1, seen, budget);
 }
 
 interface UrlPass {
@@ -873,10 +902,25 @@ function redactUrlResolved(url: string, resolved: ResolvedOptions): string {
 }
 
 function maskQueryString(url: string, resolved: ResolvedOptions): UrlPass {
-  const index = url.indexOf("?");
-  if (index === -1) return { output: url, masked: false };
-  const head = url.slice(0, index);
-  const query = url.slice(index + 1);
+  const hash = url.indexOf("#");
+  const beforeHash = hash === -1 ? url : url.slice(0, hash);
+  const question = beforeHash.indexOf("?");
+  const query =
+    question === -1
+      ? { output: beforeHash, masked: false }
+      : maskPairs(beforeHash, question + 1, resolved);
+  if (hash === -1) return query;
+  const fragment = url.slice(hash + 1);
+  const fragmentQuery = maskPairs(fragment, fragment.indexOf("?") + 1, resolved);
+  return {
+    output: `${query.output}#${fragmentQuery.output}`,
+    masked: query.masked || fragmentQuery.masked,
+  };
+}
+
+function maskPairs(source: string, from: number, resolved: ResolvedOptions): UrlPass {
+  const head = source.slice(0, from);
+  const query = source.slice(from);
   let masked = false;
   const rewritten = query
     .split("&")
@@ -901,7 +945,7 @@ function maskQueryString(url: string, resolved: ResolvedOptions): UrlPass {
       return `${key}=${resolved.urlSafeMask ? resolved.mask : encodeURIComponent(resolved.mask)}`;
     })
     .join("&");
-  return { output: `${head}?${rewritten}`, masked };
+  return { output: head + rewritten, masked };
 }
 
 export type HeaderLike =
@@ -917,6 +961,16 @@ export function redactHeaders(
   return redactHeadersResolved(headers, resolveCached(redactOptions));
 }
 
+// A repeated header arrives joined with ", ", which hides a `Bearer …` member from the anchored match.
+function redactHeaderValue(value: string, resolved: ResolvedOptions): string {
+  const whole = redactString(value, resolved);
+  if (whole !== value || !value.includes(", ")) return whole;
+  return value
+    .split(", ")
+    .map((member) => redactString(member, resolved))
+    .join(", ");
+}
+
 /** The resolved-options-taking half of `redactHeaders`, for callers already holding one. */
 function redactHeadersResolved(
   headers: HeaderLike,
@@ -926,7 +980,11 @@ function redactHeadersResolved(
 
   const put = (key: string, value: string) => {
     // Same reason as `walk`: a header named `__proto__` must survive as data.
-    define(output, key, matches(key, resolved) ? resolved.mask : redactString(value, resolved));
+    define(
+      output,
+      key,
+      matches(key, resolved) ? resolved.mask : redactHeaderValue(value, resolved),
+    );
   };
 
   if (typeof Headers !== "undefined" && headers instanceof Headers) {

@@ -126,9 +126,15 @@ export function makeExtension(options: MakeExtensionOptions = {}): DevToolbarExt
   return extension;
 }
 
-export interface MakeCommandOptions extends Partial<ToolbarCommand> {}
+export interface MakeCommandOptions<In = void, Out = void> extends Partial<
+  ToolbarCommand<In, Out>
+> {}
 
-/** A `ToolbarCommand` with sensible defaults. Pass your own spy as `run`. */
+/** A `ToolbarCommand` with sensible defaults. Pass your own spy as `run`; its types become the command's. */
+export function makeCommand(options?: MakeCommandOptions): ToolbarCommand;
+export function makeCommand<In = void, Out = void>(
+  options: MakeCommandOptions<In, Out> & Pick<ToolbarCommand<In, Out>, "run">,
+): ToolbarCommand<In, Out>;
 export function makeCommand(options: MakeCommandOptions = {}): ToolbarCommand {
   const id = options.id ?? nextId("fake-command", commandCounter);
   return {

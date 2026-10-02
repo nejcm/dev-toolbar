@@ -219,25 +219,28 @@ export function createMockBus(options: CreateMockBusOptions = {}): MockBus {
   const anyHandlers = new Set<MockBusHandler>();
   let history: MockBusEvent[] = [];
 
+  // Every live subscription's teardown, so `reset()` detaches pre-reset signals
+  // and unsubscribes instead of leaving them able to evict a later subscriber.
+  const teardowns = new Set<() => void>();
+
   // `signal` support, latched so a second call is a no-op — `once()` hands
   // back the same function it calls on delivery. Same reasoning as the real bus.
   const bind = (unsubscribe: () => void, signal?: AbortSignal) => {
+    if (signal?.aborted) {
+      unsubscribe();
+      return () => {};
+    }
     let live = true;
     const off = () => {
       if (!live) return;
       live = false;
+      teardowns.delete(off);
+      signal?.removeEventListener("abort", off);
       unsubscribe();
     };
-    if (!signal) return off;
-    if (signal.aborted) {
-      off();
-      return () => {};
-    }
-    signal.addEventListener("abort", off, { once: true });
-    return () => {
-      signal.removeEventListener("abort", off);
-      off();
-    };
+    teardowns.add(off);
+    signal?.addEventListener("abort", off, { once: true });
+    return off;
   };
 
   const on = <T>(
@@ -311,6 +314,7 @@ export function createMockBus(options: CreateMockBusOptions = {}): MockBus {
       history = [];
     },
     reset() {
+      for (const off of Array.from(teardowns)) off();
       handlers.clear();
       anyHandlers.clear();
       history = [];

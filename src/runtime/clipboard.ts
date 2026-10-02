@@ -31,15 +31,17 @@ export async function writeClipboardTextOrThrow(
  */
 export async function writeClipboardText(text: string): Promise<boolean> {
   let clipboard: ClipboardLike | undefined;
+  let writeText: ClipboardLike["writeText"];
   try {
-    // Reading `navigator.clipboard` can itself throw in a sandboxed frame.
+    // Reading `navigator.clipboard`, or a shim's `writeText`, can itself throw in a sandboxed frame.
     clipboard = (globalThis as { navigator?: { clipboard?: ClipboardLike } }).navigator?.clipboard;
+    writeText = clipboard?.writeText;
   } catch {
     return false;
   }
-  if (typeof clipboard?.writeText !== "function") return false;
+  if (typeof writeText !== "function") return false;
   try {
-    await clipboard.writeText(text);
+    await writeText.call(clipboard, text);
     return true;
   } catch {
     return false;

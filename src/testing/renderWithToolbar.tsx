@@ -1,5 +1,5 @@
 import type { RenderOptions, RenderResult } from "@testing-library/react";
-import { useEffect } from "react";
+import { useEffect, useLayoutEffect } from "react";
 import type { ReactNode } from "react";
 // Core values via the package's own specifier, types relatively — see
 // src/testing/index.ts's header (AGENTS.md).
@@ -155,18 +155,22 @@ export interface RenderWithToolbarResult extends RenderResult {
  * effects mount → cleanup → mount and a cleanup-only owner would leave the
  * layout restored mid-test.
  *
- * Must render as the **first** sibling: React runs every cleanup in tree
- * order and only then every re-mount, so a later owner would have already
- * deleted `globalThis.ResizeObserver` before the rest of the tree re-mounts,
- * throwing in consumer code that constructs one in its own mount effect.
+ * Must render as the **first** sibling. Installs in a layout effect, since
+ * StrictMode re-mounts every layout effect in tree order before any passive
+ * one and consumer code may construct a `ResizeObserver` in either. Restores
+ * in a passive cleanup, since a Suspense hide runs only layout cleanups and
+ * would otherwise drop observers whose passive effects stay mounted.
  */
 function LayoutOwner({ handle }: { handle: ToolbarLayoutHandle }): null {
-  useEffect(() => {
+  useLayoutEffect(() => {
     reinstallToolbarLayout(handle);
-    return () => {
-      handle.restore();
-    };
   }, [handle]);
+  useEffect(
+    () => () => {
+      handle.restore();
+    },
+    [handle],
+  );
   return null;
 }
 
@@ -224,7 +228,14 @@ export function renderWithToolbar(
     </>
   );
 
-  const result = render(tree(ui), renderOptions);
+  let result: RenderResult;
+  try {
+    result = render(tree(ui), renderOptions);
+  } catch (error) {
+    // Nothing committed, so `LayoutOwner` never mounted and no cleanup reaches the install.
+    layoutHandle?.restore();
+    throw error;
+  }
 
   const context = (): DevToolbarContextValue => {
     if (!latest) {

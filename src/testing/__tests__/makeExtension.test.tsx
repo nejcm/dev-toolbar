@@ -1,6 +1,7 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, expectTypeOf, it, vi } from "vitest";
 import { cleanupToolbar, mountToolbar } from "../lifecycle";
 import { makeCommand, makeExtension, resetExtensionIds } from "../makeExtension";
+import type { ToolbarCommand } from "../../core/contract";
 
 beforeEach(() => {
   vi.spyOn(console, "error").mockImplementation(() => {});
@@ -155,6 +156,16 @@ describe("makeCommand", () => {
     });
     command.run();
     expect(run).toHaveBeenCalledTimes(1);
+  });
+
+  it("types a v2 command's input and result from its run", async () => {
+    const command = makeCommand({ run: (input: { value: number }) => input.value * 2 });
+
+    expectTypeOf(command).toEqualTypeOf<ToolbarCommand<{ value: number }, number>>();
+    expectTypeOf(makeCommand({ run: () => 42 })).toEqualTypeOf<ToolbarCommand<void, number>>();
+    expectTypeOf(makeCommand({ run: vi.fn() })).toEqualTypeOf<ToolbarCommand>();
+    expectTypeOf(makeCommand()).toEqualTypeOf<ToolbarCommand>();
+    expect(await command.run({ value: 21 })).toBe(42);
   });
 });
 

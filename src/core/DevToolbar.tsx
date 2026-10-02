@@ -272,10 +272,8 @@ function DevToolbarRoot({
     getDiagnostics,
   });
 
-  // Style injection. `styleNonce` is in the deps because a host that resolves
-  // its nonce asynchronously would otherwise inject before it arrives; the
-  // re-run is a no-op once the sheet exists (first-writer-wins), so the only
-  // thing it buys is the first injection landing with the nonce.
+  // First-writer-wins: a nonce that arrives after the first injection never reaches
+  // the sheet, so an async nonce needs `injectStyles={false}` until it resolves.
   useEffect(() => {
     if (!enabled || !injectStyles) return;
     ensureStyles(undefined, undefined, undefined, styleNonce);

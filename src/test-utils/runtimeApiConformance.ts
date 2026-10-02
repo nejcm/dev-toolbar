@@ -8,6 +8,7 @@ export interface RuntimeApiHarness {
   setVisible(next: boolean): void;
   /** Runs two flips inside one commit. */
   batch?(flips: () => void): void;
+  /** Aborts `api.signal` itself, so release must follow the signal, not adapter bookkeeping. */
   abort(): void;
   dispose(): void;
   delivery: "post-commit" | "synchronous";
@@ -196,6 +197,23 @@ export const RUNTIME_API_CASES: ReadonlyArray<RuntimeApiCase> = [
       setVisible(next);
       expect(seen).toEqual([next]);
       expect(api.isVisible()).toBe(next);
+    },
+  },
+  {
+    name: "a callback subscribed twice is two subscriptions, released independently",
+    run: ({ api, setVisible }) => {
+      const initial = api.isVisible();
+      const seen: boolean[] = [];
+      const callback = (visible: boolean) => seen.push(visible);
+      const first = api.subscribeVisibility(callback);
+      api.subscribeVisibility(callback);
+
+      setVisible(!initial);
+      expect(seen).toEqual([!initial, !initial]);
+
+      first();
+      setVisible(initial);
+      expect(seen).toEqual([!initial, !initial, initial]);
     },
   },
   {

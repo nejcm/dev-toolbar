@@ -198,7 +198,7 @@ export function createNumericRing(capacity: number): NumericRing {
       written += 1;
     },
     at(index) {
-      if (index < 0 || index >= size) return Number.NaN;
+      if (!Number.isInteger(index) || index < 0 || index >= size) return Number.NaN;
       return store[indexOf(index)] as number;
     },
     last() {
@@ -265,6 +265,7 @@ export interface TimeSeries {
   readonly times: NumericRingView;
   /** Read-only: push through {@link TimeSeries.push} so it stays paired with `times`. */
   readonly values: NumericRingView;
+  /** `at` must not decrease between pushes: `valueAt` and `countSince` scan assuming it. */
   push(at: number, value: number): void;
   /** Newest value, or `NaN`. */
   last(): number;

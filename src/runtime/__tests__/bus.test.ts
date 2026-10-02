@@ -48,6 +48,18 @@ describe("createEventBus", () => {
     expect(bus.listenerCount("tick")).toBe(0);
   });
 
+  it("once() fires once when an earlier handler re-emits the same event", () => {
+    const bus = createEventBus<Events>();
+    const handler = vi.fn();
+    bus.on("tick", ({ n }) => {
+      if (n === 1) bus.emit("tick", { n: 2 });
+    });
+    bus.once("tick", handler);
+    bus.emit("tick", { n: 1 });
+    expect(handler).toHaveBeenCalledTimes(1);
+    expect(handler.mock.calls[0]?.[0]).toEqual({ n: 2 });
+  });
+
   it("unsubscribes on an AbortSignal — the shape start(api) hands you", () => {
     const bus = createEventBus<Events>();
     const controller = new AbortController();
@@ -72,7 +84,7 @@ describe("createEventBus", () => {
 
   it("hands back a safe no-op unsubscribe when the signal was already aborted", () => {
     // The previous test never calls what `on()` hands back; this pins that it's
-    // safely callable even though `bind()` never actually invokes it.
+    // safely callable even though nothing was ever subscribed.
     const bus = createEventBus<Events>();
     const controller = new AbortController();
     controller.abort();
@@ -80,6 +92,20 @@ describe("createEventBus", () => {
     expect(bus.listenerCount()).toBe(0);
     expect(() => off()).not.toThrow();
     expect(bus.listenerCount()).toBe(0);
+  });
+
+  it("leaves a live subscription of the same handler alone when the signal was already aborted", () => {
+    const bus = createEventBus<Events>();
+    const controller = new AbortController();
+    controller.abort();
+    const handler = vi.fn();
+    bus.on("tick", handler);
+    bus.onAny(handler);
+    bus.on("tick", handler, { signal: controller.signal });
+    bus.onAny(handler, { signal: controller.signal });
+    bus.emit("tick", { n: 1 });
+    expect(handler).toHaveBeenCalledTimes(2);
+    expect(bus.listenerCount()).toBe(2);
   });
 
   it("logs a throwing handler's error to console.error when no onError is supplied", () => {
