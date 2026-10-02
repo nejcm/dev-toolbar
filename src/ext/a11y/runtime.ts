@@ -302,7 +302,8 @@ export interface A11yRuntime {
   /**
    * Drops the last scan and the highlight. A scan in flight is disowned, not
    * cancelled — axe has no abort, so it runs to completion and its result is
-   * thrown away rather than repopulating the cleared report.
+   * thrown away rather than repopulating the cleared report. One still queued
+   * behind another runtime's pass never starts.
    */
   clear(): A11yReport;
   /** The report — the same object the panel renders. */
@@ -407,14 +408,23 @@ export function createA11yRuntime(options: A11yRuntimeOptions = {}): A11yRuntime
     publish(true);
   };
 
-  // axe's CJS export can arrive as `default` depending on interop, and the
-  // module object is foreign — a Proxy or getter can throw on inspection.
+  // `default` first: a namespace re-exporting `run` is another key into the engine queue.
+  // The module object is foreign — a Proxy or getter can throw on inspection.
+  const defaultEngine = (module: Readonly<Record<string, unknown>>): AxeLike | null => {
+    try {
+      const fallback = module["default"];
+      return typeof asRecord(fallback)["run"] === "function" ? (fallback as AxeLike) : null;
+    } catch {
+      return null;
+    }
+  };
+
   const unwrap = (loaded: unknown): AxeLike | null => {
     try {
       const module = asRecord(loaded);
-      if (typeof module["run"] === "function") return loaded as AxeLike;
-      const fallback = asRecord(module["default"]);
-      return typeof fallback["run"] === "function" ? (module["default"] as AxeLike) : null;
+      return (
+        defaultEngine(module) ?? (typeof module["run"] === "function" ? (loaded as AxeLike) : null)
+      );
     } catch {
       return null;
     }
@@ -556,6 +566,16 @@ export function createA11yRuntime(options: A11yRuntimeOptions = {}): A11yRuntime
   let frame: number | null = null;
   let watching = false;
   let detach: (() => void) | null = null;
+  let observer: MutationObserver | null = null;
+
+  // A document-wide observer does not see into shadow roots, so every measure adds the path's current ones.
+  const observe = (root: Node): void =>
+    observer?.observe(root, {
+      childList: true,
+      subtree: true,
+      attributes: true,
+      characterData: true,
+    });
 
   const rect = (element: Element): RectLike => {
     const box = element.getBoundingClientRect();
@@ -564,12 +584,16 @@ export function createA11yRuntime(options: A11yRuntimeOptions = {}): A11yRuntime
 
   // A step past the first is inside the previous element's shadow root — how
   // axe reports an element in an open one.
-  const findTarget = (path: readonly string[]): Element | null => {
+  const findTarget = (
+    path: readonly string[],
+    visit: (root: ShadowRoot) => void = () => {},
+  ): Element | null => {
     if (typeof document === "undefined") return null;
     let root: Document | ShadowRoot | null = document;
     let element: Element | null = null;
     for (const selector of path) {
       if (root === null) return null;
+      if (root !== document) visit(root as ShadowRoot);
       try {
         element = root.querySelector(selector);
       } catch {
@@ -581,6 +605,23 @@ export function createA11yRuntime(options: A11yRuntimeOptions = {}): A11yRuntime
     return element;
   };
 
+  const sameHighlight = (
+    a: readonly A11yHighlightView[],
+    b: readonly A11yHighlightView[],
+  ): boolean =>
+    a.length === b.length &&
+    a.every((item, index) => {
+      const other = b[index];
+      return (
+        other !== undefined &&
+        item.key === other.key &&
+        item.rect.x === other.rect.x &&
+        item.rect.y === other.rect.y &&
+        item.rect.width === other.rect.width &&
+        item.rect.height === other.rect.height
+      );
+    });
+
   const measure = (immediate = false): void => {
     const key = report.selected;
     const entry = key === null ? undefined : targets.get(key);
@@ -591,11 +632,13 @@ export function createA11yRuntime(options: A11yRuntimeOptions = {}): A11yRuntime
       }
       return;
     }
-    const element = findTarget(entry.path);
+    const element = findTarget(entry.path, observe);
     const next: readonly A11yHighlightView[] =
       element === null
         ? []
         : [{ key, rect: rect(element), label: entry.label, impact: entry.impact }];
+    // Mutations re-measure too, and an unchanged box must not republish into another render.
+    if (!immediate && sameHighlight(highlight, next)) return;
     highlight = next;
     publish(immediate);
   };
@@ -614,9 +657,16 @@ export function createA11yRuntime(options: A11yRuntimeOptions = {}): A11yRuntime
     const onChange = () => schedule();
     window.addEventListener("scroll", onChange, { passive: true, capture: true });
     window.addEventListener("resize", onChange, { passive: true });
+    observer =
+      typeof MutationObserver === "function" && typeof document !== "undefined"
+        ? new MutationObserver(onChange)
+        : null;
+    if (observer !== null) observe(document.documentElement);
     detach = () => {
       window.removeEventListener("scroll", onChange, { capture: true } as EventListenerOptions);
       window.removeEventListener("resize", onChange);
+      observer?.disconnect();
+      observer = null;
       watching = false;
       detach = null;
     };
@@ -667,7 +717,9 @@ export function createA11yRuntime(options: A11yRuntimeOptions = {}): A11yRuntime
     let raw: unknown;
     let failure: string | null = null;
     try {
-      raw = await queueOnEngine(loaded, () => loaded.run(context, runOptions()));
+      raw = await queueOnEngine(loaded, () =>
+        generation === mine ? loaded.run(context, runOptions()) : Promise.resolve(undefined),
+      );
     } catch (error) {
       failure = `${A11Y_MARKER} axe.run() threw — ${describe(error)}`;
     }
@@ -754,7 +806,7 @@ export function createA11yRuntime(options: A11yRuntimeOptions = {}): A11yRuntime
       return () => {
         disownScan();
         stopVisibility();
-        unwatch();
+        select(null);
         if (report.running) {
           report = { ...report, running: false };
           publish(true);

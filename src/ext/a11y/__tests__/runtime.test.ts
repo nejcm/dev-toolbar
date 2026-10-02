@@ -90,6 +90,18 @@ describe("the optional peer", () => {
     expect(report.axeVersion).toBe("4.10.0");
   });
 
+  it("falls back to a top-level run() when inspecting `default` throws", async () => {
+    const { stub } = stubAxe({ violations: [] });
+    const engine = Object.defineProperty({ ...stub }, "default", {
+      get() {
+        throw new Error("no default");
+      },
+    });
+    const runtime = createA11yRuntime({ load: () => Promise.resolve(engine) });
+    const report = await runtime.scan();
+    expect(report.status).toBe("ok");
+  });
+
   it("imports axe when the extension starts, before anything asks for a scan", async () => {
     const load = vi.fn(() => Promise.resolve(stubAxe({ violations: [] }).stub));
     const runtime = createA11yRuntime({ load });
@@ -690,6 +702,64 @@ describe("the highlight", () => {
     runtime.store.flush();
     expect(runtime.store.published).toBe(before);
   });
+
+  it("drops the highlight on teardown, so a remount does not repaint a stale box", async () => {
+    document.body.innerHTML = `<main><button id="one">one</button></main>`;
+    const { load } = stubAxe({
+      violations: [violation("label", "critical", [{ target: ["#one"] }])],
+    });
+    const runtime = createA11yRuntime({ load });
+    const stop = runtime.start(fakeExtensionApi().api);
+    await runtime.scan();
+    runtime.select(selectionKey("label", 0));
+    stop();
+
+    const restop = runtime.start(fakeExtensionApi().api);
+    runtime.store.flush();
+    expect(runtime.store.getSnapshot().highlight).toEqual([]);
+    expect(runtime.report().selected).toBeNull();
+    restop();
+  });
+
+  it("drops the box when the highlighted element leaves the document", async () => {
+    document.body.innerHTML = `<main><button id="one">one</button></main>`;
+    const { load } = stubAxe({
+      violations: [violation("label", "critical", [{ target: ["#one"] }])],
+    });
+    const runtime = createA11yRuntime({ load });
+    await runtime.scan();
+    runtime.select(selectionKey("label", 0));
+    runtime.store.flush();
+    expect(runtime.store.getSnapshot().highlight).toHaveLength(1);
+
+    document.body.innerHTML = "";
+    await vi.waitFor(() => {
+      runtime.store.flush();
+      expect(runtime.store.getSnapshot().highlight).toEqual([]);
+    });
+    runtime.select(null);
+  });
+
+  it("re-measures when a text node inside the page changes", async () => {
+    document.body.innerHTML = `<main><button id="one">one</button></main>`;
+    const target = document.getElementById("one") as HTMLElement;
+    let box = { x: 10, y: 20, width: 30, height: 40 };
+    target.getBoundingClientRect = () => ({ ...box, top: box.y, left: box.x }) as DOMRect;
+    const { load } = stubAxe({
+      violations: [violation("label", "critical", [{ target: ["#one"] }])],
+    });
+    const runtime = createA11yRuntime({ load });
+    await runtime.scan();
+    runtime.select(selectionKey("label", 0));
+
+    box = { x: 10, y: 20, width: 90, height: 40 };
+    (target.firstChild as Text).nodeValue = "a much longer label";
+    await vi.waitFor(() => {
+      runtime.store.flush();
+      expect(runtime.store.getSnapshot().highlight[0]?.rect.width).toBe(90);
+    });
+    runtime.select(null);
+  });
 });
 
 describe("clearing", () => {
@@ -825,6 +895,42 @@ describe("two runtimes over one engine", () => {
     expect(a.total).toBe(1);
     expect(b.total).toBe(1);
   });
+
+  it("serialises the default loader with a hand-over of the same copy", async () => {
+    document.body.innerHTML = `<main><img src="/a.png"></main>`;
+    const options = { axeOptions: { runOnly: ["image-alt"] } };
+    const first = createA11yRuntime(options);
+    const second = createA11yRuntime({ ...options, load: () => Promise.resolve(realAxe) });
+
+    const [a, b] = await Promise.all([first.scan(), second.scan()]);
+
+    expect([a.status, b.status]).toEqual(["ok", "ok"]);
+  });
+
+  it("never starts a pass that was cleared while queued behind another runtime", async () => {
+    let release: (value: unknown) => void = () => {};
+    const pending = new Promise((resolve) => {
+      release = resolve;
+    });
+    const run = vi
+      .fn()
+      .mockImplementationOnce(() => pending)
+      .mockImplementation(async () => ({ violations: [] }));
+    const engine = { run } as AxeLike;
+    const first = createA11yRuntime({ load: () => Promise.resolve(engine) });
+    const second = createA11yRuntime({ load: () => Promise.resolve(engine) });
+    const running = first.scan();
+    await vi.waitFor(() => expect(first.report().running).toBe(true));
+    const queued = second.scan();
+    await vi.waitFor(() => expect(second.report().running).toBe(true));
+
+    second.clear();
+    release({ violations: [] });
+    await Promise.all([running, queued]);
+
+    expect(run).toHaveBeenCalledTimes(1);
+    expect(second.report().status).toBe("pending");
+  });
 });
 
 describe("the scan's lifecycle", () => {
@@ -937,6 +1043,56 @@ describe("an element in a shadow root", () => {
     expect(report.groups[0]?.violations[0]?.nodes[0]?.target).toBe("#host >> #bad");
     expect(selected.selected).toBe(selectionKey("image-alt", 0));
     expect(runtime.store.getSnapshot().highlight[0]?.label).toBe("image-alt");
+  });
+
+  it("follows a replaced host's new shadow root", async () => {
+    document.body.innerHTML = `<main><div id="host"></div></main>`;
+    (document.getElementById("host") as HTMLElement).attachShadow({ mode: "open" }).innerHTML =
+      `<img id="bad" src="/x.png">`;
+    const runtime = createA11yRuntime({
+      load: () => Promise.resolve(realAxe),
+      axeOptions: { runOnly: ["image-alt"] },
+    });
+    await runtime.scan();
+    runtime.select(selectionKey("image-alt", 0));
+
+    const replacement = document.createElement("div");
+    replacement.id = "host";
+    const shadow = replacement.attachShadow({ mode: "open" });
+    shadow.innerHTML = `<img id="bad" src="/x.png">`;
+    document.getElementById("host")?.replaceWith(replacement);
+    await new Promise((resolve) => requestAnimationFrame(resolve));
+    runtime.store.flush();
+    expect(runtime.store.getSnapshot().highlight).toHaveLength(1);
+
+    shadow.innerHTML = "";
+    await vi.waitFor(() => {
+      runtime.store.flush();
+      expect(runtime.store.getSnapshot().highlight).toEqual([]);
+    });
+    runtime.select(null);
+  });
+
+  it("drops the box when the element leaves its shadow root", async () => {
+    document.body.innerHTML = `<main><div id="host"></div></main>`;
+    const host = document.getElementById("host") as HTMLElement;
+    const shadow = host.attachShadow({ mode: "open" });
+    shadow.innerHTML = `<img id="bad" src="/x.png">`;
+    const runtime = createA11yRuntime({
+      load: () => Promise.resolve(realAxe),
+      axeOptions: { runOnly: ["image-alt"] },
+    });
+    await runtime.scan();
+    runtime.select(selectionKey("image-alt", 0));
+    runtime.store.flush();
+    expect(runtime.store.getSnapshot().highlight).toHaveLength(1);
+
+    shadow.innerHTML = "";
+    await vi.waitFor(() => {
+      runtime.store.flush();
+      expect(runtime.store.getSnapshot().highlight).toEqual([]);
+    });
+    runtime.select(null);
   });
 });
 
