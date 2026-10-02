@@ -113,6 +113,11 @@ const COMMAND_MENU_EXTENSION_CSS = String.raw`@layer dev-toolbar {
     background: var(--dtb-item-active-bg);
   }
 
+  [data-dev-toolbar] [data-dtb-part="cmd-option"][aria-busy="true"] {
+    cursor: progress;
+    color: var(--dtb-muted);
+  }
+
   [data-dev-toolbar] [data-dtb-part="cmd-option-label"] {
     flex: 1 1 auto;
     min-width: 0;

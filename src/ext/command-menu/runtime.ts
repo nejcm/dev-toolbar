@@ -39,8 +39,10 @@ export interface CommandMenuSnapshot {
   commands: readonly AnyToolbarCommand[];
   /** `commands` filtered and ordered for display. */
   results: readonly CommandMatch[];
-  /** Id of a command whose `run()` has not settled yet. */
+  /** Id of the latest command whose `run()` has not settled yet. */
   running: string | null;
+  /** Every id whose `run()` has not settled yet, oldest first. */
+  pending: readonly string[];
   /** A failed run, or a command that disappeared. Cleared by the next attempt. */
   error: string | null;
   /** False until `start(api)` has run — before that there is no aggregation to read. */
@@ -267,6 +269,7 @@ export function createCommandMenuRuntime(
       commands: EMPTY,
       results: [],
       running: null,
+      pending: [],
       error: null,
       ready: false,
       recent: [],
@@ -276,6 +279,14 @@ export function createCommandMenuRuntime(
   );
 
   let api: ExtensionRuntimeApi | null = null;
+  /** Bumped on every run, open and teardown: only a run nothing has superseded may close the palette or set its error. */
+  let generation = 0;
+  /** Ids whose `run()` has not settled. Per id, so one hung command blocks only itself. */
+  const inFlight = new Set<string>();
+  const busy = (): Pick<CommandMenuSnapshot, "running" | "pending"> => {
+    const pending = [...inFlight];
+    return { running: pending[pending.length - 1] ?? null, pending };
+  };
 
   /**
    * The one place `input`-carrying commands are dropped (contract v2): this
@@ -322,6 +333,7 @@ export function createCommandMenuRuntime(
   };
 
   const open = () => {
+    generation += 1;
     store.update((snapshot) => {
       const commands = enumerate();
       // Prune recents that no longer exist from storage too, or a renamed
@@ -334,7 +346,6 @@ export function createCommandMenuRuntime(
         open: true,
         query: "",
         error: null,
-        running: null,
         commands,
         recent,
       });
@@ -356,13 +367,14 @@ export function createCommandMenuRuntime(
 
   const run = async (id?: string): Promise<void> => {
     const snapshot = store.peek();
-    // One at a time: Enter repeats and pointerdown can land on a still-busy
-    // row, which would otherwise run a slow async command twice concurrently.
-    if (snapshot.running !== null) return;
     const target = id ?? activeId(snapshot);
-    if (target === undefined) return;
+    // One at a time per command: Enter repeats and pointerdown can land on a
+    // still-busy row, which would otherwise run a slow async command twice concurrently.
+    if (target === undefined || inFlight.has(target)) return;
 
-    store.set({ ...snapshot, running: target, error: null });
+    inFlight.add(target);
+    store.set({ ...snapshot, ...busy(), error: null });
+    const attempt = ++generation;
     let ok = false;
     let message: string | null = null;
     try {
@@ -374,29 +386,32 @@ export function createCommandMenuRuntime(
       const described = describeError(error);
       message = described.message !== "" ? described.message : (described.name ?? "");
     }
+    inFlight.delete(target);
+    const superseded = attempt !== generation;
 
     if (!ok) {
       // Stay open so the failure is visible, rather than silently doing nothing.
-      store.update((current) => ({
-        ...current,
-        running: null,
-        error: message,
-      }));
+      store.update((current) =>
+        superseded ? { ...current, ...busy() } : { ...current, ...busy(), error: message },
+      );
       return;
     }
 
-    const recent = [target, ...store.peek().recent.filter((entry) => entry !== target)].slice(
-      0,
-      RECENT_LIMIT,
-    );
+    const recent = rememberRecent
+      ? [target, ...store.peek().recent.filter((entry) => entry !== target)].slice(0, RECENT_LIMIT)
+      : store.peek().recent;
     persistRecent(recent);
+    if (superseded) {
+      store.update((current) => ({ ...current, ...busy(), recent }));
+      return;
+    }
     store.update((current) => ({
       ...current,
       open: false,
       query: "",
       results: [],
       activeIndex: -1,
-      running: null,
+      ...busy(),
       error: null,
       recent,
     }));
@@ -445,6 +460,7 @@ export function createCommandMenuRuntime(
         }
         stopWatchingVisibility();
         api = null;
+        generation += 1;
         store.set({ ...store.peek(), open: false, ready: false });
       };
     },
