@@ -1,42 +1,21 @@
 import { useCallback, useEffect, useRef } from "react";
 import type { RefObject } from "react";
-import type { ToolbarColorScheme, ToolbarDensity, ToolbarPosition } from "./contract";
+import type { ToolbarPosition } from "./contract";
 import type { DevToolbarProps } from "./DevToolbar";
 import { useLatestRef } from "./latest";
 import type { ToolbarState, ToolbarStore } from "./store";
-
-export type ToolbarSettingsSections = Required<
-  Exclude<DevToolbarProps["settings"], false | undefined>
->;
-
-function resolveSettings(settings: DevToolbarProps["settings"]): ToolbarSettingsSections {
-  if (settings === undefined) {
-    return { position: true, density: true, colorScheme: true, extensions: true };
-  }
-  if (settings === false) {
-    return { position: false, density: false, colorScheme: false, extensions: false };
-  }
-  return {
-    position: settings.position === true,
-    density: settings.density === true,
-    colorScheme: settings.colorScheme === true,
-    extensions: settings.extensions === true,
-  };
-}
+import type { ResolvedViewerSettings } from "./viewerSettings";
 
 export function useControlledToolbarState(
   store: ToolbarStore,
   state: ToolbarState,
+  viewerSettings: Pick<ResolvedViewerSettings, "sections">,
   props: Pick<
     DevToolbarProps,
-    "visible" | "position" | "settings" | "onVisibleChange" | "onPositionChange" | "onPanelChange"
-  > & { density: ToolbarDensity; colorScheme: ToolbarColorScheme },
+    "visible" | "position" | "onVisibleChange" | "onPositionChange" | "onPanelChange"
+  >,
 ): {
   visible: boolean;
-  position: ToolbarPosition;
-  density: ToolbarDensity;
-  colorScheme: ToolbarColorScheme;
-  settings: ToolbarSettingsSections;
   setVisible(next: boolean): void;
   toggleVisible(): void;
   setPosition(next: ToolbarPosition): void;
@@ -46,18 +25,12 @@ export function useControlledToolbarState(
   subscribeVisibility(callback: (visible: boolean) => void): () => void;
 } {
   const { visible: visibleProp, position: positionProp } = props;
-  const settings = resolveSettings(props.settings);
+  const positionSection = viewerSettings.sections.position;
   const visibleControlled = visibleProp !== undefined;
   const positionControlled = positionProp !== undefined;
   const hasVisibleChangeHandler = props.onVisibleChange !== undefined;
   const hasPositionChangeHandler = props.onPositionChange !== undefined;
   const effectiveVisible = visibleProp ?? state.visible;
-  const effectivePosition =
-    positionProp ?? (settings.position ? state.position : store.getServerSnapshot().position);
-  const effectiveDensity = settings.density ? (state.density ?? props.density) : props.density;
-  const effectiveColorScheme = settings.colorScheme
-    ? (state.colorScheme ?? props.colorScheme)
-    : props.colorScheme;
   const visibilitySubscribersRef = useRef(new Set<(visible: boolean) => void>());
   const lastNotifiedVisibleRef = useRef(effectiveVisible);
   const visibleRef = useLatestRef(effectiveVisible);
@@ -131,7 +104,7 @@ export function useControlledToolbarState(
       if (next === previous) return;
       observedStateRef.current = next;
       if (next.visible !== previous.visible) reportVisibleChange(next.visible);
-      if (settings.position && next.position !== previous.position) {
+      if (positionSection && next.position !== previous.position) {
         reportPositionChange(next.position);
       }
       if (next.activePanelId !== previous.activePanelId) reportPanelChange(next.activePanelId);
@@ -140,7 +113,7 @@ export function useControlledToolbarState(
     // first render and this line is reported rather than lost.
     observe();
     return store.subscribe(observe);
-  }, [store, reportVisibleChange, reportPositionChange, reportPanelChange, settings.position]);
+  }, [store, reportVisibleChange, reportPositionChange, reportPanelChange, positionSection]);
 
   const controlWarningsRef = useRef(new Set<string>());
   const previousVisibleControlledRef = useRef<boolean | null>(null);
@@ -223,18 +196,14 @@ export function useControlledToolbarState(
         if (next !== positionProp) reportPositionChange(next);
         return;
       }
-      if (!settings.position) return;
+      if (!positionSection) return;
       store.setPosition(next);
     },
-    [positionControlled, positionProp, reportPositionChange, settings.position, store],
+    [positionControlled, positionProp, reportPositionChange, positionSection, store],
   );
 
   return {
     visible: effectiveVisible,
-    position: effectivePosition,
-    density: effectiveDensity,
-    colorScheme: effectiveColorScheme,
-    settings,
     setVisible,
     toggleVisible,
     setPosition,

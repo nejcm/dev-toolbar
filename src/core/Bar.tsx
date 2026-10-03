@@ -9,6 +9,7 @@ import { cx } from "./context";
 import { ExtensionBoundary } from "./ExtensionBoundary";
 import { OverflowBar } from "./Overflow";
 import type { ExtensionSettings } from "./store";
+import { acceptedPreset, isShownInBar } from "./viewerSettings";
 
 /**
  * Renders a slot function inside a child component so that a throw lands in
@@ -32,9 +33,7 @@ export function sortExtensions(
   start: DevToolbarExtension[];
   end: DevToolbarExtension[];
 } {
-  const visible = extensions.filter(
-    (extension) => extension.hidden !== true && extensionSettings[extension.id]?.shown !== false,
-  );
+  const visible = extensions.filter((extension) => isShownInBar(extension, extensionSettings));
   const byOrder = (a: DevToolbarExtension, b: DevToolbarExtension) =>
     (a.order ?? 0) - (b.order ?? 0);
   return {
@@ -76,7 +75,7 @@ export function Bar({
   ): ReactNode => {
     const isPanelOpen = activePanelId === extension.id;
     const hasPanel = typeof extension.panel === "function";
-    const preset = extensionSettings[extension.id]?.preset;
+    const preset = acceptedPreset(extension, extensionSettings);
     const slotProps: CompactSlotProps = {
       isOverflowed,
       isPanelOpen,
@@ -84,7 +83,7 @@ export function Bar({
       openPanel: () => openPanel(extension.id),
       closePanel: () => closePanel(extension.id),
       togglePanel: () => togglePanel(extension.id),
-      ...(preset && extension.presets?.includes(preset) ? { preset } : {}),
+      ...(preset ? { preset } : {}),
       ...(styleNonce ? { styleNonce } : {}),
     };
 

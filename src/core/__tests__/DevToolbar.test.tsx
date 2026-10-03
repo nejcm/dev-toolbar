@@ -18,7 +18,7 @@ import { runCommand } from "../commands";
 import { isApplePlatform } from "../shortcut";
 import { createMemoryStorage, STORAGE_PREFIX } from "../storage";
 import { resetMountedInstances } from "../useHeightVariables";
-import { useViewerSettings } from "../viewerSettingsContext";
+import { useViewerSettings } from "../viewerSettings";
 import { renderWithToolbar } from "@nejcm/dev-toolbar/testing";
 
 const panelExtension = (
@@ -1066,10 +1066,7 @@ describe("persistence", () => {
           <button type="button" onClick={() => settings.setColorScheme("dark")}>
             recolor session
           </button>
-          <button
-            type="button"
-            onClick={() => settings.setExtensionSetting("metrics", { shown: false })}
-          >
+          <button type="button" onClick={() => settings.setShown("metrics", false)}>
             hide session item
           </button>
           <span data-testid="session-settings">{JSON.stringify(settings.extensionSettings)}</span>

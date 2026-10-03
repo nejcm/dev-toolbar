@@ -21,6 +21,7 @@ import {
   readPreference,
   readPreferenceIfReadable,
   readStoredRecord,
+  resetRequested,
   stripResetParam,
   writePreference,
 } from "@nejcm/dev-toolbar/kit";
@@ -249,10 +250,7 @@ export function themeParamValue(param: string | null): string | null {
   }
 }
 
-export function resetRequested(param: string | null): boolean {
-  const value = themeParamValue(param);
-  return value === "reset" || value === "clear" || value === "off";
-}
+export { resetRequested };
 
 /** Parses a persisted edit map, dropping anything that is not a string. */
 export function parseOverrides(raw: string | null): Record<string, string> {

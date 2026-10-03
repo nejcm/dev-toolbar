@@ -29,7 +29,7 @@ interface ExtensionSetting {
 
 export type ExtensionSettings = Readonly<Record<string, Readonly<ExtensionSetting>>>;
 
-export interface ExtensionSettingPatch {
+interface ExtensionSettingPatch {
   shown?: false | undefined;
   preset?: CompactPreset | undefined;
 }

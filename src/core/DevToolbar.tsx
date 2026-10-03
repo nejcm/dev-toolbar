@@ -17,7 +17,6 @@ import { DevToolbarContext, cx } from "./context";
 import type { DevToolbarContextValue } from "./context";
 import { createInstanceStorage, resolveStorage } from "./storage";
 import { createToolbarStore } from "./store";
-import type { ExtensionSettings } from "./store";
 import { DEFAULT_SHORTCUT } from "./shortcut";
 import { ensureStyles } from "./styles";
 import { useStableClassNames } from "./classNames";
@@ -27,8 +26,13 @@ import { useCommandHost } from "./useCommandHost";
 import { useExtensionLifecycle } from "./useExtensionLifecycle";
 import { DEFAULT_INSTANCE_ID, useHeightVariables } from "./useHeightVariables";
 import { useToolbarShortcuts } from "./useToolbarShortcuts";
-import { ViewerSettingsContext } from "./viewerSettingsContext";
-import type { ViewerSettingsContextValue } from "./viewerSettingsContext";
+import {
+  ViewerSettingsContext,
+  createViewerSettingActions,
+  resolveSections,
+  resolveViewerSettings,
+} from "./viewerSettings";
+import type { ViewerSettingsContextValue } from "./viewerSettings";
 import { SettingsMenu } from "./SettingsMenu";
 export { DEFAULT_INSTANCE_ID, HEIGHT_VARIABLE, instanceHeightVariable } from "./useHeightVariables";
 
@@ -128,7 +132,6 @@ export interface DevToolbarProps {
 }
 
 const EMPTY_EXTENSIONS: readonly DevToolbarExtension[] = [];
-const EMPTY_EXTENSION_SETTINGS: ExtensionSettings = Object.freeze({});
 
 export function DevToolbar(props: DevToolbarProps): ReactNode {
   const { children, ...rest } = props;
@@ -212,42 +215,65 @@ function DevToolbarRoot({
     },
     [onExtensionErrorRef],
   );
+  const sections = resolveSections(settingsProp);
+  const defaultPositionOption = store.getServerSnapshot().position;
+  /* oxlint-disable react/use-memo, react-hooks/exhaustive-deps -- keyed on the sections' booleans, not a fresh object. */
+  const viewerSettings = useMemo(
+    () =>
+      resolveViewerSettings(
+        {
+          sections,
+          position: positionProp,
+          defaultPosition: defaultPositionOption,
+          density,
+          colorScheme,
+        },
+        state,
+      ),
+    [
+      sections.position,
+      sections.density,
+      sections.colorScheme,
+      sections.extensions,
+      positionProp,
+      defaultPositionOption,
+      density,
+      colorScheme,
+      state.position,
+      state.density,
+      state.colorScheme,
+      state.extensionSettings,
+    ],
+  );
+  /* oxlint-enable react/use-memo, react-hooks/exhaustive-deps */
   const {
-    visible: effectiveVisible,
     position: effectivePosition,
     density: effectiveDensity,
     colorScheme: effectiveColorScheme,
-    settings,
+    extensionSettings,
+  } = viewerSettings;
+  const {
+    visible: effectiveVisible,
     setVisible,
     toggleVisible,
     setPosition,
     visibleRef,
     subscribeVisibility,
-  } = useControlledToolbarState(store, state, {
+  } = useControlledToolbarState(store, state, viewerSettings, {
     visible: visibleProp,
     position: positionProp,
-    density,
-    colorScheme,
-    settings: settingsProp,
     onVisibleChange,
     onPositionChange,
     onPanelChange,
   });
-  const extensionSettings = settings.extensions
-    ? state.extensionSettings
-    : EMPTY_EXTENSION_SETTINGS;
-  const settingsPosition = settings.position;
-  const settingsDensity = settings.density;
-  const settingsColorScheme = settings.colorScheme;
-  const settingsExtensions = settings.extensions;
-  const settingsEnabled =
-    settingsPosition || settingsDensity || settingsColorScheme || settingsExtensions;
-  const setViewerPosition = useCallback(
-    (position: ToolbarPosition | undefined) => {
-      if (position === undefined) store.setPosition(undefined);
-      else setPosition(position);
-    },
-    [setPosition, store],
+  const viewerSettingActions = useMemo(
+    () =>
+      createViewerSettingActions(
+        store,
+        { position: positionProp, defaultPosition: defaultPositionOption, density, colorScheme },
+        setPosition,
+      ),
+    [store, positionProp, defaultPositionOption, density, colorScheme, setPosition],
   );
 
   // Client-only mount: the bar is never part of server HTML, so nothing to
@@ -356,46 +382,8 @@ function DevToolbarRoot({
   /* oxlint-enable react/use-memo, react-hooks/exhaustive-deps */
 
   const viewerSettingsValue = useMemo<ViewerSettingsContextValue>(
-    () => ({
-      enabled: settingsEnabled,
-      sections: {
-        position: settingsPosition,
-        density: settingsDensity,
-        colorScheme: settingsColorScheme,
-        extensions: settingsExtensions,
-      },
-      extensionSettings,
-      position: effectivePosition,
-      density: effectiveDensity,
-      colorScheme: effectiveColorScheme,
-      positionControlled: positionProp !== undefined,
-      options: {
-        position: positionProp ?? store.getServerSnapshot().position,
-        density,
-        colorScheme,
-      },
-      setPosition: setViewerPosition,
-      setDensity: store.setDensity,
-      setColorScheme: store.setColorScheme,
-      setExtensionSetting: store.setExtensionSetting,
-      resetSettings: store.resetSettings,
-    }),
-    [
-      settingsEnabled,
-      settingsPosition,
-      settingsDensity,
-      settingsColorScheme,
-      settingsExtensions,
-      extensionSettings,
-      effectivePosition,
-      effectiveDensity,
-      effectiveColorScheme,
-      positionProp,
-      density,
-      colorScheme,
-      setViewerPosition,
-      store,
-    ],
+    () => ({ ...viewerSettings, ...viewerSettingActions }),
+    [viewerSettings, viewerSettingActions],
   );
 
   const target = container ?? (typeof document === "undefined" ? null : document.body);
@@ -427,7 +415,7 @@ function DevToolbarRoot({
                   togglePanel={store.togglePanel}
                   classNames={classNames}
                   styleNonce={styleNonce}
-                  settingsMenu={settingsEnabled ? <SettingsMenu /> : null}
+                  settingsMenu={viewerSettings.enabled ? <SettingsMenu /> : null}
                 />
                 <OverlayHost
                   extensions={extensions}

@@ -17,6 +17,7 @@ import {
   parseRecord,
   readInput,
   readPreferenceIfReadable,
+  resetRequested,
   stripResetParam,
   writePreference,
 } from "@nejcm/dev-toolbar/kit";
@@ -245,24 +246,7 @@ function cloneOverrides(source: Record<string, FlagValue>): Record<string, FlagV
   return Object.assign(Object.create(null) as Record<string, FlagValue>, source);
 }
 
-/**
- * True when the URL asks for every override to be dropped.
- *
- * Exists because an override that breaks the page badly enough also breaks
- * the toolbar you'd use to remove it.
- */
-export function resetRequested(param: string | null): boolean {
-  if (param === null) return false;
-  try {
-    if (typeof location === "undefined" || typeof location.search !== "string") {
-      return false;
-    }
-    const value = new URLSearchParams(location.search).get(param);
-    return value === "reset" || value === "clear" || value === "off";
-  } catch {
-    return false;
-  }
-}
+export { resetRequested };
 
 /** The row's markers, matching the `data-dtb-tag` values `ui.tsx` renders. */
 function tagsFor(view: FlagView, reloadPending: ReadonlySet<string>): string[] {
