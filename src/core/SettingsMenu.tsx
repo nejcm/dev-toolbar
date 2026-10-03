@@ -1,15 +1,9 @@
 import { useId, useRef } from "react";
 import type { ChangeEvent, ReactNode } from "react";
-import type {
-  CompactPreset,
-  DevToolbarExtension,
-  ToolbarColorScheme,
-  ToolbarDensity,
-  ToolbarPosition,
-} from "./contract";
+import type { CompactPreset, DevToolbarExtension } from "./contract";
 import { cx, useDevToolbar } from "./context";
 import { useDisclosure } from "./useDisclosure";
-import { useViewerSettings } from "./viewerSettingsContext";
+import { acceptedPreset, useViewerSettings } from "./viewerSettings";
 
 const PRESET_LABELS: Record<CompactPreset, string> = {
   default: "Default",
@@ -77,14 +71,6 @@ export function SettingsMenu(): ReactNode {
     (labelCounts.get(extension.label) ?? 0) > 1
       ? `${extension.label} (${extension.id})`
       : extension.label;
-  const setPosition = (next: ToolbarPosition) =>
-    settings.setPosition(
-      !settings.positionControlled && next === settings.options.position ? undefined : next,
-    );
-  const setDensity = (next: ToolbarDensity) =>
-    settings.setDensity(next === settings.options.density ? undefined : next);
-  const setColorScheme = (next: ToolbarColorScheme) =>
-    settings.setColorScheme(next === settings.options.colorScheme ? undefined : next);
 
   return (
     <>
@@ -119,7 +105,7 @@ export function SettingsMenu(): ReactNode {
                 { value: "top", label: "Top" },
                 { value: "bottom", label: "Bottom" },
               ]}
-              onChange={setPosition}
+              onChange={settings.setPosition}
             />
           ) : null}
           {settings.sections.density ? (
@@ -131,7 +117,7 @@ export function SettingsMenu(): ReactNode {
                 { value: "compact", label: "Compact" },
                 { value: "comfortable", label: "Comfortable" },
               ]}
-              onChange={setDensity}
+              onChange={settings.setDensity}
             />
           ) : null}
           {settings.sections.colorScheme ? (
@@ -144,7 +130,7 @@ export function SettingsMenu(): ReactNode {
                 { value: "light", label: "Light" },
                 { value: "dark", label: "Dark" },
               ]}
-              onChange={setColorScheme}
+              onChange={settings.setColorScheme}
             />
           ) : null}
           {settings.sections.extensions && extensions.length > 0 ? (
@@ -152,19 +138,16 @@ export function SettingsMenu(): ReactNode {
               <legend>Extensions</legend>
               <div data-dtb-part="settings-extensions">
                 {extensions.map((extension) => {
-                  const value = settings.extensionSettings[extension.id];
-                  const preset =
-                    value?.preset && extension.presets?.includes(value.preset) ? value.preset : "";
+                  const shown = settings.extensionSettings[extension.id]?.shown !== false;
+                  const preset = acceptedPreset(extension, settings.extensionSettings) ?? "";
                   return (
                     <div key={extension.id} data-dtb-part="settings-extension">
                       <label>
                         <input
                           type="checkbox"
-                          checked={value?.shown !== false}
+                          checked={shown}
                           onChange={(event) =>
-                            settings.setExtensionSetting(extension.id, {
-                              shown: event.currentTarget.checked ? undefined : false,
-                            })
+                            settings.setShown(extension.id, event.currentTarget.checked)
                           }
                         />
                         <span>{`${rowName(extension)} shown in bar`}</span>
@@ -174,12 +157,12 @@ export function SettingsMenu(): ReactNode {
                           aria-label={`${rowName(extension)} presentation preset`}
                           value={preset}
                           onChange={(event: ChangeEvent<HTMLSelectElement>) =>
-                            settings.setExtensionSetting(extension.id, {
-                              preset:
-                                event.currentTarget.value === ""
-                                  ? undefined
-                                  : (event.currentTarget.value as CompactPreset),
-                            })
+                            settings.setPreset(
+                              extension.id,
+                              event.currentTarget.value === ""
+                                ? undefined
+                                : (event.currentTarget.value as CompactPreset),
+                            )
                           }
                         >
                           <option value="">Extension default</option>
