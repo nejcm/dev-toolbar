@@ -96,6 +96,43 @@ test("a lone instance publishes the unsuffixed height variable too", async ({ to
   await expect.poll(unsuffixed).toBe((await at()) ?? "");
 });
 
+test("the separator resizes the panel by drag and by key, and the height survives a reload", async ({
+  toolbar,
+  page,
+}) => {
+  const height = () => toolbar.read().then((s) => parseFloat(s.shell.heightVariable.value ?? "0"));
+  await page.getByRole("button", { name: "Flags" }).click();
+  await expect.poll(() => toolbar.read().then((s) => s.shell.activePanel)).toBe("flags");
+  const separator = page.getByRole("separator", { name: "Resize developer toolbar panel" });
+  const panelBefore = Number(await separator.getAttribute("aria-valuenow"));
+  await expect.poll(height).toBeGreaterThan(panelBefore);
+  const before = await height();
+
+  const box = (await separator.boundingBox())!;
+  const x = box.x + box.width / 2;
+  const y = box.y + box.height / 2;
+  await page.mouse.move(x, y);
+  await page.mouse.down();
+  await page.mouse.move(x, y - 100, { steps: 5 });
+  await page.mouse.up();
+  await expect.poll(height).toBeCloseTo(before + 100, 0);
+  await expect(separator).toHaveAttribute("aria-valuenow", String(panelBefore + 100));
+  expect((await toolbar.storage()).panelHeight).toBe(String(panelBefore + 100));
+
+  await separator.focus();
+  await page.keyboard.press("ArrowDown");
+  await expect.poll(height).toBeCloseTo(before + 100 - 16, 0);
+  await expect.poll(() => toolbar.storage().then((s) => s.panelHeight)).toBe(
+    String(panelBefore + 100 - 16),
+  );
+  const resized = await height();
+
+  await toolbar.goto();
+  expect((await toolbar.read()).shell.activePanel).toBe("flags");
+  await expect(separator).toHaveAttribute("aria-valuenow", String(panelBefore + 100 - 16));
+  await expect.poll(height).toBeCloseTo(resized, 0);
+});
+
 test("moves to the top and survives a reload", async ({ toolbar, page }) => {
   await page.getByTestId("toggle-position").click();
   await expect.poll(() => toolbar.read().then((s) => s.shell.position)).toBe("top");

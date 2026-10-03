@@ -390,6 +390,39 @@ describe("panel resize", () => {
     removeSpy.mockRestore();
   });
 
+  it.each([
+    ["bottom", "ArrowUp", "ArrowDown"],
+    ["top", "ArrowDown", "ArrowUp"],
+  ] as const)(
+    "at the %s, %s grows the panel and %s shrinks it, one step per press",
+    (position, grow, shrink) => {
+      render(
+        <DevToolbar
+          instanceId={`resize-keys-${position}`}
+          position={position}
+          extensions={[panelExtension("a")]}
+        >
+          <div />
+        </DevToolbar>,
+      );
+      fireEvent.click(screen.getByRole("button", { name: "a" }));
+      const resizer = screen.getByRole("separator", { name: "Resize developer toolbar panel" });
+      const height = () => Number(resizer.getAttribute("aria-valuenow"));
+      const start = height();
+
+      fireEvent.keyDown(resizer, { key: grow });
+      expect(height()).toBe(start + 16);
+      expect(
+        window.localStorage.getItem(`${STORAGE_PREFIX}:resize-keys-${position}:panelHeight`),
+      ).toBe(String(start + 16));
+      fireEvent.keyDown(resizer, { key: shrink });
+      fireEvent.keyDown(resizer, { key: shrink });
+      expect(height()).toBe(start - 16);
+      fireEvent.keyDown(resizer, { key: "ArrowLeft" });
+      expect(height()).toBe(start - 16);
+    },
+  );
+
   it("ignores a second pointer while a drag is in flight", () => {
     const addSpy = vi.spyOn(window, "addEventListener");
     const removeSpy = vi.spyOn(window, "removeEventListener");
