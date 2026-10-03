@@ -1,7 +1,9 @@
 A standalone copy of this app runs at
 <https://codesandbox.io/p/sandbox/q6269g>, linked from the root README and the docs
 landing page. It consumes `@nejcm/dev-toolbar` from npm instead of `file:../..`, and it
-drops `plugins/devToolbarAgent.ts` with the `report` option that feeds it — so it demos
+drops `plugins/devToolbarAgent.ts` with the `report` option that feeds it, and
+`plugins/statusRoutes.ts` with it (so its *3 requests (404)* button meets the SPA
+fallback's `200` there) — so it demos
 the last release and nothing here keeps it in sync. Changing `src/` for an unreleased
 feature means that copy needs updating after the release.
 

@@ -85,7 +85,7 @@ function LoadControls() {
           type="button"
           className="pg-button"
           data-testid="load-fetch-fail"
-          onClick={() => request(3, "/definitely-not-here")}
+          onClick={() => request(3, "/__status/404")}
         >
           3 requests (404)
         </button>
