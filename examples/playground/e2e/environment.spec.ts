@@ -17,6 +17,7 @@ interface EnvState {
   fields: EnvField[];
 }
 
+const PANEL = '[data-dtb-part="panel"][data-dtb-ext-id="environment"]';
 const SECRETS = ["super-secret", "abcdef123456", "rt-nested-secret", "nejc.mursic@example.com"];
 
 test("masks the four secrets by value and leaves the rest alone", async ({ toolbar }) => {
@@ -54,9 +55,22 @@ test("no secret reaches anything the toolbar publishes, or the panel", async ({
 
   await toolbar.trigger("environment").click();
   await expect.poll(() => toolbar.read().then((s) => s.shell.activePanel)).toBe("environment");
-  const panelText = await page.locator('[data-dtb-part="panel"]').innerText();
+  const panelText = await page.locator(PANEL).innerText();
   for (const secret of SECRETS) expect(panelText).not.toContain(secret);
   expect(panelText).toContain("[redacted]");
+});
+
+test("Copy JSON puts the masked context on the clipboard", async ({ toolbar, page }) => {
+  await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
+  await page.evaluate(() => navigator.clipboard.writeText(""));
+  await toolbar.trigger("environment").click();
+  await expect.poll(() => toolbar.read().then((s) => s.shell.activePanel)).toBe("environment");
+  await page.locator(`${PANEL} [data-dtb-action="copy-json"]`).click();
+
+  await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).not.toBe("");
+  const copied = await page.evaluate(() => navigator.clipboard.readText());
+  for (const secret of SECRETS) expect(copied).not.toContain(secret);
+  expect(copied).toContain("[redacted]");
 });
 
 test("impersonation outranks the environment's own severity", async ({ toolbar, page }) => {

@@ -1,7 +1,10 @@
 import { expect, test } from "./fixtures";
+import type { Toolbar } from "./fixtures";
 import type { Page, TestInfo } from "@playwright/test";
 
 // Recipe: .claude/skills/verify-dev-toolbar/features/overflow.md
+
+const barIds = (toolbar: Toolbar) => toolbar.read().then((s) => s.shell.bar.map((b) => b.id));
 
 test("collapses in priority order as the window narrows", async ({ toolbar, page }) => {
   // Priorities live in examples/playground/src/extensions.tsx; the assertion is
@@ -43,8 +46,10 @@ test("collapses in priority order as the window narrows", async ({ toolbar, page
 });
 
 test("the ⋮ menu lists exactly what collapsed and closes on Escape", async ({ toolbar, page }) => {
+  await expect.poll(() => barIds(toolbar)).toContain("flags");
   await page.setViewportSize({ width: 520, height: 800 });
-  await expect.poll(() => toolbar.read().then((s) => s.shell.overflow.present)).toBe(true);
+  await toolbar.settled();
+  await expect.poll(() => barIds(toolbar)).not.toContain("flags");
   await toolbar.overflowButton.click();
   await expect.poll(() => toolbar.read().then((s) => s.shell.overflow.open)).toBe(true);
   const s = await toolbar.read();
@@ -67,8 +72,10 @@ test("menu rows never paint over each other, so a collapsed extension can be rea
   // kept the default `flex-shrink`, so a list taller than the cap squashed
   // every row to `min-height` and the metrics list painted over the overlays
   // trigger. Rows are `flex-shrink: 0` now and the menu scrolls instead.
+  await expect.poll(() => barIds(toolbar)).toContain("flags");
   await page.setViewportSize({ width: 520, height: 800 });
-  await expect.poll(() => toolbar.read().then((s) => s.shell.overflow.present)).toBe(true);
+  await toolbar.settled();
+  await expect.poll(() => barIds(toolbar)).not.toContain("flags");
   await toolbar.overflowButton.click();
   await expect.poll(() => toolbar.read().then((s) => s.shell.overflow.open)).toBe(true);
 
@@ -94,25 +101,9 @@ test("stepping the viewport never trips a ResizeObserver loop", async ({ toolbar
     (window as any).__dtbErrors = [];
     addEventListener("error", (e) => (window as any).__dtbErrors.push(e.message));
   });
-  const settled = async () => {
-    // Two frames for the ResizeObserver to deliver, then the bar has to read
-    // the same twice in a row before the next step.
-    await page.evaluate(
-      () => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))),
-    );
-    let last = "";
-    await expect
-      .poll(async () => {
-        const now = JSON.stringify((await toolbar.read()).shell.bar.map((b) => b.id));
-        const stable = now === last;
-        last = now;
-        return stable;
-      })
-      .toBe(true);
-  };
   for (const width of [1280, 900, 700, 520, 400, 700, 1280]) {
     await page.setViewportSize({ width, height: 800 });
-    await settled();
+    await toolbar.settled();
   }
   expect(await page.evaluate(() => (window as any).__dtbErrors)).toEqual([]);
 });

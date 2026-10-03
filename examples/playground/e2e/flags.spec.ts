@@ -95,6 +95,9 @@ test("the switch in the panel overrides, and the override survives a reload", as
   expect(flag(f, "new-header")).toMatchObject({ effective: false, overridden: true });
   expect(f?.overriddenCount).toBe(1);
   expect((await toolbar.read()).shell.activePanel).toBe("flags");
+  await expect(page.locator(readout("new-header"))).toContainText(
+    "new-header = false (overridden — the app resolves true)",
+  );
 
   await page.getByRole("button", { name: /Clear all overrides/ }).click();
   await expect.poll(() => toolbar.ext<FlagsState>("flags").then((f) => f?.overriddenCount)).toBe(0);
@@ -145,4 +148,29 @@ test("a throwing whole-map adapter is one bulkError, not a marked row, and recov
   await page.getByTestId("flag-break-mirror").click();
   expect(await toolbar.run("flags.toggle.new-header")).toEqual({ ok: true });
   await expect.poll(() => toolbar.ext<FlagsState>("flags").then((f) => f?.bulkError)).toBeNull();
+});
+
+test("a clear the adapter refuses stays in effect and succeeds on retry", async ({
+  toolbar,
+  page,
+}) => {
+  expect(await toolbar.run("flags.toggle.new-header")).toEqual({ ok: true });
+  await expect(page.locator(readout("new-header"))).toContainText("new-header = false (overridden");
+
+  await page.getByTestId("flag-break-adapter").click();
+  await expect(page.getByTestId("flag-break-adapter")).toHaveText("adapter throws: true");
+  expect(await toolbar.run("flags.set", { key: "new-header" })).toEqual({ ok: true });
+  await expect
+    .poll(() => toolbar.ext<FlagsState>("flags").then((f) => flag(f, "new-header")?.tags))
+    .toContain("not-applied");
+  expect(flag(await toolbar.ext<FlagsState>("flags"), "new-header")?.overridden).toBe(false);
+  await expect(page.locator(readout("new-header"))).toContainText("new-header = false (overridden");
+
+  await page.getByTestId("flag-break-adapter").click();
+  await expect(page.getByTestId("flag-break-adapter")).toHaveText("adapter throws: false");
+  expect(await toolbar.run("flags.set", { key: "new-header" })).toEqual({ ok: true });
+  await expect
+    .poll(() => toolbar.ext<FlagsState>("flags").then((f) => flag(f, "new-header")?.tags))
+    .not.toContain("not-applied");
+  await expect(page.locator(readout("new-header"))).toHaveText(/new-header = true$/);
 });
