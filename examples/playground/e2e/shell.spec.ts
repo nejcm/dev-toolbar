@@ -138,6 +138,9 @@ test("moves to the top and survives a reload", async ({ toolbar, page }) => {
   await expect.poll(() => toolbar.read().then((s) => s.shell.position)).toBe("top");
   expect((await toolbar.storage()).position).toBe('"top"');
   await expect(page.getByTestId("inset")).toHaveCSS("padding-bottom", "0px");
+  const height = (await toolbar.read()).shell.heightVariable.value;
+  expect(parseFloat(height ?? "0")).toBeGreaterThan(0);
+  await expect(page.getByTestId("inset")).toHaveCSS("padding-top", height!);
 
   await toolbar.goto();
   expect((await toolbar.read()).shell.position).toBe("top");

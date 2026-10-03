@@ -113,3 +113,38 @@ test("the Settings button is the tab stop after the ⋮", async ({ toolbar }) =>
     await toolbar.page.evaluate(() => document.activeElement?.getAttribute("data-dtb-part")),
   ).toBe("settings-button");
 });
+
+test("the ⋮ menu and the Settings menu close each other", async ({ toolbar }) => {
+  await toolbar.overflowButton.click();
+  await expect.poll(() => toolbar.read().then((s) => s.shell.overflow.open)).toBe(true);
+  await openSettings(toolbar);
+  expect((await toolbar.read()).shell.overflow.open).toBe(false);
+
+  await toolbar.overflowButton.click();
+  await expect.poll(() => toolbar.read().then((s) => s.shell.overflow.open)).toBe(true);
+  expect((await toolbar.read()).shell.settings.open).toBe(false);
+});
+
+test("the colour scheme repaints the bar, and System follows the OS", async ({
+  toolbar,
+  page,
+}) => {
+  const background = () => toolbar.bar.evaluate((bar) => getComputedStyle(bar).backgroundColor);
+  await page.emulateMedia({ colorScheme: "light" });
+  await openSettings(toolbar);
+  const menu = page.getByRole("group", { name: "Toolbar settings" });
+
+  await menu.getByRole("radio", { name: "Light" }).check();
+  await expect.poll(() => toolbar.read().then((s) => s.shell.colorScheme)).toBe("light");
+  const light = await background();
+  await menu.getByRole("radio", { name: "Dark" }).check();
+  await expect.poll(() => toolbar.read().then((s) => s.shell.colorScheme)).toBe("dark");
+  await expect.poll(background).not.toBe(light);
+  const dark = await background();
+
+  await menu.getByRole("radio", { name: "System" }).check();
+  await expect.poll(() => toolbar.read().then((s) => s.shell.colorScheme)).toBe("system");
+  await expect.poll(background).toBe(light);
+  await page.emulateMedia({ colorScheme: "dark" });
+  await expect.poll(background).toBe(dark);
+});

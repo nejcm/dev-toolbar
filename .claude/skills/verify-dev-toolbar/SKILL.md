@@ -42,8 +42,8 @@ bun run test:e2e     # repo root: builds dist/, starts its own Vite on :5274, ru
 
 Green means the *specs' assertions* hold at 1280×800 over the current `src/` —
 the specs are organised by recipe, but each encodes a subset of its recipe's
-steps, not all of them (the `Mod`-exclusivity check and the top-position inset,
-for instance, are still manual). Read the spec before treating a step as
+steps, not all of them (the `Mod`-exclusivity check, for instance, is still
+manual). Read the spec before treating a step as
 covered; the feature map's *not driven* list is history, not a coverage map. A
 red test keeps its trace and screenshot under
 `examples/playground/e2e-results/`. Drive the browser by hand for what a spec
