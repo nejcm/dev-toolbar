@@ -60,6 +60,19 @@ test("no secret reaches anything the toolbar publishes, or the panel", async ({
   expect(panelText).toContain("[redacted]");
 });
 
+test("Copy JSON puts the masked context on the clipboard", async ({ toolbar, page }) => {
+  await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
+  await page.evaluate(() => navigator.clipboard.writeText(""));
+  await toolbar.trigger("environment").click();
+  await expect.poll(() => toolbar.read().then((s) => s.shell.activePanel)).toBe("environment");
+  await page.locator(`${PANEL} [data-dtb-action="copy-json"]`).click();
+
+  await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).not.toBe("");
+  const copied = await page.evaluate(() => navigator.clipboard.readText());
+  for (const secret of SECRETS) expect(copied).not.toContain(secret);
+  expect(copied).toContain("[redacted]");
+});
+
 test("impersonation outranks the environment's own severity", async ({ toolbar, page }) => {
   await page.getByTestId("env-impersonate").click();
   await expect

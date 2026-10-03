@@ -409,6 +409,22 @@ describe("the clipboard path", () => {
     expect(written[0]).toContain("[redacted]");
   });
 
+  it("closes the front door for JSON too", async () => {
+    const { extension } = mount(leaky);
+    const copyJson = collectCommands([extension]).find((c) => c.id === "environment.copyJson");
+    await act(async () => {
+      await copyJson?.run();
+    });
+    expect(written).toHaveLength(1);
+    const copied = written[0] as string;
+    for (const secret of ["super-secret", "abcdef123456", "nejc.mursic@"]) {
+      expect(copied).not.toContain(secret);
+    }
+    const parsed = JSON.parse(copied) as { fields: { id: string; value: string }[] };
+    expect(parsed.fields.find((f) => f.id === "extra:authToken")?.value).toBe("[redacted]");
+    expect(parsed.fields.find((f) => f.id === "userId")?.value).toBe("n***@example.com");
+  });
+
   it("reports a clipboard it cannot reach instead of pretending", async () => {
     clipboard.restore();
     clipboard = installClipboard(null);

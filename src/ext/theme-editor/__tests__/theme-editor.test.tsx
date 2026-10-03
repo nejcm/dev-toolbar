@@ -490,6 +490,15 @@ describe("the shell contract", () => {
     expect(app().hasAttribute("style")).toBe(false);
   });
 
+  it("rejects copyLink when there is no share link, and writes nothing", async () => {
+    const { extension } = mount({ themeParam: null });
+    const copyLink = collectCommands([extension]).find(
+      (command) => command.id === "theme-editor.copyLink",
+    );
+    await expect(copyLink?.run()).rejects.toThrow(/no page URL to build a share link from/);
+    expect(written).toEqual([]);
+  });
+
   it("relabels the preview command to say what a run will do", async () => {
     // A static `commands` array couldn't do this: "Pause the preview" over an
     // already-paused preview would be a lie.
