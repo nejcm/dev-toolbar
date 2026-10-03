@@ -1,14 +1,17 @@
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
 import { devToolbarAgent } from "./plugins/devToolbarAgent.ts";
+import { statusRoutes } from "./plugins/statusRoutes.ts";
 
 export default defineConfig({
   // `devToolbarAgent` is the playground's own plugin, not part of the package:
   // it holds the snapshot the agent bridge reports and serves it at
   // `/__dev-toolbar/*`, so an agent that never loads the app can curl the
   // toolbar's state. Dev-server-only and localhost-only; the threat model is in
-  // the plugin's own header and in the README recipe.
-  plugins: [react(), devToolbarAgent()],
+  // the plugin's own header and in the README recipe. `statusRoutes` answers
+  // `/__status/<code>` with that status, so the metrics fixture's failing
+  // requests are real 4xx rather than Vite's SPA fallback serving a 200.
+  plugins: [react(), devToolbarAgent(), statusRoutes()],
   resolve: {
     // `@nejcm/dev-toolbar` is a `file:..` link, so without deduping the linked
     // package would resolve React from the repo root's node_modules and the app
