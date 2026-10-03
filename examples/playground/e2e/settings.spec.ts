@@ -87,7 +87,12 @@ test("the Settings button is charged to the bar, so nothing overruns it", async 
 }) => {
   for (const width of [1280, 700, 520, 400]) {
     await page.setViewportSize({ width, height: 800 });
-    await expect.poll(() => toolbar.read().then((s) => s.shell.overflow.present)).toBe(true);
+    await toolbar.settled();
+    if (width === 520) {
+      await expect
+        .poll(() => toolbar.read().then((s) => s.shell.bar.map((b) => b.id)))
+        .not.toContain("flags");
+    }
     const fit = await toolbar.bar.evaluate((bar) => {
       const box = bar.getBoundingClientRect();
       const cog = bar.querySelector('[data-dtb-part="settings-button"]')!.getBoundingClientRect();

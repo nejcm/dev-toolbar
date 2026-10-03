@@ -111,7 +111,25 @@ export class Toolbar {
 
   /** An extension's chip trigger, wherever it currently lives (bar or overflow menu). */
   trigger(extId: string) {
-    return this.page.locator(`[data-dtb-ext-id="${extId}"] [data-dtb-part="trigger"]`);
+    return this.page.locator(
+      `:is([data-dtb-part="item"], [data-dtb-part="overflow-menu-item"])[data-dtb-ext-id="${extId}"] [data-dtb-part="trigger"]`,
+    );
+  }
+
+  /** Two frames for the ResizeObserver to deliver, then `shell.bar` has to read the same twice running. */
+  async settled() {
+    await this.page.evaluate(
+      () => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))),
+    );
+    let last = "";
+    await expect
+      .poll(async () => {
+        const now = JSON.stringify((await this.read()).shell.bar.map((b) => b.id));
+        const stable = now === last;
+        last = now;
+        return stable;
+      })
+      .toBe(true);
   }
 
   /** The viewer Settings button; present unless `settings={false}`. */
