@@ -48,7 +48,7 @@ guards the import rules.
 
 ```sh
 bun install                  # also installs the git hooks (simple-git-hooks)
-bun run verify               # verify:static && test — the one command that matters
+bun run verify               # verify:static && test — excludes e2e and consumer fixtures
 bun run verify:static        # format:check && typecheck && lint && knip && build &&
                              #   check:package — everything but the suite; what CI runs,
                              #   since test:coverage below re-runs the same tests
@@ -77,8 +77,10 @@ invisible to the pre-`exports` `node10` algorithm, so consumers need
 `moduleResolution` `node16` or `bundler` and `node10` is deliberately
 unsupported.
 
-`bun run verify` is the one command that matters. If it passes locally it passes in
-CI — but CI does not run it verbatim: `.github/workflows/ci.yml` splits it across
+`bun run verify` is the local gate, but not all of CI. A change to `src/core`,
+`src/runtime` or `src/ext` is not done until `bun run test:e2e` passes; the
+`verify-dev-toolbar` skill covers what e2e cannot. CI does not run `verify`
+verbatim: `.github/workflows/ci.yml` splits the checks across
 three parallel jobs. `package` runs `verify:static` and then the two consumer
 fixtures; `unit` runs `test:coverage`, which is `verify`'s `vitest run` with
 instrumentation and the floors on top; `browser` runs the playground's Playwright
