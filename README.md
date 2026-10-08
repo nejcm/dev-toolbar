@@ -10,7 +10,7 @@ hosts *your* tools.
 ![zero runtime dependencies](https://img.shields.io/badge/runtime%20deps-0-brightgreen)
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/bar-dark.png">
+  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/bar-dark-preview.png">
   <img alt="The dev toolbar: a thin bar along the bottom of the page carrying an environment chip, an aggregated-commands count, a promoted feature flag, theme and overlay chips, memory, delay, jank and network readings, the ⌘K hint and the current actor." src="docs/assets/bar-light.png" width="1519">
 </picture>
 
