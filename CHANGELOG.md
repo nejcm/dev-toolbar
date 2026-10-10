@@ -14,6 +14,13 @@
   style break at the boundary is accepted, not an oversight.
 -->
 
+## [1.4.2](https://github.com/nejcm/dev-toolbar/compare/v1.4.1...v1.4.2) (2026-10-10)
+
+
+### Bug Fixes
+
+* **deps:** bump source-map-js, smol-toml, esbuild in lockfile for audit ([#170](https://github.com/nejcm/dev-toolbar/issues/170)) ([238a2f5](https://github.com/nejcm/dev-toolbar/commit/238a2f54d7e762ffb5ee34c9380bfdd87305b1b1))
+
 ## [1.4.1](https://github.com/nejcm/dev-toolbar/compare/v1.4.0...v1.4.1) (2026-10-02)
 
 
