@@ -100,7 +100,7 @@ pageClass: dtb-landing-page
           <pre v-pre><span class="dtb-code-comment">// Pad your content out of the way…</span><span><em>import</em> { DevToolbarInset } <em>from</em> <b>"@nejcm/dev-toolbar"</b>;</span><span>&nbsp;</span><span>&lt;<mark>DevToolbarInset</mark>&gt;&lt;<mark>App</mark> /&gt;&lt;/<mark>DevToolbarInset</mark>&gt;;</span><span>&nbsp;</span><span class="dtb-code-comment">/* …or by hand. The shell publishes bar + open panel height on &lt;html&gt;. */</span><span>.my-layout { padding-bottom: <mark>var</mark>(--dev-toolbar-height, 0px); }</span></pre>
         </div>
         <div v-show="tab === 3" id="dtb-pane-3" role="tabpanel" aria-labelledby="dtb-tab-3">
-          <pre v-pre><span class="dtb-code-comment">// Gate on the value that names the deployment, not NODE_ENV:</span><span class="dtb-code-comment">// a staging build IS a production build.</span><span><em>const</em> Toolbar = import.meta.env.VITE_ENV === <b>"production"</b></span><span>  ? <em>null</em></span><span>  : <mark>lazy</mark>(() =&gt; <mark>import</mark>(<b>"./DevTools"</b>));</span><span>&nbsp;</span><span class="dtb-code-comment">// The dynamic import folds away, so the code leaves the prod bundle.</span><span class="dtb-code-comment">// Caveat: the chunk is not there at boot — nothing in it runs</span><span class="dtb-code-comment">// before the app's first render.</span></pre>
+          <pre v-pre><span class="dtb-code-comment">// Off in every production build, staging included,</span><span class="dtb-code-comment">// unless built with VITE_DEV_TOOLBAR=true.</span><span><em>const</em> Toolbar =</span><span>  import.meta.env.DEV || import.meta.env.VITE_DEV_TOOLBAR === <b>"true"</b></span><span>    ? <mark>lazy</mark>(() =&gt; <mark>import</mark>(<b>"./DevTools"</b>))</span><span>    : <em>null</em>;</span><span>&nbsp;</span><span class="dtb-code-comment">// The dynamic import folds away, so the code leaves the prod bundle.</span><span class="dtb-code-comment">// Caveat: the chunk is not there at boot — nothing in it runs</span><span class="dtb-code-comment">// before the app's first render.</span></pre>
         </div>
       </div>
     </div>
@@ -226,6 +226,7 @@ const subpaths = [
   { name: "/styles.css", body: "the shell stylesheet, if you would rather import it" },
 ];
 const documents = [
+  { name: "recipes.md", href: withBase("/recipes.html"), body: "Pick a framework and extensions, copy the setup files, typechecked in CI" },
   { name: "api.md", href: withBase("/api.html"), body: "The root entry: every <DevToolbar> prop, the toggle shortcut, the ⋮ menu, the escape hatches and every published type" },
   { name: "extension-contract.md", href: withBase("/extension-contract.html"), body: "The object you write, the slot props, start(api), and the two lifecycle rules that bite" },
   { name: "kit.md", href: withBase("/kit.html"), body: "The severity vocabulary, storage/poll/style helpers, data-dtb-kind, the React controls and the presentation vocabulary" },

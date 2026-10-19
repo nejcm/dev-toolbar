@@ -35,7 +35,7 @@ export default defineConfig({
     globals: true,
     environment: "jsdom",
     environmentOptions: { jsdom: { url: "http://localhost:3000/" } },
-    include: ["src/**/*.test.ts", "src/**/*.test.tsx"],
+    include: ["src/**/*.test.ts", "src/**/*.test.tsx", "docs/.vitepress/theme/*.test.ts"],
     setupFiles: ["./vitest.setup.ts"],
     coverage: {
       provider: "v8",

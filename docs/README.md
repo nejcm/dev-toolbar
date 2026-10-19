@@ -6,6 +6,7 @@ Everything the [README](https://github.com/nejcm/dev-toolbar/blob/main/README.md
 
 | Document | What is in it |
 | --- | --- |
+| [recipes.md](./recipes.md) | The recipe builder: pick a framework and extensions, copy typechecked setup files |
 | [api.md](./api.md) | The root entry: every `<DevToolbar>` prop, the toggle shortcut, the `⋮` menu, the escape-hatch exports and every published type |
 | [styling.md](./styling.md) | The three ways to restyle the bar, why none of them needs `!important`, and how icons and bar text are configured |
 | [ssr.md](./ssr.md) | Why the bar cannot mismatch on hydration, and the one Next.js app-router rule |

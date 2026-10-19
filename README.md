@@ -290,8 +290,9 @@ deployment, not on the one that says "this is a production build". Under Vite th
 are separate: `import.meta.env.MODE` is the `--mode` you passed, while `PROD` and
 `DEV` follow `NODE_ENV`, so `PROD` is `true` for a staging build too. If your mode
 names *are* your deployment names, `import.meta.env.MODE !== "production"` is enough;
-otherwise define your own variable and expose it with the `VITE_` prefix —
-`import.meta.env.VITE_ENV === "production"`, fed from `.env.staging` and friends.
+otherwise define your own opt-in variable with the `VITE_` prefix —
+`import.meta.env.DEV || import.meta.env.VITE_DEV_TOOLBAR === "true"`, set in
+`.env.staging` and friends — so a build that forgets it leaves the toolbar out.
 Other bundlers have their own inlining; the rule is the same.
 
 The lazy recipe has one more consequence: **the chunk is not there at boot.**

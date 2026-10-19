@@ -7,6 +7,7 @@
     "src/ext/*/index.tsx",
     "src/testing/index.ts",
     "src/**/*.test.{ts,tsx}",
+    "docs/.vitepress/theme/*.test.ts",
     "scripts/*.mjs"
   ],
   "project": ["src/**/*.{ts,tsx}", "scripts/**/*.mjs"],

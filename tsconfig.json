@@ -25,5 +25,12 @@
       "@nejcm/dev-toolbar/testing": ["./src/testing/index.ts"]
     }
   },
-  "include": ["src", "tsup.config.ts", "vitest.config.ts", "vitest.setup.ts"]
+  "include": [
+    "src",
+    "docs/.vitepress/theme/recipe.ts",
+    "docs/.vitepress/theme/recipe.test.ts",
+    "tsup.config.ts",
+    "vitest.config.ts",
+    "vitest.setup.ts"
+  ]
 }
