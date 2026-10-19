@@ -54,6 +54,7 @@ export default defineConfig({
       {
         text: "Using the package",
         items: [
+          { text: "Recipe builder", link: "/recipes" },
           { text: "API reference", link: "/api" },
           { text: "Styling", link: "/styling" },
           { text: "SSR", link: "/ssr" },

@@ -51,6 +51,13 @@ jobs:
       - name: Lint
         run: bun run lint
 
+      # ci.yml ignores docs/**, so a recipe-only change is typechecked here — against src/ only; the
+      # dist/ pass needs a build and runs in ci.yml's unit lane.
+      - name: Typecheck the recipe builder's output
+        run: bunx vitest run docs/.vitepress/theme/recipe.test.ts
+        env:
+          RECIPE_SKIP_DIST: "1"
+
       - name: Verify docs
         run: bun run verify:docs
 
