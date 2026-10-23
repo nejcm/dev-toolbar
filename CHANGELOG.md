@@ -14,6 +14,13 @@
   style break at the boundary is accepted, not an oversight.
 -->
 
+## [1.4.3](https://github.com/nejcm/dev-toolbar/compare/v1.4.2...v1.4.3) (2026-10-23)
+
+
+### Bug Fixes
+
+* mask credential-shaped URL parameter values and harden links and the dev bridge ([#179](https://github.com/nejcm/dev-toolbar/issues/179)) ([03e7796](https://github.com/nejcm/dev-toolbar/commit/03e77967d1c2b4fa03e9735e70a385e2a25c3352))
+
 ## [1.4.2](https://github.com/nejcm/dev-toolbar/compare/v1.4.1...v1.4.2) (2026-10-10)
 
 
