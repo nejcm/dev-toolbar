@@ -1050,6 +1050,38 @@ describe("redaction", () => {
   });
 });
 
+describe("the project link", () => {
+  it("keeps an http(s) or relative link and drops any other scheme", () => {
+    const reading = (key: string, projectUrl: string): FlagReading => ({
+      key,
+      type: "boolean",
+      value: true,
+      source: "default",
+      projectUrl,
+    });
+    const runtime = createFlagsRuntime({
+      flags: [
+        reading("web", "https://tracker.test/1"),
+        reading("relative", "/issues/2"),
+        reading("script", "javascript:alert(1)"),
+        reading("spaced", "  JavaScript:alert(1)"),
+        reading("data", "data:text/html,x"),
+      ],
+    });
+    const links = Object.fromEntries(
+      runtime.store.getSnapshot().flags.map((view) => [view.key, view.projectUrl]),
+    );
+    expect(links).toEqual({
+      web: "https://tracker.test/1",
+      relative: "/issues/2",
+      script: undefined,
+      spaced: undefined,
+      data: undefined,
+    });
+    runtime.store.destroy();
+  });
+});
+
 describe("promotion", () => {
   it("promotes only inside the window and only for the audience", () => {
     const at = Date.parse("2026-06-01T00:00:00.000Z");

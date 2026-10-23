@@ -250,6 +250,27 @@ describe("grouping and counts", () => {
     expect(worstImpact(report.counts)).toBe("critical");
   });
 
+  it("drops a help link that is not an http(s) page, since React only warns on javascript:", async () => {
+    const { load } = stubAxe({
+      violations: [
+        violation("script-link", "minor", [{}], { helpUrl: "javascript:alert(1)" }),
+        violation("data-link", "minor", [{}], { helpUrl: " data:text/html,<b>x</b>" }),
+        violation("relative-link", "minor", [{}], { helpUrl: "/rules/relative-link" }),
+        violation("web-link", "minor", [{}]),
+      ],
+    });
+    const report = await createA11yRuntime({ load }).scan();
+    const links = Object.fromEntries(
+      report.groups.flatMap((group) => group.violations).map((v) => [v.rule, v.helpUrl]),
+    );
+    expect(links).toEqual({
+      "script-link": null,
+      "data-link": null,
+      "relative-link": "/rules/relative-link",
+      "web-link": "https://dequeuniversity.com/rules/axe/4.10/web-link",
+    });
+  });
+
   it("treats a violation with no impact as minor rather than dropping it", async () => {
     const { load } = stubAxe({ violations: [violation("no-impact", null, [{}])] });
     const report = await createA11yRuntime({ load }).scan();

@@ -63,6 +63,8 @@ export const DEFAULT_SENSITIVE_KEYS: readonly string[] = [
   "xsrf",
   "xauth",
   "signature",
+  // Azure SAS (`?sv=…&sig=…`) and other signed links put the signature here.
+  "sig",
   "privatekey",
   "accesskey",
   "clientsecret",
@@ -147,7 +149,10 @@ export interface RedactOptions {
    * Also mask string *values* that look like credentials regardless of key:
    * `Bearer …`/`Basic …`/`Digest …` scheme headers, bare JWTs, and absolute
    * URLs (any registered scheme) with a sensitive query/fragment parameter —
-   * the OAuth-callback shape, where key matching can't find the secret.
+   * the OAuth-callback shape, where key matching can't find the secret. A
+   * URL parameter counts as sensitive by its name *or* by its value's shape,
+   * so `?assertion=<JWT>` is masked like `?token=<JWT>`; `redactUrl()` applies
+   * the same rule.
    * Relative references and non-URL header values are out of scope here —
    * call `redactUrl()` on those. Default `true`. A URL with nothing to mask
    * is returned byte-for-byte unchanged.
@@ -446,6 +451,17 @@ export function redactText(text: string, options?: RedactTextOptions): string {
     cursor = span.end;
   }
   return out + text.slice(cursor);
+}
+
+/**
+ * The value-shape half of `redactString`, for a URL parameter's decoded value:
+ * a key not on the list can still carry `?assertion=<JWT>` or
+ * `?h=Bearer%20…`, and masking those only as object leaves would leave the
+ * same credential in clear the moment it travels in a URL.
+ */
+function looksLikeCredential(value: string, resolved: ResolvedOptions): boolean {
+  if (!resolved.values) return false;
+  return SCHEME_CREDENTIAL.test(value) || SCHEME_DIGEST.test(value) || JWT.test(value);
 }
 
 // Cheap prefix gate before paying for a URL parse.
@@ -840,7 +856,10 @@ function maskUrl(url: string, resolved: ResolvedOptions): UrlPass {
 
   // Copied: `set` below mutates the params being iterated.
   for (const key of Array.from(parsed.searchParams.keys())) {
-    if (matches(key, resolved)) {
+    if (
+      matches(key, resolved) ||
+      parsed.searchParams.getAll(key).some((value) => looksLikeCredential(value, resolved))
+    ) {
       parsed.searchParams.set(key, slot());
       masked = true;
     }
@@ -855,7 +874,10 @@ function maskUrl(url: string, resolved: ResolvedOptions): UrlPass {
     let touched = false;
     // Copied: `set` below mutates the params being iterated.
     for (const key of Array.from(params.keys())) {
-      if (matches(key, resolved)) {
+      if (
+        matches(key, resolved) ||
+        params.getAll(key).some((value) => looksLikeCredential(value, resolved))
+      ) {
         params.set(key, slot());
         touched = true;
       }
@@ -876,7 +898,10 @@ function maskUrl(url: string, resolved: ResolvedOptions): UrlPass {
 
 /**
  * Masks credentials in a URL: `user:pass@` userinfo, sensitive query
- * parameters, and sensitive parameters in a `#`-fragment query.
+ * parameters, and sensitive parameters in a `#`-fragment query. A parameter
+ * is sensitive by its name, or — while `values` is on — by its decoded value
+ * looking like a credential (a bare JWT, a `Bearer …`/`Basic …`/`Token …`/
+ * `Digest …` value), so `?assertion=<JWT>` is masked like `?token=<JWT>`.
  *
  * The mask goes in **literally** (`https://[redacted]:[redacted]@a.test/p`,
  * `?token=[redacted]`) so a dump stays greppable, and the result still parses
@@ -918,6 +943,18 @@ function maskQueryString(url: string, resolved: ResolvedOptions): UrlPass {
   };
 }
 
+// `decodeURIComponent` throws URIError on a malformed escape ("%zz").
+// `maskPairs` runs synchronously inside a patched `fetch`, so a weird URL must
+// never become an exception in the host app's network layer. Match the raw
+// text instead — worse at unescaping, never worse than throwing.
+function decodeLoosely(text: string): string {
+  try {
+    return decodeURIComponent(text);
+  } catch {
+    return text;
+  }
+}
+
 function maskPairs(source: string, from: number, resolved: ResolvedOptions): UrlPass {
   const head = source.slice(0, from);
   const query = source.slice(from);
@@ -928,17 +965,11 @@ function maskPairs(source: string, from: number, resolved: ResolvedOptions): Url
       const equals = pair.indexOf("=");
       if (equals === -1) return pair;
       const key = pair.slice(0, equals);
-      // `decodeURIComponent` throws URIError on a malformed escape ("%zz").
-      // This runs synchronously inside a patched `fetch`, so a weird URL must
-      // never become an exception in the host app's network layer. Match the
-      // raw key instead — worse at unescaping, never worse than throwing.
-      let decoded: string;
-      try {
-        decoded = decodeURIComponent(key);
-      } catch {
-        decoded = key;
+      if (!matches(decodeLoosely(key), resolved)) {
+        // Form encoding spells a space `+`, so `Bearer+abc` is `Bearer abc`.
+        const value = decodeLoosely(pair.slice(equals + 1).replaceAll("+", " "));
+        if (!looksLikeCredential(value, resolved)) return pair;
       }
-      if (!matches(decoded, resolved)) return pair;
       masked = true;
       // Literal when the mask is URL-safe, matching what the parsed path
       // produces; encoded otherwise, for the same reason it is there.

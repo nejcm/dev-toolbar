@@ -86,6 +86,20 @@ const asRecord = (value: unknown): Readonly<Record<string, unknown>> =>
 
 const asText = (value: unknown): string | null => (typeof value === "string" ? value : null);
 
+/**
+ * `url` when it navigates to an `http:`/`https:` page (relative references
+ * included), otherwise `null`. React only warns on a `javascript:` `href`, so
+ * the scheme is checked here, before the value can reach a link.
+ */
+function webLink(url: string): string | null {
+  try {
+    const { protocol } = new URL(url, "http://localhost/");
+    return protocol === "http:" || protocol === "https:" ? url : null;
+  } catch {
+    return null;
+  }
+}
+
 // axe's own snippet truncation stops at the start tag plus a little; a single
 // attribute can still carry a hundred kilobytes into the report.
 const TEXT_LIMIT = 4096;
@@ -513,7 +527,7 @@ export function createA11yRuntime(options: A11yRuntimeOptions = {}): A11yRuntime
         help: maskProse(asText(record["help"]) ?? rule),
         helpUrl: (() => {
           const url = asText(record["helpUrl"]);
-          return url === null ? null : maskProse(url);
+          return url === null ? null : webLink(maskProse(url));
         })(),
         tags: asArray(record["tags"])
           .filter((tag): tag is string => typeof tag === "string")

@@ -43,18 +43,22 @@
  *    cannot be forged without a preflight this middleware never answers.
  * 5. **A loopback `Host`, checked here.** Control 4 compares `Origin` against
  *    `Host`, which on its own would let an attacker-controlled name resolving
- *    to `127.0.0.1` satisfy both — classic DNS rebinding. Vite's own
- *    `hostValidationMiddleware` runs before plugin middlewares and would catch
- *    that today, but it is an implementation detail of a version, and it is
- *    skipped when `server.https` is set. So the `Host` header is checked
- *    against the loopback spellings here too, and a request that fails is
- *    `403 non-loopback-host`. A control this middleware depends on belongs in
- *    this middleware.
+ *    to `127.0.0.1` satisfy both — classic DNS rebinding. Vite has its own
+ *    `hostValidationMiddleware`, but a middleware added directly in
+ *    `configureServer` (as this one is) runs *before* Vite's internal ones,
+ *    and the check is skipped when `server.https` is set. So the `Host` header
+ *    is checked against the loopback spellings here, and a request that fails
+ *    is `403 non-loopback-host`. A control this middleware depends on belongs
+ *    in this middleware.
  *
  * What is deliberately *not* here: authentication, TLS, rate limiting, and any
  * notion of a user. Anything with a shell on the developer's machine can
- * already do worse. If that is not true of your machine, do not install this
- * plugin.
+ * already do worse. Loopback is shared by every account on the host, though:
+ * any local process can check in as "the page", claim `allowRun`, and take
+ * queued commands. What it cannot do is answer a command handed to another
+ * reporter — results are accepted only from the reporter that picked the
+ * command up, and tokens are random. If other people can run processes on
+ * your machine, do not install this plugin.
  *
  * ## One page at a time
  *
@@ -171,12 +175,16 @@ const PROTOCOL_VERSION = 2;
 
 const LOOPBACK = new Set(["localhost", "127.0.0.1", "::1", "[::1]", "0:0:0:0:0:0:0:1"]);
 
-/** `"[::1]:5273"` -> `"[::1]"`, `"localhost:5273"` -> `"localhost"`. */
+/**
+ * `"[::1]:5273"` -> `"[::1]"`, `"localhost:5273"` -> `"localhost"`. Anything
+ * after the name other than `:<port>` comes back whole, so `"[::1]evil.test"`
+ * matches no loopback name rather than being read as `[::1]`.
+ */
 function hostname(header: string): string {
   const value = header.trim();
-  if (value.startsWith("[")) return value.slice(0, value.indexOf("]") + 1) || value;
-  const colon = value.indexOf(":");
-  return colon === -1 ? value : value.slice(0, colon);
+  const end = value.startsWith("[") ? value.indexOf("]") + 1 : value.indexOf(":");
+  if (end <= 0) return value;
+  return /^(:\d*)?$/.test(value.slice(end)) ? value.slice(0, end) : value;
 }
 
 /** Vite's default host is loopback; `true` means every interface. */
@@ -549,7 +557,9 @@ export function devToolbarAgent(options: DevToolbarAgentOptions = {}): Plugin {
       if (!isPlainObject(result)) continue;
       const token = result.token;
       const entry = typeof token === "string" ? waiting.get(token) : undefined;
-      if (entry === undefined) continue;
+      // Only the reporter a command was handed to may answer it, so another
+      // client checking in cannot settle a page's command with its own outcome.
+      if (entry === undefined || entry.pickedBy !== from) continue;
       clearTimeout(entry.timer);
       waiting.delete(entry.token);
       entry.settle(statusFor(result.outcome), {
@@ -642,7 +652,8 @@ export function devToolbarAgent(options: DevToolbarAgentOptions = {}): Plugin {
     }
 
     tokenSeq += 1;
-    const token = `c${String(tokenSeq)}-${String(Date.now())}`;
+    // Unguessable, so holding a token proves it was handed out to you.
+    const token = `c${String(tokenSeq)}-${globalThis.crypto.randomUUID()}`;
     const startedAt = Date.now();
 
     const entry: Waiting = {

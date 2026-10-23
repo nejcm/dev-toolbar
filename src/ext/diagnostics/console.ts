@@ -540,9 +540,10 @@ export function createConsoleTail(
       }
       return describe(argument);
     });
-    // The template itself is foreign text too — masked after substitution
-    // would be the "redact a sentence" mistake, so it is masked before, and
-    // the pieces put into it were masked on their own.
+    // The template itself is foreign text too, so the filled sentence is
+    // masked as a whole after substitution — which also catches a credential
+    // that only takes shape once a piece lands in it (`"%s %s", "Bearer",
+    // token`). The pieces put into it were masked on their own as well.
     return [maskString(filled), ...rest.slice(index).map(describe)].join(" ").trim();
   };
 

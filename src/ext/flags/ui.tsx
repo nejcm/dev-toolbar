@@ -587,7 +587,7 @@ function Row({
           {view.projectUrl ? (
             <>
               {" · "}
-              <a href={view.projectUrl} target="_blank" rel="noreferrer">
+              <a href={view.projectUrl} target="_blank" rel="noreferrer noopener">
                 project
               </a>
             </>

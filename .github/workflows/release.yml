@@ -197,13 +197,12 @@ jobs:
           fi
           npm --version
 
+      # Exact key, no `restore-keys`: a `Linux-bun-` prefix would also restore any other lane's cache (setup-job's `Linux-bun-<job>-…`, including the browser lane's non-frozen playground install) into the job that can mint npm's publish credential. A miss only costs a fresh download.
       - name: Cache bun install cache
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.bun/install/cache
           key: ${{ runner.os }}-bun-${{ hashFiles('bun.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-bun-
 
       # `--ignore-scripts`, unlike everywhere else: this is the one job that can mint npm's publish credential, and a dependency `postinstall` runs before any code in this repository does. Verified that the tree still builds from a clean `--ignore-scripts` install. (The same threat is why ci.yml's `package` lane, not this job, runs the jest-consumer test.) Not closed: `prepublishOnly` below still runs tsup and tsc from `node_modules` here — that needs packing in `gate` and publishing the artifact instead.
       - name: Install dependencies
