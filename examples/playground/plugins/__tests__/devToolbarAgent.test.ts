@@ -169,6 +169,26 @@ test("a non-loopback Host is refused (the DNS-rebinding guard)", async () => {
   assert.equal(answer.body["reason"], "non-loopback-host");
 });
 
+test("a Host with anything but a port after the loopback name is refused", async () => {
+  for (const host of ["[::1]evil.test", "localhost.evil.test", "127.0.0.1:5273x"]) {
+    const answer = await request(middleware(), {
+      method: "GET",
+      url: "/__dev-toolbar/state",
+      headers: { host },
+    });
+    assert.equal(answer.status, 403, host);
+    assert.equal(answer.body["reason"], "non-loopback-host", host);
+  }
+  for (const host of ["[::1]:5273", "[::1]", "LOCALHOST:5273", "127.0.0.1"]) {
+    const answer = await request(middleware(), {
+      method: "GET",
+      url: "/__dev-toolbar/state",
+      headers: { host },
+    });
+    assert.notEqual(answer.body["reason"], "non-loopback-host", host);
+  }
+});
+
 test("a foreign Origin is refused", async () => {
   const answer = await request(middleware(), {
     method: "GET",
@@ -424,6 +444,28 @@ deadlineTest("another page's results do not renew a command a reloaded page aban
 
   assert.equal(answer?.status, 504, "the abandoned command is still waiting");
   assert.equal(answer?.body["pickedUp"], true);
+});
+
+deadlineTest("a result from a reporter the command was not handed to is ignored", async (t) => {
+  const handler = middleware({ timeoutMs: 100 });
+  await request(handler, { method: "POST", url: "/__dev-toolbar/state", body: page() });
+  const { answers, tokens } = await queueAndPickUp(handler, ["flags.set"], "tab-a");
+  const token = tokens[0] as string;
+  // A random token, not a guessable sequence number and a clock reading.
+  assert.match(token, /^c\d+-[0-9a-f-]{36}$/);
+
+  await request(handler, {
+    method: "POST",
+    url: "/__dev-toolbar/state",
+    body: page({ reporterId: "intruder", results: [{ token, outcome: { ok: true, result: "forged" } }] }),
+  });
+  await deliver(handler, token, "tab-a");
+
+  const answer = await answers[0];
+  assert.equal(answer?.status, 200);
+  assert.equal(answer?.body["ranIn"], "tab-a");
+  assert.notEqual(answer?.body["result"], "forged");
+  t.mock.timers.tick(0);
 });
 
 test("a dev server shutting down answers every waiting caller, not none", async () => {

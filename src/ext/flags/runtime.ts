@@ -171,6 +171,20 @@ function parseDate(value: string | undefined): number | null {
   return Number.isNaN(parsed) ? null : parsed;
 }
 
+/**
+ * `url` when it navigates to an `http:`/`https:` page (relative references
+ * included), otherwise `null`. React only warns on a `javascript:` `href`, so
+ * the scheme is checked here, before a catalogue value can reach a link.
+ */
+function webLink(url: string): string | null {
+  try {
+    const { protocol } = new URL(url, "http://localhost/");
+    return protocol === "http:" || protocol === "https:" ? url : null;
+  } catch {
+    return null;
+  }
+}
+
 export function isFlagValue(value: unknown): value is FlagValue {
   return (
     value === null ||
@@ -446,6 +460,7 @@ export function createFlagsRuntime(options: FlagsRuntimeOptions = {}): FlagsRunt
       if (masked) maskedCount += 1;
 
       const expiresAtMs = parseDate(reading.expiresAt);
+      const projectUrl = reading.projectUrl === undefined ? null : webLink(reading.projectUrl);
       noteBoundary(expiresAtMs === null ? null : expiresAtMs + 1);
       const promotion = promotionFor(key);
       const typeMismatch =
@@ -473,7 +488,7 @@ export function createFlagsRuntime(options: FlagsRuntimeOptions = {}): FlagsRunt
               }),
             }),
         reloadBehavior: reading.reloadBehavior ?? "live",
-        ...(reading.projectUrl === undefined ? {} : { projectUrl: reading.projectUrl }),
+        ...(projectUrl === null ? {} : { projectUrl }),
         ...(reading.expiresAt === undefined ? {} : { expiresAt: reading.expiresAt }),
         expired: expiresAtMs !== null && expiresAtMs < at,
         recentlyUsed: reading.recentlyUsed === true,

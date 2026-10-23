@@ -125,7 +125,9 @@ and `isSensitiveKey()` for reusing the word list, `describeErrorUnmasked()`,
     `auth` does not cover `author`.
   - **By value shape**: `Bearer …`, bare JWTs, and URLs carrying a sensitive
     parameter (the OAuth-callback shape, where the secret is in the value and no
-    key matching would find it). A repeated header's values are matched one by
+    key matching would find it). A URL parameter is sensitive by its name *or*
+    by its value's shape, so `?assertion=<JWT>` and `?h=Bearer%20…` are masked
+    like `?token=…`, in `redactUrl()` and wherever a URL is redacted. A repeated header's values are matched one by
     one, so `Bearer …, ok` still masks its `Bearer` member.
   - **`allowKeys` is not the mirror of the word list.** An allow entry is matched
     against the key's *entire* canonicalised form, so `["sessionName"]` exempts

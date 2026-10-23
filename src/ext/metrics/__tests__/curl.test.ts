@@ -46,6 +46,13 @@ describe("formatCurl", () => {
     expect(line).toContain(REDACTED);
   });
 
+  it("masks a JWT under a parameter name that is not on the key list", () => {
+    const jwt = "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NSJ9.dBjftJeZ4CVPmB92K";
+    expect(formatCurl(entry(`https://idp.test/cb?assertion=${jwt}`))).toBe(
+      `curl --globoff 'https://idp.test/cb?assertion=${REDACTED}'`,
+    );
+  });
+
   it("honours the collector's own extra redaction keys", () => {
     const line = formatCurl(entry("https://api.test/v1?tenant=acme"), {
       redact: { extraKeys: ["tenant"] },

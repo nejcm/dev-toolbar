@@ -663,6 +663,65 @@ describe("redactUrl", () => {
     expect(() => redactUrl("::::?%e0%a4%a=1")).not.toThrow();
   });
 
+  describe("a credential-shaped value under a parameter name not on the list", () => {
+    // `redact({ state: JWT })` has always masked; the same JWT in a URL used
+    // to survive, because the URL pass looked only at parameter names.
+    const JWT = "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NSJ9.dBjftJeZ4CVPmB92K";
+
+    it("masks a JWT in the query, the fragment and a hash-router query", () => {
+      expect(redactUrl(`https://idp.test/cb?state=${JWT}&page=2`)).toBe(
+        `https://idp.test/cb?state=${REDACTED}&page=2`,
+      );
+      expect(redactUrl(`/oauth?assertion=${JWT}`)).toBe(`/oauth?assertion=${REDACTED}`);
+      expect(redactUrl(`https://app.test/cb#state=${JWT}&tab=a`)).toBe(
+        `https://app.test/cb#state=${REDACTED}&tab=a`,
+      );
+      expect(redactUrl(`https://app.test/#/cb?request=${JWT}`)).toBe(
+        `https://app.test/#/cb?request=${REDACTED}`,
+      );
+    });
+
+    it("masks a scheme credential, percent- or plus-encoded", () => {
+      expect(redactUrl("https://a.test/?h=Bearer%20abc123secret")).toBe(
+        `https://a.test/?h=${REDACTED}`,
+      );
+      expect(redactUrl("https://a.test/?h=Basic+dXNlcjpwYXNz")).toBe(
+        `https://a.test/?h=${REDACTED}`,
+      );
+    });
+
+    it("masks it in an unparseable URL too", () => {
+      expect(redactUrl(`http://[/?state=${JWT}&ok=1`)).toBe(`http://[/?state=${REDACTED}&ok=1`);
+      expect(redactUrl("http://[/?h=Bearer+abc&ok=1")).toBe(`http://[/?h=${REDACTED}&ok=1`);
+      expect(() => redactUrl("http://[/?x=%zz.%zz.%zz")).not.toThrow();
+    });
+
+    it("masks it inside redact() and redactText() as well", () => {
+      expect(redact({ recent: [{ url: `https://idp.test/cb?state=${JWT}` }] })).toEqual({
+        recent: [{ url: `https://idp.test/cb?state=${REDACTED}` }],
+      });
+      expect(redactText(`GET https://idp.test/cb?state=${JWT} failed`)).not.toContain(JWT);
+    });
+
+    it("leaves ordinary values alone, and honours values: false", () => {
+      expect(redactUrl("https://a.test/?state=xyz&q=bearer")).toBe(
+        "https://a.test/?state=xyz&q=bearer",
+      );
+      expect(redactUrl("https://a.test/?v=1.2.3&host=a.b.c")).toBe(
+        "https://a.test/?v=1.2.3&host=a.b.c",
+      );
+      expect(redactUrl(`https://idp.test/cb?state=${JWT}`, { values: false })).toBe(
+        `https://idp.test/cb?state=${JWT}`,
+      );
+    });
+
+    it("masks an Azure SAS signature by name", () => {
+      expect(redactUrl("https://acct.blob.core.windows.net/c/b?sv=2022-11-02&sig=AbC%2Bz")).toBe(
+        `https://acct.blob.core.windows.net/c/b?sv=2022-11-02&sig=${REDACTED}`,
+      );
+    });
+  });
+
   it("masks fragment parameters in an unparseable URL too", () => {
     expect(redactUrl("http://[/#token=SECRET")).toBe(`http://[/#token=${REDACTED}`);
     expect(redactUrl("http://[/?ok=1#/cb?token=SECRET&tab=a")).toBe(
