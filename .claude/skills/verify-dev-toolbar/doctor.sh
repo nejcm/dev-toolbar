@@ -17,7 +17,7 @@ say() { printf '%-5s %s\n' "$1" "$2"; }
 
 # 1. Right repo. A verify run against some other project's :5273 proves nothing.
 # bun, not node: every documented command in this repo is bun (`packageManager`
-# pins bun@1.4.0), so bun is the runtime the reader already has.
+# pins bun@1.4.4), so bun is the runtime the reader already has.
 name=$(bun -e 'process.stdout.write(require("./package.json").name)' 2>/dev/null || echo "")
 if [ "$name" = "@nejcm/dev-toolbar" ]; then
   say OK "repo is @nejcm/dev-toolbar at $root"
