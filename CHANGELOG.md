@@ -14,6 +14,13 @@
   style break at the boundary is accepted, not an oversight.
 -->
 
+## [1.4.5](https://github.com/nejcm/dev-toolbar/compare/v1.4.4...v1.4.5) (2026-11-09)
+
+
+### Bug Fixes
+
+* **ci:** pin bun 1.4.4 so the playground's link:../.. resolves as a path ([#188](https://github.com/nejcm/dev-toolbar/issues/188)) ([4715fac](https://github.com/nejcm/dev-toolbar/commit/4715fac7e04e90c2888e7e255e66ac47cf46bc61))
+
 ## [1.4.4](https://github.com/nejcm/dev-toolbar/compare/v1.4.3...v1.4.4) (2026-11-09)
 
 

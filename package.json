@@ -1,6 +1,6 @@
 {
   "name": "@nejcm/dev-toolbar",
-  "version": "1.4.4",
+  "version": "1.4.5",
   "private": false,
   "description": "Extensible, low-overhead in-app developer toolbar for React applications: runtime health signals, feature flags, overlays and diagnostics.",
   "keywords": [
@@ -226,7 +226,7 @@
     "jsdom": "^30.0.1",
     "knip": "^6.34.0",
     "lint-staged": "^17.4.1",
-    "oxfmt": "^0.70.0",
+    "oxfmt": "^0.77.0",
     "oxlint": "^1.81.0",
     "publint": "^0.3.24",
     "react": "^19.2.8",
@@ -248,5 +248,5 @@
       "optional": true
     }
   },
-  "packageManager": "bun@1.4.0"
+  "packageManager": "bun@1.4.4"
 }
