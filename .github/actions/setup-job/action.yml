@@ -40,9 +40,8 @@ runs:
     #
     # Listed explicitly, not `**/bun.lock`: the post step re-evaluates this key
     # to save, by which point node_modules exists, and the playground's
-    # `file:../..` install has mirrored the whole repo root — lockfiles,
-    # node_modules and all — into its own node_modules, recursively. A `**`
-    # walk from the root hits that and hashFiles fails.
+    # `link:../..` install has symlinked the repo root into its own
+    # node_modules. A `**` walk from the root could loop through it.
     - name: Cache bun install cache
       uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       with:

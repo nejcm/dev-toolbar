@@ -427,13 +427,13 @@ bun run playground           # builds the package, then Vite on :5273
 ```
 
 `examples/playground` is a Vite app that consumes the built `dist/` through
-`file:../..` exactly as a published consumer does. It exists for the checks unit
+`link:../..` exactly as a published consumer does. It exists for the checks unit
 tests cannot make: overflow collapsing live, overlays over a real `100vh` layout,
 restyling, Tailwind, and a design-token set the page actually consumes. It rebuilds
 `dist/` on start, so after editing `src/` run `bun run build` (or `bun run dev` in a
 second terminal) and reload.
 
-[The CodeSandbox copy](https://codesandbox.io/p/sandbox/q6269g) is this same app with the `file:../..` link swapped for the
+[The CodeSandbox copy](https://codesandbox.io/p/sandbox/q6269g) is this same app with the `link:../..` link swapped for the
 published package, so it demos a *release*, never your working tree — reach for it to
 show someone the toolbar, not to try a change.
 

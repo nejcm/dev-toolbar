@@ -180,7 +180,7 @@
     "docs:build": "vitepress build docs",
     "docs:preview": "vitepress preview docs",
     "playground": "cd examples/playground && bun run dev",
-    "playground:install": "rm -rf examples/playground/node_modules/@nejcm && cd examples/playground && bun install",
+    "playground:install": "cd examples/playground && bun install",
     "playground:build": "cd examples/playground && bun run build",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",

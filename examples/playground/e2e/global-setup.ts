@@ -4,7 +4,7 @@ import { join, resolve } from "node:path";
 /**
  * Stale-dist guard, run once before the suite.
  *
- * The playground consumes the library through `file:../..`, so this suite
+ * The playground consumes the library through `link:../..`, so this suite
  * exercises whatever `dist/` holds, not `src/`. Root `bun run test:e2e`
  * builds first; `bunx playwright test` in here does not, and an agent that
  * edits `src/` and runs the suite from this directory would get a green run
@@ -41,7 +41,7 @@ export default function globalSetup(): void {
 
   if (!existsSync(DIST)) {
     throw new Error(
-      `dist/ is missing at ${DIST} — the playground links file:../.. and cannot run without a build; ${HINT}`,
+      `dist/ is missing at ${DIST} — the playground links link:../.. and cannot run without a build; ${HINT}`,
     );
   }
 

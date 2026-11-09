@@ -13,7 +13,7 @@ export default defineConfig({
   // requests are real 4xx rather than Vite's SPA fallback serving a 200.
   plugins: [react(), devToolbarAgent(), statusRoutes()],
   resolve: {
-    // `@nejcm/dev-toolbar` is a `file:..` link, so without deduping the linked
+    // `@nejcm/dev-toolbar` is a `link:../..` link, so without deduping the linked
     // package would resolve React from the repo root's node_modules and the app
     // would run two copies (invalid-hook-call).
     dedupe: ["react", "react-dom"],
@@ -24,7 +24,7 @@ export default defineConfig({
   },
   server: {
     port: 5273,
-    // Serving files through the `file:..` symlink means reaching outside root.
+    // Serving files through the `link:../..` symlink means reaching outside root.
     fs: { allow: ["..", "../.."] },
   },
 });

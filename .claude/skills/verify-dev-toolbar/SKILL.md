@@ -7,7 +7,7 @@ description: Prove that @nejcm/dev-toolbar's shell and first-party extensions be
 
 This package is a React library, so there is no app to run — except one. Its
 single user-facing surface is `examples/playground`, a Vite app that consumes
-the built `dist/` through `file:../..` exactly as a published consumer does. It
+the built `dist/` through `link:../..` exactly as a published consumer does. It
 mounts the real shell with the real first-party extensions and gives every one
 of them something to measure. Driving the playground is the only way to prove
 user-visible behavior here; `vitest` runs in jsdom and cannot see layout,

@@ -16,7 +16,7 @@
     "test:e2e:ui": "playwright test --ui"
   },
   "dependencies": {
-    "@nejcm/dev-toolbar": "file:../..",
+    "@nejcm/dev-toolbar": "link:../..",
     "react": "^19.2.8",
     "react-dom": "^19.2.8"
   },

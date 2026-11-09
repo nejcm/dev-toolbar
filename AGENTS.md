@@ -23,7 +23,7 @@ The contract an extension is written against is the real public API.
 | `src/kit/` | Shared vocabulary, helpers and controls for extension authors | React + `src/runtime`, **types only** from core | `src/runtime`, core's *types* |
 | `src/ext/<name>/` | First-party extensions, one directory each | React + `src/runtime`, **types only** from core | `src/runtime`, `src/kit`, core's *types* |
 | `src/testing/` | `renderWithToolbar`, `makeExtension`, `mockBus`, fake layout | React + optional `@testing-library/react` peer | core's *types* relatively, core's *values* through `@nejcm/dev-toolbar` |
-| `examples/playground/` | Vite app consuming the built package via `file:../..` | Vite, React | `dist/`, as a real consumer does |
+| `examples/playground/` | Vite app consuming the built package via `link:../..` | Vite, React | `dist/`, as a real consumer does |
 | `test/fixtures/jest-consumer/` | A real Jest 30 + CommonJS consumer of `dist/` | Jest, bun | `dist/`, as a CommonJS consumer does |
 | `test/fixtures/vite-consumer/` | The packed tarball through a default Vite dev server and its dependency optimizer, in Chromium | Vite, Playwright, bun | the tarball `bun pm pack` produces, as an npm consumer does |
 | `docs/` | The published reference: one page per entry point and per first-party extension, plus `architecture.md` and the ADRs | Markdown | — |

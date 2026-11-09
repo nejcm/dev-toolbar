@@ -137,7 +137,7 @@ jobs:
 
       # The ESM half the playground cannot prove: a cold Vite dev server with
       # the *default* optimizer over a tarball in real `node_modules`. The
-      # playground links `file:../..`, which Vite treats as source.
+      # playground links `link:../..`, which Vite treats as source.
       - name: Verify the packaged consumer through Vite's optimizer
         run: bun run test
         working-directory: test/fixtures/vite-consumer
@@ -262,10 +262,8 @@ jobs:
         run: bun run test
         working-directory: examples/playground
 
-      # Not --frozen-lockfile: `file:../..` re-links against the `dist/` just
-      # built, and bun won't restore that from cache.
       - name: Install the playground
-        run: bun install
+        run: bun install --frozen-lockfile
         working-directory: examples/playground
 
       - name: Typecheck the playground

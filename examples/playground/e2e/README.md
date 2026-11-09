@@ -34,7 +34,7 @@ a slow mirror and cancelled the run (see `.github/actions/setup-browser`).
   whole poll. Give a concurrent run its own port with `DTB_E2E_PORT=5275`.
 - **A stale `dist/` fails the run.** `e2e/global-setup.ts` refuses to start
   when `dist/` is missing or anything under `src/` (tests aside) is newer than
-  it, since the playground links `file:../..` and would prove the old build.
+  it, since the playground links `link:../..` and would prove the old build.
   Rebuild, run root `bun run test:e2e`, or set `DTB_E2E_SKIP_DIST_CHECK=1`
   for a deliberate run against an older build.
 - **State through the bridge, selectors for input.** `fixtures.ts` wraps

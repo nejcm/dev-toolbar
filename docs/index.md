@@ -153,7 +153,7 @@ pageClass: dtb-landing-page
     <h2 class="dtb-eyebrow">contributing</h2>
     <div class="dtb-grid dtb-contributing-grid">
       <div><strong>the one command that matters</strong><pre><b>$ </b>bun run verify</pre><p>format:check → typecheck → lint → knip → build → check:package → test. If it passes locally it passes in CI.</p></div>
-      <div><strong>try a change for real</strong><pre><b>$ </b>bun run playground</pre><p>A Vite app on :5273 consuming the built dist through file:../.. exactly as a published consumer does.</p></div>
+      <div><strong>try a change for real</strong><pre><b>$ </b>bun run playground</pre><p>A Vite app on :5273 consuming the built dist through link:../.. exactly as a published consumer does.</p></div>
       <div><strong>house rules</strong><p>Bun, not npm. Zero runtime dependencies is a rule. Core never imports runtime/ or ext/. Conventional Commits, enforced — the PR title is the message that lands.</p></div>
     </div>
   </section>
